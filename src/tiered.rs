@@ -3976,6 +3976,197 @@ impl ProvenanceMap {
         self.source_kind_histogram().modality_amplitude()
     }
 
+    /// The **modality-shape sum of source-kind counts** — the sum of
+    /// the modal and antimodal [`crate::ConfigSourceKind`] level-set
+    /// cardinalities on this resolved fold. Equal to
+    /// `self.peak_source_kind_multiplicity() +
+    /// self.trough_source_kind_multiplicity()` by construction, routed
+    /// through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree_sum`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly on the empty map; returns `2` on every
+    /// non-empty fold whose peak and trough source-kinds are each
+    /// uniquely held (including every singleton-support fold and every
+    /// strictly-ordered three-cell shape); returns
+    /// `2 * contributing_source_kinds_count()` exactly on every
+    /// balanced fold (both level sets walk the full observed support).
+    ///
+    /// The **scalar-sum peer** on the multiplicity surface — the
+    /// additive dual of [`Self::source_kind_modality_amplitude`] on the
+    /// same surface at the source-kind altitude. Where
+    /// [`Self::source_kind_modality_amplitude`] fuses the extremal-
+    /// multiplicity pair `(peak_source_kind_multiplicity,
+    /// trough_source_kind_multiplicity)` into `peak.abs_diff(trough)`
+    /// — the asymmetry-magnitude scalar —
+    /// `source_kind_modality_degree_sum` fuses the same pair into
+    /// `peak + trough` — the combined extremal cardinality scalar. The
+    /// sum is overflow-safe on [`ProvenanceMap`] since both summands
+    /// are bounded above by
+    /// `crate::axis_cardinality::<crate::ConfigSourceKind>() == 3`,
+    /// giving a hard ceiling of `6` on the sum scalar. Together with
+    /// [`Self::source_kind_modality_amplitude`], the pair
+    /// `(source_kind_modality_degree_sum,
+    /// source_kind_modality_amplitude)` recovers the *unordered*
+    /// multiplicity pair `{peak_source_kind_multiplicity,
+    /// trough_source_kind_multiplicity}` under the invertible transform
+    /// `max(peak, trough) = (sum + amplitude) / 2, min(peak, trough) =
+    /// (sum - amplitude) / 2` (integer division exact since both share
+    /// parity — both `usize` sums / abs-diffs whose sum equals
+    /// `2 * max(peak, trough)`). The peak-versus-trough *labelling*
+    /// itself requires the fused [`Self::source_kind_histogram`]-side
+    /// `modality_degree` pair — the additive-side scalar sees no
+    /// signed direction.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how much of the
+    /// observed source-kind support sits at either extreme?"*: the
+    /// fleet dashboard headline *"source-kind extremal sum 6: uniform-
+    /// count over all three source-kinds — the whole support is doubly-
+    /// extremal"* (where `6` is this scalar at its structural ceiling),
+    /// the attestation manifest recording the combined extremal
+    /// cardinality of a resolved fold by source-kind, the alerting
+    /// policy reading *"source-kind extremal sum = 2"* to classify
+    /// folds where both extremes are uniquely held (singleton support,
+    /// two-cell heavy-tail, or strictly-ordered three-cell). Before
+    /// this lift, every such consumer re-derived the projection inline
+    /// as `map.peak_source_kind_multiplicity() +
+    /// map.trough_source_kind_multiplicity()` — two method calls plus
+    /// an addition, each site walking the counts vector twice where
+    /// the shared [`crate::AxisHistogram::modality_degree`] primitive
+    /// fuses both into a single walk.
+    ///
+    /// The source-kind altitude scalar-sum peer that **climbs the
+    /// "modality-degree-sum across altitudes" projection** from the
+    /// diff altitude — the natural scalar sister of the two closed
+    /// source-kind multiplicity scalars
+    /// ([`Self::peak_source_kind_multiplicity`] and
+    /// [`Self::trough_source_kind_multiplicity`], both surfaced at this
+    /// altitude) on every altitude of the fully-closed cube. Matches
+    /// the tier-altitude [`Self::tier_modality_degree_sum`] one axis
+    /// over on the same [`ProvenanceMap`] surface. Parallels the
+    /// "modality-amplitude across altitudes" projection climbed on the
+    /// same altitude by [`Self::source_kind_modality_amplitude`] one
+    /// seam over — this climb carries the additive-side dual of the
+    /// same extremal-multiplicity pair.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`], [`crate::ConfigSourceKind::File`]),
+    /// so `source_kind_modality_degree_sum()` ranges over
+    /// `{0} ∪ (2..=6)` (`0` exactly on the empty map, `1` unreachable
+    /// on the non-empty lower bound, then `2..=6` reachable on non-
+    /// empty folds), one cardinality below the tier altitude's
+    /// `{0} ∪ (2..=8)` range on the same surface. The tight upper
+    /// bound is `2 * axis_cardinality::<ConfigSourceKind>() == 6`,
+    /// witnessed on the uniform-full-cover three-source-kind shape
+    /// (all three cells at the same nonzero count).
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_degree_sum`] empty convention
+    /// one altitude down and the [`Self::peak_source_kind_multiplicity`]
+    /// / [`Self::trough_source_kind_multiplicity`] empty conventions
+    /// on the same altitude. The scalar quadruple
+    /// `(peak_source_kind_multiplicity,
+    /// trough_source_kind_multiplicity,
+    /// source_kind_modality_amplitude,
+    /// source_kind_modality_degree_sum)` reads uniformly `(0, 0, 0, 0)`
+    /// on the empty map — the vacuous-nothing boundary lifted from the
+    /// empty support.
+    ///
+    /// **Non-empty lower-bound convention** — returns `>= 2` on every
+    /// non-empty fold: every non-empty support has at least one
+    /// observed source-kind at the peak and at least one observed
+    /// source-kind at the trough (they may coincide as the same cell
+    /// on the singleton-support case), so both multiplicities are
+    /// `>= 1` and the sum is `>= 2`. The value `1` is unreachable — no
+    /// fold carries a combined extremal cardinality of exactly `1`.
+    /// The additive-side signature of the "vacuous-versus-populated"
+    /// boundary on the source-kind altitude multiplicity surface.
+    ///
+    /// **Balanced-fold convention** — returns
+    /// `2 * contributing_source_kinds_count()` on every balanced fold
+    /// (every observed source-kind contributed the same nonzero
+    /// count): on such a fold `peak_source_kind_multiplicity() ==
+    /// trough_source_kind_multiplicity() ==
+    /// contributing_source_kinds_count()`, so the sum reaches its
+    /// structural upper bound relative to the support cardinality.
+    /// Empty (`0`), singleton (`2`), two-cell balanced (`4`), full
+    /// three-cell balanced (`6`).
+    ///
+    /// **Strictly-ordered convention** — returns `2` on every
+    /// strictly-ordered three-cell fold (three distinct positive
+    /// counts, e.g. `Defaults=1, Env=2, File=3`): both multiplicities
+    /// are `1`, so the sum reads `2` even though the shape is *not*
+    /// balanced. This shape witnesses the *both-extremes-uniquely-held
+    /// branch* of the "sum equals 2" configuration on a non-empty
+    /// non-singleton fold at the source-kind altitude — one
+    /// cardinality below the tier altitude's four-cell strictly-
+    /// ordered witness on the same additive surface.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_modality_degree_sum() ==
+    ///   source_kind_histogram().modality_degree_sum()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `source_kind_modality_degree_sum() ==
+    ///   peak_source_kind_multiplicity() +
+    ///   trough_source_kind_multiplicity()` — the defining equivalence
+    ///   on the multiplicity-scalar pair at the source-kind altitude.
+    ///   Overflow-safe since both summands are bounded above by
+    ///   `crate::axis_cardinality::<crate::ConfigSourceKind>() == 3`.
+    /// - `source_kind_modality_degree_sum() == 0` iff the map is empty
+    ///   — the vacuous-nothing boundary on the additive side. Dual to
+    ///   `source_kind_modality_amplitude() == 0`'s much larger
+    ///   inhabited region (which fires on empty, singleton, uniform-
+    ///   count, and every strictly-ordered three-cell shape).
+    /// - `source_kind_modality_degree_sum() >= 2` on every non-empty
+    ///   map — both multiplicities are `>= 1` on any non-empty
+    ///   support.
+    /// - `source_kind_modality_degree_sum() == 2` on a non-empty map
+    ///   iff `peak_source_kind_multiplicity() == 1 &&
+    ///   trough_source_kind_multiplicity() == 1` — the "both extremes
+    ///   uniquely held" configuration.
+    /// - `source_kind_modality_degree_sum() <=
+    ///   2 * contributing_source_kinds_count()` always — both level
+    ///   sets are subsets of the observed support, so their sum is
+    ///   bounded above by twice the support size.
+    /// - `source_kind_modality_degree_sum() <=
+    ///   2 * crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    ///   always — bounded above by `6` on the three-cell source-kind
+    ///   axis.
+    /// - `source_kind_modality_degree_sum() % 2 ==
+    ///   source_kind_modality_amplitude() % 2` — the sum and abs-diff
+    ///   of two `usize` share parity, so the pair `(sum, amplitude)`
+    ///   recovers the *unordered* pair `{peak_source_kind_mult,
+    ///   trough_source_kind_mult}` under the invertible transform
+    ///   `max(peak, trough) = (sum + amp) / 2, min(peak, trough) =
+    ///   (sum - amp) / 2` with exact integer division. The peak-
+    ///   versus-trough labelling itself requires the fused
+    ///   `modality_degree` pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `map.peak_source_kind_multiplicity() +
+    /// map.trough_source_kind_multiplicity()` idiom (which walked the
+    /// counts vector twice — once for the peak multiplicity, once for
+    /// the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree_sum`] fuses both into a
+    /// single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    pub fn source_kind_modality_degree_sum(&self) -> usize {
+        self.source_kind_histogram().modality_degree_sum()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -60760,6 +60951,274 @@ mod progressive_tests {
                 let peak_mult = positive.iter().filter(|&&c| c == max).count();
                 let trough_mult = positive.iter().filter(|&&c| c == min).count();
                 peak_mult.abs_diff(trough_mult)
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_modality_degree_sum — additive-side
+    //    dual of `source_kind_modality_amplitude` on the source-kind
+    //    altitude, source-altitude peer of `tier_modality_degree_sum`
+    //    on the same `AxisHistogram::modality_degree_sum` primitive
+    //    one altitude down ──
+
+    #[test]
+    fn source_kind_modality_degree_sum_matches_source_kind_histogram_modality_degree_sum_pointwise()
+    {
+        // Routing pin: `source_kind_modality_degree_sum` routes through
+        // `source_kind_histogram().modality_degree_sum()`. Both must
+        // agree pointwise on every fixture; the named seam is the
+        // cube-native routing of the histogram surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_modality_degree_sum(),
+                map.source_kind_histogram().modality_degree_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_equals_sum_of_peak_and_trough_multiplicities() {
+        // Defining equivalence on the multiplicity-scalar pair at the
+        // source-kind altitude: the sum reads `peak + trough`. Locks
+        // the identity against inline re-derivation the seam replaces.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_multiplicity();
+            let trough = map.trough_source_kind_multiplicity();
+            assert_eq!(map.source_kind_modality_degree_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_empty_map_is_zero() {
+        // Empty-map convention: the vacuous-nothing boundary. Both
+        // multiplicities read `0`, so the sum reads `0`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_modality_degree_sum(), 0);
+        assert_eq!(empty.peak_source_kind_multiplicity(), 0);
+        assert_eq!(empty.trough_source_kind_multiplicity(), 0);
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_prog_singleton_support_is_two() {
+        // Prog: singleton-support all-Defaults fold — the sole
+        // observed cell is both the unique peak and the unique trough,
+        // so both multiplicities read `1` and the sum reads `2`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().source_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_mixed_fixture_is_three() {
+        // Mixed fixture: Defaults=2, Env=1, File=1 — Defaults uniquely
+        // peaks (multiplicity `1`) and Env+File tie at the trough
+        // (multiplicity `2`), so the sum reads `1 + 2 == 3`. Heavy-
+        // tail witness on the cardinality-`3` source-kind axis.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 2);
+        assert_eq!(r.provenance().source_kind_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_right_skew_two_at_peak_is_three() {
+        // Right-skew witness: Defaults=2, Env=2, File=1 — Defaults+Env
+        // tie at the peak (multiplicity `2`) and File uniquely troughs
+        // (multiplicity `1`), so the sum reads `2 + 1 == 3`. Mirror of
+        // the heavy-tail witness on the same cardinality-`3` axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 2);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.source_kind_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_uniform_full_cover_is_six() {
+        // Uniform three-source-kind cover: all three cells at count
+        // `1`, both multiplicities read `3`, so the sum reads `6` at
+        // its structural ceiling on the three-cell axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert_eq!(m.source_kind_modality_degree_sum(), 6);
+        assert_eq!(
+            m.source_kind_modality_degree_sum(),
+            2 * crate::axis_cardinality::<crate::ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_strictly_ordered_three_cell_is_two() {
+        // Strictly-ordered three-cell fold: three distinct positive
+        // counts (Defaults=1, Env=2, File=3) — both extremes uniquely
+        // held, so both multiplicities read `1` and the sum reads `2`
+        // even though the shape is *not* balanced. This shape
+        // witnesses the "sum equals 2, both extremes uniquely held"
+        // branch on a non-empty non-singleton fold at the source-kind
+        // altitude.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["f".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.peak_source_kind_multiplicity(), 1);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.source_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_is_zero_iff_map_is_empty() {
+        // Empty-versus-populated boundary on the additive side. The
+        // sum reads `0` exactly when the map is empty (both
+        // multiplicities read `0`) and `>= 2` on every non-empty
+        // support.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.source_kind_modality_degree_sum() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_at_least_two_on_non_empty_maps() {
+        // Non-empty lower bound: every non-empty support has both
+        // multiplicities `>= 1`, so the sum is `>= 2`. The value `1`
+        // is structurally unreachable.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(!map.is_empty());
+            assert!(map.source_kind_modality_degree_sum() >= 2);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_bounded_above_by_double_support() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so `peak + trough <= 2 * contributing_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.source_kind_modality_degree_sum() <= 2 * map.contributing_source_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_bounded_by_double_axis_cardinality() {
+        // Composition bound: since `contributing_source_kinds_count()
+        // <= axis_cardinality::<ConfigSourceKind>() == 3`, the sum is
+        // bounded above by `2 * axis_cardinality == 6` on the three-
+        // cell source-kind axis. Structural upper bound on the
+        // multiplicity-sum surface.
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.source_kind_modality_degree_sum() <= 2 * card);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_shares_parity_with_amplitude() {
+        // Parity lock: `sum % 2 == amplitude % 2`. Consequence:
+        // the pair `(sum, amplitude)` recovers the *unordered*
+        // multiplicity pair `{peak_mult, trough_mult}` under the
+        // invertible transform `max = (sum + amp) / 2, min = (sum -
+        // amp) / 2` with exact integer division (both share parity,
+        // so both quotients round to the whole number).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_modality_degree_sum();
+            let amp = map.source_kind_modality_amplitude();
+            assert_eq!(sum % 2, amp % 2);
+            // The transform recovers the pair exactly, up to unordering.
+            let mx = (sum + amp) / 2;
+            let mn = (sum - amp) / 2;
+            let peak = map.peak_source_kind_multiplicity();
+            let trough = map.trough_source_kind_multiplicity();
+            assert_eq!(mx, peak.max(trough));
+            assert_eq!(mn, peak.min(trough));
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_agrees_with_open_coded_sum_walk() {
+        // Parity against the hand-rolled sum walk: over the
+        // histogram's *support* (nonzero cells), compute the max and
+        // min counts, then take the multiplicity of each and their
+        // sum. Empty histogram has no support so all three scalars
+        // read `0` and the sum reads `0`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_modality_degree_sum();
+            let hist = map.source_kind_histogram();
+            let positive: Vec<usize> = hist.iter().map(|(_, c)| c).filter(|&c| c > 0).collect();
+            let hand_rolled = if positive.is_empty() {
+                0
+            } else {
+                let max = *positive.iter().max().unwrap();
+                let min = *positive.iter().min().unwrap();
+                let peak_mult = positive.iter().filter(|&&c| c == max).count();
+                let trough_mult = positive.iter().filter(|&&c| c == min).count();
+                peak_mult + trough_mult
             };
             assert_eq!(via_seam, hand_rolled);
         }
