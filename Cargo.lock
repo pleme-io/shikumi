@@ -571,6 +571,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blue-lang-syntax"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e7c18463d8d73827550761043eb13d534cabe451a6aa7efe4bd3db63b2db2b0"
+dependencies = [
+ "tatara-lisp",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2476,6 +2485,7 @@ dependencies = [
  "aws-sdk-secretsmanager",
  "base64",
  "blake3",
+ "blue-lang-syntax",
  "clap",
  "figment",
  "gen-platform",
@@ -2605,18 +2615,18 @@ dependencies = [
 
 [[package]]
 name = "tatara-closed-set"
-version = "0.3.12"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "364be0a5d6bfd14d92794c9ef42e6b41dd9acb13a23d35eec7ceeda9c90b0b46"
+checksum = "5e6ad2a08e5ca3bf0f14fe35a0d59d93fb973cd1d8021bc5ad2a8e178034e80f"
 dependencies = [
  "tatara-closed-set-derive",
 ]
 
 [[package]]
 name = "tatara-closed-set-derive"
-version = "0.3.12"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5c7130f57d1260a2edd9b48d31bf4d0976ce82266a5a453fb55d907f2d3a59d"
+checksum = "f8bb9dd5e104072ac24fa779c15056d4669427b3ca899e3d361f735df15796ad"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2625,9 +2635,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.3.12"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea77b78f7bbed09f86971c2157a5f5adb4e61be30399f2bf887ecb08dfec60a"
+checksum = "1b1cda0d008afa5d8f4837bc5542f4d2f84044290b4f2ca3cc87885efbacb08e"
 dependencies = [
  "blake3",
  "serde",
@@ -2639,9 +2649,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.3.12"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c090e870921b2b5ac5d2aaa3632772ebc4cc00829da56ab90cc3d8da49768210"
+checksum = "0a5f98ecaa85c33545cf2d083c8c76de48805fdc59ba80b840f85a4595820389"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -63,7 +63,10 @@ pub fn load_from_str(src: &str) -> Result<Value, ShikumiError> {
     sexp_to_value_root(first)
 }
 
-fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
+/// `pub(crate)` so [`crate::blue_provider`] reuses it: blue parses to the
+/// same tatara-lisp `Sexp`, so the two front-ends SHARE one mapping instead
+/// of each carrying a copy that could drift.
+pub(crate) fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
     // Top-level form: (defX :k v :k v …) — strip the head symbol.
     match sexp {
         Sexp::List(items) => {

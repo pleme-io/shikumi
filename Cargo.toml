@@ -24,6 +24,19 @@ default = []
 # gone.
 lisp = ["dep:tatara-lisp"]
 
+# blue (`.b`) config support — the pleme-io language as a configuration citizen.
+#
+# Implies `lisp`, and that IS the design: blue's surface parses to a
+# tatara-lisp `Sexp` (blue-lang-syntax re-exports `tatara_lisp::{Atom, Sexp}`),
+# so the Sexp -> figment::Value mapping this crate already ships for `.lisp` is
+# reused verbatim. blue is a FRONT-END on the existing provider, never a second
+# one — two mappings would be two things to keep in lockstep, which is the
+# drift class this crate is careful about.
+#
+# Off by default for the same reason `lisp` is: an app that authors no blue
+# configs should not carry a language front-end in its closure.
+blue = ["dep:blue-lang-syntax", "lisp"]
+
 # clap-based `<app> config-show <tier>` subcommand. The Pillar 12 dual
 # of TieredConfig: one factory every consumer pulls in to eliminate
 # hand-rolled config-show CLIs. Adds a `clap::Args` struct that runs
@@ -116,7 +129,18 @@ thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
-tatara-lisp = { version = "0.3.3", optional = true }
+# 0.3.3 -> 0.3.21 to MATCH what blue-lang-syntax resolves. The two MUST agree:
+# blue parses to `tatara_lisp::Sexp`, and two semver-compatible-LOOKING
+# versions are DISTINCT TYPES to rustc (E0308), so a shared AST is not shared
+# across a skew. One AST version fleet-wide is the whole point of a shared AST.
+tatara-lisp = { version = "0.3.21", optional = true }
+# blue — the pleme-io language. Only the SYNTAX crate: shikumi needs
+# `parse_program` (source -> Vec<Sexp>) and nothing else. The runtime,
+# interpreter, LSP and package manager stay out of the closure, because a
+# config file is PARSED AND MAPPED, NEVER EXECUTED. A config format that can
+# run arbitrary code is a much larger security surface, and that boundary is a
+# decision rather than an accident of what happened to compile.
+blue-lang-syntax = { version = "0.0.2", optional = true }
 # Feature-gated `hotswap`: the HotSwapClassifier trait + HotSwapClass/
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
