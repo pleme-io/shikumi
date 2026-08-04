@@ -5,7 +5,8 @@ version = 4
 [[package]]
 name = "akeyless-api"
 version = "0.1.1"
-source = "git+https://github.com/pleme-io/akeyless-api#4f455966ecba8789dd1932cf6a725dff2d7031f1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357249bf4e5c03bbe39dee4a8fa8ac07b8b47757520298d365341b22f04538a7"
 dependencies = [
  "reqwest",
  "serde",
@@ -988,7 +989,8 @@ dependencies = [
 [[package]]
 name = "gen-macros"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01a65672c144a3365d0e0c1949102eb8149ebc8bee4f702decf699f0d12e4b22"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -998,7 +1000,8 @@ dependencies = [
 [[package]]
 name = "gen-platform"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6a9878a6592876a0d813f1b476e74d8b6213447d7d07876de51311aed454a00"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -1011,7 +1014,8 @@ dependencies = [
 [[package]]
 name = "gen-types"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c45ce151777b35170110bed11f2fbe10e42a95217b83be77def5d93a97640fe4"
 dependencies = [
  "blake3",
  "chrono",
@@ -1529,8 +1533,9 @@ dependencies = [
 
 [[package]]
 name = "kanchi"
-version = "0.1.0"
-source = "git+https://github.com/pleme-io/kanchi?rev=0569d9655ac9ab0784b9b82a61bc873fbf69ad14#0569d9655ac9ab0784b9b82a61bc873fbf69ad14"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cceb2444b67f171df2f5304777d2b31642df2da9b45cfa248d1e7a60b37fdcea"
 dependencies = [
  "libc",
  "objc2",
@@ -1920,11 +1925,6 @@ name = "pkg-config"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
-
-[[package]]
-name = "pleme-hotswap"
-version = "0.1.0"
-source = "git+https://github.com/pleme-io/pleme-hotswap-derive#1ecf9faffc8c20013051663966929ab0fb8ff946"
 
 [[package]]
 name = "pleme-hotswap-derive"
@@ -2476,7 +2476,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.453"
+version = "0.1.455"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2492,7 +2492,6 @@ dependencies = [
  "gen-types",
  "kanchi",
  "notify",
- "pleme-hotswap",
  "pleme-hotswap-derive",
  "reqwest",
  "serde",

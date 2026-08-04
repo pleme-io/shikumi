@@ -97,12 +97,7 @@ rec {
         crateName = "akeyless-api";
         version = "0.1.1";
         edition = "2021";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/akeyless-api";
-          rev = "4f455966ecba8789dd1932cf6a725dff2d7031f1";
-          sha256 = "00iyzp86dpd8in83lm8kcx4q59i242lzw4ij5ghxwfr7qc4rmng5";
-        };
+        sha256 = "19rq8pq246rlcp9rh0jjaxvv9f07mjl8yjpfkpivn0sw9szljwim";
         libName = "akeyless_api";
         authors = [
           "Pleme Team <team@pleme.io>"
@@ -2476,10 +2471,10 @@ rec {
       };
       "clap" = rec {
         crateName = "clap";
-        version = "4.6.4";
+        version = "4.6.5";
         edition = "2024";
         crateBin = [];
-        sha256 = "1dz5brl39xchkml0khm348i87w89misprlinmnk77vwjawa0q7nr";
+        sha256 = "1pyaq1cfrwzwcfdlxynxiq8fgrvvi3yccyk490v8zr4qhmjmc6rh";
         dependencies = [
           {
             name = "clap_builder";
@@ -2518,9 +2513,9 @@ rec {
       };
       "clap_builder" = rec {
         crateName = "clap_builder";
-        version = "4.6.2";
+        version = "4.6.5";
         edition = "2024";
-        sha256 = "12sl6fyj6w2djxj0lsc1lkj1h3wpx74fjhb37izvaf65vjpji5ph";
+        sha256 = "0y500wa2x3jqvsc95dgcbvp0hj47x038bsv8vkvjigd1s41m99ll";
         dependencies = [
           {
             name = "anstream";
@@ -3376,14 +3371,9 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.30";
+        version = "0.1.33";
         edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/gen";
-          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
-          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
-        };
+        sha256 = "08jb5v8z16gnxhnp0kzfify9w55q5q84j68c1rfkd8s4q5r5d9h1";
         procMacro = true;
         libName = "gen_macros";
         authors = [
@@ -3408,14 +3398,9 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.30";
+        version = "0.1.33";
         edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/gen";
-          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
-          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
-        };
+        sha256 = "002a8pnilcaivrv7il6p8ws23dnqfip4f6rzh46nm1wjcn58gafn";
         libName = "gen_platform";
         authors = [
           "pleme-io"
@@ -3451,14 +3436,9 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.30";
+        version = "0.1.33";
         edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/gen";
-          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
-          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
-        };
+        sha256 = "1r0gcjbkmngmvrvvx0vv46ajmr0hpqpizldy200ifdbvfx8y2p64";
         libName = "gen_types";
         authors = [
           "pleme-io"
@@ -5155,9 +5135,9 @@ rec {
       };
       "ipnet" = rec {
         crateName = "ipnet";
-        version = "2.12.0";
+        version = "2.12.1";
         edition = "2018";
-        sha256 = "1qpq2y0asyv0jppw7zww9y96fpnpinwap8a0phhqqgyy3znnz3yr";
+        sha256 = "0y6xssyvfy85k90pnnanxv9phayxalhp8bacy61rw4vkmhznqxba";
         authors = [
           "Kris Price <kris@krisprice.nz>"
         ];
@@ -5253,14 +5233,9 @@ rec {
       };
       "kanchi" = rec {
         crateName = "kanchi";
-        version = "0.1.0";
+        version = "0.1.3";
         edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/kanchi";
-          rev = "0569d9655ac9ab0784b9b82a61bc873fbf69ad14";
-          sha256 = "0mh6g06180q7iwx4jyhvdhmaxx9270ysbrj4rwhw3zdgw849wmk4";
-        };
+        sha256 = "1snwgyrn0yhyiljglp5lm4nxyhhnng97firhypr1s5vznr229syc";
         dependencies = [
           {
             name = "libc";
@@ -5304,9 +5279,9 @@ rec {
       };
       "kqueue" = rec {
         crateName = "kqueue";
-        version = "1.2.0";
+        version = "1.2.1";
         edition = "2021";
-        sha256 = "1dc7rm23i7s1574xx185836rxyzynrsv5wkn96nf0649f990fg17";
+        sha256 = "1sj11bbz5kx73m0bzkmwzfmmlxjnh4q94v6ya3gls2qj4idkwxld";
         authors = [
           "William Orr <will@worrbase.com>"
         ];
@@ -7186,22 +7161,6 @@ rec {
         libName = "pkg_config";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
-        ];
-
-      };
-      "pleme-hotswap" = rec {
-        crateName = "pleme-hotswap";
-        version = "0.1.0";
-        edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/pleme-hotswap-derive";
-          rev = "1ecf9faffc8c20013051663966929ab0fb8ff946";
-          sha256 = "0kibkp081ym87hjdb928p192s0aqdf99xq9k19kn5y09cxwwl53h";
-        };
-        libName = "pleme_hotswap";
-        authors = [
-          "pleme-io"
         ];
 
       };
@@ -9204,7 +9163,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.453";
+        version = "0.1.455";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9284,12 +9243,6 @@ rec {
             features = [ "macos_fsevent" ];
           }
           {
-            name = "pleme-hotswap";
-            packageId = "pleme-hotswap";
-            rename = "pleme-hotswap";
-            optional = true;
-          }
-          {
             name = "reqwest";
             packageId = "reqwest";
             optional = true;
@@ -9359,7 +9312,7 @@ rec {
           "blue" = [ "dep:blue-lang-syntax" "lisp" ];
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
-          "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
+          "hotswap" = [ "dep:blake3" ];
           "kube" = [ "kube-discovery" "dep:reqwest" "reqwest/blocking" "dep:base64" ];
           "kube-discovery" = [ "dep:kanchi" ];
           "lisp" = [ "dep:tatara-lisp" ];
@@ -9653,9 +9606,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.21";
+        version = "0.3.27";
         edition = "2021";
-        sha256 = "03z86j01g3iamp2in0nqs4y9gywkkpas0dgy2h7vz8swishd4sjy";
+        sha256 = "0g307l493qpvy5rd75xwj3w1b4w2kv8izm702zw6h8pxxh2blw62";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9670,9 +9623,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.21";
+        version = "0.3.27";
         edition = "2021";
-        sha256 = "1bcnazqmswqz6qyrx2fanckr8rnlar8c2yd79z12l1q4w7arvfzq";
+        sha256 = "1kq8y13sxz028dh4hfpkyivafih5pcl92idciwc4p24j54bdxi7g";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
@@ -9697,9 +9650,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.21";
+        version = "0.3.27";
         edition = "2021";
-        sha256 = "13mhmkxmx247rjijqkqb55241y6jyi15bg1p927mvyla006xl70v";
+        sha256 = "1sbf81mf6dms2ck04k9y8c7i6h67mrx1kk126xz580qaqs7q3m5n";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9737,9 +9690,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.21";
+        version = "0.3.27";
         edition = "2021";
-        sha256 = "1283haalanpq82w81fjrvigq0j6yfs63q21drx2kbhw5mbn9hpqa";
+        sha256 = "1fbg6z2pq7s0xv5g5k1gl58xq3f5fzaxk5ksz96iggh3c3x95qq2";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
@@ -9857,9 +9810,9 @@ rec {
       };
       "time" = rec {
         crateName = "time";
-        version = "0.3.54";
+        version = "0.3.55";
         edition = "2024";
-        sha256 = "0i12170vw516jprmbv385krw75nyn7kwfp48nqybgfpnkximw79y";
+        sha256 = "0d6iyws47z50zlksf5m3cflxvjrcgfhjglhn112gmpahxjappf6d";
         authors = [
           "Jacob Pratt <open-source@jhpratt.dev>"
           "Time contributors"
