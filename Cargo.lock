@@ -667,9 +667,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.4"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d91e0c145792ef73a6ad36d27c75ac09f1832222a3c209689d90f534685ee5b7"
+checksum = "301b56658598e48f3648647ac6fc887be7e7108eddfa4e9b63fcf3ec58c0cadf"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -677,9 +677,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.6.2"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f09628afdcc538b57f3c6341e9c8e9970f18e4a481690a64974d7023bd33548b"
+checksum = "94a65403d1a1bd28f7dc68eb8506e8874808ee5eecb59298de588e2e1407a078"
 dependencies = [
  "anstream",
  "anstyle",
@@ -987,8 +987,8 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.30"
-source = "git+https://github.com/pleme-io/gen#6b490da46e0bfdc2465ba34d92fd2854d6c2779d"
+version = "0.1.33"
+source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -997,8 +997,8 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.30"
-source = "git+https://github.com/pleme-io/gen#6b490da46e0bfdc2465ba34d92fd2854d6c2779d"
+version = "0.1.33"
+source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -1010,8 +1010,8 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.30"
-source = "git+https://github.com/pleme-io/gen#6b490da46e0bfdc2465ba34d92fd2854d6c2779d"
+version = "0.1.33"
+source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
 dependencies = [
  "blake3",
  "chrono",
@@ -1490,9 +1490,9 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "2.12.0"
+version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
+checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -1543,9 +1543,9 @@ dependencies = [
 
 [[package]]
 name = "kqueue"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "273c0752728918e0ac4976f2b275b6fefb9ecd400585dec929419f3844cd87b5"
+checksum = "8d763e5b24120b4ddf50de6c92308156765aabfbbccebf401da7cff2d70a41ea"
 dependencies = [
  "kqueue-sys",
  "libc",
@@ -2476,7 +2476,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.452"
+version = "0.1.453"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2615,18 +2615,18 @@ dependencies = [
 
 [[package]]
 name = "tatara-closed-set"
-version = "0.3.21"
+version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e6ad2a08e5ca3bf0f14fe35a0d59d93fb973cd1d8021bc5ad2a8e178034e80f"
+checksum = "c270ba04ecfd2268f817e0d41fd19e829315f890bc97d372f1fbe291083d603c"
 dependencies = [
  "tatara-closed-set-derive",
 ]
 
 [[package]]
 name = "tatara-closed-set-derive"
-version = "0.3.21"
+version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8bb9dd5e104072ac24fa779c15056d4669427b3ca899e3d361f735df15796ad"
+checksum = "efc4de162992884b188fac459128bb0546a776f4f33a48604302fcae47f008cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2635,9 +2635,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.3.21"
+version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b1cda0d008afa5d8f4837bc5542f4d2f84044290b4f2ca3cc87885efbacb08e"
+checksum = "b6d4818fc60a03547e3722cc197aaec740130f433e4d022613ba36e36a406ee9"
 dependencies = [
  "blake3",
  "serde",
@@ -2649,9 +2649,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.3.21"
+version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a5f98ecaa85c33545cf2d083c8c76de48805fdc59ba80b840f85a4595820389"
+checksum = "02e392fa6003be174dfa7a96d9d577c50ddc51a12fccf2caee401f7cc5376fb9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2693,9 +2693,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.54"
+version = "0.3.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e1d5e639ff6bab73cb6885cc7e7b1de96c3f32c68ec55f3952614bec1092244"
+checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
  "num-conv",

@@ -2185,6 +2185,23 @@ rec {
         };
         resolvedDefaultFeatures = [ "alloc" ];
       };
+      "blue-lang-syntax" = rec {
+        crateName = "blue-lang-syntax";
+        version = "0.0.2";
+        edition = "2021";
+        sha256 = "1c5j5lxvcgdxwkpsfshs8nzcld6m2gml643na1sq4wwd7m31hz0f";
+        libName = "blue_lang_syntax";
+        authors = [
+          "Pleme.io <engineering@pleme.io>"
+        ];
+        dependencies = [
+          {
+            name = "tatara-lisp";
+            packageId = "tatara-lisp";
+          }
+        ];
+
+      };
       "bs58" = rec {
         crateName = "bs58";
         version = "0.5.1";
@@ -3364,8 +3381,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
-          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
+          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
+          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3396,8 +3413,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
-          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
+          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
+          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
         };
         libName = "gen_platform";
         authors = [
@@ -3439,8 +3456,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
-          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
+          rev = "6b490da46e0bfdc2465ba34d92fd2854d6c2779d";
+          sha256 = "0d091zh6nkg9nvaip1sq8m8190kr4883i1a6y64f7fba1rnlwrpm";
         };
         libName = "gen_types";
         authors = [
@@ -9187,7 +9204,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.452";
+        version = "0.1.453";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9223,6 +9240,11 @@ rec {
           {
             name = "blake3";
             packageId = "blake3";
+            optional = true;
+          }
+          {
+            name = "blue-lang-syntax";
+            packageId = "blue-lang-syntax";
             optional = true;
           }
           {
@@ -9334,6 +9356,7 @@ rec {
         features = {
           "akeyless-native" = [ "dep:akeyless-api" "dep:tokio" ];
           "aws-native" = [ "dep:aws-sdk-secretsmanager" "dep:aws-config" "dep:tokio" ];
+          "blue" = [ "dep:blue-lang-syntax" "lisp" ];
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
           "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
@@ -9343,7 +9366,7 @@ rec {
           "op-native" = [ "dep:reqwest" "dep:tokio" ];
           "vault-native" = [ "dep:reqwest" "dep:tokio" ];
         };
-        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "cli" "default" "gcp-native" "hotswap" "kube" "kube-discovery" "lisp" "op-native" "vault-native" ];
+        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "blue" "cli" "default" "gcp-native" "hotswap" "kube" "kube-discovery" "lisp" "op-native" "vault-native" ];
       };
       "shlex" = rec {
         crateName = "shlex";
@@ -9630,9 +9653,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.12";
+        version = "0.3.21";
         edition = "2021";
-        sha256 = "0ihb1g4skvffqzp3agd22g5rmpa1dcpg97jcg694vldzssjy0jrn";
+        sha256 = "03z86j01g3iamp2in0nqs4y9gywkkpas0dgy2h7vz8swishd4sjy";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9647,9 +9670,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.12";
+        version = "0.3.21";
         edition = "2021";
-        sha256 = "17d5sgr0gnamzd9s99b64bl6r5yhyhdx6j4vvlp0l9niaw7i7ix5";
+        sha256 = "1bcnazqmswqz6qyrx2fanckr8rnlar8c2yd79z12l1q4w7arvfzq";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
@@ -9674,9 +9697,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.12";
+        version = "0.3.21";
         edition = "2021";
-        sha256 = "02n6zs6v1v47z0mryf9hprhlxnssbxx1bhkid7w0kvdvyxw7p9zy";
+        sha256 = "13mhmkxmx247rjijqkqb55241y6jyi15bg1p927mvyla006xl70v";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9714,9 +9737,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.12";
+        version = "0.3.21";
         edition = "2021";
-        sha256 = "0442fr4xmn631jwnm9cxh80cri7bf8kn78xasb2mlaqvj9qfi460";
+        sha256 = "1283haalanpq82w81fjrvigq0j6yfs63q21drx2kbhw5mbn9hpqa";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
