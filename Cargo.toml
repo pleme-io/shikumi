@@ -109,8 +109,8 @@ figment = { version = "0.10", features = ["env", "yaml", "toml"] }
 
 # Typed-dispatcher catalog integration
 # (theory/UNIFIED-COMPUTING-MODEL.md §VI).
-gen-platform = { git = "https://github.com/pleme-io/gen" , version = "0.1" }
-gen-types = { git = "https://github.com/pleme-io/gen" , version = "0.1" }
+gen-platform = "0.1"
+gen-types = "0.1"
 # Cargo features activate globally per-target — turning on a notify
 # macOS backend feature in [dependencies] adds the apple-only backend
 # crate as an unconditional dep for every target, including Linux
@@ -145,12 +145,12 @@ blue-lang-syntax = { version = "0.0.2", optional = true }
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
 # satisfy. The `pleme-hotswap-derive` repo hosts both crates.
-pleme-hotswap = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap", optional = true, version = "0.1" }
+pleme-hotswap = { version = "0.1", optional = true }
 # Feature-gated `hotswap`: the split ConfigWatermark hash (full vs.
 # restart-required subtree).
 blake3 = { version = "1", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
-akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = true , version = "0.1" }
+akeyless-api = { version = "0.1", optional = true }
 # Feature-gated native AWS Secrets Manager SDK + credential provider chain.
 aws-sdk-secretsmanager = { version = "1", optional = true }
 aws-config = { version = "1", features = ["behavior-version-latest"], optional = true }
@@ -166,7 +166,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 # KubeClusterDiscovery reads through. INTERIM rev-pin to the cluster-discovery
 # branch head (the cluster module is not yet on kanchi's main / crates.io);
 # repin to `version = "0.1"` once kanchi merges + auto-releases. pending-configplane.
-kanchi = { git = "https://github.com/pleme-io/kanchi", rev = "0569d9655ac9ab0784b9b82a61bc873fbf69ad14", optional = true }
+kanchi = { version = "0.1", optional = true }
 # base64 decode for the real in-cluster Secret value (`kube` feature only).
 base64 = { version = "0.22", optional = true }
 
@@ -207,4 +207,4 @@ tokio = { version = "1", features = ["rt", "macros"] }
 # `hotswap` feature tests only: real #[derive(HotSwap)] on a test
 # struct, matching what a real hotswap consumer would use. Not a
 # runtime dependency of shikumi itself.
-pleme-hotswap-derive = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap-derive" }
+pleme-hotswap-derive = { version = "0.1", optional = true }
