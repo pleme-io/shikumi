@@ -67,9 +67,9 @@ use crate::error::ShikumiError;
 pub fn load_from_str(src: &str) -> Result<Value, ShikumiError> {
     let forms = blue_lang_syntax::parse_program(src)
         .map_err(|e| ShikumiError::Parse(format!("blue: {e}")))?;
-    let first = forms
-        .first()
-        .ok_or_else(|| ShikumiError::Parse("blue: empty config — expected one top-level form".into()))?;
+    let first = forms.first().ok_or_else(|| {
+        ShikumiError::Parse("blue: empty config — expected one top-level form".into())
+    })?;
     crate::lisp_provider::sexp_to_value_root(first)
 }
 
@@ -101,9 +101,10 @@ mod tests {
             crate::lisp_provider::load_from_str(lisp_src).is_ok(),
             "precondition: this IS valid tatara-lisp"
         );
-        let err = load_from_str(lisp_src)
-            .expect_err("blue must not accept lisp keyword syntax — if it does, \
-                         the surfaces converged and this doc is stale");
+        let err = load_from_str(lisp_src).expect_err(
+            "blue must not accept lisp keyword syntax — if it does, \
+                         the surfaces converged and this doc is stale",
+        );
         let ShikumiError::Parse(msg) = &err else {
             panic!("expected Parse, got {err:?}")
         };

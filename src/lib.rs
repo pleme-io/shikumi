@@ -40,6 +40,8 @@
 // scope ("cannot find macro in this scope").
 #[macro_use]
 pub mod macros;
+#[cfg(feature = "blue")]
+pub mod blue_provider;
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod coverage;
@@ -51,8 +53,6 @@ mod error;
 pub mod hotswap;
 #[cfg(feature = "kube-discovery")]
 pub mod kube_discovery;
-#[cfg(feature = "blue")]
-pub mod blue_provider;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;
 pub mod nix_provider;
