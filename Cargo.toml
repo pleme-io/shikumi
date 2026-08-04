@@ -207,4 +207,4 @@ tokio = { version = "1", features = ["rt", "macros"] }
 # `hotswap` feature tests only: real #[derive(HotSwap)] on a test
 # struct, matching what a real hotswap consumer would use. Not a
 # runtime dependency of shikumi itself.
-pleme-hotswap-derive = { version = "0.1", optional = true }
+pleme-hotswap-derive = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap-derive" }
