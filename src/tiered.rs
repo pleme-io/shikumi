@@ -5659,6 +5659,136 @@ impl ProvenanceMap {
         self.source_kind_histogram().support_magnitude_direction()
     }
 
+    /// The **uniformly-observed-count boolean** on this resolved fold's
+    /// [`crate::ConfigSourceKind`] histogram at the source-kind altitude
+    /// — `true` exactly when every observed cell of the histogram
+    /// carries the same leaf count. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down —
+    /// the short-circuiting single-pass scan over the fixed-cardinality
+    /// counts vector reading `spread() == 0` off one predicate, strictly
+    /// tighter than either of the documented scalar-side surface forms
+    /// one seam over.
+    ///
+    /// The source-kind altitude uniform-count predicate peer that
+    /// **climbs the "uniform-count across altitudes" projection** from
+    /// the diff-altitude seed [`ConfigDiff::kinds_uniform_count`] and
+    /// the tier-altitude peer [`Self::tiers_uniform_count`] to the
+    /// source-kind altitude on the same [`ProvenanceMap`] surface. The
+    /// substrate now names the uniform-observed-count boolean at every
+    /// altitude of the tiered algebra — the diff altitude
+    /// (`ConfigDiff::kinds_uniform_count` on
+    /// [`ConfigDiff::kind_histogram`]), the tier altitude
+    /// (`Self::tiers_uniform_count` on [`Self::tier_histogram`]), and
+    /// the source-kind altitude (`Self::source_kinds_uniform_count` on
+    /// [`Self::source_kind_histogram`]) — each routing through the
+    /// shared [`crate::AxisHistogram::is_uniform_count`] primitive one
+    /// altitude down, so the vacuous-uniformity and singular-support
+    /// subsumption discipline the histogram-side predicate enforces
+    /// reads through every altitude without re-derivation drift.
+    ///
+    /// **Empty-map convention** — returns `true`: the empty map has no
+    /// observed cells, so the uniformity predicate reads vacuously
+    /// (matching the class-side [`crate::AxisHistogram::is_uniform_count`]
+    /// empty convention one altitude down — the shared vacuous-
+    /// uniformity boundary on the empty histogram).
+    ///
+    /// **Singleton-support convention** — returns `true`: a fold with a
+    /// single observed source-kind carries only one nonzero count, so
+    /// uniformity is trivial. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒ is_uniform_count` one
+    /// altitude down. Every pure-progressive fold (all leaves attributed
+    /// to `Defaults` via the computed-tier constructors) is a witness
+    /// on the `true` side.
+    ///
+    /// **Uniform per-source-kind convention** — returns `true` on every
+    /// fold whose per-source-kind counts coincide (each observed
+    /// [`crate::ConfigSourceKind`] contributing the same nonzero count),
+    /// including the k-source-kind-observed-once-each shape and the
+    /// uniform full-cover shape over all three
+    /// [`crate::ConfigSourceKind`] cells. Simultaneous witness for
+    /// `(source_kind_histogram().is_full_cover(),
+    /// source_kinds_uniform_count) == (true, true)` — the top uniform-
+    /// cover corner of the (coverage, uniformity) boolean pair on the
+    /// source-kind altitude.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude —
+    /// uniform-count carries witnesses on every support cardinality.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so
+    /// `source_kinds_uniform_count` reads `true` on the empty map
+    /// (support `0`, vacuous), on every singleton-support fold (support
+    /// `1`, trivial), on every balanced two-source-kind partial-cover
+    /// fold (support `2` with matched nonzero counts), and on every
+    /// uniform three-source-kind cover (support `3` with all three
+    /// cells at the same count); and reads `false` on every skewed
+    /// partial-cover fold and on every skewed full-cover fold — the
+    /// orthogonal *shape* boundary slicing every support cardinality
+    /// into a uniform half and a skewed half (except supports `0` and
+    /// `1` which land entirely on the uniform side vacuously). Sits at
+    /// the same cardinality as the diff altitude — both are
+    /// cardinality-`3` — and one strict step below the tier altitude's
+    /// cardinality-`4` axis which reaches the four-uniform-band
+    /// `support == 4` witness the source-kind altitude cannot.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_uniform_count() ==
+    ///   source_kind_histogram().is_uniform_count()` — the routing
+    ///   equivalence one altitude down; both project the same boolean
+    ///   off the same primitive.
+    /// - `source_kinds_uniform_count() == (source_kind_spread() == 0)`
+    ///   — the fused-scalar form on the peak-minus-trough scalar peer
+    ///   one altitude down; the defining equivalence collapsed to one
+    ///   equality on the scalar-difference surface.
+    /// - `source_kinds_uniform_count() == (peak_source_kind_count() ==
+    ///   trough_source_kind_count())` — the structural form on the
+    ///   underlying scalar pair (before the pair is fused into
+    ///   `source_kind_spread`), reading off one equality on the scalar-
+    ///   pair surface.
+    /// - `source_kinds_uniform_count() == (dominant_source_kind() ==
+    ///   recessive_source_kind())` — the modal-pair form; both branches
+    ///   agree on the empty map (`None == None`), on every singleton-
+    ///   support fold (`Some(k) == Some(k)`), on every uniform per-
+    ///   source-kind fold (`Some(first_kind) == Some(first_kind)` after
+    ///   declaration-order tie-break), and on every skewed fold (both
+    ///   sides read `false`).
+    /// - `is_empty() ⇒ source_kinds_uniform_count()` — vacuous
+    ///   uniformity on the empty map; contrapositively,
+    ///   `!source_kinds_uniform_count() ⇒ !is_empty()` (a skewed fold
+    ///   has at least two distinct positive counts, so the support is
+    ///   non-empty).
+    /// - `contributing_source_kinds_count() <= 1 ⇒
+    ///   source_kinds_uniform_count()` — every fold with support size
+    ///   0 or 1 is trivially uniform-counted; contrapositively,
+    ///   `!source_kinds_uniform_count() ⇒
+    ///   contributing_source_kinds_count() >= 2` (a skewed fold observes
+    ///   at least two distinct source-kinds with differing counts).
+    /// - **Modal / antimodal collapse on uniform-count non-empty maps**
+    ///   — `source_kinds_uniform_count() ∧ !is_empty() ⇒
+    ///   source_kinds_antimodally_tied() ⇔ source_kinds_modally_tied()`.
+    ///   On every uniform-count non-empty map the modal and antimodal
+    ///   level sets coincide with the support, so the two tie predicates
+    ///   collapse to the same value. The class-side witness of this
+    ///   collapse is already pinned by
+    ///   [`Self::source_kinds_antimodally_tied`]'s doc invariant table
+    ///   one seam over.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the short-circuiting nonzero scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `bool` fits in a single byte, and the
+    /// scan short-circuits on the second distinct nonzero count — no
+    /// allocation, no per-cell branching after the histogram is built.
+    /// Strictly tighter than the two-full-scan
+    /// `peak_source_kind_count()` / `trough_source_kind_count()` fusion
+    /// the scalar-spread form pays for on skewed inputs.
+    #[must_use]
+    pub fn source_kinds_uniform_count(&self) -> bool {
+        self.source_kind_histogram().is_uniform_count()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -66284,6 +66414,368 @@ mod progressive_tests {
                 "every map must land on exactly one \
                  SupportMagnitudeDirection variant (bucket={bucket:?})",
             );
+        }
+    }
+
+    // ── ProvenanceMap::source_kinds_uniform_count — uniformly-observed-
+    //    count boolean predicate on the source-kind altitude, climbing
+    //    the "uniform-count across altitudes" projection from the diff-
+    //    altitude seed `ConfigDiff::kinds_uniform_count` and the tier-
+    //    altitude peer `ProvenanceMap::tiers_uniform_count` ──
+
+    #[test]
+    fn source_kinds_uniform_count_matches_source_kind_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `source_kinds_uniform_count` routes through
+        // `source_kind_histogram().is_uniform_count()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Source-kind-altitude
+        // peer of `tiers_uniform_count_matches_tier_histogram_is_uniform_count_pointwise`
+        // on the tier altitude in the "uniform-count across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().is_uniform_count();
+            assert_eq!(map.source_kinds_uniform_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_matches_source_kind_spread_zero_scalar_form_pointwise() {
+        // Scalar-form pin: `source_kinds_uniform_count` agrees with the
+        // `source_kind_spread() == 0` fused-difference form on the peak-
+        // minus-trough scalar peer one altitude down. Pins the defining
+        // equivalence with the fused-scalar surface, collapsed to one
+        // equality on the scalar-difference form.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_spread = map.source_kind_spread() == 0;
+            assert_eq!(map.source_kinds_uniform_count(), via_spread);
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_matches_peak_equals_trough_structural_form_pointwise() {
+        // Structural-form pin: `source_kinds_uniform_count` agrees with
+        // `peak_source_kind_count() == trough_source_kind_count()` on
+        // the underlying scalar pair one altitude down (before the pair
+        // is fused into `source_kind_spread`). Pins the defining
+        // equivalence on the scalar-pair surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(map.source_kinds_uniform_count(), via_pair);
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_matches_modal_pair_equality_pointwise() {
+        // The modal-pair form: `source_kinds_uniform_count() ==
+        // (dominant_source_kind() == recessive_source_kind())` on every
+        // fixture — including the empty map (`None == None`), every
+        // singleton-support fold (`Some(k) == Some(k)`), every uniform
+        // per-source-kind fold (`Some(first) == Some(first)` after
+        // declaration-order tie-break), and every skewed fold (both
+        // sides read `false`). Lifted from the trait-uniform
+        // `is_uniform_count() == (dominant_cell() == recessive_cell())`
+        // law on AxisHistogram. Peer of
+        // `tiers_uniform_count_matches_modal_pair_equality_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let modal_pair_equal = map.dominant_source_kind() == map.recessive_source_kind();
+            assert_eq!(map.source_kinds_uniform_count(), modal_pair_equal);
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_empty_map_is_true() {
+        // Empty-map polarity pin: the empty map has no observed cells,
+        // so the uniformity predicate reads vacuously `true` — the
+        // shared vacuous-uniformity boundary on the empty histogram.
+        // Direct pin of the histogram-side `is_empty ⇒
+        // is_uniform_count` empty convention one altitude down. Peer of
+        // `tiers_uniform_count_empty_map_is_true` on the tier altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(empty.source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_pure_progressive_singleton_support_is_true() {
+        // Singleton-support polarity pin: the pure-progressive `Prog`
+        // fold attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — one observed cell, one
+        // nonzero count, trivially uniform. Direct witness of the
+        // subsumption `has_singular_support ⇒ is_uniform_count` on the
+        // source-kind altitude. Source-kind-altitude peer of
+        // `tiers_uniform_count_singleton_support_is_true` on the tier
+        // altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(r.provenance().source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_balanced_two_source_kind_partial_cover_is_true() {
+        // Balanced-two-source-kind-partial-cover polarity pin: a fold
+        // with one leaf attributed to `Defaults` and one leaf attributed
+        // to `Env` observes two cells with count `1` each; the two
+        // nonzero cells share the same count, so
+        // `source_kinds_uniform_count` reads `true`. Witness that
+        // uniformity is *not* implied by full coverage: balanced partial
+        // cover with matched counts is uniform too. Peer of
+        // `tiers_uniform_count_balanced_two_tier_partial_cover_is_true`
+        // on the tier altitude.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(!m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert!(m.source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_uniform_three_source_kind_cover_is_true() {
+        // Uniform-axis-cover polarity pin: a fold observing every cell
+        // of ConfigSourceKind exactly once has all three nonzero counts
+        // at `1`. Simultaneous witness for
+        // `(source_kind_histogram.is_full_cover(),
+        //   source_kinds_uniform_count) == (true, true)` — the top
+        // uniform-cover corner of the (coverage, uniformity) boolean
+        // pair on the source-kind altitude. Cardinality-`3` peer of
+        // `tiers_uniform_count_uniform_four_tier_cover_is_true` at one
+        // strict cardinality below the cardinality-`4` tier axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert!(m.source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_mixed_fixture_is_false() {
+        // Direct polarity pin: the source-kind-histogram-mixed fixture
+        // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
+        // peak `2` on Defaults, trough `1` on {Env, File}. Spread `1`,
+        // so `source_kinds_uniform_count` reads `false`. Concrete
+        // skewed-full-cover witness on the source-kind altitude,
+        // mirroring the tier-altitude skewed witness pinned by
+        // `tiers_uniform_count_prog_fixture_is_false`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().source_kind_spread(), 1);
+        assert!(!r.provenance().source_kinds_uniform_count());
+        assert!(r.provenance().source_kind_histogram().is_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_skewed_three_cell_fixture_is_false() {
+        // Skewed-full-cover polarity pin: a strictly-ordered three-cell
+        // fold with Defaults=1, Env=2, File=3 — peak 3, trough 1,
+        // spread 2 — reads `false`. Every count distinct, no tie-
+        // breaking on either side of the modal-count pair. Cardinality-
+        // `3` witness peer of the cardinality-`4` tier-altitude fixture
+        // in `tiers_uniform_count_skewed_four_cell_fixture_is_false`.
+        let m: ProvenanceMap = [
+            (
+                vec!["d1".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["e1".to_owned()], Provenance::env("E_")),
+            (vec!["e2".to_owned()], Provenance::env("E_")),
+            (vec!["f1".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["f2".to_owned()], Provenance::file("/etc/x.yaml")),
+            (vec!["f3".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert!(!m.source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_empty_implies_uniform_count_pointwise() {
+        // Subsumption pin: `is_empty() ⇒ source_kinds_uniform_count()`
+        // on every fixture. Vacuous uniformity on the empty map,
+        // matching the histogram-side `is_empty ⇒ is_uniform_count`
+        // law one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.is_empty() {
+                assert!(
+                    map.source_kinds_uniform_count(),
+                    "empty map must land on the uniform-count boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_singleton_support_implies_uniform_count_pointwise() {
+        // Subsumption pin: `contributing_source_kinds_count() == 1 ⇒
+        // source_kinds_uniform_count()` on every fixture. A single
+        // observed source-kind carries only one nonzero count to
+        // compare to itself. Matches the histogram-side
+        // `has_singular_support ⇒ is_uniform_count` law one altitude
+        // down. Peer of
+        // `tiers_uniform_count_singleton_support_implies_uniform_count_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.contributing_source_kinds_count() == 1 {
+                assert!(
+                    map.source_kinds_uniform_count(),
+                    "singleton-support map must land on the uniform-count boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_false_implies_at_least_two_contributing_source_kinds_pointwise() {
+        // Contrapositive subsumption pin: a skewed fold has at least
+        // two distinct positive counts, so its support has at least two
+        // observed source-kinds. Lifted from the trait-uniform
+        // `!is_uniform_count() ⇒ distinct_cells() >= 2` law on
+        // AxisHistogram. Peer of
+        // `tiers_uniform_count_false_implies_at_least_two_contributing_tiers_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.source_kinds_uniform_count() {
+                assert!(
+                    map.contributing_source_kinds_count() >= 2,
+                    "non-uniform-count map must observe >= 2 contributing source-kinds \
+                     (was {})",
+                    map.contributing_source_kinds_count(),
+                );
+                assert!(!map.is_empty(), "non-uniform-count map must be non-empty",);
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_agrees_with_hand_rolled_positive_counts_all_equal_pointwise() {
+        // Parity against the exact hand-rolled positive-counts-all-
+        // equal walk this climb replaces: scan the source-kind
+        // histogram's per-cell counts vector, filter to the positive
+        // counts, and check every positive count equals the first.
+        // Catches any future drift where either implementation stops
+        // projecting through the same distinct-positive-counts
+        // primitive. Peer of
+        // `tiers_uniform_count_agrees_with_hand_rolled_positive_counts_all_equal_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let mut positives = crate::ConfigSourceKind::ALL
+                .iter()
+                .map(|&k| hist.count(k))
+                .filter(|&c| c > 0);
+            let hand_rolled = match positives.next() {
+                None => true,
+                Some(first) => positives.all(|c| c == first),
+            };
+            assert_eq!(
+                map.source_kinds_uniform_count(),
+                hand_rolled,
+                "source_kinds_uniform_count must agree with the hand-rolled \
+                 positive-counts-all-equal walk",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_uniform_count_collapses_modal_and_antimodal_ties_on_non_empty_map_pointwise() {
+        // Modal / antimodal collapse pin: on every uniform-count non-
+        // empty map the modal and antimodal level sets coincide with
+        // the support, so `source_kinds_antimodally_tied ⇔
+        // source_kinds_modally_tied`. Direct pin of the histogram-side
+        // collapse `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied
+        // ⇔ is_modally_tied` one altitude down. Fixed set carries
+        // witnesses across all reachable collapse polarities: the pure-
+        // progressive singleton-support fold (both `false`), the
+        // uniform-cover full-axis fold (both `true`), and the balanced
+        // two-source-kind fold (both `true`).
+        let full_cover: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            full_cover,
+            two_cell,
+        ] {
+            if map.source_kinds_uniform_count() && !map.is_empty() {
+                assert_eq!(
+                    map.source_kinds_antimodally_tied(),
+                    map.source_kinds_modally_tied(),
+                    "uniform-count non-empty map must collapse the antimodal / modal \
+                     tie predicates",
+                );
+            }
         }
     }
 }
