@@ -6479,6 +6479,209 @@ impl ProvenanceMap {
         self.source_kind_histogram().has_singular_support()
     }
 
+    /// `true` exactly when this fold observes every
+    /// [`crate::ConfigSourceKind`] cell *except one* — the **singleton-
+    /// gap-source-kind-counts boolean predicate** on the source-kind
+    /// altitude, the strictly-tighter cardinality-`(axis_cardinality -
+    /// 1)` boundary of the coverage-support partition, the complementary
+    /// cardinality slice from the just-shipped
+    /// [`Self::source_kinds_singular_support`] on the same altitude.
+    /// Routes through [`crate::AxisHistogram::has_singular_gap`] one
+    /// altitude down: the single-pass short-circuiting scan over the
+    /// fixed-cardinality counts vector that finds the first *zero* cell
+    /// and confirms no second zero cell follows, tighter than any of
+    /// the four support / coverage-gap equality forms one seam over.
+    ///
+    /// The **singleton-gap-source-kind-counts peer** of the fused
+    /// `(contributing_source_kinds, absent_source_kinds,
+    /// contributing_source_kinds_count, absent_source_kinds_count)`
+    /// support / coverage-gap 2×2 grid on the source-kind altitude — the
+    /// natural typed boolean primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"did the resolved fold
+    /// miss only one source-kind?"*: the fleet dashboard headline
+    /// *"singleton-gap fold: one source-kind silent"*, the attestation
+    /// manifest gate *"rebuild window carries all but one source-kind's
+    /// observations"*, the alerting policy predicate *"fold source-kind-
+    /// gap singular"*. Before this lift, every such consumer re-derived
+    /// the predicate inline as one of four pointwise-equivalent forms:
+    /// `map.absent_source_kinds_count() == 1` (the coverage-gap-scalar
+    /// form, which pays for a full-axis scan and equates a `usize` to
+    /// one without saying structurally *what* is being asked at the
+    /// source-kind-cell axis), `map.absent_source_kinds().len() == 1`
+    /// (the coverage-gap-`Vec` form, which allocates a
+    /// `Vec<crate::ConfigSourceKind>` and reads its length back),
+    /// `map.contributing_source_kinds_count() ==
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` (the
+    /// support-scalar form, which pays for a full-axis scan and pulls in
+    /// the [`crate::axis_cardinality`] turbofish at every call site), and
+    /// `map.contributing_source_kinds().len() ==
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` (the
+    /// support-`Vec` form, which allocates a
+    /// `Vec<crate::ConfigSourceKind>` and reads its length back). The
+    /// four forms drifted in subtle ways at every consumer site
+    /// (allocation vs. scalar, turbofish vs. name-only, coverage-gap
+    /// side vs. support side). This lift names the singleton-gap-
+    /// source-kind-counts predicate directly at the source-kind-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing *"did the fold miss exactly one
+    /// source-kind?"* check reads off as a single method call.
+    ///
+    /// The source-kind-altitude singleton-gap-predicate peer that
+    /// **closes the "singleton-gap across altitudes" projection**
+    /// already carried at the tier altitude by
+    /// [`Self::tiers_singular_gap`] and seeded at the diff altitude by
+    /// [`crate::ConfigDiff::kinds_singular_gap`]. The pattern is the
+    /// same at every altitude: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's exactly-one-*unobserved*-cell
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::has_singular_gap`] primitive one altitude
+    /// down. Dual of the just-closed "singleton-support across
+    /// altitudes" projection ([`crate::ConfigDiff::kinds_singular_support`]
+    /// seed → [`Self::tiers_singular_support`] climb →
+    /// [`Self::source_kinds_singular_support`] source-kind lift) on the
+    /// *complementary* cardinality slice of the same coverage-support
+    /// partition (`singular_support` = *exactly-one* observed cell;
+    /// `singular_gap` = *exactly-one* unobserved cell). Peer on the
+    /// same altitude to [`Self::source_kinds_partial_cover`]: on the
+    /// cardinality-`3` source-kind axis the partial-cover middle leg
+    /// fans out into the two singular-cardinality boundaries
+    /// `singular_support` (support size `1`) and `singular_gap` (support
+    /// size `2`) — the strict interior `has_strict_partial_cover` is
+    /// vacuously false on this axis (interval `[2, cardinality - 2] =
+    /// [2, 1]` is empty), so `source_kinds_singular_gap` names the top
+    /// half of the partial-cover middle leg directly at the surface.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude — the
+    /// singleton-gap corner is non-vacuous.**
+    /// [`crate::ConfigSourceKind`] carries three cells (`Defaults`,
+    /// `Env`, `File`), so `source_kinds_singular_gap()` reads `true` on
+    /// every two-source-kind partial cover (support size `2` — one
+    /// unobserved cell on the cardinality-`3` axis), and `false` on the
+    /// empty fold (three unobserved cells — not one), on every singleton-
+    /// support fold (support size `1` — two unobserved cells on the
+    /// cardinality-`3` axis), and on every uniform three-source-kind
+    /// cover (support size `3` — zero unobserved cells). Non-vacuous on
+    /// both sides of the boundary at the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map has every cell unobserved (three, not one, on
+    /// [`crate::ConfigSourceKind`]), so the singleton-gap predicate
+    /// fails. Matches [`crate::AxisHistogram::has_singular_gap`]'s
+    /// empty-histogram `false` convention one altitude down. The empty
+    /// map is therefore on the `false` side of the singular-gap boundary
+    /// — matching [`Self::source_kinds_any_observed`]'s empty-map
+    /// `false` polarity, [`Self::source_kinds_full_cover`]'s empty-map
+    /// `false` polarity, [`Self::source_kinds_partial_cover`]'s empty-
+    /// map `false` polarity, and
+    /// [`Self::source_kinds_singular_support`]'s empty-map `false`
+    /// polarity.
+    ///
+    /// **Singleton-support convention** — returns `false` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]:
+    /// two cells are unobserved on the three-cell
+    /// [`crate::ConfigSourceKind`] axis (not one), so the singleton-gap
+    /// predicate fails. Every fold of only-`Defaults`, only-`Env`, or
+    /// only-`File` leaves is a witness on the `false` side. The
+    /// singleton-support corner reads `(any_observed=true,
+    /// singular_support=true, singular_gap=false, partial_cover=true,
+    /// full_cover=false)` on the coverage boundaries.
+    ///
+    /// **Two-source-kind partial cover convention** — returns `true` on
+    /// every fold whose observed support is exactly two
+    /// [`crate::ConfigSourceKind`] cells: one cell is unobserved (three
+    /// total minus two observed equals one unobserved), exactly the
+    /// singleton-gap boundary. A fold observing the `Defaults` and
+    /// `File` source-kinds with the `Env` source-kind silent is a
+    /// witness. The two-source-kind partial cover corner reads
+    /// `(any_observed=true, singular_support=false, singular_gap=true,
+    /// partial_cover=true, full_cover=false)` — the row this predicate
+    /// isolates from the surrounding boundaries at the source-kind
+    /// altitude.
+    ///
+    /// **Uniform three-source-kind cover convention** — returns `false`
+    /// on every fold where each [`crate::ConfigSourceKind`] cell was
+    /// observed at least once: zero cells are unobserved (not one), so
+    /// the singleton-gap predicate fails. Matches
+    /// [`Self::source_kinds_full_cover`]'s `true` side on the same
+    /// fixture — the two boundaries `singular_gap` and `full_cover` are
+    /// disjoint at the top of the coverage-support partition (adjacent
+    /// support cardinalities `axis_cardinality - 1` and
+    /// `axis_cardinality`). The uniform three-source-kind cover corner
+    /// reads `(any_observed=true, singular_support=false,
+    /// singular_gap=false, partial_cover=false, full_cover=true)`.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_singular_gap() ==
+    ///   source_kind_histogram().has_singular_gap()` — both project the
+    ///   same predicate off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `source_kinds_singular_gap() == (absent_source_kinds_count()
+    ///   == 1)` always — the coverage-gap-scalar surface, without
+    ///   allocating the `Vec<crate::ConfigSourceKind>`.
+    /// - `source_kinds_singular_gap() == (absent_source_kinds().len()
+    ///   == 1)` always — the coverage-gap-`Vec` surface.
+    /// - `source_kinds_singular_gap() == (contributing_source_kinds_count()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1)`
+    ///   always — the support-scalar surface, the dual-side surfacing
+    ///   of the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `source_kinds_singular_gap() == (contributing_source_kinds().len()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1)`
+    ///   always — the support-`Vec` surface.
+    /// - `source_kinds_singular_gap() ⇒ source_kinds_any_observed()` on
+    ///   every axis with cardinality `>= 2` (every implementor today —
+    ///   [`crate::ConfigSourceKind`] carries three cells): a fold
+    ///   missing exactly one cell observes at least
+    ///   `axis_cardinality - 1 >= 1` cells. Contrapositively,
+    ///   `!source_kinds_any_observed() ⇒ !source_kinds_singular_gap()`.
+    /// - `source_kinds_singular_gap() ⇒ !source_kinds_full_cover()`
+    ///   always: full cover has zero unobserved cells, singular gap has
+    ///   exactly one, so the two boundaries are disjoint on every axis.
+    /// - `source_kinds_singular_gap() ⇒ source_kinds_partial_cover()`
+    ///   on every axis with cardinality `>= 2` (the source-kind axis
+    ///   carries three cells): a fold missing exactly one cell has at
+    ///   least one cell observed and at least one cell unobserved, so
+    ///   the partial-cover middle leg fires.
+    /// - `source_kinds_singular_gap() ⇒ !source_kinds_singular_support()`
+    ///   on every axis with cardinality `>= 3` (the source-kind axis
+    ///   carries three cells): singleton-support has support cardinality
+    ///   `1`, singleton-gap has support cardinality `axis_cardinality -
+    ///   1 >= 2`, so the two are disjoint.
+    /// - `source_kinds_singular_gap() ⇒ self.len() >=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` — a
+    ///   fold missing exactly one cell has at least one leaf for each
+    ///   of the `axis_cardinality - 1` observed cells.
+    /// - **Cross-surface bridge law** —
+    ///   `map.source_kinds_singular_gap() ==
+    ///   map.source_kind_histogram().support_cardinality_class().is_singular_gap()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly when
+    ///   the histogram-side predicate fires. Peer of the histogram-side
+    ///   bridge one altitude down, closing the (histogram, class)
+    ///   duality on the singleton-gap boundary at the source-kind
+    ///   altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the singular-gap scan). Both are `O(n)` in practice since the
+    /// source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the second zero cell (bounded at two zero cells visited on any
+    /// two-or-more-cell-gap fold), strictly tighter than the four
+    /// support / coverage-gap equality forms — no
+    /// `Vec<crate::ConfigSourceKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality against
+    /// a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    pub fn source_kinds_singular_gap(&self) -> bool {
+        self.source_kind_histogram().has_singular_gap()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -68831,6 +69034,361 @@ mod progressive_tests {
             let hist = map.source_kind_histogram();
             let nonzero_count = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = nonzero_count == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── `source_kinds_singular_gap` — the source-kind-altitude
+    //    singleton-gap boolean predicate peer of
+    //    `tiers_singular_gap` on the tier altitude and
+    //    `ConfigDiff::kinds_singular_gap` on the diff altitude, closing
+    //    the "singleton-gap across altitudes" projection. The exactly-
+    //    one-*un*observed-cell boundary of the coverage-support
+    //    partition at the source-kind altitude — the complementary
+    //    cardinality slice to the just-shipped
+    //    `source_kinds_singular_support` on the same altitude ──
+
+    #[test]
+    fn source_kinds_singular_gap_matches_source_kind_histogram_has_singular_gap_pointwise() {
+        // Routing pin: `source_kinds_singular_gap` routes through
+        // `source_kind_histogram().has_singular_gap()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Source-
+        // kind-altitude peer of
+        // `tiers_singular_gap_matches_tier_histogram_has_singular_gap_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_gap_matches_kind_histogram_has_singular_gap_pointwise`
+        // on the diff altitude in the "singleton-gap across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().has_singular_gap();
+            assert_eq!(map.source_kinds_singular_gap(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_agrees_with_absent_source_kinds_count_pointwise() {
+        // Coverage-gap-scalar surface:
+        // `source_kinds_singular_gap() == (absent_source_kinds_count()
+        // == 1)` on every fixture. Pins the fused predicate against the
+        // scalar equality form, without allocating the
+        // `Vec<ConfigSourceKind>`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let g = map.absent_source_kinds_count();
+            let via_scalar = g == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "source_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_source_kinds_count == 1 ({via_scalar}, gap={g}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_agrees_with_absent_source_kinds_len_pointwise() {
+        // Coverage-gap-`Vec` surface:
+        // `source_kinds_singular_gap() == (absent_source_kinds().len()
+        // == 1)` on every fixture. The materialized-unobserved-cells
+        // dual of the scalar surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let via_vec = map.absent_source_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_source_kinds().len() == 1 ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_agrees_with_contributing_source_kinds_count_pointwise() {
+        // Support-scalar surface:
+        // `source_kinds_singular_gap() ==
+        // (contributing_source_kinds_count() ==
+        // axis_cardinality::<ConfigSourceKind>() - 1)` on every fixture.
+        // The dual-side surfacing of the same boolean across the
+        // (observed, unobserved) partition.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let s = map.contributing_source_kinds_count();
+            let via_support = s == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam, via_support,
+                "source_kinds_singular_gap ({via_seam}) must agree with \
+                 contributing_source_kinds_count == axis_cardinality - 1 \
+                 ({via_support}, support={s}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_agrees_with_contributing_source_kinds_len_pointwise() {
+        // Support-`Vec` surface:
+        // `source_kinds_singular_gap() ==
+        // (contributing_source_kinds().len() ==
+        // axis_cardinality::<ConfigSourceKind>() - 1)` on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let via_vec = map.contributing_source_kinds().len()
+                == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_singular_gap ({via_seam}) must agree with \
+                 contributing_source_kinds().len() == axis_cardinality - 1 \
+                 ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_bridges_support_cardinality_class_is_singular_gap_pointwise() {
+        // Cross-surface bridge law:
+        // `map.source_kinds_singular_gap() ==
+        // map.source_kind_histogram().support_cardinality_class().is_singular_gap()`
+        // always. The class-side projection lands on `SingularGap`
+        // exactly when the histogram-side predicate fires. Peer of the
+        // histogram-side bridge one altitude down, closing the
+        // (histogram, class) duality on the singleton-gap boundary at
+        // the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let via_class = map
+                .source_kind_histogram()
+                .support_cardinality_class()
+                .is_singular_gap();
+            assert_eq!(
+                via_seam, via_class,
+                "source_kinds_singular_gap ({via_seam}) must agree with \
+                 support_cardinality_class().is_singular_gap() ({via_class}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_empty_map_is_false() {
+        // Empty-map boundary: the empty map has every cell unobserved
+        // (three, not one, on `ConfigSourceKind`), so the singleton-gap
+        // predicate fails. Matches `has_singular_gap` reading `false`
+        // on the empty histogram one altitude down. Empty-map polarity
+        // `false` — matching `source_kinds_any_observed`,
+        // `source_kinds_full_cover`, `source_kinds_partial_cover`, and
+        // `source_kinds_singular_support`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_singular_gap());
+        assert!(!empty.source_kinds_singular_support());
+        assert!(!empty.source_kinds_any_observed());
+        assert!(!empty.source_kinds_full_cover());
+        assert!(!empty.source_kinds_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_pure_progressive_singleton_support_is_false() {
+        // Singleton-support pin: the pure-progressive `Prog` fold
+        // attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — support cardinality is
+        // `1`, so two cells are unobserved on the cardinality-`3` axis
+        // (not one). `source_kinds_singular_gap` reads `false`. The
+        // singleton-support corner reads `(any_observed=true,
+        // singular_support=true, singular_gap=false, partial_cover=true,
+        // full_cover=false)` on the coverage boundaries.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(!r.provenance().source_kinds_singular_gap());
+        assert!(r.provenance().source_kinds_singular_support());
+        assert!(r.provenance().source_kinds_any_observed());
+        assert!(r.provenance().source_kinds_partial_cover());
+        assert!(!r.provenance().source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_two_source_kind_fixture_is_true() {
+        // Two-source-kind partial cover pin: a fold observing exactly
+        // two `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
+        // `Env` silent) has support cardinality `2` — one unobserved
+        // cell on the cardinality-`3` axis, exactly the singular-gap
+        // boundary. `source_kinds_singular_gap` reads `true`. Reads
+        // `(any_observed=true, singular_support=false,
+        // singular_gap=true, partial_cover=true, full_cover=false)`
+        // on the coverage boundaries. The row this predicate isolates
+        // from the surrounding boundaries at the source-kind altitude.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert!(m.source_kinds_singular_gap());
+        assert!(!m.source_kinds_singular_support());
+        assert!(m.source_kinds_any_observed());
+        assert!(m.source_kinds_partial_cover());
+        assert!(!m.source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_mixed_fixture_is_false() {
+        // Full-cover pin: the source-kind-histogram-mixed fixture
+        // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
+        // support cardinality `3`, zero unobserved cells (not one). So
+        // `source_kinds_singular_gap` reads `false`, sitting on the
+        // full-cover corner. Matches `source_kinds_full_cover`'s
+        // `true` side — the two boundaries `singular_gap` and
+        // `full_cover` are disjoint at the top of the coverage-support
+        // partition.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(!r.provenance().source_kinds_singular_gap());
+        assert!(r.provenance().source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_implies_source_kinds_any_observed_pointwise() {
+        // Subsumption pin: `source_kinds_singular_gap() ⇒
+        // source_kinds_any_observed()` on every fixture (on the
+        // cardinality-`3` source-kind axis a fold missing exactly one
+        // cell observes at least two). Direct pin of the two-level
+        // structural implication on the coverage-support partition at
+        // the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_gap() {
+                assert!(
+                    map.source_kinds_any_observed(),
+                    "singular-gap source-kind map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_implies_source_kinds_partial_cover_pointwise() {
+        // Structural implication pin: `source_kinds_singular_gap() ⇒
+        // source_kinds_partial_cover()` on every axis with cardinality
+        // `>= 2` (the source-kind axis carries three cells). A fold
+        // missing exactly one cell has at least one cell observed and
+        // at least one cell unobserved, so the partial-cover middle
+        // leg fires.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_gap() {
+                assert!(
+                    map.source_kinds_partial_cover(),
+                    "singular-gap source-kind map must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_implies_not_source_kinds_full_cover_pointwise() {
+        // Exclusion pin: `source_kinds_singular_gap() ⇒
+        // !source_kinds_full_cover()` always. Full cover has zero
+        // unobserved cells, singular gap has exactly one, so the two
+        // boundaries are disjoint on every axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_gap() {
+                assert!(
+                    !map.source_kinds_full_cover(),
+                    "singular-gap source-kind map must not be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_implies_not_source_kinds_singular_support_pointwise() {
+        // Exclusion pin: `source_kinds_singular_gap() ⇒
+        // !source_kinds_singular_support()` on every axis with
+        // cardinality `>= 3` (the source-kind axis carries three
+        // cells). Singleton-support has support cardinality `1`,
+        // singleton-gap has support cardinality `axis_cardinality - 1
+        // = 2 >= 2 > 1`, so the two are disjoint. The complementary
+        // cardinality slices `1` and `axis_cardinality - 1` never
+        // coincide on any axis with cardinality `>= 3`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_gap() {
+                assert!(
+                    !map.source_kinds_singular_support(),
+                    "singular-gap source-kind map must not be singular-support \
+                     on the cardinality-3 source-kind axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk_pointwise() {
+        // Parity against the exact hand-rolled exactly-one-zero walk
+        // this lift replaces: walk every cell of the source-kind
+        // histogram and count the number of zero cells; the seam fires
+        // iff that count equals `1`. The lift routes through the
+        // single-pass short-circuiting scan on `has_singular_gap` one
+        // altitude down; this test pins the seam against the naive
+        // walk.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_gap();
+            let hist = map.source_kind_histogram();
+            let zero_count = hist.iter().filter(|(_, c)| *c == 0).count();
+            let hand_rolled = zero_count == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
