@@ -5926,6 +5926,156 @@ impl ProvenanceMap {
         self.source_kind_histogram().is_full_cover()
     }
 
+    /// `true` exactly when at least one [`crate::ConfigSourceKind`]
+    /// cell was observed on this resolved fold — the **any-observed-
+    /// source-kind-counts boolean predicate** on the source-kind
+    /// altitude. Routes through `!self.source_kind_histogram().is_empty()`
+    /// one altitude down: the single-pass scan over the fixed-
+    /// cardinality counts vector that short-circuits on the first
+    /// nonzero cell, tighter than any of the four support / coverage-
+    /// gap equality forms one seam over.
+    ///
+    /// The **any-observed-source-kind-counts peer** of the fused
+    /// `(contributing_source_kinds, absent_source_kinds,
+    /// contributing_source_kinds_count, absent_source_kinds_count)`
+    /// support / coverage-gap 2×2 grid on the source-kind altitude —
+    /// the natural typed boolean primitive for fleet dashboards,
+    /// attestation manifests, and alerting policies asking *"did any
+    /// source-kind fire at least once on this resolved fold?"*: the
+    /// fleet dashboard headline *"non-empty fold: at least one source-
+    /// kind observed"*, the attestation manifest gate *"rebuild window
+    /// carries at least one source-kind observation"*, the alerting
+    /// policy predicate *"fold source-kind non-empty"*. Before this
+    /// lift, every such consumer re-derived the predicate inline as
+    /// one of five pointwise-equivalent forms:
+    /// `!map.is_empty()` (the leaf-map-nonempty form, which projects
+    /// the boolean off the raw leaf map without saying structurally
+    /// *what* is being asked at the source-kind axis),
+    /// `map.contributing_source_kinds_count() > 0` (the support-
+    /// scalar form, which pays for a full-axis scan and compares a
+    /// `usize` to zero without naming the coverage-support boundary),
+    /// `!map.contributing_source_kinds().is_empty()` (the support-
+    /// `Vec` form, which allocates a `Vec<ConfigSourceKind>` and
+    /// reads its emptiness back), `map.absent_source_kinds_count() <
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// coverage-gap-scalar form, which pays for the coverage-gap
+    /// scan and pulls in the [`crate::axis_cardinality`] turbofish
+    /// at every call site), and
+    /// `!map.source_kind_histogram().is_empty()` (the histogram-
+    /// negated form, which projects the same predicate but re-writes
+    /// the negation at every consumer site). The five forms drifted
+    /// in subtle ways at every consumer site (leaf-map vs.
+    /// histogram, allocation vs. scalar, turbofish vs. name-only,
+    /// coverage-gap side vs. support side, negation-at-call vs.
+    /// named-boundary). This lift names the any-observed-source-
+    /// kind-counts predicate directly at the source-kind-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing "did the fold observe anything
+    /// at all?" check reads off as a single method call.
+    ///
+    /// The source-kind-altitude any-observed-predicate peer that
+    /// **closes the "any-observed across altitudes" projection**
+    /// already carried at the tier altitude by
+    /// [`Self::tiers_any_observed`] and seeded at the diff altitude
+    /// by [`crate::ConfigDiff::kinds_any_observed`]. The pattern is
+    /// the same at every altitude: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's non-empty-boundary into a
+    /// single boolean predicate named at the surface, routed
+    /// through the shared `!AxisHistogram::is_empty` primitive one
+    /// altitude down. Peer on the same altitude to
+    /// [`Self::source_kinds_full_cover`] on the strictly-tighter
+    /// coverage-support boundary (`any_observed` = *at-least-one*
+    /// cell; `full_cover` = *every* cell) — the two named booleans
+    /// slice the coverage-support partition at its extremal
+    /// endpoints. Peer to [`Self::source_kinds_uniform_count`] on
+    /// the uniformity boundary orthogonal to the coverage-support
+    /// partition.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map:
+    /// the empty map has no observed cells, so the any-observed
+    /// predicate fails. Matches [`crate::AxisHistogram::is_empty`]'s
+    /// empty-histogram convention negated one altitude down. The
+    /// empty map is therefore on the `false` side of the any-
+    /// observed boundary — matching
+    /// [`Self::source_kinds_full_cover`]'s empty-map `false`
+    /// polarity and orthogonal to
+    /// [`Self::source_kinds_uniform_count`]'s empty-map `true`
+    /// polarity (vacuous uniformity).
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// fold whose observed support is a single [`crate::ConfigSourceKind`]:
+    /// one observed cell suffices for the any-observed predicate.
+    /// Every fold of only-`Defaults`, only-`Env`, or only-`File`
+    /// leaves is a witness. Matches
+    /// [`Self::source_kinds_uniform_count`]'s `true` side on the
+    /// singleton and orthogonal to
+    /// [`Self::source_kinds_full_cover`]'s `false` side on the same
+    /// singleton — the three boundaries partition the singleton-
+    /// support fixture with (`any_observed`=true, `uniform_count`=true,
+    /// `full_cover`=false).
+    ///
+    /// **Full-cover convention** — returns `true` on every full-
+    /// cover fold: every full-cover fold observes at least one
+    /// cell, so `source_kinds_full_cover() ⇒
+    /// source_kinds_any_observed()` structurally. The uniform three-
+    /// source-kind cover fixture is a simultaneous witness for
+    /// `(source_kinds_any_observed, source_kinds_uniform_count,
+    /// source_kinds_full_cover) == (true, true, true)` — the top
+    /// corner of the (any-observed, uniformity, coverage) boolean
+    /// triple on the source-kind altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_any_observed() ==
+    ///   !source_kind_histogram().is_empty()` — the routing
+    ///   equivalence one altitude down; both project the same boolean
+    ///   off the same primitive.
+    /// - `source_kinds_any_observed() == !self.is_empty()` — every
+    ///   leaf contributes to a `ConfigSourceKind` cell, so the
+    ///   histogram is empty iff the leaf map is empty. Pins the O(n)
+    ///   histogram routing against the O(1) `BTreeMap::is_empty`
+    ///   projection.
+    /// - `source_kinds_any_observed() ==
+    ///   (contributing_source_kinds_count() > 0)` — the support-
+    ///   scalar surface, the dual-side surfacing of the same boolean
+    ///   across the (observed, unobserved) partition.
+    /// - `source_kinds_any_observed() ==
+    ///   !contributing_source_kinds().is_empty()` — the support-`Vec`
+    ///   form, without paying the scalar-comparison boilerplate.
+    /// - `source_kinds_any_observed() == (absent_source_kinds_count()
+    ///   < crate::axis_cardinality::<crate::ConfigSourceKind>())` —
+    ///   the coverage-gap-scalar form, the coverage-gap-side
+    ///   surfacing of the same boolean.
+    /// - `source_kinds_full_cover() ⇒ source_kinds_any_observed()` —
+    ///   a full-cover fold observes every cell, so it observes at
+    ///   least one cell. The strict subsumption relates the two ends
+    ///   of the coverage-support partition. Contrapositively,
+    ///   `!source_kinds_any_observed() ⇒ !source_kinds_full_cover()`.
+    /// - `source_kinds_any_observed() ⇒ self.len() >= 1` — a fold
+    ///   with any observed source-kind carries at least one leaf.
+    /// - `!source_kinds_any_observed() ⇒ source_kinds_uniform_count()`
+    ///   — the empty map is the only fixture on the `false` side of
+    ///   `source_kinds_any_observed`, and it is vacuously uniform.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the any-observed scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality;
+    /// the returned `bool` reads one predicate. The scan short-
+    /// circuits on the first nonzero cell (bounded at one nonzero
+    /// cell visited on any non-empty fold), strictly tighter than
+    /// the four support / coverage-gap equality forms — no
+    /// `Vec<ConfigSourceKind>` allocation, no [`crate::axis_cardinality`]
+    /// turbofish, no scalar equality against a magic axis-cardinality
+    /// constant.
+    #[must_use]
+    pub fn source_kinds_any_observed(&self) -> bool {
+        !self.source_kind_histogram().is_empty()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -67288,6 +67438,324 @@ mod progressive_tests {
             let via_seam = map.source_kinds_full_cover();
             let hist = map.source_kind_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kinds_any_observed — any-observed-
+    //    source-kind-counts boolean predicate on the source-kind
+    //    altitude, closing the "any-observed across altitudes"
+    //    projection climbed to the tier altitude by
+    //    `tiers_any_observed` and seeded on the diff altitude by
+    //    `ConfigDiff::kinds_any_observed` ──
+
+    #[test]
+    fn source_kinds_any_observed_matches_source_kind_histogram_is_empty_negation_pointwise() {
+        // Routing pin: `source_kinds_any_observed` routes through
+        // `!source_kind_histogram().is_empty()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive.
+        // Source-kind-altitude peer of
+        // `tiers_any_observed_matches_tier_histogram_is_empty_negation_pointwise`
+        // on the tier altitude and
+        // `kinds_any_observed_matches_kind_histogram_is_empty_negation_pointwise`
+        // on the diff altitude in the "any-observed across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = !map.source_kind_histogram().is_empty();
+            assert_eq!(map.source_kinds_any_observed(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_agrees_with_map_nonempty_pointwise() {
+        // Defining equivalence on the leaf-map surface: every leaf
+        // contributes to a `ConfigSourceKind` cell, so the histogram
+        // is empty iff the leaf map is empty. Pins the O(n)
+        // histogram routing against the O(1) `BTreeMap::is_empty`
+        // projection. Peer of
+        // `tiers_any_observed_agrees_with_map_nonempty_pointwise` on
+        // the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_any_observed();
+            let via_map = !map.is_empty();
+            assert_eq!(
+                via_seam, via_map,
+                "source_kinds_any_observed ({via_seam}) must agree with \
+                 !map.is_empty() ({via_map}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_agrees_with_contributing_source_kinds_count_positive_pointwise() {
+        // Support-scalar surface: `source_kinds_any_observed() ==
+        // (contributing_source_kinds_count() > 0)` on every fixture.
+        // The dual-side surfacing of the same boolean across the
+        // (observed, unobserved) partition. Lifted from the trait-
+        // uniform `!is_empty() == (distinct_cells() > 0)` law on
+        // AxisHistogram. Peer of
+        // `tiers_any_observed_agrees_with_contributing_tiers_count_positive_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_any_observed();
+            let via_scalar = map.contributing_source_kinds_count() > 0;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "source_kinds_any_observed ({via_seam}) must agree with \
+                 contributing_source_kinds_count > 0 (count={c}) for map",
+                c = map.contributing_source_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_agrees_with_contributing_source_kinds_nonempty_pointwise() {
+        // Support-`Vec` form: `source_kinds_any_observed() ==
+        // !contributing_source_kinds().is_empty()` on every fixture.
+        // Pins the predicate against the `Vec<ConfigSourceKind>`
+        // emptiness form consumers reach for when they already hold
+        // the support vector. Peer of
+        // `tiers_any_observed_agrees_with_contributing_tiers_nonempty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_any_observed();
+            let via_vec = !map.contributing_source_kinds().is_empty();
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_any_observed ({via_seam}) must agree with \
+                 !contributing_source_kinds().is_empty() ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_agrees_with_absent_source_kinds_count_below_axis_cardinality_pointwise()
+     {
+        // Coverage-gap-scalar form: `source_kinds_any_observed() ==
+        // (absent_source_kinds_count() <
+        // axis_cardinality::<ConfigSourceKind>())` on every fixture.
+        // The coverage-gap-side surfacing of the same boolean — an
+        // empty fold has the full coverage gap (equal to the axis
+        // cardinality); any non-empty fold has a strictly-smaller
+        // coverage gap. Peer of
+        // `tiers_any_observed_agrees_with_absent_tiers_count_below_axis_cardinality_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_any_observed();
+            let via_gap = map.absent_source_kinds_count()
+                < crate::axis_cardinality::<crate::ConfigSourceKind>();
+            assert_eq!(
+                via_seam,
+                via_gap,
+                "source_kinds_any_observed ({via_seam}) must agree with \
+                 absent_source_kinds_count < axis_cardinality (gap={g}) for map",
+                g = map.absent_source_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_empty_map_is_false() {
+        // Empty-map boundary: the empty map has no observed cells,
+        // so the any-observed predicate reads `false`. Matches
+        // `is_empty` reading `true` on the empty histogram one
+        // altitude down — negated at the source-kind-altitude
+        // surface. Peer of `source_kinds_full_cover_empty_map_is_false`
+        // on the same polarity of the coverage-support partition,
+        // and orthogonal to
+        // `source_kinds_uniform_count_empty_map_is_true` on the
+        // opposite polarity. Peer of `tiers_any_observed_empty_map_is_false`
+        // on the tier altitude and `kinds_any_observed_empty_diff_is_false`
+        // on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_any_observed());
+        assert_eq!(empty.contributing_source_kinds_count(), 0);
+    }
+
+    #[test]
+    fn source_kinds_any_observed_pure_progressive_singleton_support_is_true() {
+        // Singleton-support pin: the pure-progressive `Prog` fold
+        // attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — one observed cell out
+        // of three, `source_kinds_any_observed` reads `true`. Peer of
+        // `source_kinds_uniform_count`-`true` and orthogonal to
+        // `source_kinds_full_cover`-`false` on the same fixture. The
+        // singleton-support fixture partitions the three source-kind-
+        // altitude boundaries with (`any_observed`=true,
+        // `uniform_count`=true, `full_cover`=false). Peer of
+        // `tiers_any_observed_singleton_support_is_true` on the tier
+        // altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(r.provenance().source_kinds_any_observed());
+        assert!(r.provenance().source_kinds_uniform_count());
+        assert!(!r.provenance().source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_any_observed_uniform_three_source_kind_cover_is_true() {
+        // Uniform-cover pin: a fold observing every cell of
+        // `ConfigSourceKind` exactly once has three observed cells —
+        // `source_kinds_any_observed` reads `true`. The uniform
+        // three-source-kind cover is on the `true` side of ALL three
+        // coverage-support boundaries: `any_observed`,
+        // `uniform_count`, and `full_cover`. Peer of
+        // `tiers_any_observed_uniform_cover_is_true` on the tier
+        // altitude.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kinds_any_observed());
+        assert!(m.source_kinds_uniform_count());
+        assert!(m.source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_any_observed_mixed_fixture_is_true() {
+        // Direct pin against the source-kind-histogram-mixed fixture:
+        // the fixture attributes 4 leaves as `{Defaults: 2, Env: 1,
+        // File: 1}` — every cell observed at least once, so
+        // `source_kinds_any_observed` reads `true`. Simultaneous
+        // witness with `source_kinds_full_cover`=true and
+        // `source_kinds_uniform_count`=false — the fixture pins the
+        // (any_observed, uniform, full_cover) triple at
+        // (true, false, true) on the source-kind altitude.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kinds_any_observed());
+        assert!(r.provenance().source_kinds_full_cover());
+        assert!(!r.provenance().source_kinds_uniform_count());
+    }
+
+    #[test]
+    fn source_kinds_full_cover_implies_source_kinds_any_observed_pointwise() {
+        // Subsumption pin: `source_kinds_full_cover() ⇒
+        // source_kinds_any_observed()` on every fixture. A full-
+        // cover fold observes every cell, so it observes at least
+        // one cell — the any-observed predicate holds. The strict
+        // subsumption relates the two ends of the coverage-support
+        // partition: `any_observed ⇔ !is_empty` and
+        // `full_cover ⇔ every_cell_positive`, with
+        // `full_cover ⇒ any_observed` structurally. Peer of
+        // `tiers_full_cover_implies_tiers_any_observed_pointwise` on
+        // the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_full_cover() {
+                assert!(
+                    map.source_kinds_any_observed(),
+                    "full-cover source-kind map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_implies_leaf_count_positive_pointwise() {
+        // Leaf-count lower-bound pin: `source_kinds_any_observed() ⇒
+        // self.len() >= 1`. Any fold with a nonzero histogram cell
+        // has at least one leaf contributing to that cell. Direct
+        // witness of the trait-uniform `!is_empty() ⇒ total() >= 1`
+        // law on AxisHistogram, lifted to the source-kind altitude.
+        // Peer of `tiers_any_observed_implies_leaf_count_positive_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_any_observed() {
+                assert!(
+                    !map.is_empty(),
+                    "any-observed source-kind map must have at least one leaf",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_negation_implies_source_kinds_uniform_count_pointwise() {
+        // The empty map is the only fixture on the `false` side of
+        // `source_kinds_any_observed`, and it is vacuously uniform.
+        // So `!source_kinds_any_observed() ⇒
+        // source_kinds_uniform_count()` holds structurally. Pins the
+        // interaction between the coverage-support boundary and the
+        // uniformity boundary at the empty-map corner. Peer of
+        // `tiers_any_observed_negation_implies_tiers_balanced_pointwise`
+        // on the tier altitude, on the same (any-observed, uniformity)
+        // pair.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.source_kinds_any_observed() {
+                assert!(
+                    map.source_kinds_uniform_count(),
+                    "empty source-kind map must be vacuously uniform",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_any_observed_agrees_with_open_coded_any_positive_walk() {
+        // Parity against the exact hand-rolled any-observed walk
+        // this lift replaces: walk every cell of the source-kind
+        // histogram and check any count is positive. Mirrors the
+        // parity pin
+        // `source_kinds_full_cover_agrees_with_open_coded_all_positive_walk_pointwise`
+        // on the coverage-support partition's opposite boundary. Peer
+        // of `tiers_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the tier altitude and
+        // `kinds_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_any_observed();
+            let hist = map.source_kind_histogram();
+            let hand_rolled = hist.iter().any(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
