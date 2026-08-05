@@ -76,15 +76,9 @@ gcp-native = ["dep:reqwest", "dep:tokio"]
 # Per-field hot-swap-safety classification (theory/CALHA.md SS6.3):
 # a T: HotSwapClassifier + Validate wrapper (ValidatedTieredConfig),
 # a split blake3 watermark (full vs. restart-required subtree), and
-# ConfigStore::load_and_watch_hotswap -- a sibling of load_and_watch
-# that classifies each reload's diff and auto-swaps only the Free
-# half, never the RequiresRestart half. `pleme-hotswap` provides the
-# HotSwapClassifier trait + HotSwapClass/SwapDecision types this
-# module's generic bounds require; `#[derive(HotSwap)]` (the separate
-# `pleme-hotswap-derive` proc-macro crate) is how a consumer's own
-# config struct implements that trait -- not a dependency of shikumi
-# itself.
-hotswap = ["dep:pleme-hotswap", "dep:blake3"]
+# hotswap feature removed — pleme-hotswap not on crates.io, can't be
+# a dep. The code is gated behind #[cfg(feature = "hotswap")] which
+# can never be enabled. Re-add when pleme-hotswap is published.
 
 # ConfigPlane DISCOVERED-tier cluster discovery — the `KubeClusterDiscovery`
 # DiscoveryLayer (src/kube_discovery.rs) + its kanchi::ClusterEnv seam. Pulls
@@ -145,10 +139,11 @@ blue-lang-syntax = { version = "0.0.2", optional = true }
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
 # satisfy. The `pleme-hotswap-derive` repo hosts both crates.
-# pleme-hotswap: optional git dep (not on crates.io). Used by the
-# 'hotswap' feature for real HotSwapClassifier. Optional so cargo
-# publish strips it; CI --all-features fetches from git (public repo).
-pleme-hotswap = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap", optional = true }
+# pleme-hotswap removed — not on crates.io, auto-release pre-check
+# rejects optional git deps. The hotswap feature is removed; the code
+# that uses pleme_hotswap is gated behind #[cfg(feature = "hotswap")]
+# which can never be enabled (no such feature exists). Re-add when
+# pleme-hotswap is published to crates.io.
 blake3 = { version = "1", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { version = "0.1", optional = true }
@@ -205,7 +200,5 @@ serde_json = "1"
 serde_yaml = "0.9"
 # SecretClient async tests — needed even when no native features are on.
 tokio = { version = "1", features = ["rt", "macros"] }
-# `hotswap` feature tests only: real #[derive(HotSwap)] on a test
-# struct, matching what a real hotswap consumer would use. Not a
-# runtime dependency of shikumi itself.
-pleme-hotswap-derive = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap-derive" }
+# pleme-hotswap-derive removed — not on crates.io. The hotswap tests
+# that used it are now disabled (the hotswap feature is gone).

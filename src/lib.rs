@@ -49,8 +49,10 @@ mod cube;
 pub mod discovered;
 mod discovery;
 mod error;
-#[cfg(feature = "hotswap")]
-pub mod hotswap;
+// hotswap module disabled — pleme-hotswap not on crates.io, can't be
+// a dep. Re-enable when pleme-hotswap is published.
+// #[cfg(feature = "hotswap")]
+// pub mod hotswap;
 #[cfg(feature = "kube-discovery")]
 pub mod kube_discovery;
 #[cfg(feature = "lisp")]
