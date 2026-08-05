@@ -156,7 +156,7 @@ fn kebab_to_snake(s: &str) -> String {
 
 impl Provider for LispProvider {
     fn metadata(&self) -> Metadata {
-        Metadata::named(Format::Lisp.metadata_name(&self.path))
+        crate::provider::provider_metadata_for(Format::Lisp, &self.path)
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {

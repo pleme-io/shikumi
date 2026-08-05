@@ -115,7 +115,7 @@ fn json_to_figment_value(v: &serde_json::Value) -> Value {
 
 impl Provider for NixProvider {
     fn metadata(&self) -> Metadata {
-        Metadata::named(Format::Nix.metadata_name(&self.path))
+        crate::provider::provider_metadata_for(Format::Nix, &self.path)
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {

@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use figment::{
-    Error as FigmentError, Figment, Profile,
+    Error as FigmentError, Figment, Metadata, Profile,
     providers::{Env, Format as _, Serialized, Toml as FigToml, Yaml as FigYaml},
     value::{Dict, Map, Value},
 };
@@ -128,6 +128,44 @@ pub(crate) fn provider_data_from_shikumi_load(
 ) -> Result<Map<Profile, Dict>, FigmentError> {
     let value = result.map_err(|e| FigmentError::from(e.to_string()))?;
     provider_data_from_value(value, format)
+}
+
+/// Build the [`figment::Metadata`] a shikumi-built provider's
+/// [`figment::Provider::metadata`] impl declares — the [`Format`]-typed
+/// path→name projection wrapped in the [`Metadata::named`] shape figment
+/// requires.
+///
+/// One source of truth for the metadata-construction shape shared by
+/// every shikumi-built provider's `metadata` impl.
+/// [`crate::lisp_provider::LispProvider::metadata`] (feature = "lisp",
+/// `src/lisp_provider.rs`) and [`crate::nix_provider::NixProvider::metadata`]
+/// each previously inlined the two-step
+/// `Metadata::named(Format::X.metadata_name(&self.path))` construction —
+/// two places a future refinement of the name-shape (structured spans,
+/// source annotations, richer [`Metadata`] attributes) would have to be
+/// applied in lockstep, which is exactly the drift-class this crate
+/// spends load-bearing lifts to close. Idiom-peer of
+/// [`provider_data_from_shikumi_load`], the sibling fusion helper that
+/// closed the `data()`-body drift class; together they name both halves
+/// of the shikumi-built provider's [`figment::Provider`] surface at one
+/// site each.
+///
+/// The metadata-name round-trip contract remains: the emitted
+/// [`Metadata::name`] equals what [`Format::metadata_name`] produces for
+/// the same `(format, path)` pair, and therefore
+/// [`Format::strip_metadata_name`] and [`Format::parse_metadata_tag`]
+/// invert it back to the same `(format, path_display)` pair the provider
+/// was constructed from. A future shikumi-built provider — an `HTTP`
+/// config endpoint, a `Vault` secret store, a Kubernetes `ConfigMap`
+/// reader — implements its `metadata()` by routing through this single
+/// helper, inheriting the round-trip contract by construction.
+///
+/// `path` is the same [`Path`] the provider stores from its `file(...)`
+/// constructor; passed by reference so no allocation happens beyond the
+/// one [`Format::metadata_name`] itself performs.
+#[must_use]
+pub(crate) fn provider_metadata_for(format: Format, path: &Path) -> Metadata {
+    Metadata::named(format.metadata_name(path))
 }
 
 /// Builder for a figment provider chain.
@@ -1285,6 +1323,95 @@ mod tests {
                     ),
                 }
             }
+        }
+    }
+
+    // ---- provider_metadata_for (Format × Path -> Metadata construction) ----
+    //
+    // The `metadata()` half of the shikumi-built provider surface. Before
+    // this lift `LispProvider::metadata` and `NixProvider::metadata` each
+    // open-coded `Metadata::named(Format::X.metadata_name(&self.path))`
+    // — two places a future refinement of the metadata-name shape would
+    // have to be applied in lockstep. The helper closes that drift class;
+    // these tests pin the closure at the fusion site so the two call
+    // sites remain a pointwise-equal composition and the round-trip
+    // through `Format::strip_metadata_name` / `parse_metadata_tag` is
+    // preserved by construction.
+
+    #[test]
+    fn provider_metadata_for_agrees_with_open_coded_composition_pointwise() {
+        // For every shikumi-built format the helper's output must
+        // exactly equal what the two open-coded steps produced:
+        // `Metadata::named(format.metadata_name(&path))`. The equality
+        // is on `Metadata::name` (the only field either construction
+        // sets), and it must hold across the full path shape that
+        // reaches a real provider — absolute-with-extension,
+        // relative-no-parent, and empty are the three concrete corners
+        // `LispProvider::file` / `NixProvider::file` will accept.
+        let paths: [&Path; 3] = [
+            Path::new("/etc/app/app.lisp"),
+            Path::new("relative.nix"),
+            Path::new(""),
+        ];
+        for format in [Format::Lisp, Format::Nix] {
+            for path in paths {
+                let via_helper = provider_metadata_for(format, path);
+                let via_open_coded = Metadata::named(format.metadata_name(path));
+                assert_eq!(
+                    via_helper.name, via_open_coded.name,
+                    "{format:?}/{path:?}: helper Metadata::name must equal open-coded name",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provider_metadata_for_round_trips_through_strip_metadata_name() {
+        // The whole point of the metadata name is that it inverts:
+        // `Format::strip_metadata_name` must recover `(format, path_display)`
+        // from the helper's output for every shikumi-built format.
+        // Pinning it at the fusion site guarantees that a future
+        // shikumi-built provider routing its `metadata()` through the
+        // helper inherits the round-trip contract by construction.
+        let path = Path::new("/var/lib/app/conf.lisp");
+        for format in [Format::Lisp, Format::Nix] {
+            let md = provider_metadata_for(format, path);
+            let (recovered_format, rest) = Format::strip_metadata_name(md.name.as_ref())
+                .unwrap_or_else(|| panic!("{format:?}: metadata name must round-trip"));
+            assert_eq!(
+                recovered_format, format,
+                "{format:?}: strip_metadata_name must recover the constructor format",
+            );
+            assert_eq!(
+                rest,
+                path.display().to_string(),
+                "{format:?}: strip_metadata_name must recover the constructor path display",
+            );
+        }
+    }
+
+    #[test]
+    fn provider_metadata_for_round_trips_through_parse_metadata_tag() {
+        // Idiom-peer of the `strip_metadata_name` round-trip test:
+        // `Format::parse_metadata_tag` is the typed-envelope inverse of
+        // `Format::metadata_name`, and the helper's output must
+        // invert through it to a `FormatMetadataTag` whose `(format, path)`
+        // pair equals the constructor `(format, &path)` pair — the same
+        // load-bearing contract, expressed on the typed surface.
+        let path = Path::new("/opt/app/conf.nix");
+        for format in [Format::Lisp, Format::Nix] {
+            let md = provider_metadata_for(format, path);
+            let tag = Format::parse_metadata_tag(md.name.as_ref())
+                .unwrap_or_else(|| panic!("{format:?}: metadata name must parse to a typed tag"));
+            assert_eq!(
+                tag.format, format,
+                "{format:?}: parse_metadata_tag must recover the constructor format",
+            );
+            assert_eq!(
+                tag.path,
+                Path::new(&path.display().to_string()),
+                "{format:?}: parse_metadata_tag must recover the constructor path",
+            );
         }
     }
 }
