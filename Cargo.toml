@@ -84,7 +84,7 @@ gcp-native = ["dep:reqwest", "dep:tokio"]
 # `pleme-hotswap-derive` proc-macro crate) is how a consumer's own
 # config struct implements that trait -- not a dependency of shikumi
 # itself.
-hotswap = ["dep:blake3"]
+hotswap = ["dep:pleme-hotswap", "dep:blake3"]
 
 # ConfigPlane DISCOVERED-tier cluster discovery — the `KubeClusterDiscovery`
 # DiscoveryLayer (src/kube_discovery.rs) + its kanchi::ClusterEnv seam. Pulls
@@ -145,9 +145,10 @@ blue-lang-syntax = { version = "0.0.2", optional = true }
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
 # satisfy. The `pleme-hotswap-derive` repo hosts both crates.
-# pleme-hotswap removed from [dependencies] — not on crates.io, blocks
-# registry publish. The hotswap feature's test coverage stays via the
-# dev-dependency below. Re-add when pleme-hotswap is published.
+# pleme-hotswap: optional git dep (not on crates.io). Used by the
+# 'hotswap' feature for real HotSwapClassifier. Optional so cargo
+# publish strips it; CI --all-features fetches from git (public repo).
+pleme-hotswap = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap", optional = true }
 blake3 = { version = "1", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { version = "0.1", optional = true }
