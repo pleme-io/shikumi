@@ -5503,6 +5503,162 @@ impl ProvenanceMap {
         self.source_kind_histogram().support_boundary_distance()
     }
 
+    /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
+    /// which magnitude direction of the support-cardinality interval
+    /// this fold's [`crate::ConfigSourceKind`] histogram lands on at the
+    /// source-kind altitude — the three-cell partition of the
+    /// [`crate::SupportCardinalityClass`] surface. Routes through
+    /// [`crate::AxisHistogram::support_magnitude_direction`] one altitude
+    /// down — the closed-classifier projection that fuses the two low-
+    /// support corners ([`crate::SupportCardinalityClass::Empty`] +
+    /// [`crate::SupportCardinalityClass::SingularSupport`]) into the
+    /// [`crate::SupportMagnitudeDirection::Low`] bucket, the two high-
+    /// support corners ([`crate::SupportCardinalityClass::SingularGap`] +
+    /// [`crate::SupportCardinalityClass::FullCover`]) into the
+    /// [`crate::SupportMagnitudeDirection::High`] bucket, and the strict
+    /// interior [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// into the [`crate::SupportMagnitudeDirection::StrictInterior`]
+    /// bucket. Equivalently: reads
+    /// [`Self::source_kind_support_cardinality_class`] one seam over and
+    /// projects through the class-side
+    /// [`crate::SupportCardinalityClass::support_magnitude_direction`]
+    /// three-bucket variant-tag projection — both routings are pointwise
+    /// equal.
+    ///
+    /// The **source-kind altitude support-magnitude-direction classifier
+    /// peer** of [`Self::tiers_support_magnitude_direction`] — the same
+    /// fused three-bucket variant tag one axis over on the same
+    /// [`ProvenanceMap`] surface. Both classifier reads project through
+    /// the shared [`crate::AxisHistogram::support_magnitude_direction`]
+    /// primitive one altitude down, so the total-classification
+    /// discipline the tier-altitude classifier enforces reads through the
+    /// source-kind-altitude classifier without re-derivation drift. Peer
+    /// also of the diff-altitude
+    /// [`ConfigDiff::kinds_support_magnitude_direction`] on the same
+    /// three-bucket surface, sharing the vacuous-strict-interior
+    /// reachability that follows from the cardinality-`3` axis. Mirror
+    /// peer of the sibling [`Self::source_kind_support_boundary_distance`]
+    /// classifier row on the orthogonal three-bucket quotient of the
+    /// five-corner support-cardinality surface — both share the strict-
+    /// interior middle leg, both are vacuously unreachable on the
+    /// cardinality-`3` source-kind axis.
+    ///
+    /// **Total classification.** Every fold lands on exactly one of the
+    /// three [`crate::SupportMagnitudeDirection`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportMagnitudeDirection::ALL`]. Direct pin of the
+    /// class-side three-bucket-partition law one altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude — the
+    /// strict-interior bucket is *vacuously unreachable*.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so the underlying
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] corner is
+    /// itself vacuous on this altitude (the strict interval `[2,
+    /// cardinality - 2] = [2, 1]` is empty), and the classifier reads
+    /// witnesses on **two of three** buckets:
+    /// [`crate::SupportMagnitudeDirection::Low`] on the empty map (via
+    /// the [`crate::SupportCardinalityClass::Empty`] corner) and on every
+    /// singleton-support fold (via
+    /// [`crate::SupportCardinalityClass::SingularSupport`]), and
+    /// [`crate::SupportMagnitudeDirection::High`] on every two-cell
+    /// partial-cover fold (via [`crate::SupportCardinalityClass::SingularGap`])
+    /// and on every three-cell axis cover (via
+    /// [`crate::SupportCardinalityClass::FullCover`]). Sits at the same
+    /// cardinality as the diff altitude — the strict-interior bucket is
+    /// vacuously empty on both — and stands in strict contrast to the
+    /// cardinality-`4` tier altitude where the two-tier partial-cover
+    /// fold is the singleton strict-interior witness.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_magnitude_direction() ==
+    ///   source_kind_histogram().support_magnitude_direction()` — both
+    ///   project the same variant off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `source_kind_support_magnitude_direction() ==
+    ///   source_kind_support_cardinality_class().support_magnitude_direction()`
+    ///   — the *class-side* routing equivalence: reading the support-
+    ///   cardinality classifier one seam over and projecting through the
+    ///   class-side three-bucket variant-tag projection is pointwise
+    ///   equal to reading the histogram-side classifier directly. Pins
+    ///   the composition through the source-kind altitude so consumers
+    ///   holding either classifier reach the other without re-routing
+    ///   through the originating histogram.
+    /// - `source_kind_support_magnitude_direction().is_low() ==
+    ///   (is_empty() || source_kind_histogram().has_singular_support())`
+    ///   — the low-bucket peer of the union of the two low-support
+    ///   corners on the source-kind altitude (map-emptiness coincides
+    ///   with histogram-emptiness at this altitude, since every leaf
+    ///   projects to exactly one observed cell).
+    /// - `source_kind_support_magnitude_direction().is_high() ==
+    ///   (source_kind_histogram().has_singular_gap() ||
+    ///   source_kind_histogram().is_full_cover())` — the high-bucket
+    ///   peer of the union of the two high-support corners on the
+    ///   source-kind altitude.
+    /// - `source_kind_support_magnitude_direction().is_strict_interior()
+    ///   == false` on every fold — the strict interior `[2, cardinality
+    ///   - 2] = [2, 1]` is empty on the cardinality-`3` source-kind
+    ///   axis, so the strict-interior bucket is *vacuously unreachable*.
+    ///   Matches the diff-altitude peer on the cardinality-`3`
+    ///   [`DiffLineKind`] axis, and stands in strict contrast to the
+    ///   tier-altitude peer on the cardinality-`4` [`ConfigTierKind`]
+    ///   axis where the two-tier partial-cover fold is the singleton
+    ///   witness.
+    /// - `source_kind_support_magnitude_direction().is_strict_interior()
+    ///   == source_kind_support_boundary_distance().is_strict_interior()`
+    ///   — the shared middle leg with the sibling
+    ///   [`Self::source_kind_support_boundary_distance`] classifier: both
+    ///   orthogonal three-bucket quotients of the five-corner support-
+    ///   cardinality surface share the strict-interior middle leg (the
+    ///   [`crate::SupportCardinalityClass::StrictPartialCover`] corner).
+    ///   On the cardinality-`3` source-kind axis both sides read `false`
+    ///   uniformly.
+    /// - `is_empty() ⇒ source_kind_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — the empty map lands on the
+    ///   low bucket via the [`crate::SupportCardinalityClass::Empty`]
+    ///   corner.
+    /// - `source_kind_histogram().has_singular_support() ⇒
+    ///   source_kind_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — every singleton-support fold
+    ///   lands on the low bucket via the
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] corner.
+    /// - `source_kind_histogram().has_singular_gap() ⇒
+    ///   source_kind_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::High` — every two-cell partial-cover
+    ///   fold (support cardinality `2 = cardinality - 1` on the
+    ///   cardinality-`3` axis) lands on the high bucket via the
+    ///   [`crate::SupportCardinalityClass::SingularGap`] corner.
+    /// - `source_kind_histogram().is_full_cover() ⇒
+    ///   source_kind_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::High` — every full-cover fold lands
+    ///   on the high bucket via the
+    ///   [`crate::SupportCardinalityClass::FullCover`] corner.
+    /// - Total classification —
+    ///   `crate::SupportMagnitudeDirection::ALL.iter().filter(|v| **v ==
+    ///   source_kind_support_magnitude_direction()).count() == 1` on
+    ///   every fold: every fold lands on exactly one variant. Direct
+    ///   pin of the class-side three-bucket-partition law one altitude
+    ///   down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the distinct-cells scan). Both are `O(n)` in practice since the
+    /// source-kind axis carries a fixed three-cell cardinality; the
+    /// returned [`crate::SupportMagnitudeDirection`] fits in a `u8`
+    /// discriminant, so the classifier reads off the same fused
+    /// distinct-cells scalar the support-cardinality classifier reads
+    /// and projects through one closed three-way `match` on the class-
+    /// side variant tag — no allocation, no per-cell branching after the
+    /// support cardinality is built. Strictly tighter than the three-way
+    /// `if` ladder over the class-side leg-predicate trio the consumer
+    /// would otherwise write.
+    #[must_use]
+    pub fn source_kind_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
+        self.source_kind_histogram().support_magnitude_direction()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -65643,6 +65799,490 @@ mod progressive_tests {
                 matches, 1,
                 "every map must land on exactly one \
                  SupportBoundaryDistance variant (bucket={bucket:?})",
+            );
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_support_magnitude_direction — closed
+    // support-magnitude-direction classifier lift on the source-kind
+    // altitude ──
+    //
+    // Source-kind-altitude peer of `tiers_support_magnitude_direction`
+    // (the tier-altitude climb of the same classifier row) and of the
+    // diff-altitude seed `ConfigDiff::kinds_support_magnitude_direction`.
+    // The three-variant SupportMagnitudeDirection variant tag fuses the
+    // five-corner SupportCardinalityClass surface into a three-bucket
+    // support-magnitude-direction partition (Low / StrictInterior /
+    // High). The cardinality-`3` ConfigSourceKind axis carries witnesses
+    // on **two of three** buckets (Low + High) — the strict-interior
+    // bucket is vacuously unreachable, since the underlying
+    // StrictPartialCover corner is itself vacuous on cardinality-`<= 3`
+    // axes (strict interval [2, cardinality - 2] = [2, 1] is empty).
+    // Mirrors the diff altitude on the same shape and stands in strict
+    // contrast to the cardinality-`4` tier altitude where the two-tier
+    // partial-cover fold is the singleton strict-interior witness.
+    // Mirror peer of the sibling `source_kind_support_boundary_distance`
+    // classifier row on the orthogonal three-bucket quotient of the
+    // same five-corner support-cardinality surface — both share the
+    // vacuously-unreachable strict-interior middle leg on this altitude. ──
+
+    #[test]
+    fn source_kind_support_magnitude_direction_matches_source_kind_histogram_support_magnitude_direction_pointwise()
+     {
+        // Routing pin: `source_kind_support_magnitude_direction` routes
+        // through `source_kind_histogram().support_magnitude_direction()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Source-kind-altitude peer of
+        // `tiers_support_magnitude_direction_matches_tier_histogram_support_magnitude_direction_pointwise`
+        // and of
+        // `kinds_support_magnitude_direction_matches_kind_histogram_support_magnitude_direction_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().support_magnitude_direction();
+            assert_eq!(map.source_kind_support_magnitude_direction(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_matches_class_side_projection_pointwise() {
+        // Class-side routing pin:
+        // `source_kind_support_magnitude_direction()` agrees with the
+        // composition of `source_kind_support_cardinality_class()` and
+        // the class-side
+        // `SupportCardinalityClass::support_magnitude_direction` three-
+        // bucket variant-tag projection. Pins the composition through
+        // the source-kind altitude so consumers holding either
+        // classifier reach the other without re-routing through the
+        // originating histogram. Peer of
+        // `kinds_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // on the diff altitude and of
+        // `tiers_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_class = map
+                .source_kind_support_cardinality_class()
+                .support_magnitude_direction();
+            assert_eq!(map.source_kind_support_magnitude_direction(), via_class);
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_empty_map_is_low_variant() {
+        // Empty-map support-magnitude-direction classifier polarity: the
+        // empty map observes zero cells, so `distinct_cells` reads `0`
+        // and the support-cardinality classifier lands on
+        // `SupportCardinalityClass::Empty`, which the class-side
+        // projection folds into `SupportMagnitudeDirection::Low`.
+        // Matches `AxisHistogram::support_magnitude_direction` reading
+        // Low on the empty histogram one altitude down. Peer of
+        // `kinds_support_magnitude_direction_empty_diff_is_low_variant`
+        // on the diff altitude and of
+        // `tiers_support_magnitude_direction_empty_map_is_low_variant`
+        // on the tier altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(
+            empty.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_prog_singleton_support_is_low_variant() {
+        // Singleton-support polarity pin: Prog is a pure-progressive
+        // fold with every leaf attributed to the computed-tier
+        // `Defaults` source-kind, so support collapses to a single cell
+        // — `distinct_cells` reads `1`, the support-cardinality
+        // classifier lands on SingularSupport, and the class-side
+        // projection folds into `SupportMagnitudeDirection::Low`.
+        // Direct witness of the subsumption
+        // `source_kind_histogram().has_singular_support() ⇒
+        // source_kind_support_magnitude_direction() == Low`.
+        let r = Prog::resolve_progressive();
+        assert!(
+            r.provenance()
+                .source_kind_histogram()
+                .has_singular_support()
+        );
+        assert_eq!(
+            r.provenance().source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_two_cell_partial_cover_is_high_variant() {
+        // Two-source-kind partial-cover pin: a fold observing exactly
+        // two source-kinds (`Defaults` from a computed-tier leaf +
+        // `Env` from an env overlay leaf) has `distinct_cells` reading
+        // `2 = cardinality - 1` on the three-cell ConfigSourceKind
+        // axis, so the support-cardinality classifier lands on
+        // SingularGap and the class-side projection folds into
+        // `SupportMagnitudeDirection::High`. Direct witness of the
+        // subsumption `source_kind_histogram().has_singular_gap() ⇒
+        // source_kind_support_magnitude_direction() == High`. Peer of
+        // `kinds_support_magnitude_direction_two_kind_partial_cover_is_high_variant`
+        // on the diff altitude — both fold a support-cardinality-`2`
+        // fixture into the High bucket on the cardinality-`3` axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kind_histogram().has_singular_gap());
+        assert_eq!(
+            m.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_mixed_full_cover_fixture_is_high_variant() {
+        // Full-cover polarity pin: the mixed-overlay fixture layers one
+        // env overlay (touching `c`) and one file overlay (touching
+        // `b`) onto Prog's progressive fold, so every ConfigSourceKind
+        // cell observes ≥1 leaf — `distinct_cells` reads `3 =
+        // cardinality`, the support-cardinality classifier lands on
+        // FullCover, and the class-side projection folds into
+        // `SupportMagnitudeDirection::High` (the top high-support corner
+        // of the support-cardinality interval). Cardinality-`3`
+        // counterpart of the cardinality-`3` diff-altitude pin
+        // `kinds_support_magnitude_direction_uniform_three_kind_cover_is_high_variant`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kind_histogram().is_full_cover());
+        assert_eq!(
+            r.provenance().source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_strict_interior_is_vacuously_unreachable_pointwise()
+    {
+        // Vacuous-strict-interior pin: the cardinality-`3`
+        // ConfigSourceKind axis has an empty strict interval `[2,
+        // cardinality - 2] = [2, 1]`, so the underlying
+        // SupportCardinalityClass::StrictPartialCover corner is itself
+        // vacuous on this altitude, and no fold can land on
+        // SupportMagnitudeDirection::StrictInterior. Direct pin of the
+        // vacuous-strict-interior shared convention with
+        // `source_kind_support_cardinality_class` /
+        // `source_kind_support_boundary_distance` one seam over. Peer of
+        // `kinds_support_magnitude_direction_is_strict_interior_agrees_with_kinds_strict_partial_cover_pointwise`'s
+        // vacuous-strict-interior clause on the diff altitude, and
+        // stands in strict contrast to the cardinality-`4` tier altitude
+        // where the two-tier partial-cover fold is the singleton
+        // witness.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            assert!(
+                !map.source_kind_support_magnitude_direction()
+                    .is_strict_interior(),
+                "cardinality-3 source-kind axis: StrictInterior \
+                 variant must be vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_is_low_agrees_with_empty_or_singular_support_pointwise()
+     {
+        // Low-bucket peer-equivalence pin:
+        // `source_kind_support_magnitude_direction().is_low() ==
+        // (is_empty() || source_kind_histogram().has_singular_support())`.
+        // The low bucket coincides with the union of the two low-support
+        // corners (Empty and SingularSupport) on the source-kind
+        // altitude — on this altitude every leaf projects to exactly one
+        // observed cell, so map-emptiness and histogram-emptiness
+        // coincide. Peer of
+        // `kinds_support_magnitude_direction_is_low_agrees_with_kinds_low_support_pointwise`
+        // on the diff altitude and of
+        // `tiers_support_magnitude_direction_is_low_agrees_with_empty_or_singular_support_pointwise`
+        // on the tier altitude.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            assert_eq!(
+                map.source_kind_support_magnitude_direction().is_low(),
+                map.is_empty() || map.source_kind_histogram().has_singular_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_is_high_agrees_with_singular_gap_or_full_cover_pointwise()
+     {
+        // High-bucket peer-equivalence pin:
+        // `source_kind_support_magnitude_direction().is_high() ==
+        // (source_kind_histogram().has_singular_gap() ||
+        // source_kind_histogram().is_full_cover())`. The high bucket
+        // coincides with the union of the two high-support corners
+        // (SingularGap and FullCover) on the source-kind altitude. Peer
+        // of
+        // `kinds_support_magnitude_direction_is_high_agrees_with_kinds_high_support_pointwise`
+        // on the diff altitude and of
+        // `tiers_support_magnitude_direction_is_high_agrees_with_singular_gap_or_full_cover_pointwise`
+        // on the tier altitude.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let h = map.source_kind_histogram();
+            assert_eq!(
+                map.source_kind_support_magnitude_direction().is_high(),
+                h.has_singular_gap() || h.is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_shares_strict_interior_leg_with_boundary_distance_pointwise()
+     {
+        // Shared-middle-leg pin: the strict-interior bucket of the
+        // support-magnitude-direction classifier and the strict-interior
+        // bucket of the sibling support-boundary-distance classifier
+        // fire pointwise on the same folds. Both orthogonal three-bucket
+        // quotients of the finer five-corner support-cardinality
+        // classifier share the strict-interior middle leg (the
+        // `StrictPartialCover` corner). This is the structural link that
+        // names the pair as the two orthogonal ternary partitions of the
+        // coverage-support surface at the source-kind altitude. On the
+        // cardinality-`3` source-kind axis both sides read `false`
+        // uniformly (the shared middle leg is vacuously empty). Peer of
+        // `tiers_support_magnitude_direction_shares_strict_interior_leg_with_boundary_distance_pointwise`
+        // on the tier altitude, where both sides *can* read `true` on
+        // the two-tier partial-cover fold.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            assert_eq!(
+                map.source_kind_support_magnitude_direction()
+                    .is_strict_interior(),
+                map.source_kind_support_boundary_distance()
+                    .is_strict_interior(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_empty_map_implies_source_kind_support_magnitude_direction_is_low_pointwise() {
+        // Subsumption pin: `is_empty() ⇒
+        // source_kind_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-side
+        // `Empty` → `Low` fold one altitude down. Peer of
+        // `kinds_empty_implies_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the diff altitude and of
+        // `tiers_empty_implies_tiers_support_magnitude_direction_is_low_pointwise`
+        // on the tier altitude, phrased through map-emptiness (which
+        // coincides with histogram-emptiness on the source-kind altitude
+        // since every leaf projects to exactly one observed cell).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.is_empty() {
+                assert_eq!(
+                    map.source_kind_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "empty map must land on the Low bucket via \
+                     the SupportCardinalityClass::Empty corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_singular_support_implies_source_kind_support_magnitude_direction_is_low_pointwise()
+     {
+        // Subsumption pin: `source_kind_histogram().has_singular_support()
+        // ⇒ source_kind_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-side
+        // `SingularSupport` → `Low` fold one altitude down. Peer of
+        // `kinds_singular_support_implies_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the diff altitude and of
+        // `tiers_singular_support_implies_tiers_support_magnitude_direction_is_low_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kind_histogram().has_singular_support() {
+                assert_eq!(
+                    map.source_kind_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "singleton-support map must land on the Low \
+                     bucket via the SingularSupport corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_singular_gap_implies_source_kind_support_magnitude_direction_is_high_pointwise()
+    {
+        // Subsumption pin: `source_kind_histogram().has_singular_gap()
+        // ⇒ source_kind_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::High` on the cardinality-`>= 3`
+        // axis. Direct pin of the class-side `SingularGap` → `High`
+        // fold one altitude down. Peer of
+        // `kinds_singular_gap_implies_kinds_support_magnitude_direction_is_high_pointwise`
+        // on the diff altitude and of
+        // `tiers_singular_gap_implies_tiers_support_magnitude_direction_is_high_pointwise`
+        // on the tier altitude.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            if map.source_kind_histogram().has_singular_gap() {
+                assert_eq!(
+                    map.source_kind_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::High,
+                    "singular-gap map must land on the High bucket \
+                     via the SingularGap corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_full_cover_implies_source_kind_support_magnitude_direction_is_high_pointwise() {
+        // Subsumption pin: `source_kind_histogram().is_full_cover() ⇒
+        // source_kind_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::High`. Direct pin of the class-
+        // side `FullCover` → `High` fold one altitude down. Peer of
+        // `kinds_full_cover_implies_kinds_support_magnitude_direction_is_high_pointwise`
+        // on the diff altitude and of
+        // `tiers_full_cover_implies_tiers_support_magnitude_direction_is_high_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kind_histogram().is_full_cover() {
+                assert_eq!(
+                    map.source_kind_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::High,
+                    "full-cover map must land on the High bucket \
+                     via the SupportCardinalityClass::FullCover corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise()
+     {
+        // Total-classification pin: every fold lands on exactly one of
+        // the three SupportMagnitudeDirection variants (Low,
+        // StrictInterior, High) — SupportMagnitudeDirection::ALL.
+        // Direct pin of the class-side three-bucket-partition law one
+        // altitude down. On the cardinality-`3` source-kind axis the
+        // StrictInterior bucket is vacuously unreachable, but the
+        // total-classification discipline holds — every fold still
+        // lands on exactly one of the two reachable variants. Peer of
+        // `kinds_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // on the diff altitude and of
+        // `tiers_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // on the tier altitude.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let bucket = map.source_kind_support_magnitude_direction();
+            let matches: usize = crate::SupportMagnitudeDirection::ALL
+                .iter()
+                .filter(|&&v| v == bucket)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every map must land on exactly one \
+                 SupportMagnitudeDirection variant (bucket={bucket:?})",
             );
         }
     }
