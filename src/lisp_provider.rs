@@ -160,8 +160,7 @@ impl Provider for LispProvider {
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        let value = Self::load(&self.path).map_err(|e| FigmentError::from(e.to_string()))?;
-        crate::provider::provider_data_from_value(value, Format::Lisp)
+        crate::provider::provider_data_from_shikumi_load(Self::load(&self.path), Format::Lisp)
     }
 }
 

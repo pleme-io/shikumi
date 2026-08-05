@@ -73,6 +73,63 @@ pub(crate) fn provider_data_from_value(
     Ok(map)
 }
 
+/// End-to-end projection from a shikumi-built provider's [`ShikumiError`]-
+/// bearing load result to the [`Map<Profile, Dict>`] shape
+/// [`figment::Provider::data`] requires.
+///
+/// Fuses the two open-coded steps every shikumi-built provider's `data`
+/// impl still carried after [`provider_data_from_value`] was lifted:
+///
+/// 1. Convert the [`ShikumiError`] returned by the provider's `load` into
+///    a [`FigmentError`] via `FigmentError::from(err.to_string())` — the
+///    same string projection every consumer of a shikumi Provider observes
+///    through figment's own Display path.
+/// 2. Route the resulting [`Value`] through [`provider_data_from_value`]
+///    for the format-typed dict-required wording.
+///
+/// The two consumers today — [`crate::lisp_provider::LispProvider::data`]
+/// (`lisp` feature) and [`crate::nix_provider::NixProvider::data`] — each
+/// previously wrote the `.map_err(|e| FigmentError::from(e.to_string()))`
+/// glue at the head of their `data()` body, immediately before the
+/// [`provider_data_from_value`] call. Two open-coded conversions were two
+/// places a future refinement of the [`ShikumiError`] → [`FigmentError`]
+/// projection (structured spans, source-chain, miette-style annotations)
+/// would have to be applied in lockstep, which is exactly the drift-class
+/// this crate spends load-bearing lifts to close.
+///
+/// A future shikumi-built provider — an `HTTP` config endpoint, a `Vault`
+/// secret store, a Kubernetes `ConfigMap` reader — implements its own
+/// [`ShikumiError`]-bearing `load()` and routes `data()` through this
+/// single helper, inheriting both the error-projection contract and the
+/// format-typed dict-required wording by construction. Sharpening the
+/// [`ShikumiError`] → [`FigmentError`] surface (adding [`figment::Error`]
+/// spans, threading provenance) then lands at one site instead of once
+/// per provider.
+///
+/// `format` is the same argument accepted by [`provider_data_from_value`]
+/// — passed through so the dict-required wording agrees with the
+/// metadata-name the provider's [`figment::Provider::metadata`] impl
+/// already emits via [`Format::metadata_name`].
+///
+/// # Errors
+///
+/// Returns [`FigmentError`] if the load result was [`Err`]
+/// (`ShikumiError` string-projected onto the figment error), OR if the
+/// loaded [`Value`] is not a [`Value::Dict`] (format-typed dict-required
+/// wording via [`provider_data_from_value`]).
+// Same rationale as `provider_data_from_value` for the `result_large_err`
+// silence: figment picks its error size; boxing would fork the helper's
+// `Err` from the trait method's `Err` and force every call site to unbox
+// at the trait boundary.
+#[allow(clippy::result_large_err)]
+pub(crate) fn provider_data_from_shikumi_load(
+    result: Result<Value, ShikumiError>,
+    format: Format,
+) -> Result<Map<Profile, Dict>, FigmentError> {
+    let value = result.map_err(|e| FigmentError::from(e.to_string()))?;
+    provider_data_from_value(value, format)
+}
+
 /// Builder for a figment provider chain.
 ///
 /// Layers are merged in order — later layers override earlier ones.
@@ -1090,5 +1147,144 @@ mod tests {
             panic!("nested entry must remain Value::Dict");
         };
         assert_eq!(recovered_inner, nested);
+    }
+
+    // ---- provider_data_from_shikumi_load (load-result -> Map projection) ----
+    //
+    // These tests pin the end-to-end fusion helper that
+    // `LispProvider::data` / `NixProvider::data` route through: the
+    // `.map_err(|e| FigmentError::from(e.to_string()))` glue that used to
+    // live at the head of each `data()` body now happens at one site here,
+    // and the format-typed dict-required wording is delegated to
+    // `provider_data_from_value` (already pinned above). A future shikumi-
+    // built provider inherits both projections by routing its `data()`
+    // through this single helper — that's the compounding lift.
+
+    #[test]
+    fn provider_data_from_shikumi_load_forwards_ok_dict_verbatim() {
+        // Ok(Dict) → same `{ Profile::Default => dict }` shape the
+        // downstream `provider_data_from_value` helper emits — the
+        // fusion helper must be a pointwise-equal composition on the
+        // success path.
+        let mut inner = Dict::new();
+        inner.insert("k".to_owned(), Value::from("v"));
+        let value = Value::Dict(figment::value::Tag::Default, inner.clone());
+
+        let via_fusion = provider_data_from_shikumi_load(Ok(value.clone()), Format::Lisp)
+            .expect("Ok(Dict) must succeed via the fusion helper");
+        let via_direct = provider_data_from_value(value, Format::Lisp)
+            .expect("Ok(Dict) must succeed via the direct helper");
+        assert_eq!(
+            via_fusion, via_direct,
+            "fusion path must equal direct path on Ok(Dict)",
+        );
+        assert_eq!(via_fusion.len(), 1, "exactly one profile entry");
+        assert_eq!(
+            via_fusion.get(&Profile::Default),
+            Some(&inner),
+            "inner dict preserved verbatim under Profile::Default",
+        );
+    }
+
+    #[test]
+    fn provider_data_from_shikumi_load_projects_err_via_display() {
+        // Err(ShikumiError) is projected through the same string surface
+        // every consumer of a shikumi Provider observes today —
+        // `FigmentError::from(err.to_string())` — so the fusion helper
+        // must emit exactly what the open-coded `.map_err` would.
+        let err = ShikumiError::Parse("boom".into());
+        let expected = err.to_string();
+
+        let fig_err =
+            provider_data_from_shikumi_load(Err(err), Format::Lisp).expect_err("Err must project");
+        assert_eq!(
+            fig_err.to_string(),
+            expected,
+            "the projected FigmentError must Display exactly like the source ShikumiError",
+        );
+    }
+
+    #[test]
+    fn provider_data_from_shikumi_load_delegates_non_dict_wording_to_format_helper() {
+        // Ok(non-Dict) → the downstream helper's format-typed
+        // dict-required wording must reach the operator verbatim. Pins
+        // that the fusion helper does not re-word or wrap the message
+        // — the shape must start with `Format::X.dict_required_message()`
+        // and append `"; got <Value:?>"` for every format.
+        let probe = Value::Empty(figment::value::Tag::Default, figment::value::Empty::None);
+        for format in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+            let err = provider_data_from_shikumi_load(Ok(probe.clone()), format)
+                .expect_err("Ok(non-Dict) must error via the fusion helper");
+            let msg = err.to_string();
+            let prefix = format.dict_required_message();
+            assert!(
+                msg.starts_with(prefix),
+                "{format:?}: fusion-helper message must start with `{prefix}`, got `{msg}`",
+            );
+            assert!(
+                msg.contains("; got "),
+                "{format:?}: fusion-helper message must append `; got <Value>` tail, got `{msg}`",
+            );
+        }
+    }
+
+    #[test]
+    // The open-coded arm this test re-runs is exactly the arm we lifted
+    // away, and reconstructing it is what pins the fusion helper to
+    // pointwise-equal semantics; silence the closure-Err-size pedantic
+    // hit at the one call site — same rationale as the production
+    // helper's `#[allow]` above, and confined to test scope.
+    #[allow(clippy::result_large_err)]
+    fn provider_data_from_shikumi_load_agrees_with_open_coded_composition() {
+        // Pointwise-equal composition pin: for every load result the
+        // fusion helper's output must equal what the two open-coded
+        // steps produced verbatim — `.map_err(...)` then
+        // `provider_data_from_value`. This is the drift-closure the
+        // lift exists for. `ShikumiError` intentionally does not derive
+        // `Clone`, so each case is a thunk that mints a fresh
+        // `Result<Value, ShikumiError>` per invocation instead of a
+        // cloneable value.
+        #[allow(clippy::type_complexity)]
+        let cases: [(&str, fn() -> Result<Value, ShikumiError>); 3] = [
+            ("Ok(Dict)", || {
+                let mut inner = Dict::new();
+                inner.insert("x".to_owned(), Value::from(1i64));
+                Ok(Value::Dict(figment::value::Tag::Default, inner))
+            }),
+            ("Err(ShikumiError)", || {
+                Err(ShikumiError::Parse("nix eval failed".into()))
+            }),
+            ("Ok(non-Dict)", || {
+                Ok(Value::Array(
+                    figment::value::Tag::Default,
+                    vec![Value::from(2i64)],
+                ))
+            }),
+        ];
+
+        for (label, mk) in cases {
+            for format in [Format::Lisp, Format::Nix] {
+                let via_fusion = provider_data_from_shikumi_load(mk(), format);
+                let via_open_coded = mk()
+                    .map_err(|e| FigmentError::from(e.to_string()))
+                    .and_then(|value| provider_data_from_value(value, format));
+
+                match (via_fusion, via_open_coded) {
+                    (Ok(a), Ok(b)) => assert_eq!(
+                        a, b,
+                        "{label}/{format:?}: fusion Ok must equal open-coded Ok",
+                    ),
+                    (Err(a), Err(b)) => assert_eq!(
+                        a.to_string(),
+                        b.to_string(),
+                        "{label}/{format:?}: fusion Err message must equal open-coded Err message",
+                    ),
+                    (a, b) => panic!(
+                        "{label}/{format:?}: fusion and open-coded disagree on Ok/Err arm: \
+                         fusion={a:?}, open_coded={b:?}",
+                    ),
+                }
+            }
+        }
     }
 }

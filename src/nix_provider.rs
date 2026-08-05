@@ -119,8 +119,7 @@ impl Provider for NixProvider {
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        let value = self.load().map_err(|e| FigmentError::from(e.to_string()))?;
-        crate::provider::provider_data_from_value(value, Format::Nix)
+        crate::provider::provider_data_from_shikumi_load(self.load(), Format::Nix)
     }
 }
 
