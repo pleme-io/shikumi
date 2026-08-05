@@ -3371,9 +3371,9 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.33";
+        version = "0.1.34";
         edition = "2024";
-        sha256 = "08jb5v8z16gnxhnp0kzfify9w55q5q84j68c1rfkd8s4q5r5d9h1";
+        sha256 = "1v95haq8116dn26nkkrdb67m7byp5j6cb5pdsah4pbbx865nwzg8";
         procMacro = true;
         libName = "gen_macros";
         authors = [
@@ -3398,9 +3398,9 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.33";
+        version = "0.1.34";
         edition = "2024";
-        sha256 = "002a8pnilcaivrv7il6p8ws23dnqfip4f6rzh46nm1wjcn58gafn";
+        sha256 = "10v7vzz6yfm0h4lvb2kk1a8p3qq5zmzxvaam9xj28fs13fql40il";
         libName = "gen_platform";
         authors = [
           "pleme-io"
@@ -3436,9 +3436,9 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.33";
+        version = "0.1.34";
         edition = "2024";
-        sha256 = "1r0gcjbkmngmvrvvx0vv46ajmr0hpqpizldy200ifdbvfx8y2p64";
+        sha256 = "053lmy69jzvzcibmb07skzjfdyfiljvqrh2lfhprx6gx76s3kyhy";
         libName = "gen_types";
         authors = [
           "pleme-io"
@@ -9131,7 +9131,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.462";
+        version = "0.1.463";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9569,9 +9569,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.29";
+        version = "0.3.31";
         edition = "2021";
-        sha256 = "1fqakaq3h7ip90s1jq2s3hljma12n4w2xakf08nlf0k6jgwi95rx";
+        sha256 = "0xa47fdxpczb0zyk2pmrlrnnwf35sf531gzy4zrdvvj8q5z75bwl";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9586,9 +9586,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.29";
+        version = "0.3.31";
         edition = "2021";
-        sha256 = "0acgp1zpmm0yrbhncki2vlkcfa1q2qx94fsnw5as93n5axla5jn5";
+        sha256 = "0wikgspfd2jmv7b7sq4qpvcw9dfg8w4nwj6j78g0125qm4fp2xgi";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
