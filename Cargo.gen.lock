@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "e14dd880f1cbdeb3626153b41cb87d69095a3c6d851c8326bbb88cbe4d3426a8",
+  "cargo_lock_sha256": "fb485590d064fdd3c60b691562bbab63d43fd2f4f47cdb0ddcffe1bc6d6684f5",
   "manifest_sha256": {
-    "Cargo.toml": "21ef2685e24f289851ab8b68e334e030f1617f519b39f6964fada5891e130c23"
+    "Cargo.toml": "83dfe23c58785a1310f4b39769612bdc5cc96abd811b9c178fdd0eaadb05784a"
   },
   "target_resolves": {
     "base": {
@@ -811,7 +811,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": {
+      "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -4006,7 +4006,7 @@
     "pin-project-lite-0.2.17": {
       "edition": "2018"
     },
-    "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": {
+    "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": {
       "edition": "2024",
       "proc_macro": true
     },
@@ -4153,7 +4153,7 @@
     }
   },
   "git_nar_sha256": {
-    "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": "sha256-cBTKeWcJ+GJnCjPhnpJrWAEtUrhIpNUkPKj6gMCdK04="
+    "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": "sha256-9D2RNR8RziW66m33xrp8V0uuAHTP1ym4wKmNrDXnfqY="
   },
   "flake_metadata": {}
 }
