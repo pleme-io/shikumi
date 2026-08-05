@@ -317,6 +317,50 @@ impl Format {
         matches!(self.provenance(), FormatProvenance::ShikumiBuilt)
     }
 
+    /// Whether this format is loaded by one of figment's built-in
+    /// providers (as opposed to a shikumi-built provider).
+    ///
+    /// `true` for [`Format::Yaml`] and [`Format::Toml`], which
+    /// [`crate::ProviderChain::with_file`] hands off to
+    /// `figment::providers::Yaml` / `figment::providers::Toml`. Those
+    /// providers tag per-value attribution via
+    /// `figment::Metadata::source = figment::Source::File(_)`, so
+    /// [`crate::ShikumiError::failing_source`] resolves them by path
+    /// equality rather than by metadata-name prefix.
+    ///
+    /// `false` for [`Format::Lisp`] (loaded by [`crate::LispProvider`])
+    /// and [`Format::Nix`] (loaded by [`crate::NixProvider`]); those
+    /// providers tag per-value attribution via
+    /// `figment::Metadata::name = "<format>: <path>"` (see
+    /// [`Self::metadata_name`]).
+    ///
+    /// The source-altitude peer of [`FormatProvenance::is_figment_builtin`],
+    /// closing the two-corner sibling-predicate pair on the source
+    /// altitude that the provenance altitude already closed
+    /// ([`FormatProvenance::is_figment_builtin`] /
+    /// [`FormatProvenance::is_shikumi_built`]). Peer of the shikumi-side
+    /// [`Self::has_shikumi_provider`]: the two predicates form a
+    /// closed binary partition over [`Format::ALL`], pinned pointwise
+    /// by `format_provider_class_predicates_are_a_closed_binary_partition`.
+    /// The partition-symmetric shape means consumers reading the
+    /// figment-builtin half of the (figment-builtin × shikumi-built)
+    /// axis no longer negate `has_shikumi_provider` — a shape whose
+    /// polarity a future tertiary provider class (e.g. a Vault or HTTP
+    /// provider that is neither) would silently flip: `!has_shikumi_provider`
+    /// would then include the tertiary alongside the figment-builtin
+    /// half, whereas the direct predicate stays true only for the
+    /// figment-builtin cell and forces the tertiary provider class to
+    /// declare its own predicate.
+    ///
+    /// Convenience over [`Self::provenance`]; equivalent to
+    /// `self.provenance() == FormatProvenance::FigmentBuiltin`. New code
+    /// that needs to distinguish more than the binary should prefer the
+    /// typed accessor.
+    #[must_use]
+    pub fn has_figment_builtin_provider(self) -> bool {
+        matches!(self.provenance(), FormatProvenance::FigmentBuiltin)
+    }
+
     /// Canonical `figment::Metadata::name` shape used by shikumi-built
     /// providers for per-value attribution: `"<format>: <path>"` (e.g.
     /// `"lisp: /home/u/.config/app/app.lisp"`,
@@ -3877,6 +3921,81 @@ mod tests {
         assert!(!Format::Toml.has_shikumi_provider());
         assert!(Format::Lisp.has_shikumi_provider());
         assert!(Format::Nix.has_shikumi_provider());
+    }
+
+    #[test]
+    fn format_has_figment_builtin_provider_yaml_and_toml_only() {
+        // Per-variant polarity pin on the figment-builtin-side
+        // sibling predicate: Yaml and Toml route to the figment
+        // built-in providers, Lisp and Nix do not. Mirrors the
+        // shikumi-side `format_has_shikumi_provider_lisp_and_nix_only`
+        // pointwise on the other half of the binary partition.
+        assert!(Format::Yaml.has_figment_builtin_provider());
+        assert!(Format::Toml.has_figment_builtin_provider());
+        assert!(!Format::Lisp.has_figment_builtin_provider());
+        assert!(!Format::Nix.has_figment_builtin_provider());
+    }
+
+    #[test]
+    fn format_has_figment_builtin_provider_agrees_with_provenance_is_figment_builtin() {
+        // The source-altitude predicate and the provenance-altitude
+        // predicate on the same corner (`FigmentBuiltin`) must agree
+        // pointwise across `Format::ALL` — the source-altitude peer
+        // is a thin lift of `self.provenance().is_figment_builtin()`,
+        // and the two entry points cannot drift. Mirror of the
+        // shikumi-side `format_provenance_agrees_with_has_shikumi_provider`
+        // on the figment-builtin corner.
+        for f in Format::ALL {
+            assert_eq!(
+                f.has_figment_builtin_provider(),
+                f.provenance() == FormatProvenance::FigmentBuiltin,
+                "has_figment_builtin_provider and provenance must agree on {f:?}",
+            );
+            assert_eq!(
+                f.has_figment_builtin_provider(),
+                f.provenance().is_figment_builtin(),
+                "has_figment_builtin_provider and provenance().is_figment_builtin() \
+                 must agree on {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provider_class_predicates_are_a_closed_binary_partition() {
+        // The two source-altitude provider-class predicates
+        // (`has_shikumi_provider` / `has_figment_builtin_provider`)
+        // form a closed binary partition over `Format::ALL`: every
+        // variant satisfies exactly one, none satisfy neither, none
+        // satisfy both. This is the source-altitude peer of the
+        // provenance-altitude XOR pin
+        // (`is_shikumi_built` XOR `is_figment_builtin`) inside
+        // `format_provenance_all_covers_every_provenance_over_format_all`
+        // and its neighbour predicate-disjointness assertion. A future
+        // tertiary provider class (e.g. a Vault or HTTP provider) landing
+        // as a third `FormatProvenance` variant would fail this test —
+        // by design: the new class must declare its own predicate and
+        // its own partition arm rather than silently landing under the
+        // negation of one of the existing two.
+        for f in Format::ALL {
+            assert_ne!(
+                f.has_shikumi_provider(),
+                f.has_figment_builtin_provider(),
+                "provider-class is binary; the two predicates must disagree pointwise on {f:?}"
+            );
+        }
+        let shikumi_count = Format::ALL
+            .iter()
+            .filter(|f| f.has_shikumi_provider())
+            .count();
+        let figment_count = Format::ALL
+            .iter()
+            .filter(|f| f.has_figment_builtin_provider())
+            .count();
+        assert_eq!(
+            shikumi_count + figment_count,
+            Format::ALL.len(),
+            "the two provider-class predicates must partition Format::ALL exhaustively",
+        );
     }
 
     #[test]
