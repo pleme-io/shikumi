@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "c9b587fd569e969331aac920b4e964aaad80d3845da65aa4e9abcae63309248d",
+  "cargo_lock_sha256": "6e296fd734d581402395e19d9229a877bf2397dab4e6dcc3ec195fba7b57ef26",
   "manifest_sha256": {
-    "Cargo.toml": "27f899b82c48af77c0360245812e8c33cc40d3efb3313edb726ec818578526e6"
+    "Cargo.toml": "396ac6f9b911e5c0d0b3a96a778fb9244b73d61b76d8dcbb71ae382108183421"
   },
   "target_resolves": {
     "base": {
@@ -808,44 +808,6 @@
       },
       "pin-project-lite-0.2.17": {
         "runtime_dependencies": [],
-        "build_dependencies": [],
-        "features": []
-      },
-      "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": {
-        "runtime_dependencies": [
-          {
-            "name": "proc_macro2",
-            "package_key": "proc-macro2-1.0.107",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": false,
-            "target": null,
-            "tree": "target"
-          },
-          {
-            "name": "quote",
-            "package_key": "quote-1.0.47",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": false,
-            "target": null,
-            "tree": "target"
-          },
-          {
-            "name": "syn",
-            "package_key": "syn-2.0.119",
-            "kind": "normal",
-            "features": [
-              "full"
-            ],
-            "uses_default_features": true,
-            "optional": false,
-            "target": null,
-            "tree": "target"
-          }
-        ],
         "build_dependencies": [],
         "features": []
       },
@@ -4006,10 +3968,6 @@
     "pin-project-lite-0.2.17": {
       "edition": "2018"
     },
-    "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": {
-      "edition": "2024",
-      "proc_macro": true
-    },
     "proc-macro2-1.0.107": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -4152,8 +4110,6 @@
       "build_script": "build.rs"
     }
   },
-  "git_nar_sha256": {
-    "pleme-hotswap-derive-0.1.1-d5b0da01fcd872328b1a05a4626e395ec72fca09": "sha256-9D2RNR8RziW66m33xrp8V0uuAHTP1ym4wKmNrDXnfqY="
-  },
+  "git_nar_sha256": {},
   "flake_metadata": {}
 }
