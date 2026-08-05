@@ -6885,6 +6885,263 @@ impl ProvenanceMap {
         self.source_kind_histogram().has_low_support()
     }
 
+    /// `true` exactly when this fold's observed
+    /// [`crate::ConfigSourceKind`] support sits at the **top** of the
+    /// support-cardinality interval — at most *one* unobserved cell,
+    /// excising the cardinality-`2` dual-singular-collapse case where
+    /// the singleton coincides with the cardinality-`1` unobserved-
+    /// cell shape ([`crate::ConfigSourceKind`] carries three cells, so
+    /// no such collapse ever fires at the source-kind altitude). The
+    /// **high-support-source-kind-counts boolean predicate** on the
+    /// source-kind altitude, the strict-singular-gap-or-full-cover
+    /// corner of the support-cardinality magnitude-direction ternary
+    /// partition `(low_support, strict_partial_cover, high_support)`
+    /// — the top leg of the magnitude ternary, folding the full-cover
+    /// and the strict singleton-gap boundaries into a single named
+    /// high-magnitude corner. Routes through
+    /// [`crate::AxisHistogram::has_high_support`] one altitude down:
+    /// the single-pass short-circuiting scan over the fixed-
+    /// cardinality counts vector that finds the *second* zero cell
+    /// and short-circuits, bounded at two zero witnesses, strictly
+    /// tighter than any of the four documented open-coded surfaces
+    /// one seam over.
+    ///
+    /// The **high-magnitude-source-kind-counts peer** of the four
+    /// documented surface forms consumers previously re-derived
+    /// inline: `map.source_kinds_full_cover() ||
+    /// (map.source_kinds_singular_gap() &&
+    /// !map.source_kinds_singular_support())` (the defining strict-
+    /// singular-gap-or-full-cover disjunction on three named
+    /// histogram-side peers — three method calls across three named
+    /// predicates with a boolean or plus a negation),
+    /// `map.absent_source_kinds_count() <= 1 &&
+    /// map.contributing_source_kinds_count() >= 2` (the coverage-gap-
+    /// scalar dual-interval surface, which pays for two full-axis
+    /// scans and equates two `usize`s against two magic thresholds
+    /// — the `>= 2` clause excises the cardinality-`2` dual-singular
+    /// collapse), `map.contributing_source_kinds_count() + 1 >=
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>() &&
+    /// map.contributing_source_kinds_count() >= 2` (the support-
+    /// scalar dual-interval surface on the complementary side of the
+    /// same partition, which pays for a full-axis scan and pulls in
+    /// the [`crate::axis_cardinality`] turbofish with `+ 1`
+    /// arithmetic against a magic threshold), and
+    /// `map.absent_source_kinds().len() <= 1 &&
+    /// map.contributing_source_kinds().len() >= 2` (the dual-`Vec`
+    /// form, which allocates *two* `Vec<crate::ConfigSourceKind>`
+    /// values just to peek their lengths). The four forms drifted in
+    /// subtle ways at every consumer site (allocation vs. scalar,
+    /// turbofish vs. name-only, support side vs. coverage-gap side,
+    /// three-way structural disjunction vs. dual interval arithmetic).
+    /// This lift names the high-support-source-kind-counts predicate
+    /// directly at the source-kind-altitude surface with a single-
+    /// pass short-circuiting scan — the typed boolean every operator-
+    /// facing *"did the fold land in the high-magnitude corner of the
+    /// source-kind-support-cardinality interval?"* check reads off as
+    /// a single method call.
+    ///
+    /// The source-kind-altitude high-support-predicate peer that
+    /// **closes the "high-support across altitudes" projection**
+    /// already carried at the tier altitude by
+    /// [`Self::tiers_high_support`] and seeded at the diff altitude
+    /// by [`crate::ConfigDiff::kinds_high_support`]. The pattern is
+    /// the same at every altitude: fuse the four documented open-
+    /// coded surface forms (strict-singular-gap-or-full-cover
+    /// disjunction, coverage-gap-scalar dual-interval, support-
+    /// scalar dual-interval, dual-`Vec` dual-length) into a single
+    /// boolean predicate named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::has_high_support`] primitive
+    /// one altitude down. Closes the top corner of the *magnitude-
+    /// direction* projection at the source-kind altitude opened by
+    /// [`Self::source_kinds_low_support`] on the bottom corner and
+    /// the vacuously-`false` strict interior — on the cardinality-
+    /// `3` source-kind axis the strict interior is empty (interval
+    /// `[2, cardinality - 2] = [2, 1]`), so the ternary
+    /// `(low_support, strict_partial_cover, high_support)` collapses
+    /// to the *bipartition* `(low_support, high_support)` at this
+    /// altitude — non-vacuous on both sides. The magnitude-direction
+    /// projection at the source-kind altitude is closed with this
+    /// lift.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude —
+    /// the high-magnitude corner is non-vacuous.**
+    /// [`crate::ConfigSourceKind`] carries three cells (`Defaults`,
+    /// `Env`, `File`), so `source_kinds_high_support()` reads `false`
+    /// on the empty map (three unobserved cells) and on every
+    /// singleton-support fold (two unobserved cells), and `true` on
+    /// every two-source-kind partial cover
+    /// ([`Self::source_kinds_singular_gap`] fires with one
+    /// unobserved cell) and on every uniform three-source-kind cover
+    /// ([`Self::source_kinds_full_cover`] fires with zero unobserved
+    /// cells). The two magnitude corners partition every fold at the
+    /// source-kind altitude — the strict-interior middle leg is
+    /// vacuously empty on this cardinality-`3` axis, so
+    /// `(low_support, high_support)` is a strict bipartition of the
+    /// four source-kind-boundary-defined shape-corners: the empty-
+    /// map and singleton-support shapes on the `false` side of
+    /// high-support (the `true` side of low-support), the singleton-
+    /// gap (two-source-kind partial cover) and full-cover shapes on
+    /// the `true` side of high-support (the `false` side of low-
+    /// support). Peer of the diff altitude's degenerate two-way
+    /// partition `(kinds_low_support, kinds_high_support)` on
+    /// cardinality-`3` [`crate::DiffLineKind`].
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map:
+    /// the empty map observes zero cells, so every cell is
+    /// unobserved (three zeros on the cardinality-`3` axis) — the
+    /// "at most one unobserved" predicate fails. Matches
+    /// [`crate::AxisHistogram::has_high_support`]'s empty-histogram
+    /// `false` convention one altitude down on every cardinality-
+    /// `>= 2` axis. The empty map sits on the disjoint
+    /// [`Self::source_kinds_low_support`] peer at the *bottom* of
+    /// the magnitude interval — the two magnitude corners partition
+    /// every fold at the source-kind altitude on the collapsed
+    /// bipartition. Matches [`Self::tiers_high_support`]'s empty-
+    /// map `false` polarity on the tier altitude and
+    /// [`crate::ConfigDiff::kinds_high_support`]'s empty-diff
+    /// `false` polarity on the diff altitude in the same
+    /// projection.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// fold whose observed support is a single
+    /// [`crate::ConfigSourceKind`]: the support cardinality is `1`
+    /// (two unobserved cells on the cardinality-`3` axis), so the
+    /// "at most one unobserved" predicate fails. Every fold of only-
+    /// `Defaults`, only-`Env`, or only-`File` leaves is a witness on
+    /// the `false` side. Direct witness of the disjointness
+    /// `source_kinds_singular_support ⇒ !source_kinds_high_support`
+    /// on every cardinality-`>= 2` axis.
+    ///
+    /// **Two-source-kind partial cover convention** — returns `true`
+    /// on every fold whose observed support is exactly two
+    /// [`crate::ConfigSourceKind`] cells: the support cardinality is
+    /// `2` (one unobserved cell on the cardinality-`3` axis), so the
+    /// "at most one unobserved" predicate holds *and* the non-
+    /// singleton clause `nonzeros >= 2` holds. Matches
+    /// [`Self::source_kinds_singular_gap`]'s `true` side on the same
+    /// fixture — direct witness of the strict subsumption
+    /// `source_kinds_singular_gap ⇒ source_kinds_high_support` on
+    /// the cardinality-`>= 3` axis where the dual-singular-collapse
+    /// never fires. Distinguishes the source-kind altitude from the
+    /// tier altitude, where two-tier partial cover falls on the
+    /// strict-interior corner (support size `2` on the cardinality-
+    /// `4` tier axis) and lands on `tiers_high_support == false`.
+    ///
+    /// **Uniform three-source-kind cover convention** — returns
+    /// `true` on every fold where each [`crate::ConfigSourceKind`]
+    /// cell was observed at least once: the support cardinality is
+    /// `3` (no unobserved cells on the cardinality-`3` axis), so the
+    /// "at most one unobserved" predicate holds (zero unobserved
+    /// cells fits the top boundary). Matches
+    /// [`Self::source_kinds_full_cover`]'s `true` side on the same
+    /// fixture — the strict subsumption `source_kinds_full_cover ⇒
+    /// source_kinds_high_support` fires on every implementor.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_high_support() ==
+    ///   source_kind_histogram().has_high_support()` — both project
+    ///   the same predicate off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `source_kinds_high_support() ⇔ source_kinds_full_cover() ||
+    ///   (source_kinds_singular_gap() &&
+    ///   !source_kinds_singular_support())` — the defining strict-
+    ///   singular-gap-or-full-cover disjunction on three named
+    ///   histogram-side peers. The high-support corner folds the
+    ///   full-cover and the strict singleton-gap boundaries into one
+    ///   named high-magnitude corner. The
+    ///   `!source_kinds_singular_support()` clause is vacuously
+    ///   `true` on the cardinality-`3` axis when
+    ///   `source_kinds_singular_gap()` fires (support size
+    ///   `axis_cardinality - 1 = 2 > 1`), so the disjunction reduces
+    ///   to `source_kinds_full_cover() ||
+    ///   source_kinds_singular_gap()` at the source-kind altitude,
+    ///   but the raw form is pinned so downstream lifts to
+    ///   cardinality-`2` sub-axes inherit the excision verbatim.
+    /// - `source_kinds_high_support() ==
+    ///   (absent_source_kinds_count() <= 1 &&
+    ///   contributing_source_kinds_count() >= 2)` always — the
+    ///   coverage-gap-scalar dual-interval form, without allocating
+    ///   either `Vec<crate::ConfigSourceKind>`. On the cardinality-
+    ///   `3` axis the `>= 2` clause is redundant with the `<= 1`
+    ///   clause via the partition invariant
+    ///   `contributing_source_kinds_count + absent_source_kinds_count
+    ///   == axis_cardinality == 3` (absent_count <= 1 forces
+    ///   contributing_count >= 2), but the raw dual form lifts
+    ///   verbatim to cardinality-`2` sub-axes where the excision is
+    ///   load-bearing.
+    /// - `source_kinds_high_support() ==
+    ///   (contributing_source_kinds_count() + 1 >=
+    ///   axis_cardinality::<crate::ConfigSourceKind>() &&
+    ///   contributing_source_kinds_count() >= 2)` always — the
+    ///   support-scalar dual-interval form on the complementary side
+    ///   of the same partition. The `+ 1 >= axis_cardinality` clause
+    ///   names "support magnitude at least `cardinality - 1`"; the
+    ///   `>= 2` clause excises the cardinality-`2` singleton.
+    /// - `source_kinds_high_support() == (absent_source_kinds().len()
+    ///   <= 1 && contributing_source_kinds().len() >= 2)` always —
+    ///   the dual-`Vec` form, which allocates *two*
+    ///   `Vec<crate::ConfigSourceKind>` values.
+    /// - `source_kinds_high_support() ⇒ !source_kinds_low_support()`
+    ///   on every axis with cardinality `>= 2` (the source-kind axis
+    ///   carries three cells): high support has size `>= 2`; low
+    ///   support has size `<= 1`. The two magnitude corners sit at
+    ///   opposite ends of the support-cardinality interval on every
+    ///   non-degenerate axis.
+    /// - `source_kinds_high_support() ⇔ !source_kinds_low_support()`
+    ///   on the cardinality-`3` source-kind axis — the strict
+    ///   interior is empty (interval `[2, cardinality - 2] = [2, 1]`
+    ///   is empty), so the ternary collapses to the strict
+    ///   *bipartition* `(low_support, high_support)`. The two peers
+    ///   are strict logical negations of each other at this
+    ///   altitude.
+    /// - `source_kinds_high_support() ⇒ source_kinds_any_observed()`
+    ///   on every axis with cardinality `>= 2`: high support has
+    ///   size `>= 2 >= 1`, so at least one cell was observed. The
+    ///   empty map sits on the disjoint `!source_kinds_any_observed`
+    ///   boundary at the bottom of the magnitude interval.
+    /// - `source_kinds_full_cover() ⇒ source_kinds_high_support()` —
+    ///   the strict subsumption over the top full-cover peer via the
+    ///   `is_full_cover()` disjunct on the bridge. The full-cover
+    ///   corner always sits inside the high-magnitude corner.
+    /// - `source_kinds_singular_gap() ⇒ source_kinds_high_support()`
+    ///   on every axis with cardinality `>= 3` (the source-kind axis
+    ///   carries three cells): singleton-gap has support size
+    ///   `axis_cardinality - 1 >= 2`, so the "at most one
+    ///   unobserved" *and* "at least two observed" clauses both hold.
+    /// - `source_kinds_singular_support() ⇒
+    ///   !source_kinds_high_support()` on every axis with
+    ///   cardinality `>= 2` (the source-kind axis carries three
+    ///   cells): singleton-support has support size `1 < 2`, so the
+    ///   `>= 2` clause fails uniformly.
+    /// - **Cross-surface bridge law** —
+    ///   `map.source_kinds_high_support() ==
+    ///   map.source_kind_histogram().support_cardinality_class().is_high_support()`
+    ///   always. The class-side projection lands on a high-support
+    ///   variant exactly when the histogram-side predicate fires.
+    ///   Peer of the histogram-side bridge one altitude down,
+    ///   closing the (histogram, class) duality on the high-
+    ///   magnitude corner at the source-kind altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the high-support scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality;
+    /// the returned `bool` reads one predicate. The scan short-
+    /// circuits on the *second* zero cell (bounded at two zero-
+    /// witness cells visited on any two-or-more-unobserved-cell
+    /// fold), strictly tighter than the four documented open-coded
+    /// surfaces — no three-way boolean disjunction across three
+    /// named predicates, no `Vec<crate::ConfigSourceKind>`
+    /// allocation, no [`crate::axis_cardinality`] turbofish with
+    /// `+ 1` arithmetic against a magic threshold.
+    #[must_use]
+    pub fn source_kinds_high_support(&self) -> bool {
+        self.source_kind_histogram().has_high_support()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -69980,6 +70237,520 @@ mod progressive_tests {
             let hist = map.source_kind_histogram();
             let positive_count = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = positive_count <= 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── `source_kinds_high_support` — the source-kind-altitude
+    //    high-support boolean predicate peer of `tiers_high_support`
+    //    on the tier altitude and `ConfigDiff::kinds_high_support`
+    //    on the diff altitude, closing the "high-support across
+    //    altitudes" projection. The strict-singular-gap-or-full-
+    //    cover corner (at-most-one unobserved cell with support at
+    //    least two) of the magnitude-direction ternary partition
+    //    `(low_support, strict_partial_cover, high_support)` at the
+    //    source-kind altitude, folding the full-cover and strict
+    //    singleton-gap boundaries into a single named high-magnitude
+    //    corner. Closes the magnitude-direction bipartition
+    //    `(low_support, high_support)` on the cardinality-`3` source-
+    //    kind axis where the strict interior is vacuously empty. ──
+
+    #[test]
+    fn source_kinds_high_support_matches_source_kind_histogram_has_high_support_pointwise() {
+        // Routing pin: `source_kinds_high_support` routes through
+        // `source_kind_histogram().has_high_support()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive.
+        // Source-kind-altitude peer of
+        // `tiers_high_support_matches_tier_histogram_has_high_support_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_matches_kind_histogram_has_high_support_pointwise`
+        // on the diff altitude in the "high-support across
+        // altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().has_high_support();
+            assert_eq!(map.source_kinds_high_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_matches_defining_strict_singular_gap_or_full_cover_pointwise() {
+        // Defining strict-singular-gap-or-full-cover form:
+        // `source_kinds_high_support() ⇔ source_kinds_full_cover()
+        // || (source_kinds_singular_gap() &&
+        // !source_kinds_singular_support())`. Pins the predicate
+        // against the three-way disjunction on three named
+        // histogram-side peers consumers reach for when they open-
+        // code the high-magnitude corner as a boolean fold over the
+        // full-cover and strict singleton-gap boundaries. The
+        // `!source_kinds_singular_support()` clause is vacuously
+        // `true` on the cardinality-`3` axis when
+        // `source_kinds_singular_gap()` fires (support size
+        // `axis_cardinality - 1 = 2 > 1`), so the disjunction
+        // reduces to `source_kinds_full_cover ||
+        // source_kinds_singular_gap` at the source-kind altitude —
+        // but the raw form is pinned here so downstream lifts to
+        // cardinality-`2` sub-axes inherit the excision verbatim.
+        // Peer of
+        // `tiers_high_support_matches_defining_strict_singular_gap_or_full_cover_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let via_union = map.source_kinds_full_cover()
+                || (map.source_kinds_singular_gap() && !map.source_kinds_singular_support());
+            assert_eq!(
+                via_seam, via_union,
+                "source_kinds_high_support ({via_seam}) must agree with \
+                 source_kinds_full_cover || (source_kinds_singular_gap && \
+                 !source_kinds_singular_support) ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_agrees_with_absent_source_kinds_count_at_most_one_and_support_at_least_two_pointwise()
+     {
+        // Coverage-gap-scalar dual-interval surface:
+        // `source_kinds_high_support() ==
+        // (absent_source_kinds_count() <= 1 &&
+        // contributing_source_kinds_count() >= 2)` on every fixture.
+        // The coverage-gap-side surfacing of the same boolean,
+        // without allocating either `Vec<ConfigSourceKind>`. On the
+        // cardinality-`3` axis the `>= 2` clause is redundant with
+        // the `<= 1` clause via the partition invariant
+        // `contributing_count + absent_count == axis_cardinality ==
+        // 3` (absent_count <= 1 forces contributing_count >= 2), but
+        // the raw dual form lifts verbatim to cardinality-`2` sub-
+        // axes where the excision is load-bearing. Peer of
+        // `tiers_high_support_agrees_with_absent_tiers_count_at_most_one_and_support_at_least_two_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let gap = map.absent_source_kinds_count();
+            let support = map.contributing_source_kinds_count();
+            let via_scalar = gap <= 1 && support >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "source_kinds_high_support ({via_seam}) must agree with \
+                 absent_source_kinds_count <= 1 && contributing_source_kinds_count \
+                 >= 2 (gap={gap}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_agrees_with_contributing_source_kinds_count_plus_one_at_least_axis_cardinality_pointwise()
+     {
+        // Support-scalar dual-interval form:
+        // `source_kinds_high_support() ==
+        // (contributing_source_kinds_count() + 1 >=
+        // axis_cardinality::<ConfigSourceKind>() &&
+        // contributing_source_kinds_count() >= 2)` on every fixture.
+        // The support-side surfacing of the same boolean — a high-
+        // magnitude fold observes at least `axis_cardinality - 1`
+        // cells; the `>= 2` clause excises the cardinality-`2`
+        // singleton where the dual-singular-collapse fires. Dual of
+        // the coverage-gap-scalar surface on the complementary side
+        // of the same partition via the `contributing + absent ==
+        // axis_cardinality` invariant. Peer of
+        // `tiers_high_support_agrees_with_contributing_tiers_count_plus_one_at_least_axis_cardinality_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let support = map.contributing_source_kinds_count();
+            let via_scalar =
+                support + 1 >= crate::axis_cardinality::<crate::ConfigSourceKind>() && support >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "source_kinds_high_support ({via_seam}) must agree with \
+                 contributing_source_kinds_count + 1 >= axis_cardinality && \
+                 contributing_source_kinds_count >= 2 (support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_agrees_with_absent_source_kinds_len_at_most_one_and_support_len_at_least_two_pointwise()
+     {
+        // Dual-`Vec` dual-length form: `source_kinds_high_support()
+        // == (absent_source_kinds().len() <= 1 &&
+        // contributing_source_kinds().len() >= 2)` on every fixture.
+        // Pins the predicate against the `Vec<ConfigSourceKind>`
+        // length form consumers reach for when they already hold
+        // both support and coverage-gap vectors. Allocating peer of
+        // the support-scalar dual-interval surface one pin over.
+        // Peer of
+        // `tiers_high_support_agrees_with_contributing_tiers_len_at_least_axis_cardinality_minus_one_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let gap_len = map.absent_source_kinds().len();
+            let support_len = map.contributing_source_kinds().len();
+            let via_vec = gap_len <= 1 && support_len >= 2;
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_high_support ({via_seam}) must agree with \
+                 absent_source_kinds().len() <= 1 && contributing_source_kinds().len() >= 2 \
+                 ({via_vec}, gap_len={gap_len}, support_len={support_len})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_bridges_support_cardinality_class_is_high_support_pointwise() {
+        // Cross-surface bridge law:
+        // `map.source_kinds_high_support() ==
+        // map.source_kind_histogram().support_cardinality_class().is_high_support()`
+        // always. The class-side projection lands on a high-support
+        // variant exactly when the histogram-side predicate fires.
+        // Peer of the histogram-side bridge one altitude down,
+        // closing the (histogram, class) duality on the high-
+        // magnitude corner at the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let via_class = map
+                .source_kind_histogram()
+                .support_cardinality_class()
+                .is_high_support();
+            assert_eq!(
+                via_seam, via_class,
+                "source_kinds_high_support ({via_seam}) must agree with \
+                 support_cardinality_class().is_high_support() ({via_class}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_empty_map_is_false() {
+        // Empty-map boundary: the empty map observes zero cells, so
+        // every cell is unobserved (three zeros on the cardinality-
+        // `3` axis) — the "at most one unobserved" predicate fails
+        // and `source_kinds_high_support` reads `false`. Matches
+        // `has_high_support` reading `false` on the empty histogram
+        // one altitude down for every cardinality-`>= 2` axis.
+        // Direct witness of the disjointness `source_kinds_low_support
+        // ⇒ !source_kinds_high_support` on the empty-map corner —
+        // the empty map sits at the *bottom* of the magnitude
+        // interval, not the top. Orthogonal polarity to
+        // `source_kinds_low_support` reading `true` on the empty
+        // map — the two magnitude corners partition every fold at
+        // the source-kind altitude on the collapsed bipartition.
+        // Peer of `tiers_high_support_empty_map_is_false` on the
+        // tier altitude and `kinds_high_support_empty_diff_is_false`
+        // on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_high_support());
+        assert!(empty.source_kinds_low_support());
+    }
+
+    #[test]
+    fn source_kinds_high_support_pure_progressive_singleton_support_is_false() {
+        // Singleton-support pin: the pure-progressive `Prog` fold
+        // attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — support cardinality
+        // is `1` (two unobserved cells on the cardinality-`3` axis),
+        // so the "at most one unobserved" predicate fails and
+        // `source_kinds_high_support` reads `false`. Direct witness
+        // of the disjointness `source_kinds_singular_support ⇒
+        // !source_kinds_high_support` on every cardinality-`>= 2`
+        // axis. Peer of `tiers_high_support_singleton_support_is_false`
+        // on the tier altitude and
+        // `kinds_high_support_singleton_support_is_false` on the diff
+        // altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(r.provenance().source_kinds_singular_support());
+        assert!(!r.provenance().source_kinds_high_support());
+    }
+
+    #[test]
+    fn source_kinds_high_support_two_source_kind_partial_cover_is_true() {
+        // Two-source-kind cover pin: a fold observing exactly two
+        // `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
+        // `Env` silent) has support cardinality `2` on the
+        // cardinality-`3` axis — one unobserved cell, so the "at
+        // most one unobserved" predicate holds *and* the non-
+        // singleton clause holds (two observed cells).
+        // `source_kinds_high_support` reads `true`. Direct witness
+        // of the strict subsumption `source_kinds_singular_gap ⇒
+        // source_kinds_high_support` on the cardinality-`>= 3` axis
+        // where the dual-singular-collapse never fires, and of the
+        // non-vacuous content on the `true` side of the high-support
+        // boundary at the source-kind altitude. Distinguishes the
+        // source-kind altitude from the tier altitude, where two-
+        // tier partial cover falls on the strict-interior corner
+        // (support size `2` on cardinality-`4` `ConfigTierKind`)
+        // and lands on `tiers_high_support == false`. Peer of
+        // `tiers_high_support_three_tier_partial_cover_is_true` on
+        // the tier altitude — the singleton-gap fixture on the
+        // respective axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert!(m.source_kinds_singular_gap());
+        assert!(m.source_kinds_high_support());
+    }
+
+    #[test]
+    fn source_kinds_high_support_uniform_cover_is_true() {
+        // Uniform-cover pin: every `ConfigSourceKind` cell receives
+        // at least one leaf via the source-kind-histogram mixed
+        // fixture (`{Defaults: 2, Env: 1, File: 1}`) — the support
+        // cardinality is `3` (the full three-cell axis, no
+        // unobserved cells), so the "at most one unobserved"
+        // predicate holds and `source_kinds_high_support` reads
+        // `true`. Direct witness of the strict subsumption
+        // `source_kinds_full_cover ⇒ source_kinds_high_support` on
+        // every axis (the full-cover corner always sits inside the
+        // high-magnitude corner). The uniform three-source-kind
+        // cover partitions the seven coverage-support boundaries
+        // with (`any_observed`=true, `singular_support`=false,
+        // `singular_gap`=false, `full_cover`=true,
+        // `partial_cover`=false, `low_support`=false,
+        // `high_support`=true).
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kinds_full_cover());
+        assert!(r.provenance().source_kinds_high_support());
+    }
+
+    #[test]
+    fn source_kinds_high_support_implies_not_source_kinds_low_support_pointwise() {
+        // Disjointness pin: `source_kinds_high_support() ⇒
+        // !source_kinds_low_support()` on every axis with
+        // cardinality `>= 2` (the source-kind axis carries three
+        // cells). High support has size `>= 2`; low support has size
+        // `<= 1`. The two magnitude corners sit at opposite ends of
+        // the support-cardinality interval on every non-degenerate
+        // axis. Pins the strict pairwise disjointness of the
+        // magnitude-direction ternary's two magnitude legs at the
+        // source-kind altitude. Peer of
+        // `tiers_high_support_implies_not_tiers_low_support_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_implies_not_kinds_low_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_high_support() {
+                assert!(
+                    !map.source_kinds_low_support(),
+                    "high-support source-kind map cannot be low-support on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_agrees_with_negation_of_source_kinds_low_support_pointwise() {
+        // Collapsed-bipartition pin: on the cardinality-`3` source-
+        // kind axis the strict interior is empty (interval `[2,
+        // cardinality - 2] = [2, 1]` is empty), so the magnitude-
+        // direction ternary `(low_support, strict_partial_cover,
+        // high_support)` collapses to the strict bipartition
+        // `(low_support, high_support)`. The two peers are strict
+        // logical negations of each other at this altitude:
+        // `source_kinds_high_support() == !source_kinds_low_support()`
+        // on every fixture. Direct witness of the closure of the
+        // magnitude-direction projection at the source-kind altitude.
+        // Distinguishes the source-kind altitude from the tier
+        // altitude, where the strict interior carries content and
+        // the negation is a strict subsumption
+        // (`high_support ⇒ !low_support`) rather than an equivalence.
+        // Peer of `kinds_high_support_agrees_with_negation_of_kinds_low_support_pointwise`
+        // on the cardinality-`3` diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hi = map.source_kinds_high_support();
+            let lo = map.source_kinds_low_support();
+            assert_eq!(
+                hi, !lo,
+                "source_kinds_high_support ({hi}) must equal !source_kinds_low_support \
+                 ({lo}) on the cardinality-3 source-kind axis (strict interior empty)",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_implies_source_kinds_any_observed_pointwise() {
+        // Subsumption pin: `source_kinds_high_support() ⇒
+        // source_kinds_any_observed()` on every axis with
+        // cardinality `>= 2`. High support has size `>= 2 >= 1`, so
+        // at least one cell was observed. The empty map sits on the
+        // disjoint `!source_kinds_any_observed` boundary at the
+        // bottom of the magnitude interval — every high-support map
+        // is non-empty. Peer of
+        // `tiers_high_support_implies_tiers_any_observed_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_high_support() {
+                assert!(
+                    map.source_kinds_any_observed(),
+                    "high-support source-kind map must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_full_cover_implies_source_kinds_high_support_pointwise() {
+        // Subsumption pin: `source_kinds_full_cover() ⇒
+        // source_kinds_high_support()` on every axis. The full-cover
+        // corner always sits inside the high-magnitude corner via
+        // the `is_full_cover()` disjunct on the bridge. Direct
+        // witness of the strict subsumption between the top
+        // coverage-support boundary and the top magnitude corner at
+        // the source-kind altitude. Peer of
+        // `tiers_full_cover_implies_tiers_high_support_pointwise` on
+        // the tier altitude and
+        // `kinds_full_cover_implies_kinds_high_support_pointwise` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_full_cover() {
+                assert!(
+                    map.source_kinds_high_support(),
+                    "full-cover source-kind map must be high-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_gap_implies_source_kinds_high_support_pointwise() {
+        // Subsumption pin: `source_kinds_singular_gap() ⇒
+        // source_kinds_high_support()` on every axis with
+        // cardinality `>= 3` (the source-kind axis carries three
+        // cells). A singleton-gap fold has support size
+        // `axis_cardinality - 1 = 2 >= 2`, so the "at most one
+        // unobserved" *and* "at least two observed" clauses both
+        // hold. Direct witness of the strict subsumption between
+        // the strict singleton-gap boundary and the top magnitude
+        // corner at the source-kind altitude. Peer of
+        // `tiers_singular_gap_implies_tiers_high_support_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_gap_implies_kinds_high_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_gap() {
+                assert!(
+                    map.source_kinds_high_support(),
+                    "singular-gap source-kind map must be high-support on a \
+                     cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_implies_not_source_kinds_high_support_pointwise() {
+        // Disjointness pin: `source_kinds_singular_support() ⇒
+        // !source_kinds_high_support()` on every axis with
+        // cardinality `>= 2` (the source-kind axis carries three
+        // cells). A singleton-support fold observes exactly one
+        // cell — the `>= 2` clause fails uniformly. The bottom-
+        // magnitude singleton-support fold and the top-magnitude
+        // high-support corner are disjoint on every non-degenerate
+        // axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_support() {
+                assert!(
+                    !map.source_kinds_high_support(),
+                    "singular-support source-kind map cannot be high-support on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_high_support_agrees_with_open_coded_at_most_one_zero_walk() {
+        // Parity against the exact hand-rolled high-support walk
+        // this lift replaces: walk every cell of the source-kind
+        // histogram and count how many carry a zero count and how
+        // many carry a positive count; the high-support predicate
+        // reads `true` iff at most one cell is zero AND at least
+        // two cells are positive (excising the cardinality-`2`
+        // dual-singular collapse). Mirrors the parity pins on the
+        // other coverage-support boundaries.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_high_support();
+            let hist = map.source_kind_histogram();
+            let zero_count = hist.iter().filter(|(_, c)| *c == 0).count();
+            let positive_count = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zero_count <= 1 && positive_count >= 2;
             assert_eq!(via_seam, hand_rolled);
         }
     }
