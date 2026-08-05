@@ -7142,6 +7142,297 @@ impl ProvenanceMap {
         self.source_kind_histogram().has_high_support()
     }
 
+    /// `true` exactly when this fold's observed
+    /// [`crate::ConfigSourceKind`] support sits **strictly between**
+    /// the two singular-cardinality boundaries — at least *two*
+    /// observed cells *and* at least *two* unobserved cells. The
+    /// **strict-partial-cover-source-kind-counts boolean predicate**
+    /// on the source-kind altitude, the boundary-free strict interior
+    /// of the 5-corner support-cardinality partition
+    /// `(is_empty, source_kinds_singular_support,
+    /// source_kinds_strict_partial_cover, source_kinds_singular_gap,
+    /// source_kinds_full_cover)` sitting strictly inside the
+    /// partial-cover middle leg of the coverage trichotomy
+    /// `(!source_kinds_any_observed, source_kinds_partial_cover,
+    /// source_kinds_full_cover)`, and the strict-interior middle leg
+    /// of the magnitude-direction ternary partition
+    /// `(source_kinds_low_support, source_kinds_strict_partial_cover,
+    /// source_kinds_high_support)`. Routes through
+    /// [`crate::AxisHistogram::has_strict_partial_cover`] one altitude
+    /// down: the single-pass short-circuiting scan that finds the
+    /// second zero cell *and* the second nonzero cell over the fixed-
+    /// cardinality counts vector, bounded at four witness cells.
+    ///
+    /// The **strict-interior-source-kind-counts peer** of the four
+    /// documented surface forms consumers previously re-derived
+    /// inline: `map.source_kind_histogram().has_partial_cover() &&
+    /// !map.source_kinds_singular_support() &&
+    /// !map.source_kinds_singular_gap()` (the defining structural-
+    /// conjunction form on the existing named-boundary triad — three
+    /// method calls and two negations across three named predicates),
+    /// `1 < map.contributing_source_kinds_count() &&
+    /// map.contributing_source_kinds_count() + 1 <
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// support-scalar strict-interval form on the named scalar peer
+    /// with both singular boundaries excluded — a full-axis scan and
+    /// the `+ 1 <` strict-bound arithmetic against a magic axis-
+    /// cardinality threshold pulled in through the
+    /// [`crate::axis_cardinality`] turbofish), `1 <
+    /// map.absent_source_kinds_count() &&
+    /// map.absent_source_kinds_count() + 1 <
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// coverage-gap-scalar strict-interval form on the complementary
+    /// side of the same partition, dual of the support-scalar form),
+    /// and `map.contributing_source_kinds().len() >= 2 &&
+    /// map.absent_source_kinds().len() >= 2` (the dual-`Vec` at-
+    /// least-two-of-each form, which allocates *two*
+    /// `Vec<crate::ConfigSourceKind>` values just to peek at their
+    /// lengths). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-
+    /// only, support side vs. coverage-gap side, structural
+    /// conjunction vs. interval arithmetic). This lift names the
+    /// strict-interior-source-kind-counts predicate directly at the
+    /// source-kind-altitude surface with a single-pass short-
+    /// circuiting scan — the typed boolean every operator-facing
+    /// *"did the fold land in the strict interior of the source-
+    /// kind-support-cardinality interval — neither on a singular
+    /// boundary nor on a coverage boundary?"* check reads off as a
+    /// single method call.
+    ///
+    /// The source-kind-altitude strict-partial-cover-predicate peer
+    /// that **climbs the "strict-partial-cover across altitudes"
+    /// projection** already carried at the tier altitude by
+    /// [`Self::tiers_strict_partial_cover`] and seeded at the diff
+    /// altitude by [`crate::ConfigDiff::kinds_strict_partial_cover`].
+    /// The pattern is the same at every altitude: fuse the four
+    /// documented open-coded surface forms (structural-conjunction,
+    /// support-scalar strict-interval, coverage-gap-scalar strict-
+    /// interval, dual-`Vec` at-least-two-of-each) into a single
+    /// boolean predicate named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::has_strict_partial_cover`]
+    /// primitive one altitude down. Closes the strict-interior
+    /// middle leg of the magnitude-direction ternary partition
+    /// `(source_kinds_low_support, source_kinds_strict_partial_cover,
+    /// source_kinds_high_support)` at the source-kind altitude
+    /// opened by [`Self::source_kinds_low_support`] on the bottom
+    /// corner and closed on the top corner by
+    /// [`Self::source_kinds_high_support`] — the magnitude-direction
+    /// ternary is now fully named at the source-kind altitude
+    /// (strict-interior corner vacuously empty on this cardinality-
+    /// `3` axis, but the seam is closed for downstream lifts).
+    ///
+    /// **Cardinality-conditional reachability at the source-kind
+    /// altitude — vacuously `false` on every fold.** The strict
+    /// interior carries witnesses only on axes with
+    /// `axis_cardinality::<A>() >= 4` (the strict interval
+    /// `[2, cardinality - 2]` is empty on cardinality `0`, `1`, `2`,
+    /// or `3`). [`crate::ConfigSourceKind`] carries three cells
+    /// (`Defaults`, `Env`, `File`), so
+    /// `source_kinds_strict_partial_cover()` reads `false` on every
+    /// fold regardless of the observed support — the empty map
+    /// (0 observed, 3 unobserved: fails the "at least two observed"
+    /// clause), every singleton-support fold (1 observed, 2
+    /// unobserved: fails the "at least two observed" clause), every
+    /// two-source-kind partial cover (2 observed, 1 unobserved: the
+    /// singleton-gap boundary, fails the "at least two unobserved"
+    /// clause on cardinality-`3`), and every uniform three-source-
+    /// kind cover (3 observed, 0 unobserved: fails both clauses)
+    /// all read `false`. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s
+    /// cardinality-conditional-reachability convention one altitude
+    /// down, and matches
+    /// [`crate::ConfigDiff::kinds_strict_partial_cover`]'s
+    /// vacuously-`false` polarity on the also-cardinality-`3` diff
+    /// altitude in the same projection. The source-kind altitude is
+    /// therefore uniformly on the `false` side of the strict-
+    /// interior boundary; the seam's value lies in naming the
+    /// boundary for the closed 5-corner support-cardinality
+    /// partition and the closed 3-corner magnitude-direction
+    /// partition at this altitude (both partitions collapse to
+    /// their non-strict-interior corners on cardinality-`3`), and
+    /// for downstream lifts at cardinality-`>= 4` altitudes (tier
+    /// altitude four-cell [`ConfigTierKind`] — one strict-interior
+    /// witness at support cardinality `2`) where the same predicate
+    /// carries content. The vacuously-`false` polarity is pinned
+    /// trait-uniformly by
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s
+    /// cardinality-`3` scan.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map:
+    /// the empty map observes zero cells, so the "at least two
+    /// observed" half of the conjunction fails uniformly. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s empty-
+    /// histogram `false` convention one altitude down. The empty
+    /// map sits on the `false` side of the strict-interior boundary
+    /// — matching [`Self::source_kinds_any_observed`]'s empty-map
+    /// `false` polarity, [`Self::source_kinds_full_cover`]'s empty-
+    /// map `false` polarity, [`Self::source_kinds_singular_support`]'s
+    /// empty-map `false` polarity, [`Self::source_kinds_singular_gap`]'s
+    /// empty-map `false` polarity, and
+    /// [`Self::source_kinds_high_support`]'s empty-map `false`
+    /// polarity. Orthogonal to
+    /// [`Self::source_kinds_low_support`]'s empty-map `true`
+    /// polarity — the empty map is on the *low* side of the
+    /// magnitude interval, not in its strict interior.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// fold whose observed support is a single
+    /// [`crate::ConfigSourceKind`]: the support cardinality is `1`
+    /// (not `>= 2`), so the "at least two observed" half of the
+    /// conjunction fails uniformly. Every fold of only-`Defaults`,
+    /// only-`Env`, or only-`File` leaves is a witness on the
+    /// `false` side. Direct witness of the strict disjointness
+    /// `source_kinds_singular_support ⇒
+    /// !source_kinds_strict_partial_cover` on every axis.
+    ///
+    /// **Two-source-kind partial cover convention** — returns
+    /// `false` on every fold whose observed support is exactly two
+    /// [`crate::ConfigSourceKind`] cells: the coverage gap is `1`
+    /// cell (not `>= 2`), so the "at least two unobserved" half of
+    /// the conjunction fails on the cardinality-`3` source-kind
+    /// axis (the strict-interior witness that would fire on a
+    /// cardinality-`>= 4` axis is absent). A fold observing only
+    /// `Defaults` and `File` (with `Env` silent) is a witness on
+    /// the `false` side: `Env` is the single unobserved cell.
+    /// Matches [`Self::source_kinds_singular_gap`]'s `true` side on
+    /// the same fixture — the singleton-gap boundary sits inside
+    /// the partial-cover middle leg on the cardinality-`3` axis,
+    /// disjoint from the strict-interior corner. Direct witness of
+    /// the strict disjointness `source_kinds_singular_gap ⇒
+    /// !source_kinds_strict_partial_cover` on every axis.
+    ///
+    /// **Uniform three-source-kind cover convention** — returns
+    /// `false` on every fold where each [`crate::ConfigSourceKind`]
+    /// cell was observed at least once: the coverage gap is zero
+    /// cells, so the "at least two unobserved" half of the
+    /// conjunction fails uniformly. Direct witness of the strict
+    /// disjointness `source_kinds_full_cover ⇒
+    /// !source_kinds_strict_partial_cover` on every axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_strict_partial_cover() ==
+    ///   source_kind_histogram().has_strict_partial_cover()` — both
+    ///   project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `source_kinds_strict_partial_cover() ⇔
+    ///   source_kind_histogram().has_partial_cover() &&
+    ///   !source_kinds_singular_support() &&
+    ///   !source_kinds_singular_gap()` always — the defining
+    ///   structural-conjunction form on the existing named-boundary
+    ///   triad: the strict interior is exactly the partial-cover
+    ///   middle leg minus its two singular-cardinality corners.
+    /// - `source_kinds_strict_partial_cover() == (1 <
+    ///   contributing_source_kinds_count() &&
+    ///   contributing_source_kinds_count() + 1 <
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>())`
+    ///   always — the support-scalar strict-interval form, without
+    ///   allocating the `Vec<crate::ConfigSourceKind>`.
+    /// - `source_kinds_strict_partial_cover() == (1 <
+    ///   absent_source_kinds_count() && absent_source_kinds_count()
+    ///   + 1 < crate::axis_cardinality::<crate::ConfigSourceKind>())`
+    ///   always — the coverage-gap-scalar strict-interval form on
+    ///   the complementary side of the same partition.
+    /// - `source_kinds_strict_partial_cover() ==
+    ///   (contributing_source_kinds().len() >= 2 &&
+    ///   absent_source_kinds().len() >= 2)` always — the dual-`Vec`
+    ///   at-least-two-of-each form, which allocates *two*
+    ///   `Vec<crate::ConfigSourceKind>` values.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   source_kinds_any_observed()` on every axis with
+    ///   cardinality `>= 4` (vacuous on
+    ///   [`crate::ConfigSourceKind`] cardinality `3`, where the
+    ///   antecedent is `false` on every fold). Contrapositively,
+    ///   `!source_kinds_any_observed() ⇒
+    ///   !source_kinds_strict_partial_cover()` holds by direct
+    ///   empty-histogram convention on every implementor.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   !source_kinds_full_cover()` always: the strict interior
+    ///   requires `>= 2` unobserved cells, a full cover has zero
+    ///   unobserved cells.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   !source_kinds_singular_support()` always: the strict
+    ///   interior requires `>= 2` observed cells, a singleton
+    ///   support has exactly `1` observed cell.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   !source_kinds_singular_gap()` always: the strict interior
+    ///   requires `>= 2` unobserved cells, a singleton gap has
+    ///   exactly `1` unobserved cell.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   !source_kinds_low_support()` always: the strict interior
+    ///   requires `>= 2` observed cells, low support has `<= 1`
+    ///   observed cell.
+    /// - `source_kinds_strict_partial_cover() ⇒
+    ///   !source_kinds_high_support()` always: the strict interior
+    ///   requires `>= 2` unobserved cells, high support has `<= 1`
+    ///   unobserved cell (and support `>= 2`).
+    /// - **Cardinality-conditional reachability at the source-kind
+    ///   altitude:** `!source_kinds_strict_partial_cover()` on
+    ///   every [`ProvenanceMap`] fixture —
+    ///   [`crate::ConfigSourceKind`] carries only `3` cells and the
+    ///   strict interval `[2, cardinality - 2] = [2, 1]` is empty,
+    ///   so the antecedent never fires. Pinned trait-uniformly by
+    ///   the `axis_histogram_has_strict_partial_cover_*` laws in
+    ///   [`crate::cube::tests`], and altitude-parallel to
+    ///   [`crate::ConfigDiff::kinds_strict_partial_cover`]'s
+    ///   vacuously-`false` polarity on the also-cardinality-`3`
+    ///   diff altitude.
+    /// - `(source_kinds_singular_support,
+    ///   source_kinds_strict_partial_cover,
+    ///   source_kinds_singular_gap)` is pairwise disjoint on every
+    ///   fold — distinct support cardinalities `1`,
+    ///   `[2, cardinality - 2]`, `cardinality - 1` never overlap.
+    ///   Together with the two boundary corners
+    ///   (`!source_kinds_any_observed`, `source_kinds_full_cover`)
+    ///   the five predicates partition every fold on every
+    ///   cardinality-`>= 3` axis — the 5-corner support-cardinality
+    ///   partition at the source-kind altitude is now closed.
+    /// - `(source_kinds_low_support,
+    ///   source_kinds_strict_partial_cover,
+    ///   source_kinds_high_support)` is pairwise disjoint on every
+    ///   fold — the two magnitude corners never overlap the
+    ///   boundary-free strict interior, and low support and high
+    ///   support are disjoint on every cardinality-`>= 2` axis.
+    ///   Together the three predicates form the magnitude-direction
+    ///   ternary partition of the 5-corner support-cardinality
+    ///   partition at the source-kind altitude. On the cardinality-
+    ///   `3` source-kind axis the ternary collapses to the
+    ///   *bipartition* `(source_kinds_low_support,
+    ///   source_kinds_high_support)` via the vacuously-empty strict
+    ///   interior; the seam is closed for downstream lifts to
+    ///   cardinality-`>= 4` axes where the strict interior carries
+    ///   content.
+    /// - **Cross-surface bridge law** —
+    ///   `map.source_kinds_strict_partial_cover() ==
+    ///   map.source_kind_histogram().support_cardinality_class().is_strict_partial_cover()`
+    ///   always. The class-side projection lands on the strict-
+    ///   interior variant exactly when the histogram-side predicate
+    ///   fires. Peer of the histogram-side bridge one altitude down,
+    ///   closing the (histogram, class) duality on the strict-
+    ///   interior corner at the source-kind altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the strict-partial-cover scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `bool` reads one predicate. The
+    /// scan short-circuits once it has witnessed both *two* zero
+    /// counts and *two* nonzero counts (bounded at four witness
+    /// cells visited on any strict-interior histogram — structurally
+    /// unreachable on this cardinality-`3` axis), strictly tighter
+    /// than the four documented open-coded surfaces — no
+    /// three-way conjunction across three named predicates, no
+    /// `Vec<crate::ConfigSourceKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish with `+ 1 <` strict-
+    /// bound arithmetic against a magic threshold.
+    #[must_use]
+    pub fn source_kinds_strict_partial_cover(&self) -> bool {
+        self.source_kind_histogram().has_strict_partial_cover()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -70751,6 +71042,592 @@ mod progressive_tests {
             let zero_count = hist.iter().filter(|(_, c)| *c == 0).count();
             let positive_count = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zero_count <= 1 && positive_count >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── `source_kinds_strict_partial_cover` — the source-kind-
+    //    altitude strict-partial-cover boolean predicate peer of
+    //    `tiers_strict_partial_cover` on the tier altitude and
+    //    `ConfigDiff::kinds_strict_partial_cover` on the diff
+    //    altitude, climbing the "strict-partial-cover across
+    //    altitudes" projection. The boundary-free strict interior
+    //    (at least two observed cells AND at least two unobserved
+    //    cells) of the 5-corner support-cardinality partition
+    //    `(is_empty, singular_support, strict_partial_cover,
+    //    singular_gap, full_cover)` and of the magnitude-direction
+    //    ternary `(low_support, strict_partial_cover, high_support)`
+    //    at the source-kind altitude. Cardinality-conditionally
+    //    reachable only on `axis_cardinality >= 4` axes; vacuously
+    //    `false` on every fold at this altitude (the cardinality-`3`
+    //    source-kind axis has empty strict interval
+    //    `[2, cardinality - 2] = [2, 1]`). Closes the 5-corner
+    //    support-cardinality partition and the magnitude-direction
+    //    ternary at the source-kind altitude for downstream lifts to
+    //    cardinality-`>= 4` axes. ──
+
+    #[test]
+    fn source_kinds_strict_partial_cover_matches_source_kind_histogram_has_strict_partial_cover_pointwise()
+     {
+        // Routing pin: `source_kinds_strict_partial_cover` routes
+        // through `source_kind_histogram().has_strict_partial_cover()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Source-kind-altitude peer of
+        // `tiers_strict_partial_cover_matches_tier_histogram_has_strict_partial_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_matches_kind_histogram_has_strict_partial_cover_pointwise`
+        // on the diff altitude in the "strict-partial-cover across
+        // altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().has_strict_partial_cover();
+            assert_eq!(map.source_kinds_strict_partial_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_matches_structural_conjunction_pointwise() {
+        // Defining structural-conjunction form:
+        // `source_kinds_strict_partial_cover() ⇔
+        // source_kind_histogram().has_partial_cover() &&
+        // !source_kinds_singular_support() &&
+        // !source_kinds_singular_gap()` on every fixture. Pins the
+        // predicate against the three-way conjunction on the existing
+        // named-boundary triad consumers reach for when they open-code
+        // the strict interior in structural terms. Peer of
+        // `tiers_strict_partial_cover_matches_structural_conjunction_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_matches_structural_conjunction_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let via_structural = map.source_kind_histogram().has_partial_cover()
+                && !map.source_kinds_singular_support()
+                && !map.source_kinds_singular_gap();
+            assert_eq!(
+                via_seam, via_structural,
+                "source_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 has_partial_cover && !singular_support && !singular_gap ({via_structural})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_agrees_with_contributing_source_kinds_count_strict_interval_pointwise()
+     {
+        // Support-scalar strict-interval form:
+        // `source_kinds_strict_partial_cover() == (1 <
+        // contributing_source_kinds_count() &&
+        // contributing_source_kinds_count() + 1 <
+        // axis_cardinality::<ConfigSourceKind>())` on every fixture.
+        // The support-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigSourceKind>`. Peer of
+        // `tiers_strict_partial_cover_agrees_with_contributing_tiers_count_strict_interval_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_present_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let count = map.contributing_source_kinds_count();
+            let via_interval =
+                1 < count && count + 1 < crate::axis_cardinality::<crate::ConfigSourceKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "source_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 1 < contributing_source_kinds_count && contributing_source_kinds_count + 1 < \
+                 axis_cardinality (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_agrees_with_absent_source_kinds_count_strict_interval_pointwise()
+     {
+        // Coverage-gap-scalar strict-interval form:
+        // `source_kinds_strict_partial_cover() == (1 <
+        // absent_source_kinds_count() && absent_source_kinds_count() +
+        // 1 < axis_cardinality::<ConfigSourceKind>())` on every
+        // fixture. The coverage-gap-side surfacing of the same
+        // boolean, without allocating the `Vec<ConfigSourceKind>`.
+        // Complementary to the support-scalar strict-interval form on
+        // the same partition via the `contributing_source_kinds_count
+        // + absent_source_kinds_count == axis_cardinality` invariant.
+        // Peer of `tiers_strict_partial_cover_agrees_with_absent_tiers_count_strict_interval_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_absent_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let gap = map.absent_source_kinds_count();
+            let via_interval =
+                1 < gap && gap + 1 < crate::axis_cardinality::<crate::ConfigSourceKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "source_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 1 < absent_source_kinds_count && absent_source_kinds_count + 1 < \
+                 axis_cardinality (gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise() {
+        // Dual-`Vec` at-least-two-of-each form:
+        // `source_kinds_strict_partial_cover() ==
+        // (contributing_source_kinds().len() >= 2 &&
+        // absent_source_kinds().len() >= 2)` on every fixture. Pins
+        // the predicate against the dual-vector form consumers reach
+        // for when they already hold both support and coverage-gap
+        // vectors — the allocating-both-vectors open-coding this lift
+        // replaces. Peer of
+        // `tiers_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let via_vec =
+                map.contributing_source_kinds().len() >= 2 && map.absent_source_kinds().len() >= 2;
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 contributing_source_kinds().len() >= 2 && absent_source_kinds().len() >= 2 \
+                 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_bridges_support_cardinality_class_is_strict_partial_cover_pointwise()
+     {
+        // Cross-surface bridge law:
+        // `map.source_kinds_strict_partial_cover() ==
+        // map.source_kind_histogram().support_cardinality_class().is_strict_partial_cover()`
+        // on every fixture. The class-side projection lands on the
+        // strict-interior variant exactly when the histogram-side
+        // predicate fires, closing the (histogram, class) duality on
+        // the strict-interior corner at the source-kind altitude.
+        // Peer of the histogram-side bridge one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let via_class = map
+                .source_kind_histogram()
+                .support_cardinality_class()
+                .is_strict_partial_cover();
+            assert_eq!(
+                via_seam, via_class,
+                "source_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 support_cardinality_class().is_strict_partial_cover ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_source_kind_altitude_is_vacuously_false_pointwise() {
+        // Cardinality-conditional reachability pin at the source-
+        // kind altitude: `!source_kinds_strict_partial_cover()` on
+        // every fixture. `ConfigSourceKind` carries three cells, so
+        // the strict interval `[2, cardinality - 2] = [2, 1]` on the
+        // support-cardinality scalar is empty — no fold can observe
+        // `>= 2` cells AND leave `>= 2` cells unobserved
+        // simultaneously. Trait-uniform pin of the lift's vacuously-
+        // `false` polarity at the source-kind altitude, matching
+        // `AxisHistogram::has_strict_partial_cover`'s cardinality-`3`
+        // scan one altitude down and
+        // `ConfigDiff::kinds_strict_partial_cover`'s vacuously-`false`
+        // polarity on the also-cardinality-`3` diff altitude. The
+        // lift's value lies in naming the boundary for downstream
+        // lifts at cardinality-`>= 4` altitudes (tier — four-cell
+        // `ConfigTierKind` with one strict-interior witness at
+        // support cardinality `2`) where the predicate carries
+        // content, not in the source-kind-altitude witnesses which
+        // are structurally empty.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                !map.source_kinds_strict_partial_cover(),
+                "source_kinds_strict_partial_cover must read false on every fixture — \
+                 ConfigSourceKind (cardinality-3) has empty strict interval [2, 1], \
+                 the strict interior is unreachable on cardinality-`<= 3` axes",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_empty_map_is_false() {
+        // Empty-map boundary: the empty map observes zero cells, so
+        // the "at least two observed" half of the conjunction fails
+        // uniformly — `source_kinds_strict_partial_cover` reads
+        // `false`. Matches `has_strict_partial_cover` reading `false`
+        // on the empty histogram one altitude down. Peer of
+        // `source_kinds_any_observed_empty_map_is_false`,
+        // `source_kinds_full_cover_empty_map_is_false`,
+        // `source_kinds_singular_support_empty_map_is_false`,
+        // `source_kinds_singular_gap_empty_map_is_false`, and
+        // `source_kinds_high_support_empty_map_is_false` on the same
+        // polarity of the coverage-support partition. Orthogonal to
+        // `source_kinds_low_support`'s empty-map `true` polarity.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_strict_partial_cover());
+        assert!(!empty.source_kinds_any_observed());
+        assert!(!empty.source_kinds_singular_support());
+        assert!(!empty.source_kinds_singular_gap());
+        assert!(!empty.source_kinds_full_cover());
+        assert!(!empty.source_kinds_high_support());
+        assert!(empty.source_kinds_low_support());
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_pure_progressive_singleton_support_is_false() {
+        // Singleton-support pin: the pure-progressive `Prog` fold
+        // attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — support cardinality is
+        // `1` (not `>= 2`), so the "at least two observed" half of
+        // the conjunction fails uniformly and
+        // `source_kinds_strict_partial_cover` reads `false`. Direct
+        // witness of the strict disjointness
+        // `source_kinds_singular_support ⇒
+        // !source_kinds_strict_partial_cover` on every axis.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(r.provenance().source_kinds_singular_support());
+        assert!(!r.provenance().source_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_two_source_kind_partial_cover_is_false() {
+        // Two-source-kind cover pin: a fold observing exactly two
+        // `ConfigSourceKind` cells (e.g. `Defaults` and `File` with
+        // `Env` silent) has two observed cells and one unobserved
+        // cell on the cardinality-`3` source-kind axis, so the "at
+        // least two unobserved" half of the conjunction fails
+        // uniformly — the cardinality-`3` singleton-gap boundary
+        // carries the two-source-kind fold instead of the strict
+        // interior (which is empty on this axis). Direct witness of
+        // the strict disjointness `source_kinds_singular_gap ⇒
+        // !source_kinds_strict_partial_cover` on every axis, and of
+        // the cardinality-conditional reachability at the source-
+        // kind altitude — the strict interior is structurally empty
+        // on cardinality-`3`. Distinguishes the source-kind altitude
+        // from the tier altitude, where two-tier partial cover
+        // falls on the strict-interior corner (support size `2` on
+        // the cardinality-`4` tier axis) and lands on
+        // `tiers_strict_partial_cover == true`.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert!(m.source_kinds_singular_gap());
+        assert!(!m.source_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_uniform_cover_is_false() {
+        // Uniform-cover pin: every `ConfigSourceKind` cell receives
+        // at least one leaf via the source-kind-histogram mixed
+        // fixture (`{Defaults: 2, Env: 1, File: 1}`) — the coverage
+        // gap is zero cells, so the "at least two unobserved" half
+        // of the conjunction fails uniformly. Direct witness of the
+        // strict disjointness `source_kinds_full_cover ⇒
+        // !source_kinds_strict_partial_cover` on every axis. Peer of
+        // `tiers_strict_partial_cover_uniform_cover_is_false` on the
+        // tier altitude and
+        // `kinds_strict_partial_cover_uniform_cover_is_false` on the
+        // diff altitude.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kinds_full_cover());
+        assert!(!r.provenance().source_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_implies_not_source_kinds_singular_support_pointwise() {
+        // Disjointness pin: `source_kinds_strict_partial_cover() ⇒
+        // !source_kinds_singular_support()` on every axis. The strict
+        // interior requires `>= 2` observed cells; a singleton support
+        // has exactly `1` observed cell. Vacuous at the source-kind
+        // altitude (antecedent `false` on every fold on cardinality-
+        // `3`); the pin is trait-uniform against future lifts to
+        // cardinality-`>= 4` altitudes.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strict_partial_cover() {
+                assert!(
+                    !map.source_kinds_singular_support(),
+                    "strict-partial-cover source-kind map cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_implies_not_source_kinds_singular_gap_pointwise() {
+        // Disjointness pin: `source_kinds_strict_partial_cover() ⇒
+        // !source_kinds_singular_gap()` on every axis. The strict
+        // interior requires `>= 2` unobserved cells; a singleton gap
+        // has exactly `1` unobserved cell. Vacuous at the source-kind
+        // altitude; the pin is trait-uniform against future lifts.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strict_partial_cover() {
+                assert!(
+                    !map.source_kinds_singular_gap(),
+                    "strict-partial-cover source-kind map cannot be singular-gap",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_implies_not_source_kinds_full_cover_pointwise() {
+        // Disjointness pin: `source_kinds_strict_partial_cover() ⇒
+        // !source_kinds_full_cover()` on every axis. The strict
+        // interior requires `>= 2` unobserved cells; a full cover
+        // has zero unobserved cells. Vacuous at the source-kind
+        // altitude; the pin is trait-uniform against future lifts.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strict_partial_cover() {
+                assert!(
+                    !map.source_kinds_full_cover(),
+                    "strict-partial-cover source-kind map cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_implies_not_source_kinds_low_support_pointwise() {
+        // Disjointness pin: `source_kinds_strict_partial_cover() ⇒
+        // !source_kinds_low_support()` on every axis. The strict
+        // interior requires `>= 2` observed cells; low support has
+        // `<= 1` observed cell. Pins the pairwise disjointness of
+        // the strict-interior middle leg and the low-magnitude corner
+        // of the magnitude-direction ternary partition. Vacuous at
+        // the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strict_partial_cover() {
+                assert!(
+                    !map.source_kinds_low_support(),
+                    "strict-partial-cover source-kind map cannot be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_implies_not_source_kinds_high_support_pointwise() {
+        // Disjointness pin: `source_kinds_strict_partial_cover() ⇒
+        // !source_kinds_high_support()` on every axis. The strict
+        // interior requires `>= 2` unobserved cells; high support
+        // requires `<= 1` unobserved cell (with support `>= 2`). Pins
+        // the pairwise disjointness of the strict-interior middle
+        // leg and the high-magnitude corner of the magnitude-
+        // direction ternary partition. Vacuous at the source-kind
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strict_partial_cover() {
+                assert!(
+                    !map.source_kinds_high_support(),
+                    "strict-partial-cover source-kind map cannot be high-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_low_strict_high_form_pairwise_disjoint_magnitude_direction_ternary_pointwise() {
+        // Magnitude-direction ternary pin: at every fixture, at
+        // most one of `(source_kinds_low_support,
+        // source_kinds_strict_partial_cover,
+        // source_kinds_high_support)` fires. On the cardinality-`3`
+        // source-kind axis the strict interior is vacuously empty,
+        // so the ternary collapses to the bipartition
+        // `(source_kinds_low_support, source_kinds_high_support)` —
+        // *exactly* one fires on every fold (the bipartition is
+        // exhaustive on non-degenerate axes). Pins the strict
+        // pairwise disjointness of the three legs of the magnitude-
+        // direction ternary partition at the source-kind altitude.
+        // Peer of the ternary-partition pins on the tier and diff
+        // altitudes in the same projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let lo = map.source_kinds_low_support();
+            let strict = map.source_kinds_strict_partial_cover();
+            let hi = map.source_kinds_high_support();
+            let fires = usize::from(lo) + usize::from(strict) + usize::from(hi);
+            assert!(
+                fires <= 1,
+                "magnitude-direction ternary must be pairwise disjoint (lo={lo}, \
+                 strict={strict}, hi={hi})",
+            );
+            // On cardinality-3 the ternary is exhaustive as a
+            // bipartition: exactly one of low_support / high_support
+            // fires. The strict-interior middle leg is vacuously
+            // empty at this altitude.
+            assert_eq!(
+                fires, 1,
+                "magnitude-direction ternary must be exhaustive on the cardinality-3 \
+                 source-kind axis (lo={lo}, strict={strict}, hi={hi})",
+            );
+            assert!(
+                !strict,
+                "strict-partial-cover leg is vacuously empty on the cardinality-3 \
+                 source-kind axis",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_strict_partial_cover_singular_gap_form_5_corner_support_cardinality_partition_pointwise()
+     {
+        // 5-corner support-cardinality partition pin: at every
+        // fixture, at most one of `(source_kinds_singular_support,
+        // source_kinds_strict_partial_cover,
+        // source_kinds_singular_gap)` fires — the strict-interior
+        // triad inside the coverage-trichotomy middle leg. Together
+        // with the two boundary corners
+        // (`!source_kinds_any_observed`, `source_kinds_full_cover`)
+        // the five predicates form the closed 5-corner support-
+        // cardinality partition on every cardinality-`>= 3` axis:
+        // *exactly* one of the five fires on any fold. Closes the
+        // 5-corner partition at the source-kind altitude — the
+        // strict-interior middle leg is vacuously empty on this
+        // cardinality-`3` axis, so the 5-corner partition collapses
+        // to a strict *4-corner* partition (`!any_observed`,
+        // `singular_support`, `singular_gap`, `full_cover`) with
+        // exactly one firing on every fold.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let ss = map.source_kinds_singular_support();
+            let strict = map.source_kinds_strict_partial_cover();
+            let sg = map.source_kinds_singular_gap();
+            // Strict-interior triad pairwise disjoint on every axis.
+            let triad_fires = usize::from(ss) + usize::from(strict) + usize::from(sg);
+            assert!(
+                triad_fires <= 1,
+                "strict-interior triad must be pairwise disjoint (ss={ss}, strict={strict}, \
+                 sg={sg})",
+            );
+            // Closed 5-corner partition: exactly one of the five
+            // corners fires on every fold. On cardinality-3 the
+            // strict-interior corner is vacuously empty.
+            let empty = !map.source_kinds_any_observed();
+            let full = map.source_kinds_full_cover();
+            let five_fires = usize::from(empty)
+                + usize::from(ss)
+                + usize::from(strict)
+                + usize::from(sg)
+                + usize::from(full);
+            assert_eq!(
+                five_fires, 1,
+                "5-corner support-cardinality partition must be exhaustive with exactly one \
+                 firing (empty={empty}, ss={ss}, strict={strict}, sg={sg}, full={full})",
+            );
+            assert!(
+                !strict,
+                "strict-interior corner is vacuously empty on the cardinality-3 \
+                 source-kind axis",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk() {
+        // Parity against the exact hand-rolled strict-partial-cover
+        // walk this lift replaces: walk every cell of the source-
+        // kind histogram and count how many carry a zero count and
+        // how many carry a positive count; the strict-partial-cover
+        // predicate reads `true` iff *both* counts are `>= 2`
+        // (i.e. at least two observed cells AND at least two
+        // unobserved cells). Mirrors the parity pins on the other
+        // coverage-support boundaries. Peer of
+        // `tiers_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_strict_partial_cover();
+            let hist = map.source_kind_histogram();
+            let zero_count = hist.iter().filter(|(_, c)| *c == 0).count();
+            let positive_count = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zero_count >= 2 && positive_count >= 2;
             assert_eq!(via_seam, hand_rolled);
         }
     }
