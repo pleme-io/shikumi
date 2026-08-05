@@ -1927,21 +1927,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
-name = "pleme-hotswap"
-version = "0.1.1"
-source = "git+https://github.com/pleme-io/pleme-hotswap-derive#d5b0da01fcd872328b1a05a4626e395ec72fca09"
-
-[[package]]
-name = "pleme-hotswap-derive"
-version = "0.1.1"
-source = "git+https://github.com/pleme-io/pleme-hotswap-derive#d5b0da01fcd872328b1a05a4626e395ec72fca09"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2481,7 +2466,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.456"
+version = "0.1.457"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2497,8 +2482,6 @@ dependencies = [
  "gen-types",
  "kanchi",
  "notify",
- "pleme-hotswap",
- "pleme-hotswap-derive",
  "reqwest",
  "serde",
  "serde_json",
