@@ -2466,7 +2466,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.459"
+version = "0.1.460"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2603,18 +2603,18 @@ dependencies = [
 
 [[package]]
 name = "tatara-closed-set"
-version = "0.3.27"
+version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c270ba04ecfd2268f817e0d41fd19e829315f890bc97d372f1fbe291083d603c"
+checksum = "4957850fa2eba3a8b3bea92bdef72bf999711b9c2c873d0f9a6eb795589f6819"
 dependencies = [
  "tatara-closed-set-derive",
 ]
 
 [[package]]
 name = "tatara-closed-set-derive"
-version = "0.3.27"
+version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efc4de162992884b188fac459128bb0546a776f4f33a48604302fcae47f008cf"
+checksum = "c83926ca1036c32c06b7fa4635065a7a2b5f2a7f4abc3b2c20201d731faabd04"
 dependencies = [
  "proc-macro2",
  "quote",
