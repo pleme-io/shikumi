@@ -6296,6 +6296,189 @@ impl ProvenanceMap {
         self.source_kind_histogram().has_partial_cover()
     }
 
+    /// `true` exactly when exactly one [`crate::ConfigSourceKind`] cell
+    /// was observed on this resolved fold — the **singleton-support-
+    /// source-kind-counts boolean predicate** on the source-kind altitude.
+    /// Routes through [`crate::AxisHistogram::has_singular_support`] one
+    /// altitude down: the single-pass short-circuiting scan over the
+    /// fixed-cardinality counts vector that finds the first nonzero cell
+    /// and confirms no second nonzero cell follows, tighter than any of
+    /// the four support / coverage-gap equality forms one seam over.
+    ///
+    /// The **singleton-support-source-kind-counts peer** of the fused
+    /// `(contributing_source_kinds, absent_source_kinds,
+    /// contributing_source_kinds_count, absent_source_kinds_count)`
+    /// support / coverage-gap 2×2 grid on the source-kind altitude — the
+    /// natural typed boolean primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"did the resolved fold
+    /// land on exactly one source-kind?"*: the fleet dashboard headline
+    /// *"singleton-support fold: only one source-kind fired"*, the
+    /// attestation manifest gate *"rebuild window carries exactly one
+    /// source-kind observation"*, the alerting policy predicate *"fold
+    /// source-kind-support singular"*. Before this lift, every such
+    /// consumer re-derived the predicate inline as one of four pointwise-
+    /// equivalent forms: `map.contributing_source_kinds_count() == 1`
+    /// (the support-scalar form, which pays for a full-axis scan and
+    /// equates a `usize` to one without saying structurally *what* is
+    /// being asked at the source-kind-cell axis),
+    /// `map.contributing_source_kinds().len() == 1` (the support-`Vec`
+    /// form, which allocates a `Vec<crate::ConfigSourceKind>` and reads
+    /// its length back), `map.absent_source_kinds_count() ==
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` (the
+    /// coverage-gap-scalar form, which pays for a full-axis scan and
+    /// pulls in the [`crate::axis_cardinality`] turbofish at every call
+    /// site), and `map.absent_source_kinds().len() ==
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` (the
+    /// coverage-gap-`Vec` form, which allocates a
+    /// `Vec<crate::ConfigSourceKind>` and reads its length back). The
+    /// four forms drifted in subtle ways at every consumer site
+    /// (allocation vs. scalar, turbofish vs. name-only, coverage-gap
+    /// side vs. support side). This lift names the singleton-support-
+    /// source-kind-counts predicate directly at the source-kind-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing *"did the fold land on exactly one
+    /// source-kind?"* check reads off as a single method call.
+    ///
+    /// The source-kind-altitude singleton-support-predicate peer that
+    /// **closes the "singleton-support across altitudes" projection**
+    /// already carried at the tier altitude by
+    /// [`Self::tiers_singular_support`] and seeded at the diff altitude
+    /// by [`crate::ConfigDiff::kinds_singular_support`]. The pattern is
+    /// the same at every altitude: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's exactly-one-cell boundary into
+    /// a single boolean predicate named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::has_singular_support`]
+    /// primitive one altitude down. Parallels the "any-observed across
+    /// altitudes" projection at the same altitude by
+    /// [`Self::source_kinds_any_observed`] on the strictly-tighter
+    /// cardinality slice of the same coverage-support partition
+    /// (`any_observed` = *at-least-one* cell; `singular_support` =
+    /// *exactly-one* cell). Peer on the same altitude to
+    /// [`Self::source_kinds_partial_cover`]: on the cardinality-`3`
+    /// source-kind axis the partial-cover middle leg fans out into the
+    /// two singular-cardinality boundaries `singular_support` (support
+    /// size `1`) and *singular_gap* (support size `2`) — the strict
+    /// interior `has_strict_partial_cover` is vacuously false on this
+    /// axis (interval `[2, cardinality - 2] = [2, 1]` is empty), so
+    /// `source_kinds_singular_support` names the bottom half of the
+    /// partial-cover middle leg directly at the surface.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude — the
+    /// singleton-support corner is non-vacuous.**
+    /// [`crate::ConfigSourceKind`] carries three cells (`Defaults`,
+    /// `Env`, `File`), so `source_kinds_singular_support()` reads `true`
+    /// on every singleton-support fold (support size `1` — one nonzero
+    /// and two zeros), and `false` on the empty fold (three zeros — no
+    /// observed cell), on every two-source-kind partial cover (support
+    /// size `2` — the singular-gap boundary on this axis), and on every
+    /// uniform three-source-kind cover (support size `3` — no
+    /// unobserved cell). Non-vacuous on both sides of the boundary at
+    /// the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map has no observed cells (not one), so the singleton-
+    /// support predicate fails. Matches
+    /// [`crate::AxisHistogram::has_singular_support`]'s empty-histogram
+    /// `false` convention one altitude down. The empty map is therefore
+    /// on the `false` side of the singular-support boundary — matching
+    /// [`Self::source_kinds_any_observed`]'s empty-map `false` polarity,
+    /// [`Self::source_kinds_full_cover`]'s empty-map `false` polarity,
+    /// and [`Self::source_kinds_partial_cover`]'s empty-map `false`
+    /// polarity.
+    ///
+    /// **Singleton-support convention** — returns `true` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]:
+    /// one observed cell is exactly the singleton support boundary.
+    /// Every fold of only-`Defaults`, only-`Env`, or only-`File` leaves
+    /// is a witness. Matches [`Self::source_kinds_any_observed`]'s
+    /// `true` side and [`Self::source_kinds_partial_cover`]'s `true`
+    /// side on the same singleton, and orthogonal to
+    /// [`Self::source_kinds_full_cover`]'s `false` side — the singleton-
+    /// support corner reads
+    /// `(any_observed=true, singular_support=true, partial_cover=true,
+    /// full_cover=false)` on the coverage boundaries.
+    ///
+    /// **Two-source-kind partial cover convention** — returns `false` on
+    /// every fold whose observed support is exactly two
+    /// [`crate::ConfigSourceKind`] cells: two observed cells is the
+    /// singleton-gap boundary on this cardinality-`3` axis, not the
+    /// singleton-support boundary. Reads
+    /// `(any_observed=true, singular_support=false, partial_cover=true,
+    /// full_cover=false)`.
+    ///
+    /// **Uniform three-source-kind cover convention** — returns `false`
+    /// on every fold where each [`crate::ConfigSourceKind`] cell was
+    /// observed at least once: the support is the full three-cell axis
+    /// (not one). Reads `(any_observed=true, singular_support=false,
+    /// partial_cover=false, full_cover=true)`.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_singular_support() ==
+    ///   source_kind_histogram().has_singular_support()` — both project
+    ///   the same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `source_kinds_singular_support() ==
+    ///   (contributing_source_kinds_count() == 1)` always — the support-
+    ///   scalar surface, without allocating the
+    ///   `Vec<crate::ConfigSourceKind>`.
+    /// - `source_kinds_singular_support() ==
+    ///   (contributing_source_kinds().len() == 1)` always — the support-
+    ///   `Vec` surface.
+    /// - `source_kinds_singular_support() == (absent_source_kinds_count()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1)`
+    ///   always — the coverage-gap-scalar surface, the dual-side
+    ///   surfacing of the same boolean across the (observed,
+    ///   unobserved) partition.
+    /// - `source_kinds_singular_support() == (absent_source_kinds().len()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1)`
+    ///   always — the coverage-gap-`Vec` surface.
+    /// - `source_kinds_singular_support() ⇒ source_kinds_any_observed()`
+    ///   — a fold with exactly one observed cell has at least one
+    ///   observed cell. Contrapositively,
+    ///   `!source_kinds_any_observed() ⇒ !source_kinds_singular_support()`.
+    /// - `source_kinds_singular_support() ⇒ source_kinds_partial_cover()`
+    ///   on every axis with cardinality `>= 2` (the source-kind axis
+    ///   carries three cells): a singleton support on a `>= 2`-cell axis
+    ///   leaves at least one cell unobserved, so the partial-cover
+    ///   middle leg fires.
+    /// - `source_kinds_singular_support() ⇒ !source_kinds_full_cover()`
+    ///   on every axis with cardinality `>= 2`: a singleton support has
+    ///   size 1, a full cover has size
+    ///   `axis_cardinality::<crate::ConfigSourceKind>() = 3 >= 2`, so
+    ///   the two boundaries are disjoint.
+    /// - `source_kinds_singular_support() ⇒ self.len() >= 1` — a fold
+    ///   with a singleton support has at least one leaf contributing to
+    ///   that one observed cell.
+    /// - **Cross-surface bridge law** —
+    ///   `map.source_kinds_singular_support() ==
+    ///   map.source_kind_histogram().support_cardinality_class().is_singular_support()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] exactly
+    ///   when the histogram-side predicate fires. Peer of the histogram-
+    ///   side bridge one altitude down, closing the (histogram, class)
+    ///   duality on the singleton-support boundary at the source-kind
+    ///   altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the singular-support scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the second nonzero cell (bounded at two nonzero cells visited on
+    /// any two-or-more-cell-support fold), strictly tighter than the
+    /// four support / coverage-gap equality forms — no
+    /// `Vec<crate::ConfigSourceKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality against
+    /// a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    pub fn source_kinds_singular_support(&self) -> bool {
+        self.source_kind_histogram().has_singular_support()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -68355,6 +68538,299 @@ mod progressive_tests {
             let any_positive = hist.iter().any(|(_, c)| c > 0);
             let any_zero = hist.iter().any(|(_, c)| c == 0);
             let hand_rolled = any_positive && any_zero;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kinds_singular_support — singleton-
+    //    support-source-kind-counts boolean predicate on the source-
+    //    kind altitude, closing the "singleton-support across altitudes"
+    //    projection already carried at the tier altitude by
+    //    `tiers_singular_support` and seeded on the diff altitude by
+    //    `ConfigDiff::kinds_singular_support`. The exactly-one-observed-
+    //    cell boundary of the coverage-support partition at the source-
+    //    kind altitude ──
+
+    #[test]
+    fn source_kinds_singular_support_matches_source_kind_histogram_has_singular_support_pointwise()
+    {
+        // Routing pin: `source_kinds_singular_support` routes through
+        // `source_kind_histogram().has_singular_support()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Source-
+        // kind-altitude peer of
+        // `tiers_singular_support_matches_tier_histogram_has_singular_support_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_support_matches_kind_histogram_has_singular_support_pointwise`
+        // on the diff altitude in the "singleton-support across
+        // altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().has_singular_support();
+            assert_eq!(map.source_kinds_singular_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_agrees_with_contributing_source_kinds_count_pointwise() {
+        // Support-scalar surface:
+        // `source_kinds_singular_support() ==
+        // (contributing_source_kinds_count() == 1)` on every fixture.
+        // Pins the fused predicate against the scalar equality form,
+        // without allocating the `Vec<ConfigSourceKind>`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_support();
+            let via_scalar = map.contributing_source_kinds_count() == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "source_kinds_singular_support ({via_seam}) must agree with \
+                 contributing_source_kinds_count == 1 ({via_scalar}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_agrees_with_contributing_source_kinds_len_pointwise() {
+        // Support-`Vec` surface:
+        // `source_kinds_singular_support() ==
+        // (contributing_source_kinds().len() == 1)` on every fixture.
+        // The materialized-observed-cells dual of the scalar surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_support();
+            let via_vec = map.contributing_source_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "source_kinds_singular_support ({via_seam}) must agree with \
+                 contributing_source_kinds().len() == 1 ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_agrees_with_absent_source_kinds_count_pointwise() {
+        // Coverage-gap-scalar surface:
+        // `source_kinds_singular_support() ==
+        // (absent_source_kinds_count() ==
+        // axis_cardinality::<ConfigSourceKind>() - 1)` on every
+        // fixture. The dual-side surfacing of the same boolean across
+        // the (observed, unobserved) partition.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_support();
+            let g = map.absent_source_kinds_count();
+            let via_gap = g == crate::axis_cardinality::<crate::ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam, via_gap,
+                "source_kinds_singular_support ({via_seam}) must agree with \
+                 absent_source_kinds_count == axis_cardinality - 1 \
+                 ({via_gap}, gap={g}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_bridges_support_cardinality_class_is_singular_support_pointwise()
+     {
+        // Cross-surface bridge law:
+        // `map.source_kinds_singular_support() ==
+        // map.source_kind_histogram().support_cardinality_class().is_singular_support()`
+        // always. The class-side projection lands on `SingularSupport`
+        // exactly when the histogram-side predicate fires. Peer of the
+        // histogram-side bridge one altitude down, closing the
+        // (histogram, class) duality on the singleton-support boundary
+        // at the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_support();
+            let via_class = map
+                .source_kind_histogram()
+                .support_cardinality_class()
+                .is_singular_support();
+            assert_eq!(
+                via_seam, via_class,
+                "source_kinds_singular_support ({via_seam}) must agree with \
+                 support_cardinality_class().is_singular_support() ({via_class}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_empty_map_is_false() {
+        // Empty-map boundary: the empty map has no observed cells (not
+        // one), so the singleton-support predicate fails. Matches
+        // `has_singular_support` reading `false` on the empty histogram
+        // one altitude down. Empty-map polarity `false` — matching
+        // `source_kinds_any_observed`, `source_kinds_full_cover`, and
+        // `source_kinds_partial_cover`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_singular_support());
+        assert!(!empty.source_kinds_any_observed());
+        assert!(!empty.source_kinds_full_cover());
+        assert!(!empty.source_kinds_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_support_pure_progressive_singleton_support_is_true() {
+        // Singleton-support pin: the pure-progressive `Prog` fold
+        // attributes all four leaves to `ConfigSourceKind::Defaults`
+        // via the computed-tier constructors — support cardinality is
+        // `1` (one nonzero, two zeros on the cardinality-`3` axis), so
+        // `source_kinds_singular_support` reads `true`. The singleton-
+        // support fixture reads `(any_observed=true,
+        // singular_support=true, partial_cover=true, full_cover=false)`
+        // on the coverage boundaries. Peer of
+        // `tiers_singular_support` witnesses at the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds().len(), 1);
+        assert!(r.provenance().source_kinds_singular_support());
+        assert!(r.provenance().source_kinds_any_observed());
+        assert!(r.provenance().source_kinds_partial_cover());
+        assert!(!r.provenance().source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_support_two_source_kind_fixture_is_false() {
+        // Two-source-kind partial cover pin: a fold observing exactly
+        // two `ConfigSourceKind` cells has support cardinality `2` —
+        // the singular-gap boundary on the cardinality-`3` axis, not
+        // the singular-support boundary. Reads `(any_observed=true,
+        // singular_support=false, partial_cover=true, full_cover=false)`.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::file("/etc/x.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 2);
+        assert!(!m.source_kinds_singular_support());
+        assert!(m.source_kinds_partial_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_support_mixed_fixture_is_false() {
+        // Full-cover pin: the source-kind-histogram-mixed fixture
+        // attributes 4 leaves as `{Defaults: 2, Env: 1, File: 1}` —
+        // support cardinality `3`, not `1`. So
+        // `source_kinds_singular_support` reads `false`, sitting on the
+        // full-cover corner. Peer of
+        // `source_kinds_partial_cover_mixed_fixture_is_false`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(!r.provenance().source_kinds_singular_support());
+        assert!(r.provenance().source_kinds_full_cover());
+    }
+
+    #[test]
+    fn source_kinds_singular_support_implies_source_kinds_any_observed_pointwise() {
+        // Subsumption pin: `source_kinds_singular_support() ⇒
+        // source_kinds_any_observed()` on every fixture. Direct pin of
+        // the two-level structural implication on the coverage-support
+        // partition at the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_support() {
+                assert!(
+                    map.source_kinds_any_observed(),
+                    "singular-support source-kind map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_implies_source_kinds_partial_cover_pointwise() {
+        // Structural implication pin:
+        // `source_kinds_singular_support() ⇒
+        // source_kinds_partial_cover()` on every axis with cardinality
+        // `>= 2` (the source-kind axis carries three cells). A
+        // singleton support on a `>= 2`-cell axis leaves at least one
+        // cell unobserved, so the partial-cover middle leg fires.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_support() {
+                assert!(
+                    map.source_kinds_partial_cover(),
+                    "singular-support source-kind map must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_implies_not_source_kinds_full_cover_pointwise() {
+        // Exclusion pin: `source_kinds_singular_support() ⇒
+        // !source_kinds_full_cover()` on every axis with cardinality
+        // `>= 2`. Singleton support has size 1, full cover has size
+        // `axis_cardinality::<ConfigSourceKind>() = 3 >= 2`, so the
+        // two boundaries are disjoint.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_singular_support() {
+                assert!(
+                    !map.source_kinds_full_cover(),
+                    "singular-support source-kind map must not be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk_pointwise() {
+        // Parity against the exact hand-rolled exactly-one-positive
+        // walk this lift replaces: walk every cell of the source-kind
+        // histogram and count the number of nonzero cells; the seam
+        // fires iff that count equals `1`. The lift routes through the
+        // single-pass short-circuiting scan on `has_singular_support`
+        // one altitude down; this test pins the seam against the naive
+        // walk.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kinds_singular_support();
+            let hist = map.source_kind_histogram();
+            let nonzero_count = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzero_count == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
