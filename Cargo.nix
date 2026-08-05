@@ -9131,7 +9131,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.460";
+        version = "0.1.461";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9569,9 +9569,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.27";
+        version = "0.3.28";
         edition = "2021";
-        sha256 = "0g307l493qpvy5rd75xwj3w1b4w2kv8izm702zw6h8pxxh2blw62";
+        sha256 = "06b8kxc9bdvfk87kv1rckhdp36gr5gvxwax9psrsi8zbl87qams9";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9586,9 +9586,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.27";
+        version = "0.3.28";
         edition = "2021";
-        sha256 = "1kq8y13sxz028dh4hfpkyivafih5pcl92idciwc4p24j54bdxi7g";
+        sha256 = "015xm8gp679040n3pg2agwm5yavsb833aipsnw32rhrn2352cff8";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
