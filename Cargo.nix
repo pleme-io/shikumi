@@ -7164,15 +7164,31 @@ rec {
         ];
 
       };
-      "pleme-hotswap-derive" = rec {
-        crateName = "pleme-hotswap-derive";
-        version = "0.1.0";
+      "pleme-hotswap" = rec {
+        crateName = "pleme-hotswap";
+        version = "0.1.1";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/pleme-hotswap-derive";
-          rev = "1ecf9faffc8c20013051663966929ab0fb8ff946";
-          sha256 = "0kibkp081ym87hjdb928p192s0aqdf99xq9k19kn5y09cxwwl53h";
+          rev = "d5b0da01fcd872328b1a05a4626e395ec72fca09";
+          sha256 = "19kywwssr3d9q2w2kmygfh0awjspgjxcdxvdxax2bkhi3wsr2ggl";
+        };
+        libName = "pleme_hotswap";
+        authors = [
+          "pleme-io"
+        ];
+
+      };
+      "pleme-hotswap-derive" = rec {
+        crateName = "pleme-hotswap-derive";
+        version = "0.1.1";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/pleme-io/pleme-hotswap-derive";
+          rev = "d5b0da01fcd872328b1a05a4626e395ec72fca09";
+          sha256 = "19kywwssr3d9q2w2kmygfh0awjspgjxcdxvdxax2bkhi3wsr2ggl";
         };
         procMacro = true;
         libName = "pleme_hotswap_derive";
@@ -9163,7 +9179,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.455";
+        version = "0.1.456";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9243,6 +9259,12 @@ rec {
             features = [ "macos_fsevent" ];
           }
           {
+            name = "pleme-hotswap";
+            packageId = "pleme-hotswap";
+            rename = "pleme-hotswap";
+            optional = true;
+          }
+          {
             name = "reqwest";
             packageId = "reqwest";
             optional = true;
@@ -9312,7 +9334,7 @@ rec {
           "blue" = [ "dep:blue-lang-syntax" "lisp" ];
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
-          "hotswap" = [ "dep:blake3" ];
+          "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
           "kube" = [ "kube-discovery" "dep:reqwest" "reqwest/blocking" "dep:base64" ];
           "kube-discovery" = [ "dep:kanchi" ];
           "lisp" = [ "dep:tatara-lisp" ];
