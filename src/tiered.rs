@@ -4784,6 +4784,207 @@ impl ProvenanceMap {
         self.source_kind_histogram().is_antimodally_tied()
     }
 
+    /// Returns `true` exactly when this fold's observed
+    /// [`crate::ConfigSourceKind`] histogram has exactly one cell holding
+    /// the trough leaf count — the **strictly-antimodally-unique-source-
+    /// kind-counts boolean predicate** on the source-kind altitude, the
+    /// direct strict-complement of the antimodally-tied predicate
+    /// [`Self::source_kinds_antimodally_tied`] on every non-empty fold
+    /// (both read `false` on the empty map — the shared boundary below
+    /// both branches of the strict antimodal partition). Routes through
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`] one
+    /// altitude down: the single-pass scan over the fixed-cardinality
+    /// counts vector reading `self.trough_multiplicity() == 1` off one
+    /// predicate, tighter than either open-coded surface form one seam
+    /// over.
+    ///
+    /// The **strictly-antimodally-unique-source-kind-counts peer** of the
+    /// two documented surface forms consumers previously re-derived
+    /// inline: `map.source_kind_histogram().trough_multiplicity() == 1`
+    /// (the multiplicity-scalar equality form, one method call *plus* a
+    /// comparison against a magic `1` threshold), and
+    /// `map.source_kind_modality_degree().1 == 1` (the modality-pair
+    /// projection-equality form, reading the antimodal component of the
+    /// fused `(peak_multiplicity, trough_multiplicity)` pair before the
+    /// equality). Both surface forms drift subtly at every consumer site
+    /// (scalar vs. pair-component, `== 1` vs. `!= 2` after singular-
+    /// support fixup). This lift names the strictly-antimodally-unique-
+    /// source-kind-counts predicate directly at the source-kind-altitude
+    /// surface as one method call — the typed boolean every operator-
+    /// facing *"is the rarest source-kind uniquely held on this fold, or
+    /// is the declaration-order tie-break exercised?"* check reads off
+    /// at one method call, on the strict-uniqueness side of the strict
+    /// antimodal partition.
+    ///
+    /// The source-kind altitude strict-antimodal-uniqueness predicate
+    /// peer that **closes the strict antimodal partition** on the source-
+    /// kind altitude — the strict-complement row on top of the
+    /// antimodal-side seed [`Self::source_kinds_antimodally_tied`],
+    /// mirroring the shape the strict modal partition
+    /// (`source_kinds_strictly_modally_unique`,
+    /// `source_kinds_modally_tied`) closes one column over on the same
+    /// [`ProvenanceMap`] surface. **Source-altitude peer** of
+    /// [`Self::tiers_strictly_antimodally_unique`] one axis over on the
+    /// same [`ProvenanceMap`] surface, closing the four-primitive
+    /// multiplicity boolean algebra
+    /// `(source_kinds_strictly_modally_unique, source_kinds_modally_tied,
+    /// source_kinds_strictly_antimodally_unique,
+    /// source_kinds_antimodally_tied)` on the source-kind altitude in
+    /// the same shape the tier altitude closes it via
+    /// [`Self::tiers_strictly_modally_unique`],
+    /// [`Self::tiers_modally_tied`],
+    /// [`Self::tiers_strictly_antimodally_unique`], and
+    /// [`Self::tiers_antimodally_tied`]. Fuses the two open-coded
+    /// surface forms (multiplicity-scalar equality, modality-pair
+    /// projection-equality) into a single boolean predicate named at the
+    /// surface, routed through the shared
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`]
+    /// primitive one altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`],
+    /// [`crate::ConfigSourceKind::File`]), so
+    /// `source_kinds_strictly_antimodally_unique()` reads `true` on
+    /// every fold whose trough leaf count is uniquely held by exactly
+    /// one observed source-kind cell (e.g. every singleton-support fold
+    /// where the lone observed cell stands alone at its own trough, the
+    /// right-skew `(2, 2, 1)` shape where File uniquely sits at the
+    /// trough count `1` while Defaults + Env tie at the peak `2`, or
+    /// the strictly-ordered `(1, 2, 3)` shape where Defaults uniquely
+    /// sits at the trough count `1` while all three cells hold distinct
+    /// positive counts), and `false` on the empty map (no observed
+    /// cell, no trough), on the heavy-tail `(2, 1, 1)` shape where Env
+    /// + File share the trough at count `1`, and on the uniform
+    /// three-source-kind cover where all three cells tie at count `1`.
+    /// One cardinality below the tier altitude's four-cell axis: only
+    /// two off-trough support cardinalities carry non-trivial witnesses
+    /// (support-`3` strictly-ordered strict-trough, support-`2`
+    /// singleton-support-collapse strict-trough) rather than the three
+    /// on the cardinality-`4` tier axis.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map observes zero cells, so
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`]'s
+    /// empty-histogram convention one altitude down. The empty-map row
+    /// on the strict antimodal partition pair
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::tiers_strictly_antimodally_unique`]'s empty-map
+    /// `false` polarity on the tier altitude in the same projection.
+    ///
+    /// **Singleton-support convention** — returns `true` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]
+    /// cell: the lone observed cell stands alone at its own trough
+    /// (peak and trough coincide), so `trough_multiplicity` reads `1`
+    /// and the equality `1 == 1` fires. Every fold with all leaves
+    /// attributed to only-`Defaults` (the pure-progressive fold),
+    /// only-`Env`, or only-`File` is a witness on the `true` side — the
+    /// singleton-support corner is uniformly on the strictly-
+    /// antimodally-unique side of the strict antimodal partition.
+    /// Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ is_strictly_antimodally_unique` one
+    /// altitude down, the antimodal-side dual of the modal-side
+    /// subsumption `has_singular_support ⇒ is_strictly_modally_unique`
+    /// pinned at [`Self::source_kinds_strictly_modally_unique`].
+    ///
+    /// **Uniform three-source-kind cover convention** — returns `false`
+    /// on every fold where each [`crate::ConfigSourceKind`] cell was
+    /// observed at exactly the same positive count (in particular the
+    /// fold with one leaf per source-kind): the three cells share the
+    /// same count, so `trough_multiplicity` reads `3` and the equality
+    /// `3 == 1` fails. Peer of the histogram-side axis-cover convention
+    /// one altitude down, which reads `false` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`3`
+    /// [`crate::ConfigSourceKind`] axis honours the general condition.
+    ///
+    /// **Two-way antimodal partition on non-empty maps** — on every
+    /// non-empty map exactly one of the antimodal-uniqueness pair
+    /// `(source_kinds_strictly_antimodally_unique,
+    /// source_kinds_antimodally_tied)` fires: either the trough is
+    /// uniquely held (strictly-antimodally-unique fires, antimodally-
+    /// tied does not) or the trough is shared (antimodally-tied fires,
+    /// strictly-antimodally-unique does not). The empty map sits below
+    /// both branches (both read `false`). Direct pin of the histogram-
+    /// side strict antimodal partition
+    /// `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+    /// !is_antimodally_tied` one altitude down.
+    ///
+    /// **Strict-uniqueness modal / antimodal collapse on uniform-count
+    /// non-empty maps** — on every uniform-count non-empty map the peak
+    /// and trough level sets coincide with the support, so
+    /// `source_kinds_strictly_antimodally_unique ⇔
+    /// source_kinds_strictly_modally_unique` — the strict-uniqueness
+    /// pair collapses to a single boolean, the singleton-support
+    /// witness. Direct pin of the histogram-side collapse law
+    /// `is_uniform_count ∧ !is_empty ⇒ is_strictly_antimodally_unique
+    /// ⇔ is_strictly_modally_unique` one altitude down, peer of the
+    /// same collapse pinned on the tier altitude by
+    /// [`Self::tiers_strictly_antimodally_unique`].
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_strictly_antimodally_unique() ==
+    ///   source_kind_histogram().is_strictly_antimodally_unique()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `source_kinds_strictly_antimodally_unique() ⇔
+    ///   source_kind_histogram().trough_multiplicity() == 1` — the
+    ///   defining multiplicity-scalar equality form.
+    /// - `source_kinds_strictly_antimodally_unique() ⇔
+    ///   trough_source_kind_multiplicity() == 1` — the same equality
+    ///   read through the named source-kind-altitude scalar peer of the
+    ///   histogram trough multiplicity.
+    /// - `source_kinds_strictly_antimodally_unique() ⇔
+    ///   source_kind_modality_degree().1 == 1` — the modality-pair
+    ///   projection-equality form, reading the antimodal component of
+    ///   the fused `(peak, trough)` pair.
+    /// - `!is_empty() ⇒ source_kinds_strictly_antimodally_unique() ⇔
+    ///   !source_kinds_antimodally_tied()` — the strict antimodal
+    ///   partition on non-empty maps: exactly one of the pair fires.
+    /// - `source_kinds_strictly_antimodally_unique() ⇒ !is_empty()` —
+    ///   a strictly-unique trough requires at least one observed cell,
+    ///   so the empty map cannot fire. Contrapositively, `is_empty() ⇒
+    ///   !source_kinds_strictly_antimodally_unique()`.
+    /// - `contributing_source_kinds_count() == 1 ⇒
+    ///   source_kinds_strictly_antimodally_unique()` — a singleton-
+    ///   support fold has exactly one observed cell as the sole member
+    ///   of the antimodal level set, so the uniqueness predicate fires.
+    ///   Direct pin of the histogram-side subsumption
+    ///   `has_singular_support ⇒ is_strictly_antimodally_unique` one
+    ///   altitude down.
+    /// - **Strict-uniqueness modal / antimodal collapse on uniform-
+    ///   count maps** — `source_kind_histogram().is_uniform_count() ∧
+    ///   !is_empty() ⇒ source_kinds_strictly_antimodally_unique() ⇔
+    ///   source_kinds_strictly_modally_unique()`. On every uniform-
+    ///   count non-empty map the two strict-uniqueness predicates
+    ///   collapse to the same value. Direct pin of the histogram-side
+    ///   collapse `is_uniform_count ∧ !is_empty ⇒
+    ///   is_strictly_antimodally_unique ⇔ is_strictly_modally_unique`
+    ///   one altitude down — the strict-uniqueness-side dual of the
+    ///   tie-side collapse pinned at
+    ///   [`Self::source_kinds_antimodally_tied`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the trough-multiplicity scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. Strictly tighter than the
+    /// two documented open-coded surfaces one seam over (no exposed
+    /// `== 1` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for a
+    /// single-component projection).
+    #[must_use]
+    pub fn source_kinds_strictly_antimodally_unique(&self) -> bool {
+        self.source_kind_histogram()
+            .is_strictly_antimodally_unique()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -63224,6 +63425,391 @@ mod progressive_tests {
                 }
             }
             assert_eq!(map.source_kinds_antimodally_tied(), trough_mult >= 2);
+        }
+    }
+
+    // ── ProvenanceMap::source_kinds_strictly_antimodally_unique —
+    //    strictly-antimodally-unique-source-kind-counts boolean predicate
+    //    on the source-kind altitude, source-altitude peer of
+    //    `tiers_strictly_antimodally_unique` on the same
+    //    `AxisHistogram::is_strictly_antimodally_unique` primitive one
+    //    altitude down. Direct strict-complement of `is_antimodally_tied`
+    //    on non-empty maps; both read `false` on the empty map. Fuses two
+    //    open-coded surface forms into ONE named boolean:
+    //    `source_kind_histogram().trough_multiplicity() == 1` (scalar
+    //    equality) and `source_kind_modality_degree().1 == 1` (fused-pair
+    //    projection equality). Cardinality-`3` ConfigSourceKind axis:
+    //    reaches `true` on singleton support, right-skew `(2, 2, 1)`
+    //    (File uniquely holds the trough) and strictly-ordered `(1, 2, 3)`
+    //    (three distinct counts, Defaults uniquely at trough); `false` on
+    //    empty, heavy-tail `(2, 1, 1)` (Env + File tied at trough) and
+    //    uniform full-cover `(1, 1, 1)` (all three tied at trough).
+    //    Closes the four-primitive multiplicity boolean algebra
+    //    (strictly-modally-unique, modally-tied, strictly-antimodally-
+    //    unique, antimodally-tied) on the source-kind altitude in the
+    //    same shape closed on the tier altitude by
+    //    `tiers_strictly_antimodally_unique`. ──
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_matches_source_kind_histogram_is_strictly_antimodally_unique_pointwise()
+     {
+        // Routing pin: `source_kinds_strictly_antimodally_unique` routes
+        // through
+        // `source_kind_histogram().is_strictly_antimodally_unique()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native strict-
+        // antimodal-uniqueness primitive. Source-altitude peer of the
+        // tier-altitude `tiers_strictly_antimodally_unique` →
+        // `tier_histogram().is_strictly_antimodally_unique()` routing one
+        // axis over on the same `ProvenanceMap` surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().is_strictly_antimodally_unique();
+            assert_eq!(
+                map.source_kinds_strictly_antimodally_unique(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_matches_trough_multiplicity_eq_one_pointwise() {
+        // Multiplicity-scalar equivalence pin:
+        // `source_kinds_strictly_antimodally_unique()` iff
+        // `source_kind_histogram().trough_multiplicity() == 1` on every
+        // fixture. Pins the defining open-coded surface form the named
+        // seam replaces — one method call plus a magic `1` threshold at
+        // the consumer site, now folded into one typed boolean at the
+        // surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_scalar = map.source_kind_histogram().trough_multiplicity() == 1;
+            assert_eq!(map.source_kinds_strictly_antimodally_unique(), via_scalar,);
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_matches_named_trough_source_kind_multiplicity_eq_one_pointwise()
+     {
+        // Named-scalar-peer equivalence pin:
+        // `source_kinds_strictly_antimodally_unique()` iff
+        // `trough_source_kind_multiplicity() == 1` on every fixture. The
+        // same defining equality read through the source-kind-altitude
+        // scalar peer of the histogram trough multiplicity — pinning the
+        // two named seams on the same altitude against the shared
+        // underlying predicate.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_named_scalar = map.trough_source_kind_multiplicity() == 1;
+            assert_eq!(
+                map.source_kinds_strictly_antimodally_unique(),
+                via_named_scalar,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_matches_modality_degree_second_component_eq_one_pointwise()
+     {
+        // Modality-pair projection-equality pin:
+        // `source_kinds_strictly_antimodally_unique()` iff
+        // `source_kind_modality_degree().1 == 1` on every fixture. Pins
+        // the second documented open-coded surface form the named seam
+        // replaces — reading the antimodal component of the fused
+        // `(peak, trough)` pair and comparing against the `1` threshold.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair_projection = map.source_kind_modality_degree().1 == 1;
+            assert_eq!(
+                map.source_kinds_strictly_antimodally_unique(),
+                via_pair_projection,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_empty_map_is_false() {
+        // Empty-map polarity pin: the empty map has no observed cells,
+        // so `trough_multiplicity` reads `0` and the equality `0 == 1`
+        // fails. Matches the
+        // AxisHistogram::is_strictly_antimodally_unique empty convention
+        // one altitude down and the empty-row of the strict antimodal
+        // partition pair
+        // `(is_strictly_antimodally_unique, is_antimodally_tied)` =
+        // `(false, false)`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_prog_singleton_support_is_true() {
+        // Singleton-support polarity pin: Prog is a pure-progressive
+        // fold with every leaf attributed to the computed-tier
+        // `Defaults` source-kind, so that one cell stands alone at its
+        // own trough (peak and trough coincide at `trough_multiplicity
+        // == 1`). The strictly-antimodally-unique side of the strict
+        // antimodal partition fires; the antimodally-tied side does not.
+        // Direct witness of the singleton-support corner of the
+        // histogram-side subsumption `has_singular_support ⇒
+        // is_strictly_antimodally_unique`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
+        assert!(r.provenance().source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_heavy_tail_mixed_fixture_is_false() {
+        // Heavy-tail three-cell polarity pin: the mixed fixture is
+        // Defaults=2, Env=1, File=1 → trough shared by Env + File at
+        // count `1` (trough_mult=2), so the strict-antimodal-uniqueness
+        // predicate does not fire. Direct antimodal-side witness on the
+        // cardinality-`3` source-kind axis: even though the *peak* is
+        // uniquely held by Defaults at count `2` — the modal side is on
+        // the strict-unique branch — the antimodal side reads through
+        // the trough scan and is on the tied branch, distinguishing the
+        // two sides of the four-primitive multiplicity boolean algebra.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 2);
+        assert!(!r.provenance().source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_right_skew_three_cell_fixture_is_true() {
+        // Right-skew three-cell polarity pin: Defaults=2, Env=2, File=1
+        // → trough uniquely held by File at count `1` (trough_mult=1),
+        // so the strict-antimodal-uniqueness predicate fires. Direct
+        // strict-side witness on the cardinality-`3` source-kind axis:
+        // the modal side is on the tied branch (peak_mult=2, Defaults +
+        // Env tied at `2`), but the antimodal side reads through the
+        // trough scan and is on the strict-unique branch — the split-
+        // corner witness sitting on tied-peak / strict-trough opposite
+        // to the mixed fixture's strict-peak / tied-trough.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert!(m.source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_uniform_full_cover_is_false() {
+        // Uniform-axis-cover polarity pin: every ConfigSourceKind cell
+        // contributes exactly one leaf, so all three cells tie at the
+        // trough count `1` (trough_mult=3 = axis cardinality). The
+        // strict-antimodal-uniqueness predicate does not fire — the
+        // top-corner witness of the balanced-full-cover shape on the
+        // source-kind altitude sitting on the antimodally-tied side of
+        // the partition, where the modal / antimodal collapse coincides
+        // (both peak and trough tied at three).
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert!(!m.source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_strictly_ordered_three_cell_fixture_is_true() {
+        // Strictly-ordered three-cell polarity pin: Defaults=1, Env=2,
+        // File=3 — three distinct positive counts, so the trough (at
+        // Defaults=1) is uniquely held (trough_mult=1). The strict-
+        // antimodal-uniqueness predicate fires even though the shape is
+        // *not* singleton-support — a strict advance over the
+        // singleton-support witness above, distinguishing full-cover
+        // strictly-ordered from singleton-support on the cardinality-`3`
+        // source-kind axis. Both peak and trough are uniquely held on
+        // the strict-modal / strict-antimodal corner, a strict advance
+        // over the singleton-support witness where the two collapse to
+        // the single observed cell.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["f".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert!(m.source_kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_implies_non_empty_pointwise() {
+        // Non-empty subsumption pin:
+        // `source_kinds_strictly_antimodally_unique()` fires only on
+        // non-empty maps — a strictly-unique trough requires at least
+        // one observed cell, so the empty map (zero observed cells)
+        // cannot fire. Contrapositively, `is_empty() ⇒
+        // !source_kinds_strictly_antimodally_unique()`. Direct pin of
+        // the histogram-side subsumption
+        // `!is_empty ⇐ is_strictly_antimodally_unique` one altitude
+        // down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strictly_antimodally_unique() {
+                assert!(!map.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_singleton_support_subsumption_pointwise() {
+        // Singleton-support subsumption pin:
+        // `contributing_source_kinds_count() == 1 ⇒
+        // source_kinds_strictly_antimodally_unique()` on every fixture
+        // — a fold with a single observed source-kind cell is uniformly
+        // on the strictly-antimodally-unique side of the partition (the
+        // lone observed cell stands alone at its own trough). Direct
+        // pin of the histogram-side subsumption `has_singular_support
+        // ⇒ is_strictly_antimodally_unique` one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.contributing_source_kinds_count() == 1 {
+                assert!(map.source_kinds_strictly_antimodally_unique());
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_strict_partition_on_non_empty_pointwise() {
+        // Strict antimodal partition pin: on every non-empty map exactly
+        // one of `(source_kinds_strictly_antimodally_unique,
+        // source_kinds_antimodally_tied)` fires; both read `false` on
+        // the empty map — the shared boundary below both branches of
+        // the strict antimodal partition. Direct pin of the histogram-
+        // side strict antimodal partition
+        // `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+        // !is_antimodally_tied` one altitude down, now phrased as an
+        // XOR on the two named source-kind-altitude seams at the
+        // surface — the direct closing complement of the same
+        // partition test on the tie-side seam
+        // `source_kinds_antimodally_tied_strict_partition_on_non_empty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let unique = map.source_kinds_strictly_antimodally_unique();
+            let tied = map.source_kinds_antimodally_tied();
+            if map.is_empty() {
+                assert!(!unique);
+                assert!(!tied);
+            } else {
+                assert_ne!(unique, tied);
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_collapses_with_strictly_modally_unique_on_uniform_count_pointwise()
+     {
+        // Strict-uniqueness modal / antimodal collapse pin: on every
+        // uniform-count non-empty map the peak and trough level sets
+        // coincide with the support, so
+        // `source_kinds_strictly_antimodally_unique ⇔
+        // source_kinds_strictly_modally_unique` — the strict-uniqueness
+        // pair collapses to a single boolean. Direct pin of the
+        // histogram-side collapse law `is_uniform_count ∧ !is_empty ⇒
+        // is_strictly_antimodally_unique ⇔ is_strictly_modally_unique`
+        // one altitude down, the strict-uniqueness-side dual of the
+        // tie-side collapse
+        // `source_kinds_antimodally_tied_collapses_with_modally_tied_on_uniform_count_pointwise`
+        // pinned above, and peer of the same collapse pinned on the
+        // tier altitude by `tiers_strictly_antimodally_unique`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.is_empty() && map.source_kind_histogram().is_uniform_count() {
+                assert_eq!(
+                    map.source_kinds_strictly_antimodally_unique(),
+                    map.source_kinds_strictly_modally_unique(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk_pointwise()
+     {
+        // Parity against the exact hand-rolled open-coded trough-
+        // multiplicity walk this lift replaces: scan the histogram's
+        // per-cell counts vector, track the running strictly-positive
+        // min + reset-on-drop antimodal multiplicity, then read
+        // `trough_mult == 1` off the equality. Catches any future
+        // drift where either implementation stops projecting through
+        // the same trough-multiplicity scan on the underlying counts.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let mut min = usize::MAX;
+            let mut trough_mult = 0usize;
+            for k in crate::ConfigSourceKind::ALL {
+                let c = hist.count(*k);
+                if c == 0 {
+                    continue;
+                }
+                if c < min {
+                    min = c;
+                    trough_mult = 1;
+                } else if c == min {
+                    trough_mult += 1;
+                }
+            }
+            assert_eq!(
+                map.source_kinds_strictly_antimodally_unique(),
+                trough_mult == 1,
+            );
         }
     }
 }
