@@ -15,6 +15,25 @@ keywords = ["config", "hot-reload", "nix", "figment", "arcswap"]
 [lints.clippy]
 pedantic = "warn"
 
+# The `hotswap` feature was removed from `[features]` above because
+# `pleme-hotswap` is not on crates.io (the auto-release pre-check rejects
+# optional git deps). The seven `#[cfg(feature = "hotswap")]` gates covering
+# the surface it wraps — one re-export in `src/lib.rs`, five gates and one
+# `#[cfg(all(test, feature = "hotswap"))]` test module in `src/store.rs` —
+# stay in-tree so re-adding the feature is a one-line change once
+# `pleme-hotswap` publishes. Without this `check-cfg` entry, every one of
+# those gates emits `unexpected_cfg_condition_value` at `cargo build`
+# (measured 2026-08-05: 7 warnings on `cargo build --all-features`), and a
+# future misspelled `#[cfg(feature = "hotwsap")]` typo would blend into that
+# same warning cluster instead of surfacing on its own. Declaring `hotswap`
+# as a KNOWN feature value lets the gates evaluate false silently while any
+# other misspelled feature name still warns. `src/lib.rs`'s
+# `check_cfg_tests` module pins this invariant from the runtime side. Delete
+# this entry together with the last surviving `#[cfg(feature = "hotswap")]`
+# gate — never before, never after.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("hotswap"))'] }
+
 [features]
 default = []
 # tatara-lisp config file support. Off by default to keep the default
