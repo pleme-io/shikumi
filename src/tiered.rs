@@ -11559,6 +11559,128 @@ impl ProvenanceMap {
         self.tier_histogram().trough_multiplicity()
     }
 
+    /// The **antimodal-side fused `(trough_tier_count,
+    /// trough_tier_multiplicity)` pair on the tier altitude** — the
+    /// argmin-count-plus-multiplicity observation that fuses the two
+    /// scalar walks [`Self::trough_tier_count`] and
+    /// [`Self::trough_tier_multiplicity`] into a single `(usize,
+    /// usize)`-tuple read named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::trough_observation`] primitive one
+    /// altitude down. Returns `(0, 0)` on the empty map; otherwise
+    /// `(trough_tier_count(), trough_tier_multiplicity())` where
+    /// `trough_tier_count >= 1` and `1 <= trough_tier_multiplicity <= 4`
+    /// on the four-cell [`ConfigTierKind`] axis.
+    ///
+    /// The **`(count, multiplicity)`-axis peer** of the shipped
+    /// antimodal-side `(cell, count)` fused-pair
+    /// [`Self::recessive_tier_observation`] on the tier altitude —
+    /// together they close the antimodal-side fused-pair surface at
+    /// this altitude as the `(cell, count)` + `(count, multiplicity)`
+    /// pair, matching the closed pair at the primitive altitude carried
+    /// by [`crate::AxisHistogram::recessive_observation`] +
+    /// [`crate::AxisHistogram::trough_observation`]. And the
+    /// **antimodal-side sibling** of the shipped modal-side
+    /// [`Self::peak_tier_observation`] on the same altitude — together
+    /// they close the 4-cell `(modal, antimodal) × ((cell, count),
+    /// (count, multiplicity))` fused-pair grid at the tier altitude:
+    ///
+    /// ```text
+    /// dominant_tier_observation   (cell, count)          — modal
+    /// recessive_tier_observation  (cell, count)          — antimodal
+    /// peak_tier_observation       (count, multiplicity)  — modal
+    /// trough_tier_observation     (count, multiplicity)  — antimodal (this)
+    /// ```
+    ///
+    /// The **tier-altitude peer** of the shipped source-kind-altitude
+    /// fused-pair [`Self::trough_source_kind_observation`], lifting the
+    /// primitive [`crate::AxisHistogram::trough_observation`] one
+    /// altitude up onto the cardinality-`4` [`ConfigTierKind`] axis
+    /// through [`Self::tier_histogram`]. Consumers previously
+    /// re-derived the pair inline as `(map.trough_tier_count(),
+    /// map.trough_tier_multiplicity())` — two method calls, each
+    /// routing through [`Self::tier_histogram`] and each scanning the
+    /// counts vector independently (once to read the trough count, once
+    /// to count cells at the trough), where the shared
+    /// [`crate::AxisHistogram::trough_observation`] primitive fuses
+    /// both into one walk.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude.**
+    /// [`ConfigTierKind`] carries four cells ([`ConfigTierKind::Bare`],
+    /// [`ConfigTierKind::Discovered`], [`ConfigTierKind::Default`],
+    /// [`ConfigTierKind::Custom`]), so `trough_tier_observation()`
+    /// reads `(0, 0)` on the empty map, `(len(), 1)` on every
+    /// singleton-support fold (the sole observed tier is simultaneously
+    /// the unique peak *and* the unique trough at the total count),
+    /// `(1, 4)` on every uniform four-tier cover (all four cells tied
+    /// at count `1`), and `(trough_count, m)` with `1 <= m <= 4` on
+    /// every mixed fold. One strict advance over the cardinality-`3`
+    /// source-kind altitude's `(1, 3)` uniform-cover ceiling.
+    ///
+    /// **Empty-map convention** — returns `(0, 0)`, matching the
+    /// [`crate::AxisHistogram::trough_observation`] empty convention
+    /// one altitude down and the paired scalar empty conventions of
+    /// [`Self::trough_tier_count`] and [`Self::trough_tier_multiplicity`]
+    /// on the same altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_tier_observation() ==
+    ///   tier_histogram().trough_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `trough_tier_observation() == (trough_tier_count(),
+    ///   trough_tier_multiplicity())` — the defining fusion identity:
+    ///   the fused pair equals the two-scan scalar pair pointwise on
+    ///   every fixture.
+    /// - `trough_tier_observation() == (0, 0)` ⇔ [`Self::is_empty`] is
+    ///   `true` — the empty-map / empty-histogram boundary. Peer to
+    ///   the scalar `trough_tier_count() == 0` and
+    ///   `trough_tier_multiplicity() == 0` boundaries.
+    /// - `trough_tier_observation().0 == trough_tier_count()` — the
+    ///   count-side projection recovers [`Self::trough_tier_count`]
+    ///   pointwise.
+    /// - `trough_tier_observation().1 == trough_tier_multiplicity()` —
+    ///   the multiplicity-side projection recovers
+    ///   [`Self::trough_tier_multiplicity`] pointwise.
+    /// - `trough_tier_observation().0 >= 1` whenever `!is_empty()` —
+    ///   the trough count is strictly positive on every non-empty fold
+    ///   (the anti-modal cell witnesses one member of the observed
+    ///   support, and every member of the support has a strictly-
+    ///   positive count by construction).
+    /// - `trough_tier_observation().1 >= 1` whenever `!is_empty()` —
+    ///   at least one cell holds the trough on every non-empty fold.
+    /// - `trough_tier_observation().0 <= peak_tier_observation().0`
+    ///   always — the trough count never exceeds the peak count (the
+    ///   antimodal-side count is the positive-min of the same support
+    ///   the modal-side count reads the max of).
+    /// - `trough_tier_observation().1 <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` always — bounded
+    ///   above by the axis cardinality `4` on the four-cell tier axis.
+    ///   Lifted from the trait-uniform `trough_multiplicity() <=
+    ///   axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `trough_tier_observation().1 <= contributing_tiers_count()`
+    ///   always — the antimodal set is a subset of the observed
+    ///   support.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// fused trough-plus-multiplicity scan through
+    /// [`crate::AxisHistogram::trough_observation`]). Both are `O(n)`
+    /// in practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(map.trough_tier_count(), map.trough_tier_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the
+    /// trough count, once for the multiplicity — where
+    /// [`crate::AxisHistogram::trough_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    pub fn trough_tier_observation(&self) -> (usize, usize) {
+        self.tier_histogram().trough_observation()
+    }
+
     /// The **modality-shape amplitude of tier counts** — the absolute
     /// difference between the modal and antimodal [`ConfigTierKind`]
     /// level-set cardinalities on this resolved fold. Equal to
@@ -52026,6 +52148,248 @@ mod progressive_tests {
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::trough_tier_observation — antimodal-side fused
+    //    (count, multiplicity) pair on the tier altitude, closing the
+    //    (count, multiplicity)-axis peer of the shipped (cell, count)
+    //    `recessive_tier_observation` at this altitude and the
+    //    antimodal-side sibling of the shipped modal-side
+    //    `peak_tier_observation`, closing the 4-cell (modal, antimodal)
+    //    × ((cell, count), (count, multiplicity)) fused-pair grid at
+    //    the tier altitude. Tier-altitude peer of the shipped source-
+    //    kind-altitude `trough_source_kind_observation`; lifts the
+    //    primitive `AxisHistogram::trough_observation` one altitude up
+    //    through `tier_histogram()` onto the cardinality-`4`
+    //    ConfigTierKind axis. ──
+
+    #[test]
+    fn trough_tier_observation_matches_tier_histogram_trough_observation_pointwise() {
+        // Routing pin: `trough_tier_observation` routes through
+        // `tier_histogram().trough_observation()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Tier-
+        // altitude fused-pair climb of the primitive
+        // `AxisHistogram::trough_observation`; peer of
+        // `trough_source_kind_observation_matches_source_kind_histogram_trough_observation_pointwise`
+        // on the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().trough_observation();
+            assert_eq!(map.trough_tier_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_agrees_with_trough_tier_count_and_multiplicity_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `trough_tier_observation` agrees with
+        // the two-scan scalar pair `(trough_tier_count(),
+        // trough_tier_multiplicity())` on every fixture — the defining
+        // fusion identity. The fused pair reads the same two scalars
+        // in one pass instead of two.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = (map.trough_tier_count(), map.trough_tier_multiplicity());
+            assert_eq!(map.trough_tier_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_count_component_equals_trough_tier_count_pointwise() {
+        // Count-side projection: `.0` recovers `trough_tier_count()`
+        // pointwise on every fixture; both routings read the same
+        // trough count off the same primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_tier_observation().0, map.trough_tier_count());
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_multiplicity_component_equals_trough_tier_multiplicity_pointwise() {
+        // Multiplicity-side projection: `.1` recovers
+        // `trough_tier_multiplicity()` pointwise on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.trough_tier_observation().1,
+                map.trough_tier_multiplicity()
+            );
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_empty_map_is_zero_pair() {
+        // Empty-map convention: no observed cell, so both scalars read
+        // `0` and the fused pair reads `(0, 0)`. Peer of
+        // `trough_tier_multiplicity_empty_map_is_zero` on the
+        // multiplicity component and `trough_tier_count_empty_map_is_zero`
+        // on the count component.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_tier_observation(), (0, 0));
+    }
+
+    #[test]
+    fn trough_tier_observation_prog_fixture_is_one_two() {
+        // Prog: 4 leaves attributed as `a→Discovered, b→Default,
+        // c→Bare, d→Default` — counts are `Bare=1, Discovered=1,
+        // Default=2, Custom=0`. Trough over the support {Bare,
+        // Discovered, Default} lands at count `1`, tied between Bare
+        // and Discovered — multiplicity reads `2`. Fused pair reads
+        // `(1, 2)` — the antimodally-tied case on the cardinality-`4`
+        // tier axis; the antimodal-side sibling of the shipped modal-
+        // side `peak_tier_observation() == (2, 1)` on the same fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().trough_tier_observation(), (1, 2));
+    }
+
+    #[test]
+    fn trough_tier_observation_nested_fixture_is_one_one() {
+        // Nested: 3 leaves attributed as `win.w→Discovered,
+        // win.h→Default, theme→Default` — counts are `Bare=0,
+        // Discovered=1, Default=2, Custom=0`. Trough over the support
+        // {Discovered, Default} is uniquely Discovered at count `1`,
+        // multiplicity reads `1`. Fused pair reads `(1, 1)` — the
+        // strictly-antimodally-unique corner; the antimodal cell reads
+        // through the seam whether the fixture is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().trough_tier_observation(), (1, 1));
+    }
+
+    #[test]
+    fn trough_tier_observation_singleton_support_is_len_one() {
+        // Singleton-support pin: every leaf lands on `Default`, so
+        // `Default` is simultaneously the unique peak *and* the unique
+        // trough at count `len()` = `4`, multiplicity reads `1`. Fused
+        // pair reads `(4, 1)` — coinciding with the modal-side
+        // `peak_tier_observation() == (4, 1)` on this singleton-support
+        // degenerate.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.len(), 4);
+        assert_eq!(m.trough_tier_observation(), (4, 1));
+    }
+
+    #[test]
+    fn trough_tier_observation_two_tier_tie_is_one_two() {
+        // Two-tier-tied pin: `Bare + Default` both at count `1`, both
+        // tied at the trough (and simultaneously at the peak). Fused
+        // pair reads `(1, 2)` — the antimodally-tied boundary at the
+        // smallest non-trivial tied support on the tier axis;
+        // coincides with the modal-side `peak_tier_observation() ==
+        // (1, 2)` on this balanced two-cell shape.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.trough_tier_observation(), (1, 2));
+    }
+
+    #[test]
+    fn trough_tier_observation_uniform_full_cover_is_one_four() {
+        // Uniform four-tier cover pin: one leaf per ConfigTierKind
+        // cell (Bare + Discovered + Default + Custom), all at count
+        // `1`. All four cells tie at the trough (and simultaneously at
+        // the peak) — fused pair reads `(1, 4)`, multiplicity
+        // component = axis cardinality, the maximum reachable value on
+        // the four-cell tier axis. Strict advance over the source-kind
+        // altitude's `(1, 3)` uniform-cover ceiling.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.trough_tier_observation(), (1, 4));
+        assert_eq!(
+            m.trough_tier_observation().1,
+            crate::axis_cardinality::<ConfigTierKind>()
+        );
+    }
+
+    #[test]
+    fn trough_tier_observation_is_zero_zero_iff_map_is_empty_pointwise() {
+        // Emptiness boundary: the fused pair reads `(0, 0)` iff the
+        // map is empty; both components share the emptiness boundary
+        // of their scalar peers.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_tier_observation() == (0, 0), map.is_empty());
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_multiplicity_component_bounded_by_axis_cardinality() {
+        // Structural bound: `trough_tier_observation().1 <=
+        // axis_cardinality::<ConfigTierKind>()` (= 4) on every fixture.
+        // Lifted from the trait-uniform `trough_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram.
+        let card = crate::axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_tier_observation().1 <= card);
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_multiplicity_component_bounded_above_by_contributing_tiers_count() {
+        // Support bound: the antimodal set is a subset of the observed
+        // support, so `trough_tier_observation().1 <=
+        // contributing_tiers_count()` on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_tier_observation().1 <= map.contributing_tiers_count());
+        }
+    }
+
+    #[test]
+    fn trough_tier_observation_count_component_le_peak_tier_observation_count_component_pointwise()
+    {
+        // Ordering pin: the trough count is the positive-min and the
+        // peak count is the max of the same support, so
+        // `trough_tier_observation().0 <= peak_tier_observation().0`
+        // on every fixture. The antimodal-vs-modal ordering witness
+        // that seals the antimodal-side sibling against the shipped
+        // modal-side seam. Equality holds on every uniform-per-tier
+        // fold (singleton support and full-cover uniform included),
+        // where the peak and trough read off the same shared level
+        // set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_tier_observation().0 <= map.peak_tier_observation().0);
         }
     }
 
