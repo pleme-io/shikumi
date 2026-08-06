@@ -13011,6 +13011,221 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().peak_observation()
     }
 
+    /// The **antimodal `(count, multiplicity)` fused pair of file formats** —
+    /// the trough (positive-min) file-format count on this chain paired with
+    /// the number of [`crate::discovery::Format`] cells that hold it, read
+    /// off the chain's file-format histogram in one fused scan. Equal to
+    /// `(trough_file_format_count(), file_format_trough_multiplicity())` by
+    /// construction, routed through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::trough_observation`] reads the fused
+    /// `(usize, usize)` pair off the fixed-cardinality counts vector in one
+    /// running-min walk (zero cells excluded). Returns `(0, 0)` exactly on
+    /// every chain whose file-format histogram is empty (empty chain, or
+    /// non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::Env`] / unrecognized-extension [`ConfigSource::File`]
+    /// layers); otherwise `(trough_count, m)` with `trough_count >= 1` and
+    /// `1 <= m <= crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (= `4`) on every chain with a non-empty file-format histogram, closed
+    /// at the upper boundary `(1, 4)` exactly on the uniform four-cell full-
+    /// cover shape (peak and trough coincide at `1` across all four cells).
+    ///
+    /// The **`(count, multiplicity)`-axis antimodal-side fused peer** of the
+    /// shipped `(cell, count)` antimodal-side fused pair
+    /// [`Self::recessive_file_format_observation`] on the file-format sub-
+    /// axis of the chain altitude — together they close the antimodal-side
+    /// fused-pair surface at this sub-axis as the `(cell, count)` +
+    /// `(count, multiplicity)` pair, matching the closed pair at the
+    /// primitive altitude carried by
+    /// [`crate::AxisHistogram::recessive_observation`] +
+    /// [`crate::AxisHistogram::trough_observation`], the closed pair on the
+    /// tier altitude carried by
+    /// [`crate::ProvenanceMap::recessive_tier_observation`] +
+    /// [`crate::ProvenanceMap::trough_tier_observation`], the closed pair on
+    /// the source-kind altitude carried by
+    /// [`crate::ProvenanceMap::recessive_source_kind_observation`] +
+    /// [`crate::ProvenanceMap::trough_source_kind_observation`], and the
+    /// closed pair on the diff altitude carried by
+    /// [`crate::ConfigDiff::recessive_kind_observation`] +
+    /// [`crate::ConfigDiff::trough_kind_observation`]. Together with the
+    /// shipped modal-side [`Self::file_format_peak_observation`] this lift
+    /// closes the 4-cell `(modal, antimodal) × ((cell, count), (count,
+    /// multiplicity))` fused-pair grid at the file-format sub-axis of the
+    /// chain altitude — the same 4-cell grid the layer-kind sub-axis closed
+    /// one seam over with
+    /// [`Self::layer_kind_peak_observation`] +
+    /// [`Self::layer_kind_trough_observation`]. Consumers previously re-
+    /// derived the antimodal `(count, multiplicity)` pair inline as
+    /// `(chain.trough_file_format_count(), chain.file_format_trough_multiplicity())`
+    /// — two method calls, each routing through
+    /// [`Self::file_format_histogram`] and each scanning the counts vector
+    /// independently (once to read the trough count, once to walk the
+    /// multiplicity of cells tied at it), where the shared
+    /// [`crate::AxisHistogram::trough_observation`] primitive fuses both
+    /// into one walk.
+    ///
+    /// The chain-altitude file-format sub-axis fused-pair peer that
+    /// **lifts the antimodal-side `(count, multiplicity)` projection
+    /// sideways** from the layer-kind sub-axis on the same altitude
+    /// ([`Self::layer_kind_trough_observation`]) to the second chain-
+    /// altitude sub-axis, matching the tier altitude
+    /// ([`crate::ProvenanceMap::trough_tier_observation`]) and the source-
+    /// kind altitude ([`crate::ProvenanceMap::trough_source_kind_observation`])
+    /// climb, and one seam over from the seeding diff altitude
+    /// ([`crate::ConfigDiff::trough_kind_observation`]). The last remaining
+    /// chain-altitude sub-axis is the natural next sideways lift
+    /// (`env_prefix_kind_trough_observation` over
+    /// [`Self::env_prefix_kind_histogram`]), mirroring the closing sideways
+    /// step the shipped sibling antimodal-side row already walked
+    /// (`recessive_layer_kind_observation` →
+    /// `recessive_file_format_observation` →
+    /// `recessive_env_prefix_kind_observation`). Once closed at every chain
+    /// sub-axis in the same trajectory, the substrate closes the antimodal-
+    /// side `(count, multiplicity)` fused-pair row at every altitude / sub-
+    /// axis of the histogram lattice alongside the closed sibling
+    /// `(trough_count, trough_multiplicity)` scalar halves and the closed
+    /// antimodal-side `(cell, count)` fused-pair peer.
+    ///
+    /// The **fused-pair peer** of the two closed antimodal-side scalar
+    /// siblings ([`Self::trough_file_format_count`] carrying the *count*
+    /// alone as `usize` and [`Self::file_format_trough_multiplicity`]
+    /// carrying the *multiplicity* alone as `usize`) — the natural upstream
+    /// both scalar halves project through, from which
+    /// [`Self::trough_file_format_count`] recovers via `.0` and
+    /// [`Self::file_format_trough_multiplicity`] recovers via `.1`. Where
+    /// the two scalar-half siblings each surface one half of the antimodal
+    /// observation independently at the cost of walking the histogram
+    /// twice, this row surfaces the *joint pair itself* as one
+    /// `(usize, usize)` read.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis —
+    /// matching the cardinality-`4` tier altitude.**
+    /// [`crate::discovery::Format`] carries four cells, so
+    /// `file_format_trough_observation()` reads `(0, 0)` on every chain
+    /// whose file-format histogram is empty, `(1, 4)` on every uniform
+    /// four-cell full-cover chain (four cells all tied at count `1` — the
+    /// top-corner witness on the multiplicity component, where peak and
+    /// trough coincide), `(k, 1)` on every singleton-support chain where a
+    /// single format collects `k` recognized-extension file layers (the
+    /// sole observed cell is uniquely both peak and trough at the total
+    /// count), `(1, 1)` on the sample chain (`.yaml ×2 + Env ×1`; Yaml is
+    /// the sole observed format at count `2` — Env layers do not contribute
+    /// to the file-format histogram, so peak and trough coincide on the
+    /// sole observed cell), `(1, 1)` on the toml-majority partial-cover
+    /// (`.toml ×2 + .yaml ×1`; Yaml is uniquely at the trough count `1`),
+    /// `(2, 2)` on the balanced two-format tie shape (two formats tied at
+    /// count `2`), and `(1, 3)` on every uniform three-format partial-cover
+    /// chain (three cells tied at count `1`). One strict advance over the
+    /// cardinality-`3` layer-kind sub-axis (whose multiplicity component
+    /// reaches `3` on uniform-full-cover) and pointwise matched to the
+    /// cardinality-`4` tier altitude on the reachable pairs.
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)` (not
+    /// `Option<(usize, usize)>`), matching the
+    /// [`crate::AxisHistogram::trough_observation`] empty convention one
+    /// altitude down, the [`Self::trough_file_format_count`] and
+    /// [`Self::file_format_trough_multiplicity`] empty conventions on the
+    /// same sub-axis, and the
+    /// [`crate::ProvenanceMap::trough_tier_observation`] /
+    /// [`crate::ProvenanceMap::trough_source_kind_observation`] /
+    /// [`crate::ConfigDiff::trough_kind_observation`] empty conventions on
+    /// the peer altitudes. The fused
+    /// `(trough_file_format_count, file_format_trough_multiplicity)` pair
+    /// reads uniformly `(0, 0)` on the empty-histogram chain — every scalar
+    /// projection reads zero, matching the
+    /// [`crate::AxisHistogram::trough_observation`] side one altitude down.
+    /// Unlike [`Self::layer_kind_trough_observation`], the `(0, 0)`
+    /// boundary is NOT `self.as_ref().is_empty()`: a non-empty chain of
+    /// only [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers reads
+    /// `(0, 0)` as well (empty file-format histogram). Cross-sub-axis
+    /// divergence from the layer-kind sub-axis, where the `(0, 0)`
+    /// boundary coincides with the empty chain — matching the modal-side
+    /// [`Self::file_format_peak_observation`] boundary on the same sub-
+    /// axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_format_trough_observation() ==
+    ///   file_format_histogram().trough_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `file_format_trough_observation() == (trough_file_format_count(),
+    ///   file_format_trough_multiplicity())` — the defining fusion identity
+    ///   against the two-scan scalar pair; the count and multiplicity
+    ///   scalars project through the same primitive one altitude down.
+    /// - `file_format_trough_observation() == (0, 0)` ⇔
+    ///   `file_format_histogram().is_empty()` — the empty-boundary
+    ///   equivalence: the pair is `(0, 0)` exactly when the file-format
+    ///   histogram is empty, matching [`Self::trough_file_format_count`] on
+    ///   the count side and [`Self::file_format_trough_multiplicity`] on
+    ///   the multiplicity side. Cross-sub-axis divergence from the layer-
+    ///   kind sub-axis, where the boundary is `self.as_ref().is_empty()`.
+    /// - `file_format_trough_observation().0 == trough_file_format_count()`
+    ///   — the count-side projection recovers
+    ///   [`Self::trough_file_format_count`] pointwise; both routings read
+    ///   the same trough count off the same primitive.
+    /// - `file_format_trough_observation().1 ==
+    ///   file_format_trough_multiplicity()` — the multiplicity-side
+    ///   projection recovers [`Self::file_format_trough_multiplicity`]
+    ///   pointwise; both routings read the same antimodal multiplicity off
+    ///   the same primitive.
+    /// - `file_format_trough_observation().0 >= 1` whenever
+    ///   `!file_format_histogram().is_empty()` — every non-empty file-
+    ///   format histogram has at least one layer at the antimodal format
+    ///   (zero cells are excluded from the min), so the count component is
+    ///   strictly positive.
+    /// - `file_format_trough_observation().1 >= 1` whenever
+    ///   `!file_format_histogram().is_empty()` — every non-empty file-
+    ///   format histogram has at least one cell at the trough, so the
+    ///   multiplicity component is strictly positive.
+    /// - `file_format_trough_observation().1 <=
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` always —
+    ///   bounded above by the axis cardinality `4` on the four-cell file-
+    ///   format axis. Lifted from the trait-uniform `trough_observation().1
+    ///   <= axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `file_format_trough_observation().1 <= present_file_formats().len()`
+    ///   always — the antimodal set is a subset of the observed support,
+    ///   so its size is bounded by the support size.
+    /// - `file_format_trough_observation().0 <=
+    ///   file_format_peak_observation().0` always — the antimodal-side
+    ///   count is bounded above by the modal-side count on the same
+    ///   histogram, peer to the scalar `trough_file_format_count() <=
+    ///   peak_file_format_count()` bound and lifted from the primitive
+    ///   `trough_observation().0 <= peak_observation().0` invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `file_format_trough_observation()` on a uniform four-cell full-
+    ///   cover chain (one layer per format, all four formats observed)
+    ///   equals `(1, 4)` — every observed cell is tied at the trough count
+    ///   `1`, so the multiplicity walks the full four-cell axis; peak and
+    ///   trough coincide on the uniform-count shape.
+    /// - `file_format_trough_observation()` on a singleton-support chain
+    ///   (every recognized-extension file layer on the same format) equals
+    ///   `(k, 1)` where `k = file_format_histogram().total()` — the sole
+    ///   observed format holds both the peak and the trough alone at its
+    ///   layer count.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the fused running-min scan through
+    /// [`crate::AxisHistogram::trough_observation`]). Both are `O(n)` in
+    /// practice since the file-format axis carries a fixed four-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(chain.trough_file_format_count(), chain.file_format_trough_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the trough
+    /// count, once for the multiplicity — where
+    /// [`crate::AxisHistogram::trough_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    fn file_format_trough_observation(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().trough_observation()
+    }
+
     /// The **balanced-file-formats boolean predicate** on the file-format
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`crate::discovery::Format`] contributed the same number of
@@ -62062,6 +62277,362 @@ mod tests {
         for chain in recessive_file_format_fixtures() {
             let slice = chain.as_slice();
             assert!(slice.file_format_peak_observation().1 <= slice.present_file_formats().len(),);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_trough_observation — antimodal-side
+    //      fused (count, multiplicity) pair on the file-format sub-axis of
+    //      the chain altitude, lifting AxisHistogram::trough_observation from
+    //      the histogram surface, closing the (count, multiplicity)-axis
+    //      peer of recessive_file_format_observation and the 4-cell (modal,
+    //      antimodal) × ((cell, count), (count, multiplicity)) fused-pair
+    //      grid at this sub-axis ----
+
+    #[test]
+    fn file_format_trough_observation_matches_file_format_histogram_trough_observation_pointwise() {
+        // The routing pin: `file_format_trough_observation` routes through
+        // `file_format_histogram().trough_observation()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Antimodal-side peer of
+        // `file_format_peak_observation_matches_file_format_histogram_peak_observation_pointwise`
+        // on the same sub-axis, and file-format sub-axis peer of
+        // `layer_kind_trough_observation_matches_layer_kind_histogram_trough_observation_pointwise`
+        // one seam over on the same altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().trough_observation();
+            assert_eq!(slice.file_format_trough_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_matches_trough_file_format_count_and_file_format_trough_multiplicity_scalar_pair_pointwise()
+     {
+        // The defining fusion identity: `file_format_trough_observation ==
+        // (trough_file_format_count, file_format_trough_multiplicity)`
+        // pointwise on every fixture. The scalar pair is what consumers
+        // would reconstruct through two independent walks; the fused
+        // primitive reads both in one running-min scan through
+        // `AxisHistogram::trough_observation` one altitude down.
+        // Antimodal-side peer of
+        // `file_format_peak_observation_matches_peak_file_format_count_and_file_format_peak_multiplicity_scalar_pair_pointwise`
+        // on the same sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_trough_observation(),
+                (
+                    slice.trough_file_format_count(),
+                    slice.file_format_trough_multiplicity(),
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_count_component_equals_trough_file_format_count_pointwise() {
+        // The count-side projection recovers `trough_file_format_count`
+        // pointwise; both routings read the same trough count off the same
+        // primitive. Cross-pins the fused-pair `.0` against the shipped
+        // scalar-count seam so a future change to either surface cannot
+        // silently diverge.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_trough_observation().0,
+                slice.trough_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_multiplicity_component_equals_file_format_trough_multiplicity_pointwise()
+     {
+        // The multiplicity-side projection recovers
+        // `file_format_trough_multiplicity` pointwise; both routings read
+        // the same antimodal multiplicity off the same primitive. Cross-
+        // pins the fused-pair `.1` against the shipped scalar-multiplicity
+        // seam so a future change to either surface cannot silently
+        // diverge.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_trough_observation().1,
+                slice.file_format_trough_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_empty_chain_is_zero_zero() {
+        // Empty-chain witness: the empty chain has no file layers so no
+        // observed file-format cells; both the trough count and the trough
+        // multiplicity are `0`, and the fused pair reads `(0, 0)`.
+        // Antimodal-side peer of
+        // `file_format_peak_observation_empty_chain_is_zero_zero` on the
+        // same sub-axis.
+        let chain: Vec<ConfigSource> = Vec::new();
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (0, 0));
+    }
+
+    #[test]
+    fn file_format_trough_observation_no_recognized_files_is_zero_zero() {
+        // Empty-histogram witness on a NON-empty chain of only Defaults /
+        // Env / unrecognized-extension File layers: none of these
+        // contribute to the file-format histogram, so the fused pair
+        // reads `(0, 0)` on every such chain. Cross-sub-axis divergence
+        // from the layer-kind sub-axis, where the `(0, 0)` boundary
+        // coincides with the empty chain — here it coincides with the
+        // empty file-format HISTOGRAM instead. Matches the modal-side
+        // `file_format_peak_observation_no_recognized_files_is_zero_zero`
+        // boundary on the same sub-axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+            ConfigSource::File(PathBuf::from("/b")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.is_empty());
+        assert!(slice.file_format_histogram().is_empty());
+        assert_eq!(slice.file_format_trough_observation(), (0, 0));
+    }
+
+    #[test]
+    fn file_format_trough_observation_sample_chain_is_two_one() {
+        // Direct witness against `sample_chain()`: two `.yaml` file
+        // layers + one Env layer. Env layers do not contribute to the
+        // file-format histogram, so `Yaml` is the sole observed format at
+        // count `2` — peak and trough coincide on the sole observed cell,
+        // so the trough count is `2` and the multiplicity is `1`. Peer of
+        // `recessive_file_format_observation_sample_chain_is_some_yaml_at_two`
+        // on the fused (cell, count) side — both project the same
+        // antimodal observation from complementary axes.
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (2, 1));
+    }
+
+    #[test]
+    fn file_format_trough_observation_toml_majority_is_one_one() {
+        // Strictly-anti-unimodal polarity pin: two `.toml` + one `.yaml`
+        // layer. `Yaml` is uniquely antimodal at count `1`; `Toml` at `2`.
+        // Trough = `1`, multiplicity = `1`. Peer of
+        // `recessive_file_format_observation_toml_majority_is_some_yaml_at_one`
+        // on the fused (cell, count) side.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (1, 1));
+    }
+
+    #[test]
+    fn file_format_trough_observation_singleton_support_is_total_and_one() {
+        // Direct witness on singleton-support chains: every recognized-
+        // extension file layer on the same format. The sole observed
+        // format carries `total()` recognized-extension file layers at
+        // multiplicity `1` — it is uniquely both the modal and antimodal
+        // cell (trough count = `total()`, multiplicity = `1`; peak and
+        // trough coincide on the sole observed cell). Pointwise
+        // coincides with `recessive_file_format_observation`'s count
+        // component on the same fixtures.
+        for chain in [
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ] {
+            let slice = chain.as_slice();
+            let total = slice.file_format_histogram().total();
+            assert_eq!(slice.file_format_trough_observation(), (total, 1));
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_uniform_full_cover_is_one_four() {
+        // Direct witness on the uniform four-cell full-cover chain (one
+        // layer per format, all four formats observed): every observed
+        // cell is tied at the trough count `1`, so the multiplicity walks
+        // the full four-cell file-format axis. The `(1, 4)` reading is
+        // the top-corner witness on the multiplicity component of the
+        // antimodal-side fused pair on the cardinality-`4` file-format
+        // sub-axis — one strict advance over the cardinality-`3` layer-
+        // kind sub-axis's `(1, 3)` top corner and pointwise-matched to
+        // the cardinality-`4` tier altitude's uniform full-cover top
+        // corner. Peak and trough coincide on the uniform-count shape.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (1, 4));
+    }
+
+    #[test]
+    fn file_format_trough_observation_two_way_tie_is_two_and_two() {
+        // Direct witness on a modally-tied chain: two formats share the
+        // count `2`. Fixture: two `.toml` + two `.lisp` (no `.yaml`, no
+        // `.nix`). Both Toml and Lisp are tied at count `2` — peak and
+        // trough coincide at count `2`, and the trough multiplicity is
+        // `2`. Pointwise pin of the `>= 2` boundary of the antimodal-
+        // multiplicity axis at this sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.lisp")),
+        ];
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (2, 2));
+    }
+
+    #[test]
+    fn file_format_trough_observation_three_way_tie_is_one_and_three() {
+        // Direct witness on a three-format tie at count `1`: `.yaml` +
+        // `.toml` + `.lisp` (no `.nix`). All three are tied at count `1`
+        // — peak and trough coincide at count `1`, and the trough
+        // multiplicity is `3`. Pointwise pin of the interior multiplicity
+        // value on the cardinality-`4` file-format sub-axis (a value the
+        // cardinality-`3` layer-kind sub-axis can only reach as the
+        // full-cover corner).
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (1, 3));
+    }
+
+    #[test]
+    fn file_format_trough_observation_heavy_tail_is_one_and_two() {
+        // Direct witness on a heavy-tail chain: three `.toml` + one
+        // `.yaml` + one `.lisp` (no `.nix`). Toml is uniquely modal at
+        // count `3`; Yaml and Lisp are tied at the trough count `1`.
+        // Trough count = `1`, multiplicity = `2`. Divergence pin from
+        // the modal side (peak here is `(3, 1)`), showing the fused
+        // pair carries the joint (count, multiplicity) rather than
+        // conflating with the modal-side reading on non-uniform shapes.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.file_format_trough_observation(), (1, 2));
+        assert_eq!(slice.file_format_peak_observation(), (3, 1));
+    }
+
+    #[test]
+    fn file_format_trough_observation_zero_zero_iff_file_format_histogram_empty_pointwise() {
+        // The empty-boundary equivalence: `(0, 0) ⇔
+        // file_format_histogram().is_empty()` on every fixture. Cross-
+        // sub-axis divergence from the layer-kind sub-axis, where the
+        // boundary reads on `self.as_ref().is_empty()` (the chain-empty
+        // predicate) instead of the histogram-empty predicate — a non-
+        // empty chain with no recognized-extension file layers still
+        // reads `(0, 0)` on this sub-axis. Matches the modal-side
+        // `file_format_peak_observation_zero_zero_iff_file_format_histogram_empty_pointwise`
+        // boundary on the same sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_trough_observation() == (0, 0),
+                slice.file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_count_component_at_least_one_on_non_empty_histogram_pointwise()
+     {
+        // Structural bound on the count component: every chain with a
+        // non-empty file-format histogram has at least one layer at the
+        // antimodal format (zero cells are excluded from the min), so the
+        // trough count is strictly positive. Lifted from the trait-
+        // uniform `trough_observation().0 >= 1 ⇔ !is_empty()` law on
+        // `AxisHistogram`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_format_histogram().is_empty() {
+                assert!(slice.file_format_trough_observation().0 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_multiplicity_component_at_least_one_on_non_empty_histogram_pointwise()
+     {
+        // Structural bound on the multiplicity component: every chain
+        // with a non-empty file-format histogram has at least one cell
+        // at the trough, so the multiplicity is strictly positive. Lifted
+        // from the trait-uniform `trough_observation().1 >= 1 ⇔ !is_empty()`
+        // law on `AxisHistogram`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_format_histogram().is_empty() {
+                assert!(slice.file_format_trough_observation().1 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_multiplicity_bounded_by_axis_cardinality_pointwise() {
+        // Structural bound on the multiplicity component: bounded above
+        // by the axis cardinality `4` on the four-cell file-format axis.
+        // Lifted from the trait-uniform `trough_observation().1 <=
+        // axis_cardinality::<A>()` law on `AxisHistogram`.
+        let bound = crate::axis_cardinality::<crate::discovery::Format>();
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_trough_observation().1 <= bound);
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_multiplicity_bounded_by_present_file_formats_count_pointwise()
+    {
+        // Structural bound on the multiplicity component: bounded above
+        // by the observed-support size (the antimodal set is a subset of
+        // the observed support). Cross-pins the fused-pair multiplicity
+        // against `present_file_formats().len()` on the same altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_trough_observation().1 <= slice.present_file_formats().len(),);
+        }
+    }
+
+    #[test]
+    fn file_format_trough_observation_count_bounded_by_peak_observation_count_pointwise() {
+        // Structural bound on the count component: the antimodal-side
+        // count is bounded above by the modal-side count on the same
+        // histogram. Peer to the scalar `trough_file_format_count() <=
+        // peak_file_format_count()` bound and lifted from the primitive
+        // `trough_observation().0 <= peak_observation().0` invariant on
+        // `AxisHistogram`. Cross-pins the antimodal-side fused pair
+        // against the modal-side fused pair at the same sub-axis, closing
+        // the `(peak.0, trough.0)` scalar-count ordering on the fused
+        // surface.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_trough_observation().0 <= slice.file_format_peak_observation().0,
+            );
         }
     }
 
