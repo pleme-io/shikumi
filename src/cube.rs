@@ -4161,6 +4161,128 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         best.map(|cell| (cell, max, multiplicity))
     }
 
+    /// The **antimodal-side fused (cell, count, multiplicity) triple** —
+    /// the [`Self::recessive_cell`], [`Self::trough_count`], and
+    /// [`Self::trough_multiplicity`] scalars packed into one
+    /// `Option<(A, usize, usize)>` triple, computed in a single pass
+    /// over the counts vector. Returns `None` exactly when
+    /// [`Self::is_empty`] is `true`; otherwise
+    /// `Some((recessive_cell(), trough_count(), trough_multiplicity()))`
+    /// where `trough_count >= 1` and
+    /// `1 <= trough_multiplicity <= distinct_cells()`.
+    ///
+    /// The *fused triple* peer of the sibling fused-pair projections
+    /// [`Self::recessive_observation`] (the antimodal `(cell, count)`
+    /// pair) and [`Self::trough_observation`] (the antimodal
+    /// `(count, multiplicity)` pair): the same declaration-order argmin
+    /// walk that discovers the recessive cell records both its count and
+    /// how many cells tie at it, collapsing the three coordinated reads
+    /// `(recessive_cell(), trough_count(), trough_multiplicity())` into
+    /// one single-pass fold. Structural dual of
+    /// [`Self::modal_observation`] on the modal side: the histogram
+    /// surface now carries the (pair, pair, triple) antimodal-projection
+    /// family — the two overlapping fused pairs plus the closing triple
+    /// that fuses them into a single read. Peer to
+    /// [`Self::modal_observation`] on the modal side, closing the 6-cell
+    /// (modal, antimodal) × (cell, count, multiplicity) triple-grid the
+    /// modal/antimodal fused pairs closed for their 2-slot slices.
+    ///
+    /// Every consumer that reads the *"which cell (rarest), what count,
+    /// how many tied at the trough"* antimodal-surface triple — the
+    /// *tie-broken tail-headline* dashboard line reading *"format: toml
+    /// at 3× (2-way tied at trough)"* from a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// *unique-antimodal* attestation on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "Watch fired 1×
+    /// alone at the trough" vs "Watch and Extract fired 1× each — tied at
+    /// the trough" diagnostic), the *antimodality summary* line on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the operator
+    /// table's "the chain's lightest layer kind was X, at N×, tied with
+    /// k−1 others" cell) — now reads a single method call instead of
+    /// three separate walks. Before this lift, every such consumer paired
+    /// three method calls (`recessive_cell()`, `trough_count()`,
+    /// `trough_multiplicity()`), each doing a full single-pass scan over
+    /// the counts vector — `O(3 · axis_cardinality)` pointwise. The
+    /// fused triple collapses the work to one pass that tracks the
+    /// running argmin cell, running-min count (initialized to
+    /// `usize::MAX` so the first positive count promotes the sentinel),
+    /// and reset-on-fall tie-count simultaneously in one fold, excluding
+    /// zero-count cells by construction so the empty boundary reads
+    /// `None` uniformly.
+    ///
+    /// **Tie-breaking** — pointwise inherits the
+    /// [`Self::recessive_cell`] declaration-order tie-break: when
+    /// multiple cells share the trough count, the cell earliest in
+    /// [`ClosedAxis::ALL`] wins the `.0` slot. The `.2` multiplicity
+    /// records how many cells (including the winner) share the trough,
+    /// so the fused triple simultaneously reports the tie-broken
+    /// representative and the tie's cardinality.
+    ///
+    /// **Empty-histogram convention** — returns `None`, matching the
+    /// [`Self::recessive_observation`] empty convention pointwise. The
+    /// fused triple reads `None` on every histogram on which
+    /// `is_empty()` reads `true`, and strictly `Some((c, k, l))` with
+    /// `k >= 1` and `l >= 1` on every non-empty histogram. The
+    /// discriminant boundary lives on the outer `Option`, so a consumer
+    /// that matches on `Some((cell, count, mult))` never sees a spurious
+    /// `(cell, 0, 0)` tuple.
+    ///
+    /// **Fused invariants** with the scalar and fused-pair peers:
+    /// - `antimodal_observation().map(|(c, _, _)| c) == recessive_cell()`
+    ///   pointwise on every histogram (the cell projection of the fused
+    ///   triple equals [`Self::recessive_cell`]).
+    /// - `antimodal_observation().map_or(0, |(_, n, _)| n) ==
+    ///   trough_count()` pointwise on every histogram (the count
+    ///   projection equals [`Self::trough_count`]).
+    /// - `antimodal_observation().map_or(0, |(_, _, m)| m) ==
+    ///   trough_multiplicity()` pointwise on every histogram (the
+    ///   multiplicity projection equals [`Self::trough_multiplicity`]).
+    /// - `antimodal_observation() == recessive_observation().map(|(c,
+    ///   n)| (c, n, trough_multiplicity()))` pointwise — the triple is
+    ///   the fused-pair `recessive_observation` extended with the
+    ///   [`Self::trough_multiplicity`] scalar.
+    /// - `antimodal_observation() == recessive_cell().map(|c|
+    ///   (c, trough_observation().0, trough_observation().1))`
+    ///   pointwise — the triple is the [`Self::recessive_cell`] extended
+    ///   with the fused-pair [`Self::trough_observation`].
+    /// - `antimodal_observation().is_none() ⇔ is_empty()` —
+    ///   one-discriminant empty boundary on the fused triple.
+    /// - When non-empty, `antimodal_observation().unwrap().2 <=
+    ///   distinct_cells()` always; equality holds iff
+    ///   [`Self::is_uniform_count`] is `true`.
+    /// - When non-empty, `antimodal_observation().unwrap().1 >= 1` and
+    ///   `.2 >= 1` (the recessive cell witnesses one observation and one
+    ///   member of the antimodal level set).
+    /// - When non-empty, `antimodal_observation().unwrap().1 <=
+    ///   modal_observation().unwrap().1` — the antimodal-side count is
+    ///   bounded above by the modal-side count on the same histogram
+    ///   (peer to the scalar `trough_count() <= peak_count()` bound).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_antimodal_observation_empty_is_none_*`,
+    /// `axis_histogram_antimodal_observation_matches_component_projections_*`).
+    #[must_use]
+    pub fn antimodal_observation(&self) -> Option<(A, usize, usize)> {
+        let mut best: Option<A> = None;
+        let mut min = usize::MAX;
+        let mut multiplicity = 0usize;
+        for (cell, c) in self {
+            if c == 0 {
+                continue;
+            }
+            if c < min {
+                best = Some(cell);
+                min = c;
+                multiplicity = 1;
+            } else if c == min {
+                multiplicity += 1;
+            }
+        }
+        best.map(|cell| (cell, min, multiplicity))
+    }
+
     /// The **modality-degree pair** — the fused
     /// `(peak_multiplicity, trough_multiplicity)` projection on the
     /// histogram's multiplicity surface. Returns `(0, 0)` exactly when
@@ -31581,6 +31703,366 @@ mod tests {
             std::iter::once(DiffLineKind::Removed).collect();
         assert!(!singleton.is_empty());
         let (_, count, mult) = singleton.modal_observation().unwrap();
+        assert!(count >= 1);
+        assert!(mult >= 1);
+    }
+
+    // ---- AxisHistogram::antimodal_observation fused-triple laws ----
+    //
+    // The antimodal-side (cell, count, multiplicity) fusion peer of the
+    // fused-pair `recessive_observation` (cell, count) and
+    // `trough_observation` (count, multiplicity), and the structural dual
+    // of `modal_observation` on the antimodal side. Pinned by the
+    // defining three-way component-projection identities, the empty and
+    // singleton boundaries, the structural bound against distinct_cells
+    // on the multiplicity slot, the tie-break equivalence against
+    // `recessive_cell` on the cell slot, and the antimodal-≤-modal count
+    // bound.
+
+    fn assert_antimodal_observation_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.antimodal_observation(),
+            None,
+            "empty histogram antimodal_observation must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_antimodal_observation_matches_component_projections<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Trait-uniform three-way fusion identity: on every non-empty
+        // singleton observation, antimodal_observation() equals
+        // (recessive_cell(), trough_count(), trough_multiplicity())
+        // pointwise across every closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            let triple = hist.antimodal_observation();
+            assert!(
+                triple.is_some(),
+                "non-empty singleton antimodal_observation must be Some \
+                 on observed cell {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            let (cell, count, mult) = triple.unwrap();
+            assert_eq!(
+                Some(cell),
+                hist.recessive_cell(),
+                "antimodal_observation cell must equal recessive_cell \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                count,
+                hist.trough_count(),
+                "antimodal_observation count must equal trough_count \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                mult,
+                hist.trough_multiplicity(),
+                "antimodal_observation multiplicity must equal trough_multiplicity \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_antimodal_observation_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_matches_component_projections_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_antimodal_observation_matches_component_projections::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_equals_component_triple_across_canonical_shapes() {
+        // The defining fusion identity across the canonical observation-
+        // mix shapes (empty, singleton, strict-antimodal, two-way-tied,
+        // three-way uniform): antimodal_observation() and the open-coded
+        // `recessive_cell().map(|c| (c, trough_count(), trough_multiplicity()))`
+        // triple agree pointwise. Regression in either side (the fused
+        // walk drifting from the three scalar walks on the tie-count
+        // reset condition, the c==0 guard, the running-min promotion, or
+        // the declaration-order tie-break for the cell slot) surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let expected = hist
+                .recessive_cell()
+                .map(|c| (c, hist.trough_count(), hist.trough_multiplicity()));
+            assert_eq!(
+                hist.antimodal_observation(),
+                expected,
+                "antimodal_observation must equal (recessive_cell, trough_count, \
+                 trough_multiplicity) on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_equals_recessive_observation_extended_by_multiplicity()
+    {
+        // Cross-fusion identity: the fused triple equals the fused pair
+        // `recessive_observation` extended by the `trough_multiplicity`
+        // scalar on the last slot, and equivalently equals the fused
+        // pair `trough_observation` (count, multiplicity) preceded by the
+        // `recessive_cell` on the first slot. Pins the two overlapping
+        // fused-pair sub-projections against the closing triple, so a
+        // regression in any of the three (recessive_observation,
+        // trough_observation, antimodal_observation) that breaks either
+        // consistency law surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let via_recessive_observation = hist
+                .recessive_observation()
+                .map(|(c, n)| (c, n, hist.trough_multiplicity()));
+            let via_trough_observation = hist
+                .recessive_cell()
+                .map(|c| (c, hist.trough_observation().0, hist.trough_observation().1));
+            let fused = hist.antimodal_observation();
+            assert_eq!(
+                fused,
+                via_recessive_observation,
+                "antimodal_observation must equal recessive_observation extended by \
+                 trough_multiplicity on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                fused,
+                via_trough_observation,
+                "antimodal_observation must equal (recessive_cell, trough_observation) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_pins_witness_shapes() {
+        // Direct witness pins on the boundary and interior shapes.
+        // `DiffLineKind::ALL` declares [Removed, Added, Context], so
+        // the declaration-order tie-break in `recessive_cell` picks
+        // Removed first when the trough is shared across cells that
+        // include Removed:
+        //   - empty → None
+        //   - singleton (Added:1) → Some((Added, 1, 1)) — unique
+        //     antimodal cell (the sole observed cell sits at both peak
+        //     and trough)
+        //   - strict-antimodal (Added:2, Removed:1) → Some((Removed, 1,
+        //     1)) — Removed strictly holds the trough
+        //   - two-way-tied (Added:1, Removed:1) → Some((Removed, 1, 2))
+        //     — declaration-order tie-break picks Removed at the shared
+        //     trough
+        //   - uniform three-cover (Added:1, Removed:1, Context:1) →
+        //     Some((Removed, 1, 3)) — same tie-break at the three-way
+        //     shared trough, multiplicity equals the full support size
+        //     (uniform-count: peak and trough level sets coincide with
+        //     the support).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.antimodal_observation(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            singleton.antimodal_observation(),
+            Some((DiffLineKind::Added, 1, 1))
+        );
+
+        let strict_antimodal: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            strict_antimodal.antimodal_observation(),
+            Some((DiffLineKind::Removed, 1, 1))
+        );
+
+        let two_way_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            two_way_tied.antimodal_observation(),
+            Some((DiffLineKind::Removed, 1, 2))
+        );
+
+        let uniform_three_cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            uniform_three_cover.antimodal_observation(),
+            Some((DiffLineKind::Removed, 1, 3)),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_multiplicity_bounded_by_distinct_cells() {
+        // Structural bound: antimodal_observation().unwrap().2 <=
+        // distinct_cells() always; equality holds iff
+        // is_uniform_count() is true. Peer to the same bound
+        // trough_observation and trough_multiplicity carry on the
+        // antimodal (count, multiplicity) surface, lifted to the fused
+        // triple.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (_, _, mult) = hist.antimodal_observation().unwrap();
+            assert!(
+                mult <= hist.distinct_cells(),
+                "antimodal_observation multiplicity {mult} must be <= distinct_cells {} \
+                 on input of length {}",
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    mult,
+                    hist.distinct_cells(),
+                    "antimodal_observation multiplicity must equal distinct_cells on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_count_bounded_by_modal_observation_count() {
+        // Antimodal-≤-modal count bound: on every non-empty histogram,
+        // the antimodal-side count in the fused triple is bounded above
+        // by the modal-side count on the same histogram. Peer to the
+        // scalar `trough_count() <= peak_count()` bound, lifted through
+        // both fused triples. Structural — the trough is a minimum, the
+        // peak is a maximum, and both are taken over the same support
+        // (`c > 0`), so the min-≤-max invariant holds by construction
+        // whenever the support is non-empty.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (_, tn, _) = hist.antimodal_observation().unwrap();
+            let (_, pn, _) = hist.modal_observation().unwrap();
+            assert!(
+                tn <= pn,
+                "antimodal_observation count {tn} must be <= modal_observation count \
+                 {pn} on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_antimodal_observation_empty_iff_none() {
+        // Fused-triple empty-boundary pin: antimodal_observation() ==
+        // None iff is_empty() is true, and
+        // antimodal_observation().is_some() iff the histogram is
+        // non-empty. Peer to the fused-pair boundaries
+        // recessive_observation() == None iff is_empty() and
+        // trough_observation() == (0, 0) iff is_empty(). One
+        // discriminant on the outer Option — a consumer that matches on
+        // Some((cell, count, mult)) never sees a spurious (cell, 0, 0)
+        // tuple.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.antimodal_observation(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        let (_, count, mult) = singleton.antimodal_observation().unwrap();
         assert!(count >= 1);
         assert!(mult >= 1);
     }
