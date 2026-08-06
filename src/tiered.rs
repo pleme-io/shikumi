@@ -3919,6 +3919,142 @@ impl ProvenanceMap {
         self.source_kind_histogram().trough_multiplicity()
     }
 
+    /// The **antimodal-side fused (count, multiplicity) pair of source-
+    /// kind counts** — the anti-modal peer of
+    /// [`Self::peak_source_kind_observation`] on the source-kind altitude,
+    /// fusing the trough count and its multiplicity into a single `(usize,
+    /// usize)` tuple read in one pass over the fixed-cardinality counts
+    /// vector. Routes as a one-line delegate to
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_observation`], the shared primitive
+    /// that fuses both scalars into a single walk over the histogram's
+    /// *support* (nonzero cells). Returns `(0, 0)` on the empty map;
+    /// otherwise
+    /// `(trough_source_kind_count(), trough_source_kind_multiplicity())`
+    /// where `trough_count >= 1` and `1 <= multiplicity <= 3` on the
+    /// three-cell source-kind axis.
+    ///
+    /// The **`(count, multiplicity)`-axis peer** of the shipped antimodal-
+    /// side `(cell, count)` fused-pair
+    /// [`Self::recessive_source_kind_observation`] on the source-kind
+    /// altitude — together they close the antimodal-side fused-pair
+    /// surface at this altitude as the `(cell, count)` + `(count,
+    /// multiplicity)` pair, matching the closed pair at the primitive
+    /// altitude carried by
+    /// [`crate::AxisHistogram::recessive_observation`] +
+    /// [`crate::AxisHistogram::trough_observation`]. And the **antimodal-
+    /// side sibling** of the shipped modal-side
+    /// [`Self::peak_source_kind_observation`] on the same altitude —
+    /// together they close the 4-cell `(modal, antimodal) × ((cell,
+    /// count), (count, multiplicity))` grid at the source-kind altitude:
+    ///
+    /// ```text
+    /// dominant_source_kind_observation   (cell, count)          — modal
+    /// recessive_source_kind_observation  (cell, count)          — antimodal
+    /// peak_source_kind_observation       (count, multiplicity)  — modal
+    /// trough_source_kind_observation     (count, multiplicity)  — antimodal (this)
+    /// ```
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how light is the anti-
+    /// modal layer-class count, and how many layer classes are tied at
+    /// it?"*: the fleet dashboard headline *"trough source-kind
+    /// observation: 1 across 2 layer classes"* (where `(1, 2)` is this
+    /// pair) flagging a rebuild window where the recessive layer class is
+    /// ambiguous, the attestation manifest recording the antimodal
+    /// `(count, multiplicity)` pair of a resolved fold, the alerting
+    /// policy reading *"trough source-kind observation = (1, 3)"* to gate
+    /// a rebuild window on both the trough density and its uniqueness
+    /// simultaneously. Before this lift, every such consumer re-derived
+    /// the pair inline as `(map.trough_source_kind_count(),
+    /// map.trough_source_kind_multiplicity())` — two method calls, each
+    /// routing through [`Self::source_kind_histogram`] and each scanning
+    /// the counts vector independently (once to read the trough count,
+    /// once to count cells at the trough), where the shared
+    /// [`crate::AxisHistogram::trough_observation`] primitive fuses both
+    /// into one walk.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`],
+    /// [`crate::ConfigSourceKind::File`]), so
+    /// `trough_source_kind_observation()` reads `(0, 0)` on the empty map,
+    /// `(len(), 1)` on every singleton-support fold (the sole observed
+    /// source-kind is simultaneously the unique peak *and* the unique
+    /// trough at the total count), `(1, 3)` on every uniform three-source-
+    /// kind cover (all three cells tied at count `1`), and `(trough_count,
+    /// m)` with `1 <= m <= 3` on every mixed fold.
+    ///
+    /// **Empty-map convention** — returns `(0, 0)`, matching the
+    /// [`crate::AxisHistogram::trough_observation`] empty convention one
+    /// altitude down and the paired scalar empty conventions of
+    /// [`Self::trough_source_kind_count`] and
+    /// [`Self::trough_source_kind_multiplicity`] on the same altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_source_kind_observation() ==
+    ///   source_kind_histogram().trough_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `trough_source_kind_observation() ==
+    ///   (trough_source_kind_count(),
+    ///   trough_source_kind_multiplicity())` — the defining fusion
+    ///   identity: the fused pair equals the two-scan scalar pair
+    ///   pointwise on every fixture.
+    /// - `trough_source_kind_observation() == (0, 0)` ⇔ [`Self::is_empty`]
+    ///   is `true` — the empty-map / empty-histogram boundary. Peer to
+    ///   the scalar `trough_source_kind_count() == 0` and
+    ///   `trough_source_kind_multiplicity() == 0` boundaries.
+    /// - `trough_source_kind_observation().0 ==
+    ///   trough_source_kind_count()` — the count-side projection recovers
+    ///   [`Self::trough_source_kind_count`] pointwise.
+    /// - `trough_source_kind_observation().1 ==
+    ///   trough_source_kind_multiplicity()` — the multiplicity-side
+    ///   projection recovers [`Self::trough_source_kind_multiplicity`]
+    ///   pointwise.
+    /// - `trough_source_kind_observation().0 >= 1` whenever `!is_empty()`
+    ///   — the trough count is strictly positive on every non-empty fold
+    ///   (the anti-modal cell witnesses one member of the observed
+    ///   support, and every member of the support has a strictly-positive
+    ///   count by construction).
+    /// - `trough_source_kind_observation().1 >= 1` whenever `!is_empty()`
+    ///   — at least one cell holds the trough on every non-empty fold.
+    /// - `trough_source_kind_observation().0 <=
+    ///   peak_source_kind_observation().0` always — the trough count
+    ///   never exceeds the peak count (the antimodal-side count is the
+    ///   positive-min of the same support the modal-side count reads the
+    ///   max of).
+    /// - `trough_source_kind_observation().1 <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` always —
+    ///   bounded above by the axis cardinality `3` on the three-cell
+    ///   source-kind axis. Lifted from the trait-uniform
+    ///   `trough_multiplicity() <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `trough_source_kind_observation().1 <=
+    ///   contributing_source_kinds_count()` always — the antimodal set is
+    ///   a subset of the observed support.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// fused trough-plus-multiplicity scan through
+    /// [`crate::AxisHistogram::trough_observation`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(map.trough_source_kind_count(),
+    /// map.trough_source_kind_multiplicity())` idiom (which walked the
+    /// counts vector twice — once for the trough count, once for the
+    /// multiplicity — where [`crate::AxisHistogram::trough_observation`]
+    /// fuses both into a single walk).
+    #[must_use]
+    pub fn trough_source_kind_observation(&self) -> (usize, usize) {
+        self.source_kind_histogram().trough_observation()
+    }
+
     /// The **modality-shape amplitude of source-kind counts** — the
     /// absolute difference between the modal and antimodal
     /// [`crate::ConfigSourceKind`] level-set cardinalities on this
@@ -66256,6 +66392,237 @@ mod progressive_tests {
                 hist.iter().filter(|(_, c)| *c == min).count()
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::trough_source_kind_observation — antimodal-side
+    //    fused (count, multiplicity) pair on the source-kind altitude,
+    //    closing the (count, multiplicity)-axis peer of the shipped
+    //    (cell, count) `recessive_source_kind_observation` at this
+    //    altitude and the antimodal-side sibling of the shipped
+    //    `peak_source_kind_observation`, lifting the primitive
+    //    `AxisHistogram::trough_observation` one altitude up through
+    //    `source_kind_histogram()` ──
+
+    #[test]
+    fn trough_source_kind_observation_matches_source_kind_histogram_trough_observation_pointwise() {
+        // Routing pin: `trough_source_kind_observation` routes through
+        // `source_kind_histogram().trough_observation()`, so the two seams
+        // must stay pointwise equivalent under every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().trough_observation();
+            assert_eq!(map.trough_source_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_agrees_with_trough_source_kind_count_and_multiplicity_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `trough_source_kind_observation` agrees
+        // with the two-scan scalar pair `(trough_source_kind_count(),
+        // trough_source_kind_multiplicity())` on every fixture — the
+        // defining fusion identity. The fused pair reads the same two
+        // scalars in one pass instead of two.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = (
+                map.trough_source_kind_count(),
+                map.trough_source_kind_multiplicity(),
+            );
+            assert_eq!(map.trough_source_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_count_component_equals_trough_source_kind_count_pointwise() {
+        // Count-side projection: `.0` recovers
+        // `trough_source_kind_count()` pointwise on every fixture; both
+        // routings read the same trough count off the same primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.trough_source_kind_observation().0,
+                map.trough_source_kind_count()
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_multiplicity_component_equals_trough_source_kind_multiplicity_pointwise()
+     {
+        // Multiplicity-side projection: `.1` recovers
+        // `trough_source_kind_multiplicity()` pointwise on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.trough_source_kind_observation().1,
+                map.trough_source_kind_multiplicity()
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_empty_map_is_zero_pair() {
+        // Empty-map convention: no observed cell, so both scalars read
+        // `0` and the fused pair reads `(0, 0)`. Peer of
+        // `trough_source_kind_multiplicity_empty_map_is_zero` on the
+        // multiplicity component and `trough_source_kind_count == 0` on
+        // the count component.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_source_kind_observation(), (0, 0));
+    }
+
+    #[test]
+    fn trough_source_kind_observation_prog_fixture_is_four_one() {
+        // Prog: singleton-support all-Defaults fold (4 leaves, only
+        // Defaults observed) — Defaults is simultaneously the unique
+        // peak and the unique trough at count `4`, multiplicity reads
+        // `1`. Fused pair reads `(4, 1)`, coinciding with the modal-
+        // side `peak_source_kind_observation` on this singleton-support
+        // degenerate.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().trough_source_kind_observation(), (4, 1));
+    }
+
+    #[test]
+    fn trough_source_kind_observation_mixed_fixture_is_one_two() {
+        // Mixed fixture: Defaults=2, Env=1, File=1 — Env and File tie
+        // at the trough count `1`, so the fused pair reads `(1, 2)` —
+        // the antimodally-tied case on the cardinality-`3` source-kind
+        // axis.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().trough_source_kind_observation(), (1, 2));
+    }
+
+    #[test]
+    fn trough_source_kind_observation_strictly_ordered_fixture_is_one_one() {
+        // Strictly-ordered pin: two Defaults leaves + one Env leaf —
+        // Env uniquely troughs at count `1`. Fused pair reads `(1, 1)`
+        // — the strictly-antimodally-unique boundary on a two-cell
+        // support.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.trough_source_kind_observation(), (1, 1));
+    }
+
+    #[test]
+    fn trough_source_kind_observation_uniform_full_cover_is_one_three() {
+        // Uniform three-source-kind cover pin: one leaf per
+        // ConfigSourceKind cell (Defaults + Env + File), all at count
+        // `1`. All three cells tie at the trough (and simultaneously at
+        // the peak) — fused pair reads `(1, 3)`, multiplicity component
+        // = axis cardinality, the maximum reachable value on the three-
+        // cell source-kind axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.trough_source_kind_observation(), (1, 3));
+        assert_eq!(
+            m.trough_source_kind_observation().1,
+            crate::axis_cardinality::<crate::ConfigSourceKind>()
+        );
+    }
+
+    #[test]
+    fn trough_source_kind_observation_is_zero_zero_iff_map_is_empty_pointwise() {
+        // Emptiness boundary: the fused pair reads `(0, 0)` iff the map
+        // is empty; both components share the emptiness boundary of
+        // their scalar peers.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.trough_source_kind_observation() == (0, 0),
+                map.is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_multiplicity_component_bounded_by_axis_cardinality() {
+        // Structural bound: `trough_source_kind_observation().1 <=
+        // axis_cardinality::<ConfigSourceKind>()` (= 3) on every
+        // fixture. Lifted from the trait-uniform `trough_multiplicity()
+        // <= axis_cardinality::<A>()` law on AxisHistogram.
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_source_kind_observation().1 <= card);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_multiplicity_component_bounded_above_by_contributing_source_kinds_count()
+     {
+        // Support bound: the antimodal set is a subset of the observed
+        // support, so `trough_source_kind_observation().1 <=
+        // contributing_source_kinds_count()` on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.trough_source_kind_observation().1 <= map.contributing_source_kinds_count()
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_observation_count_component_le_peak_source_kind_observation_count_component_pointwise()
+     {
+        // Ordering pin: the trough count is the positive-min and the
+        // peak count is the max of the same support, so
+        // `trough_source_kind_observation().0 <=
+        // peak_source_kind_observation().0` on every fixture. The
+        // antimodal-vs-modal ordering witness that seals the antimodal-
+        // side sibling against the shipped modal-side seam. Equality
+        // holds on every uniform-per-source-kind fold (singleton support
+        // and full-cover uniform included), where the peak and trough
+        // read off the same shared level set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_source_kind_observation().0 <= map.peak_source_kind_observation().0);
         }
     }
 
