@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "17f24465b1a1d13cfa80324ee86f3533b712db86088c90ea55233eb5ba90d36e",
+  "cargo_lock_sha256": "85da9f7a909327ed77fbd0ed2e93ab9975586e4bcdfc525099c587deebcedb9f",
   "manifest_sha256": {
-    "Cargo.toml": "e02304feabe14b246a7afbc3789ef9aa66afb37401bdd92bf67b22e8be458993"
+    "Cargo.toml": "01d0c78c9235157abe9be4a4d7fa641cb8c322cd206a915e2b2e7a412485f7ac"
   },
   "target_resolves": {
     "base": {
@@ -808,6 +808,44 @@
       },
       "pin-project-lite-0.2.17": {
         "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "pleme-hotswap-derive-0.1.1": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-2.0.119",
+            "kind": "normal",
+            "features": [
+              "full"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [],
         "features": []
       },
@@ -3967,6 +4005,10 @@
     },
     "pin-project-lite-0.2.17": {
       "edition": "2018"
+    },
+    "pleme-hotswap-derive-0.1.1": {
+      "edition": "2024",
+      "proc_macro": true
     },
     "proc-macro2-1.0.107": {
       "edition": "2021",
