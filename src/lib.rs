@@ -84,7 +84,7 @@ pub use cube::{
     unrealizable_iter, unrealizable_ordinal,
 };
 pub use discovered::{
-    ContributorNamesIter, ContributorsAtIter, DiscoveryComposition, DiscoveryLayer,
+    AxisLayer, ContributorNamesIter, ContributorsAtIter, DiscoveryComposition, DiscoveryLayer,
     LayerAttribution, LayerAttributionIntoIter, LayerAttributionIter,
     LayerAttributionLayerRankingIter, LayerAttributionLayerRankingNamesIter,
     LayerAttributionLeafCountsByLayerIter, LayerAttributionSubtreeIter,

@@ -88,6 +88,144 @@ pub fn compose(layers: &[&dyn DiscoveryLayer]) -> Dict {
     compose_with_provenance(layers).dict
 }
 
+// ── AxisLayer — the kanchi→DiscoveryLayer adapter ───────────────────────
+
+/// A [`DiscoveryLayer`] assembled from probed environment axes.
+///
+/// This is the missing joint between `kanchi` and the DISCOVERED tier.
+/// `kanchi` describes itself as *"the shikumi `discovered()` tier made
+/// declarative"* and its `defaxes!` macro generates, per axis, the
+/// `FALLBACK_X` / `detect_x() -> Option<T>` / `detect_x_or_fallback() -> T`
+/// trio — but a bare trio is not a layer, so every consumer has had to
+/// hand-assemble its `discovered()` from N separate calls.
+///
+/// **The adapter lives here, not in `kanchi`, on purpose.** `shikumi`
+/// depends on `kanchi`, so the reverse edge would be a cycle; and
+/// `kanchi::axes` states the split explicitly — it is *"kept serde-free so
+/// `kanchi` stays the lean detection leaf"*, leaving the projection into a
+/// figment dict to the consumer. This type is that projection, written once
+/// for the whole fleet instead of once per app.
+///
+/// # Dotted paths
+///
+/// Keys are dotted config paths (`"window.width"`), expanded into nested
+/// [`Dict`]s so a layer can shape a sub-struct without knowing how the
+/// config type is nested in Rust.
+///
+/// # The degenerate case is the point
+///
+/// [`Self::set_opt`] takes the raw `Option` a probe returns and **drops a
+/// `None` entirely**, so an axis that cannot answer contributes nothing and
+/// the tier below shows through — exactly the "empty ⇒ this axis is
+/// undetectable" contract [`DiscoveryLayer::discover`] documents. Prefer it
+/// over feeding `detect_x_or_fallback()` into [`Self::set`]: a fallback
+/// pushed into the DISCOVERED tier *masks* `prescribed_default()`, which is
+/// the tier that is actually supposed to own curated defaults.
+///
+/// ```ignore
+/// let platform = AxisLayer::new("platform")
+///     .set_opt("window.width",  detect_window_dims().map(|(w, _)| w))
+///     .set_opt("window.height", detect_window_dims().map(|(_, h)| h))
+///     .set_opt("font_size",     detect_font_size());
+/// let discovered = compose(&[&platform]);
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct AxisLayer {
+    name: &'static str,
+    entries: Vec<(String, Value)>,
+}
+
+impl AxisLayer {
+    /// A new, empty axis layer named `name` (the provenance label).
+    #[must_use]
+    pub fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            entries: Vec::new(),
+        }
+    }
+
+    /// Contribute `value` at dotted `path`.
+    ///
+    /// Use this for an axis that always has an answer. For a probe that
+    /// returns `Option`, prefer [`Self::set_opt`] so an unanswerable axis
+    /// stays invisible instead of being pinned to a fallback.
+    #[must_use]
+    pub fn set(mut self, path: &str, value: impl Into<Value>) -> Self {
+        self.entries.push((path.to_owned(), value.into()));
+        self
+    }
+
+    /// Contribute `value` at dotted `path` **only if the probe answered**.
+    ///
+    /// `None` contributes nothing — not a null, not a default. That is the
+    /// clean degenerate: the axis is simply absent from this layer's dict,
+    /// so the next tier down supplies the value.
+    #[must_use]
+    pub fn set_opt<T: Into<Value>>(self, path: &str, value: Option<T>) -> Self {
+        match value {
+            Some(v) => self.set(path, v),
+            None => self,
+        }
+    }
+
+    /// How many axes actually answered — `0` means this layer is a no-op.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether no axis answered (the fully-degenerate layer).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+/// Insert `value` at dotted `path` within `dict`, creating intermediate
+/// [`Value::Dict`]s as needed.
+///
+/// A non-dict sitting where an intermediate segment must go is **replaced**
+/// by a dict — the same wholesale-replace rule [`deep_merge`] applies at a
+/// cross-shape boundary, kept identical so a path written by an axis and a
+/// path written by a nested layer resolve the same way.
+fn insert_path(dict: &mut Dict, path: &str, value: Value) {
+    let mut segments = path.split('.').peekable();
+    let mut cursor = dict;
+    while let Some(seg) = segments.next() {
+        if segments.peek().is_none() {
+            cursor.insert(seg.to_owned(), value);
+            return;
+        }
+        let entry = cursor
+            .entry(seg.to_owned())
+            .or_insert_with(|| Value::from(Dict::new()));
+        if !matches!(entry, Value::Dict(..)) {
+            *entry = Value::from(Dict::new());
+        }
+        match entry {
+            Value::Dict(_, inner) => cursor = inner,
+            // Unreachable: just forced to a Dict above. Returning keeps the
+            // function total rather than panicking on an impossible branch.
+            _ => return,
+        }
+    }
+}
+
+impl DiscoveryLayer for AxisLayer {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn discover(&self) -> Dict {
+        let mut dict = Dict::new();
+        for (path, value) in &self.entries {
+            insert_path(&mut dict, path, value.clone());
+        }
+        dict
+    }
+}
+
 /// The provenance names of an ordered layer stack, in application order.
 #[must_use]
 pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
@@ -8750,6 +8888,105 @@ pub fn contest_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<PathC
         decider,
         overridden: names,
     })
+}
+
+#[cfg(test)]
+mod axis_layer_tests {
+    use super::*;
+
+    #[test]
+    fn a_flat_axis_becomes_a_leaf() {
+        let l = AxisLayer::new("platform").set("font_size", 13.0_f64);
+        assert_eq!(l.name(), "platform");
+        assert_eq!(l.discover().get("font_size"), Some(&Value::from(13.0)));
+    }
+
+    #[test]
+    fn a_dotted_path_becomes_a_nested_dict() {
+        // The whole point of dotted paths: an axis shapes a sub-struct
+        // without knowing how the config type nests in Rust.
+        let d = AxisLayer::new("platform")
+            .set("window.width", 1200_i64)
+            .set("window.height", 800_i64)
+            .discover();
+        let Some(Value::Dict(_, window)) = d.get("window") else {
+            panic!("window did not become a nested dict: {d:?}");
+        };
+        assert_eq!(window.get("width"), Some(&Value::from(1200_i64)));
+        assert_eq!(window.get("height"), Some(&Value::from(800_i64)));
+        // Sibling keys under one prefix must COEXIST — the bug a naive
+        // `insert` at each path would produce is the second write erasing
+        // the first.
+        assert_eq!(window.len(), 2);
+    }
+
+    #[test]
+    fn an_unanswered_axis_contributes_nothing() {
+        // The clean degenerate the DiscoveryLayer contract documents: an
+        // axis that cannot answer is INVISIBLE, so the tier below shows
+        // through. A `None` must not become a null leaf.
+        let l = AxisLayer::new("platform")
+            .set_opt("font_size", None::<f64>)
+            .set_opt("theme", Some("vellum"));
+        let d = l.discover();
+        assert!(!d.contains_key("font_size"), "None must not emit a leaf");
+        assert_eq!(d.get("theme"), Some(&Value::from("vellum")));
+        assert_eq!(l.len(), 1);
+    }
+
+    #[test]
+    fn a_fully_unanswered_layer_is_empty_and_composes_to_nothing() {
+        let l = AxisLayer::new("platform")
+            .set_opt("a", None::<i64>)
+            .set_opt("b", None::<i64>);
+        assert!(l.is_empty());
+        assert!(l.discover().is_empty());
+        // …and it must not clobber a layer that DID answer.
+        let answered = AxisLayer::new("fleet").set("a", 1_i64);
+        let composed = compose(&[&l, &answered]);
+        assert_eq!(composed.get("a"), Some(&Value::from(1_i64)));
+    }
+
+    #[test]
+    fn a_later_axis_layer_overrides_an_earlier_one_per_leaf() {
+        // Coarse→specific ordering, proven through the real compose().
+        let coarse = AxisLayer::new("fleet")
+            .set("window.width", 800_i64)
+            .set("theme", "nord");
+        let specific = AxisLayer::new("platform").set("window.width", 1600_i64);
+        let d = compose(&[&coarse, &specific]);
+        let Some(Value::Dict(_, window)) = d.get("window") else {
+            panic!("expected nested window");
+        };
+        assert_eq!(window.get("width"), Some(&Value::from(1600_i64)));
+        // The uncontested leaf from the coarse layer survives the merge.
+        assert_eq!(d.get("theme"), Some(&Value::from("nord")));
+    }
+
+    #[test]
+    fn axis_layer_provenance_names_the_winning_layer() {
+        // The payoff of routing axes through a real DiscoveryLayer: the
+        // attribution API can now answer "which axis group set this?".
+        let coarse = AxisLayer::new("fleet").set("font_size", 13.0_f64);
+        let specific = AxisLayer::new("platform").set("font_size", 16.0_f64);
+        let c = compose_with_provenance(&[&coarse, &specific]);
+        assert_eq!(c.attribution.layer_of(&["font_size"]), Some("platform"));
+    }
+
+    #[test]
+    fn a_scalar_in_an_intermediate_segment_is_replaced_by_a_dict() {
+        // Cross-shape boundary: `window` is first a scalar, then used as a
+        // prefix. deep_merge replaces wholesale at such a boundary, and
+        // insert_path must agree or the two disagree on the same input.
+        let d = AxisLayer::new("x")
+            .set("window", 1_i64)
+            .set("window.width", 42_i64)
+            .discover();
+        let Some(Value::Dict(_, window)) = d.get("window") else {
+            panic!("scalar was not replaced by a dict: {d:?}");
+        };
+        assert_eq!(window.get("width"), Some(&Value::from(42_i64)));
+    }
 }
 
 #[cfg(test)]
