@@ -508,6 +508,55 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
         ProgressiveResolution::new(value, ProvenanceMap { inner: attribution })
     }
 
+    /// **The end-to-end fused chain** — folds the three computed tiers *and*
+    /// the operator's real file + env overlays into ONE
+    /// [`ProgressiveResolution`], reading the file / env layers through the
+    /// [`crate::ProviderChain`] figment fold (the same YAML/TOML/nix/lisp
+    /// format-detection + `PREFIX_`/`__` env machinery [`crate::ConfigStore`]
+    /// uses) so a caller does not hand-build the overlay dicts.
+    ///
+    /// This is where [`Self::resolve_progressive`] (which folds only the three
+    /// trait tiers) and [`crate::ProviderChain`] (which actually reads the file
+    /// + env) *fuse*: the full documented chain
+    ///
+    /// ```text
+    /// bare → discovered[kanchi] → prescribed_default → file → env
+    /// ```
+    ///
+    /// resolves in one call, every leaf still carrying its typed [`Provenance`].
+    /// `file` overlays carry [`Provenance::file`]; `env` overlays carry
+    /// [`Provenance::env`]. Both land at [`ConfigTierKind::Custom`] tier rank
+    /// (above the three computed tiers) and, being the same rank, keep their
+    /// documented **file-then-env** order so env wins over file per leaf — the
+    /// two are then told apart by [`Provenance::source`] (`File` vs `Env`), not
+    /// by tier.
+    ///
+    /// A missing / malformed file contributes an **empty** overlay (via
+    /// [`ProgressiveLayer::from_file`]) — never a panic, never a partial guess.
+    /// Pass [`None`] to skip a layer entirely. A caller that must *fail* on a
+    /// malformed file builds the overlay itself with
+    /// [`ProgressiveLayer::try_from_file`] and passes it to
+    /// [`Self::resolve_progressive_with`].
+    ///
+    /// The pure, side-effect-free seam is preserved: this convenience is a thin
+    /// reader over [`Self::resolve_progressive_with`], which stays the injectable
+    /// entry point tests drive with hand-built [`ProgressiveLayer`]s (no file /
+    /// env in the loop).
+    #[must_use]
+    fn resolve_progressive_full(
+        file: Option<&Path>,
+        env_prefix: Option<&str>,
+    ) -> ProgressiveResolution<Self> {
+        let mut overlays: Vec<ProgressiveLayer> = Vec::new();
+        if let Some(path) = file {
+            overlays.push(ProgressiveLayer::from_file(path));
+        }
+        if let Some(prefix) = env_prefix {
+            overlays.push(ProgressiveLayer::from_env(prefix));
+        }
+        Self::resolve_progressive_with(&overlays)
+    }
+
     /// Low-ceremony standard seam for wiring the [`Self::discovered`] tier
     /// from a declarative stack of [`DiscoveryLayer`]s (typically one per
     /// `kanchi` axis-group) instead of hand-rolling a struct literal.
@@ -16649,6 +16698,35 @@ impl ProgressiveLayer {
         let path = path.as_ref();
         let dict: Dict = ProviderChain::new().with_file(path).extract()?;
         Ok(Self::file(path.to_path_buf(), dict))
+    }
+
+    /// Read an operator FILE overlay leniently — the **infallible** peer of
+    /// [`Self::try_from_file`], and the file-side mirror of
+    /// [`Self::from_env`]'s infallibility.
+    ///
+    /// Identical parsing to [`Self::try_from_file`] (same
+    /// [`ProviderChain::with_file`] format detection, same
+    /// [`Provenance::file`] stamp); the only difference is the failure
+    /// mode. A file that is missing, unreadable, or malformed degenerates
+    /// to an **empty-dict overlay** — a no-op in the fold that lets the
+    /// tier below show through — rather than an error.
+    ///
+    /// That is the right shape for the progressive fold specifically:
+    /// [`TieredConfig::resolve_progressive_full`] must stay total (the
+    /// computed tiers always resolve *something*), so an absent operator
+    /// file is an ordinary state, not a failure. Callers that need to
+    /// *know* the file was bad — a `config-check` subcommand, a daemon
+    /// refusing to start on a typo — reach for [`Self::try_from_file`]
+    /// and read the [`ShikumiError`].
+    ///
+    /// Note the asymmetry is deliberate and load-bearing: silently
+    /// swallowing a malformed file is a hazard when the operator expects
+    /// it to apply, which is why the fallible form remains the default
+    /// spelling and this one is reached for explicitly.
+    #[must_use]
+    pub fn from_file(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        Self::try_from_file(path).unwrap_or_else(|_| Self::file(path.to_path_buf(), Dict::new()))
     }
 
     /// Read an operator ENV overlay from a prefix — the env-side fusion
@@ -59600,6 +59678,196 @@ mod progressive_tests {
         assert!(
             Provenance::computed(ConfigTierKind::Default).tier_ordinal()
                 < Provenance::file("/x").tier_ordinal()
+        );
+    }
+
+    // ── resolve_progressive_full — the end-to-end fused chain ──
+    //
+    // Fuses the three computed tiers with real file + env overlays read
+    // through the ProviderChain figment fold. A String field keeps the env
+    // overlay coercion-free; a u32 field exercises the file numeric path.
+    //
+    // Restored 2026-08-06: the method + its tests were authored on
+    // `feat/kube-cluster-discovery` (45091d6) and dropped by the merge
+    // `011f4ad`, which resolved src/tiered.rs in favour of main while the
+    // CLAUDE.md claim came through from the feature side — leaving the doc
+    // asserting a SHIPPED function that did not exist.
+
+    #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+    struct Fused {
+        name: String,
+        size: u32,
+    }
+    impl TieredConfig for Fused {
+        fn bare() -> Self {
+            Self {
+                name: String::new(),
+                size: 0,
+            }
+        }
+        fn discovered() -> Self {
+            Self {
+                name: "disc".to_owned(),
+                size: 1,
+            }
+        }
+        fn prescribed_default() -> Self {
+            Self {
+                name: "disc".to_owned(),
+                size: 9,
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_progressive_full_reads_a_real_file_over_the_computed_tiers() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("fused.yaml");
+        std::fs::write(&file, "size: 42\n").unwrap();
+
+        let r = Fused::resolve_progressive_full(Some(&file), None);
+        // File beats prescribed (9); name untouched by the file → from discovered.
+        assert_eq!(r.value().size, 42);
+        assert_eq!(r.value().name, "disc");
+        let prov = r.provenance().provenance_of(&["size"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(prov.source(), &ConfigSource::File(file.clone()));
+        // The untouched leaf keeps its computed-tier credit.
+        assert_eq!(
+            r.provenance().provenance_of(&["name"]).unwrap().tier(),
+            ConfigTierKind::Discovered,
+        );
+    }
+
+    #[test]
+    fn resolve_progressive_full_reads_a_real_env_overlay() {
+        let prefix = "SHIKUMI_FUSED_ENV_";
+        // SAFETY: single-threaded test; prefix is unique to this test so a
+        // parallel sibling cannot observe it; removed immediately below.
+        unsafe { std::env::set_var("SHIKUMI_FUSED_ENV_NAME", "fromenv") };
+        let r = Fused::resolve_progressive_full(None, Some(prefix));
+        unsafe { std::env::remove_var("SHIKUMI_FUSED_ENV_NAME") };
+
+        assert_eq!(r.value().name, "fromenv", "env overlay beats prescribed");
+        let prov = r.provenance().provenance_of(&["name"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(prov.source(), &ConfigSource::Env(prefix.to_owned()));
+    }
+
+    #[test]
+    fn resolve_progressive_full_env_beats_file_on_a_shared_leaf() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("fused.yaml");
+        // File sets BOTH name and size; env re-sets name.
+        std::fs::write(&file, "name: fromfile\nsize: 42\n").unwrap();
+        let prefix = "SHIKUMI_FUSED_SHARED_";
+        // SAFETY: as above — unique prefix, removed immediately.
+        unsafe { std::env::set_var("SHIKUMI_FUSED_SHARED_NAME", "fromenv") };
+
+        let r = Fused::resolve_progressive_full(Some(&file), Some(prefix));
+        unsafe { std::env::remove_var("SHIKUMI_FUSED_SHARED_NAME") };
+
+        // env is folded after file (both Custom rank, file-then-env order) → wins.
+        assert_eq!(r.value().name, "fromenv");
+        // size only the file set → file wins, and is told apart by source.
+        assert_eq!(r.value().size, 42);
+        assert_eq!(
+            r.provenance().provenance_of(&["name"]).unwrap().source(),
+            &ConfigSource::Env(prefix.to_owned()),
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["size"]).unwrap().source(),
+            &ConfigSource::File(file.clone()),
+        );
+    }
+
+    #[test]
+    fn resolve_progressive_full_missing_file_is_crash_safe_noop() {
+        // A missing file contributes an empty overlay — the fused result equals
+        // the plain computed fold, never a panic.
+        let r = Fused::resolve_progressive_full(Some(Path::new("/nope/absent.yaml")), None);
+        let base = Fused::resolve_progressive();
+        assert_eq!(r.value(), base.value());
+        // The computed tiers still fully credit every leaf.
+        assert_eq!(
+            r.provenance().provenance_of(&["name"]).unwrap().tier(),
+            ConfigTierKind::Discovered,
+        );
+    }
+
+    #[test]
+    fn resolve_progressive_full_malformed_file_is_crash_safe_noop() {
+        // Distinct from the MISSING case: the file exists and parses to
+        // garbage. `from_file` must still degrade to an empty overlay rather
+        // than propagate — otherwise the fused chain is not total.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("broken.yaml");
+        std::fs::write(&file, "size: [not, a, number\n").unwrap();
+
+        let r = Fused::resolve_progressive_full(Some(&file), None);
+        let base = Fused::resolve_progressive();
+        assert_eq!(r.value(), base.value(), "malformed file must not apply");
+    }
+
+    #[test]
+    fn from_file_missing_path_yields_empty_dict_with_file_provenance() {
+        let layer = ProgressiveLayer::from_file("/nope/absent.yaml");
+        assert!(layer.dict().is_empty(), "missing file ⇒ empty overlay");
+        assert_eq!(
+            layer.provenance().source(),
+            &ConfigSource::File("/nope/absent.yaml".into()),
+        );
+    }
+
+    #[test]
+    fn from_file_is_the_lenient_peer_of_try_from_file() {
+        // The pair must disagree ONLY on the failure mode. A test that checked
+        // just the happy path would pass even if `from_file` were a plain
+        // alias, so the disagreement is asserted directly.
+        //
+        // MEASURED, and not what the signatures suggest: a MISSING file is
+        // already Ok(empty) on BOTH sides — figment's `Yaml::file()` is a
+        // silent no-op when the path does not exist, so `try_from_file`'s
+        // `Result` never fires for absence. The genuine divergence is a file
+        // that EXISTS and fails to parse. Pinned here so nobody "simplifies"
+        // `from_file` away on the assumption it only guards absence.
+        let missing = Path::new("/nope/absent.yaml");
+        assert!(
+            ProgressiveLayer::try_from_file(missing).is_ok(),
+            "a missing file is not an error at the figment layer",
+        );
+        assert!(ProgressiveLayer::from_file(missing).dict().is_empty());
+
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // The real divergence: malformed → try_ errors, lenient degrades.
+        let bad = dir.path().join("bad.yaml");
+        std::fs::write(&bad, "size: [not, a, number\n").unwrap();
+        assert!(
+            ProgressiveLayer::try_from_file(&bad).is_err(),
+            "a malformed file MUST be an error on the fallible side",
+        );
+        assert!(
+            ProgressiveLayer::from_file(&bad).dict().is_empty(),
+            "…and an empty overlay on the lenient side",
+        );
+
+        // …and they agree exactly on a good file.
+        let file = dir.path().join("ok.yaml");
+        std::fs::write(&file, "size: 7\n").unwrap();
+        assert_eq!(
+            ProgressiveLayer::from_file(&file).dict(),
+            ProgressiveLayer::try_from_file(&file).unwrap().dict(),
+        );
+    }
+
+    #[test]
+    fn from_env_unset_prefix_yields_empty_dict_with_env_provenance() {
+        let layer = ProgressiveLayer::from_env("SHIKUMI_DEFINITELY_UNSET_PREFIX_");
+        assert!(layer.dict().is_empty(), "unset prefix ⇒ empty overlay");
+        assert_eq!(
+            layer.provenance().source(),
+            &ConfigSource::Env("SHIKUMI_DEFINITELY_UNSET_PREFIX_".to_owned()),
         );
     }
 
