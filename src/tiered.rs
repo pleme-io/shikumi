@@ -12844,6 +12844,157 @@ impl ProvenanceMap {
         self.tier_histogram().antimodal_observation()
     }
 
+    /// The **extremal tier observations** — the fused-quadruple pair
+    /// packing the modal `(cell, count, multiplicity)` triple and the
+    /// antimodal `(cell, count, multiplicity)` triple on this resolved
+    /// fold's tier histogram into one `Option<((ConfigTierKind, usize,
+    /// usize), (ConfigTierKind, usize, usize))>`. Returns `None` exactly
+    /// when the map is empty (no observed cell); otherwise returns
+    /// `Some((modal_tier_observation().unwrap(),
+    /// antimodal_tier_observation().unwrap()))` where the two triples
+    /// share the same non-emptiness discriminant so the outer `Option`
+    /// fuses both empty gates into a single check.
+    ///
+    /// Defined as `self.tier_histogram().extremal_observations()`, routed
+    /// through [`crate::AxisHistogram::extremal_observations`] one
+    /// altitude down — the fused single-pass argmax/argmin scan over the
+    /// histogram's nonzero support that names the modal *and* antimodal
+    /// cell together with each side's count *and* multiplicity
+    /// simultaneously, collapsing the six coordinated reads
+    /// `(dominant_tier(), peak_tier_count(), peak_tier_multiplicity(),
+    /// recessive_tier(), trough_tier_count(),
+    /// trough_tier_multiplicity())` — or equivalently the two
+    /// three-scalar folds `modal_tier_observation()` and
+    /// `antimodal_tier_observation()` — into one walk. Where each fused
+    /// triple already collapsed three coordinated `O(k)` walks over the
+    /// counts vector into one on its own side, the quadruple pair
+    /// further collapses the two triples' independent folds into a
+    /// single walk: `O(2 · k)` becomes `O(k)` for every consumer that
+    /// needs the full both-extremes headline surface at the tier
+    /// altitude.
+    ///
+    /// The **closing joint** of the (triple, triple, quadruple) tier-
+    /// altitude modal/antimodal fusion family — the modal fused triple
+    /// [`Self::modal_tier_observation`] and the antimodal fused triple
+    /// [`Self::antimodal_tier_observation`] packed into a single fold
+    /// that tracks the running argmax cell / running-max count /
+    /// reset-on-rise peak multiplicity **and** the running argmin cell /
+    /// running-min count / reset-on-fall trough multiplicity
+    /// simultaneously in one walk over the tier histogram. Structural
+    /// climb of the primitive-layer seed
+    /// [`crate::AxisHistogram::extremal_observations`] one altitude up,
+    /// under the same trajectory that lifted `modal_observation` /
+    /// `antimodal_observation` to their tier-altitude peers over the
+    /// prior two commits.
+    ///
+    /// **Nine-cell grid closure.** With its two component fused triples
+    /// [`Self::modal_tier_observation`] and
+    /// [`Self::antimodal_tier_observation`], this quadruple pair closes
+    /// the 9-cell (modal, antimodal, joint) × (cell, count, multiplicity)
+    /// triple-grid at the tier altitude that already closed one altitude
+    /// down at the histogram surface via
+    /// [`crate::AxisHistogram::modal_observation`] +
+    /// [`crate::AxisHistogram::antimodal_observation`] +
+    /// [`crate::AxisHistogram::extremal_observations`]. The tier altitude
+    /// now carries the same (per-side triple, per-side triple, joint
+    /// quadruple) fusion family the histogram surface closed, with the
+    /// outer `Option` fusing both non-emptiness gates into a single
+    /// discriminant so consumers never see one side present with the
+    /// other absent.
+    ///
+    /// **Empty-map convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::extremal_observations`] empty convention
+    /// one altitude down. Both `modal_tier_observation` and
+    /// `antimodal_tier_observation` carry the same
+    /// `is_none() ⇔ is_empty()` boundary discriminant, so the outer
+    /// `Option` on the quadruple pair fuses them into one non-emptiness
+    /// gate: a consumer matching on `Some((modal, antimodal))` never
+    /// sees the modal side present with the antimodal side absent, or
+    /// vice versa. Structural climb of the primitive-layer
+    /// `is_none() ⇔ is_empty()` seal one altitude up.
+    ///
+    /// **Tie-breaking policy** — pointwise inherits both underlying
+    /// tier-altitude triples' declaration-order tie-break: when multiple
+    /// tier cells share the peak, the cell earliest in
+    /// [`ConfigTierKind::ALL`] (`Bare → Default → Custom → Discovered`)
+    /// wins the modal `.0` slot; when multiple tier cells share the
+    /// trough, the same declaration-order rule picks the antimodal `.0`
+    /// slot. The two multiplicity slots record how many tier cells share
+    /// each extreme, so the fused quadruple reports both tie-broken
+    /// representatives and both tie cardinalities at one method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_tier_observations() ==
+    ///   tier_histogram().extremal_observations()` — the routing
+    ///   equivalence one altitude down; both project the same
+    ///   fused-quadruple pair off the same primitive.
+    /// - `extremal_tier_observations().map(|(m, _)| m) ==
+    ///   modal_tier_observation()` — the modal projection recovers
+    ///   [`Self::modal_tier_observation`] pointwise. Empty case:
+    ///   `None.map(…) == None == modal_tier_observation()`. Non-empty
+    ///   case: `Some((m, _)).map(…) == Some(m) ==
+    ///   modal_tier_observation()`.
+    /// - `extremal_tier_observations().map(|(_, a)| a) ==
+    ///   antimodal_tier_observation()` — the antimodal projection
+    ///   recovers [`Self::antimodal_tier_observation`] pointwise.
+    /// - `extremal_tier_observations() ==
+    ///   modal_tier_observation().zip(antimodal_tier_observation())` —
+    ///   the quadruple pair is the `Option::zip` of the two fused
+    ///   triples, and both sides share the same non-emptiness
+    ///   discriminant so `zip` never drops information.
+    /// - `extremal_tier_observations().is_none() ⇔ is_empty()` — the
+    ///   one-discriminant empty boundary on the fused quadruple.
+    /// - When `Some(((_, mn, _), (_, an, _)))`, `an <= mn` — the
+    ///   antimodal-side count is bounded above by the modal-side count
+    ///   on the same fold (peer to the scalar `trough_tier_count() <=
+    ///   peak_tier_count()` bound, lifted through both fused triples of
+    ///   the joint pair). Equality holds iff the tier histogram is
+    ///   uniform-count.
+    /// - When `Some(((_, _, mm), (_, _, am)))`, `1 <= mm <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` (`= 4`) and
+    ///   `1 <= am <= crate::axis_cardinality::<ConfigTierKind>()` — both
+    ///   multiplicities are bounded above by the axis cardinality on the
+    ///   same fold.
+    /// - When `Some(((_, _, mm), (_, _, am)))`, `mm <=
+    ///   contributing_tiers_count()` and `am <=
+    ///   contributing_tiers_count()` — both level sets are subsets of
+    ///   the observed cells (never count cells with zero leaves).
+    /// - `extremal_tier_observations().map(|(m, a)| m == a)` reads
+    ///   `Some(true)` whenever the tier histogram is uniform-count
+    ///   (empty maps read `None`, so the projection short-circuits;
+    ///   singleton-support and uniform-full-cover folds read `Some(true)`
+    ///   since peak and trough coincide and the declaration-order tie-
+    ///   break picks the same cell on both sides), and `Some(false)` on
+    ///   every strictly-unimodal witness where peak > trough.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the fused
+    /// argmax/argmin scan through
+    /// [`crate::AxisHistogram::extremal_observations`]). Both are `O(n)`
+    /// in practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `Option<((ConfigTierKind, usize,
+    /// usize), (ConfigTierKind, usize, usize))>` fits in one enum + two
+    /// enum + six scalars. Halves the cost of the previous open-coded
+    /// pair `(map.modal_tier_observation(),
+    /// map.antimodal_tier_observation())` (which walked the counts
+    /// vector twice — once for the modal argmax fold, once for the
+    /// antimodal argmin fold — where
+    /// [`crate::AxisHistogram::extremal_observations`] fuses both into a
+    /// single walk).
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn extremal_tier_observations(
+        &self,
+    ) -> Option<(
+        (ConfigTierKind, usize, usize),
+        (ConfigTierKind, usize, usize),
+    )> {
+        self.tier_histogram().extremal_observations()
+    }
+
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
     /// `true` exactly when every observed [`ConfigTierKind`] contributed the
     /// same number of leaves. The typed boolean peer of `tier_spread() == 0`
@@ -56531,6 +56682,350 @@ mod progressive_tests {
         assert!(modal.1 > antimodal.1);
         assert_ne!(modal.0, antimodal.0);
         assert_ne!(modal.2, antimodal.2);
+    }
+
+    // ── ProvenanceMap::extremal_tier_observations — fused-quadruple pair
+    //    packing `modal_tier_observation` and `antimodal_tier_observation`
+    //    into one single-pass walk on the tier altitude, closing the
+    //    (triple, triple, quadruple) modal/antimodal fusion family and the
+    //    9-cell (modal, antimodal, joint) × (cell, count, multiplicity)
+    //    triple-grid at the tier altitude. Structural climb of the
+    //    primitive-layer seed `AxisHistogram::extremal_observations` one
+    //    altitude up. ──
+
+    #[test]
+    fn extremal_tier_observations_matches_tier_histogram_extremal_observations_pointwise() {
+        // Routing pin: `extremal_tier_observations` routes through
+        // `tier_histogram().extremal_observations()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native fused-quadruple primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().extremal_observations();
+            assert_eq!(map.extremal_tier_observations(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_matches_open_coded_zip_pointwise() {
+        // Structural-form pin: `extremal_tier_observations` agrees with
+        // the open-coded `modal_tier_observation().zip(antimodal_tier_observation())`
+        // pair on every fixture. Pins the defining equivalence: the
+        // fused quadruple pair reads the same two triples off the same
+        // primitive as two independent fused-triple calls zipped
+        // together, so consumers can safely replace the two-call zip
+        // idiom with one method call and one walk.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map
+                .modal_tier_observation()
+                .zip(map.antimodal_tier_observation());
+            assert_eq!(map.extremal_tier_observations(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_modal_projection_equals_modal_tier_observation_pointwise() {
+        // Modal-side projection pin: `.map(|(m, _)| m) ==
+        // modal_tier_observation()` on every fixture. Pins the
+        // fused-quadruple primitive as the upstream of the sibling
+        // modal-side fused triple, which reads the same triple through
+        // the `.map` projection on the outer `Option` shape.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tier_observations().map(|(m, _)| m);
+            assert_eq!(via_map, map.modal_tier_observation());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_antimodal_projection_equals_antimodal_tier_observation_pointwise()
+    {
+        // Antimodal-side projection pin: `.map(|(_, a)| a) ==
+        // antimodal_tier_observation()` on every fixture. Pins the
+        // fused-quadruple primitive as the upstream of the sibling
+        // antimodal-side fused triple, which reads the same triple
+        // through the `.map` projection on the outer `Option` shape.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tier_observations().map(|(_, a)| a);
+            assert_eq!(via_map, map.antimodal_tier_observation());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_empty_map_is_none() {
+        // Empty-map polarity pin: the empty map has no observed cell,
+        // so the fused quadruple pair reads `None` — the vacuous-nothing
+        // boundary lifted from the empty support one altitude down. Both
+        // component triples share this discriminant, so the outer
+        // `Option` fuses both empty gates into one check.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.extremal_tier_observations(), None);
+    }
+
+    #[test]
+    fn extremal_tier_observations_prog_fixture_is_default_two_one_bare_one_two() {
+        // Prog: 4 leaves attributed as `a→Discovered, b→Default,
+        // c→Bare, d→Default` — counts {Bare:1, Default:2, Discovered:1}.
+        // Modal side: `Default` uniquely peaks at count `2`, multiplicity
+        // reads `1` — modal triple reads `(Default, 2, 1)`. Antimodal
+        // side: trough count reads `1`, cells at the trough are
+        // `{Bare, Discovered}`; declaration-order tie-break on
+        // `Bare → Default → Custom → Discovered` picks `Bare`,
+        // multiplicity reads `2` — antimodal triple reads `(Bare, 1, 2)`.
+        // Fused quadruple pair reads `Some(((Default, 2, 1), (Bare, 1,
+        // 2)))` — the strictly-unimodal witness on the cardinality-`4`
+        // tier axis where peak and trough diverge on every component.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().extremal_tier_observations(),
+            Some((
+                (ConfigTierKind::Default, 2, 1),
+                (ConfigTierKind::Bare, 1, 2),
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_tier_observations_nested_fixture_is_default_two_one_discovered_one_one() {
+        // Nested: 3 leaves attributed as `win.w→Discovered,
+        // win.h→Default, theme→Default` — counts {Default:2,
+        // Discovered:1}. Modal side: `Default` uniquely peaks at count
+        // `2`, multiplicity reads `1`. Antimodal side: `Discovered`
+        // uniquely troughs at count `1`, multiplicity reads `1` — no
+        // tie, no declaration-order fallback needed. Fused quadruple
+        // pair reads `Some(((Default, 2, 1), (Discovered, 1, 1)))` —
+        // the strictly-unimodal witness where both extremes are unique.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().extremal_tier_observations(),
+            Some((
+                (ConfigTierKind::Default, 2, 1),
+                (ConfigTierKind::Discovered, 1, 1),
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_tier_observations_singleton_support_is_default_four_one_default_four_one() {
+        // Singleton-support polarity pin: every leaf lands on
+        // `Default`, so `Default` is the sole observed cell — peak and
+        // trough both read count `4`, multiplicity reads `1` on both
+        // sides. Fused quadruple pair reads `Some(((Default, 4, 1),
+        // (Default, 4, 1)))` — the peak/trough coincidence corner where
+        // the modal and antimodal triples agree pointwise.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.len(), 4);
+        assert_eq!(
+            m.extremal_tier_observations(),
+            Some((
+                (ConfigTierKind::Default, 4, 1),
+                (ConfigTierKind::Default, 4, 1),
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_tier_observations_two_tier_tie_is_bare_one_two_bare_one_two() {
+        // Two-tier-tied polarity pin: `Bare + Default` both at count
+        // `1`, both tied at peak and trough (which coincide). Fused
+        // quadruple pair reads `Some(((Bare, 1, 2), (Bare, 1, 2)))` —
+        // declaration-order tie-breaking picks the first observed cell
+        // in `ConfigTierKind::ALL` (`Bare`) on both sides, and the
+        // multiplicity records how many cells share the shared count.
+        // Uniform-count coincidence corner on the cardinality-`4` tier
+        // axis.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(
+            m.extremal_tier_observations(),
+            Some(((ConfigTierKind::Bare, 1, 2), (ConfigTierKind::Bare, 1, 2),)),
+        );
+    }
+
+    #[test]
+    fn extremal_tier_observations_uniform_full_cover_is_bare_one_four_bare_one_four() {
+        // Uniform four-tier cover polarity pin: one leaf per
+        // `ConfigTierKind` cell (Bare + Discovered + Default + Custom),
+        // all at count `1`. All four cells tie at peak and trough —
+        // fused quadruple pair reads `Some(((Bare, 1, 4), (Bare, 1,
+        // 4)))`, with both multiplicity components saturating the axis
+        // cardinality of `4`. Top-corner witness of the tie-breaking
+        // policy on the uniform full-cover shape at the cardinality-`4`
+        // tier altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(
+            m.extremal_tier_observations(),
+            Some(((ConfigTierKind::Bare, 1, 4), (ConfigTierKind::Bare, 1, 4),)),
+        );
+        let obs = m.extremal_tier_observations().unwrap();
+        assert_eq!(obs.0.2, crate::axis_cardinality::<ConfigTierKind>());
+        assert_eq!(obs.1.2, crate::axis_cardinality::<ConfigTierKind>());
+    }
+
+    #[test]
+    fn extremal_tier_observations_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `extremal_tier_observations().is_none()` iff the map is empty.
+        // Direct pin of the histogram-side `is_empty ⇔
+        // extremal_observations.is_none()` equivalence one altitude
+        // down — the shared vacuous-nothing boundary on the empty
+        // support. Cross-pins with the parallel sibling boundaries on
+        // `modal_tier_observation` (`.is_none() ⇔ is_empty`) and
+        // `antimodal_tier_observation` (`.is_none() ⇔ is_empty`).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.extremal_tier_observations().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_antimodal_count_bounded_by_modal_count_pointwise() {
+        // Antimodal-≤-modal count-component bound: on every non-empty
+        // support, the `.1.1` antimodal count component is bounded
+        // above by the `.0.1` modal count component — the trough count
+        // is never larger than the peak count on the same fold.
+        // Equality holds iff the tier histogram is uniform-count (peak
+        // and trough coincide). Peer of the scalar `trough_tier_count()
+        // <= peak_tier_count()` bound, lifted through both fused triples
+        // of the joint pair.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(((_, mn, _), (_, an, _))) = map.extremal_tier_observations() {
+                assert!(an <= mn);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_multiplicities_bounded_by_axis_cardinality_pointwise() {
+        // Axis-cardinality upper bound on both sides: on every
+        // non-empty support, both `.0.2` (modal multiplicity) and
+        // `.1.2` (antimodal multiplicity) are `>= 1` and `<=
+        // axis_cardinality::<ConfigTierKind>()` = `4` — each level set
+        // is a subset of the four-cell tier axis. Equality on both
+        // sides holds on uniform-count full-cover folds where every
+        // observed cell shares the same count and every axis cell is
+        // observed.
+        let card = crate::axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(((_, _, mm), (_, _, am))) = map.extremal_tier_observations() {
+                assert!(mm >= 1);
+                assert!(mm <= card);
+                assert!(am >= 1);
+                assert!(am <= card);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_multiplicities_bounded_by_contributing_tiers_count_pointwise() {
+        // Present-support upper bound on both sides: on every non-empty
+        // support, both multiplicity components are bounded above by
+        // `contributing_tiers_count()` — each level set is a subset of
+        // the observed cells (never counts cells with zero leaves).
+        // Sharpens the axis-cardinality bound on every partial-cover
+        // fold. Peer of the sibling bounds on the fused triples.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(((_, _, mm), (_, _, am))) = map.extremal_tier_observations() {
+                assert!(mm <= map.contributing_tiers_count());
+                assert!(am <= map.contributing_tiers_count());
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_tier_observations_sides_agree_on_uniform_count_or_singleton_pointwise() {
+        // Peak-trough coincidence law lifted to the fused quadruple:
+        // on every singleton-support fold and every uniform-count
+        // fold, the modal and antimodal triples of the quadruple pair
+        // read the same value pointwise — `.0 == .1`. Peer of the
+        // fused-triple coincidence law on `modal_tier_observation` /
+        // `antimodal_tier_observation`. Both projections read the same
+        // triple because peak and trough coincide on these corners; the
+        // tie-break rule picks the same cell on both sides.
+        let singleton: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        let singleton_obs = singleton.extremal_tier_observations().unwrap();
+        assert_eq!(singleton_obs.0, singleton_obs.1);
+
+        let uniform_cover: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        let uniform_obs = uniform_cover.extremal_tier_observations().unwrap();
+        assert_eq!(uniform_obs.0, uniform_obs.1);
+    }
+
+    #[test]
+    fn extremal_tier_observations_sides_diverge_on_strictly_unimodal_pointwise() {
+        // Complement of the coincidence law lifted to the fused
+        // quadruple: on every strictly-unimodal fold where peak and
+        // trough diverge, the modal and antimodal triples of the
+        // quadruple pair read DIFFERENT values. Prog is a strictly-
+        // unimodal witness: modal reads `(Default, 2, 1)`, antimodal
+        // reads `(Bare, 1, 2)` — every component diverges (cell,
+        // count, and multiplicity).
+        let r = Prog::resolve_progressive();
+        let obs = r.provenance().extremal_tier_observations().unwrap();
+        assert_ne!(obs.0, obs.1);
+        assert_ne!(obs.0.0, obs.1.0);
+        assert!(obs.0.1 > obs.1.1);
+        assert_ne!(obs.0.2, obs.1.2);
     }
 
     // ── ProvenanceMap::tiers_modally_tied — modally-tied-tier-counts
