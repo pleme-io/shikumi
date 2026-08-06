@@ -11294,6 +11294,96 @@ impl ProvenanceMap {
         self.tier_histogram().peak_multiplicity()
     }
 
+    /// The **modal-side fused `(peak_tier_count, peak_tier_multiplicity)`
+    /// pair on the tier altitude** — the argmax-count-plus-multiplicity
+    /// observation that fuses the two scalar walks
+    /// [`Self::peak_tier_count`] and [`Self::peak_tier_multiplicity`]
+    /// into a single `(usize, usize)`-tuple read named at the surface,
+    /// routed through the shared [`crate::AxisHistogram::peak_observation`]
+    /// primitive one altitude down. Returns `(0, 0)` on the empty map;
+    /// otherwise `(peak_tier_count(), peak_tier_multiplicity())` where
+    /// `peak_tier_count >= 1` and `1 <= peak_tier_multiplicity <= 4` on
+    /// the four-cell [`ConfigTierKind`] axis.
+    ///
+    /// The **tier-altitude peer** of the shipped source-kind-altitude
+    /// fused-pair [`Self::peak_source_kind_observation`]
+    /// (`ProvenanceMap::peak_source_kind_observation`), the **`(count,
+    /// multiplicity)`-axis peer** of the shipped `(cell, count)`
+    /// fused-pair [`Self::dominant_tier_observation`] on the same
+    /// altitude, and the direct altitude-lift of the primitive
+    /// [`crate::AxisHistogram::peak_observation`]. The pattern is the
+    /// same at every altitude: fuse the two open-coded scalar walks
+    /// (`(peak_count, peak_multiplicity)`) into one named `(usize,
+    /// usize)`-tuple read, routed through the shared
+    /// [`crate::AxisHistogram::peak_observation`] primitive one altitude
+    /// down.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude.**
+    /// [`ConfigTierKind`] carries four cells ([`ConfigTierKind::Bare`],
+    /// [`ConfigTierKind::Discovered`], [`ConfigTierKind::Default`],
+    /// [`ConfigTierKind::Custom`]), so `peak_tier_observation()` reads
+    /// `(0, 0)` on the empty map, `(len(), 1)` on every singleton-support
+    /// fold (the sole observed tier uniquely peaks at the total count),
+    /// `(1, 4)` on every uniform four-tier cover (all four cells tied at
+    /// count `1`), and `(peak_count, m)` with `1 <= m <= 4` on every
+    /// mixed fold. One strict advance over the cardinality-`3`
+    /// source-kind altitude's `(1, 3)` uniform-cover ceiling.
+    ///
+    /// **Empty-map convention** — returns `(0, 0)`, matching the
+    /// [`crate::AxisHistogram::peak_observation`] empty convention one
+    /// altitude down and the paired scalar empty conventions of
+    /// [`Self::peak_tier_count`] and [`Self::peak_tier_multiplicity`] on
+    /// the same altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_tier_observation() == tier_histogram().peak_observation()`
+    ///   — the routing equivalence one altitude down; both project the
+    ///   same fused pair off the same primitive.
+    /// - `peak_tier_observation() == (peak_tier_count(),
+    ///   peak_tier_multiplicity())` — the defining fusion identity: the
+    ///   fused pair equals the two-scan scalar pair pointwise on every
+    ///   fixture.
+    /// - `peak_tier_observation() == (0, 0)` ⇔ [`Self::is_empty`] is
+    ///   `true` — the empty-map / empty-histogram boundary. Peer to the
+    ///   scalar `peak_tier_count() == 0` and `peak_tier_multiplicity()
+    ///   == 0` boundaries.
+    /// - `peak_tier_observation().0 == peak_tier_count()` — the
+    ///   count-side projection recovers [`Self::peak_tier_count`]
+    ///   pointwise.
+    /// - `peak_tier_observation().1 == peak_tier_multiplicity()` — the
+    ///   multiplicity-side projection recovers
+    ///   [`Self::peak_tier_multiplicity`] pointwise.
+    /// - `peak_tier_observation().0 >= 1` whenever `!is_empty()` — the
+    ///   peak count is strictly positive on every non-empty fold.
+    /// - `peak_tier_observation().1 >= 1` whenever `!is_empty()` — at
+    ///   least one cell holds the peak on every non-empty fold.
+    /// - `peak_tier_observation().1 <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` always — bounded
+    ///   above by the axis cardinality `4` on the four-cell tier axis.
+    ///   Lifted from the trait-uniform `peak_multiplicity() <=
+    ///   axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `peak_tier_observation().1 <= contributing_tiers_count()`
+    ///   always — the modal set is a subset of the observed support.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the fused
+    /// peak-plus-multiplicity scan through
+    /// [`crate::AxisHistogram::peak_observation`]). Both are `O(n)` in
+    /// practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline `(map.peak_tier_count(),
+    /// map.peak_tier_multiplicity())` idiom (which walked the counts
+    /// vector twice — once for the peak count, once for the
+    /// multiplicity — where [`crate::AxisHistogram::peak_observation`]
+    /// fuses both into a single walk).
+    #[must_use]
+    pub fn peak_tier_observation(&self) -> (usize, usize) {
+        self.tier_histogram().peak_observation()
+    }
+
     /// The **antimodal-multiplicity of tier counts** — the number of
     /// [`ConfigTierKind`] cells that hold the trough (positive-min) leaf
     /// count on this resolved fold. Equal to `1` on every strictly-
@@ -51291,6 +51381,211 @@ mod progressive_tests {
                 hist.iter().filter(|(_, c)| *c == max).count()
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::peak_tier_observation — modal-side fused
+    //    (count, multiplicity) pair on the tier altitude, closing the
+    //    (count, multiplicity)-axis peer of the shipped (cell, count)
+    //    `dominant_tier_observation` at this altitude and lifting the
+    //    source-kind-altitude `peak_source_kind_observation` one axis
+    //    over onto the cardinality-`4` ConfigTierKind axis. Routes
+    //    through the shared `AxisHistogram::peak_observation`
+    //    primitive one altitude down through `tier_histogram()`. ──
+
+    #[test]
+    fn peak_tier_observation_matches_tier_histogram_peak_observation_pointwise() {
+        // Routing pin: `peak_tier_observation` routes through
+        // `tier_histogram().peak_observation()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Tier-altitude
+        // fused-pair climb of the primitive
+        // `AxisHistogram::peak_observation`; peer of
+        // `peak_source_kind_observation_matches_source_kind_histogram_peak_observation_pointwise`
+        // on the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().peak_observation();
+            assert_eq!(map.peak_tier_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_agrees_with_peak_tier_count_and_multiplicity_scalar_pair_pointwise() {
+        // Structural-form pin: `peak_tier_observation` agrees with the
+        // two-scan scalar pair `(peak_tier_count(),
+        // peak_tier_multiplicity())` on every fixture — the defining
+        // fusion identity. The fused pair reads the same two scalars
+        // in one pass instead of two.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = (map.peak_tier_count(), map.peak_tier_multiplicity());
+            assert_eq!(map.peak_tier_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_count_component_equals_peak_tier_count_pointwise() {
+        // Count-side projection: `.0` recovers `peak_tier_count()`
+        // pointwise on every fixture; both routings read the same peak
+        // count off the same primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_tier_observation().0, map.peak_tier_count());
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_multiplicity_component_equals_peak_tier_multiplicity_pointwise() {
+        // Multiplicity-side projection: `.1` recovers
+        // `peak_tier_multiplicity()` pointwise on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_tier_observation().1, map.peak_tier_multiplicity());
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_empty_map_is_zero_pair() {
+        // Empty-map convention: no observed cell, so both scalars read
+        // `0` and the fused pair reads `(0, 0)`. Peer of
+        // `peak_tier_multiplicity_empty_map_is_zero` on the multiplicity
+        // component and `peak_tier_count_empty_map_is_zero` on the count
+        // component.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_tier_observation(), (0, 0));
+    }
+
+    #[test]
+    fn peak_tier_observation_prog_fixture_is_two_one() {
+        // Prog: 4 leaves attributed as `a→Discovered, b→Default,
+        // c→Bare, d→Default` — `Default` uniquely peaks at count `2`,
+        // multiplicity reads `1`. Fused pair reads `(2, 1)` — the
+        // strictly-modally-unique corner on the cardinality-`4` tier
+        // axis.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_observation(), (2, 1));
+    }
+
+    #[test]
+    fn peak_tier_observation_nested_fixture_is_two_one() {
+        // Nested: 3 leaves attributed as `win.w→Discovered,
+        // win.h→Default, theme→Default` — `Default` uniquely peaks at
+        // count `2`, multiplicity reads `1`. Fused pair reads `(2, 1)`
+        // — the modal cell reads through the seam whether the fixture
+        // is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_observation(), (2, 1));
+    }
+
+    #[test]
+    fn peak_tier_observation_singleton_support_is_len_one() {
+        // Singleton-support pin: every leaf lands on `Default`, so
+        // `Default` is the sole observed cell — peak count reads
+        // `len()` = `4`, multiplicity reads `1`. Fused pair reads
+        // `(4, 1)` — the singleton-support corner where the peak count
+        // equals the total leaf count.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.len(), 4);
+        assert_eq!(m.peak_tier_observation(), (4, 1));
+    }
+
+    #[test]
+    fn peak_tier_observation_two_tier_tie_is_one_two() {
+        // Two-tier-tied pin: `Bare + Default` both at count `1`, both
+        // tied at the peak. Fused pair reads `(1, 2)` — the
+        // modally-tied boundary at the smallest non-trivial tied
+        // support on the tier axis.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.peak_tier_observation(), (1, 2));
+    }
+
+    #[test]
+    fn peak_tier_observation_uniform_full_cover_is_one_four() {
+        // Uniform four-tier cover pin: one leaf per ConfigTierKind
+        // cell (Bare + Discovered + Default + Custom), all at count
+        // `1`. All four cells tie at the peak — fused pair reads
+        // `(1, 4)`, multiplicity component = axis cardinality, the
+        // maximum reachable value on the four-cell tier axis. Strict
+        // advance over the source-kind altitude's `(1, 3)`
+        // uniform-cover ceiling.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.peak_tier_observation(), (1, 4));
+        assert_eq!(
+            m.peak_tier_observation().1,
+            crate::axis_cardinality::<ConfigTierKind>()
+        );
+    }
+
+    #[test]
+    fn peak_tier_observation_is_zero_zero_iff_map_is_empty_pointwise() {
+        // Emptiness boundary: the fused pair reads `(0, 0)` iff the
+        // map is empty; both components share the emptiness boundary
+        // of their scalar peers.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_tier_observation() == (0, 0), map.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_multiplicity_component_bounded_by_axis_cardinality() {
+        // Structural bound: `peak_tier_observation().1 <=
+        // axis_cardinality::<ConfigTierKind>()` (= 4) on every fixture.
+        // Lifted from the trait-uniform `peak_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram.
+        let card = crate::axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.peak_tier_observation().1 <= card);
+        }
+    }
+
+    #[test]
+    fn peak_tier_observation_multiplicity_component_bounded_above_by_contributing_tiers_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `peak_tier_observation().1 <=
+        // contributing_tiers_count()` on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.peak_tier_observation().1 <= map.contributing_tiers_count());
         }
     }
 
