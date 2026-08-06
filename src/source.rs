@@ -4564,19 +4564,20 @@ pub trait ConfigSourceChain {
     /// the first chain-altitude sub-axis, and one seam over from the
     /// seeding diff altitude
     /// ([`crate::ConfigDiff::trough_kind_observation`]). The two remaining
-    /// chain-altitude sub-axes are the natural next sideways lifts
-    /// (`file_format_trough_observation` over
-    /// [`Self::file_format_histogram`], `env_prefix_kind_trough_observation`
-    /// over [`Self::env_prefix_kind_histogram`]), mirroring the three-step
+    /// chain-altitude sub-axes are the shipped sideways lifts
+    /// ([`Self::file_format_trough_observation`] over
+    /// [`Self::file_format_histogram`],
+    /// [`Self::env_prefix_kind_trough_observation`] over
+    /// [`Self::env_prefix_kind_histogram`]), mirroring the three-step
     /// chain trajectory the closed sibling antimodal-side row already walked
     /// (`recessive_layer_kind_observation` →
     /// `recessive_file_format_observation` →
-    /// `recessive_env_prefix_kind_observation`). Once closed at every chain
-    /// sub-axis in the same trajectory, the substrate closes the antimodal-
-    /// side `(count, multiplicity)` fused-pair row at every altitude / sub-
-    /// axis alongside the closed sibling `(trough_count,
-    /// trough_multiplicity)` scalar halves and the closed antimodal-side
-    /// `(cell, count)` fused-pair peer.
+    /// `recessive_env_prefix_kind_observation`). Together with these
+    /// shipped closers, the substrate closes the antimodal-side `(count,
+    /// multiplicity)` fused-pair row at every altitude / sub-axis
+    /// alongside the closed sibling `(trough_count, trough_multiplicity)`
+    /// scalar halves and the closed antimodal-side `(cell, count)` fused-
+    /// pair peer.
     ///
     /// The **fused-pair peer** of the two closed antimodal-side scalar
     /// siblings ([`Self::trough_layer_kind_count`] carrying the *count*
@@ -13072,18 +13073,18 @@ pub trait ConfigSourceChain {
     /// kind altitude ([`crate::ProvenanceMap::trough_source_kind_observation`])
     /// climb, and one seam over from the seeding diff altitude
     /// ([`crate::ConfigDiff::trough_kind_observation`]). The last remaining
-    /// chain-altitude sub-axis is the natural next sideways lift
-    /// (`env_prefix_kind_trough_observation` over
+    /// chain-altitude sub-axis is the shipped sideways lift
+    /// ([`Self::env_prefix_kind_trough_observation`] over
     /// [`Self::env_prefix_kind_histogram`]), mirroring the closing sideways
     /// step the shipped sibling antimodal-side row already walked
     /// (`recessive_layer_kind_observation` →
     /// `recessive_file_format_observation` →
-    /// `recessive_env_prefix_kind_observation`). Once closed at every chain
-    /// sub-axis in the same trajectory, the substrate closes the antimodal-
-    /// side `(count, multiplicity)` fused-pair row at every altitude / sub-
-    /// axis of the histogram lattice alongside the closed sibling
-    /// `(trough_count, trough_multiplicity)` scalar halves and the closed
-    /// antimodal-side `(cell, count)` fused-pair peer.
+    /// `recessive_env_prefix_kind_observation`). Together with this
+    /// shipped closer, the substrate closes the antimodal-side `(count,
+    /// multiplicity)` fused-pair row at every altitude / sub-axis of the
+    /// histogram lattice alongside the closed sibling `(trough_count,
+    /// trough_multiplicity)` scalar halves and the closed antimodal-side
+    /// `(cell, count)` fused-pair peer.
     ///
     /// The **fused-pair peer** of the two closed antimodal-side scalar
     /// siblings ([`Self::trough_file_format_count`] carrying the *count*
@@ -22408,13 +22409,12 @@ pub trait ConfigSourceChain {
     /// row `(dominant_layer_kind_observation,
     /// dominant_file_format_observation,
     /// dominant_env_prefix_kind_observation)` one column over on the same
-    /// altitude. The natural next lift on the antimodal-side `(count,
-    /// multiplicity)` trajectory is `env_prefix_kind_trough_observation`
-    /// over the same sub-axis, which will close the 4-cell `(modal,
-    /// antimodal) × ((cell, count), (count, multiplicity))` fused-pair
-    /// grid at the env-prefix sub-axis and complete the antimodal-side
-    /// `(count, multiplicity)` fused-pair row across every chain sub-axis
-    /// alongside this modal-side row.
+    /// altitude. The antimodal-side `(count, multiplicity)` peer at this
+    /// sub-axis is [`Self::env_prefix_kind_trough_observation`], which
+    /// closes the 4-cell `(modal, antimodal) × ((cell, count), (count,
+    /// multiplicity))` fused-pair grid at the env-prefix sub-axis and
+    /// completes the antimodal-side `(count, multiplicity)` fused-pair
+    /// row across every chain sub-axis alongside this modal-side row.
     ///
     /// The **fused-pair peer** of the two closed modal-side scalar
     /// siblings ([`Self::peak_env_prefix_kind_count`] carrying the
@@ -22552,6 +22552,241 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().peak_observation()
+    }
+
+    /// The **antimodal `(count, multiplicity)` fused pair of env-prefix
+    /// kinds** — the trough (min) [`ConfigSource::Env`] layer count on
+    /// this chain paired with the number of [`EnvMetadataTagKind`] cells
+    /// that hold it, read off the chain's env-prefix histogram in one
+    /// fused scan. Equal to `(trough_env_prefix_kind_count(),
+    /// env_prefix_kind_trough_multiplicity())` by construction, routed
+    /// through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_observation`] reads the fused pair
+    /// off the primitive in a single running-min walk over the fixed-
+    /// cardinality counts vector, matching the closed pair on the layer-
+    /// kind sub-axis carried by [`Self::layer_kind_trough_observation`],
+    /// the closed pair on the file-format sub-axis carried by
+    /// [`Self::file_format_trough_observation`], the closed pair on the
+    /// tier altitude carried by
+    /// [`crate::ProvenanceMap::trough_tier_observation`], the closed pair
+    /// on the source-kind altitude carried by
+    /// [`crate::ProvenanceMap::trough_source_kind_observation`], and the
+    /// closed pair on the diff altitude carried by
+    /// [`crate::ConfigDiff::trough_kind_observation`].
+    ///
+    /// The **`(count, multiplicity)`-axis antimodal-side fused peer** of
+    /// the shipped `(cell, count)` antimodal-side fused pair
+    /// [`Self::recessive_env_prefix_kind_observation`] on the env-prefix
+    /// sub-axis of the chain altitude — together they close the antimodal-
+    /// side fused-pair surface at this sub-axis as the `(cell, count)` +
+    /// `(count, multiplicity)` pair, matching the closed pair at the
+    /// primitive altitude carried by
+    /// [`crate::AxisHistogram::recessive_observation`] +
+    /// [`crate::AxisHistogram::trough_observation`], the closed pair on
+    /// the tier altitude carried by
+    /// [`crate::ProvenanceMap::recessive_tier_observation`] +
+    /// [`crate::ProvenanceMap::trough_tier_observation`], and the closed
+    /// pair on the diff altitude carried by
+    /// [`crate::ConfigDiff::recessive_kind_observation`] +
+    /// [`crate::ConfigDiff::trough_kind_observation`]. Together with the
+    /// shipped modal-side [`Self::env_prefix_kind_peak_observation`] this
+    /// lift closes the 4-cell `(modal, antimodal) × ((cell, count),
+    /// (count, multiplicity))` fused-pair grid at the env-prefix sub-axis
+    /// of the chain altitude — the same 4-cell grid the layer-kind sub-
+    /// axis closed one seam over with
+    /// [`Self::layer_kind_peak_observation`] +
+    /// [`Self::layer_kind_trough_observation`] and the file-format sub-
+    /// axis closed one seam over with
+    /// [`Self::file_format_peak_observation`] +
+    /// [`Self::file_format_trough_observation`]. Consumers previously re-
+    /// derived the antimodal `(count, multiplicity)` pair inline as
+    /// `(chain.trough_env_prefix_kind_count(),
+    /// chain.env_prefix_kind_trough_multiplicity())` — two method calls,
+    /// each routing through [`Self::env_prefix_kind_histogram`] and each
+    /// scanning the counts vector independently (once to read the trough
+    /// count, once to walk the multiplicity of cells tied at it), where
+    /// the shared [`crate::AxisHistogram::trough_observation`] primitive
+    /// fuses both into one walk.
+    ///
+    /// The chain-altitude env-prefix sub-axis fused-pair peer that
+    /// **closes the antimodal-side `(count, multiplicity)` fused-pair row
+    /// across every chain sub-axis** — the last remaining sub-axis on the
+    /// chain-altitude antimodal-side row after the shipped
+    /// [`Self::layer_kind_trough_observation`] on the first sub-axis and
+    /// [`Self::file_format_trough_observation`] on the second sub-axis.
+    /// The chain-altitude antimodal-side row
+    /// `(layer_kind_trough_observation, file_format_trough_observation,
+    /// env_prefix_kind_trough_observation)` now spans every sub-axis of
+    /// the chain surface, matching the fully-closed antimodal-side
+    /// `(cell, count)` row `(recessive_layer_kind_observation,
+    /// recessive_file_format_observation,
+    /// recessive_env_prefix_kind_observation)` one column over on the same
+    /// altitude and the fully-closed modal-side `(count, multiplicity)`
+    /// row `(layer_kind_peak_observation, file_format_peak_observation,
+    /// env_prefix_kind_peak_observation)` one modality-axis over on the
+    /// same altitude. Together with those shipped fully-closed rows this
+    /// completes the 12-cell `(modal, antimodal) × ((cell, count),
+    /// (count, multiplicity)) × (layer_kind, file_format,
+    /// env_prefix_kind)` fused-pair grid across the chain-altitude sub-
+    /// axes.
+    ///
+    /// The **fused-pair peer** of the two closed antimodal-side scalar
+    /// siblings ([`Self::trough_env_prefix_kind_count`] carrying the
+    /// *count* alone as `usize` and
+    /// [`Self::env_prefix_kind_trough_multiplicity`] carrying the
+    /// *multiplicity* alone as `usize`) — the natural upstream both
+    /// scalar halves project through, from which
+    /// [`Self::trough_env_prefix_kind_count`] recovers via `.0` and
+    /// [`Self::env_prefix_kind_trough_multiplicity`] recovers via `.1`.
+    /// Where the two scalar-half siblings each surface one half of the
+    /// antimodal observation independently at the cost of walking the
+    /// histogram twice, this row surfaces the *joint pair itself* as one
+    /// `(usize, usize)` read.
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis — the
+    /// two-cell reachability floor.** [`EnvMetadataTagKind`] carries two
+    /// cells, so `env_prefix_kind_trough_observation()` reads `(0, 0)` on
+    /// every chain whose env-prefix histogram is empty, `(1, 2)` on every
+    /// uniform two-cell full-cover chain (both cells tied at count `1` —
+    /// the top-corner witness on the multiplicity component at this sub-
+    /// axis, where peak and trough coincide), `(k, 2)` on every uniform
+    /// two-cell full-cover chain at any per-cell count `k` (both cells
+    /// tied at count `k`; peak and trough coincide), `(k, 1)` on every
+    /// singleton-support chain where a single env-prefix kind collects
+    /// `k` [`ConfigSource::Env`] layers (multiplicity `1` — the sole
+    /// observed cell holds both peak and trough alone), `(1, 1)` on the
+    /// sample chain (`.yaml ×2 + Env("APP_") ×1`; strictly-modally-
+    /// unique with `Prefixed` the sole observed cell at count `1`; peak
+    /// and trough coincide on the singleton support), and `(1, 1)` on
+    /// every strictly-unimodal two-cell partial-cover chain (three of
+    /// one kind + one of the other; the recessive kind uniquely at the
+    /// trough count `1`). One strict step below the cardinality-`3`
+    /// layer-kind sub-axis's `(1, 3)` top corner and the cardinality-`4`
+    /// file-format sub-axis's `(1, 4)` top corner — the closing lowest-
+    /// cardinality seam on the chain-altitude antimodal-side row.
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)` (not
+    /// `Option<(usize, usize)>`), matching the
+    /// [`crate::AxisHistogram::trough_observation`] empty convention one
+    /// altitude down, the [`Self::trough_env_prefix_kind_count`] and
+    /// [`Self::env_prefix_kind_trough_multiplicity`] empty conventions
+    /// on the same sub-axis, and the
+    /// [`crate::ProvenanceMap::trough_tier_observation`] /
+    /// [`crate::ProvenanceMap::trough_source_kind_observation`] /
+    /// [`crate::ConfigDiff::trough_kind_observation`] empty conventions
+    /// on the peer altitudes. The fused
+    /// `(trough_env_prefix_kind_count,
+    /// env_prefix_kind_trough_multiplicity)` pair reads uniformly
+    /// `(0, 0)` on the empty-histogram chain — every scalar projection
+    /// reads zero, matching the
+    /// [`crate::AxisHistogram::trough_observation`] side one altitude
+    /// down. Like [`Self::env_prefix_kind_peak_observation`] and
+    /// [`Self::file_format_trough_observation`] and unlike
+    /// [`Self::layer_kind_trough_observation`], the `(0, 0)` boundary is
+    /// NOT `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers reads
+    /// `(0, 0)` as well (empty env-prefix histogram). Unlike
+    /// [`Self::file_format_trough_observation`], the empty-histogram /
+    /// no-[`ConfigSource::Env`]-layers condition is exactly the layer-
+    /// kind `count(ConfigSourceKind::Env) == 0` condition: every
+    /// [`ConfigSource::Env`] entry projects to a `Some` cell regardless
+    /// of prefix value, so no `Env` entry is silently dropped by the
+    /// projection the way an unrecognized-extension
+    /// [`ConfigSource::File`] entry is on the file-format sub-axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kind_trough_observation() ==
+    ///   env_prefix_kind_histogram().trough_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `env_prefix_kind_trough_observation() ==
+    ///   (trough_env_prefix_kind_count(),
+    ///   env_prefix_kind_trough_multiplicity())` — the defining fusion
+    ///   identity against the two-scan scalar pair; the count and
+    ///   multiplicity scalars project through the same primitive one
+    ///   altitude down.
+    /// - `env_prefix_kind_trough_observation() == (0, 0)` ⇔
+    ///   `env_prefix_kind_histogram().is_empty()` — the empty-boundary
+    ///   equivalence: the pair is `(0, 0)` exactly when the env-prefix
+    ///   histogram is empty, matching
+    ///   [`Self::trough_env_prefix_kind_count`] on the count side and
+    ///   [`Self::env_prefix_kind_trough_multiplicity`] on the
+    ///   multiplicity side. Like
+    ///   [`Self::env_prefix_kind_peak_observation`] and
+    ///   [`Self::file_format_trough_observation`] and unlike
+    ///   [`Self::layer_kind_trough_observation`], the boundary reads on
+    ///   the histogram-empty predicate, not on
+    ///   `self.as_ref().is_empty()`.
+    /// - `env_prefix_kind_trough_observation().0 ==
+    ///   trough_env_prefix_kind_count()` — the count-side projection
+    ///   recovers [`Self::trough_env_prefix_kind_count`] pointwise; both
+    ///   routings read the same trough count off the same primitive.
+    /// - `env_prefix_kind_trough_observation().1 ==
+    ///   env_prefix_kind_trough_multiplicity()` — the multiplicity-side
+    ///   projection recovers
+    ///   [`Self::env_prefix_kind_trough_multiplicity`] pointwise; both
+    ///   routings read the same antimodal multiplicity off the same
+    ///   primitive.
+    /// - `env_prefix_kind_trough_observation().0 >= 1` whenever
+    ///   `!env_prefix_kind_histogram().is_empty()` — every non-empty
+    ///   env-prefix histogram has at least one layer at the antimodal
+    ///   kind (zero cells are excluded from the min), so the count
+    ///   component is strictly positive.
+    /// - `env_prefix_kind_trough_observation().1 >= 1` whenever
+    ///   `!env_prefix_kind_histogram().is_empty()` — every non-empty
+    ///   env-prefix histogram has at least one cell at the trough, so
+    ///   the multiplicity component is strictly positive.
+    /// - `env_prefix_kind_trough_observation().1 <=
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` always —
+    ///   bounded above by the axis cardinality `2` on the two-cell env-
+    ///   prefix axis. Lifted from the trait-uniform
+    ///   `trough_observation().1 <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `env_prefix_kind_trough_observation().1 <=
+    ///   present_env_prefix_kinds().len()` always — the antimodal set
+    ///   is a subset of the observed support, so its size is bounded by
+    ///   the support size.
+    /// - `env_prefix_kind_trough_observation().0 <=
+    ///   env_prefix_kind_peak_observation().0` always — the antimodal-
+    ///   side count is bounded above by the modal-side count on the
+    ///   same histogram, peer to the scalar
+    ///   `trough_env_prefix_kind_count() <=
+    ///   peak_env_prefix_kind_count()` bound and lifted from the
+    ///   primitive `trough_observation().0 <= peak_observation().0`
+    ///   invariant on [`crate::AxisHistogram`].
+    /// - `env_prefix_kind_trough_observation()` on a uniform two-cell
+    ///   full-cover chain (one env layer per kind, both cells observed)
+    ///   equals `(1, 2)` — every observed cell is tied at the trough
+    ///   count `1`, so the multiplicity walks the full two-cell axis;
+    ///   peak and trough coincide on the uniform-count shape.
+    /// - `env_prefix_kind_trough_observation()` on a singleton-support
+    ///   chain (every env layer on the same kind) equals `(k, 1)` where
+    ///   `k = env_prefix_kind_histogram().total()` — the sole observed
+    ///   kind holds both the peak and the trough alone at its layer
+    ///   count.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// fused running-min scan through
+    /// [`crate::AxisHistogram::trough_observation`]). Both are `O(n)`
+    /// in practice since the env-prefix axis carries a fixed two-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(chain.trough_env_prefix_kind_count(),
+    /// chain.env_prefix_kind_trough_multiplicity())` idiom (which walked
+    /// the counts vector twice — once for the trough count, once for
+    /// the multiplicity — where
+    /// [`crate::AxisHistogram::trough_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    fn env_prefix_kind_trough_observation(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().trough_observation()
     }
 
     /// The **balanced-env-prefix-kinds boolean predicate** on the env-
@@ -91525,6 +91760,392 @@ mod tests {
             assert!(
                 slice.env_prefix_kind_peak_observation().1
                     <= slice.present_env_prefix_kinds().len(),
+            );
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_trough_observation — antimodal-
+    //      side fused (count, multiplicity) pair on the env-prefix sub-axis
+    //      of the chain altitude, lifting AxisHistogram::trough_observation
+    //      from the histogram surface, closing the (count, multiplicity)-
+    //      axis peer of recessive_env_prefix_kind_observation and the 4-cell
+    //      (modal, antimodal) × ((cell, count), (count, multiplicity))
+    //      fused-pair grid at this sub-axis, and closing the antimodal-side
+    //      (count, multiplicity) fused-pair row across every chain sub-axis
+    //      after layer_kind_trough_observation and file_format_trough_observation ----
+
+    #[test]
+    fn env_prefix_kind_trough_observation_matches_env_prefix_kind_histogram_trough_observation_pointwise()
+     {
+        // The routing pin: `env_prefix_kind_trough_observation` routes
+        // through `env_prefix_kind_histogram().trough_observation()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Antimodal-side peer of
+        // `env_prefix_kind_peak_observation_matches_env_prefix_kind_histogram_peak_observation_pointwise`
+        // on the same sub-axis, and env-prefix sub-axis peer of
+        // `layer_kind_trough_observation_matches_layer_kind_histogram_trough_observation_pointwise`
+        // and
+        // `file_format_trough_observation_matches_file_format_histogram_trough_observation_pointwise`
+        // on the same altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().trough_observation();
+            assert_eq!(slice.env_prefix_kind_trough_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_matches_trough_env_prefix_kind_count_and_env_prefix_kind_trough_multiplicity_scalar_pair_pointwise()
+     {
+        // The defining fusion identity:
+        // `env_prefix_kind_trough_observation ==
+        // (trough_env_prefix_kind_count,
+        // env_prefix_kind_trough_multiplicity)` pointwise on every
+        // fixture. The scalar pair is what consumers would reconstruct
+        // through two independent walks; the fused primitive reads both
+        // in one running-min scan through
+        // `AxisHistogram::trough_observation` one altitude down.
+        // Antimodal-side peer of
+        // `env_prefix_kind_peak_observation_matches_peak_env_prefix_kind_count_and_env_prefix_kind_peak_multiplicity_scalar_pair_pointwise`
+        // on the same sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_trough_observation(),
+                (
+                    slice.trough_env_prefix_kind_count(),
+                    slice.env_prefix_kind_trough_multiplicity(),
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_count_component_equals_trough_env_prefix_kind_count_pointwise()
+     {
+        // The count-side projection recovers
+        // `trough_env_prefix_kind_count` pointwise; both routings read
+        // the same trough count off the same primitive. Cross-pins the
+        // fused-pair `.0` against the shipped scalar-count seam so a
+        // future change to either surface cannot silently diverge.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_trough_observation().0,
+                slice.trough_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_multiplicity_component_equals_env_prefix_kind_trough_multiplicity_pointwise()
+     {
+        // The multiplicity-side projection recovers
+        // `env_prefix_kind_trough_multiplicity` pointwise; both routings
+        // read the same antimodal multiplicity off the same primitive.
+        // Cross-pins the fused-pair `.1` against the shipped scalar-
+        // multiplicity seam so a future change to either surface cannot
+        // silently diverge.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_trough_observation().1,
+                slice.env_prefix_kind_trough_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_empty_chain_is_zero_zero() {
+        // Empty-chain witness: the empty chain has no env layers so no
+        // observed env-prefix cells; both the trough count and the
+        // trough multiplicity are `0`, and the fused pair reads
+        // `(0, 0)`. Antimodal-side peer of
+        // `env_prefix_kind_peak_observation_empty_chain_is_zero_zero`
+        // on the same sub-axis.
+        let chain: Vec<ConfigSource> = Vec::new();
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_no_env_layers_is_zero_zero() {
+        // Empty-histogram witness on a NON-empty chain of only Defaults
+        // / File layers: none of these contribute to the env-prefix
+        // histogram, so the fused pair reads `(0, 0)` on every such
+        // chain. Cross-sub-axis divergence from the layer-kind sub-axis,
+        // where the `(0, 0)` boundary coincides with the empty chain —
+        // here it coincides with the empty env-prefix HISTOGRAM instead.
+        // Matches the modal-side
+        // `env_prefix_kind_peak_observation_no_env_layers_is_zero_zero`
+        // boundary on the same sub-axis. Unlike the file-format sub-
+        // axis, the empty-histogram condition here is exactly the
+        // layer-kind `count(ConfigSourceKind::Env) == 0` condition:
+        // every Env entry projects to a Some cell regardless of prefix
+        // value.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.is_empty());
+        assert!(slice.env_prefix_kind_histogram().is_empty());
+        assert_eq!(slice.env_prefix_kind_trough_observation(), (0, 0));
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_sample_chain_is_one_one() {
+        // Direct witness against `sample_chain()`: two `.yaml` file
+        // layers + one Env layer with a prefixed name (`"APP_"`).
+        // `Prefixed` is the sole observed env-prefix kind at count `1`
+        // (Bare has count `0`), so peak and trough coincide on the sole
+        // observed cell — trough = `1` and multiplicity = `1`. Peer of
+        // `recessive_env_prefix_kind_observation_sample_chain_is_some_prefixed_at_one`
+        // on the fused (cell, count) side — both project the same
+        // antimodal observation from complementary axes, and peer of
+        // `env_prefix_kind_peak_observation_sample_chain_is_one_one` on
+        // the modal side (peak and trough coincide on singleton
+        // support).
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_bare_majority_is_one_one() {
+        // Strictly-anti-unimodal polarity pin: three bare env layers +
+        // one prefixed. `Prefixed` is uniquely antimodal at count `1`;
+        // `Bare` at `3`. Trough = `1`, multiplicity = `1`. Peer of
+        // `recessive_env_prefix_kind_observation_bare_majority_is_some_prefixed_at_one`
+        // on the fused (cell, count) side.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_prefixed_majority_is_one_one() {
+        // Strictly-anti-unimodal polarity pin, other polarity: three
+        // prefixed env layers + one bare. `Bare` is uniquely antimodal
+        // at count `1`; `Prefixed` at `3`. Trough = `1`, multiplicity =
+        // `1`. Peer of
+        // `recessive_env_prefix_kind_observation_prefixed_majority_is_some_bare_at_one`
+        // on the fused (cell, count) side.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_singleton_support_is_total_and_one() {
+        // Direct witness on singleton-support chains: every env layer
+        // on the same kind. The sole observed kind carries `total()`
+        // env layers at multiplicity `1` — it is uniquely both the
+        // modal and antimodal cell (trough count = `total()`,
+        // multiplicity = `1`; peak and trough coincide on the sole
+        // observed cell). Pointwise coincides with
+        // `recessive_env_prefix_kind_observation`'s count component on
+        // the same fixtures. Covers both polarities (all-bare and all-
+        // prefixed) plus a mixed surround with non-env layers that do
+        // not contribute to the histogram.
+        for chain in [
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+        ] {
+            let slice = chain.as_slice();
+            let total = slice.env_prefix_kind_histogram().total();
+            assert_eq!(slice.env_prefix_kind_trough_observation(), (total, 1));
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_uniform_full_cover_at_count_one_is_one_two() {
+        // Direct witness on the uniform two-cell full-cover chain (one
+        // env layer per kind, both cells observed): every observed cell
+        // is tied at the trough count `1`, so the multiplicity walks
+        // the full two-cell env-prefix axis. The `(1, 2)` reading is
+        // the top-corner witness on the multiplicity component of the
+        // antimodal-side fused pair on the cardinality-`2` env-prefix
+        // sub-axis — one strict step below the cardinality-`3` layer-
+        // kind sub-axis's `(1, 3)` top corner and the cardinality-`4`
+        // file-format sub-axis's `(1, 4)` top corner. Peak and trough
+        // coincide on the uniform-count shape. Peer of
+        // `env_prefix_kind_peak_observation_uniform_full_cover_at_count_one_is_one_two`
+        // on the modal side.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (1, 2)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_uniform_full_cover_at_count_two_is_two_two() {
+        // Direct witness on a uniform full-cover chain at per-cell
+        // count `2` (two env layers per kind, both cells observed at
+        // the same count `2`): every observed cell is tied at the
+        // trough count `2`, so trough = `2` and multiplicity = `2`.
+        // Pointwise pin of the `(k, 2)` uniform-count row at any per-
+        // cell count `k >= 1` on the cardinality-`2` env-prefix sub-
+        // axis. Peer of
+        // `env_prefix_kind_peak_observation_uniform_full_cover_at_count_two_is_two_two`
+        // on the modal side (peak and trough coincide on uniform-count
+        // shape).
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_trough_observation(),
+            (2, 2)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_zero_zero_iff_env_prefix_kind_histogram_empty_pointwise()
+    {
+        // The empty-boundary equivalence: `(0, 0) ⇔
+        // env_prefix_kind_histogram().is_empty()` on every fixture.
+        // Cross-sub-axis divergence from the layer-kind sub-axis,
+        // where the boundary reads on `self.as_ref().is_empty()` (the
+        // chain-empty predicate) instead of the histogram-empty
+        // predicate — a non-empty chain with no env layers still reads
+        // `(0, 0)` on this sub-axis. Matches the modal-side
+        // `env_prefix_kind_peak_observation_zero_zero_iff_env_prefix_kind_histogram_empty_pointwise`
+        // boundary on the same sub-axis and the file-format sub-axis
+        // `file_format_trough_observation_zero_zero_iff_file_format_histogram_empty_pointwise`
+        // boundary on the same altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_trough_observation() == (0, 0),
+                slice.env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_count_component_at_least_one_on_non_empty_histogram_pointwise()
+     {
+        // Structural bound on the count component: every chain with a
+        // non-empty env-prefix histogram has at least one env layer at
+        // the antimodal kind (zero cells are excluded from the min),
+        // so the trough count is strictly positive. Lifted from the
+        // trait-uniform `trough_observation().0 >= 1 ⇔ !is_empty()` law
+        // on `AxisHistogram`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kind_histogram().is_empty() {
+                assert!(slice.env_prefix_kind_trough_observation().0 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_multiplicity_component_at_least_one_on_non_empty_histogram_pointwise()
+     {
+        // Structural bound on the multiplicity component: every chain
+        // with a non-empty env-prefix histogram has at least one cell
+        // at the trough, so the multiplicity is strictly positive.
+        // Lifted from the trait-uniform `trough_observation().1 >= 1 ⇔
+        // !is_empty()` law on `AxisHistogram`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kind_histogram().is_empty() {
+                assert!(slice.env_prefix_kind_trough_observation().1 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_multiplicity_bounded_by_axis_cardinality_pointwise() {
+        // Structural bound on the multiplicity component: bounded above
+        // by the axis cardinality `2` on the two-cell env-prefix axis.
+        // Lifted from the trait-uniform `trough_observation().1 <=
+        // axis_cardinality::<A>()` law on `AxisHistogram`. On this
+        // cardinality-`2` sub-axis the bound coincides with the
+        // env_prefix_kinds_full_cover corner.
+        let bound = crate::axis_cardinality::<EnvMetadataTagKind>();
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.env_prefix_kind_trough_observation().1 <= bound);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_multiplicity_bounded_by_present_env_prefix_kinds_count_pointwise()
+     {
+        // Structural bound on the multiplicity component: bounded above
+        // by the observed-support size (the antimodal set is a subset
+        // of the observed support). Cross-pins the fused-pair
+        // multiplicity against `present_env_prefix_kinds().len()` on
+        // the same altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_trough_observation().1
+                    <= slice.present_env_prefix_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_trough_observation_count_bounded_by_peak_observation_count_pointwise() {
+        // Structural bound on the count component: the antimodal-side
+        // count is bounded above by the modal-side count on the same
+        // histogram. Peer to the scalar
+        // `trough_env_prefix_kind_count() <=
+        // peak_env_prefix_kind_count()` bound and lifted from the
+        // primitive `trough_observation().0 <= peak_observation().0`
+        // invariant on `AxisHistogram`. Cross-pins the antimodal-side
+        // fused pair against the modal-side fused pair at the same
+        // sub-axis, closing the `(peak.0, trough.0)` scalar-count
+        // ordering on the fused surface.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_trough_observation().0
+                    <= slice.env_prefix_kind_peak_observation().0,
             );
         }
     }
