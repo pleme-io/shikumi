@@ -4031,6 +4031,136 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         }
     }
 
+    /// The **modal-side fused (cell, count, multiplicity) triple** — the
+    /// [`Self::dominant_cell`], [`Self::peak_count`], and
+    /// [`Self::peak_multiplicity`] scalars packed into one
+    /// `Option<(A, usize, usize)>` triple, computed in a single pass
+    /// over the counts vector. Returns `None` exactly when
+    /// [`Self::is_empty`] is `true`; otherwise
+    /// `Some((dominant_cell(), peak_count(), peak_multiplicity()))`
+    /// where `peak_count >= 1` and
+    /// `1 <= peak_multiplicity <= distinct_cells()`.
+    ///
+    /// The *fused triple* peer of the sibling fused-pair projections
+    /// [`Self::dominant_observation`] (the modal `(cell, count)` pair)
+    /// and [`Self::peak_observation`] (the modal `(count, multiplicity)`
+    /// pair): the same declaration-order argmax walk that discovers the
+    /// dominant cell records both its count and how many cells tie at
+    /// it, collapsing the three coordinated reads
+    /// `(dominant_cell(), peak_count(), peak_multiplicity())` into one
+    /// single-pass fold. Every consumer that reads the *"which cell,
+    /// what count, how many tied"* modal-surface triple — the
+    /// *tie-broken headline* dashboard line reading
+    /// *"format: yaml at 47× (2-way tied)"* from a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// *unique-modal* attestation on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "Parse fired 12×
+    /// alone" vs "Parse and Io fired 12× each — tied" diagnostic), the
+    /// *modality summary* line on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the
+    /// operator table's "the chain's heaviest layer kind was X, at N×,
+    /// tied with k−1 others" cell) — now reads a single method call
+    /// instead of three separate walks.
+    ///
+    /// The natural typed primitive for the *modal-headline* surface
+    /// every operator-facing rebuild line, structured-diagnostic legend,
+    /// and attestation manifest carries: pointwise equivalent to the
+    /// open-coded triple
+    /// `dominant_cell().map(|c| (c, peak_count(), peak_multiplicity()))`
+    /// on every histogram — the lift is pure efficiency + naming, with
+    /// no semantic surface change. Before this lift, every such consumer
+    /// paired three method calls (`dominant_cell()`, `peak_count()`,
+    /// `peak_multiplicity()`), each doing a full single-pass scan over
+    /// the counts vector — `O(3 · axis_cardinality)` pointwise. The
+    /// fused triple collapses the work to one pass that tracks the
+    /// running argmax cell, running-max count, and reset-on-rise
+    /// tie-count simultaneously in one fold, excluding zero-count
+    /// cells by construction so the empty boundary reads `None`
+    /// uniformly.
+    ///
+    /// **Tie-breaking** — pointwise inherits the
+    /// [`Self::dominant_cell`] declaration-order tie-break: when
+    /// multiple cells share the peak count, the cell earliest in
+    /// [`ClosedAxis::ALL`] wins the `.0` slot. The `.2` multiplicity
+    /// then records how many cells (including the winner) share the
+    /// peak, so the fused triple simultaneously reports the
+    /// tie-broken representative and the tie's cardinality — the
+    /// combination every *tie-detector* dashboard needs.
+    ///
+    /// **Empty-histogram convention** — returns `None`, matching the
+    /// [`Self::dominant_observation`] empty convention pointwise. The
+    /// fused triple reads `None` on every histogram on which
+    /// `is_empty()` reads `true`, and strictly `Some((c, k, l))` with
+    /// `k >= 1` and `l >= 1` on every non-empty histogram. The
+    /// discriminant boundary lives on the outer `Option`, so a
+    /// consumer that matches on `Some((cell, count, mult))` never sees
+    /// a spurious `(cell, 0, 0)` tuple.
+    ///
+    /// **Fused invariants** with the scalar and fused-pair peers:
+    /// - `modal_observation().map(|(c, _, _)| c) == dominant_cell()`
+    ///   pointwise on every histogram (the cell projection of the
+    ///   fused triple equals [`Self::dominant_cell`]).
+    /// - `modal_observation().map_or(0, |(_, n, _)| n) == peak_count()`
+    ///   pointwise on every histogram (the count projection equals
+    ///   [`Self::peak_count`]).
+    /// - `modal_observation().map_or(0, |(_, _, m)| m) ==
+    ///   peak_multiplicity()` pointwise on every histogram (the
+    ///   multiplicity projection equals [`Self::peak_multiplicity`]).
+    /// - `modal_observation() == dominant_observation().map(|(c, n)|
+    ///   (c, n, peak_multiplicity()))` pointwise — the triple is the
+    ///   fused-pair `dominant_observation` extended with the
+    ///   [`Self::peak_multiplicity`] scalar.
+    /// - `modal_observation() == dominant_cell().map(|c|
+    ///   (c, peak_observation().0, peak_observation().1))` pointwise —
+    ///   the triple is the [`Self::dominant_cell`] extended with the
+    ///   fused-pair [`Self::peak_observation`].
+    /// - `modal_observation().is_none() ⇔ is_empty()` —
+    ///   one-discriminant empty boundary on the fused triple.
+    /// - When non-empty, `modal_observation().unwrap().2 <=
+    ///   distinct_cells()` always; equality holds iff
+    ///   [`Self::is_uniform_count`] is `true`.
+    /// - When non-empty, `modal_observation().unwrap().1 >= 1` and
+    ///   `.2 >= 1` (the dominant cell witnesses one observation and
+    ///   one member of the modal level set).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The two trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_modal_observation_empty_is_none_*`,
+    /// `axis_histogram_modal_observation_matches_component_projections_*`).
+    ///
+    /// Peer to [`Self::dominant_observation`] (the modal `(cell, count)`
+    /// fused pair) and [`Self::peak_observation`] (the modal
+    /// `(count, multiplicity)` fused pair): the histogram surface now
+    /// carries the (pair, pair, triple) modal-projection family — the
+    /// two overlapping fused pairs plus the closing triple that fuses
+    /// them into a single read. Every operator-facing summary reads the
+    /// narrowest projection it needs at one method call, and the
+    /// *modal headline* dashboard line collapses to a single triple
+    /// read on the closed modal surface.
+    #[must_use]
+    pub fn modal_observation(&self) -> Option<(A, usize, usize)> {
+        let mut best: Option<A> = None;
+        let mut max = 0usize;
+        let mut multiplicity = 0usize;
+        for (cell, c) in self {
+            if c == 0 {
+                continue;
+            }
+            if c > max {
+                best = Some(cell);
+                max = c;
+                multiplicity = 1;
+            } else if c == max {
+                multiplicity += 1;
+            }
+        }
+        best.map(|cell| (cell, max, multiplicity))
+    }
+
     /// The **modality-degree pair** — the fused
     /// `(peak_multiplicity, trough_multiplicity)` projection on the
     /// histogram's multiplicity surface. Returns `(0, 0)` exactly when
@@ -31146,6 +31276,311 @@ mod tests {
             std::iter::once(DiffLineKind::Removed).collect();
         assert!(!singleton.is_empty());
         let (count, mult) = singleton.trough_observation();
+        assert!(count >= 1);
+        assert!(mult >= 1);
+    }
+
+    // ---- AxisHistogram::modal_observation fused-triple laws ----
+    //
+    // The modal-side (cell, count, multiplicity) fusion peer of the
+    // fused-pair `dominant_observation` (cell, count) and
+    // `peak_observation` (count, multiplicity). Pinned by the defining
+    // three-way component-projection identities, the empty and singleton
+    // boundaries, the structural bound against distinct_cells on the
+    // multiplicity slot, and the tie-break equivalence against
+    // `dominant_cell` on the cell slot.
+
+    fn assert_modal_observation_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.modal_observation(),
+            None,
+            "empty histogram modal_observation must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modal_observation_matches_component_projections<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Trait-uniform three-way fusion identity: on every non-empty
+        // singleton observation, modal_observation() equals
+        // (dominant_cell(), peak_count(), peak_multiplicity()) pointwise
+        // across every closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            let triple = hist.modal_observation();
+            assert!(
+                triple.is_some(),
+                "non-empty singleton modal_observation must be Some \
+                 on observed cell {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            let (cell, count, mult) = triple.unwrap();
+            assert_eq!(
+                Some(cell),
+                hist.dominant_cell(),
+                "modal_observation cell must equal dominant_cell \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                count,
+                hist.peak_count(),
+                "modal_observation count must equal peak_count \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                mult,
+                hist.peak_multiplicity(),
+                "modal_observation multiplicity must equal peak_multiplicity \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modal_observation_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_matches_component_projections_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modal_observation_matches_component_projections::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_equals_component_triple_across_canonical_shapes() {
+        // The defining fusion identity across the canonical observation-
+        // mix shapes (empty, singleton, strict-modal, two-way-tied,
+        // three-way uniform): modal_observation() and the open-coded
+        // `dominant_cell().map(|c| (c, peak_count(), peak_multiplicity()))`
+        // triple agree pointwise. Regression in either side (the fused
+        // walk drifting from the three scalar walks on the tie-count
+        // reset condition, the c==0 guard, the running-max promotion, or
+        // the declaration-order tie-break for the cell slot) surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let expected = hist
+                .dominant_cell()
+                .map(|c| (c, hist.peak_count(), hist.peak_multiplicity()));
+            assert_eq!(
+                hist.modal_observation(),
+                expected,
+                "modal_observation must equal (dominant_cell, peak_count, peak_multiplicity) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_equals_dominant_observation_extended_by_multiplicity() {
+        // Cross-fusion identity: the fused triple equals the fused pair
+        // `dominant_observation` extended by the `peak_multiplicity`
+        // scalar on the last slot, and equivalently equals the fused
+        // pair `peak_observation` (count, multiplicity) preceded by the
+        // `dominant_cell` on the first slot. Pins the two overlapping
+        // fused-pair sub-projections against the closing triple, so a
+        // regression in any of the three (dominant_observation,
+        // peak_observation, modal_observation) that breaks either
+        // consistency law surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let via_dominant_observation = hist
+                .dominant_observation()
+                .map(|(c, n)| (c, n, hist.peak_multiplicity()));
+            let via_peak_observation = hist
+                .dominant_cell()
+                .map(|c| (c, hist.peak_observation().0, hist.peak_observation().1));
+            let fused = hist.modal_observation();
+            assert_eq!(
+                fused,
+                via_dominant_observation,
+                "modal_observation must equal dominant_observation extended by \
+                 peak_multiplicity on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                fused,
+                via_peak_observation,
+                "modal_observation must equal (dominant_cell, peak_observation) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_pins_witness_shapes() {
+        // Direct witness pins on the boundary and interior shapes.
+        // `DiffLineKind::ALL` declares [Removed, Added, Context], so
+        // the declaration-order tie-break in `dominant_cell` picks
+        // Removed first when the peak is shared across cells that
+        // include Removed:
+        //   - empty → None
+        //   - singleton (Added:1) → Some((Added, 1, 1)) — unique modal cell
+        //   - strict-modal (Added:2, Removed:1) → Some((Added, 2, 1))
+        //     — Added strictly holds the peak
+        //   - two-way-tied (Added:1, Removed:1) → Some((Removed, 1, 2))
+        //     — declaration-order tie-break picks Removed at the
+        //     shared peak
+        //   - uniform three-cover (Added:1, Removed:1, Context:1) →
+        //     Some((Removed, 1, 3)) — same tie-break at the three-way
+        //     shared peak, multiplicity equals the full support size
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.modal_observation(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            singleton.modal_observation(),
+            Some((DiffLineKind::Added, 1, 1))
+        );
+
+        let strict_modal: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            strict_modal.modal_observation(),
+            Some((DiffLineKind::Added, 2, 1))
+        );
+
+        let two_way_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            two_way_tied.modal_observation(),
+            Some((DiffLineKind::Removed, 1, 2))
+        );
+
+        let uniform_three_cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            uniform_three_cover.modal_observation(),
+            Some((DiffLineKind::Removed, 1, 3)),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_multiplicity_bounded_by_distinct_cells() {
+        // Structural bound: modal_observation().unwrap().2 <=
+        // distinct_cells() always; equality holds iff
+        // is_uniform_count() is true. Peer to the same bound
+        // peak_observation and peak_multiplicity carry on the modal
+        // (count, multiplicity) surface, lifted to the fused triple.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (_, _, mult) = hist.modal_observation().unwrap();
+            assert!(
+                mult <= hist.distinct_cells(),
+                "modal_observation multiplicity {mult} must be <= distinct_cells {} \
+                 on input of length {}",
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    mult,
+                    hist.distinct_cells(),
+                    "modal_observation multiplicity must equal distinct_cells on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modal_observation_empty_iff_none() {
+        // Fused-triple empty-boundary pin: modal_observation() == None
+        // iff is_empty() is true, and modal_observation().is_some() iff
+        // the histogram is non-empty. Peer to the fused-pair boundaries
+        // dominant_observation() == None iff is_empty() and
+        // peak_observation() == (0, 0) iff is_empty(). One discriminant
+        // on the outer Option — a consumer that matches on Some((cell,
+        // count, mult)) never sees a spurious (cell, 0, 0) tuple.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.modal_observation(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        let (_, count, mult) = singleton.modal_observation().unwrap();
         assert!(count >= 1);
         assert!(mult >= 1);
     }
