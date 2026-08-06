@@ -4512,6 +4512,192 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().peak_observation()
     }
 
+    /// The **antimodal `(count, multiplicity)` fused pair of layer kinds** —
+    /// the trough (positive-min) layer count on this chain paired with the
+    /// number of [`ConfigSourceKind`] cells that hold it, read off the chain's
+    /// layer-kind histogram in one fused scan. Equal to
+    /// `(trough_layer_kind_count(), layer_kind_trough_multiplicity())` by
+    /// construction, routed through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_observation`] reads the fused
+    /// `(usize, usize)` pair off the fixed-cardinality counts vector in one
+    /// running-min walk (zero cells excluded). Returns `(0, 0)` exactly on
+    /// the empty chain (no observed cells, no trough, no multiplicity);
+    /// otherwise `(trough_count, m)` with `trough_count >= 1` and `1 <= m <=
+    /// crate::axis_cardinality::<ConfigSourceKind>()` (= `3`) on every non-
+    /// empty chain, closed at the upper boundary `(1, 3)` exactly on the
+    /// uniform three-cell full-cover shape (peak and trough coincide at `1`
+    /// across all three cells).
+    ///
+    /// The **`(count, multiplicity)`-axis antimodal-side fused peer** of the
+    /// shipped `(cell, count)` antimodal-side fused pair
+    /// [`Self::recessive_layer_kind_observation`] on the layer-kind sub-axis
+    /// of the chain altitude — together they close the antimodal-side fused-
+    /// pair surface at this sub-axis as the `(cell, count)` + `(count,
+    /// multiplicity)` pair, matching the closed pair at the primitive
+    /// altitude carried by [`crate::AxisHistogram::recessive_observation`] +
+    /// [`crate::AxisHistogram::trough_observation`], the closed pair on the
+    /// tier altitude carried by
+    /// [`crate::ProvenanceMap::recessive_tier_observation`] +
+    /// [`crate::ProvenanceMap::trough_tier_observation`], and the closed
+    /// pair on the diff altitude carried by
+    /// [`crate::ConfigDiff::recessive_kind_observation`] +
+    /// [`crate::ConfigDiff::trough_kind_observation`]. Together with the
+    /// shipped modal-side [`Self::layer_kind_peak_observation`] this lift
+    /// closes the 4-cell `(modal, antimodal) × ((cell, count), (count,
+    /// multiplicity))` fused-pair grid at the layer-kind sub-axis of the
+    /// chain altitude. Consumers previously re-derived the antimodal
+    /// `(count, multiplicity)` pair inline as
+    /// `(chain.trough_layer_kind_count(), chain.layer_kind_trough_multiplicity())`
+    /// — two method calls, each routing through
+    /// [`Self::layer_kind_histogram`] and each scanning the counts vector
+    /// independently (once to read the trough count, once to walk the
+    /// multiplicity of cells tied at it), where the shared
+    /// [`crate::AxisHistogram::trough_observation`] primitive fuses both
+    /// into one walk.
+    ///
+    /// The chain-altitude layer-kind sub-axis fused-pair peer that
+    /// **lifts the antimodal-side `(count, multiplicity)` projection
+    /// sideways** from the tier altitude
+    /// ([`crate::ProvenanceMap::trough_tier_observation`]) and the source-
+    /// kind altitude
+    /// ([`crate::ProvenanceMap::trough_source_kind_observation`]) down to
+    /// the first chain-altitude sub-axis, and one seam over from the
+    /// seeding diff altitude
+    /// ([`crate::ConfigDiff::trough_kind_observation`]). The two remaining
+    /// chain-altitude sub-axes are the natural next sideways lifts
+    /// (`file_format_trough_observation` over
+    /// [`Self::file_format_histogram`], `env_prefix_kind_trough_observation`
+    /// over [`Self::env_prefix_kind_histogram`]), mirroring the three-step
+    /// chain trajectory the closed sibling antimodal-side row already walked
+    /// (`recessive_layer_kind_observation` →
+    /// `recessive_file_format_observation` →
+    /// `recessive_env_prefix_kind_observation`). Once closed at every chain
+    /// sub-axis in the same trajectory, the substrate closes the antimodal-
+    /// side `(count, multiplicity)` fused-pair row at every altitude / sub-
+    /// axis alongside the closed sibling `(trough_count,
+    /// trough_multiplicity)` scalar halves and the closed antimodal-side
+    /// `(cell, count)` fused-pair peer.
+    ///
+    /// The **fused-pair peer** of the two closed antimodal-side scalar
+    /// siblings ([`Self::trough_layer_kind_count`] carrying the *count*
+    /// alone as `usize` and [`Self::layer_kind_trough_multiplicity`]
+    /// carrying the *multiplicity* alone as `usize`) — the natural upstream
+    /// both scalar halves project through, from which
+    /// [`Self::trough_layer_kind_count`] recovers via `.0` and
+    /// [`Self::layer_kind_trough_multiplicity`] recovers via `.1`. Where
+    /// the two scalar-half siblings each surface one half of the antimodal
+    /// observation independently at the cost of walking the histogram
+    /// twice, this row surfaces the *joint pair itself* as one
+    /// `(usize, usize)` read.
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis — matching
+    /// the cardinality-`3` diff altitude.** [`ConfigSourceKind`] carries
+    /// three cells, so `layer_kind_trough_observation()` reads `(0, 0)` on
+    /// the empty chain, `(1, 3)` on every uniform per-kind full-cover chain
+    /// (three cells all tied at count `1` — the top-corner witness on the
+    /// multiplicity component, where peak and trough coincide), `(1, 1)` on
+    /// the sample chain (`File ×2 + Env ×1`; Env uniquely at the trough
+    /// count `1`), `(self.as_ref().len(), 1)` on every singleton-support
+    /// chain (the sole observed kind is uniquely both peak and trough at
+    /// the total layer count), and `(1, 2)` on the balanced two-kind shape
+    /// (both kinds tied at count `1` at the trough). One strict retreat
+    /// from the cardinality-`4` tier altitude (whose multiplicity component
+    /// reaches `4` on uniform-full-cover) and pointwise matched to the
+    /// cardinality-`3` diff altitude on the reachable pairs.
+    ///
+    /// **Empty-chain convention** — returns `(0, 0)` (not
+    /// `Option<(usize, usize)>`), matching the
+    /// [`crate::AxisHistogram::trough_observation`] empty convention one
+    /// altitude down, the [`Self::trough_layer_kind_count`] and
+    /// [`Self::layer_kind_trough_multiplicity`] empty conventions on the
+    /// same sub-axis, and the
+    /// [`crate::ProvenanceMap::trough_tier_observation`] /
+    /// [`crate::ConfigDiff::trough_kind_observation`] empty conventions on
+    /// the peer altitudes. The fused
+    /// `(trough_layer_kind_count, layer_kind_trough_multiplicity)` pair
+    /// reads uniformly `(0, 0)` on the empty chain — every scalar
+    /// projection reads zero, matching the
+    /// [`crate::AxisHistogram::trough_observation`] side one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_trough_observation() ==
+    ///   layer_kind_histogram().trough_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `layer_kind_trough_observation() == (trough_layer_kind_count(),
+    ///   layer_kind_trough_multiplicity())` — the defining fusion identity
+    ///   against the two-scan scalar pair; the count and multiplicity
+    ///   scalars project through the same primitive one altitude down.
+    /// - `layer_kind_trough_observation() == (0, 0)` ⇔
+    ///   `self.as_ref().is_empty()` — the empty-boundary equivalence: the
+    ///   pair is `(0, 0)` exactly when the chain is empty, matching
+    ///   [`Self::trough_layer_kind_count`] on the count side and
+    ///   [`Self::layer_kind_trough_multiplicity`] on the multiplicity side.
+    /// - `layer_kind_trough_observation().0 == trough_layer_kind_count()`
+    ///   — the count-side projection recovers
+    ///   [`Self::trough_layer_kind_count`] pointwise; both routings read
+    ///   the same trough count off the same primitive.
+    /// - `layer_kind_trough_observation().1 ==
+    ///   layer_kind_trough_multiplicity()` — the multiplicity-side
+    ///   projection recovers [`Self::layer_kind_trough_multiplicity`]
+    ///   pointwise; both routings read the same antimodal multiplicity off
+    ///   the same primitive.
+    /// - `layer_kind_trough_observation().0 >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — every non-empty chain has at least
+    ///   one layer at the antimodal kind (zero cells are excluded from the
+    ///   min), so the count component is strictly positive.
+    /// - `layer_kind_trough_observation().1 >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — every non-empty chain has at least
+    ///   one cell at the trough, so the multiplicity component is strictly
+    ///   positive.
+    /// - `layer_kind_trough_observation().1 <=
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` always — bounded
+    ///   above by the axis cardinality `3` on the three-cell layer-kind
+    ///   axis. Lifted from the trait-uniform `trough_observation().1 <=
+    ///   axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `layer_kind_trough_observation().1 <= present_layer_kinds_count()`
+    ///   always — the antimodal set is a subset of the observed support,
+    ///   so its size is bounded by the support size.
+    /// - `layer_kind_trough_observation().0 <=
+    ///   layer_kind_peak_observation().0` always — the antimodal-side
+    ///   count is bounded above by the modal-side count on the same
+    ///   histogram, peer to the scalar `trough_layer_kind_count() <=
+    ///   peak_layer_kind_count()` bound and lifted from the primitive
+    ///   `trough_observation().0 <= peak_observation().0` invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `layer_kind_trough_observation()` on a uniform per-kind full-cover
+    ///   chain (one layer per kind, three kinds observed) equals `(1, 3)`
+    ///   — every observed cell is tied at the trough count `1`, so the
+    ///   multiplicity walks the full three-cell axis; peak and trough
+    ///   coincide on the uniform-count shape.
+    /// - `layer_kind_trough_observation()` on a singleton-support chain
+    ///   (every layer on the same kind) equals `(self.as_ref().len(), 1)`
+    ///   — the sole observed kind holds both the peak and the trough alone
+    ///   at the total layer count.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the fused
+    /// running-min scan through
+    /// [`crate::AxisHistogram::trough_observation`]). Both are `O(n)` in
+    /// practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(chain.trough_layer_kind_count(), chain.layer_kind_trough_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the trough
+    /// count, once for the multiplicity — where
+    /// [`crate::AxisHistogram::trough_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    fn layer_kind_trough_observation(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().trough_observation()
+    }
+
     /// The **balanced-layer-kinds boolean predicate** on the layer-kind
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`ConfigSourceKind`] contributed the same number of layers. The
@@ -45705,6 +45891,341 @@ mod tests {
         for chain in recessive_layer_kind_fixtures() {
             let slice = chain.as_slice();
             assert!(slice.layer_kind_peak_observation().1 <= slice.present_layer_kinds_count(),);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_trough_observation — antimodal-side
+    //      fused `(count, multiplicity)` pair on the layer-kind sub-axis of
+    //      the chain altitude, closing the antimodal-side `(count,
+    //      multiplicity)` peer of `recessive_layer_kind_observation` and the
+    //      4-cell `(modal, antimodal) × ((cell, count), (count, multiplicity))`
+    //      fused-pair grid at this sub-axis ----
+
+    #[test]
+    fn layer_kind_trough_observation_matches_layer_kind_histogram_trough_observation_pointwise() {
+        // The routing pin: `layer_kind_trough_observation` routes through
+        // `layer_kind_histogram().trough_observation()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Layer-kind sub-axis
+        // peer of
+        // `trough_tier_observation_matches_tier_histogram_trough_observation_pointwise`
+        // on the tier altitude and
+        // `trough_kind_observation_matches_kind_histogram_trough_observation_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().trough_observation();
+            assert_eq!(slice.layer_kind_trough_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_matches_trough_layer_kind_count_and_layer_kind_trough_multiplicity_scalar_pair_pointwise()
+     {
+        // The defining fusion identity: `layer_kind_trough_observation ==
+        // (trough_layer_kind_count, layer_kind_trough_multiplicity)`
+        // pointwise on every fixture. The scalar pair is what consumers
+        // would reconstruct through two independent walks; the fused
+        // primitive reads both in one running-min scan through
+        // `AxisHistogram::trough_observation` one altitude down. Peer of
+        // `trough_tier_observation_matches_trough_tier_count_and_trough_tier_multiplicity_scalar_pair_pointwise`
+        // and
+        // `trough_kind_observation_agrees_with_trough_kind_count_and_multiplicity_scalar_pair_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.layer_kind_trough_observation(),
+                (
+                    slice.trough_layer_kind_count(),
+                    slice.layer_kind_trough_multiplicity(),
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_count_component_equals_trough_layer_kind_count_pointwise() {
+        // The count-side projection recovers `trough_layer_kind_count`
+        // pointwise; both routings read the same trough count off the
+        // same primitive. Cross-pins the fused-pair `.0` against the
+        // shipped scalar-count seam so a future change to either surface
+        // cannot silently diverge.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.layer_kind_trough_observation().0,
+                slice.trough_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_multiplicity_component_equals_layer_kind_trough_multiplicity_pointwise()
+     {
+        // The multiplicity-side projection recovers
+        // `layer_kind_trough_multiplicity` pointwise; both routings read
+        // the same antimodal multiplicity off the same primitive. Cross-
+        // pins the fused-pair `.1` against the shipped scalar-multiplicity
+        // seam so a future change to either surface cannot silently
+        // diverge.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.layer_kind_trough_observation().1,
+                slice.layer_kind_trough_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_empty_chain_is_zero_zero() {
+        // Empty-chain witness: the empty chain has no observed cells, so
+        // both the trough count and the trough multiplicity are `0`, and
+        // the fused pair reads `(0, 0)`. Peer to the
+        // `trough_tier_observation_empty_map_is_zero_zero` /
+        // `trough_kind_observation_empty_diff_is_zero_pair` empty-boundary
+        // witnesses on the tier and diff altitudes.
+        let chain: Vec<ConfigSource> = Vec::new();
+        assert_eq!(chain.as_slice().layer_kind_trough_observation(), (0, 0));
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_sample_chain_is_one_one() {
+        // Direct witness against `sample_chain()`: two File layers + one
+        // Env layer (no Defaults). The support {Env, File} is Env=1,
+        // File=2 — Env is the unique antimodal cell at count 1, so the
+        // trough count is 1 and the multiplicity is 1. Peer of
+        // `recessive_layer_kind_observation_sample_chain_is_some_env_at_one`
+        // on the fused (cell, count) pair — both project the same
+        // antimodal observation from complementary axes.
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().layer_kind_trough_observation(), (1, 1));
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_singleton_support_is_len_and_one() {
+        // Direct witness on singleton-support chains: every layer on the
+        // same kind. The sole observed kind carries `len()` layers at
+        // multiplicity 1 — it is simultaneously the unique modal *and*
+        // antimodal cell (trough count = `len()`, multiplicity = `1`).
+        // Pointwise coincides with `recessive_layer_kind_observation`'s
+        // count component on the same fixtures, and with
+        // `layer_kind_peak_observation` on the balanced singleton shape.
+        // Peer of
+        // `recessive_layer_kind_observation_singleton_support_is_some_file_at_len`.
+        for chain in [
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+        ] {
+            let slice = chain.as_slice();
+            assert_eq!(slice.layer_kind_trough_observation(), (slice.len(), 1),);
+            assert_eq!(
+                slice.layer_kind_trough_observation(),
+                slice.layer_kind_peak_observation(),
+                "on singleton-support chains, peak and trough coincide",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_uniform_full_cover_is_one_three() {
+        // Direct witness on the uniform three-cell full-cover chain (one
+        // layer per kind, all three kinds observed): every observed cell
+        // is tied at the trough count `1` (peak and trough coincide on
+        // the uniform-count shape), so the multiplicity walks the full
+        // three-cell layer-kind axis. The `(1, 3)` reading is the top-
+        // corner witness on the multiplicity component of the fused pair
+        // on the cardinality-`3` layer-kind sub-axis — the strict retreat
+        // from the cardinality-`4` tier altitude's `(1, 4)` top corner
+        // and pointwise-equal to the cardinality-`3` diff altitude's
+        // uniform-cover top corner.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_trough_observation(), (1, 3));
+        assert_eq!(
+            slice.layer_kind_trough_observation(),
+            slice.layer_kind_peak_observation(),
+            "on the uniform full-cover shape, peak and trough coincide",
+        );
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_two_way_tie_is_one_and_two() {
+        // Direct witness on a balanced two-kind chain: two kinds each
+        // observed at count `1`. Both Defaults and File are tied at the
+        // trough count `1` (and simultaneously at the peak, since they
+        // coincide on the uniform-count two-kind shape) — the trough
+        // count is 1 and the multiplicity is 2. Pointwise pin of the
+        // `>= 2` boundary of the antimodal-multiplicity axis at the
+        // smallest non-trivial tied support. Peer of
+        // `trough_kind_observation_two_kind_tie_is_one_two` on the diff
+        // altitude on the same cardinality-`3` axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_trough_observation(), (1, 2));
+        assert_eq!(
+            slice.layer_kind_trough_observation(),
+            slice.layer_kind_peak_observation(),
+            "on the balanced two-kind shape, peak and trough coincide",
+        );
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_env_majority_is_one_one() {
+        // Direct positional pin against the env-majority fixture: three
+        // File layers + one Env + one Defaults. Env and Defaults are
+        // both tied at count `1` at the trough — trough count is 1 and
+        // multiplicity is 2. Pointwise-consistent with the fused
+        // (trough_layer_kind_count, layer_kind_trough_multiplicity)
+        // scalar pair on this shipped fixture.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_trough_observation(), (1, 2));
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_zero_zero_iff_empty_pointwise() {
+        // The empty-boundary equivalence: `(0, 0) ⇔ chain empty` on
+        // every fixture. Peer to the
+        // `trough_tier_observation_zero_zero_iff_empty_pointwise` and
+        // `trough_kind_observation_is_zero_zero_iff_diff_is_empty_pointwise`
+        // equivalences on the tier and diff altitudes — the fused pair
+        // sits on the `(0, 0)` singular boundary exactly on the empty
+        // chain and off it everywhere else.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.layer_kind_trough_observation() == (0, 0),
+                slice.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Structural bound on the count component: every non-empty chain
+        // has at least one layer at the antimodal kind (zero cells are
+        // excluded from the min), so the trough count is strictly
+        // positive. Lifted from the trait-uniform
+        // `trough_observation().0 >= 1 ⇔ !is_empty()` law on
+        // `AxisHistogram`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.is_empty() {
+                assert!(slice.layer_kind_trough_observation().0 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_multiplicity_component_at_least_one_on_non_empty_pointwise() {
+        // Structural bound on the multiplicity component: every non-empty
+        // chain has at least one cell at the trough, so the multiplicity
+        // is strictly positive. Lifted from the trait-uniform
+        // `trough_observation().1 >= 1 ⇔ !is_empty()` law on
+        // `AxisHistogram`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.is_empty() {
+                assert!(slice.layer_kind_trough_observation().1 >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_multiplicity_bounded_by_axis_cardinality_pointwise() {
+        // Structural bound on the multiplicity component: bounded above
+        // by the axis cardinality `3` on the three-cell layer-kind axis.
+        // Lifted from the trait-uniform `trough_observation().1 <=
+        // axis_cardinality::<A>()` law on `AxisHistogram`.
+        let bound = crate::axis_cardinality::<ConfigSourceKind>();
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.layer_kind_trough_observation().1 <= bound);
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_multiplicity_bounded_by_present_layer_kinds_count_pointwise() {
+        // Structural bound on the multiplicity component: bounded above
+        // by the observed-support size (the antimodal set is a subset of
+        // the observed support). Cross-pins the fused-pair multiplicity
+        // against `present_layer_kinds_count` on the same altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.layer_kind_trough_observation().1 <= slice.present_layer_kinds_count(),);
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_count_component_bounded_above_by_layer_kind_peak_observation_count_component_pointwise()
+     {
+        // Modal-side dominance: the antimodal count is bounded above by
+        // the modal count on the same histogram, so
+        // `layer_kind_trough_observation().0 <=
+        // layer_kind_peak_observation().0` on every fixture. Lifted from
+        // the primitive `trough_observation().0 <= peak_observation().0`
+        // invariant on `AxisHistogram` and peer to the scalar
+        // `trough_layer_kind_count() <= peak_layer_kind_count()` bound.
+        // Sideways lift of
+        // `trough_kind_observation_count_component_bounded_above_by_peak_kind_observation_count_component`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_trough_observation().0 <= slice.layer_kind_peak_observation().0,
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_trough_observation_coincides_with_layer_kind_peak_observation_on_uniform_count_pointwise()
+     {
+        // Uniform-count coincidence: on every balanced chain (empty
+        // included, vacuous uniformity) the peak and trough level sets
+        // coincide, so the fused antimodal-side pair equals the fused
+        // modal-side pair on both components. The `is_uniform_count ⇒
+        // trough_observation == peak_observation` structural equality
+        // lifted from `AxisHistogram` to the layer-kind sub-axis of the
+        // chain altitude at the fused-pair surface. Sideways lift of the
+        // scalar `layer_kind_trough_multiplicity ==
+        // layer_kind_peak_multiplicity` coincidence and the `(cell,
+        // count)`-side `recessive_layer_kind_observation ==
+        // dominant_layer_kind_observation`-on-uniform-count coincidence.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                slice.layer_kind_trough_observation(),
+                slice.layer_kind_peak_observation(),
+                "balanced chain: peak and trough fused observations must \
+                 coincide (uniform-count shape)",
+            );
         }
     }
 
