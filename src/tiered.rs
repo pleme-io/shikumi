@@ -19570,6 +19570,127 @@ impl ConfigDiff {
         self.kind_histogram().peak_multiplicity()
     }
 
+    /// The **modal `(count, multiplicity)` fused pair of diff kinds** —
+    /// the peak line count on this diff paired with the number of
+    /// [`DiffLineKind`] cells that hold it, read off the diff-kind
+    /// histogram in one fused scan. Equal to `(peak_kind_count(),
+    /// peak_kind_multiplicity())` by construction, routed through
+    /// [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_observation`] reads the fused
+    /// `(usize, usize)` pair off the fixed-cardinality counts vector in
+    /// one running-max walk. Returns `(0, 0)` exactly on the empty diff
+    /// (no observed cells, no peak, no multiplicity); otherwise
+    /// `(peak_count, m)` with `peak_count >= 1` and `1 <= m <=
+    /// crate::axis_cardinality::<DiffLineKind>()` (= `3`) on every non-
+    /// empty diff, closed at the upper boundary `(1, 3)` exactly on the
+    /// uniform three-cell full-cover shape.
+    ///
+    /// The **`(count, multiplicity)`-axis fused peer** of the shipped
+    /// `(cell, count)` modal-side fused pair
+    /// [`Self::dominant_kind_observation`] on the diff altitude — together
+    /// they close the modal-side fused-pair surface at this altitude as
+    /// the `(cell, count)` + `(count, multiplicity)` pair, matching the
+    /// closed pair at the primitive altitude carried by
+    /// [`crate::AxisHistogram::dominant_observation`] +
+    /// [`crate::AxisHistogram::peak_observation`]. Consumers previously
+    /// re-derived the modal `(count, multiplicity)` pair inline as
+    /// `(diff.peak_kind_count(), diff.peak_kind_multiplicity())` — two
+    /// method calls, each routing through [`Self::kind_histogram`] and
+    /// each scanning the counts vector independently (once to read the
+    /// peak count, once to count cells at the peak), where the shared
+    /// [`crate::AxisHistogram::peak_observation`] primitive fuses both
+    /// into one walk. The natural typed primitive for CLI `config-diff`
+    /// summaries, attestation manifests, and alerting policies asking
+    /// *"how heavy is the modal kind, and how many kinds are tied at
+    /// it?"*: the diff-summary headline *"peak kind observation: 3
+    /// across 1 kind"* (where `(3, 1)` is this pair), the attestation
+    /// manifest recording the modal `(count, multiplicity)` pair of a
+    /// rendered diff, the alerting policy reading *"peak kind
+    /// observation = (2, 2)"* to gate a rebuild window on the peak
+    /// density and its uniqueness simultaneously.
+    ///
+    /// The diff-altitude fused-pair peer that **closes the "peak-
+    /// observation across altitudes" `(count, multiplicity)`-axis
+    /// projection at the diff altitude** — the modal-side sibling of
+    /// the shipped `(cell, count)` peer
+    /// [`Self::dominant_kind_observation`] on the diff altitude and of
+    /// the fused `(count, multiplicity)` peers already carried at both
+    /// upstream altitudes on the histogram lattice
+    /// ([`crate::ProvenanceMap::peak_source_kind_observation`] on the
+    /// source-kind altitude and
+    /// [`crate::ProvenanceMap::peak_tier_observation`] on the tier
+    /// altitude). The pattern is the same at every altitude: fuse the
+    /// two open-coded scalar walks (`(peak_count, peak_multiplicity)`)
+    /// into one `(usize, usize)`-tuple read named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::peak_observation`] primitive one altitude
+    /// down.
+    ///
+    /// **Cardinality-`3` reachability at the diff altitude.**
+    /// [`DiffLineKind`] carries three cells ([`DiffLineKind::Context`],
+    /// [`DiffLineKind::Removed`], [`DiffLineKind::Added`]), so
+    /// `peak_kind_observation()` reads `(0, 0)` on the empty diff,
+    /// `(n, 1)` on every singleton-support diff (the sole observed
+    /// kind uniquely peaks at the total line count `n`), `(1, 3)` on
+    /// every uniform three-kind cover (all three cells tied at count
+    /// `1`), and `(peak_count, m)` with `1 <= m <= 3` on every mixed
+    /// diff.
+    ///
+    /// **Empty-diff convention** — returns `(0, 0)`, matching the
+    /// [`crate::AxisHistogram::peak_observation`] empty convention one
+    /// altitude down and the paired scalar empty conventions of
+    /// [`Self::peak_kind_count`] and [`Self::peak_kind_multiplicity`]
+    /// on the same altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_kind_observation() == kind_histogram().peak_observation()`
+    ///   — the routing equivalence one altitude down; both project the
+    ///   same fused pair off the same primitive.
+    /// - `peak_kind_observation() == (peak_kind_count(),
+    ///   peak_kind_multiplicity())` — the defining fusion identity: the
+    ///   fused pair equals the two-scan scalar pair pointwise on every
+    ///   fixture.
+    /// - `peak_kind_observation() == (0, 0)` ⇔ `self.lines.is_empty()`
+    ///   — the empty-diff / empty-histogram boundary. Peer to the
+    ///   scalar `peak_kind_count() == 0` and `peak_kind_multiplicity()
+    ///   == 0` boundaries.
+    /// - `peak_kind_observation().0 == peak_kind_count()` — the count-
+    ///   side projection recovers [`Self::peak_kind_count`] pointwise.
+    /// - `peak_kind_observation().1 == peak_kind_multiplicity()` — the
+    ///   multiplicity-side projection recovers
+    ///   [`Self::peak_kind_multiplicity`] pointwise.
+    /// - `peak_kind_observation().0 >= 1` whenever `!self.lines.is_empty()`
+    ///   — the peak count is strictly positive on every non-empty diff.
+    /// - `peak_kind_observation().1 >= 1` whenever `!self.lines.is_empty()`
+    ///   — at least one cell holds the peak on every non-empty diff.
+    /// - `peak_kind_observation().1 <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` always — bounded
+    ///   above by the axis cardinality `3` on the three-cell diff-kind
+    ///   axis. Lifted from the trait-uniform `peak_multiplicity() <=
+    ///   axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `peak_kind_observation().1 <= present_kinds_count()` always —
+    ///   the modal set is a subset of the observed support.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the fused peak-
+    /// plus-multiplicity scan through
+    /// [`crate::AxisHistogram::peak_observation`]). Both are `O(n)` in
+    /// practice since the diff-kind axis carries a fixed three-cell
+    /// cardinality; the returned `(usize, usize)` fits in two scalars.
+    /// Halves the cost of the previous inline
+    /// `(diff.peak_kind_count(), diff.peak_kind_multiplicity())` idiom
+    /// (which walked the counts vector twice — once for the peak count,
+    /// once for the multiplicity — where
+    /// [`crate::AxisHistogram::peak_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    pub fn peak_kind_observation(&self) -> (usize, usize) {
+        self.kind_histogram().peak_observation()
+    }
+
     /// The **antimodal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the trough (positive-min) line
     /// count on this diff. Equal to `1` on every strictly-antimodally-
@@ -30960,6 +31081,191 @@ mod tests {
         };
         assert_eq!(diff.peak_kind_count(), 2);
         assert_eq!(diff.peak_kind_multiplicity(), 1);
+    }
+
+    // ── ConfigDiff::peak_kind_observation — modal-side fused
+    //    (count, multiplicity) pair on the diff altitude closing the
+    //    `(count, multiplicity)`-axis peer of `dominant_kind_observation`
+    //    and porting `peak_source_kind_observation` /
+    //    `peak_tier_observation` down one altitude ──
+
+    #[test]
+    fn peak_kind_observation_matches_kind_histogram_peak_observation_pointwise() {
+        // Routing pin: `peak_kind_observation` routes through
+        // `kind_histogram().peak_observation()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native fused-pair primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_observation();
+            assert_eq!(diff.peak_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_agrees_with_peak_kind_count_and_multiplicity_scalar_pair_pointwise() {
+        // Structural-form pin: `peak_kind_observation` agrees with the
+        // two-scan scalar pair `(peak_kind_count(),
+        // peak_kind_multiplicity())` on every fixture — the defining
+        // fusion identity. The fused pair reads the same two scalars in
+        // one pass instead of two.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = (diff.peak_kind_count(), diff.peak_kind_multiplicity());
+            assert_eq!(diff.peak_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_count_component_equals_peak_kind_count_pointwise() {
+        // Count-side projection: `.0` recovers `peak_kind_count()`
+        // pointwise on every fixture; both routings read the same peak
+        // count off the same primitive.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.peak_kind_observation().0, diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_multiplicity_component_equals_peak_kind_multiplicity_pointwise() {
+        // Multiplicity-side projection: `.1` recovers
+        // `peak_kind_multiplicity()` pointwise on every fixture.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.peak_kind_observation().1,
+                diff.peak_kind_multiplicity()
+            );
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_empty_diff_is_zero_pair() {
+        // Empty-diff convention: no observed cell, so both scalars read
+        // `0` and the fused pair reads `(0, 0)`. Peer of
+        // `peak_kind_multiplicity_empty_diff_is_zero` on the
+        // multiplicity component and `peak_kind_count_empty_diff_is_zero`
+        // on the count component.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.peak_kind_observation(), (0, 0));
+    }
+
+    #[test]
+    fn peak_kind_observation_singleton_support_is_len_one() {
+        // Singleton-support pin: three Removed lines — Removed uniquely
+        // peaks at count `3`, multiplicity reads `1`. Fused pair reads
+        // `(3, 1)`, the strictly-modally-unique shape at the total line
+        // count.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_observation(), (3, 1));
+    }
+
+    #[test]
+    fn peak_kind_observation_two_kind_tie_is_one_two() {
+        // Two-kind-tied pin: one Removed + one Added, both at count `1`,
+        // both tied at the peak. Fused pair reads `(1, 2)` — the
+        // modally-tied boundary at the smallest non-trivial tied support
+        // on the diff-kind axis.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.peak_kind_observation(), (1, 2));
+    }
+
+    #[test]
+    fn peak_kind_observation_uniform_full_cover_is_one_three() {
+        // Uniform three-kind cover pin: one line per DiffLineKind cell
+        // (Removed + Added + Context), all at count `1`. All three cells
+        // tie at the peak — fused pair reads `(1, 3)`, multiplicity
+        // component = axis cardinality, the maximum reachable value on
+        // the three-cell diff-kind axis.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(diff.peak_kind_observation(), (1, 3));
+        assert_eq!(
+            diff.peak_kind_observation().1,
+            crate::axis_cardinality::<DiffLineKind>()
+        );
+    }
+
+    #[test]
+    fn peak_kind_observation_context_dominated_fixture_is_three_one() {
+        // Direct positional pin: 3 Context + 1 Removed — Context
+        // uniquely peaks at count `3`, multiplicity reads `1`. Fused
+        // pair reads `(3, 1)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_observation(), (3, 1));
+    }
+
+    #[test]
+    fn peak_kind_observation_added_dominated_fixture_is_two_one() {
+        // Direct positional pin: 2 Added + 1 Context — Added uniquely
+        // peaks at count `2`, multiplicity reads `1`. Fused pair reads
+        // `(2, 1)`. Peer of the two shipped scalar direct pins
+        // `peak_kind_count_added_dominated_fixture_is_two` and
+        // `peak_kind_multiplicity_added_dominated_fixture_is_one` on the
+        // count and multiplicity components respectively.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_observation(), (2, 1));
+    }
+
+    #[test]
+    fn peak_kind_observation_is_zero_zero_iff_diff_is_empty_pointwise() {
+        // Emptiness boundary: the fused pair reads `(0, 0)` iff the diff
+        // is empty; both components share the emptiness boundary of
+        // their scalar peers.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.peak_kind_observation() == (0, 0),
+                diff.lines.is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_multiplicity_component_bounded_by_axis_cardinality() {
+        // Structural bound: `peak_kind_observation().1 <=
+        // axis_cardinality::<DiffLineKind>()` (= 3) on every fixture.
+        // Lifted from the trait-uniform `peak_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram.
+        let card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            assert!(diff.peak_kind_observation().1 <= card);
+        }
+    }
+
+    #[test]
+    fn peak_kind_observation_multiplicity_component_bounded_above_by_present_kinds_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `peak_kind_observation().1 <= present_kinds_count()`
+        // on every fixture.
+        for diff in dominant_kind_fixtures() {
+            assert!(diff.peak_kind_observation().1 <= diff.present_kinds_count());
+        }
     }
 
     // ── ConfigDiff::trough_kind_multiplicity — antimodal-multiplicity scalar
