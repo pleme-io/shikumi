@@ -4477,6 +4477,216 @@ impl ProvenanceMap {
         self.source_kind_histogram().dominant_observation()
     }
 
+    /// The **recessive source-kind observation** — the fused `(cell,
+    /// count)` pair on the trough side of this resolved fold's
+    /// source-kind histogram: the anti-modal [`crate::ConfigSourceKind`]
+    /// together with the leaf count it collected. Returns `None`
+    /// exactly when the map is empty (no observed cell); otherwise
+    /// returns `Some((k, n))` where `k ==
+    /// recessive_source_kind().unwrap()` and `n ==
+    /// trough_source_kind_count() >= 1`.
+    ///
+    /// Defined as `self.source_kind_histogram().recessive_observation()`,
+    /// routed through [`crate::AxisHistogram::recessive_observation`]
+    /// one altitude down — the fused single-pass argmin scan over the
+    /// histogram's nonzero support that names the anti-modal cell
+    /// together with the trough count simultaneously, halving the work
+    /// of the two-scan `(recessive_source_kind(),
+    /// trough_source_kind_count())` fusion the scalar-pair form pays
+    /// for on every non-empty fold.
+    ///
+    /// The **fused-pair peer** of [`Self::recessive_source_kind`]
+    /// (which carries the *cell* alone as
+    /// `Option<crate::ConfigSourceKind>`) and
+    /// [`Self::trough_source_kind_count`] (which carries the *count*
+    /// alone as `usize`) on the trough side — the natural upstream
+    /// both scalar halves project through via `.map(|(k, _)| k)` and
+    /// `.map_or(0, |(_, n)| n)` respectively. The natural typed
+    /// primitive for fleet dashboards, attestation manifests, and
+    /// alerting policies asking *"which layer class was rarest on
+    /// this resolved fold, and by how many leaves?"*: the fleet
+    /// dashboard headline *"runt layer class: Env owns 1 of 47
+    /// leaves"* (where `Some((Env, 1))` is this pair), the attestation
+    /// manifest recording the anti-modal `(cell, count)` pair of a
+    /// resolved fold between two rebuild windows, the alerting policy
+    /// reading *"recessive source-kind observation = Some((File, 2))"*
+    /// to gate a rebuild window on the anti-modal layer class and its
+    /// density simultaneously. Before this lift, every such consumer
+    /// re-derived the pair inline as `(map.recessive_source_kind(),
+    /// map.trough_source_kind_count())` — two method calls, each
+    /// routing through [`Self::source_kind_histogram`] and each
+    /// scanning the counts vector independently (once to argmin the
+    /// cell, once to read the trough count back), where the shared
+    /// [`crate::AxisHistogram::recessive_observation`] primitive
+    /// fuses both into one walk.
+    ///
+    /// The source-kind-altitude fused-pair peer that **closes the
+    /// "recessive-observation across altitudes" projection** at the
+    /// source-kind altitude — the missing altitude in the trio that
+    /// already carried it on the tier altitude
+    /// ([`Self::recessive_tier_observation`]) and on the diff altitude
+    /// ([`ConfigDiff::recessive_kind_observation`]). Every altitude
+    /// carrying an [`crate::AxisHistogram`] surface now names the
+    /// anti-modal-side fused `(cell, count)` pair at a single call,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::recessive_observation`] primitive one
+    /// altitude down. With this lift the substrate carries the joint
+    /// `(dominant, recessive) × (cell, count) × fused` 2×2×2 = 8-seam
+    /// grid on the source-kind altitude alongside the closed sibling
+    /// modal-side fused-pair peer
+    /// [`Self::dominant_source_kind_observation`] and the closed
+    /// sibling scalar halves ([`Self::dominant_source_kind`],
+    /// [`Self::peak_source_kind_count`], [`Self::recessive_source_kind`],
+    /// [`Self::trough_source_kind_count`]) — the anti-modal fused-pair
+    /// row on the source-kind altitude, matching the same grid on the
+    /// tier altitude.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`],
+    /// [`crate::ConfigSourceKind::File`]), so
+    /// `recessive_source_kind_observation()` reads `None` on the empty
+    /// map, `Some((Defaults, n))` on every uniform per-source-kind
+    /// full-cover fold (declaration-order tie-breaking on the three-
+    /// cell axis picks the first cell at the shared trough count,
+    /// matching the modal-side sibling on the same uniform-count
+    /// corner), `Some((k, len()))` on every singleton-support fold
+    /// (the sole observed source-kind collects every leaf, matching
+    /// the modal-side sibling on the same corner), and `Some((k, n))`
+    /// with `n < peak_source_kind_count()` and `n >= 1` on every
+    /// strictly-unimodal partial-cover fold where the peak and trough
+    /// diverge — witnesses on every corner of the tie-breaking policy
+    /// on the cardinality-`3` source-kind axis, one cardinality below
+    /// the tier altitude's cardinality-`4` reachable pairs on the same
+    /// surface.
+    ///
+    /// **Empty-map convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::recessive_observation`] empty convention
+    /// one altitude down and the [`Self::recessive_source_kind`] empty
+    /// convention on the same altitude. The scalar count projection
+    /// [`Self::trough_source_kind_count`] reads `0` on the same
+    /// boundary via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the trough side** — declaration-order
+    /// first: on trough ties, the
+    /// [`crate::AxisHistogram::recessive_observation`] scan (a
+    /// running-min walk with `<`-only promotion — strict inequality,
+    /// not `<=`) keeps the *first* observed cell at that count in
+    /// [`crate::ClosedAxis::ALL`] declaration order (`Defaults → Env →
+    /// File` for [`crate::ConfigSourceKind`]), matching the shared
+    /// [`crate::AxisHistogram::recessive_cell`] tie-breaking one
+    /// altitude down and [`Self::recessive_source_kind`] on the same
+    /// altitude. Every uniform-cover fold (each observed source-kind
+    /// producing the same nonzero leaf count) reads `Some((Defaults,
+    /// n))` — the first cell in declaration order — pointwise
+    /// identical to [`Self::dominant_source_kind_observation`] on the
+    /// same input (the modal / anti-modal coincidence corner where
+    /// peak and trough coincide).
+    ///
+    /// **Peak-trough coincidence law.**
+    /// [`Self::dominant_source_kind_observation`] and
+    /// [`Self::recessive_source_kind_observation`] coincide pointwise
+    /// on every empty map (both `None`), every singleton-support fold
+    /// (both `Some((k, len()))` at the sole observed cell), and every
+    /// uniform-count fold (both `Some((k, shared_count))` at the first
+    /// observed cell — the modal and anti-modal level sets coincide
+    /// because peak and trough are equal). On every strictly-unimodal
+    /// support where peak > trough, the two projections read OPPOSITE
+    /// ends of the observation interval and DIVERGE pointwise on the
+    /// count component (peak count > trough count strictly). Peer of
+    /// the tier-altitude coincidence law
+    /// ([`Self::dominant_tier_observation`] /
+    /// [`Self::recessive_tier_observation`]) and of the histogram-side
+    /// coincidence law
+    /// ([`crate::AxisHistogram::dominant_observation`] and
+    /// [`crate::AxisHistogram::recessive_observation`] coincide iff
+    /// the histogram is empty or uniform-count).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_source_kind_observation() ==
+    ///   source_kind_histogram().recessive_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `recessive_source_kind_observation().is_none() == is_empty()`
+    ///   — the `None`-boundary equivalence: the pair is defined
+    ///   exactly when the map has at least one leaf, matching
+    ///   [`Self::recessive_source_kind`] on the cell side.
+    /// - `recessive_source_kind_observation().map(|(k, _)| k) ==
+    ///   recessive_source_kind()` — the cell-side projection recovers
+    ///   [`Self::recessive_source_kind`] pointwise; both routings pick
+    ///   the same anti-modal cell off the same primitive.
+    /// - `recessive_source_kind_observation().map_or(0, |(_, n)| n) ==
+    ///   trough_source_kind_count()` — the count-side projection
+    ///   recovers [`Self::trough_source_kind_count`] pointwise; both
+    ///   routings read the same trough count off the same primitive.
+    ///   Empty case: `None.map_or(0, …) == 0 ==
+    ///   trough_source_kind_count()`. Non-empty case: `Some((_,
+    ///   n)).map_or(0, …) == n == trough_source_kind_count()`.
+    /// - When `Some((k, n))`, `k` is a member of
+    ///   [`Self::contributing_source_kinds`] — the anti-modal cell is
+    ///   by definition observed. Peer to the cell-side
+    ///   [`Self::recessive_source_kind`] membership invariant.
+    /// - When `Some((k, n))`, `source_kind_histogram().count(k) == n`
+    ///   — the count component equals the observation count at the
+    ///   cell component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::recessive_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has
+    ///   at least one leaf at the anti-modal source-kind, so the count
+    ///   component is strictly positive.
+    /// - When `Some((_, n))`, `n <= peak_source_kind_count()` — the
+    ///   trough count is bounded above by the peak count. Equality
+    ///   holds iff the source-kind histogram is uniform-count (peak
+    ///   and trough coincide); the strict inequality holds on every
+    ///   strictly-unimodal support.
+    /// - When `Some((_, n))`, `n <= len()` — the trough count is
+    ///   bounded above by the total leaf count (every source-kind
+    ///   contributes at most every leaf, and the others contribute
+    ///   zero). Equality holds when `contributing_source_kinds_count()
+    ///   <= 1`.
+    /// - `recessive_source_kind_observation()` on a uniform per-source-
+    ///   kind full-cover fold (one leaf per source-kind) equals
+    ///   `Some((crate::ConfigSourceKind::Defaults, 1))` —
+    ///   declaration-order tie-breaking on the three-cell axis picks
+    ///   the first cell at the shared trough count `1`, matching the
+    ///   modal-side sibling on the same fixture (peak and trough
+    ///   coincide on uniform-count).
+    /// - `recessive_source_kind_observation()` on a singleton-support
+    ///   fold (every leaf on the same source-kind) equals `Some((k,
+    ///   len()))` where `k` is the sole observed source-kind — the
+    ///   trough equals the total, matching the modal-side sibling on
+    ///   the same fixture (peak and trough coincide on singleton-
+    ///   support).
+    /// - `recessive_source_kind_observation() ==
+    ///   dominant_source_kind_observation()` whenever the source-kind
+    ///   histogram is empty or uniform-count (peak and trough coincide
+    ///   with the same declaration-order tie-break). Strictly diverges
+    ///   on the count component on every strictly-unimodal support
+    ///   where peak > trough — the two projections then read different
+    ///   `(cell, count)` pairs at each end of the observation interval.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the fused argmin scan through
+    /// [`crate::AxisHistogram::recessive_observation`]). Both are `O(n)`
+    /// in practice since the source-kind axis carries a fixed three-
+    /// cell cardinality; the returned
+    /// `Option<(crate::ConfigSourceKind, usize)>` fits in one enum +
+    /// two scalars. Halves the cost of the previous inline
+    /// `(map.recessive_source_kind(), map.trough_source_kind_count())`
+    /// idiom (which walked the counts vector twice — once to argmin
+    /// the cell, once to read the trough count back — where
+    /// [`crate::AxisHistogram::recessive_observation`] fuses both into
+    /// a single walk).
+    #[must_use]
+    pub fn recessive_source_kind_observation(&self) -> Option<(crate::ConfigSourceKind, usize)> {
+        self.source_kind_histogram().recessive_observation()
+    }
+
     /// Returns `true` exactly when this fold's observed
     /// [`crate::ConfigSourceKind`] histogram has two or more cells tied at
     /// the peak leaf count — the **modally-tied-source-kind-counts
@@ -61546,6 +61756,555 @@ mod progressive_tests {
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
         }
+    }
+
+    // ── ProvenanceMap::recessive_source_kind_observation — anti-modal
+    //    fused (cell, count) pair on the source-kind altitude closing
+    //    the "recessive-observation across altitudes" projection
+    //    alongside the modal-side sibling dominant_source_kind_observation
+    //    and the closed scalar halves (recessive_source_kind,
+    //    trough_source_kind_count). ──
+
+    #[test]
+    fn recessive_source_kind_observation_matches_source_kind_histogram_recessive_observation_pointwise()
+     {
+        // Routing pin: `recessive_source_kind_observation` routes
+        // through `source_kind_histogram().recessive_observation()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either
+        // implementation stops projecting through the shared cube-
+        // native fused-pair primitive. Source-kind-altitude closure
+        // of the "recessive-observation across altitudes" projection
+        // seeded on the diff altitude by
+        // `recessive_kind_observation_matches_kind_histogram_recessive_observation_pointwise`
+        // and lifted to the tier altitude by
+        // `recessive_tier_observation_matches_tier_histogram_recessive_observation_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().recessive_observation();
+            assert_eq!(map.recessive_source_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_matches_recessive_source_kind_and_trough_source_kind_count_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `recessive_source_kind_observation`
+        // agrees with the open-coded `(recessive_source_kind(),
+        // trough_source_kind_count())` pair on every fixture — coerced
+        // through the `Option` shape via `.map(|k| (k,
+        // trough_source_kind_count()))`. Pins the defining
+        // equivalence on the underlying scalar-pair surface: both
+        // routings read the same anti-modal cell and the same trough
+        // count off the same primitive, so the fused-pair form is
+        // behaviorally indistinguishable from the two-call open-coded
+        // pair. Peer of
+        // `recessive_tier_observation_matches_recessive_tier_and_trough_tier_count_scalar_pair_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map
+                .recessive_source_kind()
+                .map(|k| (k, map.trough_source_kind_count()));
+            assert_eq!(map.recessive_source_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_cell_component_equals_recessive_source_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _)| k) ==
+        // recessive_source_kind()` on every fixture. Pins the fused-
+        // pair primitive as the upstream of the sibling anti-modal-
+        // cell scalar, which reads the same value through the `.map`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude
+        // down). Empty case: `None.map(…) == None ==
+        // recessive_source_kind()`. Non-empty case: `Some((k,
+        // _)).map(…) == Some(k) == recessive_source_kind()`. Peer of
+        // `recessive_tier_observation_cell_component_equals_recessive_tier_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.recessive_source_kind_observation().map(|(k, _)| k);
+            assert_eq!(via_map, map.recessive_source_kind());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_count_component_equals_trough_source_kind_count_pointwise()
+    {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // trough_source_kind_count()` on every fixture. Pins the
+        // fused-pair primitive as the upstream of the sibling trough-
+        // count scalar, which reads the same value through the
+        // `.map_or` projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude
+        // down). Empty case: `None.map_or(0, …) == 0 ==
+        // trough_source_kind_count()`. Non-empty case: `Some((_,
+        // n)).map_or(0, …) == n == trough_source_kind_count()`. Peer
+        // of
+        // `recessive_tier_observation_count_component_equals_trough_tier_count_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map
+                .recessive_source_kind_observation()
+                .map_or(0, |(_, n)| n);
+            assert_eq!(via_map, map.trough_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_empty_map_is_none() {
+        // Empty-map polarity pin: the empty map has no observed cell,
+        // so the fused pair reads `None` — the vacuous-nothing
+        // boundary lifted from the empty support. The triple
+        // `(recessive_source_kind, trough_source_kind_count,
+        // recessive_source_kind_observation)` reads uniformly
+        // `(None, 0, None)` on the empty map. Peer of
+        // `recessive_tier_observation_empty_map_is_none` on the tier
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.recessive_source_kind_observation(), None);
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_prog_fixture_is_some_defaults_at_four() {
+        // Singleton-support polarity pin: `Prog::resolve_progressive`
+        // attributes 4 leaves, all with source-kind `Defaults` (the
+        // pure-progressive fold uses only computed-tier
+        // constructors, each pinning `ConfigSource::Defaults`).
+        // Singleton-support fold on the source-kind axis: the sole
+        // observed cell is both the modal and the anti-modal cell,
+        // and the trough coincides with the peak at `len() == 4`.
+        // Witness of the singleton-support corner where trough ==
+        // peak == len(), and the modal / anti-modal cells coincide
+        // (both the `dominant_source_kind_observation` and
+        // `recessive_source_kind_observation` seams read the same
+        // value on this corner). Peer of
+        // `recessive_tier_observation_singleton_support_is_some_singleton`
+        // on the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().recessive_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 4)),
+        );
+        assert_eq!(
+            r.provenance().recessive_source_kind_observation(),
+            r.provenance().dominant_source_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_mixed_fixture_is_some_env_at_one() {
+        // Strictly-unimodal polarity pin: the mixed fixture layers a
+        // file overlay on `b` and an env overlay on `c` onto Prog's
+        // progressive fold — per-leaf source-kinds `a→Defaults,
+        // b→File, c→Env, d→Defaults`. Counts: Defaults=2, Env=1,
+        // File=1. The argmin over the observed support {Defaults, Env,
+        // File} ties at `1` between `Env` and `File`; declaration-
+        // order tie-breaking on `ConfigSourceKind::ALL` (`Defaults →
+        // Env → File`) picks the earlier cell → `Some((Env, 1))`.
+        // Strictly-unimodal witness on the cardinality-`3` source-
+        // kind axis: the peak (`Defaults` at `2`) and the trough
+        // (`Env` at `1`) diverge strictly on the count component.
+        // Matches the fixture-shape of
+        // `recessive_source_kind_mixed_fixture_is_env` on the cell-
+        // only sibling and
+        // `trough_source_kind_count_mixed_fixture_is_one` on the
+        // count-only sibling.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().recessive_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Env, 1)),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_uniform_full_cover_is_some_defaults_at_count_one() {
+        // Uniform-axis-cover polarity pin: a fold observing every
+        // cell of `ConfigSourceKind` exactly once has all three
+        // nonzero counts at `1`; the trough is tied between all three
+        // cells, and declaration-order tie-breaking picks `Defaults`
+        // (the first cell in the axis) paired with the shared trough
+        // count `1` — pointwise identical to the modal-side sibling
+        // `dominant_source_kind_observation_uniform_full_cover_is_some_defaults_at_count_one`
+        // on the same fixture (peak and trough coincide on uniform-
+        // count, and the declaration-order tie-break is identical on
+        // both sides). Top-corner witness of the tie-breaking policy
+        // on the uniform full-cover shape at the cardinality-`3`
+        // source-kind altitude — one cardinality below the tier
+        // altitude's cardinality-`4` uniform full-cover witness, still
+        // resolved by the same declaration-order-first tie-break
+        // policy through the shared
+        // `AxisHistogram::recessive_observation` primitive.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (
+                vec!["b".to_owned()],
+                Provenance::env("SHIKUMI_RSKO_UNIFORM_"),
+            ),
+            (
+                vec!["c".to_owned()],
+                Provenance::file("/etc/rsko_uniform.yaml"),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kinds_balanced());
+        assert!(m.source_kinds_full_cover());
+        assert_eq!(
+            m.recessive_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 1)),
+        );
+        assert_eq!(
+            m.recessive_source_kind_observation(),
+            m.dominant_source_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `recessive_source_kind_observation().is_none()` iff the map
+        // is empty. Direct pin of the histogram-side `is_empty ⇔
+        // recessive_observation.is_none()` equivalence one altitude
+        // down — the shared vacuous-nothing boundary on the empty
+        // support. Cross-pins with the parallel
+        // `recessive_source_kind_is_some_iff_map_is_nonempty` and
+        // `trough_source_kind_count_is_zero_iff_map_is_empty` scalar-
+        // half boundaries. Peer of
+        // `recessive_tier_observation_none_iff_empty_pointwise` on
+        // the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.recessive_source_kind_observation().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_is_some_iff_map_is_nonempty_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the None-
+        // boundary): `recessive_source_kind_observation().is_some()`
+        // iff the map has at least one leaf. Direct pin of the
+        // histogram-side `!is_empty ⇔ recessive_observation.is_some()`
+        // equivalence one altitude down. Peer of
+        // `recessive_tier_observation_is_some_iff_map_is_nonempty_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_some = map.recessive_source_kind_observation().is_some();
+            assert_eq!(is_some, !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_cell_component_is_contributing_source_kind_pointwise() {
+        // Present-support membership pin: when `Some((k, _))`, `k`
+        // is a member of `contributing_source_kinds()` — the anti-
+        // modal cell is by definition observed. Lifted from the
+        // histogram-side law `recessive_observation.map(|(k, _)| k)
+        // is nonzero-count` one altitude down. Peer of
+        // `recessive_tier_observation_cell_component_is_contributing_tier_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((k, _)) = map.recessive_source_kind_observation() {
+                assert!(
+                    map.contributing_source_kinds().contains(&k),
+                    "recessive cell {k:?} must be present in {:?}",
+                    map.contributing_source_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_count_component_equals_histogram_count_at_cell_pointwise()
+    {
+        // Cell/count consistency pin: when `Some((k, n))`, `n ==
+        // source_kind_histogram().count(k)` — the count component is
+        // the observation count at the cell component. Lifted from
+        // the histogram-side law `recessive_observation.map(|(k, n)| n
+        // == count(k))` one altitude down (the trough-count
+        // consistency law on `AxisHistogram::recessive_observation`).
+        // Peer of
+        // `recessive_tier_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((k, n)) = map.recessive_source_kind_observation() {
+                assert_eq!(n, map.source_kind_histogram().count(k));
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1` —
+        // every non-empty support has at least one leaf at the anti-
+        // modal source-kind, so the count component is strictly
+        // positive. The `Some((_, 0))` shape is unreachable — every
+        // observed cell in a non-empty support carries at least one
+        // leaf by the `recessive_observation` scan's `c > 0` filter
+        // one altitude down. Peer of
+        // `recessive_tier_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, n)) = map.recessive_source_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_count_component_bounded_above_by_peak_source_kind_count_pointwise()
+     {
+        // Trough-≤-peak upper bound pin: when `Some((_, n))`, `n <=
+        // peak_source_kind_count()` — the trough count is bounded
+        // above by the peak count on every non-empty support. Sharper
+        // than the total-leaf upper bound (`n <= len()`) on every
+        // strictly-unimodal support where the peak is strictly less
+        // than the total. Equality holds iff the source-kind
+        // histogram is uniform-count (peak and trough coincide across
+        // the observed support). Peer of
+        // `recessive_tier_observation_count_component_bounded_above_by_peak_tier_count_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, n)) = map.recessive_source_kind_observation() {
+                assert!(n <= map.peak_source_kind_count());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_count_component_bounded_by_len_pointwise() {
+        // Total-leaf upper bound pin: when `Some((_, n))`, `n <=
+        // len()` — the trough count is bounded above by the total
+        // leaf count (every source-kind contributes at most every
+        // leaf, and the others contribute zero). Equality holds when
+        // `contributing_source_kinds_count() <= 1`; the strict
+        // inequality holds on every multi-source-kind support. Peer
+        // of
+        // `recessive_tier_observation_count_component_bounded_by_len_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, n)) = map.recessive_source_kind_observation() {
+                assert!(n <= map.len());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on trough ties, the
+        // `.0` component is the *first* observed cell at that count
+        // in `ConfigSourceKind::ALL` declaration order (`Defaults →
+        // Env → File`). Cross-pins with the shared
+        // `AxisHistogram::recessive_observation` scan's running-min
+        // walk with `<`-only promotion (strict, not `<=`), which
+        // keeps the first-observed tied cell. Peer of
+        // `recessive_tier_observation_yields_declaration_first_on_ties_pointwise`
+        // on the tier altitude, one cardinality below on the
+        // cardinality-`3` ConfigSourceKind axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((k_obs, n_obs)) = map.recessive_source_kind_observation() {
+                let mut first_at_trough = None;
+                for cell in crate::ConfigSourceKind::ALL {
+                    if map.source_kind_histogram().count(*cell) == n_obs {
+                        first_at_trough = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(k_obs), first_at_trough);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_agrees_with_open_coded_argmin_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused
+        // (cell, count) argmin walk this lift replaces: scan the
+        // histogram's per-cell counts vector in declaration order,
+        // track the running-min cell and count with `<`-only
+        // promotion (strict inequality — the first observed cell at
+        // the tied count is kept), excluding zero-count cells.
+        // Catches any future drift where either implementation stops
+        // projecting through the same fused (cell, count) argmin
+        // walk. Peer of
+        // `recessive_tier_observation_agrees_with_open_coded_argmin_walk_pointwise`
+        // on the tier altitude, one cardinality below on the
+        // cardinality-`3` ConfigSourceKind axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let mut best: Option<(crate::ConfigSourceKind, usize)> = None;
+            for cell in crate::ConfigSourceKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c < best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(map.recessive_source_kind_observation(), best);
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `recessive_source_kind_observation()` fully
+        // determines the `(recessive_source_kind,
+        // trough_source_kind_count)` scalar pair pointwise via `.map`
+        // and `.map_or` — the fused-pair primitive is the upstream
+        // both scalar halves project through, and the pair
+        // `(recessive_source_kind, trough_source_kind_count)` recovers
+        // under the invertible projections `.map(|(k, _)| k)` (cell)
+        // and `.map_or(0, |(_, n)| n)` (count). Pins the fused-pair
+        // primitive as the natural upstream both scalar halves
+        // project through. Peer of
+        // `recessive_tier_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.recessive_source_kind_observation();
+            let cell = obs.map(|(k, _)| k);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, map.recessive_source_kind());
+            assert_eq!(count, map.trough_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_coincides_with_dominant_source_kind_observation_on_uniform_count_or_empty_pointwise()
+     {
+        // Peak-trough coincidence law (uniform-count / empty side):
+        // `recessive_source_kind_observation()` and
+        // `dominant_source_kind_observation()` coincide pointwise on
+        // every empty map (both `None`) and every uniform-count map
+        // (both `Some((k, shared_count))` at the first observed cell
+        // — the modal and anti-modal level sets coincide because peak
+        // and trough are equal, and the declaration-order tie-break
+        // is identical on both sides). The empty map, the singleton-
+        // support Prog fold, and the uniform-full-cover fold are all
+        // on the uniform-count side of the boundary. Peer of
+        // `recessive_tier_observation_coincides_with_dominant_tier_observation_on_uniform_count_or_empty_pointwise`
+        // on the tier altitude.
+        let empty = ProvenanceMap::default();
+        assert_eq!(
+            empty.recessive_source_kind_observation(),
+            empty.dominant_source_kind_observation(),
+        );
+
+        let singleton = Prog::resolve_progressive();
+        assert!(singleton.provenance().source_kinds_balanced());
+        assert_eq!(
+            singleton.provenance().recessive_source_kind_observation(),
+            singleton.provenance().dominant_source_kind_observation(),
+        );
+
+        let full_cover: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (
+                vec!["b".to_owned()],
+                Provenance::env("SHIKUMI_RSKO_COINCIDE_"),
+            ),
+            (
+                vec!["c".to_owned()],
+                Provenance::file("/etc/rsko_coincide.yaml"),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert!(full_cover.source_kinds_balanced());
+        assert!(full_cover.source_kinds_full_cover());
+        assert_eq!(
+            full_cover.recessive_source_kind_observation(),
+            full_cover.dominant_source_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_observation_diverges_from_dominant_source_kind_observation_on_strictly_unimodal_pointwise()
+     {
+        // Peak-trough divergence law (strictly-unimodal side):
+        // `recessive_source_kind_observation()` and
+        // `dominant_source_kind_observation()` DIVERGE on the count
+        // component on every strictly-unimodal support where
+        // `peak_source_kind_count() > trough_source_kind_count()` —
+        // the two projections read OPPOSITE ends of the observation
+        // interval, with the peak count strictly larger than the
+        // trough count. The `source_kind_histogram_mixed_fixture` is
+        // strictly-unimodal on the source-kind axis (peak=`2` at
+        // `Defaults`, trough=`1` at `Env` after declaration-order
+        // tie-break with `File`), so both projections must diverge on
+        // the count component on it. Cross-pins with the histogram-
+        // side divergence law on `AxisHistogram::dominant_observation`
+        // and `AxisHistogram::recessive_observation` one altitude
+        // down. Peer of
+        // `recessive_tier_observation_diverges_from_dominant_tier_observation_on_strictly_unimodal_pointwise`
+        // on the tier altitude.
+        let r = source_kind_histogram_mixed_fixture();
+        let map = r.provenance();
+        assert!(map.peak_source_kind_count() > map.trough_source_kind_count());
+        let dom = map.dominant_source_kind_observation();
+        let rec = map.recessive_source_kind_observation();
+        assert!(dom.is_some());
+        assert!(rec.is_some());
+        let (_, dom_n) = dom.unwrap();
+        let (_, rec_n) = rec.unwrap();
+        assert!(dom_n > rec_n);
     }
 
     // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
