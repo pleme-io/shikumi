@@ -4283,6 +4283,123 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         best.map(|cell| (cell, min, multiplicity))
     }
 
+    /// The **extremal-observation fused-quadruple pair** — the
+    /// [`Self::modal_observation`] and [`Self::antimodal_observation`]
+    /// fused triples packed into one `Option<((A, usize, usize), (A,
+    /// usize, usize))>` pair, computed in a single pass over the counts
+    /// vector. Returns `None` exactly when [`Self::is_empty`] is `true`;
+    /// otherwise `Some((modal_observation().unwrap(),
+    /// antimodal_observation().unwrap()))` where the two triples share the
+    /// same non-emptiness discriminant and each `(cell, count,
+    /// multiplicity)` triple satisfies its underlying triple's invariants.
+    ///
+    /// The *closing joint* of the (pair, pair, triple) modal/antimodal
+    /// fusion family — the modal fused triple [`Self::modal_observation`]
+    /// and the antimodal fused triple [`Self::antimodal_observation`]
+    /// packed into a single argmax/argmin fold that tracks the running
+    /// maximum cell / count / peak-multiplicity **and** the running
+    /// minimum cell / count / trough-multiplicity simultaneously in one
+    /// walk over `&self`. Structurally the joint peer of the fused-pair
+    /// projections that already fuse each half: the histogram surface now
+    /// carries not only per-side (cell, count, multiplicity) triples but a
+    /// **joint** (modal-triple, antimodal-triple) pair, closing the 9-cell
+    /// (modal, antimodal, joint) × (cell, count, multiplicity) triple-grid
+    /// the modal/antimodal triples close for their per-side slices.
+    ///
+    /// Every consumer that reads the *"which cell (both), what count
+    /// (both), how many tied (both)"* joint-headline surface — the
+    /// *modal-plus-antimodal summary* dashboard line reading *"format:
+    /// yaml at 47× (2-way tied) / toml at 3× (unique trough)"* from a
+    /// chain's [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// *both-extremes attestation* on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "Parse fired 12×
+    /// alone / Extract fired 1× alone" diagnostic), the *bimodality
+    /// summary* line on [`crate::ConfigSourceChain::layer_kind_histogram`]
+    /// — now reads a single method call instead of two independent
+    /// three-scalar walks (six coordinated reads in total, before this
+    /// lift). The fused-quadruple pair collapses the work to one pass that
+    /// tracks the running argmax cell, running-max count, reset-on-rise
+    /// modal multiplicity, running argmin cell, running-min count
+    /// (initialized to `usize::MAX` so the first positive count promotes
+    /// the sentinel), and reset-on-fall antimodal multiplicity
+    /// simultaneously, excluding zero-count cells by construction so the
+    /// empty boundary reads `None` uniformly.
+    ///
+    /// **Tie-breaking** — pointwise inherits both underlying triples'
+    /// declaration-order tie-break: when multiple cells share the peak,
+    /// the cell earliest in [`ClosedAxis::ALL`] wins the modal `.0` slot;
+    /// when multiple cells share the trough, the cell earliest in
+    /// [`ClosedAxis::ALL`] wins the antimodal `.0` slot. The two
+    /// multiplicity slots record how many cells share each extreme.
+    ///
+    /// **Empty-histogram convention** — returns `None`, matching both
+    /// [`Self::modal_observation`] and [`Self::antimodal_observation`]
+    /// empty conventions pointwise. Both underlying triples share the
+    /// same `is_empty()` discriminant, so the outer `Option` fuses them
+    /// into a single non-emptiness gate: a consumer that matches on
+    /// `Some((modal, antimodal))` never sees one side present and the
+    /// other absent.
+    ///
+    /// **Fused invariants** with the two component fused triples:
+    /// - `extremal_observations().map(|(m, _)| m) == modal_observation()`
+    ///   pointwise on every histogram (the modal projection equals
+    ///   [`Self::modal_observation`]).
+    /// - `extremal_observations().map(|(_, a)| a) ==
+    ///   antimodal_observation()` pointwise on every histogram (the
+    ///   antimodal projection equals [`Self::antimodal_observation`]).
+    /// - `extremal_observations() == modal_observation().zip(antimodal_observation())`
+    ///   pointwise — the quadruple pair is the `Option::zip` of the two
+    ///   fused triples, and both sides share the same non-emptiness
+    ///   discriminant so `zip` never drops information.
+    /// - `extremal_observations().is_none() ⇔ is_empty()` —
+    ///   one-discriminant empty boundary on the fused quadruple.
+    /// - When non-empty, `extremal_observations().unwrap().1.1 <=
+    ///   extremal_observations().unwrap().0.1` — the antimodal-side count
+    ///   is bounded above by the modal-side count on the same histogram
+    ///   (peer to the scalar `trough_count() <= peak_count()` bound,
+    ///   lifted through both fused triples of the joint pair).
+    /// - When non-empty, both multiplicities are `<= distinct_cells()`
+    ///   and both are `>= 1`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_extremal_observations_empty_is_none_*`,
+    /// `axis_histogram_extremal_observations_matches_component_projections_*`).
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn extremal_observations(&self) -> Option<((A, usize, usize), (A, usize, usize))> {
+        let mut modal_best: Option<A> = None;
+        let mut max = 0usize;
+        let mut peak_mult = 0usize;
+        let mut antimodal_best: Option<A> = None;
+        let mut min = usize::MAX;
+        let mut trough_mult = 0usize;
+        for (cell, c) in self {
+            if c == 0 {
+                continue;
+            }
+            if c > max {
+                modal_best = Some(cell);
+                max = c;
+                peak_mult = 1;
+            } else if c == max {
+                peak_mult += 1;
+            }
+            if c < min {
+                antimodal_best = Some(cell);
+                min = c;
+                trough_mult = 1;
+            } else if c == min {
+                trough_mult += 1;
+            }
+        }
+        match (modal_best, antimodal_best) {
+            (Some(mc), Some(ac)) => Some(((mc, max, peak_mult), (ac, min, trough_mult))),
+            _ => None,
+        }
+    }
+
     /// The **modality-degree pair** — the fused
     /// `(peak_multiplicity, trough_multiplicity)` projection on the
     /// histogram's multiplicity surface. Returns `(0, 0)` exactly when
@@ -32065,6 +32182,295 @@ mod tests {
         let (_, count, mult) = singleton.antimodal_observation().unwrap();
         assert!(count >= 1);
         assert!(mult >= 1);
+    }
+
+    // ---- AxisHistogram::extremal_observations fused-quadruple laws ----
+    //
+    // The joint-fusion peer of the modal / antimodal fused triples
+    // `modal_observation` and `antimodal_observation`. Pinned by the two
+    // trait-uniform laws (empty → None; singleton → both projections match
+    // their component triples), the two-fold canonical-shape identity, the
+    // cross-fusion identity against Option::zip of the two component
+    // triples, direct witness pins, the outer-Option empty boundary, and
+    // the antimodal-≤-modal count bound lifted through both slots.
+
+    fn assert_extremal_observations_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.extremal_observations(),
+            None,
+            "empty histogram extremal_observations must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_extremal_observations_matches_component_projections<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Trait-uniform joint-fusion identity: on every non-empty
+        // singleton observation, extremal_observations() equals
+        // (modal_observation(), antimodal_observation()) pointwise across
+        // every closed-axis implementor, and both slot projections match
+        // their component triples.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            let quad = hist.extremal_observations();
+            assert!(
+                quad.is_some(),
+                "non-empty singleton extremal_observations must be Some \
+                 on observed cell {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            let (modal, antimodal) = quad.unwrap();
+            assert_eq!(
+                Some(modal),
+                hist.modal_observation(),
+                "extremal_observations modal slot must equal modal_observation \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                Some(antimodal),
+                hist.antimodal_observation(),
+                "extremal_observations antimodal slot must equal antimodal_observation \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_observations_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_matches_component_projections_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_observations_matches_component_projections::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_equals_component_quadruple_across_canonical_shapes() {
+        // The defining fusion identity across the canonical observation-
+        // mix shapes (empty, singleton, strict-modal, two-way-tied,
+        // three-way uniform): extremal_observations() and the open-coded
+        // `modal_observation().zip(antimodal_observation())` pair agree
+        // pointwise. Regression in either the fused walk drifting from
+        // the two component walks (on the tie-count reset, the c==0
+        // guard, the promotion condition, or the declaration-order
+        // tie-break for either cell slot) or the joint-Option
+        // discriminant on the outer wrapper surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let expected = hist.modal_observation().zip(hist.antimodal_observation());
+            assert_eq!(
+                hist.extremal_observations(),
+                expected,
+                "extremal_observations must equal modal_observation.zip(antimodal_observation) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_pins_witness_shapes() {
+        // Direct witness pins on the boundary and interior shapes.
+        // `DiffLineKind::ALL` declares [Removed, Added, Context], so
+        // the declaration-order tie-break in both `dominant_cell` and
+        // `recessive_cell` picks Removed first when either extreme is
+        // shared across cells that include Removed:
+        //   - empty → None
+        //   - singleton (Added:1) → Some(((Added, 1, 1), (Added, 1, 1)))
+        //     — the sole observed cell sits at both peak and trough
+        //   - strict (Added:2, Removed:1) → Some(((Added, 2, 1),
+        //     (Removed, 1, 1))) — Added strictly holds the peak, Removed
+        //     strictly holds the trough
+        //   - two-way-tied (Added:1, Removed:1) → Some(((Removed, 1, 2),
+        //     (Removed, 1, 2))) — uniform-count: peak and trough
+        //     coincide, tie-break picks Removed on both sides
+        //   - uniform three-cover → Some(((Removed, 1, 3), (Removed, 1,
+        //     3))) — same collapse across the full support
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.extremal_observations(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            singleton.extremal_observations(),
+            Some(((DiffLineKind::Added, 1, 1), (DiffLineKind::Added, 1, 1))),
+        );
+
+        let strict: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            strict.extremal_observations(),
+            Some(((DiffLineKind::Added, 2, 1), (DiffLineKind::Removed, 1, 1))),
+        );
+
+        let two_way_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            two_way_tied.extremal_observations(),
+            Some(((DiffLineKind::Removed, 1, 2), (DiffLineKind::Removed, 1, 2))),
+        );
+
+        let uniform_three_cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            uniform_three_cover.extremal_observations(),
+            Some(((DiffLineKind::Removed, 1, 3), (DiffLineKind::Removed, 1, 3))),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_antimodal_count_bounded_by_modal_count() {
+        // Antimodal-≤-modal count bound lifted through both slots of the
+        // fused quadruple: on every non-empty histogram, the antimodal
+        // slot's count is bounded above by the modal slot's count.
+        // Structural — the trough is a minimum, the peak is a maximum,
+        // and both are taken over the same support (`c > 0`), so the
+        // min-≤-max invariant holds by construction whenever the support
+        // is non-empty. Peer to the same bound each component triple
+        // carries independently, now provable off a single method call.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let ((_, peak, _), (_, trough, _)) = hist.extremal_observations().unwrap();
+            assert!(
+                trough <= peak,
+                "extremal_observations antimodal count {trough} must be <= modal count \
+                 {peak} on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_multiplicities_bounded_by_distinct_cells() {
+        // Structural bound on both multiplicity slots: on every non-empty
+        // histogram, both extremal_observations().unwrap().{0,1}.2 <=
+        // distinct_cells(). Peer to the same bound each component triple
+        // carries independently, lifted through the quadruple.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let ((_, _, peak_mult), (_, _, trough_mult)) = hist.extremal_observations().unwrap();
+            let distinct = hist.distinct_cells();
+            assert!(
+                peak_mult <= distinct,
+                "extremal_observations modal multiplicity {peak_mult} must be \
+                 <= distinct_cells {distinct} on input of length {}",
+                input.len(),
+            );
+            assert!(
+                trough_mult <= distinct,
+                "extremal_observations antimodal multiplicity {trough_mult} must be \
+                 <= distinct_cells {distinct} on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_observations_empty_iff_none() {
+        // Fused-quadruple empty-boundary pin: extremal_observations() ==
+        // None iff is_empty() is true, and extremal_observations().is_some()
+        // iff the histogram is non-empty. Peer to the fused-triple
+        // boundaries modal_observation() == None iff is_empty() and
+        // antimodal_observation() == None iff is_empty(). One
+        // discriminant on the outer Option collapses both underlying
+        // triples' non-emptiness gates into a single check — a consumer
+        // that matches on Some((modal, antimodal)) never sees one side
+        // present with the other absent.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.extremal_observations(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        let ((_, peak, peak_mult), (_, trough, trough_mult)) =
+            singleton.extremal_observations().unwrap();
+        assert!(peak >= 1);
+        assert!(peak_mult >= 1);
+        assert!(trough >= 1);
+        assert!(trough_mult >= 1);
     }
 
     // ---- AxisHistogram::trough_count trait-uniform laws ----
