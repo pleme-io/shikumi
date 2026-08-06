@@ -1175,7 +1175,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.490": {
+      "shikumi-0.1.491": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
