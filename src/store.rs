@@ -3064,7 +3064,19 @@ mod hotswap_tests {
         thread::sleep(Duration::from_millis(100));
         write_cfg(&path, "debug", "0.0.0.0:8080"); // Free -- should fire
         thread::sleep(Duration::from_millis(400));
-        write_cfg(&path, "debug", "0.0.0.0:9999"); // RequiresRestart -- must NOT fire
+        // Write 2 changes BOTH fields. `bind` is restart-required, so the
+        // candidate as a whole classifies RequiresRestart and must not fire
+        // — and because `log_level` also moves, a leak is now detectable by
+        // VALUE ("trace" appearing at all) instead of by event count.
+        //
+        // It used to change only `bind`, leaving log_level at "debug", so a
+        // leaked fire pushed a value identical to write 1's and the only
+        // discriminator left was `observed.len() <= 1`. That bound is not a
+        // property of this code: it assumes the filesystem watcher coalesces
+        // one logical write into one event. Measured on macOS 2026-08-06 —
+        // with write 2 DELETED entirely, write 1 alone still yields
+        // ["debug", "debug"]. The duplicate is the watcher, not the gate.
+        write_cfg(&path, "trace", "0.0.0.0:9999"); // RequiresRestart -- must NOT fire
         thread::sleep(Duration::from_millis(400));
 
         let observed = seen.lock().unwrap().clone();
@@ -3072,9 +3084,13 @@ mod hotswap_tests {
             observed.iter().all(|v| v == "debug"),
             "on_free_reload must never observe a RequiresRestart-blocked candidate: {observed:?}"
         );
+        // At least one Free swap must have been observed — otherwise this
+        // test would pass vacuously on a callback that never fires at all,
+        // which is the failure mode most likely to hide a broken watcher.
         assert!(
-            observed.len() <= 1,
-            "on_free_reload must fire at most once across this sequence: {observed:?}"
+            !observed.is_empty(),
+            "on_free_reload must fire for the Free swap; an empty observation \
+             means the watcher never delivered, not that the gate worked"
         );
     }
 

@@ -49,10 +49,8 @@ mod cube;
 pub mod discovered;
 mod discovery;
 mod error;
-// hotswap module disabled — pleme-hotswap not on crates.io, can't be
-// a dep. Re-enable when pleme-hotswap is published.
-// #[cfg(feature = "hotswap")]
-// pub mod hotswap;
+#[cfg(feature = "hotswap")]
+pub mod hotswap;
 #[cfg(feature = "kube-discovery")]
 pub mod kube_discovery;
 #[cfg(feature = "lisp")]
@@ -265,11 +263,20 @@ mod check_cfg_tests {
         // If either count drifts, either update this baseline and note
         // why in the Cargo.toml comment block, or fix the gate whose
         // addition/removal shifted the total.
+        // UPDATED 2026-08-06, 1 -> 2, per this test's own instruction.
+        // The feature was RESTORED (pleme-hotswap 0.1.1 published
+        // 2026-08-05), which meant un-commenting `#[cfg(feature =
+        // "hotswap")] pub mod hotswap;` — a real gate that had been
+        // carried as a comment for exactly as long as the dep was
+        // unavailable. So lib.rs now holds two bare attributes: the module
+        // declaration and the `pub use hotswap::…` re-export. store.rs is
+        // untouched at 5; nothing about the gated surface changed, only
+        // whether the module line is code or a comment.
         let lib_hits = count_gate_attribute_lines(LIB_RS);
         let store_hits = count_gate_attribute_lines(STORE_RS);
         assert_eq!(
-            lib_hits, 1,
-            "src/lib.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 1",
+            lib_hits, 2,
+            "src/lib.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 2",
         );
         assert_eq!(
             store_hits, 5,

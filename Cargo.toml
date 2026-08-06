@@ -36,6 +36,29 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("hotswap")
 
 [features]
 default = []
+
+# Per-field hot-swap-safety classification (theory/CALHA.md §6.3).
+#
+# RESTORED 2026-08-06. This feature was deleted — not stubbed, deleted —
+# because `pleme-hotswap` was not on crates.io and the auto-release
+# pre-check rejects optional git deps. The seven `#[cfg(feature =
+# "hotswap")]` gates were deliberately left in-tree against exactly this
+# day, so the integration (ValidatedTieredConfig, the split-blake3
+# ConfigWatermark, ConfigSyncProof, `ConfigStore::load_and_watch_hotswap`,
+# and its end-to-end test module) has been complete and unreachable the
+# whole time. `pleme-hotswap` 0.1.1 published 2026-08-05; the gates now
+# evaluate.
+#
+# Off by default like every other optional surface here: an app that does
+# not classify its config fields should not carry the trait crate.
+#
+# `dep:blake3` is not incidental — it is the feature's other half.
+# `ConfigWatermark` is a SPLIT hash: one blake3 over the whole config, one
+# over just the restart-required subtree, so a consumer can prove "the live
+# process is running these exact hot fields" independently of whether a cold
+# field drifted. Without blake3 the module is 7 × E0433. Measured on the
+# restore: enabling `dep:pleme-hotswap` alone fails to compile.
+hotswap = ["dep:pleme-hotswap", "dep:blake3"]
 # tatara-lisp config file support. Off by default to keep the default
 # dependency closure minimal — apps that author Lisp configs opt in
 # explicitly. Sourced from crates.io (`tatara-lisp` 0.3.3, the canonical
@@ -158,11 +181,12 @@ blue-lang-syntax = { version = "0.0.2", optional = true }
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
 # satisfy. The `pleme-hotswap-derive` repo hosts both crates.
-# pleme-hotswap removed — not on crates.io, auto-release pre-check
-# rejects optional git deps. The hotswap feature is removed; the code
-# that uses pleme_hotswap is gated behind #[cfg(feature = "hotswap")]
-# which can never be enabled (no such feature exists). Re-add when
-# pleme-hotswap is published to crates.io.
+# RE-ADDED 2026-08-06. `pleme-hotswap` published to crates.io as 0.1.1 on
+# 2026-08-05, which was the single condition this dep was removed under
+# ("Re-add when pleme-hotswap is published to crates.io"). It is a
+# crates.io version dep, not a git dep, so the auto-release pre-check that
+# rejects optional git deps is satisfied.
+pleme-hotswap = { version = "0.1", optional = true }
 blake3 = { version = "1", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { version = "0.1", optional = true }
@@ -219,5 +243,9 @@ serde_json = "1"
 serde_yaml = "0.9"
 # SecretClient async tests — needed even when no native features are on.
 tokio = { version = "1", features = ["rt", "macros"] }
-# pleme-hotswap-derive removed — not on crates.io. The hotswap tests
-# that used it are now disabled (the hotswap feature is gone).
+# RE-ADDED 2026-08-06 alongside `pleme-hotswap` (both published 0.1.1 on
+# 2026-08-05 from the pleme-hotswap-derive repo, which hosts the pair).
+# Needed by the `#[cfg(all(test, feature = "hotswap"))]` module in
+# src/store.rs, which derives HotSwap on a fixture config to drive the
+# end-to-end load_and_watch_hotswap path.
+pleme-hotswap-derive = "0.1"
