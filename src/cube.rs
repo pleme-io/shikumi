@@ -3966,6 +3966,71 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         multiplicity
     }
 
+    /// The **antimodal-side fused (count, multiplicity) pair** — the
+    /// [`Self::trough_count`] and [`Self::trough_multiplicity`] scalars
+    /// packed into one `(usize, usize)` tuple, computed in a single
+    /// pass over the counts vector. Returns `(0, 0)` on the empty
+    /// histogram; otherwise `(trough_count(), trough_multiplicity())`
+    /// where `trough_count >= 1` and
+    /// `1 <= trough_multiplicity <= distinct_cells()`.
+    ///
+    /// The *count-side* peer of [`Self::recessive_observation`] (which
+    /// fuses `(cell, count)` on the antimodal side): the same walk that
+    /// discovers the trough count records how many cells tie at it,
+    /// halving the work of the `(trough_count(), trough_multiplicity())`
+    /// pair every consumer that needs both scalars pays for today. Also
+    /// the *antimodal-side peer* of [`Self::peak_observation`], closing
+    /// the fused-pair `(count, multiplicity)` × `(peak, trough)` 2×2
+    /// grid at the primitive layer alongside the closed
+    /// `(cell, count)` × `(peak, trough)` grid the sibling
+    /// [`Self::dominant_observation`] / [`Self::recessive_observation`]
+    /// pair already carries. The *tie-detector* dashboard line reading
+    /// *"trough observation: 1 across 2 cells"* now comes out of one
+    /// method call instead of two separate walks.
+    ///
+    /// **Zero cells are excluded from the search.** The minimum is
+    /// taken over the histogram's *support* (`c > 0`), matching the
+    /// [`Self::trough_count`] and [`Self::trough_multiplicity`] zero-
+    /// cell-exclusion rules pointwise. The running min is initialized
+    /// to `usize::MAX` so the first positive count promotes the sentinel
+    /// off; the reset-on-fall (`c < min`) resets the multiplicity to
+    /// `1`, and the tie-increment (`c == min`) grows it — the same fold
+    /// pattern the scalar [`Self::trough_multiplicity`] runs, extended
+    /// to carry the min itself out alongside the tie count.
+    ///
+    /// **Fused invariants** with the scalar peers:
+    /// - `trough_observation() == (trough_count(), trough_multiplicity())`
+    ///   pointwise on every histogram (the defining fusion identity).
+    /// - `trough_observation() == (0, 0)` ⇔ [`Self::is_empty`] is `true`.
+    /// - `trough_observation().1 <= distinct_cells()` always; equality
+    ///   holds iff [`Self::is_uniform_count`] is `true`.
+    /// - `trough_observation().0 >= 1` ⇔ [`Self::is_empty`] is `false`.
+    /// - `trough_observation().0 <= peak_observation().0` always: the
+    ///   antimodal-side count is bounded above by the modal-side count
+    ///   on the same histogram (peer to the scalar
+    ///   `trough_count() <= peak_count()` bound).
+    #[must_use]
+    pub fn trough_observation(&self) -> (usize, usize) {
+        let mut min = usize::MAX;
+        let mut multiplicity = 0usize;
+        for &c in &self.counts {
+            if c == 0 {
+                continue;
+            }
+            if c < min {
+                min = c;
+                multiplicity = 1;
+            } else if c == min {
+                multiplicity += 1;
+            }
+        }
+        if multiplicity == 0 {
+            (0, 0)
+        } else {
+            (min, multiplicity)
+        }
+    }
+
     /// The **modality-degree pair** — the fused
     /// `(peak_multiplicity, trough_multiplicity)` projection on the
     /// histogram's multiplicity surface. Returns `(0, 0)` exactly when
@@ -30840,6 +30905,247 @@ mod tests {
             std::iter::once(DiffLineKind::Removed).collect();
         assert!(!singleton.is_empty());
         let (count, mult) = singleton.peak_observation();
+        assert!(count >= 1);
+        assert!(mult >= 1);
+    }
+
+    // ---- AxisHistogram::trough_observation fused-pair laws ----
+    //
+    // The antimodal-side (count, multiplicity) fusion peer of the fused
+    // (cell, count) pair `recessive_observation` and the antimodal peer
+    // of the modal-side `peak_observation`. Pinned by the defining
+    // fusion identity, the empty and singleton boundaries, the
+    // structural bound against distinct_cells, and the bilateral
+    // `trough_count <= peak_count` bound against peak_observation.
+
+    fn assert_trough_observation_empty_is_zero_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.trough_observation(),
+            (0, 0),
+            "empty histogram trough_observation must be (0, 0) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_trough_observation_matches_scalar_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Trait-uniform fusion identity: on every non-empty singleton
+        // observation, trough_observation() equals (trough_count(),
+        // trough_multiplicity()) pointwise across every closed-axis
+        // implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.trough_observation(),
+                (hist.trough_count(), hist.trough_multiplicity()),
+                "trough_observation must equal (trough_count, trough_multiplicity) \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_empty_is_zero_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_observation_empty_is_zero_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_matches_scalar_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_observation_matches_scalar_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_equals_scalar_pair_across_canonical_shapes() {
+        // The defining fusion identity across the canonical observation-
+        // mix shapes (empty, singleton, strict-modal, two-way-tied,
+        // three-way uniform): trough_observation() and (trough_count(),
+        // trough_multiplicity()) agree pointwise. Regression in either
+        // side (the fused walk drifting from the scalar walks on the
+        // tie-count reset condition, the c==0 guard, or the running-min
+        // sentinel promotion) surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.trough_observation(),
+                (hist.trough_count(), hist.trough_multiplicity()),
+                "trough_observation must equal (trough_count, trough_multiplicity) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_pins_witness_shapes() {
+        // Direct witness pins on the boundary and interior shapes:
+        // empty → (0, 0); singleton → (1, 1); strict-modal (Added:2,
+        // Removed:1) → (1, 1) (Removed alone at the trough count 1);
+        // two-way-tied uniform (Added:1, Removed:1) → (1, 2); uniform
+        // three-cover → (1, 3).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.trough_observation(), (0, 0));
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(singleton.trough_observation(), (1, 1));
+
+        let strict_modal: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict_modal.trough_observation(), (1, 1));
+
+        let two_way_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(two_way_tied.trough_observation(), (1, 2));
+
+        let uniform_three_cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(uniform_three_cover.trough_observation(), (1, 3));
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_multiplicity_bounded_by_distinct_cells() {
+        // Structural bound: trough_observation().1 <= distinct_cells()
+        // always; equality holds iff is_uniform_count() is true.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (_, mult) = hist.trough_observation();
+            assert!(
+                mult <= hist.distinct_cells(),
+                "trough_observation multiplicity {mult} must be <= distinct_cells {} \
+                 on input of length {}",
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    mult,
+                    hist.distinct_cells(),
+                    "trough_observation multiplicity must equal distinct_cells on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_count_bounded_by_peak_observation_count() {
+        // Bilateral bound: trough_observation().0 <= peak_observation().0
+        // always. Peer to the scalar `trough_count() <= peak_count()`
+        // bound; equality holds iff is_uniform_count() is true (peak and
+        // trough coincide on the observed support).
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (trough_c, _) = hist.trough_observation();
+            let (peak_c, _) = hist.peak_observation();
+            assert!(
+                trough_c <= peak_c,
+                "trough_observation count {trough_c} must be <= peak_observation count \
+                 {peak_c} on input of length {}",
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    trough_c,
+                    peak_c,
+                    "trough_observation count must equal peak_observation count on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_observation_empty_iff_zero_zero() {
+        // Fused-pair empty-boundary pin: trough_observation() == (0, 0)
+        // iff is_empty() is true, and trough_observation().0 >= 1 iff
+        // the histogram is non-empty. Peer to the scalar boundaries
+        // trough_count() == 0 iff is_empty() and trough_multiplicity() == 0
+        // iff is_empty(), and to the modal-side peak_observation empty
+        // boundary.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_observation(), (0, 0));
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        let (count, mult) = singleton.trough_observation();
         assert!(count >= 1);
         assert!(mult >= 1);
     }
