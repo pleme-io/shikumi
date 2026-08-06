@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "a8965bafba590f350eeba624bd441ec3b8603d668fdfb352efe38e0fe2e8f9f6",
+  "cargo_lock_sha256": "4d75faafe66605bc0a35f170b40d49260a1eee5a8a90422c9d92db50f55335a1",
   "manifest_sha256": {
     "Cargo.toml": "4066c6a260415ac4d3e47d033912cf1bc3bdd7b57792af0f4664842678b667e0"
   },
