@@ -3551,6 +3551,46 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         multiplicity
     }
 
+    /// The **modal-side fused (count, multiplicity) pair** — the
+    /// [`Self::peak_count`] and [`Self::peak_multiplicity`] scalars
+    /// packed into one `(usize, usize)` tuple, computed in a single
+    /// pass over the counts vector. Returns `(0, 0)` on the empty
+    /// histogram; otherwise `(peak_count(), peak_multiplicity())` where
+    /// `peak_count >= 1` and `1 <= peak_multiplicity <= distinct_cells()`.
+    ///
+    /// The *count-side* peer of [`Self::dominant_observation`] (which
+    /// fuses `(cell, count)` on the modal side): the same walk that
+    /// discovers the peak count records how many cells tie at it,
+    /// halving the work of the `(peak_count(), peak_multiplicity())`
+    /// pair every consumer that needs both scalars pays for today.
+    /// Together with [`Self::dominant_observation`], this closes the
+    /// modal-side fused-pair surface as the `(cell, count)` +
+    /// `(count, multiplicity)` pair — the *tie-detector* dashboard
+    /// line reading *"peak observation: 12 across 2 cells"* now comes
+    /// out of one method call instead of two separate walks.
+    ///
+    /// **Fused invariants** with the scalar peers:
+    /// - `peak_observation() == (peak_count(), peak_multiplicity())`
+    ///   pointwise on every histogram (the defining fusion identity).
+    /// - `peak_observation() == (0, 0)` ⇔ [`Self::is_empty`] is `true`.
+    /// - `peak_observation().1 <= distinct_cells()` always; equality
+    ///   holds iff [`Self::is_uniform_count`] is `true`.
+    /// - `peak_observation().0 >= 1` ⇔ [`Self::is_empty`] is `false`.
+    #[must_use]
+    pub fn peak_observation(&self) -> (usize, usize) {
+        let mut max = 0usize;
+        let mut multiplicity = 0usize;
+        for &c in &self.counts {
+            if c > max {
+                max = c;
+                multiplicity = 1;
+            } else if c == max && c > 0 {
+                multiplicity += 1;
+            }
+        }
+        (max, multiplicity)
+    }
+
     /// The minimum observation count across the histogram's *observed*
     /// support — the **height of the histogram's trough**. Returns `0`
     /// exactly when [`Self::is_empty`] is `true`; otherwise returns the
@@ -30615,6 +30655,193 @@ mod tests {
             std::iter::once(DiffLineKind::Removed).collect();
         assert!(!singleton.is_empty());
         assert!(singleton.peak_multiplicity() >= 1);
+    }
+
+    // ---- AxisHistogram::peak_observation fused-pair laws ----
+    //
+    // The modal-side (count, multiplicity) fusion peer of the fused
+    // (cell, count) pair `dominant_observation`. Pinned by the defining
+    // fusion identity, the empty and singleton boundaries, and the
+    // structural bound against distinct_cells.
+
+    fn assert_peak_observation_empty_is_zero_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_observation(),
+            (0, 0),
+            "empty histogram peak_observation must be (0, 0) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_observation_matches_scalar_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Trait-uniform fusion identity: on every non-empty singleton
+        // observation, peak_observation() equals (peak_count(),
+        // peak_multiplicity()) pointwise across every closed-axis
+        // implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_observation(),
+                (hist.peak_count(), hist.peak_multiplicity()),
+                "peak_observation must equal (peak_count, peak_multiplicity) \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_empty_is_zero_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_observation_empty_is_zero_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_matches_scalar_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_observation_matches_scalar_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_equals_scalar_pair_across_canonical_shapes() {
+        // The defining fusion identity across the canonical observation-
+        // mix shapes (empty, singleton, strict-modal, two-way-tied,
+        // three-way uniform): peak_observation() and (peak_count(),
+        // peak_multiplicity()) agree pointwise. Regression in either
+        // side (the fused walk drifting from the scalar walks on the
+        // tie-count reset condition, the c==0 guard, or the running-max
+        // promotion) surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.peak_observation(),
+                (hist.peak_count(), hist.peak_multiplicity()),
+                "peak_observation must equal (peak_count, peak_multiplicity) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_pins_witness_shapes() {
+        // Direct witness pins on the boundary and interior shapes:
+        // empty → (0, 0); singleton → (1, 1); strict-modal (Added:2,
+        // Removed:1) → (2, 1); uniform three-cover → (1, 3).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_observation(), (0, 0));
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(singleton.peak_observation(), (1, 1));
+
+        let strict_modal: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict_modal.peak_observation(), (2, 1));
+
+        let uniform_three_cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(uniform_three_cover.peak_observation(), (1, 3));
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_multiplicity_bounded_by_distinct_cells() {
+        // Structural bound: peak_observation().1 <= distinct_cells()
+        // always; equality holds iff is_uniform_count() is true.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (_, mult) = hist.peak_observation();
+            assert!(
+                mult <= hist.distinct_cells(),
+                "peak_observation multiplicity {mult} must be <= distinct_cells {} \
+                 on input of length {}",
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    mult,
+                    hist.distinct_cells(),
+                    "peak_observation multiplicity must equal distinct_cells on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_observation_empty_iff_zero_zero() {
+        // Fused-pair empty-boundary pin: peak_observation() == (0, 0)
+        // iff is_empty() is true, and peak_observation().0 >= 1 iff
+        // the histogram is non-empty. Peer to the scalar boundaries
+        // peak_count() == 0 iff is_empty() and peak_multiplicity() == 0
+        // iff is_empty().
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_observation(), (0, 0));
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        let (count, mult) = singleton.peak_observation();
+        assert!(count >= 1);
+        assert!(mult >= 1);
     }
 
     // ---- AxisHistogram::trough_count trait-uniform laws ----
