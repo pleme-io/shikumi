@@ -7164,6 +7164,44 @@ rec {
         ];
 
       };
+      "pleme-hotswap" = rec {
+        crateName = "pleme-hotswap";
+        version = "0.1.1";
+        edition = "2024";
+        sha256 = "18lmm62mjsn3gz6x9i92bj67bv7q6d9x3hpsd0v8i874jkv0va71";
+        libName = "pleme_hotswap";
+        authors = [
+          "pleme-io"
+        ];
+
+      };
+      "pleme-hotswap-derive" = rec {
+        crateName = "pleme-hotswap-derive";
+        version = "0.1.1";
+        edition = "2024";
+        sha256 = "1pav752rqvfw75676xdgm3knx422nxklidc0gf6pl1p5710f85sf";
+        procMacro = true;
+        libName = "pleme_hotswap_derive";
+        authors = [
+          "pleme-io"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+          }
+          {
+            name = "syn";
+            packageId = "syn 2.0.119";
+            features = [ "full" ];
+          }
+        ];
+
+      };
       "potential_utf" = rec {
         crateName = "potential_utf";
         version = "0.1.5";
@@ -9131,7 +9169,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.483";
+        version = "0.1.484";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9211,6 +9249,11 @@ rec {
             features = [ "macos_fsevent" ];
           }
           {
+            name = "pleme-hotswap";
+            packageId = "pleme-hotswap";
+            optional = true;
+          }
+          {
             name = "reqwest";
             packageId = "reqwest";
             optional = true;
@@ -9252,6 +9295,10 @@ rec {
         ];
         devDependencies = [
           {
+            name = "pleme-hotswap-derive";
+            packageId = "pleme-hotswap-derive";
+          }
+          {
             name = "serde_json";
             packageId = "serde_json";
           }
@@ -9272,17 +9319,17 @@ rec {
         features = {
           "akeyless-native" = [ "dep:akeyless-api" "dep:tokio" ];
           "aws-native" = [ "dep:aws-sdk-secretsmanager" "dep:aws-config" "dep:tokio" ];
-          "blake3" = [ "dep:blake3" ];
           "blue" = [ "dep:blue-lang-syntax" "lisp" ];
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
+          "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
           "kube" = [ "kube-discovery" "dep:reqwest" "reqwest/blocking" "dep:base64" ];
           "kube-discovery" = [ "dep:kanchi" ];
           "lisp" = [ "dep:tatara-lisp" ];
           "op-native" = [ "dep:reqwest" "dep:tokio" ];
           "vault-native" = [ "dep:reqwest" "dep:tokio" ];
         };
-        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "blake3" "blue" "cli" "default" "gcp-native" "kube" "kube-discovery" "lisp" "op-native" "vault-native" ];
+        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "blue" "cli" "default" "gcp-native" "hotswap" "kube" "kube-discovery" "lisp" "op-native" "vault-native" ];
       };
       "shlex" = rec {
         crateName = "shlex";
@@ -9569,9 +9616,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.34";
+        version = "0.3.35";
         edition = "2021";
-        sha256 = "0df9pcwri2b6s012gpvqn9x3rdlbnvvvp6jl30h8h69j92ka65a6";
+        sha256 = "0lgjf8qggsdy57ckhn41ac2g4s1vpn25y65i2lqazxnnp5g4p7sc";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9586,9 +9633,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.34";
+        version = "0.3.35";
         edition = "2021";
-        sha256 = "141pn685l26hb7m4pndx26xjb6k1g9qwl7agvgsr3y97d1y0x4s5";
+        sha256 = "18lcqq983vwqsgdml578rrhgq3dmfl91wirhjcknpfcs89jn4bxi";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
