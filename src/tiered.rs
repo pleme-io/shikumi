@@ -5006,6 +5006,122 @@ impl ProvenanceMap {
         self.source_kind_histogram().recessive_observation()
     }
 
+    /// The **modal source-kind observation** — the fused `(cell, count,
+    /// multiplicity)` triple on the modal side of this resolved fold's
+    /// source-kind histogram: the dominant [`crate::ConfigSourceKind`]
+    /// together with the leaf count it collected and how many source-
+    /// kind cells tied at that peak count. Returns `None` exactly when
+    /// the map is empty (no observed cell); otherwise returns `Some((k,
+    /// n, m))` where `k == dominant_source_kind().unwrap()`, `n ==
+    /// peak_source_kind_count() >= 1`, and `m ==
+    /// peak_source_kind_multiplicity() >= 1`.
+    ///
+    /// Defined as `self.source_kind_histogram().modal_observation()`,
+    /// routed through [`crate::AxisHistogram::modal_observation`] one
+    /// altitude down — the fused single-pass argmax scan over the
+    /// histogram's nonzero support that names the modal cell together
+    /// with the peak count *and* the peak multiplicity simultaneously,
+    /// collapsing the three coordinated reads `(dominant_source_kind(),
+    /// peak_source_kind_count(), peak_source_kind_multiplicity())` —
+    /// three independent `O(k)` walks over the counts vector — into one
+    /// walk.
+    ///
+    /// The **fused triple** peer of the two sibling fused pairs already
+    /// on this altitude: [`Self::dominant_source_kind_observation`] (the
+    /// modal `(cell, count)` pair) and
+    /// [`Self::peak_source_kind_observation`] (the modal `(count,
+    /// multiplicity)` pair). The source-kind altitude now carries the
+    /// (pair, pair, triple) modal-projection family — the two
+    /// overlapping fused pairs plus the closing triple that fuses them
+    /// into a single read. Structural climb of the primitive-layer seed
+    /// [`crate::AxisHistogram::modal_observation`] one altitude up,
+    /// under the same trajectory that lifted `dominant_observation` /
+    /// `peak_observation` / `trough_observation` /
+    /// `recessive_observation` to their source-kind-altitude peers, and
+    /// the same trajectory that lifted the fused triple one axis over
+    /// to the tier altitude via [`Self::modal_tier_observation`] over
+    /// the prior handful of commits.
+    ///
+    /// **Empty-map convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::modal_observation`] empty convention one
+    /// altitude down. Both [`Self::dominant_source_kind_observation`]
+    /// and [`Self::peak_source_kind_observation`] carry compatible
+    /// boundary discriminants: `dominant_source_kind_observation() ==
+    /// None ⇔ is_empty()` and `peak_source_kind_observation() == (0, 0)
+    /// ⇔ is_empty()`. Consumers matching on `Some((cell, count, mult))`
+    /// never see a spurious `(cell, 0, 0)` — the empty gate lives on
+    /// the outer `Option`.
+    ///
+    /// **Tie-breaking policy on the peak side** — declaration-order
+    /// first, inherited pointwise from
+    /// [`Self::dominant_source_kind_observation`]: on peak ties the `.0`
+    /// cell component is the first tied cell in
+    /// [`crate::ConfigSourceKind::ALL`] (`Defaults → Env → File`). The
+    /// `.2` multiplicity records how many cells (including the winner)
+    /// share that peak count, so the fused triple reports the tie-broken
+    /// representative and the tie's cardinality at one method call — the
+    /// combination every *tie-detector* dashboard needs.
+    ///
+    /// # Invariants
+    ///
+    /// - `modal_source_kind_observation() ==
+    ///   source_kind_histogram().modal_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   triple off the same primitive.
+    /// - `modal_source_kind_observation().map(|(k, _, _)| k) ==
+    ///   dominant_source_kind()` — the cell-side projection recovers
+    ///   [`Self::dominant_source_kind`] pointwise. Empty case:
+    ///   `None.map(…) == None == dominant_source_kind()`. Non-empty
+    ///   case: `Some((k, _, _)).map(…) == Some(k) ==
+    ///   dominant_source_kind()`.
+    /// - `modal_source_kind_observation().map_or(0, |(_, n, _)| n) ==
+    ///   peak_source_kind_count()` — the count-side projection recovers
+    ///   [`Self::peak_source_kind_count`] pointwise.
+    /// - `modal_source_kind_observation().map_or(0, |(_, _, m)| m) ==
+    ///   peak_source_kind_multiplicity()` — the multiplicity-side
+    ///   projection recovers [`Self::peak_source_kind_multiplicity`]
+    ///   pointwise.
+    /// - `modal_source_kind_observation() ==
+    ///   dominant_source_kind_observation().map(|(k, n)| (k, n,
+    ///   peak_source_kind_multiplicity()))` — the triple is the
+    ///   fused-pair [`Self::dominant_source_kind_observation`] extended
+    ///   with the [`Self::peak_source_kind_multiplicity`] scalar.
+    /// - `modal_source_kind_observation() == dominant_source_kind().map(|k|
+    ///   (k, peak_source_kind_observation().0,
+    ///   peak_source_kind_observation().1))` — the triple is the
+    ///   [`Self::dominant_source_kind`] extended with the fused-pair
+    ///   [`Self::peak_source_kind_observation`].
+    /// - `modal_source_kind_observation().is_none() ⇔ is_empty()` — the
+    ///   one-discriminant empty boundary on the fused triple.
+    /// - When `Some((_, n, _))`, `n >= 1` — every non-empty support has
+    ///   at least one leaf at the modal source-kind.
+    /// - When `Some((_, _, m))`, `1 <= m <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` (`= 3`) —
+    ///   the multiplicity is bounded above by the axis cardinality, and
+    ///   equality holds on every uniform-count full-cover fold.
+    /// - When `Some((_, _, m))`, `m <= contributing_source_kinds_count()`
+    ///   — the multiplicity is bounded above by the count of source-
+    ///   kinds with nonzero leaves, since the modal level set is a
+    ///   subset of `contributing_source_kinds()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the fused argmax scan through
+    /// [`crate::AxisHistogram::modal_observation`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `Option<(crate::ConfigSourceKind,
+    /// usize, usize)>` fits in one enum + three scalars. Cuts the cost
+    /// of the previous open-coded triple `(map.dominant_source_kind(),
+    /// map.peak_source_kind_count(),
+    /// map.peak_source_kind_multiplicity())` from three independent
+    /// walks over the counts vector to one.
+    #[must_use]
+    pub fn modal_source_kind_observation(&self) -> Option<(crate::ConfigSourceKind, usize, usize)> {
+        self.source_kind_histogram().modal_observation()
+    }
+
     /// Returns `true` exactly when this fold's observed
     /// [`crate::ConfigSourceKind`] histogram has two or more cells tied at
     /// the peak leaf count — the **modally-tied-source-kind-counts
@@ -65579,6 +65695,305 @@ mod progressive_tests {
         let (_, dom_n) = dom.unwrap();
         let (_, rec_n) = rec.unwrap();
         assert!(dom_n > rec_n);
+    }
+
+    // ── ProvenanceMap::modal_source_kind_observation — modal-side
+    //    fused (cell, count, multiplicity) triple on the source-kind
+    //    altitude, closing the (pair, pair, triple) modal-projection
+    //    family with the closing triple that fuses the two overlapping
+    //    pairs `dominant_source_kind_observation` (cell, count) and
+    //    `peak_source_kind_observation` (count, multiplicity) into a
+    //    single read. Structural climb of the primitive-layer seed
+    //    `AxisHistogram::modal_observation` one altitude up, mirroring
+    //    the peer `modal_tier_observation` one axis over on the tier
+    //    altitude. ──
+
+    #[test]
+    fn modal_source_kind_observation_matches_source_kind_histogram_modal_observation_pointwise() {
+        // Routing pin: `modal_source_kind_observation` routes through
+        // `source_kind_histogram().modal_observation()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native fused-triple
+        // primitive. Peer of
+        // `modal_tier_observation_matches_tier_histogram_modal_observation_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().modal_observation();
+            assert_eq!(map.modal_source_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_matches_open_coded_scalar_triple_pointwise() {
+        // Structural-form pin: `modal_source_kind_observation` agrees
+        // with the open-coded `(dominant_source_kind(),
+        // peak_source_kind_count(), peak_source_kind_multiplicity())`
+        // triple on every fixture — coerced through the `Option` shape
+        // via `.map(|k| (k, peak_source_kind_count(),
+        // peak_source_kind_multiplicity()))`. Pins the defining
+        // equivalence: the fused triple form reads the same three
+        // scalars off the same primitive as three independent calls, so
+        // consumers can safely replace the three-call idiom with one
+        // method call and one walk.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_triple = map.dominant_source_kind().map(|k| {
+                (
+                    k,
+                    map.peak_source_kind_count(),
+                    map.peak_source_kind_multiplicity(),
+                )
+            });
+            assert_eq!(map.modal_source_kind_observation(), via_triple);
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_cell_component_equals_dominant_source_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _, _)| k) ==
+        // dominant_source_kind()` on every fixture. Pins the fused-
+        // triple primitive as the upstream of the sibling modal-cell
+        // scalar, which reads the same value through the `.map`
+        // projection on the `Option` shape.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.modal_source_kind_observation().map(|(k, _, _)| k);
+            assert_eq!(via_map, map.dominant_source_kind());
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_count_component_equals_peak_source_kind_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n, _)| n) ==
+        // peak_source_kind_count()` on every fixture. Empty case:
+        // `None.map_or(0, …) == 0 == peak_source_kind_count()`. Non-
+        // empty case: `Some((_, n, _)).map_or(0, …) == n ==
+        // peak_source_kind_count()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.modal_source_kind_observation().map_or(0, |(_, n, _)| n);
+            assert_eq!(via_map, map.peak_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_multiplicity_component_equals_peak_source_kind_multiplicity_pointwise()
+     {
+        // Multiplicity-side sibling pin: `.map_or(0, |(_, _, m)| m) ==
+        // peak_source_kind_multiplicity()` on every fixture. Empty
+        // case: `None.map_or(0, …) == 0 ==
+        // peak_source_kind_multiplicity()`. Non-empty case: `Some((_,
+        // _, m)).map_or(0, …) == m == peak_source_kind_multiplicity()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.modal_source_kind_observation().map_or(0, |(_, _, m)| m);
+            assert_eq!(via_map, map.peak_source_kind_multiplicity());
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_extends_dominant_source_kind_observation_by_peak_source_kind_multiplicity_pointwise()
+     {
+        // Fusion pin: `modal_source_kind_observation() ==
+        // dominant_source_kind_observation().map(|(k, n)| (k, n,
+        // peak_source_kind_multiplicity()))` on every fixture — the
+        // fused triple is the fused-pair
+        // `dominant_source_kind_observation` extended with the
+        // `peak_source_kind_multiplicity` scalar. Cross-pins the (pair,
+        // pair, triple) modal-projection family: the closing triple is
+        // behaviorally the modal-cell/peak-count pair augmented with
+        // the peak-multiplicity scalar.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_extend = map
+                .dominant_source_kind_observation()
+                .map(|(k, n)| (k, n, map.peak_source_kind_multiplicity()));
+            assert_eq!(map.modal_source_kind_observation(), via_extend);
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_empty_map_is_none() {
+        // Empty-map polarity pin: the empty map has no observed cell,
+        // so the fused triple reads `None` — the vacuous-nothing
+        // boundary lifted from the empty support one altitude down.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.modal_source_kind_observation(), None);
+    }
+
+    #[test]
+    fn modal_source_kind_observation_prog_fixture_is_defaults_four_one() {
+        // Singleton-support polarity pin: the `Prog` fixture attributes
+        // all 4 leaves to source-kind `Defaults` (the pure-progressive
+        // fold uses only computed-tier constructors, each pinning
+        // `ConfigSource::Defaults`). The sole observed cell collects
+        // every leaf, so the fused triple reads `Some((Defaults, 4,
+        // 1))` — the singleton-support corner where `n == len()` and
+        // multiplicity is `1`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().modal_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 4, 1)),
+        );
+    }
+
+    #[test]
+    fn modal_source_kind_observation_mixed_fixture_is_defaults_two_one() {
+        // Strictly-unimodal peak-side polarity pin: the mixed fixture
+        // attributes 4 leaves as `a→Defaults, b→File, c→Env,
+        // d→Defaults`, so `Defaults` is uniquely at the peak count `2`
+        // and the fused triple reads `Some((Defaults, 2, 1))` — the
+        // modal cell paired with its dominant leaf count and a
+        // multiplicity of `1` (Defaults uniquely peaks).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().modal_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 2, 1)),
+        );
+    }
+
+    #[test]
+    fn modal_source_kind_observation_uniform_full_cover_is_defaults_one_three() {
+        // Uniform three-source-kind cover polarity pin: one leaf per
+        // `ConfigSourceKind` cell (Defaults + Env + File), all at count
+        // `1`. All three cells tie at the peak — fused triple reads
+        // `Some((Defaults, 1, 3))`, with the multiplicity component
+        // saturating the axis cardinality of `3`. Top-corner witness of
+        // the tie-breaking policy on the uniform full-cover shape at
+        // the cardinality-`3` source-kind altitude — one cardinality
+        // below the tier altitude's cardinality-`4` witness.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (
+                vec!["b".to_owned()],
+                Provenance::env("SHIKUMI_MSKO_UNIFORM_"),
+            ),
+            (
+                vec!["c".to_owned()],
+                Provenance::file("/etc/msko_uniform.yaml"),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kinds_full_cover());
+        assert_eq!(
+            m.modal_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 1, 3)),
+        );
+        assert_eq!(
+            m.modal_source_kind_observation().unwrap().2,
+            crate::axis_cardinality::<crate::ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn modal_source_kind_observation_two_source_kind_tie_is_defaults_one_two() {
+        // Two-source-kind-tied polarity pin: `Defaults + Env` both at
+        // count `1`, both tied at the peak. Fused triple reads
+        // `Some((Defaults, 1, 2))` — declaration-order tie-breaking
+        // picks the first observed cell in `ConfigSourceKind::ALL`
+        // (`Defaults`), and the multiplicity records how many cells
+        // share the peak count.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (vec!["b".to_owned()], Provenance::env("SHIKUMI_MSKO_TIE_")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            m.modal_source_kind_observation(),
+            Some((crate::ConfigSourceKind::Defaults, 1, 2)),
+        );
+    }
+
+    #[test]
+    fn modal_source_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `modal_source_kind_observation().is_none()` iff the map is
+        // empty. Direct pin of the histogram-side `is_empty ⇔
+        // modal_observation.is_none()` equivalence one altitude down —
+        // the shared vacuous-nothing boundary on the empty support.
+        // Cross-pins with the parallel sibling boundaries on
+        // `dominant_source_kind_observation` (`.is_none() ⇔ is_empty`)
+        // and `peak_source_kind_observation` (`== (0, 0) ⇔ is_empty`).
+        // Peer of `modal_tier_observation_none_iff_empty_pointwise` on
+        // the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.modal_source_kind_observation().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_multiplicity_component_bounded_by_axis_cardinality_pointwise()
+    {
+        // Axis-cardinality upper bound: on every non-empty support, the
+        // `.2` multiplicity component is bounded above by
+        // `axis_cardinality::<ConfigSourceKind>()` = `3` — the modal
+        // level set is a subset of the three-cell axis. Equality holds
+        // on uniform-count folds where every observed cell shares the
+        // same count and every axis cell is observed (uniform full
+        // cover). Peer of
+        // `modal_tier_observation_multiplicity_component_bounded_by_axis_cardinality_pointwise`
+        // on the tier altitude, one cardinality below.
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, _, m)) = map.modal_source_kind_observation() {
+                assert!(m >= 1);
+                assert!(m <= card);
+            }
+        }
+    }
+
+    #[test]
+    fn modal_source_kind_observation_multiplicity_component_bounded_by_contributing_source_kinds_count_pointwise()
+     {
+        // Present-support upper bound: on every non-empty support, the
+        // `.2` multiplicity component is bounded above by
+        // `contributing_source_kinds_count()` — the modal level set is
+        // a subset of the observed cells (never counts cells with zero
+        // leaves). Sharpens the axis-cardinality bound on every partial-
+        // cover fold. Peer of
+        // `modal_tier_observation_multiplicity_component_bounded_by_contributing_tiers_count_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, _, m)) = map.modal_source_kind_observation() {
+                assert!(m <= map.contributing_source_kinds_count());
+            }
+        }
     }
 
     // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
