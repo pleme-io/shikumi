@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "0cc33839ed978731dbaa73ad01d8a2075a9132c8f02fcee410e8e551b247cd67",
+  "cargo_lock_sha256": "f79b2ece43867af1b414c2a0e6ed05dffbdf2560f09f8b76d668f75f07889cb8",
   "manifest_sha256": {
-    "Cargo.toml": "8c882a8261d5b218130bfb574de7715ce6510a499ecf057550d34514fb348803"
+    "Cargo.toml": "1c42a11c2cfd6a6b8c0207a25eb5dbc54f2149ea395b2d9c0616297207b1431d"
   },
   "target_resolves": {
     "base": {
@@ -32,7 +32,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "async-trait-0.1.91": {
+      "async-trait-0.1.92": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -87,11 +87,11 @@
           "std"
         ]
       },
-      "cc-1.4.0": {
+      "cc-1.4.2": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
-            "package_key": "find-msvc-tools-0.1.9",
+            "package_key": "find-msvc-tools-0.1.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -303,7 +303,7 @@
           "yaml"
         ]
       },
-      "find-msvc-tools-0.1.9": {
+      "find-msvc-tools-0.1.10": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -403,7 +403,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.19",
+            "package_key": "thiserror-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -485,7 +485,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.19",
+            "package_key": "thiserror-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1175,7 +1175,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.496": {
+      "shikumi-0.1.497": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1189,7 +1189,7 @@
           },
           {
             "name": "async_trait",
-            "package_key": "async-trait-0.1.91",
+            "package_key": "async-trait-0.1.92",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1287,7 +1287,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.19",
+            "package_key": "thiserror-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1464,11 +1464,11 @@
           "getrandom"
         ]
       },
-      "thiserror-2.0.19": {
+      "thiserror-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "thiserror_impl",
-            "package_key": "thiserror-impl-2.0.19",
+            "package_key": "thiserror-impl-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1483,7 +1483,7 @@
           "std"
         ]
       },
-      "thiserror-impl-2.0.19": {
+      "thiserror-impl-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1972,7 +1972,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2218,7 +2218,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2569,7 +2569,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2930,7 +2930,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3191,7 +3191,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3557,7 +3557,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.0",
+                "package_key": "cc-1.4.2",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3877,7 +3877,7 @@
     "arrayvec-0.7.8": {
       "edition": "2018"
     },
-    "async-trait-0.1.91": {
+    "async-trait-0.1.92": {
       "edition": "2021",
       "proc_macro": true
     },
@@ -3891,8 +3891,8 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.4.0": {
-      "edition": "2018"
+    "cc-1.4.2": {
+      "edition": "2021"
     },
     "cfg-if-1.0.4": {
       "edition": "2018"
@@ -3922,8 +3922,8 @@
       "edition": "2018",
       "build_script": "build.rs"
     },
-    "find-msvc-tools-0.1.9": {
-      "edition": "2018"
+    "find-msvc-tools-0.1.10": {
+      "edition": "2021"
     },
     "fsevent-sys-4.1.0": {
       "edition": "2018"
@@ -4059,7 +4059,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.496": {
+    "shikumi-0.1.497": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4078,11 +4078,11 @@
     "tempfile-3.27.0": {
       "edition": "2021"
     },
-    "thiserror-2.0.19": {
+    "thiserror-2.0.20": {
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "thiserror-impl-2.0.19": {
+    "thiserror-impl-2.0.20": {
       "edition": "2021",
       "proc_macro": true
     },
