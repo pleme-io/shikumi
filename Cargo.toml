@@ -52,6 +52,17 @@ default = []
 # Off by default like every other optional surface here: an app that does
 # not classify its config fields should not carry the trait crate.
 #
+# 2026-08-08: the gated surface grew by one block — a `Validate`-bounded
+# `impl ConfigStore<T>` carrying `replace_validated` (takes a
+# `ValidatedTieredConfig<T>` BY VALUE, so an unvalidated candidate has no
+# argument form) and `try_replace` (validates, then installs, leaving the live
+# value untouched on refusal). These exist because `ConfigStore::replace` --
+# which is NOT gated and is retained -- pushes a value straight into the
+# `ArcSwap` past the gate the initial load and every file reload pass through,
+# so an RPC push or an MCP `config_set` could install a value the same process
+# would refuse to read from disk. store.rs gate-attribute baseline 5 -> 6
+# (src/lib.rs `hotswap_gate_site_count_matches_warning_baseline`).
+#
 # `dep:blake3` is not incidental — it is the feature's other half.
 # `ConfigWatermark` is a SPLIT hash: one blake3 over the whole config, one
 # over just the restart-required subtree, so a consumer can prove "the live

@@ -272,6 +272,16 @@ mod check_cfg_tests {
         // declaration and the `pub use hotswap::…` re-export. store.rs is
         // untouched at 5; nothing about the gated surface changed, only
         // whether the module line is code or a comment.
+        //
+        // UPDATED 2026-08-08, store.rs 5 -> 6, per this test's own instruction.
+        // ONE bare attribute added: the gate on the new `Validate`-bounded
+        // `impl<T> ConfigStore<T>` block carrying `replace_validated` +
+        // `try_replace` — the validated door beside the unvalidated
+        // `ConfigStore::replace`. It is one attribute and not two because
+        // both methods live in that single gated block rather than carrying
+        // their own; keeping the gate at the block boundary is what holds this
+        // count proportional to the gated SURFACE rather than to its method
+        // count.
         let lib_hits = count_gate_attribute_lines(LIB_RS);
         let store_hits = count_gate_attribute_lines(STORE_RS);
         assert_eq!(
@@ -279,8 +289,8 @@ mod check_cfg_tests {
             "src/lib.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 2",
         );
         assert_eq!(
-            store_hits, 5,
-            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 5",
+            store_hits, 6,
+            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 6",
         );
     }
 

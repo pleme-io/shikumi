@@ -46,6 +46,57 @@ pub struct ConfigStore<T> {
     pending_restart: Arc<ArcSwapOption<Vec<&'static str>>>,
 }
 
+#[cfg(feature = "hotswap")]
+impl<T> ConfigStore<T>
+where
+    T: for<'de> Deserialize<'de> + Send + Sync + crate::Validate + 'static,
+{
+    /// Replace the live value with one that **carries its own proof of
+    /// validation**.
+    ///
+    /// The argument is a [`crate::ValidatedTieredConfig<T>`], whose sole
+    /// constructor is [`crate::ValidatedTieredConfig::validate`]. A caller that
+    /// has validated holds a token; a caller that has not **cannot construct
+    /// the argument**, so there is no expressible way to reach this method with
+    /// an unvalidated value.
+    ///
+    /// This is the same shape the fleet already uses for a proof-gated write —
+    /// `escuta`'s `comporta` mints a `WriteCapability<Open>` only from a
+    /// `SyncProof`, and the write verb consumes the capability. Here the proof
+    /// IS the value, so nothing can drift between the thing proven and the
+    /// thing installed.
+    ///
+    /// **Tier: truly-unrepresentable *within this authored surface*** — an
+    /// unvalidated value has no argument form. It is NOT a fleet-wide
+    /// guarantee: [`Self::replace`] still exists (deliberately, above), so the
+    /// honest claim is that this method cannot be misused, not that the store
+    /// cannot be.
+    pub fn replace_validated(&self, proof: crate::ValidatedTieredConfig<T>) {
+        self.observatory
+            .record_success(&self.inner, proof.into_inner());
+    }
+
+    /// Validate `value`, then install it — the ergonomic sibling of
+    /// [`Self::replace_validated`].
+    ///
+    /// This is what an RPC push (`tear`'s `SetConfig`) or an MCP `config_set`
+    /// should call. It routes the candidate through exactly the gate the
+    /// initial load and every file reload already pass, so a value pushed at
+    /// runtime is held to the same standard as one read from disk — which was
+    /// the asymmetry [`Self::replace`] left open.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`crate::Validate::validate`]'s error untouched, and the
+    /// live value is left **unchanged** — a rejected candidate must not
+    /// half-install, for the same reason a failed reload keeps the old config.
+    pub fn try_replace(&self, value: T) -> Result<(), crate::ShikumiError> {
+        let proof = crate::ValidatedTieredConfig::validate(value)?;
+        self.replace_validated(proof);
+        Ok(())
+    }
+}
+
 impl<T> ConfigStore<T>
 where
     T: for<'de> Deserialize<'de> + Send + Sync + 'static,
@@ -195,6 +246,26 @@ where
     /// - Mado's MCP `config_set` tool: same pattern.
     /// - Programmatic theme toggling (light/dark) without writing
     ///   the file to disk.
+    /// # This is the UNVALIDATED door, and that is now stated rather than implied
+    ///
+    /// `replace` performs no semantic validation. For a `T` that does **not**
+    /// implement [`crate::Validate`] that is correct and it is the only path.
+    /// For a `T` that **does**, it is a hole: the initial load and every
+    /// file-driven reload route through [`crate::ValidatedTieredConfig`], and
+    /// this pushes a value straight into the `ArcSwap` past that gate — so an
+    /// RPC push or an MCP `config_set` could install a value the same process
+    /// would have refused to load from disk.
+    ///
+    /// Prefer [`Self::replace_validated`] (hand it a proof) or
+    /// [`Self::try_replace`] (it mints one for you). Both exist as of
+    /// 2026-08-08; this method is retained because removing it would break
+    /// stores over un-validatable types, and because ★★ MODULARIZE-DON'T-DELETE
+    /// says a superseded path is configured off, never deleted.
+    ///
+    /// **Honest tier: only-mitigated.** Rust has no specialization, so a
+    /// `T: Validate` cannot be *forced* down the validated path by the type
+    /// system; the mitigation is that the validated path exists, is
+    /// ergonomic, and is named here. Do not read this doc as a guarantee.
     pub fn replace(&self, value: T) {
         self.observatory.record_success(&self.inner, value);
     }
@@ -3251,5 +3322,93 @@ mod hotswap_tests {
         // event landed within the window -- reload_hotswap's tests
         // above cover the core classify/validate/swap logic
         // deterministically.
+    }
+}
+
+#[cfg(all(test, feature = "hotswap"))]
+mod validated_replace_tests {
+    use super::*;
+    use crate::{Validate, ValidatedTieredConfig};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct Gated {
+        port: u16,
+    }
+
+    impl Validate for Gated {
+        fn validate(&self) -> Result<(), ShikumiError> {
+            if self.port == 0 {
+                return Err(ShikumiError::Validation(
+                    "port 0 is not a listenable port".to_owned(),
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    /// Built through the real loader, exactly as the shipped tests do — a
+    /// store constructed some other way would not be the thing under test.
+    fn store() -> (ConfigStore<Gated>, tempfile::TempDir) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("gated.yaml");
+        std::fs::write(&file, "port: 8080\n").unwrap();
+        let s = ConfigStore::<Gated>::load(&file, "SHIKUMI_VALIDATED_REPLACE_TEST_").unwrap();
+        (s, dir)
+    }
+
+    /// The hole this pair of methods closes.
+    ///
+    /// `replace` installs a value the same process would REFUSE to load from
+    /// disk — the initial load and every file reload route through
+    /// `ValidatedTieredConfig`, and `replace` does not. That asymmetry is the
+    /// defect; this test pins it as a KNOWN, DELIBERATE property of the
+    /// unvalidated door rather than leaving it undocumented.
+    #[test]
+    fn replace_installs_a_value_that_validation_would_have_refused() {
+        let (s, _dir) = store();
+        s.replace(Gated { port: 0 });
+        assert_eq!(
+            s.get().port,
+            0,
+            "the unvalidated door is still open, by design"
+        );
+    }
+
+    /// `try_replace` refuses it, and — the half that matters — leaves the live
+    /// value UNCHANGED. A rejected candidate must not half-install, for the
+    /// same reason a failed reload keeps the old config.
+    #[test]
+    fn try_replace_refuses_and_leaves_the_live_value_untouched() {
+        let (s, _dir) = store();
+        let before = s.get().port;
+
+        let err = s
+            .try_replace(Gated { port: 0 })
+            .expect_err("port 0 must be refused");
+        assert!(err.to_string().contains("listenable"), "got: {err}");
+
+        assert_eq!(
+            s.get().port,
+            before,
+            "a refused candidate must not disturb the live value"
+        );
+    }
+
+    #[test]
+    fn try_replace_installs_a_valid_candidate() {
+        let (s, _dir) = store();
+        s.try_replace(Gated { port: 9090 }).expect("valid");
+        assert_eq!(s.get().port, 9090);
+    }
+
+    /// `replace_validated` takes the PROOF by value, so the thing proven and
+    /// the thing installed cannot drift — there is no second value to pass.
+    #[test]
+    fn replace_validated_consumes_the_proof_it_installs() {
+        let (s, _dir) = store();
+        let proof = ValidatedTieredConfig::validate(Gated { port: 7070 }).expect("valid");
+        s.replace_validated(proof);
+        assert_eq!(s.get().port, 7070);
     }
 }
