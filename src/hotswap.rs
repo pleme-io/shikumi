@@ -186,6 +186,61 @@ pub struct ConfigSyncProof {
     /// When this proof was computed.
     pub observed_at: std::time::SystemTime,
 }
+/// The **wire projection** of a [`ConfigSyncProof`] — the shape a target
+/// serves on `/healthz/config` and a poller deserializes.
+///
+/// **Why this type exists at all.** [`ConfigSyncProof`] is not serializable:
+/// `ConfigWatermark` derives only `Debug, Clone, Copy, PartialEq, Eq`, and
+/// `blake3::Hash` is not a serde type. So until now there was **no wire format**
+/// — not merely no server. Measured 2026-08-11: `calha/src/watermark.rs` carries
+/// a hand-written mirror of "the wire shape shikumi will serve", and because no
+/// such shape existed it had drifted unnoticed — two hash fields where there are
+/// three (`free` missing entirely), `String` where the source is `blake3::Hash`,
+/// and an `i64` epoch where the source is `SystemTime`.
+///
+/// A mirror of a type that has never been serialized cannot be wrong yet, which
+/// is exactly why it went wrong. This makes the shape real, so a consumer has
+/// something to be right about.
+///
+/// Hashes are hex strings on the wire: `blake3::Hash`'s `Display` is hex, the
+/// representation is stable, and a hex string survives a JSON round-trip
+/// without a custom deserializer at every consumer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigSyncProofWire {
+    /// Monotonic publish counter of the store that produced this.
+    pub generation: u64,
+    /// Hash of the whole resolved config, hex.
+    pub full: String,
+    /// Hash of the `RequiresRestart` fields only, hex. The half calha polls.
+    pub restart_required: String,
+    /// Hash of the `Free` fields only, hex. The symmetric peer — its absence
+    /// from a consumer's model is what makes "did a hot-swappable knob move?"
+    /// unanswerable.
+    pub free: String,
+    /// Unix epoch seconds. Chosen over `SystemTime` because its serde
+    /// representation is an implementation detail and a poller comparing
+    /// timestamps needs a stable integer.
+    pub observed_at_epoch: i64,
+}
+
+impl ConfigSyncProof {
+    /// Project to the wire shape.
+    #[must_use]
+    pub fn to_wire(&self) -> ConfigSyncProofWire {
+        ConfigSyncProofWire {
+            generation: self.generation,
+            full: self.watermark.full.to_hex().to_string(),
+            restart_required: self.watermark.restart_required.to_hex().to_string(),
+            free: self.watermark.free.to_hex().to_string(),
+            observed_at_epoch: self
+                .observed_at
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -392,5 +447,64 @@ mod tests {
     #[test]
     fn swap_decision_free_and_require_restart_are_distinguishable() {
         assert_ne!(SwapDecision::Free, SwapDecision::RequiresRestart(vec!["x"]));
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    fn proof() -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation: 7,
+            watermark: ConfigWatermark {
+                full: blake3::hash(b"full"),
+                restart_required: blake3::hash(b"restart"),
+                free: blake3::hash(b"free"),
+            },
+            observed_at: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000),
+        }
+    }
+
+    /// The wire shape must carry ALL THREE hashes. calha's hand-written mirror
+    /// carried two, and the missing `free` half is precisely what makes
+    /// "did a hot-swappable knob move?" unanswerable for a consumer.
+    #[test]
+    fn the_wire_shape_carries_all_three_hashes() {
+        let w = proof().to_wire();
+        assert_ne!(w.full, w.restart_required);
+        assert_ne!(w.restart_required, w.free);
+        assert_ne!(w.full, w.free);
+        for h in [&w.full, &w.restart_required, &w.free] {
+            assert_eq!(h.len(), 64, "blake3 hex is 64 chars: {h}");
+            assert!(h.chars().all(|c| c.is_ascii_hexdigit()), "{h}");
+        }
+    }
+
+    /// A consumer deserializes what a target serves — round-trip or the wire
+    /// format is a claim rather than a contract.
+    #[test]
+    fn the_wire_shape_round_trips_through_json() {
+        let w = proof().to_wire();
+        let json = serde_json::to_string(&w).expect("serialize");
+        let back: ConfigSyncProofWire = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(w, back);
+    }
+
+    /// camelCase on the wire, so a consumer's field names are pinned rather
+    /// than inferred.
+    #[test]
+    fn the_wire_field_names_are_pinned() {
+        let json = serde_json::to_string(&proof().to_wire()).unwrap();
+        for key in ["generation", "full", "restartRequired", "free", "observedAtEpoch"] {
+            assert!(json.contains(&format!("\"{key}\"")), "missing {key} in {json}");
+        }
+    }
+
+    /// The timestamp is a stable integer, not a SystemTime whose serde
+    /// representation is an implementation detail.
+    #[test]
+    fn the_timestamp_is_epoch_seconds() {
+        assert_eq!(proof().to_wire().observed_at_epoch, 1_700_000_000);
     }
 }
