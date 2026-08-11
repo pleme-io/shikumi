@@ -207,9 +207,7 @@ pub struct ConfigSyncProof {
 /// without a custom deserializer at every consumer.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConfigSyncProofWire {
-    /// Monotonic publish counter of the store that produced this.
-    pub generation: u64,
+pub struct ConfigWatermarkWire {
     /// Hash of the whole resolved config, hex.
     pub full: String,
     /// Hash of the `RequiresRestart` fields only, hex. The half calha polls.
@@ -218,6 +216,24 @@ pub struct ConfigSyncProofWire {
     /// from a consumer's model is what makes "did a hot-swappable knob move?"
     /// unanswerable.
     pub free: String,
+}
+
+/// The wire projection of a [`ConfigSyncProof`].
+///
+/// **NESTED, not flat, and that was a correction.** The first draft flattened
+/// the three hashes to the top level; calha's consumer models a `watermark`
+/// sub-object, and its round-trip test failed with `missing field watermark`
+/// against the flat payload. Nesting is also the truer shape — a watermark IS
+/// a three-part thing, not three unrelated fields that happen to travel
+/// together. Caught before anything polled a live target, which is the only
+/// cheap moment to find a producer/consumer disagreement.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigSyncProofWire {
+    /// Monotonic publish counter of the store that produced this.
+    pub generation: u64,
+    /// The three-part watermark.
+    pub watermark: ConfigWatermarkWire,
     /// Unix epoch seconds. Chosen over `SystemTime` because its serde
     /// representation is an implementation detail and a poller comparing
     /// timestamps needs a stable integer.
@@ -230,9 +246,11 @@ impl ConfigSyncProof {
     pub fn to_wire(&self) -> ConfigSyncProofWire {
         ConfigSyncProofWire {
             generation: self.generation,
-            full: self.watermark.full.to_hex().to_string(),
-            restart_required: self.watermark.restart_required.to_hex().to_string(),
-            free: self.watermark.free.to_hex().to_string(),
+            watermark: ConfigWatermarkWire {
+                full: self.watermark.full.to_hex().to_string(),
+                restart_required: self.watermark.restart_required.to_hex().to_string(),
+                free: self.watermark.free.to_hex().to_string(),
+            },
             observed_at_epoch: self
                 .observed_at
                 .duration_since(std::time::UNIX_EPOCH)
@@ -471,7 +489,7 @@ mod wire_tests {
     /// "did a hot-swappable knob move?" unanswerable for a consumer.
     #[test]
     fn the_wire_shape_carries_all_three_hashes() {
-        let w = proof().to_wire();
+        let w = proof().to_wire().watermark;
         assert_ne!(w.full, w.restart_required);
         assert_ne!(w.restart_required, w.free);
         assert_ne!(w.full, w.free);
@@ -496,7 +514,7 @@ mod wire_tests {
     #[test]
     fn the_wire_field_names_are_pinned() {
         let json = serde_json::to_string(&proof().to_wire()).unwrap();
-        for key in ["generation", "full", "restartRequired", "free", "observedAtEpoch"] {
+        for key in ["generation", "watermark", "full", "restartRequired", "free", "observedAtEpoch"] {
             assert!(json.contains(&format!("\"{key}\"")), "missing {key} in {json}");
         }
     }
