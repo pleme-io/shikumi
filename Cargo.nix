@@ -318,9 +318,9 @@ rec {
       };
       "async-trait" = rec {
         crateName = "async-trait";
-        version = "0.1.91";
+        version = "0.1.92";
         edition = "2021";
-        sha256 = "1v3cm8mzg66037wm392p1vsdx0lq8bid6y2ivr7z03lpfx0xqdmf";
+        sha256 = "0rqn5iga1hlv2lm8xzav1zhar46jb4dvx89i6kfv93kb53maxxl2";
         procMacro = true;
         libName = "async_trait";
         authors = [
@@ -585,10 +585,10 @@ rec {
       };
       "aws-lc-rs" = rec {
         crateName = "aws-lc-rs";
-        version = "1.17.3";
+        version = "1.18.0";
         edition = "2021";
-        links = "aws_lc_rs_1_17_3_sys";
-        sha256 = "1wbj1n78iqsf38xd2q93isjkb1iyaf7akm3wrji8ri6s33dbbg80";
+        links = "aws_lc_rs_1_18_0_sys";
+        sha256 = "17nx79a6wyx6xx5kj0f09vr0wh1q4agwjxqy6w6swfwwhz62sayf";
         libName = "aws_lc_rs";
         authors = [
           "AWS-LibCrypto"
@@ -621,10 +621,10 @@ rec {
       };
       "aws-lc-sys" = rec {
         crateName = "aws-lc-sys";
-        version = "0.43.0";
+        version = "0.44.0";
         edition = "2021";
-        links = "aws_lc_0_43_0";
-        sha256 = "0k12q9axgpzhqj5q5ics2m302fnbr4pp4pipi9kn5zknril32423";
+        links = "aws_lc_0_44_0";
+        sha256 = "10vlwayxyylnn4vs57xs0iy0rp76k50v7zbabkh78cdvx1xsx7zh";
         build = "builder/main.rs";
         libName = "aws_lc_sys";
         authors = [
@@ -2309,12 +2309,9 @@ rec {
       };
       "cc" = rec {
         crateName = "cc";
-        version = "1.4.0";
-        edition = "2018";
-        sha256 = "1fc26n76n7gr37m2q0xw5l8jpn4sd33hvyppmwhv6v4fcyxq3pas";
-        authors = [
-          "Alex Crichton <alex@alexcrichton.com>"
-        ];
+        version = "1.4.2";
+        edition = "2021";
+        sha256 = "0zi7dyd4jaflww22jd3701869jrv4p47f9xlslw7h60pk4a2w9jx";
         dependencies = [
           {
             name = "find-msvc-tools";
@@ -2339,7 +2336,7 @@ rec {
           }
         ];
         features = {
-          "parallel" = [ "dep:libc" "dep:jobserver" ];
+          "parallel" = [ "dep:jobserver" "dep:libc" ];
         };
         resolvedDefaultFeatures = [ "parallel" ];
       };
@@ -3149,9 +3146,9 @@ rec {
       };
       "find-msvc-tools" = rec {
         crateName = "find-msvc-tools";
-        version = "0.1.9";
-        edition = "2018";
-        sha256 = "10nmi0qdskq6l7zwxw5g56xny7hb624iki1c39d907qmfh3vrbjv";
+        version = "0.1.10";
+        edition = "2021";
+        sha256 = "1pp1612g5k6im9732g16j6a87czhb35xcyzlrpq2mkgdwrrkbdr6";
         libName = "find_msvc_tools";
 
       };
@@ -5199,9 +5196,9 @@ rec {
       };
       "js-sys" = rec {
         crateName = "js-sys";
-        version = "0.3.103";
+        version = "0.3.104";
         edition = "2021";
-        sha256 = "00lib0b6hqmw56r2hjp7xrv730qacslirbkdlhvmi39zvgy4pd2k";
+        sha256 = "0fjsgady7wbv7bbyy6c8qhrd93bnx11qbl83l1g7bb9a4601030f";
         libName = "js_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -9169,7 +9166,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.497";
+        version = "0.1.498";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9616,9 +9613,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.37";
+        version = "0.3.43";
         edition = "2021";
-        sha256 = "1giskvfyhgb3zs64qlcigpp40la3y6kmbasr4s7fmnskx81ssz8y";
+        sha256 = "1wpv1wjkz66b97iq7fipnfnidc8gxigq4yb110lh7dps7817vdwh";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9633,9 +9630,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.37";
+        version = "0.3.43";
         edition = "2021";
-        sha256 = "1q3r7jn7f8y5lyhgdhygknjnl6xl72d4wv2wjx7v3hp168g3pca9";
+        sha256 = "0rld3ccxjm3blxc1xkafdr73i9hvifpnrkgcb0gv22arzm0kpbr8";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
@@ -9660,9 +9657,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.27";
+        version = "0.3.43";
         edition = "2021";
-        sha256 = "1sbf81mf6dms2ck04k9y8c7i6h67mrx1kk126xz580qaqs7q3m5n";
+        sha256 = "00f3ys4v184jxfvflypfjg7yvbg7jxgfs2x612mcnyqg1swpq19l";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9700,9 +9697,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.27";
+        version = "0.3.43";
         edition = "2021";
-        sha256 = "1fbg6z2pq7s0xv5g5k1gl58xq3f5fzaxk5ksz96iggh3c3x95qq2";
+        sha256 = "1gi3iwdmf4bpil755s02fk7027q4bb1imld5xc1x22bxd14i3bzv";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
@@ -9775,9 +9772,9 @@ rec {
       };
       "thiserror" = rec {
         crateName = "thiserror";
-        version = "2.0.19";
+        version = "2.0.20";
         edition = "2021";
-        sha256 = "1ngwxsjsa64v1n7vb90h2b0i3fqk1piwaf0z6fqdacqfhjc3b909";
+        sha256 = "0kxs6p295jffxhzaxpxv1dwaaf5iqlm6sx8h0djp6ancbxgj71pc";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -9794,9 +9791,9 @@ rec {
       };
       "thiserror-impl" = rec {
         crateName = "thiserror-impl";
-        version = "2.0.19";
+        version = "2.0.20";
         edition = "2021";
-        sha256 = "1ka10pqy1g8zy5al9m8yadg30jp8hx0q80j8awmd8131yw6gxjs3";
+        sha256 = "1bwjc94gi0xn5jz26h1a8bjj1wdkvvr6jifamyc4mp9n28zcs15w";
         procMacro = true;
         libName = "thiserror_impl";
         authors = [
@@ -11022,9 +11019,9 @@ rec {
       };
       "wasm-bindgen" = rec {
         crateName = "wasm-bindgen";
-        version = "0.2.126";
+        version = "0.2.127";
         edition = "2021";
-        sha256 = "197rma4qg1kb8l4bl7857pgszzval8s1w740g9myyjh92467q1jb";
+        sha256 = "0w6fa1mkbb6qlkffgy4qaz0hdf496zbjkyiyvs4lvmpd8xbr6w0v";
         libName = "wasm_bindgen";
         authors = [
           "The wasm-bindgen Developers"
@@ -11073,9 +11070,9 @@ rec {
       };
       "wasm-bindgen-futures" = rec {
         crateName = "wasm-bindgen-futures";
-        version = "0.4.76";
+        version = "0.4.77";
         edition = "2021";
-        sha256 = "0799v92cpaprapnmpaflc51sdnz362q2fsjdqnwiq8ij1wsg2bf6";
+        sha256 = "0l3r8m335kb2p8yj65kb0biwlypcx3ay4g750hafkl13rkapfxvb";
         libName = "wasm_bindgen_futures";
         authors = [
           "The wasm-bindgen Developers"
@@ -11101,9 +11098,9 @@ rec {
       };
       "wasm-bindgen-macro" = rec {
         crateName = "wasm-bindgen-macro";
-        version = "0.2.126";
+        version = "0.2.127";
         edition = "2021";
-        sha256 = "1cda6wl5zyiy7777cfgrix7fhpaqba55l5zpqj4zig7ng7jyaz0n";
+        sha256 = "1hcvlb6bv771fvgifd367wd0cm4giyar8fq5i4h705vj7y7myxvp";
         procMacro = true;
         libName = "wasm_bindgen_macro";
         authors = [
@@ -11125,9 +11122,9 @@ rec {
       };
       "wasm-bindgen-macro-support" = rec {
         crateName = "wasm-bindgen-macro-support";
-        version = "0.2.126";
+        version = "0.2.127";
         edition = "2021";
-        sha256 = "03iq412frl2py55skwb3ya08xha0cf6q22zr5kqlwbr675w7r6gk";
+        sha256 = "112j4d7dv8y2sk9yy9czrl9fpjx9388ywnn7icdv2bywazw367g1";
         libName = "wasm_bindgen_macro_support";
         authors = [
           "The wasm-bindgen Developers"
@@ -11161,10 +11158,10 @@ rec {
       };
       "wasm-bindgen-shared" = rec {
         crateName = "wasm-bindgen-shared";
-        version = "0.2.126";
+        version = "0.2.127";
         edition = "2021";
         links = "wasm_bindgen";
-        sha256 = "097a3kbjls447s1lwr41l21x5crrh5vq3h6zsxccz7slrjq4q6yw";
+        sha256 = "1gywp6xv8a27fvm3ga9xby93xyic3hc2s626b9z9rw2xqny4vxky";
         libName = "wasm_bindgen_shared";
         authors = [
           "The wasm-bindgen Developers"
@@ -11179,9 +11176,9 @@ rec {
       };
       "web-sys" = rec {
         crateName = "web-sys";
-        version = "0.3.103";
+        version = "0.3.104";
         edition = "2021";
-        sha256 = "0hb1zdnrp99p5r5q66jagsddmwha460yv2wklvzrzk0b3jvdq8l6";
+        sha256 = "0c0acbvaqzqf21q5vdff2g74fvb7afi91xjplmclybq4d24k6df4";
         libName = "web_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -11437,6 +11434,10 @@ rec {
           "MouseEvent" = [ "Event" "UiEvent" ];
           "MouseScrollEvent" = [ "Event" "MouseEvent" "UiEvent" ];
           "MutationEvent" = [ "Event" ];
+          "NavigateEvent" = [ "Event" ];
+          "Navigation" = [ "EventTarget" ];
+          "NavigationCurrentEntryChangeEvent" = [ "Event" ];
+          "NavigationHistoryEntry" = [ "EventTarget" ];
           "NetworkInformation" = [ "EventTarget" ];
           "Node" = [ "EventTarget" ];
           "Notification" = [ "EventTarget" ];
