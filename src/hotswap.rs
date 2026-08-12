@@ -963,6 +963,139 @@ impl ProofDelta {
     }
 }
 
+/// The **wire projection** of a [`ProofDelta`] — the proof-altitude
+/// sibling of [`WatermarkDeltaWire`], adding the two axes a bare
+/// watermark comparison cannot express.
+///
+/// **Why this type exists — the proof-altitude wire pair to
+/// [`WatermarkDeltaWire`].** [`ProofDelta`] extends [`WatermarkDelta`]
+/// with two `Option`-wrapped axes: `generations_advanced`
+/// ([`Option::None`] iff generation regressed) and `observed_at_elapsed`
+/// ([`Option::None`] iff a system-clock adjustment ran the wall-clock
+/// backwards between the two observations). Both `Option`s pass through
+/// serde's native tagged encoding without a custom serializer. The
+/// watermark half NESTS as a [`WatermarkDeltaWire`], matching the way
+/// [`ConfigSyncProofWire`] nests [`ConfigWatermarkWire`] — so the class-
+/// partition invariant weld carried at [`WatermarkDelta::try_from_wire`]
+/// travels with this payload. A `ProofDeltaWire` cannot carry a
+/// watermark shape the [`WatermarkDelta::between`] fold could not
+/// produce, because the parse boundary refuses it once, at the seam.
+///
+/// **What is NOT welded here (and why).** [`ProofDelta`] itself carries
+/// no impossibility corners — every combination of `(watermark_moved,
+/// generations_advanced)` is representable, and the semantically
+/// meaningful combinations ([`ProofDelta::stationary`],
+/// [`ProofDelta::identity_republish`], [`ProofDelta::cross_store_signal`],
+/// [`ProofDelta::generations_regressed`]) are diagnostic predicates
+/// describing wire values that are all legitimate at the delta altitude
+/// (a cross-store signal is genuine information about a proof pair, not
+/// a shape to refuse). The type-level impossibility welds live one
+/// altitude up on [`ProofRelation`], whose payload-carrying variants
+/// ([`ProofRelation::Progression`] and [`ProofRelation::CrossStore`])
+/// hold a [`MovedWatermarkDelta`]. This type stops at the honest
+/// [`ProofDelta`] shape; the sum-type wire projection is the next
+/// natural increment, which will chain
+/// [`MovedWatermarkDelta::try_from_wire`] for those two variants and
+/// [`std::num::NonZeroU64`] parses for the three generation-carrying
+/// arms — inheriting this shape and adding only the variant tag plus
+/// the nonzero welds.
+///
+/// **Nanosecond wire unit for the elapsed axis.** [`std::time::Duration`]
+/// on the value side has nanosecond precision; the wire preserves it as
+/// `Option<u64>` nanoseconds (max ~584 years, well beyond any
+/// legitimate poll interval between two observations). A `u64` is a
+/// single JSON number rather than the two-field
+/// `{secs, nanos}` shape serde's default `Duration` encoding uses,
+/// keeping the wire compact and matching the "one field, one number"
+/// vocabulary [`ConfigSyncProofWire::observed_at_epoch`] established
+/// for the absolute-time axis. Field name (`observedAtElapsedNanos`)
+/// spells the unit at the wire so a consumer never has to remember
+/// which power-of-ten scale to divide by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProofDeltaWire {
+    /// The class-scoped watermark comparison — the wire mirror of
+    /// [`ProofDelta::watermark`]. NESTED as a [`WatermarkDeltaWire`]
+    /// so the class-partition invariant weld on that type
+    /// ([`WatermarkDelta::class_moves_imply_full_moved`]) travels
+    /// with this payload and fires at
+    /// [`ProofDelta::try_from_wire`]'s parse boundary.
+    pub watermark: WatermarkDeltaWire,
+    /// How many generations advanced from `prior` to `current`. The
+    /// wire mirror of [`ProofDelta::generations_advanced`]: `Some(0)`
+    /// iff same generation (identity observation), `Some(n>0)` iff a
+    /// generation advance, `None` iff current's generation was
+    /// strictly less than prior's. `None` on the wire is a diagnostic
+    /// signal that a monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce, not a shape
+    /// to refuse — a consumer that receives it knows the two proofs
+    /// came from different stores or that the wire that carried them
+    /// was tampered with.
+    pub generations_advanced: Option<u64>,
+    /// Wall-clock time elapsed between `prior.observed_at` and
+    /// `current.observed_at`, in nanoseconds. The wire mirror of
+    /// [`ProofDelta::observed_at_elapsed`]: `Some(n)` iff the two
+    /// observations were ordered forward, `None` iff current's
+    /// timestamp was strictly less than prior's. Unlike the
+    /// generation axis, `None` here is a legitimate real-world
+    /// condition (NTP step, container migration between observations)
+    /// rather than a same-store impossibility.
+    pub observed_at_elapsed_nanos: Option<u64>,
+}
+
+impl ProofDelta {
+    /// Project to the wire shape — the watermark half nests as a
+    /// [`WatermarkDeltaWire`] (matching how [`ConfigSyncProofWire`]
+    /// nests [`ConfigWatermarkWire`]), the `generations_advanced`
+    /// `Option` passes through unchanged, and the
+    /// `observed_at_elapsed` [`Duration`](std::time::Duration) becomes
+    /// `Option<u64>` nanoseconds. Pure, allocation-free.
+    #[must_use]
+    pub fn to_wire(&self) -> ProofDeltaWire {
+        ProofDeltaWire {
+            watermark: self.watermark.to_wire(),
+            generations_advanced: self.generations_advanced,
+            observed_at_elapsed_nanos: self
+                .observed_at_elapsed
+                .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)),
+        }
+    }
+
+    /// Reconstruct a [`ProofDelta`] from its wire projection — the
+    /// inverse of [`Self::to_wire`], chaining
+    /// [`WatermarkDelta::try_from_wire`]'s class-partition weld on the
+    /// nested watermark half so the returned delta's watermark is
+    /// guaranteed to have a shape a legitimate
+    /// [`WatermarkDelta::between`] call could have produced.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] propagated from the nested
+    /// [`WatermarkDelta::try_from_wire`] call — the two `Option` axes
+    /// have no impossibility corners at the [`ProofDelta`] altitude
+    /// (both diagnostic combinations they express are legitimate wire
+    /// values that a consumer must be able to receive and route on),
+    /// so the only parse error at this altitude surfaces from the
+    /// class-partition weld on the nested watermark.
+    pub fn try_from_wire(wire: &ProofDeltaWire) -> Result<Self, ShikumiError> {
+        Ok(Self {
+            watermark: WatermarkDelta::try_from_wire(&wire.watermark)?,
+            generations_advanced: wire.generations_advanced,
+            observed_at_elapsed: wire
+                .observed_at_elapsed_nanos
+                .map(std::time::Duration::from_nanos),
+        })
+    }
+}
+
+impl TryFrom<&ProofDeltaWire> for ProofDelta {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &ProofDeltaWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
 /// Exhaustive sum-type classification of a proof pair — every possible
 /// relation between two [`ConfigSyncProof`] values lands in exactly one
 /// variant.
@@ -3027,5 +3160,372 @@ mod watermark_delta_wire_tests {
                 .to_wire();
             assert_eq!(back, w);
         }
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_wire_tests {
+    //! Weld the wire projection of [`ProofDelta`] — the proof-altitude
+    //! sibling of [`WatermarkDeltaWire`]. Together the tests below cover:
+    //!
+    //! 1. `to_wire` is a mechanical mirror on every one of the five
+    //!    [`ProofRelation`] corners (`Stationary`, `IdentityRepublish`,
+    //!    `Progression`, `CrossStore`, `Regressed`) plus the
+    //!    wall-clock-backwards corner (elapsed `None`), so every
+    //!    legitimate wire value round-trips.
+    //! 2. The wire round-trips through JSON with camelCase field names
+    //!    pinned (`watermark`, `generationsAdvanced`,
+    //!    `observedAtElapsedNanos`).
+    //! 3. `Option` axes preserve `None` across the wire so the
+    //!    generation-regressed and wall-clock-backwards signals are not
+    //!    silently discarded.
+    //! 4. The class-partition weld on the nested [`WatermarkDeltaWire`]
+    //!    fires at [`ProofDelta::try_from_wire`]'s boundary, so a
+    //!    malformed watermark half rejects the whole payload rather
+    //!    than yielding a delta whose watermark could not have come
+    //!    from any [`WatermarkDelta::between`] call.
+    //! 5. Value → wire → value and wire → value → wire are both fixed
+    //!    points on every legitimate corner.
+    //! 6. `TryFrom<&ProofDeltaWire>` and the inherent `try_from_wire`
+    //!    method agree pointwise.
+    //! 7. `ProofDelta::to_wire` composes through
+    //!    [`WatermarkDelta::to_wire`] on the watermark half — one
+    //!    source of truth for the value → wire projection on the
+    //!    class-scoped triple, so a future change to the watermark
+    //!    encoding never diverges between the bare and proof-nested
+    //!    paths.
+    //! 8. Nanosecond precision is preserved end-to-end (the wire unit
+    //!    matches the value-side [`Duration`](std::time::Duration)
+    //!    precision).
+    //!
+    //! Same test idiom as [`wire_tests`] (the [`ConfigSyncProofWire`]
+    //! pin) and [`watermark_delta_wire_tests`] (the delta wire pin),
+    //! so a future refactor that touches one of the three wire surfaces
+    //! surfaces consistent breakage across all three.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: wm_of(cfg),
+            observed_at: UNIX_EPOCH + Duration::from_secs(secs),
+        }
+    }
+
+    /// Every legitimate corner of the (watermark moved?, generation
+    /// delta, elapsed sign) grid, folded through [`ProofDelta::between`].
+    /// The wire projection must round-trip on every one of these — a
+    /// legitimate consumer receives them all and must reconstruct each.
+    fn every_corner() -> Vec<ProofDelta> {
+        vec![
+            // Stationary: identical observation twice.
+            ProofDelta::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&base(), 5, 1_700_000_060),
+            ),
+            // IdentityRepublish: same value, generation advance.
+            ProofDelta::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&base(), 6, 1_700_000_030),
+            ),
+            // Progression: value changed and generation advanced.
+            ProofDelta::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&mutated(), 6, 1_700_000_060),
+            ),
+            // CrossStore signal: value changed, generation stationary.
+            ProofDelta::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&mutated(), 5, 1_700_000_060),
+            ),
+            // Regressed generation: `generations_advanced = None`.
+            ProofDelta::between(
+                &proof_at(&base(), 10, 1_700_000_000),
+                &proof_at(&base(), 5, 1_700_000_060),
+            ),
+            // Wall-clock ran backwards: `observed_at_elapsed = None`.
+            ProofDelta::between(
+                &proof_at(&base(), 5, 1_700_000_060),
+                &proof_at(&base(), 5, 1_700_000_000),
+            ),
+        ]
+    }
+
+    #[test]
+    fn to_wire_is_a_mechanical_mirror_on_every_corner() {
+        for d in every_corner() {
+            let w = d.to_wire();
+            assert_eq!(w.watermark, d.watermark.to_wire(), "watermark mirrors");
+            assert_eq!(
+                w.generations_advanced, d.generations_advanced,
+                "generationsAdvanced mirrors"
+            );
+            assert_eq!(
+                w.observed_at_elapsed_nanos,
+                d.observed_at_elapsed
+                    .map(|dur| u64::try_from(dur.as_nanos()).unwrap_or(u64::MAX)),
+                "observedAtElapsedNanos mirrors"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wire_shape_round_trips_through_json() {
+        for d in every_corner() {
+            let w = d.to_wire();
+            let json = serde_json::to_string(&w).expect("serialize");
+            let back: ProofDeltaWire = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(w, back);
+        }
+    }
+
+    #[test]
+    fn the_wire_field_names_are_pinned_as_camel_case() {
+        // The pin: the wire vocabulary matches ConfigSyncProofWire's
+        // camelCase convention. `observedAtElapsedNanos` names its unit
+        // at the wire so a consumer never has to remember which scale
+        // to divide by, and the nested `watermark` field name mirrors
+        // ConfigSyncProofWire's own nesting name.
+        let w = ProofDeltaWire {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            generations_advanced: Some(3),
+            observed_at_elapsed_nanos: Some(500_000_000),
+        };
+        let json = serde_json::to_string(&w).unwrap();
+        for key in ["watermark", "generationsAdvanced", "observedAtElapsedNanos"] {
+            assert!(
+                json.contains(&format!("\"{key}\"")),
+                "missing {key} in {json}"
+            );
+        }
+        // Snake_case forms MUST NOT appear -- serde(rename_all)
+        // regressions have been silent bugs before.
+        for snake in [
+            "generations_advanced",
+            "observed_at_elapsed_nanos",
+            "observed_at_elapsed",
+        ] {
+            assert!(
+                !json.contains(snake),
+                "snake_case leaked into wire: {snake} in {json}",
+            );
+        }
+    }
+
+    #[test]
+    fn generation_regression_preserves_none_across_the_wire() {
+        // A regressed generation folds to `generations_advanced: None`.
+        // JSON encodes that as `null`, and the deserialized wire must
+        // survive back as `Option::None` so the consumer can classify
+        // this as `Regressed` rather than silently reading a bogus
+        // count. Symmetric peer of the elapsed-None test below.
+        let d = ProofDelta::between(
+            &proof_at(&base(), 10, 1_700_000_000),
+            &proof_at(&base(), 5, 1_700_000_060),
+        );
+        assert_eq!(
+            d.generations_advanced, None,
+            "precondition: regressed generation is None"
+        );
+        let w = d.to_wire();
+        assert_eq!(
+            w.generations_advanced, None,
+            "the wire must preserve None on the generation axis"
+        );
+        let back = ProofDelta::try_from_wire(&w).expect("wire round-trip");
+        assert_eq!(back.generations_advanced, None);
+        assert!(
+            back.generations_regressed(),
+            "the reconstructed delta must classify as regressed"
+        );
+    }
+
+    #[test]
+    fn wall_clock_backwards_preserves_none_across_the_wire() {
+        // A system-clock adjustment folds to
+        // `observed_at_elapsed: None`. Unlike regression this is a
+        // legitimate real-world condition; the wire must nevertheless
+        // preserve None so the consumer distinguishes "clock jumped
+        // backwards" from "elapsed = 0".
+        let d = ProofDelta::between(
+            &proof_at(&base(), 5, 1_700_000_060),
+            &proof_at(&base(), 5, 1_700_000_000),
+        );
+        assert_eq!(
+            d.observed_at_elapsed, None,
+            "precondition: wall-clock ran backwards is None"
+        );
+        let w = d.to_wire();
+        assert_eq!(w.observed_at_elapsed_nanos, None);
+        let back = ProofDelta::try_from_wire(&w).expect("wire round-trip");
+        assert_eq!(back.observed_at_elapsed, None);
+    }
+
+    #[test]
+    fn nanosecond_precision_is_preserved_end_to_end() {
+        // The wire unit matches the value-side Duration precision, so a
+        // sub-second observation cadence (a 200ms /healthz/config poll
+        // interval, say) survives the round trip without truncation.
+        // Hand-build a ProofDelta with a sub-second elapsed so the
+        // check has bite: `between()` from two epoch-seconds proofs
+        // could only ever produce whole-second durations.
+        let d = ProofDelta {
+            watermark: WatermarkDelta::between(&wm_of(&base()), &wm_of(&base())),
+            generations_advanced: Some(1),
+            observed_at_elapsed: Some(Duration::from_nanos(123_456_789)),
+        };
+        let w = d.to_wire();
+        assert_eq!(w.observed_at_elapsed_nanos, Some(123_456_789));
+        let back = ProofDelta::try_from_wire(&w).expect("wire round-trip");
+        assert_eq!(
+            back.observed_at_elapsed,
+            Some(Duration::from_nanos(123_456_789)),
+            "nanoseconds must survive the wire without truncation"
+        );
+    }
+
+    #[test]
+    fn value_wire_value_is_identity_on_every_corner() {
+        for d in every_corner() {
+            let back = ProofDelta::try_from_wire(&d.to_wire())
+                .expect("between-computed delta must round-trip through wire");
+            assert_eq!(back, d);
+        }
+    }
+
+    #[test]
+    fn wire_value_wire_is_fixed_point_on_every_well_formed_wire() {
+        for d in every_corner() {
+            let w = d.to_wire();
+            let back = ProofDelta::try_from_wire(&w)
+                .expect("well-formed round-trip")
+                .to_wire();
+            assert_eq!(back, w);
+        }
+    }
+
+    #[test]
+    fn class_partition_violation_on_the_nested_watermark_is_a_parse_error() {
+        // The load-bearing chain: a wire whose nested watermark half
+        // fails `class_moves_imply_full_moved` is refused at the
+        // ProofDeltaWire boundary too, because `ProofDelta::try_from_wire`
+        // routes the watermark half through `WatermarkDelta::try_from_wire`
+        // first. The error message names the offending triple so a
+        // consumer can localize the fault without re-parsing the whole
+        // payload.
+        let violation = ProofDeltaWire {
+            watermark: WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed_nanos: Some(60_000_000_000),
+        };
+        let err = ProofDelta::try_from_wire(&violation).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("fullMoved"),
+            "class-partition error must name the offending triple: {msg}"
+        );
+    }
+
+    #[test]
+    fn try_from_impl_and_try_from_wire_method_agree_pointwise() {
+        for d in every_corner() {
+            let w = d.to_wire();
+            let via_method = ProofDelta::try_from_wire(&w).unwrap();
+            let via_trait = ProofDelta::try_from(&w).unwrap();
+            assert_eq!(via_method, via_trait);
+        }
+    }
+
+    #[test]
+    fn proof_delta_to_wire_watermark_equals_watermark_delta_to_wire() {
+        // The composition weld: ProofDelta::to_wire's watermark half
+        // MUST equal WatermarkDelta::to_wire on the same watermark
+        // value. One source of truth for the value → wire projection
+        // on the class-scoped triple; a future refactor that touches
+        // WatermarkDelta::to_wire must NOT need a parallel change on
+        // the proof-nested path.
+        for d in every_corner() {
+            assert_eq!(d.to_wire().watermark, d.watermark.to_wire());
+        }
+    }
+
+    #[test]
+    fn stationary_corner_round_trips_with_all_falses_and_some_zero() {
+        // The exact bit pattern on the wire for the stationary corner:
+        // every boolean false, generationsAdvanced Some(0), elapsed
+        // Some(0). Pinning the exact JSON structure catches an
+        // accidental default swap (e.g. serializing `None` for a
+        // Some(0) generation, which would look like regression to a
+        // consumer).
+        let d = ProofDelta::between(
+            &proof_at(&base(), 5, 1_700_000_000),
+            &proof_at(&base(), 5, 1_700_000_000),
+        );
+        let w = d.to_wire();
+        assert!(!w.watermark.full_moved);
+        assert!(!w.watermark.restart_required_moved);
+        assert!(!w.watermark.free_moved);
+        assert_eq!(w.generations_advanced, Some(0));
+        assert_eq!(w.observed_at_elapsed_nanos, Some(0));
+    }
+
+    #[test]
+    fn config_sync_proof_delta_since_composes_with_wire_projection() {
+        // The consumer-facing composition: a receiver-style
+        // `current.delta_since(&prior).to_wire()` reaches the same wire
+        // as `ProofDelta::between(&prior, &current).to_wire()`. This
+        // welds "the ergonomic sibling never diverges from the named
+        // constructor" AT the wire boundary, not just the value.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&mutated(), 6, 1_700_000_060);
+        assert_eq!(
+            current.delta_since(&prior).to_wire(),
+            ProofDelta::between(&prior, &current).to_wire(),
+        );
     }
 }
