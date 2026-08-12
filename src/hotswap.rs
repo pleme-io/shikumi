@@ -359,6 +359,167 @@ fn parse_wire_hash(hex: &str, field: &'static str) -> Result<blake3::Hash, Shiku
     })
 }
 
+/// The typed answer to "what moved between two [`ConfigWatermark`] values?"
+/// — a per-half `bool` triple with the class-partition invariant welded
+/// at the type shape.
+///
+/// Every consumer polling `/healthz/config` (theory/CALHA.md §2) receives
+/// a stream of [`ConfigSyncProofWire`] snapshots, and every observer that
+/// wants to react to a change compares "last seen" against "just received"
+/// on the class-scoped halves. Before this type each such consumer wrote
+/// three inline `!=` comparisons over the three [`ConfigWatermark`] hash
+/// fields — one per half — and re-derived the class-partition semantics
+/// at the call site. `WatermarkDelta` names that comparison as a type, so
+/// the answer travels as data (queryable, testable, transportable) rather
+/// than as hand-rolled boolean arithmetic at every seam.
+///
+/// The named accessors ([`Self::restart_pending`], [`Self::hot_swappable_drift`])
+/// spell the two CALHA-side questions in the semantic vocabulary of the
+/// observers, not just the mechanical vocabulary of the underlying hashes:
+/// a `calha` poller asks "is a restart pending since I last checked?"
+/// and an operator watching live-edit activity asks "did a hot-swappable
+/// knob drift?", and those two questions are the load-bearing use of the
+/// class partition.
+///
+/// The class-partition invariant `full_moved iff (restart_required_moved ||
+/// free_moved)` holds under the [`ConfigWatermark::compute`] assumption
+/// that the `field_classes` slice partitions every serialized top-level
+/// field (theory/CALHA.md §5.1 — the `Free | RequiresRestart` closure is
+/// 2-arm-total). [`Self::partitioned_class_invariant_holds`] states the
+/// biconditional at the type level. The one-way implication
+/// `restart_required_moved || free_moved ⇒ full_moved` — which holds
+/// **unconditionally**, since a class-scoped hash cannot move without the
+/// full-hash superset also moving — is spelled at
+/// [`Self::class_moves_imply_full_moved`] and is the honest sanity check
+/// a consumer can perform on a delta value it did not compute itself
+/// (e.g. one deserialized from an untrusted source) regardless of whether
+/// the producer's field partition is fully exhaustive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WatermarkDelta {
+    /// Whether the full watermark ([`ConfigWatermark::full`]) moved. True
+    /// iff any observable field of the resolved config changed, whether or
+    /// not that field is class-partitioned into either half below.
+    pub full_moved: bool,
+    /// Whether the `RequiresRestart` half ([`ConfigWatermark::restart_required`])
+    /// moved — the exact signal `calha`'s split watermark (theory/CALHA.md
+    /// §2) polls to decide whether a running process is missing a restart.
+    pub restart_required_moved: bool,
+    /// Whether the Free half ([`ConfigWatermark::free`]) moved — the
+    /// symmetric peer of [`Self::restart_required_moved`], observed by a
+    /// live-edit surface distinguishing "a hot-swappable knob drifted"
+    /// (interesting to an operator) from "a `RequiresRestart` field drifted"
+    /// (the pending-restart signal above).
+    pub free_moved: bool,
+}
+
+impl WatermarkDelta {
+    /// Compute the delta from `prior` to `current` — a pointwise
+    /// comparison over the three watermark halves. Pure, allocation-free,
+    /// symmetric in the trivial `stationary`-typed sense (see
+    /// [`Self::stationary`]).
+    #[must_use]
+    pub fn between(prior: &ConfigWatermark, current: &ConfigWatermark) -> Self {
+        Self {
+            full_moved: prior.full != current.full,
+            restart_required_moved: prior.restart_required != current.restart_required,
+            free_moved: prior.free != current.free,
+        }
+    }
+
+    /// True iff at least one of the three halves moved — a fast "did
+    /// anything change at all?" predicate an observer polls to short-
+    /// circuit further inspection.
+    #[must_use]
+    pub const fn any_moved(&self) -> bool {
+        self.full_moved || self.restart_required_moved || self.free_moved
+    }
+
+    /// True iff NO half moved — the pair of watermarks is bit-identical
+    /// on every observable axis. Named for the observer whose null
+    /// hypothesis is "nothing changed since I last looked."
+    #[must_use]
+    pub const fn stationary(&self) -> bool {
+        !self.any_moved()
+    }
+
+    /// True iff the `RequiresRestart` half moved — the `calha`-side
+    /// question "is a restart pending since I last polled this replica?"
+    /// spelled in the semantic vocabulary of the observer. Alias of
+    /// [`Self::restart_required_moved`] scoped to the CALHA use.
+    #[must_use]
+    pub const fn restart_pending(&self) -> bool {
+        self.restart_required_moved
+    }
+
+    /// True iff the Free half moved — the operator-side question "did a
+    /// hot-swappable knob drift since I last polled this replica?" spelled
+    /// in the semantic vocabulary of the live-edit observer. Alias of
+    /// [`Self::free_moved`] scoped to the operator use.
+    #[must_use]
+    pub const fn hot_swappable_drift(&self) -> bool {
+        self.free_moved
+    }
+
+    /// One-way sanity check: a class-scoped half moving implies the full
+    /// half moved (a class-scoped hash's input is a subset of the full
+    /// hash's input, so moving the smaller input implies moving the
+    /// larger one). Holds unconditionally, independent of whether the
+    /// producer's `field_classes` slice covers every top-level field.
+    ///
+    /// A consumer that received a [`WatermarkDelta`] from an untrusted
+    /// source (e.g. one reconstructed from a wire it did not compute)
+    /// checks this predicate before trusting the delta — a value where
+    /// `restart_required_moved || free_moved` is `true` while `full_moved`
+    /// is `false` cannot have been produced by [`Self::between`] on any
+    /// two well-formed [`ConfigWatermark`] values.
+    #[must_use]
+    pub const fn class_moves_imply_full_moved(&self) -> bool {
+        !((self.restart_required_moved || self.free_moved) && !self.full_moved)
+    }
+
+    /// Two-way class-partition invariant: `full_moved` iff
+    /// `restart_required_moved || free_moved`. Holds when the producer's
+    /// `field_classes` slice is exhaustive over every top-level
+    /// serialized field of the config — i.e. every observable field is
+    /// classified into exactly one half. Under that assumption, moving
+    /// the full hash forces at least one class-scoped half to move too.
+    ///
+    /// Weaker sibling: [`Self::class_moves_imply_full_moved`] holds
+    /// unconditionally. A consumer that does not know whether the
+    /// producer's classification is exhaustive uses the weaker predicate.
+    #[must_use]
+    pub const fn partitioned_class_invariant_holds(&self) -> bool {
+        self.full_moved == (self.restart_required_moved || self.free_moved)
+    }
+}
+
+impl ConfigWatermark {
+    /// Convenience: the delta from `prior` to `self`. Equivalent to
+    /// `WatermarkDelta::between(prior, self)` — spelled at the call site
+    /// for the common "compare the just-computed watermark against a
+    /// previously-observed one" pattern rather than at a helper-type
+    /// entry point.
+    #[must_use]
+    pub fn delta_since(&self, prior: &Self) -> WatermarkDelta {
+        WatermarkDelta::between(prior, self)
+    }
+}
+
+impl ConfigSyncProof {
+    /// Convenience: the [`WatermarkDelta`] from `prior.watermark` to
+    /// `self.watermark`. The generation and observed-at timestamp are
+    /// intentionally NOT folded into the delta shape — those are already
+    /// carried by [`ConfigSyncProof`] itself, and a delta between two
+    /// proofs whose watermarks are equal is `stationary()` regardless of
+    /// how far the generation counter advanced or how much wall time
+    /// passed between the two snapshots (a store can publish an identical
+    /// value multiple times without moving the watermark).
+    #[must_use]
+    pub fn watermark_delta_since(&self, prior: &Self) -> WatermarkDelta {
+        self.watermark.delta_since(&prior.watermark)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,5 +881,291 @@ mod wire_tests {
         let w = proof().watermark;
         let back = ConfigWatermark::try_from_wire(&w.to_wire()).expect("round-trip");
         assert_eq!(back, w);
+    }
+}
+
+#[cfg(test)]
+mod delta_tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    #[test]
+    fn between_identical_watermarks_reports_no_movement() {
+        let w = wm_of(&base());
+        let d = WatermarkDelta::between(&w, &w);
+        assert!(!d.full_moved, "full stationary on identical watermarks");
+        assert!(
+            !d.restart_required_moved,
+            "restart_required stationary on identical watermarks"
+        );
+        assert!(!d.free_moved, "free stationary on identical watermarks");
+        assert!(
+            !d.any_moved(),
+            "any_moved false when no half moved -- the null hypothesis"
+        );
+        assert!(
+            d.stationary(),
+            "stationary is the negation of any_moved on the identity pair"
+        );
+    }
+
+    #[test]
+    fn between_after_a_free_only_edit_reports_free_and_full_moved_only() {
+        let prior = wm_of(&base());
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = wm_of(&c2);
+        let d = WatermarkDelta::between(&prior, &current);
+        assert!(d.full_moved, "full moves on any field change");
+        assert!(
+            !d.restart_required_moved,
+            "restart_required MUST NOT move on a Free-only edit -- the load-bearing invariant"
+        );
+        assert!(d.free_moved, "free moves on a Free-classified edit");
+        assert!(d.any_moved(), "at least one half moved");
+        assert!(!d.stationary(), "not stationary after an edit");
+    }
+
+    #[test]
+    fn between_after_a_restart_only_edit_reports_restart_and_full_moved_only() {
+        let prior = wm_of(&base());
+        let mut c2 = base();
+        c2.bind_addr = "0.0.0.0:9090".into();
+        let current = wm_of(&c2);
+        let d = WatermarkDelta::between(&prior, &current);
+        assert!(d.full_moved, "full moves on any field change");
+        assert!(
+            d.restart_required_moved,
+            "restart_required moves on a RequiresRestart edit"
+        );
+        assert!(
+            !d.free_moved,
+            "free MUST NOT move on a RequiresRestart-only edit -- symmetric partition weld"
+        );
+    }
+
+    #[test]
+    fn between_after_a_mixed_edit_reports_all_three_moved() {
+        let prior = wm_of(&base());
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        c2.bind_addr = "0.0.0.0:9090".into();
+        let current = wm_of(&c2);
+        let d = WatermarkDelta::between(&prior, &current);
+        assert!(d.full_moved && d.restart_required_moved && d.free_moved);
+    }
+
+    #[test]
+    fn between_is_symmetric_up_to_the_boolean_answer() {
+        let a = wm_of(&base());
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let b = wm_of(&c2);
+        // The delta answers "did each half move?", not "in which
+        // direction did it move" -- a move from a→b and a move from b→a
+        // are both moves, so `between(a,b)` and `between(b,a)` must
+        // report the identical boolean triple.
+        assert_eq!(
+            WatermarkDelta::between(&a, &b),
+            WatermarkDelta::between(&b, &a)
+        );
+    }
+
+    #[test]
+    fn named_semantic_aliases_agree_with_the_underlying_fields() {
+        // A Free-only edit answers `restart_pending() = false`,
+        // `hot_swappable_drift() = true`, and vice versa on a
+        // RequiresRestart-only edit. The aliases must not drift from
+        // their underlying fields -- a consumer that reads either name
+        // must reach the same bit.
+        let mut free_edit = base();
+        free_edit.log_level = "debug".into();
+        let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&free_edit));
+        assert!(!d.restart_pending(), "no restart pending on Free-only edit");
+        assert!(
+            d.hot_swappable_drift(),
+            "hot-swappable drift on Free-only edit"
+        );
+        assert_eq!(d.restart_pending(), d.restart_required_moved);
+        assert_eq!(d.hot_swappable_drift(), d.free_moved);
+
+        let mut restart_edit = base();
+        restart_edit.bind_addr = "0.0.0.0:9090".into();
+        let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&restart_edit));
+        assert!(
+            d.restart_pending(),
+            "restart pending on RequiresRestart edit"
+        );
+        assert!(
+            !d.hot_swappable_drift(),
+            "no hot-swappable drift on RequiresRestart-only edit"
+        );
+    }
+
+    #[test]
+    fn class_moves_imply_full_moved_holds_on_every_delta_computed_by_between() {
+        // Weld the unconditional one-way implication over the four
+        // corners of the (Free-edit, Restart-edit) product: no-edit,
+        // Free-only, Restart-only, both. On every corner
+        // `class_moves_imply_full_moved()` holds because `between()`
+        // cannot fabricate a class-scoped move without the full-hash
+        // superset also having moved.
+        for (mut mutate_free, mut mutate_restart) in
+            [(false, false), (true, false), (false, true), (true, true)]
+                .into_iter()
+                .map(|(f, r)| (f, r))
+        {
+            let mut c2 = base();
+            if mutate_free {
+                c2.log_level = "debug".into();
+                mutate_free = true; // suppress unused_assignments lint
+            }
+            if mutate_restart {
+                c2.bind_addr = "0.0.0.0:9090".into();
+                mutate_restart = true;
+            }
+            let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&c2));
+            assert!(
+                d.class_moves_imply_full_moved(),
+                "class_moves_imply_full_moved must hold on every WatermarkDelta produced by \
+                 between() -- violated on ({mutate_free}, {mutate_restart})"
+            );
+        }
+    }
+
+    #[test]
+    fn class_moves_imply_full_moved_refutes_a_hand_constructed_impossibility() {
+        // A consumer that receives a WatermarkDelta from an untrusted
+        // source can construct one that would fail the invariant. The
+        // predicate catches it -- refusing to trust a delta shape that
+        // no honest `between()` call could have produced.
+        let impossible = WatermarkDelta {
+            full_moved: false,
+            restart_required_moved: true,
+            free_moved: false,
+        };
+        assert!(!impossible.class_moves_imply_full_moved());
+    }
+
+    #[test]
+    fn partitioned_class_invariant_holds_on_two_class_field_slice() {
+        // With FIELD_CLASSES covering every serialized field of Cfg
+        // (log_level Free, bind_addr RequiresRestart -- an exhaustive
+        // partition), the two-way `full ⇔ restart||free` invariant
+        // holds on every edit shape.
+        for (mutate_free, mutate_restart) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let mut c2 = base();
+            if mutate_free {
+                c2.log_level = "debug".into();
+            }
+            if mutate_restart {
+                c2.bind_addr = "0.0.0.0:9090".into();
+            }
+            let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&c2));
+            assert!(
+                d.partitioned_class_invariant_holds(),
+                "partitioned_class_invariant_holds must hold when field_classes is exhaustive \
+                 -- violated on ({mutate_free}, {mutate_restart})"
+            );
+        }
+    }
+
+    #[test]
+    fn config_watermark_delta_since_agrees_with_between() {
+        // The ergonomic sibling on the receiver must NOT diverge from
+        // the named type-associated constructor -- a consumer that reads
+        // `current.delta_since(&prior)` must reach the same value as
+        // `WatermarkDelta::between(&prior, &current)`. Argument order is
+        // load-bearing: the receiver is the "current" half.
+        let prior = wm_of(&base());
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = wm_of(&c2);
+        assert_eq!(
+            current.delta_since(&prior),
+            WatermarkDelta::between(&prior, &current)
+        );
+    }
+
+    #[test]
+    fn config_sync_proof_watermark_delta_since_composes_through_the_watermark() {
+        // The proof-level convenience composes through the watermark-
+        // level primitive -- adding new fields to `ConfigSyncProof` (a
+        // future signed-attestation blob, a leaf-schema hash) never
+        // reaches this method's implementation; the watermark half stays
+        // the single source of truth.
+        let prior = ConfigSyncProof {
+            generation: 1,
+            watermark: wm_of(&base()),
+            observed_at: std::time::UNIX_EPOCH,
+        };
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            // Generation and observed_at intentionally differ from
+            // prior -- the watermark_delta_since answer is invariant
+            // under those two axes by construction, and this test pins
+            // that invariance.
+            generation: 42,
+            watermark: wm_of(&c2),
+            observed_at: std::time::UNIX_EPOCH + std::time::Duration::from_secs(9_999),
+        };
+        assert_eq!(
+            current.watermark_delta_since(&prior),
+            current.watermark.delta_since(&prior.watermark)
+        );
+    }
+
+    #[test]
+    fn config_sync_proof_watermark_delta_since_is_stationary_across_a_generation_bump() {
+        // A store that re-publishes an identical value bumps generation
+        // and observed_at without moving any watermark half. The
+        // proof-level delta must report `stationary()` under that -- if
+        // it folded generation in, this would falsely report movement.
+        let wm = wm_of(&base());
+        let prior = ConfigSyncProof {
+            generation: 1,
+            watermark: wm,
+            observed_at: std::time::UNIX_EPOCH,
+        };
+        let current = ConfigSyncProof {
+            generation: 2,
+            watermark: wm,
+            observed_at: std::time::UNIX_EPOCH + std::time::Duration::from_secs(60),
+        };
+        let d = current.watermark_delta_since(&prior);
+        assert!(
+            d.stationary(),
+            "watermark_delta_since must be stationary when only generation/timestamp advanced"
+        );
     }
 }

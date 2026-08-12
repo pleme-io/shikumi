@@ -112,7 +112,9 @@ pub use error::{
     FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
 #[cfg(feature = "hotswap")]
-pub use hotswap::{ConfigSyncProof, ConfigWatermark, Validate, ValidatedTieredConfig};
+pub use hotswap::{
+    ConfigSyncProof, ConfigWatermark, Validate, ValidatedTieredConfig, WatermarkDelta,
+};
 #[cfg(feature = "kube-discovery")]
 pub use kube_discovery::KubeClusterDiscovery;
 #[cfg(feature = "kube")]
