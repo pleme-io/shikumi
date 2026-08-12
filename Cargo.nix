@@ -4070,9 +4070,9 @@ rec {
       };
       "http-body-util" = rec {
         crateName = "http-body-util";
-        version = "0.1.4";
+        version = "0.1.5";
         edition = "2018";
-        sha256 = "1wizkqx9a75x8v5lm7cawpammz8sfvd7cngnkp34wkcfl3b1zx79";
+        sha256 = "07773iilap808wjp6vywlq15zkgwnswqzrv270zxvg2z9biry5i3";
         libName = "http_body_util";
         authors = [
           "Carl Lerche <me@carllerche.com>"
@@ -9478,7 +9478,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.512";
+        version = "0.1.513";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
