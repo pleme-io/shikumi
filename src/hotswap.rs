@@ -1910,6 +1910,100 @@ impl ConfigSyncProof {
     pub fn relation_wire_since(&self, prior: &Self) -> ProofRelationWire {
         self.relation_since(prior).to_wire()
     }
+
+    /// Convenience: the [`WatermarkRelation`] classification from
+    /// `prior.watermark` to `self.watermark` — the cross-altitude
+    /// receiver-sibling of [`ConfigWatermark::relation_since`], the
+    /// classification peer of [`Self::watermark_delta_since`].
+    ///
+    /// The `Option::None` arm reproduces exactly the class-partition
+    /// -invariant violation set [`ConfigWatermark::relation_since`]
+    /// filters at the watermark altitude — a shape reachable only off
+    /// the authored `ConfigWatermark::compute` flow (i.e., through the
+    /// `pub`-field [`ConfigWatermark`] constructor with hash halves that
+    /// disagree with the moved-ness bitmask). On any two watermarks
+    /// produced by [`ConfigWatermark::compute`], this method is total.
+    ///
+    /// The generation and observed-at axes are intentionally NOT folded
+    /// in — this method answers the SAME question
+    /// [`ConfigWatermark::relation_since`] answers one altitude down,
+    /// invariant under generation bumps and timestamp advances (a store
+    /// re-publishing an identical value never moves the classification,
+    /// matching the same invariance [`Self::watermark_delta_since`]
+    /// carries). A consumer that wants the proof-altitude classification
+    /// (which folds the generation-monotonicity + elapsed-observation
+    /// axes together with the watermark answer) calls
+    /// [`Self::relation_since`] instead.
+    ///
+    /// Argument order matches [`Self::watermark_delta_since`] /
+    /// [`Self::delta_since`] / [`Self::relation_since`] /
+    /// [`ConfigWatermark::relation_since`]: the receiver is the
+    /// "current" half.
+    #[must_use]
+    pub fn watermark_relation_since(&self, prior: &Self) -> Option<WatermarkRelation> {
+        self.watermark.relation_since(&prior.watermark)
+    }
+
+    /// The [`WatermarkRelationWire`] classification-wire from
+    /// `prior.watermark` to `self.watermark` — the cross-altitude wire
+    /// receiver-sibling of [`ConfigWatermark::relation_wire_since`],
+    /// closing the "watermark question through a proof container"
+    /// receiver family the value-side [`Self::watermark_delta_since`]
+    /// opened one altitude up.
+    ///
+    /// A `/healthz/config` change-feed or a cross-replica delta-log
+    /// endpoint that holds two [`ConfigSyncProof`] values but wants to
+    /// broadcast the watermark-altitude wire tag (not the fuller proof
+    /// -altitude classification) previously had two inline paths, each
+    /// leaking a payload-unwrap the receiver never needed:
+    ///
+    /// - `self.watermark.relation_since(&prior.watermark).map(|r| r.to_wire())`
+    ///   — reach the watermark half by name, then two-hop through
+    ///   `relation_since` and `to_wire`.
+    /// - Reach the proof-altitude classification through
+    ///   [`Self::relation_wire_since`], then unwrap the
+    ///   [`ProofRelationWire::Progression`] payload's `watermark` field
+    ///   through [`MovedWatermarkDelta::try_from_wire`] and re-classify
+    ///   — but this fails on every non-`Progression` arm (`Stationary`,
+    ///   `IdentityRepublish`, `Regressed`, `Skipped`,
+    ///   `CrossStoreOrTampered`), leaving the caller to write a
+    ///   `match` and a re-derivation that never routes through the
+    ///   watermark altitude's own [`ConfigWatermark::relation_since`]
+    ///   pipeline the sibling API already carries.
+    ///
+    /// Both routes composed the watermark-altitude answer inline at
+    /// every seam. This method IS the composition, matching the
+    /// "receiver is current" argument-order convention every peer
+    /// `*_since` method (at either altitude) already carries.
+    ///
+    /// **Return-type asymmetry with [`Self::relation_wire_since`] is
+    /// load-bearing.** [`Self::relation_wire_since`] is total (the
+    /// [`ProofRelation`] classification cannot fail on a legitimate
+    /// proof pair); this method returns `Option<WatermarkRelationWire>`
+    /// because the underlying [`WatermarkDelta`] carries a
+    /// class-partition-invariant violation shape reachable through
+    /// hand-constructed [`ConfigWatermark`] values. The `None` arm
+    /// reaches this method through the exact same passthrough
+    /// [`ConfigWatermark::relation_wire_since`] carries — a shape only
+    /// reachable off the authored `ConfigWatermark::compute` flow.
+    ///
+    /// Composes `self.watermark.relation_wire_since(&prior.watermark)`
+    /// which itself composes
+    /// `self.watermark.relation_since(&prior.watermark).map(|r| r.to_wire())`.
+    /// A `WatermarkRelationWire` reached through this method equals
+    /// the tag reachable through [`Self::watermark_relation_since`]
+    /// followed by [`WatermarkRelation::to_wire`], and on any
+    /// [`ProofRelationWire::Progression`] arm equals the classification
+    /// tag recoverable from the nested `watermark` payload.
+    ///
+    /// Argument order matches [`Self::watermark_delta_since`] /
+    /// [`Self::delta_since`] / [`Self::relation_since`] /
+    /// [`Self::relation_wire_since`]: the receiver is the "current"
+    /// half.
+    #[must_use]
+    pub fn watermark_relation_wire_since(&self, prior: &Self) -> Option<WatermarkRelationWire> {
+        self.watermark.relation_wire_since(&prior.watermark)
+    }
 }
 
 #[cfg(test)]
@@ -6064,5 +6158,472 @@ mod relation_wire_since_tests {
             matches!(swapped, ProofRelationWire::Regressed { .. }),
             "swap must flip the generation direction to Regressed, got {swapped:?}",
         );
+    }
+}
+
+#[cfg(test)]
+mod watermark_relation_since_cross_altitude_tests {
+    //! Weld the cross-altitude `watermark_relation_since` +
+    //! `watermark_relation_wire_since` receiver-sibling pair on
+    //! [`ConfigSyncProof`] — the classification peers of
+    //! [`ConfigSyncProof::watermark_delta_since`], letting a proof
+    //! -altitude caller reach the watermark-altitude classification
+    //! (value AND wire) without hand-composing through the `.watermark`
+    //! field or unwrapping the [`ProofRelationWire::Progression`]
+    //! payload. Together the tests below cover:
+    //!
+    //! 1. [`ConfigSyncProof::watermark_relation_since`] composes
+    //!    through the underlying [`ConfigWatermark::relation_since`] —
+    //!    the exact composition the method is named for. A future
+    //!    signed-attestation blob or leaf-schema hash added to
+    //!    [`ConfigSyncProof`] never reaches this method's body; the
+    //!    `.watermark` half stays the single source of truth for the
+    //!    watermark-altitude classification.
+    //! 2. [`ConfigSyncProof::watermark_relation_wire_since`] composes
+    //!    through the underlying [`ConfigWatermark::relation_wire_since`]
+    //!    — the wire peer of (1).
+    //! 3. `watermark_relation_wire_since` agrees pointwise with
+    //!    `watermark_relation_since().map(WatermarkRelation::to_wire)`
+    //!    — the two composition legs (wire-first through the receiver
+    //!    sibling vs. value-first then wire projection) never diverge.
+    //! 4. Both methods are invariant under generation bumps and
+    //!    observed-at advances — a store re-publishing an identical
+    //!    value never moves the classification, matching the invariance
+    //!    [`ConfigSyncProof::watermark_delta_since`] carries.
+    //! 5. Totality on the authored flow: every proof pair whose
+    //!    watermarks come out of [`ConfigWatermark::compute`] yields
+    //!    `Some` at both methods.
+    //! 6. Impossibility passthrough: a proof pair whose nested
+    //!    watermarks hit the class-partition-invariant violation
+    //!    corner reaches both methods as `None` — the exact same
+    //!    `None` set [`ConfigWatermark::relation_since`] /
+    //!    [`ConfigWatermark::relation_wire_since`] filter, lifted
+    //!    unchanged through the proof container.
+    //! 7. Cross-altitude coherence with [`Self::relation_wire_since`]:
+    //!    on any edit that lands the proof-altitude wire in
+    //!    [`ProofRelationWire::Progression`], the classification tag
+    //!    recoverable from the nested `watermark` payload matches
+    //!    `watermark_relation_wire_since`'s answer — the two paths
+    //!    reach the same wire tag through the sibling API.
+    //! 8. Argument-order convention: at the watermark altitude,
+    //!    moved-ness is symmetric, so swapping the receiver and
+    //!    argument reaches the same classification even through the
+    //!    proof container — the load-bearing generation-direction axis
+    //!    that flips [`ProofRelation`] `Progression <-> Regressed`
+    //!    lives at the proof altitude, NOT at the watermark altitude
+    //!    the cross-altitude sibling reaches.
+    //! 9. Payload-unwrap-free reach: on every non-`Progression` arm of
+    //!    the proof-altitude wire (`Stationary`, `IdentityRepublish`,
+    //!    `Regressed`, `Skipped`, `CrossStoreOrTampered`), the
+    //!    watermark-altitude wire tag is STILL reachable through this
+    //!    method — a single call that never leans on the
+    //!    [`ProofRelationWire::Progression`] payload.
+    //!
+    //! Same test idiom as the sibling `relation_wire_since_tests`
+    //! module, so a future refactor touching either altitude's
+    //! classification pipeline surfaces breakage here too.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn proof_at(c: &Cfg, generation: u64, secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            watermark: wm_of(c),
+            generation,
+            observed_at: UNIX_EPOCH + Duration::from_secs(secs),
+        }
+    }
+
+    fn authored_pairs() -> [(Cfg, Cfg); 4] {
+        [
+            (base(), base()),
+            (base(), free_edit()),
+            (base(), restart_edit()),
+            (base(), both_edit()),
+        ]
+    }
+
+    // ---------- (1) value-side composition through the watermark half
+
+    #[test]
+    fn watermark_relation_since_composes_through_the_watermark_half() {
+        // Pin (1): the proof-level cross-altitude classification MUST
+        // compose through the watermark-level primitive — adding a
+        // future signed-attestation blob to ConfigSyncProof never
+        // reaches this method's implementation. The .watermark half is
+        // the single source of truth for the watermark-altitude
+        // classification, and this method is a pure delegation to it.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = proof_at(&prior_cfg, 1, 1_700_000_000);
+            let current = proof_at(&current_cfg, 42, 1_700_000_060);
+            assert_eq!(
+                current.watermark_relation_since(&prior),
+                current.watermark.relation_since(&prior.watermark),
+                "watermark_relation_since must delegate to the watermark half on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (2) wire-side composition through the watermark half
+
+    #[test]
+    fn watermark_relation_wire_since_composes_through_the_watermark_half() {
+        // Pin (2): wire peer of (1). The proof-level cross-altitude
+        // wire classification composes through the underlying
+        // ConfigWatermark::relation_wire_since — the same
+        // single-source-of-truth guarantee, extended one composition
+        // further to the wire boundary.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = proof_at(&prior_cfg, 1, 1_700_000_000);
+            let current = proof_at(&current_cfg, 42, 1_700_000_060);
+            assert_eq!(
+                current.watermark_relation_wire_since(&prior),
+                current.watermark.relation_wire_since(&prior.watermark),
+                "watermark_relation_wire_since must delegate to the watermark half on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (3) two-leg agreement
+
+    #[test]
+    fn watermark_relation_wire_since_agrees_with_value_then_to_wire() {
+        // Pin (3): the wire-first sibling equals the value-first then
+        // to-wire composition on every authored pair. Composing the
+        // classification with the wire projection through the receiver
+        // sibling yields the same answer as composing them through the
+        // named methods — the proof stays welded across the two
+        // composition legs.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = proof_at(&prior_cfg, 1, 1_700_000_000);
+            let current = proof_at(&current_cfg, 2, 1_700_000_060);
+            assert_eq!(
+                current.watermark_relation_wire_since(&prior),
+                current
+                    .watermark_relation_since(&prior)
+                    .map(|r| r.to_wire()),
+                "watermark_relation_wire_since must fold watermark_relation_since().map(to_wire) on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (4) invariance under generation + timestamp axes
+
+    #[test]
+    fn both_methods_are_invariant_under_generation_and_timestamp_bumps() {
+        // Pin (4): a store re-publishing an identical value bumps
+        // generation and observed_at without moving any watermark
+        // half — the cross-altitude classification MUST answer
+        // Some(Stationary) under that, matching the invariance
+        // ConfigSyncProof::watermark_delta_since carries. If either
+        // method folded the generation/observed_at axes in, this
+        // would report a movement (or an IdentityRepublish, which
+        // exists at the proof altitude only) — pinning that the
+        // cross-altitude sibling stays scoped to the watermark
+        // altitude's vocabulary.
+        let wm = wm_of(&base());
+        let prior = ConfigSyncProof {
+            generation: 1,
+            watermark: wm,
+            observed_at: UNIX_EPOCH,
+        };
+        let current = ConfigSyncProof {
+            generation: 999,
+            watermark: wm,
+            observed_at: UNIX_EPOCH + Duration::from_secs(9_999),
+        };
+        assert_eq!(
+            current.watermark_relation_since(&prior),
+            Some(WatermarkRelation::Stationary),
+            "watermark_relation_since must be Stationary across generation/timestamp bump",
+        );
+        assert_eq!(
+            current.watermark_relation_wire_since(&prior),
+            Some(WatermarkRelationWire::Stationary),
+            "watermark_relation_wire_since must be Stationary across generation/timestamp bump",
+        );
+        // Cross-check: the proof-altitude classification DOES flip on
+        // the same input (it becomes IdentityRepublish), pinning that
+        // the two altitudes' classifications are legitimately
+        // different vocabularies — the cross-altitude sibling routes
+        // exclusively to the watermark altitude's vocabulary.
+        assert!(
+            matches!(
+                current.relation_since(&prior),
+                ProofRelation::IdentityRepublish { .. }
+            ),
+            "at the proof altitude the same input is IdentityRepublish — pinning the vocabularies differ",
+        );
+    }
+
+    // ---------- (5) totality on the authored flow
+
+    #[test]
+    fn both_methods_are_total_on_the_authored_flow() {
+        // Pin (5): on any two ConfigSyncProof values whose watermarks
+        // come out of ConfigWatermark::compute, both cross-altitude
+        // classifications yield Some. A None on either path signals a
+        // hand-constructed inconsistent watermark leaking through a
+        // non-standard entry point, not a legitimate authored-flow
+        // outcome — matching the totality guarantee
+        // ConfigWatermark::relation_since /
+        // ConfigWatermark::relation_wire_since already carry one
+        // altitude down.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = proof_at(&prior_cfg, 1, 1_700_000_000);
+            let current = proof_at(&current_cfg, 2, 1_700_000_060);
+            assert!(
+                current.watermark_relation_since(&prior).is_some(),
+                "authored proof pair {prior_cfg:?} -> {current_cfg:?} must classify to Some",
+            );
+            assert!(
+                current.watermark_relation_wire_since(&prior).is_some(),
+                "authored proof pair {prior_cfg:?} -> {current_cfg:?} must classify to Some at the wire",
+            );
+        }
+    }
+
+    // ---------- (6) impossibility passthrough as None
+
+    #[test]
+    fn impossibility_passes_through_the_proof_container_as_none() {
+        // Pin (6): a proof pair whose nested watermarks hit the
+        // (F, T, F) class-partition-invariant violation corner (a
+        // class-scoped half moved without full_moved) reaches BOTH
+        // cross-altitude classifications as None — the exact same
+        // filter ConfigWatermark::relation_since /
+        // ConfigWatermark::relation_wire_since carry at the watermark
+        // altitude. The proof container never absorbs the
+        // impossibility into a Some at the cross-altitude sibling.
+        let prior_wm = ConfigWatermark {
+            full: blake3::hash(b"pinned-full"),
+            restart_required: blake3::hash(b"restart-a"),
+            free: blake3::hash(b"pinned-free"),
+        };
+        let current_wm = ConfigWatermark {
+            full: blake3::hash(b"pinned-full"),
+            restart_required: blake3::hash(b"restart-b"),
+            free: blake3::hash(b"pinned-free"),
+        };
+        let prior = ConfigSyncProof {
+            watermark: prior_wm,
+            generation: 1,
+            observed_at: UNIX_EPOCH,
+        };
+        let current = ConfigSyncProof {
+            watermark: current_wm,
+            generation: 2,
+            observed_at: UNIX_EPOCH + Duration::from_secs(60),
+        };
+        assert_eq!(current.watermark_relation_since(&prior), None);
+        assert_eq!(current.watermark_relation_wire_since(&prior), None);
+        // Same shape at the watermark altitude — pin that the
+        // cross-altitude sibling is a pure passthrough of the
+        // filter, never a re-derivation.
+        assert_eq!(current.watermark.relation_since(&prior.watermark), None);
+        assert_eq!(
+            current.watermark.relation_wire_since(&prior.watermark),
+            None
+        );
+    }
+
+    // ---------- (7) coherence with the proof-altitude wire on Progression
+
+    #[test]
+    fn agrees_with_progression_payload_on_the_watermark_tag() {
+        // Pin (7): on any edit that lands the proof-altitude wire in
+        // ProofRelationWire::Progression, the classification tag
+        // recoverable from the nested `watermark` payload matches
+        // watermark_relation_wire_since's answer. The receiver
+        // sibling is the ergonomic peer of "unwrap the Progression,
+        // try_from_wire the MovedWatermarkDelta, .relation().unwrap(),
+        // .to_wire()" — same answer, no unwrap.
+        let prior = proof_at(&base(), 1, 1_700_000_000);
+        let current = proof_at(&both_edit(), 2, 1_700_000_060);
+        let proof_wire = current.relation_wire_since(&prior);
+        let ProofRelationWire::Progression { watermark: ww, .. } = proof_wire else {
+            panic!(
+                "both-classes edit + generation advance must land in Progression, got {proof_wire:?}"
+            );
+        };
+        let via_payload = MovedWatermarkDelta::try_from_wire(&ww)
+            .expect("legitimate progression watermark round-trips")
+            .relation()
+            .expect("round-tripped MovedWatermarkDelta always classifies")
+            .to_wire();
+        let via_cross_altitude = current
+            .watermark_relation_wire_since(&prior)
+            .expect("authored proof pair must classify to Some");
+        assert_eq!(via_payload, via_cross_altitude);
+        // And both equal Both — the classification the edit encodes.
+        assert_eq!(via_cross_altitude, WatermarkRelationWire::Both);
+    }
+
+    // ---------- (8) argument-order convention at the cross-altitude sibling
+
+    #[test]
+    fn argument_order_is_symmetric_at_the_cross_altitude_sibling() {
+        // Pin (8): at the watermark altitude moved-ness is symmetric
+        // (WatermarkDelta::between uses XOR-based comparison), so
+        // swapping the receiver and argument at the cross-altitude
+        // sibling reaches the same classification — even through the
+        // proof container. The load-bearing generation-direction axis
+        // that flips ProofRelation Progression <-> Regressed lives at
+        // the proof altitude, and this test pins that the
+        // cross-altitude sibling does NOT expose it.
+        let a = proof_at(&base(), 1, 1_700_000_000);
+        let b = proof_at(&free_edit(), 2, 1_700_000_060);
+        let forward = b.watermark_relation_since(&a);
+        let backward = a.watermark_relation_since(&b);
+        assert_eq!(
+            forward, backward,
+            "watermark_relation_since must be symmetric at the cross-altitude sibling",
+        );
+        assert_eq!(forward, Some(WatermarkRelation::FreeOnly));
+        let forward_wire = b.watermark_relation_wire_since(&a);
+        let backward_wire = a.watermark_relation_wire_since(&b);
+        assert_eq!(
+            forward_wire, backward_wire,
+            "watermark_relation_wire_since must be symmetric at the cross-altitude sibling",
+        );
+        assert_eq!(forward_wire, Some(WatermarkRelationWire::FreeOnly));
+        // Cross-check: at the proof altitude the same swap flips
+        // Progression <-> Regressed — pinning that the argument-order
+        // asymmetry lives at the proof altitude, not at the
+        // cross-altitude sibling.
+        let proof_forward = b.relation_wire_since(&a);
+        let proof_backward = a.relation_wire_since(&b);
+        assert!(
+            matches!(proof_forward, ProofRelationWire::Progression { .. }),
+            "proof-altitude forward must be Progression, got {proof_forward:?}",
+        );
+        assert!(
+            matches!(proof_backward, ProofRelationWire::Regressed { .. }),
+            "proof-altitude backward must be Regressed, got {proof_backward:?}",
+        );
+    }
+
+    // ---------- (9) payload-unwrap-free reach on non-Progression arms
+
+    #[test]
+    fn cross_altitude_sibling_reaches_the_watermark_tag_on_every_proof_arm() {
+        // Pin (9): the cross-altitude sibling reaches a
+        // WatermarkRelationWire tag on EVERY authored proof pair,
+        // including the pairs whose proof-altitude wire is NOT
+        // Progression (Stationary, IdentityRepublish, Regressed).
+        // The inline alternative — "unwrap the Progression payload,
+        // try_from_wire, .relation().unwrap(), .to_wire()" — leans on
+        // the Progression arm and panics on the others. This test
+        // pins that a single call to the receiver sibling covers
+        // every corner. Each expected pair below carries the
+        // proof-altitude arm the pair reaches AND the watermark
+        // -altitude wire tag the cross-altitude sibling reaches — the
+        // two vocabularies are legitimately different, and the
+        // sibling routes to the watermark one.
+        struct Case {
+            name: &'static str,
+            prior: ConfigSyncProof,
+            current: ConfigSyncProof,
+            want_wm: WatermarkRelationWire,
+        }
+        let cases = vec![
+            Case {
+                name: "Stationary (all axes stationary) at both altitudes",
+                prior: proof_at(&base(), 5, 1_700_000_000),
+                current: proof_at(&base(), 5, 1_700_000_000),
+                want_wm: WatermarkRelationWire::Stationary,
+            },
+            Case {
+                name: "IdentityRepublish (identical watermark, generation advanced)",
+                prior: proof_at(&base(), 5, 1_700_000_000),
+                current: proof_at(&base(), 6, 1_700_000_060),
+                want_wm: WatermarkRelationWire::Stationary,
+            },
+            Case {
+                name: "Regressed (current generation < prior)",
+                prior: proof_at(&base(), 6, 1_700_000_060),
+                current: proof_at(&base(), 5, 1_700_000_000),
+                want_wm: WatermarkRelationWire::Stationary,
+            },
+            Case {
+                name: "Progression, FreeOnly at the watermark",
+                prior: proof_at(&base(), 5, 1_700_000_000),
+                current: proof_at(&free_edit(), 6, 1_700_000_060),
+                want_wm: WatermarkRelationWire::FreeOnly,
+            },
+            Case {
+                name: "Progression, RestartRequiredOnly at the watermark",
+                prior: proof_at(&base(), 5, 1_700_000_000),
+                current: proof_at(&restart_edit(), 6, 1_700_000_060),
+                want_wm: WatermarkRelationWire::RestartRequiredOnly,
+            },
+            Case {
+                name: "Progression, Both at the watermark",
+                prior: proof_at(&base(), 5, 1_700_000_000),
+                current: proof_at(&both_edit(), 6, 1_700_000_060),
+                want_wm: WatermarkRelationWire::Both,
+            },
+        ];
+        for Case {
+            name,
+            prior,
+            current,
+            want_wm,
+        } in cases
+        {
+            let got = current.watermark_relation_wire_since(&prior);
+            assert_eq!(
+                got,
+                Some(want_wm),
+                "{name}: cross-altitude sibling must reach {want_wm:?}, got {got:?}",
+            );
+        }
     }
 }
