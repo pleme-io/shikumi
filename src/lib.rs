@@ -115,7 +115,7 @@ pub use error::{
 pub use hotswap::{
     ConfigSyncProof, ConfigWatermark, MovedWatermarkDelta, ProofDelta, ProofDeltaWire,
     ProofRelation, ProofRelationWire, Validate, ValidatedTieredConfig, WatermarkDelta,
-    WatermarkDeltaWire, WatermarkRelation,
+    WatermarkDeltaWire, WatermarkRelation, WatermarkRelationWire,
 };
 #[cfg(feature = "kube-discovery")]
 pub use kube_discovery::KubeClusterDiscovery;

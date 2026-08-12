@@ -950,6 +950,142 @@ impl TryFrom<&WatermarkDeltaWire> for MovedWatermarkDelta {
     }
 }
 
+/// The **wire projection** of a [`WatermarkRelation`] — the sum-type
+/// peer of [`WatermarkDeltaWire`] at the classification altitude,
+/// carrying the same five variants under a serde **internally-tagged**
+/// encoding (`{"kind": "..."}`) so a consumer routes on `kind` without
+/// deserializing the whole payload first.
+///
+/// **Why this type exists — the wire-side classification pair to
+/// [`ProofRelationWire`] one altitude down.** [`WatermarkRelation`] is
+/// the value-side classification of the (`full_moved`,
+/// `restart_required_moved`, `free_moved`) grid; the wire form is the
+/// same five variants. The value of naming it as a wire type is **not**
+/// "avoid encoding drift" — five payload-free tags do not drift the way
+/// hashes and timestamps do. It is **hold the classification vocabulary
+/// at the wire boundary**, so a `/healthz/config` change-feed or a
+/// cross-replica delta-log endpoint that wants to broadcast the
+/// watermark classification carries the same `kind` tag a value-side
+/// `match` would route on, without re-deriving the classification on
+/// every consumer from the underlying [`WatermarkDeltaWire`] triple.
+///
+/// **The isomorphism is total — no welds at the parse boundary.** Every
+/// variant is payload-free, so unlike [`ProofRelationWire`] there is no
+/// [`std::num::NonZeroU64`] weld nor [`MovedWatermarkDelta`] weld to
+/// chain. The value → wire → value round-trip is a total mechanical
+/// mirror; [`WatermarkRelation::from_wire`] and
+/// `From<&WatermarkRelationWire>` are total, not fallible. The
+/// impossibility bucket that [`WatermarkDelta::relation`] filters to
+/// `Option::None` never reaches this wire — a producer that wants to
+/// broadcast an impossibility signal sends the underlying
+/// [`WatermarkDeltaWire`] instead, whose parse boundary refuses it via
+/// [`WatermarkDelta::try_from_wire`]. One wire projection per welded
+/// invariant; the impossibility check keeps living where it lived.
+///
+/// **Why internally-tagged (`{"kind": "..."}`) rather than serde's
+/// default externally-tagged shape.** Same reason as
+/// [`ProofRelationWire`]: the internal tag puts the classification at a
+/// fixed JSON path a consumer can read with one `.get("kind")` lookup,
+/// without a variant-shaped wrapping envelope. Matches the `kind`-first
+/// vocabulary already established by [`crate::ShikumiErrorKind`],
+/// [`crate::ConfigTierKind`], and [`ProofRelationWire`]. camelCase tag
+/// values (`stationary`, `unclassifiedDrift`, `restartRequiredOnly`,
+/// `freeOnly`, `both`) keep the on-the-wire word bank consistent with
+/// the sibling wire types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WatermarkRelationWire {
+    /// The wire mirror of [`WatermarkRelation::Stationary`] — no
+    /// observable field of the resolved config changed. Serializes as
+    /// `{"kind": "stationary"}` with no additional fields.
+    Stationary,
+    /// The wire mirror of [`WatermarkRelation::UnclassifiedDrift`] — the
+    /// full watermark moved but neither class-scoped half did. Only
+    /// reachable when the producer's `field_classes` slice is NOT
+    /// exhaustive over the config's top-level fields. Serializes as
+    /// `{"kind": "unclassifiedDrift"}`.
+    UnclassifiedDrift,
+    /// The wire mirror of [`WatermarkRelation::RestartRequiredOnly`] — a
+    /// `RequiresRestart` field drifted, no Free field did. The CALHA-
+    /// side "pending restart signal without a hot-swap" corner.
+    /// Serializes as `{"kind": "restartRequiredOnly"}`.
+    RestartRequiredOnly,
+    /// The wire mirror of [`WatermarkRelation::FreeOnly`] — a Free field
+    /// drifted, no `RequiresRestart` field did. The operator-side
+    /// "hot-swap without a pending restart" corner. Serializes as
+    /// `{"kind": "freeOnly"}`.
+    FreeOnly,
+    /// The wire mirror of [`WatermarkRelation::Both`] — at least one
+    /// field of each class drifted. Serializes as `{"kind": "both"}`.
+    Both,
+}
+
+impl WatermarkRelation {
+    /// Project to the wire shape — each variant mirrors 1:1 to
+    /// [`WatermarkRelationWire`]'s peer under the internally-tagged
+    /// camelCase encoding. Pure, allocation-free, `const`.
+    ///
+    /// The reverse is [`Self::from_wire`] — total, not fallible: every
+    /// variant is payload-free, so no [`std::num::NonZeroU64`] nor
+    /// [`MovedWatermarkDelta`] welds need re-establishing at the parse
+    /// boundary, and the impossibility bucket [`WatermarkDelta::relation`]
+    /// filters to `Option::None` cannot reach this wire in the first
+    /// place.
+    #[must_use]
+    pub const fn to_wire(&self) -> WatermarkRelationWire {
+        match *self {
+            Self::Stationary => WatermarkRelationWire::Stationary,
+            Self::UnclassifiedDrift => WatermarkRelationWire::UnclassifiedDrift,
+            Self::RestartRequiredOnly => WatermarkRelationWire::RestartRequiredOnly,
+            Self::FreeOnly => WatermarkRelationWire::FreeOnly,
+            Self::Both => WatermarkRelationWire::Both,
+        }
+    }
+
+    /// Reconstruct a [`WatermarkRelation`] from its wire projection —
+    /// the inverse of [`Self::to_wire`]. Total: every variant is
+    /// payload-free, so the isomorphism has no parse-time welds to
+    /// chain (contrast [`ProofRelation::try_from_wire`], which welds
+    /// both [`std::num::NonZeroU64`] on the three generation-carrying
+    /// arms and [`MovedWatermarkDelta`] on the two payload-carrying
+    /// arms). `const` so a wire value known at compile time can be
+    /// lifted at compile time, matching [`Self::to_wire`]'s `const`-ness.
+    #[must_use]
+    pub const fn from_wire(wire: &WatermarkRelationWire) -> Self {
+        match *wire {
+            WatermarkRelationWire::Stationary => Self::Stationary,
+            WatermarkRelationWire::UnclassifiedDrift => Self::UnclassifiedDrift,
+            WatermarkRelationWire::RestartRequiredOnly => Self::RestartRequiredOnly,
+            WatermarkRelationWire::FreeOnly => Self::FreeOnly,
+            WatermarkRelationWire::Both => Self::Both,
+        }
+    }
+}
+
+impl From<WatermarkRelation> for WatermarkRelationWire {
+    /// Total value → wire conversion — delegates to
+    /// [`WatermarkRelation::to_wire`]. Provided so a consumer holding
+    /// a bare [`WatermarkRelation`] reaches the wire shape through
+    /// either the named method or the standard `Into` idiom (`let w:
+    /// WatermarkRelationWire = r.into();`), matching the two-seam pair
+    /// [`ProofRelation`] carries for its own wire projection.
+    fn from(relation: WatermarkRelation) -> Self {
+        relation.to_wire()
+    }
+}
+
+impl From<&WatermarkRelationWire> for WatermarkRelation {
+    /// Total wire → value conversion — delegates to
+    /// [`WatermarkRelation::from_wire`]. Takes `&Self::Item` (not a
+    /// `TryFrom`-style owned value) to match the wire-side impls on
+    /// [`WatermarkDelta`] and [`MovedWatermarkDelta`], where every wire
+    /// type is `Copy` and the borrowed input is the natural seam
+    /// consumers pass a deserialized shape through.
+    fn from(wire: &WatermarkRelationWire) -> Self {
+        Self::from_wire(wire)
+    }
+}
+
 impl ConfigWatermark {
     /// Convenience: the delta from `prior` to `self`. Equivalent to
     /// `WatermarkDelta::between(prior, self)` — spelled at the call site
@@ -4905,5 +5041,576 @@ mod watermark_relation_tests {
             d2.relation(),
             "same (full, restart, free) tuple must yield the same variant",
         );
+    }
+}
+
+#[cfg(test)]
+mod watermark_relation_wire_tests {
+    //! Weld the wire projection of [`WatermarkRelation`] — the sum-type
+    //! peer of [`WatermarkDeltaWire`] at the classification altitude,
+    //! and the value-side classification's counterpart one altitude
+    //! below [`ProofRelationWire`]. Together the tests below cover:
+    //!
+    //! 1. `to_wire` is a mechanical mirror on every one of the five
+    //!    [`WatermarkRelation`] variants; `from_wire` is its total
+    //!    inverse (no welds — every variant is payload-free).
+    //! 2. The wire round-trips through JSON under the internally-tagged
+    //!    (`{"kind": "..."}`) shape with camelCase tag values —
+    //!    snake_case forms and the externally-tagged default shape MUST
+    //!    NOT appear, matching the pin the sibling `ProofRelationWire`
+    //!    carries.
+    //! 3. Each variant serializes to `{"kind": "<camelCase>"}` alone —
+    //!    no payload fields, since every variant is payload-free. An
+    //!    accidental refactor that adds a field to one variant without
+    //!    a corresponding wire migration turns red here.
+    //! 4. `From<WatermarkRelation>` / `From<&WatermarkRelationWire>`
+    //!    agree pointwise with `to_wire` / `from_wire`, so a consumer
+    //!    reaching the wire through the standard `Into` idiom gets the
+    //!    same shape as one calling the named methods.
+    //! 5. Value → wire → value and wire → value → wire are both fixed
+    //!    points on every variant — the isomorphism composes cleanly
+    //!    with itself in either direction.
+    //! 6. Every variant-side predicate on [`WatermarkRelation`]
+    //!    ([`WatermarkRelation::any_moved`],
+    //!    [`WatermarkRelation::stationary`],
+    //!    [`WatermarkRelation::restart_pending`],
+    //!    [`WatermarkRelation::hot_swappable_drift`],
+    //!    [`WatermarkRelation::partitioned_class_invariant_holds`])
+    //!    survives a wire round-trip on every variant — the wire is a
+    //!    lossless channel for the classification vocabulary a consumer
+    //!    routes on.
+    //! 7. The classification composes through the two altitudes: on
+    //!    every legitimate delta reachable via [`WatermarkDelta::between`],
+    //!    `delta.relation().unwrap().to_wire()` agrees with the two-hop
+    //!    composition `delta.to_wire()` → `WatermarkDelta::try_from_wire`
+    //!    → `.relation().unwrap().to_wire()`. The bare wire and the
+    //!    classification wire never diverge on the value-side origin.
+    //! 8. The impossibility bucket has no wire-side counterpart — the
+    //!    three (`false`, class-moved) impossibility corners
+    //!    [`WatermarkDelta::relation`] filters to `None` are refused at
+    //!    the bare-watermark wire boundary via
+    //!    [`WatermarkDelta::try_from_wire`], so a producer of a
+    //!    [`WatermarkRelationWire`] has no legitimate path to encoding
+    //!    the impossibility (matching the module-level "impossibility
+    //!    bucket travels as `Option::None`, not a variant" doc pin).
+    //! 9. The five wire variants exhaustively cover the five value-side
+    //!    variants — iterating a hand-authored list reaches each wire
+    //!    variant exactly once; any future addition to
+    //!    [`WatermarkRelation`] forces a matching wire-side variant.
+    //! 10. `MovedWatermarkDelta`'s payload composes coherently with this
+    //!     wire projection: a [`ProofRelationWire::Progression`] payload
+    //!     round-tripped through [`ProofRelation::try_from_wire`] reaches
+    //!     the same [`WatermarkRelationWire`] the value-side path does,
+    //!     welding the two altitudes' wire vocabularies to one
+    //!     classification.
+    //!
+    //! Same test idiom as [`watermark_relation_tests`] (the value-side
+    //! peer) and [`proof_relation_wire_tests`] (the wire-side peer one
+    //! altitude up), so a future refactor that touches one of the four
+    //! classification surfaces surfaces consistent breakage across all
+    //! four.
+
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    // A Cfg with an EXTRA field NOT covered by FIELD_CLASSES_UNCLASSIFIED
+    // below — an edit to `release_channel` moves the full watermark
+    // without moving either class-scoped half, the only path to the
+    // UnclassifiedDrift corner via an authored config edit.
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct CfgUnclassified {
+        log_level: String,
+        bind_addr: String,
+        release_channel: String,
+    }
+
+    const FIELD_CLASSES_UNCLASSIFIED: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn base_unclassified() -> CfgUnclassified {
+        CfgUnclassified {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+            release_channel: "stable".into(),
+        }
+    }
+
+    fn unclassified_edit() -> CfgUnclassified {
+        let mut c = base_unclassified();
+        c.release_channel = "beta".into();
+        c
+    }
+
+    fn wm_of_unclassified(c: &CfgUnclassified) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES_UNCLASSIFIED)
+    }
+
+    /// Every one of the five [`WatermarkRelation`] variants, in the
+    /// same order the value-side enum declares them. Used to pin
+    /// exhaustive coverage across the wire projection.
+    const EVERY_VARIANT: [WatermarkRelation; 5] = [
+        WatermarkRelation::Stationary,
+        WatermarkRelation::UnclassifiedDrift,
+        WatermarkRelation::RestartRequiredOnly,
+        WatermarkRelation::FreeOnly,
+        WatermarkRelation::Both,
+    ];
+
+    /// The wire counterpart of [`EVERY_VARIANT`] — hand-authored so a
+    /// future refactor that reorders or renames a wire variant turns
+    /// red at every pin here.
+    const EVERY_WIRE_VARIANT: [WatermarkRelationWire; 5] = [
+        WatermarkRelationWire::Stationary,
+        WatermarkRelationWire::UnclassifiedDrift,
+        WatermarkRelationWire::RestartRequiredOnly,
+        WatermarkRelationWire::FreeOnly,
+        WatermarkRelationWire::Both,
+    ];
+
+    // ---------- Mechanical mirror ----------
+
+    #[test]
+    fn to_wire_is_a_mechanical_mirror_on_every_variant() {
+        for (v, w) in EVERY_VARIANT.iter().zip(EVERY_WIRE_VARIANT.iter()) {
+            assert_eq!(v.to_wire(), *w, "to_wire mismatch on {v:?}");
+        }
+    }
+
+    #[test]
+    fn from_wire_is_the_total_inverse_of_to_wire() {
+        for v in EVERY_VARIANT {
+            assert_eq!(WatermarkRelation::from_wire(&v.to_wire()), v);
+        }
+    }
+
+    // ---------- JSON round-trip ----------
+
+    #[test]
+    fn the_wire_shape_round_trips_through_json() {
+        for w in EVERY_WIRE_VARIANT {
+            let json = serde_json::to_string(&w).expect("serialize");
+            let back: WatermarkRelationWire = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(w, back, "JSON round-trip mismatch: {json}");
+        }
+    }
+
+    #[test]
+    fn the_wire_uses_internally_tagged_kind_with_camel_case_tags() {
+        // Pin: the wire uses serde's internally-tagged shape with a
+        // `kind` discriminator, so a consumer routes on a fixed JSON
+        // path (`.kind`) rather than a variant-shaped wrapping
+        // envelope. Tag values are camelCase (matching the sibling
+        // wire types' vocabulary).
+        let cases: &[(WatermarkRelationWire, &str)] = &[
+            (WatermarkRelationWire::Stationary, "stationary"),
+            (
+                WatermarkRelationWire::UnclassifiedDrift,
+                "unclassifiedDrift",
+            ),
+            (
+                WatermarkRelationWire::RestartRequiredOnly,
+                "restartRequiredOnly",
+            ),
+            (WatermarkRelationWire::FreeOnly, "freeOnly"),
+            (WatermarkRelationWire::Both, "both"),
+        ];
+        for (w, tag) in cases {
+            let json = serde_json::to_string(w).unwrap();
+            assert!(
+                json.contains(&format!("\"kind\":\"{tag}\"")),
+                "missing kind={tag} in {json}",
+            );
+        }
+    }
+
+    #[test]
+    fn snake_case_and_externally_tagged_forms_are_absent_from_the_wire() {
+        // Snake_case tag renames and serde's default externally-tagged
+        // envelope have been silent regression sources on the sibling
+        // wire types; pin BOTH absences so a stray `rename_all` swap
+        // OR a stray removal of `tag = "kind"` turns red on this wire
+        // too.
+        for w in EVERY_WIRE_VARIANT {
+            let json = serde_json::to_string(&w).unwrap();
+            for snake in ["unclassified_drift", "restart_required_only", "free_only"] {
+                assert!(
+                    !json.contains(snake),
+                    "snake_case tag leaked into wire: {snake} in {json}",
+                );
+            }
+            // Externally-tagged would be `{"stationary":null}` etc; pin
+            // that the JSON always starts with `{"kind":"..."`.
+            assert!(
+                json.starts_with(r#"{"kind":""#),
+                "wire must start with kind tag: {json}",
+            );
+        }
+    }
+
+    #[test]
+    fn every_variant_serializes_to_kind_alone_with_no_payload_fields() {
+        // Every variant is payload-free, so the exact JSON is
+        // `{"kind":"<camelCase>"}` and nothing more. An accidental
+        // refactor that adds a field to one variant without a
+        // corresponding wire migration turns red here.
+        let expected: &[(WatermarkRelationWire, &str)] = &[
+            (
+                WatermarkRelationWire::Stationary,
+                r#"{"kind":"stationary"}"#,
+            ),
+            (
+                WatermarkRelationWire::UnclassifiedDrift,
+                r#"{"kind":"unclassifiedDrift"}"#,
+            ),
+            (
+                WatermarkRelationWire::RestartRequiredOnly,
+                r#"{"kind":"restartRequiredOnly"}"#,
+            ),
+            (WatermarkRelationWire::FreeOnly, r#"{"kind":"freeOnly"}"#),
+            (WatermarkRelationWire::Both, r#"{"kind":"both"}"#),
+        ];
+        for (w, want) in expected {
+            let json = serde_json::to_string(w).unwrap();
+            assert_eq!(&json, want, "unexpected JSON for {w:?}");
+        }
+    }
+
+    // ---------- From / Into agreement ----------
+
+    #[test]
+    fn from_impls_agree_with_named_methods() {
+        // A consumer reaching the wire through the standard `Into`
+        // idiom gets the same shape as one calling the named methods.
+        for v in EVERY_VARIANT {
+            let via_method: WatermarkRelationWire = v.to_wire();
+            let via_from: WatermarkRelationWire = v.into();
+            assert_eq!(via_method, via_from, "From/to_wire mismatch on {v:?}");
+        }
+        for w in EVERY_WIRE_VARIANT {
+            let via_method = WatermarkRelation::from_wire(&w);
+            let via_from: WatermarkRelation = (&w).into();
+            assert_eq!(via_method, via_from, "From/from_wire mismatch on {w:?}");
+        }
+    }
+
+    // ---------- Fixed-point round-trips ----------
+
+    #[test]
+    fn value_to_wire_to_value_is_a_fixed_point_on_every_variant() {
+        for v in EVERY_VARIANT {
+            let back = WatermarkRelation::from_wire(&v.to_wire());
+            assert_eq!(back, v, "value round-trip broke on {v:?}");
+        }
+    }
+
+    #[test]
+    fn wire_to_value_to_wire_is_a_fixed_point_on_every_variant() {
+        for w in EVERY_WIRE_VARIANT {
+            let back = WatermarkRelation::from_wire(&w).to_wire();
+            assert_eq!(back, w, "wire round-trip broke on {w:?}");
+        }
+    }
+
+    // ---------- Predicate survival across the wire ----------
+
+    #[test]
+    fn every_variant_side_predicate_survives_the_wire_round_trip() {
+        // Iterate every variant; check that every predicate on the
+        // value-side classification agrees with the same predicate on
+        // the value reconstructed from the wire. Welds "the wire is a
+        // lossless channel for the classification vocabulary a
+        // consumer routes on."
+        for v in EVERY_VARIANT {
+            let back = WatermarkRelation::from_wire(&v.to_wire());
+            assert_eq!(
+                back.any_moved(),
+                v.any_moved(),
+                "any_moved must survive wire on {v:?}",
+            );
+            assert_eq!(
+                back.stationary(),
+                v.stationary(),
+                "stationary must survive wire on {v:?}",
+            );
+            assert_eq!(
+                back.restart_pending(),
+                v.restart_pending(),
+                "restart_pending must survive wire on {v:?}",
+            );
+            assert_eq!(
+                back.hot_swappable_drift(),
+                v.hot_swappable_drift(),
+                "hot_swappable_drift must survive wire on {v:?}",
+            );
+            assert_eq!(
+                back.partitioned_class_invariant_holds(),
+                v.partitioned_class_invariant_holds(),
+                "partitioned_class_invariant_holds must survive wire on {v:?}",
+            );
+        }
+    }
+
+    // ---------- Two-altitude composition ----------
+
+    #[test]
+    fn classification_wire_agrees_with_bare_delta_wire_then_classify() {
+        // Pin: on every legitimate delta reachable via
+        // WatermarkDelta::between, `delta.relation().unwrap().to_wire()`
+        // agrees with the two-hop composition
+        // `delta.to_wire() -> try_from_wire -> relation().unwrap().to_wire()`.
+        // The bare-watermark wire and the classification wire never
+        // diverge on the value-side origin — one classification
+        // vocabulary across the two wire altitudes.
+        let cases: Vec<(WatermarkDelta, WatermarkRelationWire)> = vec![
+            (
+                WatermarkDelta::between(&wm_of(&base()), &wm_of(&base())),
+                WatermarkRelationWire::Stationary,
+            ),
+            (
+                WatermarkDelta::between(&wm_of(&base()), &wm_of(&free_edit())),
+                WatermarkRelationWire::FreeOnly,
+            ),
+            (
+                WatermarkDelta::between(&wm_of(&base()), &wm_of(&restart_edit())),
+                WatermarkRelationWire::RestartRequiredOnly,
+            ),
+            (
+                WatermarkDelta::between(&wm_of(&base()), &wm_of(&both_edit())),
+                WatermarkRelationWire::Both,
+            ),
+            (
+                WatermarkDelta::between(
+                    &wm_of_unclassified(&base_unclassified()),
+                    &wm_of_unclassified(&unclassified_edit()),
+                ),
+                WatermarkRelationWire::UnclassifiedDrift,
+            ),
+        ];
+        for (delta, expected_wire) in cases {
+            let direct = delta
+                .relation()
+                .expect("legitimate delta must classify")
+                .to_wire();
+            let bare_wire = delta.to_wire();
+            let via_bare_wire = WatermarkDelta::try_from_wire(&bare_wire)
+                .expect("legitimate delta round-trips through wire")
+                .relation()
+                .expect("round-tripped delta must classify")
+                .to_wire();
+            assert_eq!(
+                direct, expected_wire,
+                "direct classification wire wrong on {delta:?}",
+            );
+            assert_eq!(
+                via_bare_wire, expected_wire,
+                "two-hop classification wire wrong on {delta:?}",
+            );
+            assert_eq!(
+                direct, via_bare_wire,
+                "wire projections diverged between altitudes on {delta:?}",
+            );
+        }
+    }
+
+    // ---------- Impossibility bucket has no wire counterpart ----------
+
+    #[test]
+    fn no_wire_variant_reaches_a_classification_the_bare_wire_would_refuse() {
+        // The three (false, class-moved) impossibility corners
+        // WatermarkDelta::relation filters to None are refused at the
+        // bare-watermark wire boundary via WatermarkDelta::try_from_wire,
+        // so a producer of a WatermarkRelationWire has no legitimate
+        // path to encoding the impossibility. Pin: every possible
+        // WatermarkRelationWire deserializes into a variant whose
+        // predicates match SOME legitimate WatermarkDelta shape (i.e.
+        // the classification never lifts an impossibility corner into
+        // a wire variant).
+        let impossible = [
+            (false, true, false),
+            (false, false, true),
+            (false, true, true),
+        ];
+        for (full, restart, free) in impossible {
+            let d = WatermarkDelta {
+                full_moved: full,
+                restart_required_moved: restart,
+                free_moved: free,
+            };
+            assert_eq!(
+                d.relation(),
+                None,
+                "impossibility corner {d:?} must yield None"
+            );
+            let bare_wire = d.to_wire();
+            assert!(
+                WatermarkDelta::try_from_wire(&bare_wire).is_err(),
+                "bare wire must refuse the impossibility corner {d:?} that has no relation-wire",
+            );
+        }
+        // Every legitimate WatermarkRelationWire's reconstructed value
+        // is a variant whose class-partition invariant holds under
+        // WatermarkRelation::partitioned_class_invariant_holds, EXCEPT
+        // UnclassifiedDrift — the sole legitimate corner that fails
+        // the invariant. Pin the count so the impossibility-bucket
+        // omission is explicit: 4/5 wire variants satisfy the
+        // invariant, and none carries an impossibility shape.
+        let invariant_holders: usize = EVERY_WIRE_VARIANT
+            .iter()
+            .filter(|w| WatermarkRelation::from_wire(w).partitioned_class_invariant_holds())
+            .count();
+        assert_eq!(
+            invariant_holders, 4,
+            "exactly four wire variants satisfy the class-partition invariant",
+        );
+    }
+
+    // ---------- Exhaustiveness pins ----------
+
+    #[test]
+    fn the_five_wire_variants_are_reached_from_five_distinct_value_variants() {
+        // Pinning the count at 5 turns any future variant addition red
+        // — every new corner of the (fullMoved, restartRequiredMoved,
+        // freeMoved) grid needs a corresponding wire tag.
+        let seen: std::collections::BTreeSet<String> = EVERY_VARIANT
+            .iter()
+            .map(|v| serde_json::to_string(&v.to_wire()).unwrap())
+            .collect();
+        assert_eq!(
+            seen.len(),
+            5,
+            "five value variants must project to five distinct wire tags",
+        );
+    }
+
+    #[test]
+    fn every_wire_variant_round_trips_from_a_legitimate_value_variant() {
+        // Injective in both directions: every wire variant reaches
+        // back to exactly one value variant. Pinning both directions
+        // rules out an accidental collapse (two wire variants
+        // reconstructing to the same value) and an accidental orphan
+        // (a wire variant with no value-side origin).
+        let value_to_wire: std::collections::BTreeMap<String, String> = EVERY_VARIANT
+            .iter()
+            .map(|v| {
+                (
+                    format!("{v:?}"),
+                    serde_json::to_string(&v.to_wire()).unwrap(),
+                )
+            })
+            .collect();
+        let wire_to_value: std::collections::BTreeMap<String, String> = EVERY_WIRE_VARIANT
+            .iter()
+            .map(|w| {
+                (
+                    serde_json::to_string(w).unwrap(),
+                    format!("{:?}", WatermarkRelation::from_wire(w)),
+                )
+            })
+            .collect();
+        assert_eq!(value_to_wire.len(), 5);
+        assert_eq!(wire_to_value.len(), 5);
+        for (v, w) in &value_to_wire {
+            assert_eq!(
+                wire_to_value.get(w).map(String::as_str),
+                Some(v.as_str()),
+                "wire {w} did not reconstruct to value {v}",
+            );
+        }
+    }
+
+    // ---------- ProofRelationWire cross-altitude coherence ----------
+
+    #[test]
+    fn proof_relation_wire_progression_payload_agrees_with_the_classification_wire() {
+        // A ProofRelationWire::Progression's watermark payload
+        // reconstructs to a MovedWatermarkDelta whose .relation()
+        // reaches the same WatermarkRelationWire as the value-side
+        // path does. Welds the two altitudes' wire vocabularies to
+        // ONE classification.
+        use std::time::{Duration, UNIX_EPOCH};
+        let prior = ConfigSyncProof {
+            watermark: wm_of(&base()),
+            generation: 1,
+            observed_at: UNIX_EPOCH,
+        };
+        let current = ConfigSyncProof {
+            watermark: wm_of(&both_edit()),
+            generation: 2,
+            observed_at: UNIX_EPOCH + Duration::from_secs(1),
+        };
+        let value_side = ProofRelation::between(&prior, &current);
+        let ProofRelation::Progression { watermark, .. } = value_side else {
+            panic!("both-classes edit + generation advance must land in Progression");
+        };
+        let value_wire = watermark
+            .relation()
+            .expect("MovedWatermarkDelta always classifies")
+            .to_wire();
+        // Round-trip through the ProofRelationWire boundary and
+        // classify from the reconstructed payload.
+        let proof_wire = value_side.to_wire();
+        let ProofRelationWire::Progression { watermark: ww, .. } = proof_wire else {
+            panic!("Progression must project to Progression");
+        };
+        let via_wire = MovedWatermarkDelta::try_from_wire(&ww)
+            .expect("legitimate progression watermark round-trips")
+            .relation()
+            .expect("round-tripped MovedWatermarkDelta always classifies")
+            .to_wire();
+        assert_eq!(value_wire, WatermarkRelationWire::Both);
+        assert_eq!(via_wire, value_wire);
     }
 }
