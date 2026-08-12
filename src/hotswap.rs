@@ -1945,6 +1945,70 @@ impl ProofRelation {
             Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. } => None,
         }
     }
+
+    /// The forward-progression generation count iff this classification
+    /// carries one — `Some(generations)` on [`Self::Progression`] and
+    /// [`Self::IdentityRepublish`] (the two variants whose payload field
+    /// is named `generations`), [`Option::None`] on the three variants
+    /// without a forward-progression count ([`Self::Stationary`],
+    /// [`Self::CrossStore`], [`Self::Regressed`]).
+    ///
+    /// **The sibling accessor to [`Self::watermark`] for the OTHER payload
+    /// axis of the classification grid.** [`Self::watermark`] surfaces the
+    /// class-scoped watermark payload iff the variant carries one;
+    /// `generations` surfaces the forward-progression generation count
+    /// iff the variant carries one. Together the two accessors close the
+    /// (watermark, generations) × (present, absent) payload matrix at the
+    /// classification altitude — a consumer that wants to route on either
+    /// payload reaches it through one `const`-callable receiver call
+    /// instead of the two-arm `if let` a hand-written match would demand.
+    ///
+    /// **[`Self::Regressed`] deliberately returns [`Option::None`].** The
+    /// `Regressed { by }` variant carries a distinct field — `by`,
+    /// semantically "how many generations the counter went **backwards**"
+    /// — not a forward-progression count. Collapsing forward and backward
+    /// magnitudes under one accessor would erase the sign information the
+    /// classification carries: a consumer asking "how many publishes did
+    /// I miss?" wants only forward advances, and a consumer asking "did
+    /// the counter go backwards, and by how much?" already reaches the
+    /// answer through a `match` on [`Self::Regressed`] whose field name
+    /// is `by`. A future sibling accessor `regressed_by()` could surface
+    /// the backward magnitude at the same receiver-family altitude with
+    /// the same [`Option<std::num::NonZeroU64>`] shape, without polluting
+    /// this one.
+    ///
+    /// **The [`std::num::NonZeroU64`] weld survives the accessor.** The
+    /// return type is [`Option<std::num::NonZeroU64>`], not
+    /// [`Option<u64>`] — the "a zero-count republish is indistinguishable
+    /// from [`Self::Stationary`]; a zero-count progression is
+    /// indistinguishable from [`Self::CrossStore`]" invariant welded at
+    /// the two variants' field
+    /// shapes travels with the returned value, so a consumer reading
+    /// `relation.generations().map(std::num::NonZeroU64::get)` knows the
+    /// unwrapped `u64` is strictly positive by construction. The wire-
+    /// side sibling ([`ProofRelationWire::generations`]) returns
+    /// [`Option<u64>`] because the wire type does NOT weld nonzero at
+    /// the field shape — the weld is applied at parse time inside
+    /// [`ProofRelation::try_from_wire`].
+    ///
+    /// The exhaustive `match` in the body pins the same load-bearing
+    /// invariant the sum-type's field shapes weld: adding a sixth variant
+    /// to [`ProofRelation`] turns every consumer of this accessor red at
+    /// compile time so the "which variants carry a forward-progression
+    /// count?" answer never drifts silently.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`] projects
+    /// at compile time too, matching the `const`-ness of [`Self::watermark`]
+    /// and every other accessor in this impl.
+    #[must_use]
+    pub const fn generations(&self) -> Option<std::num::NonZeroU64> {
+        match *self {
+            Self::IdentityRepublish { generations } | Self::Progression { generations, .. } => {
+                Some(generations)
+            }
+            Self::Stationary | Self::CrossStore { .. } | Self::Regressed { .. } => None,
+        }
+    }
 }
 
 /// The **wire projection** of a [`ProofRelation`] — the sum-type peer of
@@ -2212,6 +2276,55 @@ impl ProofRelationWire {
         match self {
             Self::Progression { watermark, .. } | Self::CrossStore { watermark } => Some(watermark),
             Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. } => None,
+        }
+    }
+
+    /// The forward-progression generation count iff this classification
+    /// carries one — the wire-side receiver-sibling of
+    /// [`ProofRelation::generations`], returning `Some(generations)` on
+    /// [`Self::Progression`] and [`Self::IdentityRepublish`] and
+    /// [`Option::None`] on the three variants without a forward-
+    /// progression count ([`Self::Stationary`], [`Self::CrossStore`],
+    /// [`Self::Regressed`]).
+    ///
+    /// **Why the return type is [`Option<u64>`], not
+    /// [`Option<std::num::NonZeroU64>`].** The wire type does NOT weld
+    /// the [`std::num::NonZeroU64`] "a zero-count republish is
+    /// indistinguishable from [`Self::Stationary`]; a zero-count
+    /// progression is indistinguishable from [`Self::CrossStore`]"
+    /// invariant at the field shape —
+    /// serde has no [`std::num::NonZeroU64`] representation distinct from
+    /// [`u64`], and that weld is applied one seam later at parse time,
+    /// inside [`ProofRelation::try_from_wire`], where each generation-
+    /// carrying arm routes its `u64` through [`std::num::NonZeroU64::new`].
+    /// The accessor here surfaces the pre-parse shape a serde
+    /// deserializer hands the consumer at first sight, so a healthcheck
+    /// reader that only wants to count observed forward advances
+    /// (regardless of whether the value moved) reaches them WITHOUT
+    /// re-invoking the parse-time weld. A consumer that wants the welded
+    /// value form should follow the standard `try_from_wire` seam
+    /// already established one altitude up.
+    ///
+    /// **Same-shape invariant with [`ProofRelation::generations`].** For
+    /// every legitimate value/wire pair the two accessors agree pointwise
+    /// on the `Some`/`None` shape and on the payload magnitude: whenever
+    /// `relation.generations()` is `Some(g)`,
+    /// `relation.to_wire().generations()` is also `Some(g.get())`; on the
+    /// three payload-free variants both return `None`. The property is
+    /// exercised by the tests in the `proof_relation_generations_tests`
+    /// submodule.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects at compile time too, matching the `const`-ness of
+    /// [`ProofRelation::generations`] one altitude up and of every other
+    /// classification accessor in the file.
+    #[must_use]
+    pub const fn generations(&self) -> Option<u64> {
+        match *self {
+            Self::IdentityRepublish { generations } | Self::Progression { generations, .. } => {
+                Some(generations)
+            }
+            Self::Stationary | Self::CrossStore { .. } | Self::Regressed { .. } => None,
         }
     }
 }
@@ -9609,6 +9722,436 @@ mod proof_relation_watermark_tests {
                 }
                 ProofRelation::Regressed { .. } => {
                     assert!(relation.watermark().is_none(), "Regressed must be None",);
+                    seen_regressed = true;
+                }
+            }
+        }
+        assert!(seen_stationary, "must reach ProofRelation::Stationary");
+        assert!(
+            seen_identity_republish,
+            "must reach ProofRelation::IdentityRepublish",
+        );
+        assert!(seen_progression, "must reach ProofRelation::Progression");
+        assert!(seen_crossstore, "must reach ProofRelation::CrossStore");
+        assert!(seen_regressed, "must reach ProofRelation::Regressed");
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_generations_tests {
+    //! Weld the forward-progression generation-count accessor
+    //! ([`ProofRelation::generations`]) and its wire-side sibling
+    //! ([`ProofRelationWire::generations`]) — the typed one-liner
+    //! sibling to [`ProofRelation::watermark`] for the OTHER payload
+    //! axis of the classification grid, so a consumer holding a
+    //! [`ProofRelation`] and wanting the forward-progression count
+    //! reaches it through one `const`-callable receiver call instead of
+    //! the two-arm `if let ProofRelation::IdentityRepublish { generations }
+    //! | ProofRelation::Progression { generations, .. } = &relation
+    //! { ... } else { ... }` a hand-written match would demand.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Some/None shape by variant identity — [`ProofRelation::generations`]
+    //!    is `Some` on the two forward-progression variants
+    //!    ([`ProofRelation::IdentityRepublish`], [`ProofRelation::Progression`])
+    //!    and [`Option::None`] on the three variants without a forward-
+    //!    progression count ([`ProofRelation::Stationary`],
+    //!    [`ProofRelation::CrossStore`], [`ProofRelation::Regressed`]).
+    //!    Pinned at both altitudes.
+    //! 2. Same-Some/None invariant across altitudes — for every
+    //!    [`ProofRelation`] value the two altitude accessors agree
+    //!    pointwise on presence AND, when both return `Some`, the wire
+    //!    magnitude equals the value-side magnitude via
+    //!    [`std::num::NonZeroU64::get`]. Catches a divergence a
+    //!    same-shape-only assertion would miss.
+    //! 3. [`ProofRelation::Regressed`] deliberately returns `None` — the
+    //!    variant carries a distinct backward-magnitude field (`by`), not
+    //!    a forward-progression count. Payload magnitude on `by` (3 in
+    //!    the fixture) does NOT leak into the accessor's `Some` set,
+    //!    pinning the semantic distinction the accessor's docstring
+    //!    names.
+    //! 4. Round-trip through [`ProofRelation::try_from_wire`] preserves
+    //!    the forward-progression count — the reconstructed relation
+    //!    carries the same [`std::num::NonZeroU64`] the original does, so
+    //!    a wire consumer that follows the standard parse seam surfaces
+    //!    a count equal to the one the producer's
+    //!    [`ProofRelation::generations`] reached.
+    //! 5. Composition with [`ProofDelta::relation`] — on the four
+    //!    legitimate corners reachable from a delta,
+    //!    `delta.relation().and_then(|r| r.generations())` equals the
+    //!    count accessed via
+    //!    `ProofRelation::between(&prior, &current).generations()`.
+    //!    Cross-altitude coherence pinned on the count accessor across
+    //!    both the delta-fold and the direct proof-pair classification
+    //!    paths.
+    //! 6. The [`std::num::NonZeroU64`] weld survives — whenever the
+    //!    value-side accessor returns `Some(n)`, `n.get() >= 1`. The
+    //!    weld the sum-type's field shape carries travels with the
+    //!    accessor's return type and is not lost at the receiver
+    //!    boundary. On the wire side a `Some(u)` produced from a
+    //!    legitimate value satisfies `u >= 1` bitwise for the same
+    //!    reason.
+    //! 7. Payload orthogonality with [`ProofRelation::watermark`] — the
+    //!    two accessors surface distinct payload axes: on [`ProofRelation::Progression`]
+    //!    both return `Some`, on [`ProofRelation::IdentityRepublish`]
+    //!    only `generations` is `Some`, on [`ProofRelation::CrossStore`]
+    //!    only `watermark` is `Some`, and on the two variants without
+    //!    either payload ([`ProofRelation::Stationary`],
+    //!    [`ProofRelation::Regressed`]) both return `None`. Pins the
+    //!    (watermark, generations) × (present, absent) matrix at compile
+    //!    time by exhausting the variant fixture.
+    //! 8. `const`-callable on both altitudes — a compile-time-known
+    //!    [`ProofRelation`] / [`ProofRelationWire`] projects its count
+    //!    at compile time too, matching the `const`-ness of every other
+    //!    classification accessor in the file.
+    //! 9. All five variants of [`ProofRelation`] are explicitly enumerated
+    //!    — adding a sixth variant fails to compile at the exhaustive
+    //!    `match` in the accessor body AND at every enumeration test
+    //!    below that names the five current variants by tag.
+    //!
+    //! Fixtures build hand-authored [`ProofRelation`] values directly
+    //! rather than routing through [`ProofRelation::between`] on
+    //! [`ConfigWatermark::compute`]-style proof pairs. That gives the
+    //! [`ProofRelation::Regressed`] variant reachable coverage and keeps
+    //! each test's setup local to the property it pins.
+    #![allow(clippy::needless_pass_by_value)]
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    /// A [`MovedWatermarkDelta`] whose all three axes moved — the widest
+    /// legitimate payload, spelled through the constructor so the "at
+    /// least one class-scoped half moved" invariant lands at the type.
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    /// A [`MovedWatermarkDelta`] where only the Free class-scoped half
+    /// moved. Distinct payload shape from `moved_all` so a test that
+    /// compares payload magnitudes across altitudes catches an accidental
+    /// swap between the two variants' watermark fields.
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    /// Every [`ProofRelation`] variant, hand-constructed with a distinct
+    /// count where variants carry one. `IdentityRepublish` uses
+    /// `generations = 1`, `Progression` uses `generations = 2`,
+    /// `Regressed` uses `by = 3` — three distinct magnitudes so an
+    /// accidental variant swap on the accessor `match` arms surfaces as
+    /// a wrong count, not a still-passing test.
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    // ---------- (1) Some/None shape by variant identity
+
+    #[test]
+    fn generations_returns_some_on_forward_variants_none_on_the_rest_at_both_altitudes() {
+        for (name, relation) in all_five_relations() {
+            let expect_some = matches!(
+                relation,
+                ProofRelation::IdentityRepublish { .. } | ProofRelation::Progression { .. }
+            );
+            assert_eq!(
+                relation.generations().is_some(),
+                expect_some,
+                "{name}: ProofRelation::generations Some/None must match variant identity",
+            );
+            assert_eq!(
+                relation.to_wire().generations().is_some(),
+                expect_some,
+                "{name}: ProofRelationWire::generations Some/None must match variant identity",
+            );
+        }
+    }
+
+    // ---------- (2) same-Some/None invariant across altitudes AND magnitude agreement
+
+    #[test]
+    fn value_and_wire_altitudes_agree_on_presence_and_magnitude() {
+        for (name, relation) in all_five_relations() {
+            let value = relation.generations();
+            let wire = relation.to_wire().generations();
+            match (value, wire) {
+                (Some(v), Some(w)) => {
+                    assert_eq!(
+                        v.get(),
+                        w,
+                        "{name}: wire magnitude must equal value magnitude via NonZeroU64::get",
+                    );
+                }
+                (None, None) => {}
+                (a, b) => panic!(
+                    "{name}: Some/None shape must agree across altitudes, got value={a:?} \
+                     wire={b:?}",
+                ),
+            }
+        }
+    }
+
+    // ---------- (3) Regressed returns None even though it carries a NonZeroU64
+
+    #[test]
+    fn regressed_backward_magnitude_does_not_leak_into_generations() {
+        // The Regressed fixture uses `by = 3` — a strictly-positive
+        // NonZeroU64 that would satisfy a naive "return Some on any
+        // NonZeroU64 field" accessor. The accessor's semantic contract
+        // is FORWARD-progression only; Regressed's backward magnitude is
+        // deliberately excluded. Pinned here so a future edit that
+        // widened the accessor to include Regressed silently would fail
+        // the None assertion.
+        let regressed = ProofRelation::Regressed { by: nz(3) };
+        assert_eq!(
+            regressed.generations(),
+            None,
+            "Regressed::by (backward magnitude) must NOT leak into generations()",
+        );
+        assert_eq!(
+            regressed.to_wire().generations(),
+            None,
+            "ProofRelationWire::Regressed::by must NOT leak into generations() either",
+        );
+    }
+
+    // ---------- (4) round-trip through try_from_wire preserves the count
+
+    #[test]
+    fn round_trip_through_try_from_wire_preserves_the_generations_count() {
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            let back = ProofRelation::try_from_wire(&wire).unwrap_or_else(|e| {
+                panic!("{name}: try_from_wire must succeed on to_wire output, got {e:?}")
+            });
+            assert_eq!(
+                back.generations(),
+                relation.generations(),
+                "{name}: round-trip must preserve the generations count",
+            );
+        }
+    }
+
+    // ---------- (5) composition with ProofDelta::relation
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    #[test]
+    fn agrees_with_proof_delta_relation_generations_on_legitimate_corners() {
+        // On any authored proof pair, the count accessed via the
+        // delta-fold path (delta.relation().and_then(|r| r.generations()))
+        // equals the count accessed via the direct proof-pair
+        // classification path
+        // (ProofRelation::between(&prior, &current).generations()).
+        // Cross-altitude coherence pinned on the count accessor across
+        // both classification-reach paths.
+        let cases: [(&str, ConfigSyncProof, ConfigSyncProof); 4] = [
+            (
+                "Stationary",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 5, 1_700_000_060),
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 7, 1_700_000_060),
+            ),
+            (
+                "Progression",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 6, 1_700_000_060),
+            ),
+            (
+                "CrossStore",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 5, 1_700_000_060),
+            ),
+        ];
+        for (name, prior, current) in cases {
+            let delta_path = current
+                .delta_since(&prior)
+                .relation()
+                .and_then(|r| r.generations());
+            let direct_path = ProofRelation::between(&prior, &current).generations();
+            assert_eq!(
+                delta_path, direct_path,
+                "{name}: delta-fold and direct-classification paths must yield the same \
+                 generations count",
+            );
+        }
+    }
+
+    // ---------- (6) NonZeroU64 weld survives the accessor
+
+    #[test]
+    fn some_never_carries_a_zero_count_on_either_altitude() {
+        for (name, relation) in all_five_relations() {
+            if let Some(g) = relation.generations() {
+                assert!(
+                    g.get() >= 1,
+                    "{name}: value-side Some must carry NonZeroU64 (nonzero by construction)",
+                );
+            }
+            if let Some(g) = relation.to_wire().generations() {
+                // The wire type does NOT weld nonzero at the field shape.
+                // But the wire projection of a NonZeroU64 produced by
+                // ProofRelation::to_wire on a legitimate value must
+                // still be nonzero — the count is preserved bitwise
+                // across to_wire.
+                assert!(
+                    g >= 1,
+                    "{name}: wire-side Some produced from a legitimate value must be nonzero",
+                );
+            }
+        }
+    }
+
+    // ---------- (7) payload orthogonality with ProofRelation::watermark
+
+    #[test]
+    fn watermark_and_generations_close_the_payload_matrix_pointwise() {
+        // The (watermark, generations) × (present, absent) matrix, filled
+        // by variant. Adding a sixth variant to ProofRelation turns both
+        // this test and the two accessors' bodies red at the same
+        // instant.
+        for (name, relation) in all_five_relations() {
+            let wm_present = relation.watermark().is_some();
+            let gens_present = relation.generations().is_some();
+            let (expect_wm, expect_gens) = match relation {
+                ProofRelation::Stationary => (false, false),
+                ProofRelation::IdentityRepublish { .. } => (false, true),
+                ProofRelation::Progression { .. } => (true, true),
+                ProofRelation::CrossStore { .. } => (true, false),
+                ProofRelation::Regressed { .. } => (false, false),
+            };
+            assert_eq!(
+                (wm_present, gens_present),
+                (expect_wm, expect_gens),
+                "{name}: (watermark, generations) presence must match the payload matrix cell",
+            );
+        }
+    }
+
+    // ---------- (8) const-callable on both altitudes
+
+    #[test]
+    fn generations_is_const_callable_on_both_altitudes() {
+        const R_STATIONARY: ProofRelation = ProofRelation::Stationary;
+        const G_STATIONARY: Option<std::num::NonZeroU64> = R_STATIONARY.generations();
+        const R_STATIONARY_WIRE: ProofRelationWire = ProofRelationWire::Stationary;
+        const G_STATIONARY_WIRE: Option<u64> = R_STATIONARY_WIRE.generations();
+        assert!(G_STATIONARY.is_none());
+        assert!(G_STATIONARY_WIRE.is_none());
+    }
+
+    // ---------- (9) all five variants explicitly enumerated
+
+    #[test]
+    fn every_relation_variant_is_reached_and_classified_correctly() {
+        let mut seen_stationary = false;
+        let mut seen_identity_republish = false;
+        let mut seen_progression = false;
+        let mut seen_crossstore = false;
+        let mut seen_regressed = false;
+        for (_, relation) in all_five_relations() {
+            match relation {
+                ProofRelation::Stationary => {
+                    assert!(relation.generations().is_none(), "Stationary must be None");
+                    seen_stationary = true;
+                }
+                ProofRelation::IdentityRepublish { generations } => {
+                    assert_eq!(
+                        relation.generations(),
+                        Some(generations),
+                        "IdentityRepublish must surface its generations field",
+                    );
+                    seen_identity_republish = true;
+                }
+                ProofRelation::Progression { generations, .. } => {
+                    assert_eq!(
+                        relation.generations(),
+                        Some(generations),
+                        "Progression must surface its generations field",
+                    );
+                    seen_progression = true;
+                }
+                ProofRelation::CrossStore { .. } => {
+                    assert!(relation.generations().is_none(), "CrossStore must be None");
+                    seen_crossstore = true;
+                }
+                ProofRelation::Regressed { .. } => {
+                    assert!(relation.generations().is_none(), "Regressed must be None");
                     seen_regressed = true;
                 }
             }
