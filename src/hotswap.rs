@@ -530,6 +530,57 @@ impl WatermarkDelta {
             (false, _, _) => None,
         }
     }
+
+    /// The wire-side sibling of [`Self::relation`] — classifies this
+    /// delta into the [`WatermarkRelationWire`] sum and returns it
+    /// wrapped in the same `Option` shape [`Self::relation`] carries.
+    /// Composes `self.relation().map(|r| r.to_wire())` at one call,
+    /// spelled `const` (matching both [`Self::relation`] and
+    /// [`WatermarkRelation::to_wire`], neither of which allocates) so a
+    /// delta known at compile time projects to its classification wire
+    /// at compile time too.
+    ///
+    /// **Closes the delta-altitude (`bare`, `relation`) × (`value`,
+    /// `wire`) 2×2 grid.** Before this method the four cells were three-
+    /// quarters full at the delta altitude: the value-side bare
+    /// projection ([`Self::to_wire`] itself is delta → wire delta),
+    /// [`Self::relation`] (value/relation), and [`Self::to_wire`] again
+    /// covering value/wire. The wire/relation cell — reached from a
+    /// [`WatermarkDelta`] in ONE call to project the classification onto
+    /// the wire — previously required composing [`Self::relation`] with
+    /// [`WatermarkRelation::to_wire`] inline at every seam OR climbing
+    /// to [`ConfigWatermark::relation_wire_since`] (which requires two
+    /// watermark values, not just a delta). This method IS the
+    /// composition at the delta altitude, matching the shape
+    /// [`Self::to_wire`] already carries for the bare projection.
+    ///
+    /// **Same-`None` invariant with [`Self::relation`].** Returns `None`
+    /// on exactly the same three impossibility corners
+    /// ([`Self::relation`] filters — the class-scoped-moved-without-
+    /// `full_moved` shape [`Self::class_moves_imply_full_moved`]
+    /// refuses. A [`WatermarkDelta`] produced by [`Self::between`] on
+    /// two well-formed [`ConfigWatermark`] values, or reconstructed by
+    /// [`Self::try_from_wire`], never lands on `None` at either
+    /// method — the impossibility bucket travels as `Option::None` on
+    /// both value-side and wire-side, matching the module-level
+    /// "impossibility bucket travels as `Option::None`, not a variant"
+    /// doc pin.
+    ///
+    /// **Coherence with [`ConfigWatermark::relation_wire_since`].** For
+    /// any two [`ConfigWatermark`] values `prior` and `current`,
+    /// `current.delta_since(&prior).relation_wire()` equals
+    /// `current.relation_wire_since(&prior)` pointwise. The former
+    /// reaches the wire through the delta altitude, the latter through
+    /// the watermark-container altitude; both compose the same two
+    /// morphisms (`.relation()` then `.to_wire()`) at different
+    /// altitudes and reach the same wire.
+    #[must_use]
+    pub const fn relation_wire(&self) -> Option<WatermarkRelationWire> {
+        match self.relation() {
+            Some(r) => Some(r.to_wire()),
+            None => None,
+        }
+    }
 }
 
 /// An exhaustive sum-type classification of the
@@ -8044,5 +8095,381 @@ mod watermark_delta_wire_since_tests {
                 "sibling wire must be class-partition-consistent on {prior_cfg:?} -> {current_cfg:?}, got {wire:?}",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod watermark_delta_relation_wire_tests {
+    //! Weld the delta-altitude `relation_wire` sibling on
+    //! [`WatermarkDelta`] — the wire-side classification peer of
+    //! [`WatermarkDelta::relation`], closing the fourth (and final)
+    //! cell of the (`bare`, `relation`) × (`value`, `wire`) 2×2 grid at
+    //! the delta altitude. Mirrors the shape
+    //! [`ConfigWatermark::relation_wire_since`] carries one altitude up
+    //! at the watermark-container altitude, so the sibling-family shape
+    //! stays uniform across altitudes. Together the tests below cover:
+    //!
+    //! 1. [`WatermarkDelta::relation_wire`] composes through
+    //!    [`WatermarkDelta::relation`] + [`WatermarkRelation::to_wire`]
+    //!    — a future watermark-altitude classification variant added to
+    //!    [`WatermarkRelation`] never reaches this method's body;
+    //!    `relation` stays the single source of truth for the delta →
+    //!    value-relation classification, and [`WatermarkRelation::to_wire`]
+    //!    stays the single source of truth for its wire projection.
+    //! 2. Same-`None` invariant with [`WatermarkDelta::relation`]:
+    //!    [`WatermarkDelta::relation_wire`] returns `None` on exactly
+    //!    the same three class-partition-invariant-violating shapes
+    //!    [`WatermarkDelta::relation`] refuses, and returns `Some` on
+    //!    exactly the same five legitimate corners. The impossibility
+    //!    bucket travels as `Option::None` on both altitudes.
+    //! 3. Round-trip totality through [`WatermarkRelation::from_wire`]:
+    //!    every `Some(wire)` the sibling reaches on the authored flow
+    //!    reconstructs to the exact value-side relation
+    //!    [`WatermarkDelta::relation`] yields, so the wire projection
+    //!    composed with its inverse is the identity on the value-side
+    //!    relation.
+    //! 4. Cross-altitude coherence with
+    //!    [`ConfigWatermark::relation_wire_since`]: on any two
+    //!    [`ConfigWatermark`] values whose delta is the delta this
+    //!    sibling is called on, the wire reached through the delta
+    //!    altitude MUST equal the wire reached through the watermark-
+    //!    container altitude. Both altitudes compose the same two
+    //!    morphisms and reach the same wire tag pointwise.
+    //! 5. Reaches every legitimate corner in one call — `Stationary`,
+    //!    `UnclassifiedDrift`, `RestartRequiredOnly`, `FreeOnly`, `Both`
+    //!    — through the authored [`WatermarkDelta::between`] flow for
+    //!    four of them plus one hand-authored `UnclassifiedDrift`
+    //!    (`full_moved=true`, both class halves `false`), which
+    //!    `between` never produces on real config values but a
+    //!    consumer can construct through the `pub`-field constructor
+    //!    when partitioning is non-exhaustive.
+    //! 6. Impossibility corners map to `None` on the wire side too —
+    //!    the three (`full_moved=false`, class-scoped=`true`) tuples a
+    //!    consumer might hand-construct through the `pub`-field
+    //!    constructor land at `None`, matching
+    //!    [`WatermarkDelta::relation`]'s filtering behaviour on the
+    //!    same shapes.
+    //! 7. `const`-callable — a [`WatermarkDelta`] known at compile time
+    //!    projects to its classification wire at compile time too,
+    //!    matching the `const`-ness of both [`WatermarkDelta::relation`]
+    //!    and [`WatermarkRelation::to_wire`].
+    //!
+    //! Same test idiom as `watermark_delta_wire_since_tests` (the
+    //! watermark-container-altitude peer above), so a future refactor
+    //! touching either altitude's classification wire pipeline surfaces
+    //! breakage here too.
+
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn authored_pairs() -> [(Cfg, Cfg); 4] {
+        [
+            (base(), base()),
+            (base(), free_edit()),
+            (base(), restart_edit()),
+            (base(), both_edit()),
+        ]
+    }
+
+    // ---------- (1) composition through relation + WatermarkRelation::to_wire
+
+    #[test]
+    fn relation_wire_composes_through_relation_then_to_wire() {
+        // Pin (1): the delta-altitude classification-wire sibling MUST
+        // fold through WatermarkDelta::relation +
+        // WatermarkRelation::to_wire on every authored pair. A future
+        // watermark-altitude classification variant added to
+        // WatermarkRelation never reaches this method's body; relation
+        // stays the single source of truth for the delta →
+        // value-relation classification, and WatermarkRelation::to_wire
+        // stays the single source of truth for its wire projection.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let delta = current.delta_since(&prior);
+            assert_eq!(
+                delta.relation_wire(),
+                delta.relation().map(|r| r.to_wire()),
+                "relation_wire must equal relation().map(|r| r.to_wire()) on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (2) same-None invariant with relation
+
+    #[test]
+    fn relation_wire_is_some_iff_relation_is_some_on_authored_flow() {
+        // Pin (2a): on every WatermarkDelta the authored flow produces
+        // (via WatermarkDelta::between on well-formed ConfigWatermark
+        // values), both methods return Some — the class-partition
+        // invariant holds by construction, so the impossibility bucket
+        // never fires.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let delta = current.delta_since(&prior);
+            assert!(
+                delta.relation().is_some(),
+                "authored delta must have Some(relation): {prior_cfg:?} -> {current_cfg:?}",
+            );
+            assert!(
+                delta.relation_wire().is_some(),
+                "authored delta must have Some(relation_wire): {prior_cfg:?} -> {current_cfg:?}",
+            );
+            assert_eq!(
+                delta.relation().is_some(),
+                delta.relation_wire().is_some(),
+                "relation and relation_wire must have identical Some/None shape on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn relation_wire_is_none_on_the_same_three_impossibility_corners_as_relation() {
+        // Pin (2b): on the three (full_moved=false, class-scoped=true)
+        // impossibility corners a consumer can hand-construct through
+        // the pub-field constructor, relation_wire must land at None on
+        // the same shapes relation does. The impossibility bucket
+        // travels as Option::None on both altitudes.
+        let impossibility_corners = [
+            WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+        ];
+        for d in impossibility_corners {
+            assert!(
+                d.relation().is_none(),
+                "relation must refuse impossibility corner {d:?}",
+            );
+            assert!(
+                d.relation_wire().is_none(),
+                "relation_wire must refuse the same impossibility corner {d:?}",
+            );
+        }
+    }
+
+    // ---------- (3) round-trip totality through WatermarkRelation::from_wire
+
+    #[test]
+    fn round_trips_through_from_wire_to_the_same_value_side_relation() {
+        // Pin (3): every Some(wire) the sibling reaches on the authored
+        // flow reconstructs through WatermarkRelation::from_wire to the
+        // exact value-side relation WatermarkDelta::relation yields.
+        // The wire projection composed with its inverse is the identity
+        // on the value-side relation.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let delta = current.delta_since(&prior);
+            let wire = delta.relation_wire().unwrap_or_else(|| {
+                panic!("authored delta must have Some(relation_wire): {delta:?}")
+            });
+            let back = WatermarkRelation::from_wire(&wire);
+            assert_eq!(
+                Some(back),
+                delta.relation(),
+                "round-tripped wire must equal the value-side relation on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (4) cross-altitude coherence with ConfigWatermark::relation_wire_since
+
+    #[test]
+    fn agrees_with_watermark_container_altitude_sibling() {
+        // Pin (4): on any two ConfigWatermark values whose delta is the
+        // delta this sibling is called on, the wire reached through the
+        // delta altitude MUST equal
+        // ConfigWatermark::relation_wire_since (the watermark-
+        // container-altitude sibling). Both altitudes compose the same
+        // two morphisms (relation() then to_wire()) at different
+        // altitudes and reach the same wire tag pointwise.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let delta_altitude_wire = current.delta_since(&prior).relation_wire();
+            let container_altitude_wire = current.relation_wire_since(&prior);
+            assert_eq!(
+                delta_altitude_wire, container_altitude_wire,
+                "delta-altitude sibling must equal ConfigWatermark::relation_wire_since on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (5) reaches every legitimate corner in one call
+
+    #[test]
+    fn reaches_every_legitimate_relation_variant_in_one_call() {
+        // Pin (5): the sibling reaches a WatermarkRelationWire on every
+        // legitimate corner — Stationary, RestartRequiredOnly, FreeOnly,
+        // Both — through the authored WatermarkDelta::between flow, and
+        // reaches the fifth legitimate variant UnclassifiedDrift
+        // (full_moved=true, both class halves false) through a hand-
+        // authored delta a consumer can construct when partitioning is
+        // non-exhaustive. All five payload-free variants reachable in
+        // ONE call to relation_wire.
+        //
+        // Case row: (name, delta, want_wire).
+        type Case = (&'static str, WatermarkDelta, WatermarkRelationWire);
+        let cases: [Case; 5] = [
+            (
+                "Stationary",
+                current_from(base(), base()),
+                WatermarkRelationWire::Stationary,
+            ),
+            (
+                "FreeOnly",
+                current_from(base(), free_edit()),
+                WatermarkRelationWire::FreeOnly,
+            ),
+            (
+                "RestartRequiredOnly",
+                current_from(base(), restart_edit()),
+                WatermarkRelationWire::RestartRequiredOnly,
+            ),
+            (
+                "Both",
+                current_from(base(), both_edit()),
+                WatermarkRelationWire::Both,
+            ),
+            (
+                "UnclassifiedDrift",
+                WatermarkDelta {
+                    full_moved: true,
+                    restart_required_moved: false,
+                    free_moved: false,
+                },
+                WatermarkRelationWire::UnclassifiedDrift,
+            ),
+        ];
+        for (name, delta, want_wire) in cases {
+            let got = delta.relation_wire();
+            assert_eq!(
+                got,
+                Some(want_wire),
+                "{name}: relation_wire must reach {want_wire:?} on {delta:?}",
+            );
+        }
+    }
+
+    fn current_from(prior_cfg: Cfg, current_cfg: Cfg) -> WatermarkDelta {
+        let prior = wm_of(&prior_cfg);
+        let current = wm_of(&current_cfg);
+        current.delta_since(&prior)
+    }
+
+    // ---------- (6) impossibility corners map to None on the wire side too
+
+    #[test]
+    fn impossibility_corners_map_to_none_on_both_altitudes() {
+        // Pin (6): every (full_moved=false, class-scoped=true) tuple a
+        // consumer might hand-construct through the pub-field
+        // constructor lands at None on both relation and relation_wire.
+        // Enumerated by hand rather than through between() because
+        // between() on two well-formed ConfigWatermark values never
+        // produces these shapes (a class-scoped hash's input is a
+        // subset of the full hash's input, so moving the smaller input
+        // implies moving the larger one — see
+        // WatermarkDelta::class_moves_imply_full_moved).
+        for (rr, free) in [(true, false), (false, true), (true, true)] {
+            let d = WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: rr,
+                free_moved: free,
+            };
+            assert!(
+                !d.class_moves_imply_full_moved(),
+                "sanity: {d:?} must violate class_moves_imply_full_moved",
+            );
+            assert_eq!(
+                d.relation(),
+                None,
+                "relation must map impossibility corner to None: {d:?}",
+            );
+            assert_eq!(
+                d.relation_wire(),
+                None,
+                "relation_wire must map the same impossibility corner to None: {d:?}",
+            );
+        }
+    }
+
+    // ---------- (7) const-callable
+
+    #[test]
+    fn relation_wire_is_const_callable() {
+        // Pin (7): a WatermarkDelta known at compile time projects to
+        // its classification wire at compile time too, matching the
+        // const-ness of both WatermarkDelta::relation and
+        // WatermarkRelation::to_wire. Assign to a `const` binding so
+        // the const-ness of relation_wire fails to compile at this
+        // exact line the moment either half of the composition loses
+        // its const-ness — a compile-time weld on the const-callability
+        // of the whole classification-wire pipeline.
+        const D: WatermarkDelta = WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: false,
+        };
+        const W: Option<WatermarkRelationWire> = D.relation_wire();
+        assert_eq!(W, Some(WatermarkRelationWire::RestartRequiredOnly));
     }
 }
