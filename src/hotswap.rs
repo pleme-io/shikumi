@@ -1890,6 +1890,61 @@ impl ProofRelation {
             Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. }
         )
     }
+
+    /// The class-scoped watermark payload iff this classification carries
+    /// one — `Some(&watermark)` on [`Self::Progression`] and
+    /// [`Self::CrossStore`] (the two variants whose payloads weld the
+    /// [`MovedWatermarkDelta`] invariant at the field shape),
+    /// [`Option::None`] on the three payload-free variants
+    /// ([`Self::Stationary`], [`Self::IdentityRepublish`],
+    /// [`Self::Regressed`]).
+    ///
+    /// **The typed accessor for the two payload-carrying corners of the
+    /// classification grid.** Before this receiver, a consumer holding a
+    /// [`ProofRelation`] and wanting to route on the watermark payload's
+    /// class-scoped questions ([`WatermarkDelta::restart_pending`],
+    /// [`WatermarkDelta::hot_swappable_drift`],
+    /// [`WatermarkDelta::any_moved`], etc.) hand-wrote the two-arm `if
+    /// let` at every seam:
+    ///
+    /// ```ignore
+    /// let restart = if let ProofRelation::Progression { watermark, .. }
+    ///     | ProofRelation::CrossStore { watermark } = &relation
+    /// {
+    ///     watermark.restart_pending()
+    /// } else {
+    ///     false
+    /// };
+    /// ```
+    ///
+    /// The accessor collapses that to a one-liner using standard
+    /// [`Option`] combinators and the `Deref<Target = WatermarkDelta>` on
+    /// [`MovedWatermarkDelta`]:
+    ///
+    /// ```ignore
+    /// let restart = relation.watermark().is_some_and(|w| w.restart_pending());
+    /// ```
+    ///
+    /// The exhaustive `match` in the body pins the same load-bearing
+    /// invariant the sum-type's field shapes weld: adding a sixth
+    /// variant to [`ProofRelation`] turns every consumer of this
+    /// accessor red at compile time so the "which variants carry a
+    /// watermark payload?" answer never drifts silently.
+    ///
+    /// `const`-callable through the field pattern — a compile-time-known
+    /// [`ProofRelation`] projects at compile time too, matching the
+    /// `const`-ness of every other accessor in this impl.
+    ///
+    /// The wire-side sibling is [`ProofRelationWire::watermark`], which
+    /// returns the raw [`WatermarkDeltaWire`] the pre-parse serde
+    /// deserializer hands the consumer.
+    #[must_use]
+    pub const fn watermark(&self) -> Option<&MovedWatermarkDelta> {
+        match self {
+            Self::Progression { watermark, .. } | Self::CrossStore { watermark } => Some(watermark),
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. } => None,
+        }
+    }
 }
 
 /// The **wire projection** of a [`ProofRelation`] — the sum-type peer of
@@ -2113,6 +2168,50 @@ impl ProofRelation {
                 })?;
                 Ok(Self::Regressed { by })
             }
+        }
+    }
+}
+
+impl ProofRelationWire {
+    /// The wire watermark payload iff this classification carries one —
+    /// the wire-side receiver-sibling of [`ProofRelation::watermark`],
+    /// returning `Some(&WatermarkDeltaWire)` on [`Self::Progression`] and
+    /// [`Self::CrossStore`] and [`Option::None`] on the three payload-
+    /// free variants ([`Self::Stationary`], [`Self::IdentityRepublish`],
+    /// [`Self::Regressed`]).
+    ///
+    /// **Why the return type is [`WatermarkDeltaWire`], not
+    /// [`MovedWatermarkDelta`].** The wire type does NOT weld the
+    /// [`MovedWatermarkDelta`] "at least one class-scoped half moved"
+    /// invariant at the field shape — that weld is applied one seam
+    /// later at parse time, inside [`ProofRelation::try_from_wire`],
+    /// where the wire payload routes through
+    /// [`MovedWatermarkDelta::try_from_wire`]. The accessor here surfaces
+    /// the pre-parse shape a serde deserializer hands the consumer at
+    /// first sight, so a healthcheck reader that only wants to route on
+    /// the wire payload's own predicates (`watermark.full_moved`, etc.)
+    /// reaches them WITHOUT re-invoking the parse-time weld. A consumer
+    /// that wants the welded value form should follow the standard
+    /// `try_from_wire` seam already established one altitude up.
+    ///
+    /// **Same-shape invariant with [`ProofRelation::watermark`].** For
+    /// every legitimate value / wire pair the two accessors agree
+    /// pointwise on the `Some`/`None` shape: whenever
+    /// `relation.watermark()` is `Some`, `relation.to_wire().watermark()`
+    /// is also `Some` and equals the wire projection of the value-side
+    /// payload; on the three payload-free variants both return `None`.
+    /// The property is exercised by the tests in the
+    /// `proof_relation_watermark_tests` submodule.
+    ///
+    /// `const`-callable through the field pattern — a compile-time-known
+    /// [`ProofRelationWire`] projects at compile time too, matching the
+    /// `const`-ness of [`ProofRelation::watermark`] one altitude up and
+    /// of every other classification method in the file.
+    #[must_use]
+    pub const fn watermark(&self) -> Option<&WatermarkDeltaWire> {
+        match self {
+            Self::Progression { watermark, .. } | Self::CrossStore { watermark } => Some(watermark),
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. } => None,
         }
     }
 }
@@ -9094,5 +9193,433 @@ mod proof_delta_relation_tests {
         assert_eq!(W_STATIONARY, Some(ProofRelationWire::Stationary));
         assert_eq!(R_REGRESSED, None);
         assert_eq!(W_REGRESSED, None);
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_watermark_tests {
+    //! Weld the class-scoped watermark-payload accessor
+    //! ([`ProofRelation::watermark`]) and its wire-side sibling
+    //! ([`ProofRelationWire::watermark`]) — the typed one-liner replacing
+    //! the two-arm `if let ProofRelation::Progression { watermark, .. } |
+    //! ProofRelation::CrossStore { watermark } = &relation { ... } else {
+    //! ... }` a consumer previously hand-wrote at every routing seam.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Some/None shape by variant identity — [`ProofRelation::watermark`]
+    //!    is `Some` on the two payload-carrying variants
+    //!    ([`ProofRelation::Progression`], [`ProofRelation::CrossStore`])
+    //!    and [`Option::None`] on the three payload-free variants
+    //!    ([`ProofRelation::Stationary`], [`ProofRelation::IdentityRepublish`],
+    //!    [`ProofRelation::Regressed`]). Pinned at both altitudes.
+    //! 2. Same-Some/None invariant across altitudes — for every
+    //!    [`ProofRelation`] value, `relation.watermark().is_some() ==
+    //!    relation.to_wire().watermark().is_some()`. The two altitude
+    //!    accessors agree pointwise on presence.
+    //! 3. Wire projection of the payload agrees — when both sides return
+    //!    `Some`, the wire watermark equals the value-side watermark's
+    //!    [`MovedWatermarkDelta::to_wire`] projection. A future variant
+    //!    added to [`ProofRelation`] carrying a watermark payload turns
+    //!    every consumer of this composition red at compile time.
+    //! 4. Round-trip through [`ProofRelation::try_from_wire`] preserves
+    //!    the payload — the reconstructed relation carries the same
+    //!    [`MovedWatermarkDelta`] the original does, so a wire consumer
+    //!    that follows the standard parse seam surfaces a payload
+    //!    equal to the one the producer's [`ProofRelation::watermark`]
+    //!    reached.
+    //! 5. Composition with [`ProofDelta::relation`] — on the four
+    //!    legitimate corners reachable from a delta,
+    //!    `delta.relation().and_then(|r| r.watermark().copied())` equals
+    //!    the payload accessed via
+    //!    `ProofRelation::between(&prior, &current).watermark().copied()`.
+    //!    Cross-altitude coherence pinned on the payload accessor across
+    //!    both the delta-fold and the direct proof-pair classification
+    //!    paths.
+    //! 6. [`MovedWatermarkDelta`] invariant survives — whenever the
+    //!    accessor returns `Some`, the returned watermark satisfies
+    //!    [`WatermarkDelta::any_moved`] (welded at the type by
+    //!    [`MovedWatermarkDelta::new`] refusing the stationary null
+    //!    hypothesis). A `Some` never carries a stationary payload on
+    //!    either altitude.
+    //! 7. `const`-callable on both altitudes — a
+    //!    [`ProofRelation`] / [`ProofRelationWire`] known at compile time
+    //!    projects its watermark payload at compile time too, matching
+    //!    the `const`-ness of every other classification accessor in the
+    //!    file.
+    //! 8. All five variants of [`ProofRelation`] are explicitly enumerated
+    //!    — adding a sixth variant fails to compile at the exhaustive
+    //!    `match` in the accessor body AND at every enumeration test
+    //!    below that names the five current variants by tag.
+    //!
+    //! Fixtures build hand-authored [`ProofRelation`] values directly
+    //! rather than routing through [`ProofRelation::between`] on
+    //! [`ConfigWatermark::compute`]-style proof pairs. That gives the
+    //! [`ProofRelation::Regressed`] variant reachable coverage (the
+    //! delta-fold folds its `by` count into `Option::None` and the
+    //! authored-flow fixture in `proof_delta_relation_tests` cannot reach
+    //! it) and keeps each test's setup local to the property it pins.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    /// A [`MovedWatermarkDelta`] whose all three axes moved — the widest
+    /// legitimate payload, spelled through the constructor so the "at
+    /// least one class-scoped half moved" invariant lands at the type.
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    /// A [`MovedWatermarkDelta`] where only the Free class-scoped half
+    /// moved. Distinct payload shape from `moved_all` so a test that
+    /// checks payload equality across altitudes catches an accidental
+    /// swap between the two variants' watermark fields.
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    /// Every [`ProofRelation`] variant, hand-constructed with a distinct
+    /// payload where variants carry one. Order matches the grid:
+    /// `Stationary`, `IdentityRepublish`, `Progression`, `CrossStore`,
+    /// `Regressed`.
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    // ---------- (1) Some/None shape by variant identity
+
+    #[test]
+    fn watermark_returns_some_on_payload_variants_none_on_the_rest_at_both_altitudes() {
+        // Pin (1): the accessor's Some/None shape matches variant
+        // identity — Some on Progression and CrossStore, None on the
+        // three payload-free variants — on BOTH the value-side and the
+        // wire-side altitude. A future sixth variant added to
+        // ProofRelation turns the exhaustive match in the accessor red,
+        // so the "which variants carry a watermark payload?" answer
+        // never drifts silently.
+        for (name, relation) in all_five_relations() {
+            let expect_some = matches!(
+                relation,
+                ProofRelation::Progression { .. } | ProofRelation::CrossStore { .. }
+            );
+            assert_eq!(
+                relation.watermark().is_some(),
+                expect_some,
+                "{name}: ProofRelation::watermark Some/None must match variant identity",
+            );
+            assert_eq!(
+                relation.to_wire().watermark().is_some(),
+                expect_some,
+                "{name}: ProofRelationWire::watermark Some/None must match variant identity",
+            );
+        }
+    }
+
+    // ---------- (2) same-Some/None invariant across altitudes
+
+    #[test]
+    fn value_and_wire_altitudes_agree_on_some_none_pointwise() {
+        // Pin (2): for every ProofRelation value the two altitude
+        // accessors agree pointwise on presence. Combined with test (1)
+        // this pins the shape from BOTH directions: (1) says each side
+        // matches the variant identity, (2) says the two sides match
+        // each other. If some future edit made the wire side branch
+        // differently on a payload-free variant, test (1) alone might
+        // still pass on some subset of variants while this test catches
+        // the pointwise divergence.
+        for (name, relation) in all_five_relations() {
+            let value_some = relation.watermark().is_some();
+            let wire_some = relation.to_wire().watermark().is_some();
+            assert_eq!(
+                value_some, wire_some,
+                "{name}: value-side and wire-side accessors must agree on Some/None",
+            );
+        }
+    }
+
+    // ---------- (3) wire projection of the payload agrees
+
+    #[test]
+    fn wire_watermark_equals_value_watermark_to_wire_when_both_present() {
+        // Pin (3): when both accessors return Some, the wire watermark
+        // equals the value-side watermark's MovedWatermarkDelta::to_wire
+        // projection. The payload is not merely "some watermark" but the
+        // *same* watermark projected through the type's own wire
+        // morphism — a future edit that swapped the Progression /
+        // CrossStore fields at either altitude would fail this test on
+        // the crossstore corner (which uses the distinct
+        // `moved_free_only()` fixture).
+        for (name, relation) in all_five_relations() {
+            let value_wm = relation.watermark();
+            let wire = relation.to_wire();
+            let wire_wm = wire.watermark();
+            match (value_wm, wire_wm) {
+                (Some(v), Some(w)) => {
+                    assert_eq!(
+                        v.to_wire(),
+                        *w,
+                        "{name}: wire watermark must equal value watermark's to_wire()",
+                    );
+                }
+                (None, None) => {}
+                (a, b) => panic!(
+                    "{name}: Some/None shape must agree across altitudes, got value={a:?} \
+                     wire={b:?}",
+                ),
+            }
+        }
+    }
+
+    // ---------- (4) round-trip through try_from_wire preserves the payload
+
+    #[test]
+    fn round_trip_through_try_from_wire_preserves_the_watermark_payload() {
+        // Pin (4): a wire consumer that follows the standard parse seam
+        // (ProofRelation::try_from_wire) reaches a value whose
+        // .watermark() accessor returns exactly the payload the producer's
+        // .watermark() reached before serialization. The MovedWatermarkDelta
+        // weld travels with the payload through the wire round trip and
+        // the accessor surfaces it on the other side without a second
+        // pattern-match.
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            let back = ProofRelation::try_from_wire(&wire).unwrap_or_else(|e| {
+                panic!("{name}: try_from_wire must succeed on to_wire output, got {e:?}")
+            });
+            assert_eq!(
+                back.watermark().copied(),
+                relation.watermark().copied(),
+                "{name}: round-trip must preserve the watermark payload",
+            );
+        }
+    }
+
+    // ---------- (5) composition with ProofDelta::relation
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    #[test]
+    fn agrees_with_proof_delta_relation_watermark_on_legitimate_corners() {
+        // Pin (5): on any authored proof pair, the payload accessed via
+        // the delta-fold path (delta.relation().and_then(|r|
+        // r.watermark().copied())) equals the payload accessed via the
+        // direct proof-pair classification path
+        // (ProofRelation::between(&prior, &current).watermark().copied()).
+        // Cross-altitude coherence pinned on the payload accessor.
+        let cases: [(&str, ConfigSyncProof, ConfigSyncProof); 4] = [
+            (
+                "Stationary",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 5, 1_700_000_060),
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 7, 1_700_000_060),
+            ),
+            (
+                "Progression",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 6, 1_700_000_060),
+            ),
+            (
+                "CrossStore",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 5, 1_700_000_060),
+            ),
+        ];
+        for (name, prior, current) in cases {
+            let delta_path = current
+                .delta_since(&prior)
+                .relation()
+                .and_then(|r| r.watermark().copied());
+            let direct_path = ProofRelation::between(&prior, &current)
+                .watermark()
+                .copied();
+            assert_eq!(
+                delta_path, direct_path,
+                "{name}: delta-fold and direct-classification paths must yield the same \
+                 watermark payload",
+            );
+        }
+    }
+
+    // ---------- (6) MovedWatermarkDelta invariant survives
+
+    #[test]
+    fn some_never_carries_a_stationary_payload_on_either_altitude() {
+        // Pin (6): the MovedWatermarkDelta "at least one class-scoped
+        // half moved" invariant survives the accessor — on the value
+        // side the wrapping type welds it at the field shape, on the
+        // wire side the identical Some/None shape (pinned in test 2)
+        // means the wire Some cases correspond 1-1 to value Some cases
+        // whose MovedWatermarkDelta is non-stationary by construction.
+        // Sanity-anchored against WatermarkDelta::any_moved on the
+        // returned reference.
+        for (name, relation) in all_five_relations() {
+            if let Some(wm) = relation.watermark() {
+                assert!(
+                    wm.any_moved(),
+                    "{name}: value-side Some must carry a non-stationary payload",
+                );
+            }
+            let wire = relation.to_wire();
+            if let Some(wm_wire) = wire.watermark() {
+                // The wire type does NOT weld the invariant at the field
+                // shape (the weld happens at parse time inside
+                // ProofRelation::try_from_wire). But the wire projection
+                // of a MovedWatermarkDelta produced by to_wire on a
+                // legitimate value must still be non-stationary — the
+                // three booleans are preserved bitwise across to_wire.
+                assert!(
+                    wm_wire.full_moved || wm_wire.restart_required_moved || wm_wire.free_moved,
+                    "{name}: wire-side Some produced from a legitimate value must carry a \
+                     non-stationary payload",
+                );
+            }
+        }
+    }
+
+    // ---------- (7) const-callable on both altitudes
+
+    #[test]
+    fn watermark_is_const_callable_on_both_altitudes() {
+        // Pin (7): a compile-time-known ProofRelation projects its
+        // watermark payload at compile time too, matching the const-ness
+        // of every other classification accessor in the file
+        // (ProofRelation::same_store_consistent, ProofDelta::relation,
+        // WatermarkRelation::to_wire, etc.). Assigned to `const` bindings
+        // so const-ness of the whole accessor pipeline fails to compile
+        // at these exact lines the moment any transitive dependency
+        // loses its const-ness.
+        const R_STATIONARY: ProofRelation = ProofRelation::Stationary;
+        const W_STATIONARY: Option<&MovedWatermarkDelta> = R_STATIONARY.watermark();
+        const R_STATIONARY_WIRE: ProofRelationWire = ProofRelationWire::Stationary;
+        const W_STATIONARY_WIRE: Option<&WatermarkDeltaWire> = R_STATIONARY_WIRE.watermark();
+        assert!(W_STATIONARY.is_none());
+        assert!(W_STATIONARY_WIRE.is_none());
+    }
+
+    // ---------- (8) all five variants explicitly enumerated
+
+    #[test]
+    fn every_relation_variant_is_reached_by_the_fixture_and_classified_correctly() {
+        // Pin (8): the fixture reaches all five ProofRelation variants
+        // (including Regressed, which the delta-altitude authored flow
+        // cannot reach). Combined with the exhaustive `match` in the
+        // accessor body, adding a sixth variant to ProofRelation turns
+        // this test's `match` red at the same instant the accessor's own
+        // `match` turns red. No silent drift.
+        let mut seen_stationary = false;
+        let mut seen_identity_republish = false;
+        let mut seen_progression = false;
+        let mut seen_crossstore = false;
+        let mut seen_regressed = false;
+        for (_, relation) in all_five_relations() {
+            match relation {
+                ProofRelation::Stationary => {
+                    assert!(relation.watermark().is_none(), "Stationary must be None");
+                    seen_stationary = true;
+                }
+                ProofRelation::IdentityRepublish { .. } => {
+                    assert!(
+                        relation.watermark().is_none(),
+                        "IdentityRepublish must be None",
+                    );
+                    seen_identity_republish = true;
+                }
+                ProofRelation::Progression { .. } => {
+                    assert!(relation.watermark().is_some(), "Progression must be Some",);
+                    seen_progression = true;
+                }
+                ProofRelation::CrossStore { .. } => {
+                    assert!(relation.watermark().is_some(), "CrossStore must be Some",);
+                    seen_crossstore = true;
+                }
+                ProofRelation::Regressed { .. } => {
+                    assert!(relation.watermark().is_none(), "Regressed must be None",);
+                    seen_regressed = true;
+                }
+            }
+        }
+        assert!(seen_stationary, "must reach ProofRelation::Stationary");
+        assert!(
+            seen_identity_republish,
+            "must reach ProofRelation::IdentityRepublish",
+        );
+        assert!(seen_progression, "must reach ProofRelation::Progression");
+        assert!(seen_crossstore, "must reach ProofRelation::CrossStore");
+        assert!(seen_regressed, "must reach ProofRelation::Regressed");
     }
 }
