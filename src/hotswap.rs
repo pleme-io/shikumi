@@ -595,6 +595,178 @@ impl TryFrom<WatermarkDelta> for MovedWatermarkDelta {
     }
 }
 
+/// The **wire projection** of a [`WatermarkDelta`] — the shape a
+/// broadcast event / delta-log entry / cross-replica-diff endpoint
+/// serves and a consumer deserializes.
+///
+/// **Why this type exists — the same-shape wire pair to
+/// [`ConfigWatermarkWire`].** [`WatermarkDelta`] is three booleans, so
+/// the wire shape is trivially the same three booleans. The value of
+/// naming it as a type is **not** "avoid encoding drift" — booleans do
+/// not drift the way hashes and timestamps do. It is **close the
+/// invariant welds the value form already carries at the parse
+/// boundary**, so a consumer that deserializes a [`WatermarkDeltaWire`]
+/// holds a value whose invariants have already been checked once at
+/// the seam rather than at every downstream use.
+///
+/// **Two welds a wire deserializer chains at once.**
+///
+/// 1. [`WatermarkDelta::try_from_wire`] rejects a delta whose shape
+///    fails [`WatermarkDelta::class_moves_imply_full_moved`] — a
+///    payload where `restart_required_moved || free_moved` is `true`
+///    while `full_moved` is `false` cannot come from any well-formed
+///    [`WatermarkDelta::between`] call (a class-scoped hash's input is
+///    a subset of the full-hash input, so moving the smaller input
+///    implies moving the larger one). Refusing at parse time is what
+///    the honest-sanity-check doc on
+///    [`WatermarkDelta::class_moves_imply_full_moved`] names as the
+///    seam a consumer with an untrusted delta must perform.
+/// 2. [`MovedWatermarkDelta::try_from_wire`] chains the class-invariant
+///    check with the moved-ness constraint, so a consumer that wants
+///    the wire form of the [`ProofRelation::Progression`] /
+///    [`ProofRelation::CrossStore`] payload holds a
+///    [`MovedWatermarkDelta`] directly — the "at least one half moved"
+///    proof travels with the payload, not as a re-validation at every
+///    seam. This is the "wire projection can rely on the
+///    `MovedWatermarkDelta` weld" step the v0.1.503 commit body flagged
+///    as the next natural increment after the newtype landed.
+///
+/// Symmetric to the [`ConfigWatermarkWire`] pattern: one wire type,
+/// two typed parse paths, each welding one more invariant than the
+/// last. camelCase serde field names match the sibling wire types so a
+/// consumer's on-the-wire vocabulary stays consistent
+/// (`fullMoved` / `restartRequiredMoved` / `freeMoved`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkDeltaWire {
+    /// Whether the full watermark moved — the wire mirror of
+    /// [`WatermarkDelta::full_moved`].
+    pub full_moved: bool,
+    /// Whether the `RequiresRestart` half moved — the wire mirror of
+    /// [`WatermarkDelta::restart_required_moved`].
+    pub restart_required_moved: bool,
+    /// Whether the Free half moved — the wire mirror of
+    /// [`WatermarkDelta::free_moved`].
+    pub free_moved: bool,
+}
+
+impl WatermarkDelta {
+    /// Project to the wire shape — three `bool` fields become three
+    /// `bool` fields under the camelCase serde vocabulary the sibling
+    /// wire types already use. Pure, allocation-free.
+    ///
+    /// The reverse is [`Self::try_from_wire`], which welds the class-
+    /// partition sanity check ([`Self::class_moves_imply_full_moved`])
+    /// at the parse boundary so a deserialized delta cannot have a
+    /// shape that no honest [`Self::between`] call could have produced.
+    #[must_use]
+    pub const fn to_wire(&self) -> WatermarkDeltaWire {
+        WatermarkDeltaWire {
+            full_moved: self.full_moved,
+            restart_required_moved: self.restart_required_moved,
+            free_moved: self.free_moved,
+        }
+    }
+
+    /// Reconstruct a [`WatermarkDelta`] from its wire projection — the
+    /// inverse of [`Self::to_wire`], welding
+    /// [`Self::class_moves_imply_full_moved`] at the parse boundary so
+    /// the returned value is guaranteed to have a shape a legitimate
+    /// [`Self::between`] call could have produced.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] when the wire has a
+    /// class-scoped half moved without `full_moved` — a shape the
+    /// class-partition invariant refuses independent of whether the
+    /// producer's `field_classes` slice is exhaustive. The error
+    /// message names the offending triple so a consumer can localize
+    /// the malformed input.
+    pub fn try_from_wire(wire: &WatermarkDeltaWire) -> Result<Self, ShikumiError> {
+        let candidate = Self {
+            full_moved: wire.full_moved,
+            restart_required_moved: wire.restart_required_moved,
+            free_moved: wire.free_moved,
+        };
+        if candidate.class_moves_imply_full_moved() {
+            Ok(candidate)
+        } else {
+            Err(ShikumiError::Parse(format!(
+                "malformed WatermarkDeltaWire: a class-scoped half moved \
+                 without fullMoved (fullMoved={} restartRequiredMoved={} \
+                 freeMoved={}) -- a class-scoped hash's input is a subset of \
+                 the full-hash input, so this shape cannot come from any \
+                 well-formed WatermarkDelta::between call",
+                wire.full_moved, wire.restart_required_moved, wire.free_moved,
+            )))
+        }
+    }
+}
+
+impl TryFrom<&WatermarkDeltaWire> for WatermarkDelta {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &WatermarkDeltaWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
+impl MovedWatermarkDelta {
+    /// Project to the wire shape — delegates to
+    /// [`WatermarkDelta::to_wire`] on the underlying delta. The wire
+    /// form is the same three booleans a bare [`WatermarkDelta`]
+    /// serializes; the moved-ness invariant is welded on the
+    /// **reconstruction** side ([`Self::try_from_wire`]) rather than in
+    /// a distinct wire shape, so a producer that sends a stationary
+    /// bare delta and a producer that fails to construct a
+    /// [`MovedWatermarkDelta`] are two seams for one problem.
+    #[must_use]
+    pub const fn to_wire(&self) -> WatermarkDeltaWire {
+        self.0.to_wire()
+    }
+
+    /// Reconstruct a [`MovedWatermarkDelta`] from a
+    /// [`WatermarkDeltaWire`] — chains
+    /// [`WatermarkDelta::try_from_wire`]'s class-partition check with
+    /// [`Self::new`]'s moved-ness check, so a consumer holding the
+    /// returned value knows both invariants passed at the parse
+    /// boundary.
+    ///
+    /// This is the wire-side counterpart of the type-level weld the
+    /// newtype gives [`ProofRelation::Progression`] and
+    /// [`ProofRelation::CrossStore`]: a payload deserialized off the
+    /// wire holds the "at least one half moved" proof without a
+    /// runtime `stationary()` check at every downstream seam.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] when either weld fails: the
+    /// class-partition sanity check (a class-scoped half moved without
+    /// `full_moved`) or the moved-ness constraint (all three halves
+    /// stationary). The error message names the offending triple so a
+    /// consumer can localize the malformed input.
+    pub fn try_from_wire(wire: &WatermarkDeltaWire) -> Result<Self, ShikumiError> {
+        let delta = WatermarkDelta::try_from_wire(wire)?;
+        Self::new(delta).ok_or_else(|| {
+            ShikumiError::Parse(format!(
+                "malformed WatermarkDeltaWire for MovedWatermarkDelta: \
+                 stationary payload (fullMoved={} restartRequiredMoved={} \
+                 freeMoved={}) -- a MovedWatermarkDelta requires at least one \
+                 class-scoped half to have moved",
+                wire.full_moved, wire.restart_required_moved, wire.free_moved,
+            ))
+        })
+    }
+}
+
+impl TryFrom<&WatermarkDeltaWire> for MovedWatermarkDelta {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &WatermarkDeltaWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
 impl ConfigWatermark {
     /// Convenience: the delta from `prior` to `self`. Equivalent to
     /// `WatermarkDelta::between(prior, self)` — spelled at the call site
@@ -2524,5 +2696,336 @@ mod moved_watermark_delta_tests {
         let d_restart = WatermarkDelta::between(&wm_of(&base()), &wm_of(&c));
         let m_restart = MovedWatermarkDelta::new(d_restart).unwrap();
         assert_ne!(m_a, m_restart, "different edits produce different wraps");
+    }
+}
+
+#[cfg(test)]
+mod watermark_delta_wire_tests {
+    //! Weld the wire projection of [`WatermarkDelta`] /
+    //! [`MovedWatermarkDelta`] — the same-shape wire pair to
+    //! [`ConfigWatermarkWire`]. Together the tests below cover:
+    //!
+    //! 1. `to_wire` is a mechanical mirror on all four (Free-edit,
+    //!    Restart-edit) corners produced by `WatermarkDelta::between`.
+    //! 2. The wire round-trips through JSON with camelCase field names
+    //!    pinned (`fullMoved` / `restartRequiredMoved` / `freeMoved`).
+    //! 3. `WatermarkDelta::try_from_wire` refuses a wire whose shape
+    //!    fails `class_moves_imply_full_moved` — the honest sanity
+    //!    check for a delta received from an untrusted source, moved
+    //!    from a runtime predicate to a parse-time weld.
+    //! 4. `MovedWatermarkDelta::try_from_wire` chains the class weld
+    //!    with the moved-ness weld — a stationary wire is rejected on
+    //!    the newtype path even when it passes the bare-delta path.
+    //! 5. Value → wire → value and wire → value → wire are both
+    //!    fixed points on well-formed inputs, welding the isomorphism
+    //!    both directions.
+    //! 6. `TryFrom<&WatermarkDeltaWire>` and the inherent
+    //!    `try_from_wire` methods agree pointwise for both types.
+    //! 7. Every `WatermarkDelta::between`-computed value survives the
+    //!    round trip on every (Free-edit, Restart-edit) corner — the
+    //!    parse-time check never refuses a legitimate delta.
+    //!
+    //! Same test idiom as [`wire_tests`] (the [`ConfigSyncProofWire`]
+    //! pin) and [`moved_watermark_delta_tests`] (the newtype pin), so a
+    //! future refactor that touches one of the three surfaces surfaces
+    //! consistent breakage across all three.
+
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    /// Every corner of the (Free-edit, Restart-edit) product, folded
+    /// through `WatermarkDelta::between` — the four legitimate delta
+    /// shapes a well-formed producer emits.
+    fn every_between_corner() -> Vec<WatermarkDelta> {
+        [(false, false), (true, false), (false, true), (true, true)]
+            .into_iter()
+            .map(|(mutate_free, mutate_restart)| {
+                let mut c = base();
+                if mutate_free {
+                    c.log_level = "debug".into();
+                }
+                if mutate_restart {
+                    c.bind_addr = "0.0.0.0:9090".into();
+                }
+                WatermarkDelta::between(&wm_of(&base()), &wm_of(&c))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn to_wire_is_a_mechanical_mirror_on_every_between_corner() {
+        for d in every_between_corner() {
+            let w = d.to_wire();
+            assert_eq!(w.full_moved, d.full_moved, "fullMoved mirrors");
+            assert_eq!(
+                w.restart_required_moved, d.restart_required_moved,
+                "restartRequiredMoved mirrors"
+            );
+            assert_eq!(w.free_moved, d.free_moved, "freeMoved mirrors");
+        }
+    }
+
+    #[test]
+    fn the_wire_shape_round_trips_through_json() {
+        for d in every_between_corner() {
+            let w = d.to_wire();
+            let json = serde_json::to_string(&w).expect("serialize");
+            let back: WatermarkDeltaWire = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(w, back);
+        }
+    }
+
+    #[test]
+    fn the_wire_field_names_are_pinned_as_camel_case() {
+        // The pin: the wire vocabulary matches ConfigWatermarkWire's
+        // camelCase convention (`full` / `restartRequired` / `free`
+        // over there, `fullMoved` / `restartRequiredMoved` /
+        // `freeMoved` here) so a consumer that reads either surface
+        // sees a consistent on-the-wire naming.
+        let all_true = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        };
+        let json = serde_json::to_string(&all_true).unwrap();
+        for key in ["fullMoved", "restartRequiredMoved", "freeMoved"] {
+            assert!(
+                json.contains(&format!("\"{key}\"")),
+                "missing {key} in {json}"
+            );
+        }
+        // Snake-cased forms MUST NOT appear -- serde(rename_all)
+        // regressions have been silent bugs before.
+        for snake in ["full_moved", "restart_required_moved", "free_moved"] {
+            assert!(
+                !json.contains(snake),
+                "snake_case leaked into wire: {snake} in {json}",
+            );
+        }
+    }
+
+    #[test]
+    fn value_wire_value_is_identity_on_every_between_corner() {
+        for d in every_between_corner() {
+            let back = WatermarkDelta::try_from_wire(&d.to_wire())
+                .expect("between-computed delta must round-trip through wire");
+            assert_eq!(back, d);
+        }
+    }
+
+    #[test]
+    fn wire_value_wire_is_fixed_point_on_every_well_formed_wire() {
+        for d in every_between_corner() {
+            let w = d.to_wire();
+            let back = WatermarkDelta::try_from_wire(&w)
+                .expect("well-formed round-trip")
+                .to_wire();
+            assert_eq!(back, w);
+        }
+    }
+
+    #[test]
+    fn class_partition_violation_in_the_wire_is_a_parse_error() {
+        // The load-bearing weld: a wire whose class-scoped half moved
+        // WITHOUT the full-hash superset having moved is refused at
+        // the parse boundary. The two shapes below cannot come from
+        // any well-formed WatermarkDelta::between call -- the class-
+        // scoped hash's input is a subset of the full-hash input.
+        for wire in [
+            WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+        ] {
+            let err = WatermarkDelta::try_from_wire(&wire).unwrap_err();
+            assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+            let msg = err.to_string();
+            assert!(
+                msg.contains("fullMoved"),
+                "error message must name the offending triple: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn all_stationary_wire_parses_to_a_stationary_delta() {
+        // A shape that is stationary on every half satisfies the
+        // class-partition invariant vacuously (both sides of the
+        // implication are false), so the bare-delta parse accepts it.
+        // The MovedWatermarkDelta parse refuses it — see the sibling
+        // test below.
+        let wire = WatermarkDeltaWire {
+            full_moved: false,
+            restart_required_moved: false,
+            free_moved: false,
+        };
+        let d = WatermarkDelta::try_from_wire(&wire).expect("stationary wire is well-formed");
+        assert!(d.stationary());
+    }
+
+    #[test]
+    fn try_from_impl_and_try_from_wire_method_agree_for_watermark_delta() {
+        for d in every_between_corner() {
+            let w = d.to_wire();
+            let via_method = WatermarkDelta::try_from_wire(&w).unwrap();
+            let via_trait = WatermarkDelta::try_from(&w).unwrap();
+            assert_eq!(via_method, via_trait);
+        }
+    }
+
+    // -- MovedWatermarkDelta wire path --------------------------------
+
+    #[test]
+    fn moved_wire_round_trips_on_every_non_stationary_between_corner() {
+        for d in every_between_corner() {
+            let Some(m) = MovedWatermarkDelta::new(d) else {
+                // Stationary corner -- covered by the sibling test
+                // that welds the newtype's refusal of that shape.
+                continue;
+            };
+            let w = m.to_wire();
+            let back = MovedWatermarkDelta::try_from_wire(&w)
+                .expect("moved between-computed delta must round-trip through wire");
+            assert_eq!(back, m);
+        }
+    }
+
+    #[test]
+    fn moved_wire_delegates_to_bare_wire() {
+        // The newtype's wire form must equal the underlying delta's
+        // wire form -- otherwise a producer that serialized via the
+        // newtype and a producer that unwrapped first would emit two
+        // different on-the-wire shapes for the same value.
+        for d in every_between_corner() {
+            let Some(m) = MovedWatermarkDelta::new(d) else {
+                continue;
+            };
+            assert_eq!(m.to_wire(), d.to_wire());
+        }
+    }
+
+    #[test]
+    fn moved_wire_refuses_a_stationary_wire_even_when_bare_accepts_it() {
+        // The chained weld: a stationary wire passes the bare-delta
+        // class-partition check (vacuously) but fails the newtype
+        // moved-ness check. Refusing at the parse boundary is what
+        // gives a consumer a MovedWatermarkDelta whose "at least one
+        // half moved" proof travelled with the payload.
+        let stationary = WatermarkDeltaWire {
+            full_moved: false,
+            restart_required_moved: false,
+            free_moved: false,
+        };
+        // Bare accepts it -- vacuous class invariant.
+        WatermarkDelta::try_from_wire(&stationary).expect("bare accepts stationary");
+        // Newtype refuses it -- moved-ness weld.
+        let err = MovedWatermarkDelta::try_from_wire(&stationary).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("stationary"),
+            "moved-ness error must name the null hypothesis: {msg}"
+        );
+    }
+
+    #[test]
+    fn moved_wire_refuses_a_class_partition_violation_via_the_chained_check() {
+        // A wire that violates the class-partition invariant is
+        // refused by the newtype path too -- the try_from_wire chain
+        // routes through WatermarkDelta::try_from_wire first, so the
+        // class error surfaces here BEFORE the moved-ness check runs.
+        let violation = WatermarkDeltaWire {
+            full_moved: false,
+            restart_required_moved: true,
+            free_moved: false,
+        };
+        let err = MovedWatermarkDelta::try_from_wire(&violation).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        // The message must be the class-partition variant, not the
+        // moved-ness variant -- the two welds have distinct error
+        // strings and a consumer localizing the fault reads the one
+        // that fired.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("class-scoped half moved"),
+            "class-partition error must fire first: {msg}"
+        );
+    }
+
+    #[test]
+    fn try_from_impl_and_try_from_wire_method_agree_for_moved_watermark_delta() {
+        for d in every_between_corner() {
+            let Some(m) = MovedWatermarkDelta::new(d) else {
+                continue;
+            };
+            let w = m.to_wire();
+            let via_method = MovedWatermarkDelta::try_from_wire(&w).unwrap();
+            let via_trait = MovedWatermarkDelta::try_from(&w).unwrap();
+            assert_eq!(via_method, via_trait);
+        }
+    }
+
+    #[test]
+    fn moved_value_wire_value_is_identity_on_every_non_stationary_corner() {
+        for d in every_between_corner() {
+            let Some(m) = MovedWatermarkDelta::new(d) else {
+                continue;
+            };
+            let back = MovedWatermarkDelta::try_from_wire(&m.to_wire())
+                .expect("moved round-trip through wire");
+            assert_eq!(back, m);
+        }
+    }
+
+    #[test]
+    fn moved_wire_value_wire_is_fixed_point_on_every_well_formed_moved_wire() {
+        for d in every_between_corner() {
+            let Some(m) = MovedWatermarkDelta::new(d) else {
+                continue;
+            };
+            let w = m.to_wire();
+            let back = MovedWatermarkDelta::try_from_wire(&w)
+                .expect("well-formed round-trip")
+                .to_wire();
+            assert_eq!(back, w);
+        }
     }
 }
