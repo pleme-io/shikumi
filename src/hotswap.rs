@@ -518,6 +518,175 @@ impl ConfigSyncProof {
     pub fn watermark_delta_since(&self, prior: &Self) -> WatermarkDelta {
         self.watermark.delta_since(&prior.watermark)
     }
+
+    /// The full [`ProofDelta`] from `prior` to `self` — a proof-altitude
+    /// comparison that folds the watermark answer together with the
+    /// generation-monotonicity and elapsed-observation axes
+    /// [`Self::watermark_delta_since`] intentionally drops.
+    ///
+    /// A consumer that wants the watermark question alone
+    /// (`stationary()` = "did the config value move at all") calls
+    /// [`Self::watermark_delta_since`]. A consumer that wants the
+    /// proof-altitude questions — "was a generation skipped", "did
+    /// generation go backwards", "how much wall time passed between the
+    /// two snapshots", "did the watermark move without a generation
+    /// bump (cross-store)" — calls this method. Argument order matches
+    /// [`ConfigWatermark::delta_since`]: the receiver is the "current"
+    /// half, the argument is the "prior" half.
+    #[must_use]
+    pub fn delta_since(&self, prior: &Self) -> ProofDelta {
+        ProofDelta::between(prior, self)
+    }
+}
+
+/// The typed answer to "what moved between two [`ConfigSyncProof`] values?"
+/// — the proof-altitude sibling of [`WatermarkDelta`], adding the two
+/// axes a bare watermark comparison cannot express.
+///
+/// [`WatermarkDelta`] answers "did the config value move at all" over
+/// the three class-scoped hash halves. It intentionally throws away the
+/// generation counter and the observation timestamp — both fields
+/// [`ConfigSyncProof`] itself carries — because a watermark comparison
+/// is well-defined without them. But a consumer polling `/healthz/config`
+/// often wants the fuller question at the proof altitude:
+///
+/// - **Did generation go backwards?** ([`Self::generations_regressed`]) —
+///   a signal that a monotonic store cannot produce, so its appearance
+///   in a [`ProofDelta`] means the two proofs came from different stores,
+///   or the wire that carried them was tampered with. Under
+///   [`ConfigStore`](crate::ConfigStore)'s generation semantics
+///   ([`ConfigStore::generation`](crate::ConfigStore::generation) starts
+///   at `0` and monotonically increases on every successful publish),
+///   this can only be `false` on any pair produced by a single store.
+/// - **Was a generation skipped?** ([`Self::generations_skipped`]) —
+///   a consumer polling at some cadence might miss intermediate
+///   publishes; the count of missed generations tells the observer how
+///   many state transitions it did not witness. `None` when generation
+///   regressed, `Some(0)` when exactly one publish happened, `Some(n)`
+///   when `n` publishes were missed.
+/// - **How much wall time elapsed?** ([`Self::observed_at_elapsed`]) —
+///   a per-observer wall-clock reading; unlike generation this can be
+///   nonzero on identical proofs (the same value observed twice in
+///   sequence), and can be `None` when the two timestamps are not
+///   ordered (a system-clock adjustment between the two observations).
+/// - **Watermark moved without a generation bump?**
+///   ([`Self::cross_store_signal`]) — the invariant weld: a single
+///   monotonic store CANNOT produce a proof pair where the watermark
+///   moved but generation stayed the same, because moving the watermark
+///   requires a publish which bumps generation. This predicate catches
+///   the impossibility at the type level.
+///
+/// The watermark half is preserved as [`Self::watermark`] so a consumer
+/// that already knows how to consume a [`WatermarkDelta`] can reach it
+/// through the composed shape without a second computation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProofDelta {
+    /// The watermark-altitude comparison — every predicate on
+    /// [`WatermarkDelta`] (`full_moved`, `restart_pending`,
+    /// `hot_swappable_drift`, etc.) is reachable through this field.
+    pub watermark: WatermarkDelta,
+    /// How many generations advanced from `prior` to `current`.
+    /// `Some(0)` iff the two proofs share a generation counter (a
+    /// re-observation of the same publish). `Some(n)` iff current's
+    /// generation is `n` greater than prior's. `None` iff current's
+    /// generation is STRICTLY less than prior's — a "backwards
+    /// generation" that a monotonic store cannot produce, so its
+    /// appearance is a diagnostic signal, not a legitimate reading.
+    pub generations_advanced: Option<u64>,
+    /// Wall-clock time elapsed between `prior.observed_at` and
+    /// `self.observed_at`. `None` iff `self.observed_at < prior.observed_at`
+    /// — a system-clock adjustment (NTP step, container migration)
+    /// between the two observations, which unlike generation is a
+    /// legitimate real-world condition, not a bug signal.
+    pub observed_at_elapsed: Option<std::time::Duration>,
+}
+
+impl ProofDelta {
+    /// Compute the proof-altitude delta from `prior` to `current` —
+    /// a pointwise comparison over the three proof fields.
+    /// Pure, allocation-free.
+    #[must_use]
+    pub fn between(prior: &ConfigSyncProof, current: &ConfigSyncProof) -> Self {
+        Self {
+            watermark: prior.watermark.delta_since(&current.watermark),
+            generations_advanced: current.generation.checked_sub(prior.generation),
+            observed_at_elapsed: current.observed_at.duration_since(prior.observed_at).ok(),
+        }
+    }
+
+    /// True iff neither the watermark moved nor the generation advanced
+    /// — the pair of proofs represents the same observation twice.
+    /// Note: `observed_at` is intentionally NOT part of the stationary
+    /// predicate; a consumer that observed the same publish at two
+    /// different wall-clock instants (the common `/healthz/config`
+    /// polling case) still reports `stationary()`.
+    #[must_use]
+    pub const fn stationary(&self) -> bool {
+        self.watermark.stationary() && matches!(self.generations_advanced, Some(0))
+    }
+
+    /// True iff current's generation is strictly less than prior's —
+    /// a signal that a single monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce, so its
+    /// appearance means the two proofs came from different stores, or
+    /// the wire that carried them was tampered with.
+    #[must_use]
+    pub const fn generations_regressed(&self) -> bool {
+        self.generations_advanced.is_none()
+    }
+
+    /// How many publishes happened between the two observations WITHOUT
+    /// the polling observer witnessing them — `generations_advanced - 1`
+    /// clamped to zero, or `None` if generation regressed. A polling
+    /// consumer that sees `Some(0)` observed every publish; a consumer
+    /// that sees `Some(n)` missed `n` intermediate state transitions
+    /// and should widen its polling cadence.
+    #[must_use]
+    pub const fn generations_skipped(&self) -> Option<u64> {
+        match self.generations_advanced {
+            Some(n) => Some(n.saturating_sub(1)),
+            None => None,
+        }
+    }
+
+    /// True iff a re-publish of the same value happened between the two
+    /// observations — watermark stationary, generation advanced by one
+    /// or more. Distinguishable from `stationary()` (same observation
+    /// twice) exactly by the generation axis.
+    #[must_use]
+    pub const fn identity_republish(&self) -> bool {
+        if !self.watermark.stationary() {
+            return false;
+        }
+        matches!(self.generations_advanced, Some(n) if n > 0)
+    }
+
+    /// The invariant weld: true iff the watermark moved but generation
+    /// did NOT advance. A single monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce this state —
+    /// moving the watermark requires a publish which bumps generation.
+    /// Its appearance in a delta means the two proofs originated from
+    /// different stores (a cross-replica comparison misplaced as a
+    /// same-store one), or the wire that carried them was tampered with.
+    ///
+    /// Symmetric peer of [`Self::generations_regressed`] on the
+    /// impossibility side: both predicates catch a proof pair that no
+    /// single well-formed store could have produced.
+    #[must_use]
+    pub const fn cross_store_signal(&self) -> bool {
+        !self.watermark.stationary() && matches!(self.generations_advanced, Some(0))
+    }
+
+    /// True iff the pair of proofs is consistent with having come from a
+    /// single monotonic [`ConfigStore`](crate::ConfigStore) — no
+    /// generation regression AND no watermark-move-without-generation-bump.
+    /// The typed conjunction of the two impossibility predicates,
+    /// spelled once so a consumer that wants the "trust this pair"
+    /// question doesn't have to hand-write the boolean at every seam.
+    #[must_use]
+    pub const fn same_store_consistent(&self) -> bool {
+        !self.generations_regressed() && !self.cross_store_signal()
+    }
 }
 
 #[cfg(test)]
@@ -1166,6 +1335,359 @@ mod delta_tests {
         assert!(
             d.stationary(),
             "watermark_delta_since must be stationary when only generation/timestamp advanced"
+        );
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_tests {
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: wm_of(cfg),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    #[test]
+    fn between_identical_proofs_reports_stationary() {
+        // Same observation observed twice: watermark stationary AND
+        // generation unchanged. No wire time elapsed either. This is
+        // the null hypothesis a poller checks before doing more work.
+        let p = proof_at(&base(), 5, 1_700_000_000);
+        let d = ProofDelta::between(&p, &p);
+        assert!(d.watermark.stationary(), "watermark must be stationary");
+        assert_eq!(d.generations_advanced, Some(0));
+        assert_eq!(d.observed_at_elapsed, Some(Duration::ZERO));
+        assert!(d.stationary(), "identity proof pair must be stationary");
+    }
+
+    #[test]
+    fn between_same_value_at_different_wall_time_still_stationary() {
+        // observed_at intentionally does NOT participate in stationary()
+        // -- a consumer polling the same publish at two wall-clock
+        // instants still reports "no movement", matching
+        // watermark_delta_since's semantics at the proof altitude.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&base(), 5, 1_700_000_060);
+        let d = ProofDelta::between(&prior, &current);
+        assert!(
+            d.stationary(),
+            "stationary must be true across a wall-clock advance on the same publish"
+        );
+        assert_eq!(d.observed_at_elapsed, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn identity_republish_when_watermark_stationary_but_generation_advanced() {
+        // A store that re-publishes an identical value bumps generation
+        // WITHOUT moving any watermark half -- the ConfigStore contract
+        // (see store.rs:reload()). ProofDelta must distinguish this from
+        // stationary (which only holds when generation is also unchanged).
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&base(), 6, 1_700_000_030);
+        let d = ProofDelta::between(&prior, &current);
+        assert!(d.watermark.stationary(), "watermark must be stationary");
+        assert_eq!(d.generations_advanced, Some(1));
+        assert!(d.identity_republish(), "identity re-publish signal");
+        assert!(
+            !d.stationary(),
+            "NOT stationary -- generation advanced even though value did not"
+        );
+    }
+
+    #[test]
+    fn generations_regressed_when_current_generation_less_than_prior() {
+        // A single monotonic ConfigStore cannot produce this pair --
+        // its appearance means the two proofs came from different
+        // stores, or the wire was tampered with. Modeled as
+        // `Option::None` on generations_advanced so a consumer cannot
+        // silently underflow the difference.
+        let prior = proof_at(&base(), 10, 1_700_000_000);
+        let current = proof_at(&base(), 5, 1_700_000_060);
+        let d = ProofDelta::between(&prior, &current);
+        assert!(
+            d.generations_regressed(),
+            "generation went backwards -- must be flagged"
+        );
+        assert_eq!(d.generations_advanced, None);
+        assert_eq!(
+            d.generations_skipped(),
+            None,
+            "generations_skipped is undefined when generation regressed"
+        );
+        assert!(
+            !d.same_store_consistent(),
+            "regressed generation is a same-store impossibility"
+        );
+    }
+
+    #[test]
+    fn generations_skipped_when_gap_greater_than_one() {
+        // A poller with a coarse cadence might miss intermediate
+        // publishes. The count of missed publishes is exactly
+        // `generations_advanced - 1`.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 9,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_120),
+        };
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(d.generations_advanced, Some(4));
+        assert_eq!(
+            d.generations_skipped(),
+            Some(3),
+            "5 -> 9 advances 4 generations, skipping 3 intermediate publishes"
+        );
+    }
+
+    #[test]
+    fn generations_skipped_is_zero_on_a_single_publish_advance() {
+        // 5 -> 6 advances one generation. The poller witnessed every
+        // publish, so nothing was skipped -- `Some(0)`, not `None`.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 6,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_030),
+        };
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(d.generations_advanced, Some(1));
+        assert_eq!(
+            d.generations_skipped(),
+            Some(0),
+            "a single-publish advance skips zero intermediate publishes"
+        );
+    }
+
+    #[test]
+    fn cross_store_signal_when_watermark_moved_without_generation_advance() {
+        // A single monotonic store cannot produce a proof pair where
+        // the watermark moved but generation stayed the same -- moving
+        // the watermark requires a publish which bumps generation. Hand-
+        // construct the impossible pair (two different values at the
+        // same generation) to exercise the invariant weld.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 5,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_060),
+        };
+        let d = ProofDelta::between(&prior, &current);
+        assert!(d.watermark.full_moved, "watermark moved");
+        assert_eq!(d.generations_advanced, Some(0));
+        assert!(
+            d.cross_store_signal(),
+            "watermark-move-without-generation-bump is a same-store impossibility"
+        );
+        assert!(!d.same_store_consistent());
+    }
+
+    #[test]
+    fn observed_at_elapsed_none_when_current_precedes_prior() {
+        // A system-clock adjustment (NTP step) between two observations
+        // can make current.observed_at strictly earlier than prior's.
+        // Modeled as None so a consumer cannot silently compute a
+        // meaningless "negative elapsed" duration.
+        let prior = proof_at(&base(), 5, 1_700_000_060);
+        let current = proof_at(&base(), 6, 1_700_000_000);
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(
+            d.observed_at_elapsed, None,
+            "elapsed is None when observed_at moved backwards"
+        );
+    }
+
+    #[test]
+    fn observed_at_elapsed_carries_the_wall_clock_difference() {
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&base(), 5, 1_700_000_090);
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(d.observed_at_elapsed, Some(Duration::from_secs(90)));
+    }
+
+    #[test]
+    fn same_store_consistent_holds_on_every_legitimate_pair() {
+        // Cross-product of (watermark moved?, generation advanced?) minus
+        // the two impossibilities. Every legitimate corner must report
+        // same_store_consistent() = true, and the two impossible corners
+        // (regressed generation, cross-store signal) must be the ONLY
+        // false readings. Together these welds the invariant on both
+        // sides.
+        let anchor = base();
+        let mut mutated = base();
+        mutated.log_level = "debug".into();
+
+        // Legitimate corners.
+        for (prior, current, label) in [
+            (
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                "identity observation twice",
+            ),
+            (
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                "identity re-publish",
+            ),
+            (
+                proof_at(&anchor, 5, 1_700_000_000),
+                ConfigSyncProof {
+                    generation: 6,
+                    watermark: wm_of(&mutated),
+                    observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_060),
+                },
+                "legitimate publish with a value change",
+            ),
+        ] {
+            let d = ProofDelta::between(&prior, &current);
+            assert!(
+                d.same_store_consistent(),
+                "same_store_consistent must hold on the legitimate corner: {label}"
+            );
+        }
+
+        // Impossible corners.
+        let regressed = ProofDelta::between(
+            &proof_at(&anchor, 10, 1_700_000_000),
+            &proof_at(&anchor, 5, 1_700_000_060),
+        );
+        assert!(!regressed.same_store_consistent(), "regressed generation");
+
+        let cross_store = ProofDelta::between(
+            &proof_at(&anchor, 5, 1_700_000_000),
+            &ConfigSyncProof {
+                generation: 5,
+                watermark: wm_of(&mutated),
+                observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_060),
+            },
+        );
+        assert!(
+            !cross_store.same_store_consistent(),
+            "cross-store: watermark moved without generation bump"
+        );
+    }
+
+    #[test]
+    fn watermark_field_agrees_with_watermark_delta_since() {
+        // The composed shape's watermark half must match the direct
+        // watermark comparison -- a consumer that already knows how to
+        // consume a WatermarkDelta reaches it through the composed shape
+        // without a second computation, and this test welds equality.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 6,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_030),
+        };
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(d.watermark, current.watermark_delta_since(&prior));
+    }
+
+    #[test]
+    fn config_sync_proof_delta_since_agrees_with_between() {
+        // The ergonomic sibling on the receiver must NOT diverge from
+        // the named type-associated constructor -- a consumer reading
+        // `current.delta_since(&prior)` must reach the same value as
+        // `ProofDelta::between(&prior, &current)`. Argument order is
+        // load-bearing: the receiver is the "current" half.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 6,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_030),
+        };
+        assert_eq!(
+            current.delta_since(&prior),
+            ProofDelta::between(&prior, &current)
+        );
+    }
+
+    #[test]
+    fn identity_republish_is_disjoint_from_stationary_and_from_movement() {
+        // The three "no watermark movement" corners are:
+        //   stationary          -- generation unchanged, same observation
+        //   identity_republish  -- generation advanced, same value
+        //   generations_regressed -- generation went backwards (impossible)
+        // A ProofDelta whose watermark is stationary lands in exactly
+        // one of these three; the predicates must not overlap on the
+        // legitimate corners.
+        let anchor = base();
+
+        let same_obs = ProofDelta::between(
+            &proof_at(&anchor, 5, 1_700_000_000),
+            &proof_at(&anchor, 5, 1_700_000_060),
+        );
+        assert!(same_obs.stationary());
+        assert!(!same_obs.identity_republish());
+
+        let republish = ProofDelta::between(
+            &proof_at(&anchor, 5, 1_700_000_000),
+            &proof_at(&anchor, 6, 1_700_000_060),
+        );
+        assert!(!republish.stationary());
+        assert!(republish.identity_republish());
+    }
+
+    #[test]
+    fn identity_republish_is_false_when_watermark_moved() {
+        // A watermark move disqualifies identity_republish regardless of
+        // how far generation advanced -- the "same value" half of the
+        // predicate is required.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let current = ConfigSyncProof {
+            generation: 6,
+            watermark: wm_of(&c2),
+            observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_030),
+        };
+        let d = ProofDelta::between(&prior, &current);
+        assert!(
+            !d.identity_republish(),
+            "value changed -- not an identity re-publish"
         );
     }
 }
