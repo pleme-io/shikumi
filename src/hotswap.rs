@@ -491,6 +491,189 @@ impl WatermarkDelta {
     pub const fn partitioned_class_invariant_holds(&self) -> bool {
         self.full_moved == (self.restart_required_moved || self.free_moved)
     }
+
+    /// Classify this delta into the exhaustive [`WatermarkRelation`] sum —
+    /// the sum-type peer of [`ProofRelation::between`] at the watermark
+    /// altitude. Every legitimate corner of the
+    /// (`full_moved`, `restart_required_moved`, `free_moved`) grid maps to
+    /// one variant; the three impossibility corners (a class-scoped half
+    /// moved without `full_moved` — the same shape
+    /// [`Self::class_moves_imply_full_moved`] refuses) map to `None`.
+    ///
+    /// A [`WatermarkDelta`] produced by [`Self::between`] on two
+    /// well-formed [`ConfigWatermark`] values, or reconstructed by
+    /// [`Self::try_from_wire`], always satisfies the weak class-partition
+    /// invariant, so this classification is total on every value the
+    /// authored surface produces. `None` reaches a consumer only when the
+    /// delta was hand-constructed with inconsistent field values through
+    /// the public `pub`-field constructor — the same "hand-authored
+    /// inconsistency" seam [`Self::class_moves_imply_full_moved`] flags
+    /// via a predicate. Naming the classification as a variant promotes
+    /// that runtime check to a `match`-able shape a consumer can route on
+    /// without a second predicate call.
+    #[must_use]
+    pub const fn relation(&self) -> Option<WatermarkRelation> {
+        match (
+            self.full_moved,
+            self.restart_required_moved,
+            self.free_moved,
+        ) {
+            (false, false, false) => Some(WatermarkRelation::Stationary),
+            (true, false, false) => Some(WatermarkRelation::UnclassifiedDrift),
+            (true, true, false) => Some(WatermarkRelation::RestartRequiredOnly),
+            (true, false, true) => Some(WatermarkRelation::FreeOnly),
+            (true, true, true) => Some(WatermarkRelation::Both),
+            // The three (false, ?, ?) impossibility corners — a class-
+            // scoped half moved without full_moved. `Self::class_moves_imply_full_moved`
+            // refuses this shape as a predicate; the classification refuses
+            // it by yielding `None`.
+            (false, _, _) => None,
+        }
+    }
+}
+
+/// An exhaustive sum-type classification of the
+/// (`full_moved`, `restart_required_moved`, `free_moved`) grid a
+/// [`WatermarkDelta`] describes — the value-side sum-type peer of
+/// [`ProofRelation`] at the watermark altitude.
+///
+/// **Why this type exists — promote the class-partition predicate to a
+/// match.** [`WatermarkDelta`] carries three booleans plus a handful of
+/// predicates ([`WatermarkDelta::restart_pending`],
+/// [`WatermarkDelta::hot_swappable_drift`],
+/// [`WatermarkDelta::class_moves_imply_full_moved`]) that a consumer
+/// composes ad-hoc at every seam to decide which corner of the grid a
+/// delta lands in. Naming the classification as a sum type folds that
+/// composition into ONE `match`: adding a sixth corner to the grid (say,
+/// a new [`HotSwapClass`] axis) turns every consumer red at the same
+/// instant the classification changes, closing the exhaustiveness gap
+/// the free-floating predicates leave open. Same relationship
+/// [`ProofRelation`] holds to [`ProofDelta`]'s four boolean predicates,
+/// spelled one altitude down at the watermark grid.
+///
+/// **Five legitimate corners under the weak class-partition invariant.**
+/// The three (`full_moved`=`false`, class-scoped=`true`) tuples are
+/// refused by [`WatermarkDelta::class_moves_imply_full_moved`] and reach
+/// this classification as `None` from [`WatermarkDelta::relation`]. The
+/// five remaining corners are:
+///
+/// - [`Self::Stationary`] — `(false, false, false)`: nothing moved. The
+///   null hypothesis a poller checks before further inspection.
+/// - [`Self::UnclassifiedDrift`] — `(true, false, false)`: the full
+///   watermark moved but neither class-scoped half did. Only possible
+///   when the producer's `field_classes` slice is NOT exhaustive over
+///   the config's top-level fields — an "unclassified field drifted"
+///   signal a consumer that assumes exhaustive partitioning should
+///   escalate. Under the two-way invariant
+///   ([`WatermarkDelta::partitioned_class_invariant_holds`]) this
+///   variant is impossible; the crate does not force exhaustive
+///   partitioning at the [`ConfigWatermark::compute`] boundary, so the
+///   variant exists to name the corner.
+/// - [`Self::RestartRequiredOnly`] — `(true, true, false)`: a
+///   `RequiresRestart` field drifted, no Free field did. The exact
+///   corner CALHA's split-watermark poller (see
+///   [`WatermarkDelta::restart_pending`]) routes on to raise the
+///   pending-restart signal without a spurious hot-swap.
+/// - [`Self::FreeOnly`] — `(true, false, true)`: a Free field drifted,
+///   no `RequiresRestart` field did. The symmetric operator-side
+///   corner a live-edit surface (see
+///   [`WatermarkDelta::hot_swappable_drift`]) routes on to perform a
+///   hot swap without prompting for a restart.
+/// - [`Self::Both`] — `(true, true, true)`: at least one field of each
+///   class drifted. A consumer that must both hot-swap AND notify for a
+///   pending restart reaches this corner in one arm.
+///
+/// **The impossibility bucket travels as `Option::None`, not as a
+/// variant.** [`ProofRelation`] treats its two impossibility corners
+/// ([`ProofRelation::CrossStore`] and [`ProofRelation::Regressed`]) as
+/// legitimate variants because each names a semantically meaningful
+/// diagnostic ("cross-store confusion" and "monotonicity regression").
+/// The class-partition impossibility here has no comparable diagnostic
+/// use — it means only that a [`WatermarkDelta`] was hand-constructed
+/// with inconsistent field values through the `pub`-field constructor,
+/// which no authored path in the crate produces. Yielding `None` mirrors
+/// the [`MovedWatermarkDelta::new`] precedent for filtering out an
+/// invariant-violating shape without inflating the sum with a bucket
+/// that never routes anywhere.
+///
+/// **Predicate parity with [`WatermarkDelta`].** Every predicate on
+/// [`WatermarkDelta`] has a variant-side sibling here
+/// ([`Self::any_moved`], [`Self::stationary`], [`Self::restart_pending`],
+/// [`Self::hot_swappable_drift`],
+/// [`Self::partitioned_class_invariant_holds`]) so a consumer already
+/// destructuring the classification reaches every question through the
+/// variant shape rather than falling back to a `WatermarkDelta`
+/// projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WatermarkRelation {
+    /// The `(false, false, false)` corner: no observable field of the
+    /// resolved config changed. The null hypothesis a poller confirms
+    /// before doing any further inspection.
+    Stationary,
+    /// The `(true, false, false)` corner: the full watermark moved but
+    /// neither class-scoped half did. Only reachable when the producer's
+    /// `field_classes` slice is NOT exhaustive over the config's
+    /// top-level fields — an "unclassified field drifted" signal.
+    UnclassifiedDrift,
+    /// The `(true, true, false)` corner: a `RequiresRestart` field
+    /// drifted, no Free field did. The CALHA-side "pending restart
+    /// signal without a hot-swap" corner.
+    RestartRequiredOnly,
+    /// The `(true, false, true)` corner: a Free field drifted, no
+    /// `RequiresRestart` field did. The operator-side "hot-swap without
+    /// a pending restart" corner.
+    FreeOnly,
+    /// The `(true, true, true)` corner: at least one field of each
+    /// class drifted. A consumer that hot-swaps AND notifies for a
+    /// pending restart reaches this in one arm.
+    Both,
+}
+
+impl WatermarkRelation {
+    /// True iff at least one axis of the underlying delta moved — the
+    /// variant-side sibling of [`WatermarkDelta::any_moved`]. Equivalent
+    /// to `!self.stationary()`.
+    #[must_use]
+    pub const fn any_moved(&self) -> bool {
+        !matches!(self, Self::Stationary)
+    }
+
+    /// True iff no axis moved — the variant-side sibling of
+    /// [`WatermarkDelta::stationary`]. Equivalent to `!self.any_moved()`.
+    #[must_use]
+    pub const fn stationary(&self) -> bool {
+        matches!(self, Self::Stationary)
+    }
+
+    /// True iff the `RequiresRestart` half moved — the CALHA-side
+    /// question spelled through the variant shape. The variant-side
+    /// sibling of [`WatermarkDelta::restart_pending`].
+    #[must_use]
+    pub const fn restart_pending(&self) -> bool {
+        matches!(self, Self::RestartRequiredOnly | Self::Both)
+    }
+
+    /// True iff the Free half moved — the operator-side "did a
+    /// hot-swappable knob drift?" question spelled through the variant
+    /// shape. The variant-side sibling of
+    /// [`WatermarkDelta::hot_swappable_drift`].
+    #[must_use]
+    pub const fn hot_swappable_drift(&self) -> bool {
+        matches!(self, Self::FreeOnly | Self::Both)
+    }
+
+    /// True iff the two-way class-partition invariant holds — every
+    /// variant except [`Self::UnclassifiedDrift`]. The variant-side
+    /// sibling of [`WatermarkDelta::partitioned_class_invariant_holds`]:
+    /// the classification refuses the impossibility corners at
+    /// [`WatermarkDelta::relation`] (via `None`), so the only surviving
+    /// invariant-violating shape at this altitude is the "full moved
+    /// but neither class-scoped half did" corner a non-exhaustive
+    /// `field_classes` slice allows.
+    #[must_use]
+    pub const fn partitioned_class_invariant_holds(&self) -> bool {
+        !matches!(self, Self::UnclassifiedDrift)
+    }
 }
 
 /// A [`WatermarkDelta`] whose "at least one half moved" invariant is
@@ -776,6 +959,25 @@ impl ConfigWatermark {
     #[must_use]
     pub fn delta_since(&self, prior: &Self) -> WatermarkDelta {
         WatermarkDelta::between(prior, self)
+    }
+
+    /// The [`WatermarkRelation`] classification from `prior` to `self` —
+    /// the sum-type receiver-sibling of [`Self::delta_since`], mirroring
+    /// the [`ConfigSyncProof::relation_since`] / [`Self::delta_since`]
+    /// pair one altitude up at the proof grid. Reaches the same variant
+    /// [`WatermarkDelta::relation`] would yield on the equivalent
+    /// [`Self::delta_since`] output, one call rather than two.
+    ///
+    /// Returns `None` only when the underlying delta violates the weak
+    /// class-partition invariant — a shape [`WatermarkDelta::between`]
+    /// on any two [`ConfigWatermark`] values produced by
+    /// [`Self::compute`] cannot yield in the absence of hash collisions,
+    /// so a `None` here signals a hand-constructed inconsistent
+    /// [`WatermarkDelta`] leaking through a non-standard path rather
+    /// than a legitimate authored-flow outcome.
+    #[must_use]
+    pub fn relation_since(&self, prior: &Self) -> Option<WatermarkRelation> {
+        self.delta_since(prior).relation()
     }
 }
 
@@ -4243,6 +4445,465 @@ mod proof_relation_wire_tests {
         assert_eq!(
             current.relation_since(&prior).to_wire(),
             ProofRelation::between(&prior, &current).to_wire(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod watermark_relation_tests {
+    //! Weld the sum-type classification of a [`WatermarkDelta`] — the
+    //! value-side peer of [`ProofRelation`] at the watermark altitude.
+    //! Together the tests below cover:
+    //!
+    //! 1. Every legitimate corner of the (`full_moved`,
+    //!    `restart_required_moved`, `free_moved`) grid maps to the
+    //!    intended [`WatermarkRelation`] variant, computed from the exact
+    //!    same [`WatermarkDelta::between`] the authored crate uses.
+    //! 2. Every one of the three impossibility corners (a class-scoped
+    //!    half moved without `full_moved`) yields `None` from
+    //!    [`WatermarkDelta::relation`] — the same shape
+    //!    [`WatermarkDelta::class_moves_imply_full_moved`] refuses as a
+    //!    predicate.
+    //! 3. Every variant-side predicate matches its
+    //!    [`WatermarkDelta`]-side sibling pointwise, so a consumer that
+    //!    routes on `Self::restart_pending` / `Self::hot_swappable_drift`
+    //!    / `Self::partitioned_class_invariant_holds` through the variant
+    //!    reaches the same answer the underlying delta's predicate gives.
+    //! 4. [`ConfigWatermark::relation_since`] agrees with
+    //!    `self.delta_since(prior).relation()` on every corner — the
+    //!    ergonomic receiver sibling never diverges from the named path.
+    //! 5. Wire round-trips through [`WatermarkDelta::try_from_wire`]
+    //!    preserve the classification: a delta reconstructed from the wire
+    //!    reaches the same variant its value-side origin did.
+    //! 6. `Some` is total on every [`WatermarkDelta::between`] output —
+    //!    across a matrix of edits touching each [`HotSwapClass`], both,
+    //!    and neither, the classification never yields `None`.
+    //! 7. `restart_pending` and `hot_swappable_drift` on the variant
+    //!    agree with the payload of the analogous [`ProofRelation`]
+    //!    variant, so the two altitudes stay coherent.
+    //! 8. The impossibility bucket has no `to_wire`-side counterpart — a
+    //!    `MovedWatermarkDelta::try_from_wire` reject and a
+    //!    `WatermarkDelta::relation` `None` name the same set of
+    //!    hand-constructed shapes.
+    //! 9. The (`Stationary`, `UnclassifiedDrift`, `RestartRequiredOnly`,
+    //!    `FreeOnly`, `Both`) tags exhaustively cover the five legitimate
+    //!    corners: iterating a hand-authored list of the five
+    //!    (`full_moved`, `restart_required_moved`, `free_moved`) tuples
+    //!    reaches each variant exactly once with `Some(_)`.
+    //! 10. `PartialEq` on the variant matches structural equality of the
+    //!     underlying delta — two deltas with the same tuple of booleans
+    //!     land in the same variant regardless of which config edit
+    //!     produced them.
+
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    // A Cfg with an EXTRA field NOT covered by FIELD_CLASSES — an edit
+    // to `unclassified` moves `full` but neither class-scoped half,
+    // reaching the UnclassifiedDrift corner.
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct CfgUnclassified {
+        log_level: String,
+        bind_addr: String,
+        // Not in FIELD_CLASSES_UNCLASSIFIED below either — an edit here
+        // touches only the full-hash input.
+        release_channel: String,
+    }
+
+    // Same subset of classifications as FIELD_CLASSES — `release_channel`
+    // is deliberately absent so an edit to it produces a
+    // `full_moved`-only delta.
+    const FIELD_CLASSES_UNCLASSIFIED: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn base_unclassified() -> CfgUnclassified {
+        CfgUnclassified {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+            release_channel: "stable".into(),
+        }
+    }
+
+    fn unclassified_edit() -> CfgUnclassified {
+        let mut c = base_unclassified();
+        c.release_channel = "beta".into();
+        c
+    }
+
+    fn wm_of_unclassified(c: &CfgUnclassified) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES_UNCLASSIFIED)
+    }
+
+    // ---------- Corner coverage ----------
+
+    #[test]
+    fn stationary_delta_maps_to_stationary_variant() {
+        let w = wm_of(&base());
+        let d = WatermarkDelta::between(&w, &w);
+        assert_eq!(d.relation(), Some(WatermarkRelation::Stationary));
+    }
+
+    #[test]
+    fn free_only_edit_maps_to_free_only_variant() {
+        let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&free_edit()));
+        // Only the free-classed field changed, so restart_required stays
+        // put; full moves because a subset of its input changed.
+        assert_eq!(d.relation(), Some(WatermarkRelation::FreeOnly));
+    }
+
+    #[test]
+    fn restart_only_edit_maps_to_restart_required_only_variant() {
+        let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&restart_edit()));
+        assert_eq!(d.relation(), Some(WatermarkRelation::RestartRequiredOnly),);
+    }
+
+    #[test]
+    fn both_classes_edit_maps_to_both_variant() {
+        let d = WatermarkDelta::between(&wm_of(&base()), &wm_of(&both_edit()));
+        assert_eq!(d.relation(), Some(WatermarkRelation::Both));
+    }
+
+    #[test]
+    fn unclassified_field_edit_maps_to_unclassified_drift_variant() {
+        // A field not present in FIELD_CLASSES_UNCLASSIFIED moves full
+        // but neither class-scoped half — the only path to the
+        // UnclassifiedDrift corner via an authored config edit.
+        let d = WatermarkDelta::between(
+            &wm_of_unclassified(&base_unclassified()),
+            &wm_of_unclassified(&unclassified_edit()),
+        );
+        assert_eq!(d.relation(), Some(WatermarkRelation::UnclassifiedDrift));
+    }
+
+    // ---------- Impossibility coverage ----------
+
+    #[test]
+    fn hand_constructed_restart_moved_without_full_moved_yields_none() {
+        // The (false, true, false) impossibility corner: a class-scoped
+        // half moved without full moving. class_moves_imply_full_moved
+        // refuses this as a predicate; relation refuses it via None.
+        let d = WatermarkDelta {
+            full_moved: false,
+            restart_required_moved: true,
+            free_moved: false,
+        };
+        assert_eq!(d.relation(), None);
+        assert!(!d.class_moves_imply_full_moved());
+    }
+
+    #[test]
+    fn hand_constructed_free_moved_without_full_moved_yields_none() {
+        let d = WatermarkDelta {
+            full_moved: false,
+            restart_required_moved: false,
+            free_moved: true,
+        };
+        assert_eq!(d.relation(), None);
+        assert!(!d.class_moves_imply_full_moved());
+    }
+
+    #[test]
+    fn hand_constructed_both_class_moved_without_full_moved_yields_none() {
+        let d = WatermarkDelta {
+            full_moved: false,
+            restart_required_moved: true,
+            free_moved: true,
+        };
+        assert_eq!(d.relation(), None);
+        assert!(!d.class_moves_imply_full_moved());
+    }
+
+    // ---------- Predicate parity with WatermarkDelta ----------
+
+    #[test]
+    fn variant_predicates_match_delta_predicates_on_every_legitimate_corner() {
+        // Iterate the five legitimate (full, restart, free) tuples; check
+        // that every predicate on the variant agrees with the same
+        // predicate on the underlying delta. Welds "the variant shape
+        // never routes a consumer to a different answer than the
+        // WatermarkDelta predicates would have."
+        let tuples = [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, false, true),
+            (true, true, true),
+        ];
+        for (full, restart, free) in tuples {
+            let d = WatermarkDelta {
+                full_moved: full,
+                restart_required_moved: restart,
+                free_moved: free,
+            };
+            let r = d.relation().expect("legitimate corner must classify");
+            assert_eq!(
+                r.any_moved(),
+                d.any_moved(),
+                "any_moved must agree on {d:?} -> {r:?}"
+            );
+            assert_eq!(
+                r.stationary(),
+                d.stationary(),
+                "stationary must agree on {d:?} -> {r:?}"
+            );
+            assert_eq!(
+                r.restart_pending(),
+                d.restart_pending(),
+                "restart_pending must agree on {d:?} -> {r:?}"
+            );
+            assert_eq!(
+                r.hot_swappable_drift(),
+                d.hot_swappable_drift(),
+                "hot_swappable_drift must agree on {d:?} -> {r:?}"
+            );
+            assert_eq!(
+                r.partitioned_class_invariant_holds(),
+                d.partitioned_class_invariant_holds(),
+                "partitioned_class_invariant_holds must agree on {d:?} -> {r:?}"
+            );
+        }
+    }
+
+    // ---------- Receiver-sibling composition ----------
+
+    #[test]
+    fn config_watermark_relation_since_agrees_with_delta_since_then_relation() {
+        // Iterate the four legitimate configuration edits reachable
+        // through an authored config change (stationary, free-only,
+        // restart-only, both) and pin that the receiver-sibling never
+        // diverges from the delta_since().relation() composition — the
+        // exact "the ergonomic sibling never diverges from the named
+        // path" pin ConfigSyncProof::relation_since already carries at
+        // one altitude up.
+        let cases = [
+            (base(), base()),
+            (base(), free_edit()),
+            (base(), restart_edit()),
+            (base(), both_edit()),
+        ];
+        for (prior, current) in cases {
+            let a = wm_of(&prior);
+            let b = wm_of(&current);
+            assert_eq!(
+                b.relation_since(&a),
+                b.delta_since(&a).relation(),
+                "relation_since must fold delta_since().relation() on {prior:?} -> {current:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_watermark_relation_since_reaches_unclassified_drift_corner() {
+        // Cover the fifth corner through the receiver sibling too — the
+        // Cfg type that carries an unclassified `release_channel` field.
+        let a = wm_of_unclassified(&base_unclassified());
+        let b = wm_of_unclassified(&unclassified_edit());
+        assert_eq!(
+            b.relation_since(&a),
+            Some(WatermarkRelation::UnclassifiedDrift),
+        );
+    }
+
+    // ---------- Wire round-trip preserves the classification ----------
+
+    #[test]
+    fn classification_survives_watermark_delta_wire_round_trip() {
+        // A delta reconstructed via WatermarkDelta::try_from_wire lands
+        // in the same variant its value-side origin did — the wire is a
+        // lossless channel for the classification, one altitude below
+        // ProofRelation's own wire round-trip pin.
+        let cases = [
+            (base(), base()),
+            (base(), free_edit()),
+            (base(), restart_edit()),
+            (base(), both_edit()),
+        ];
+        for (prior, current) in cases {
+            let d = WatermarkDelta::between(&wm_of(&prior), &wm_of(&current));
+            let wire = d.to_wire();
+            let back = WatermarkDelta::try_from_wire(&wire)
+                .expect("legitimate delta must round-trip through the wire");
+            assert_eq!(
+                d.relation(),
+                back.relation(),
+                "wire round-trip must preserve the classification on {d:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hand_constructed_impossibility_shape_wire_is_refused_and_never_reaches_a_variant() {
+        // The wire boundary refuses the same shapes WatermarkDelta::relation
+        // yields None on — pinning that the impossibility bucket has no
+        // wire-side counterpart. A `MovedWatermarkDelta::try_from_wire`
+        // reject and a `WatermarkDelta::relation` None name the same set
+        // of hand-constructed shapes.
+        let impossible = [
+            (false, true, false),
+            (false, false, true),
+            (false, true, true),
+        ];
+        for (full, restart, free) in impossible {
+            let d = WatermarkDelta {
+                full_moved: full,
+                restart_required_moved: restart,
+                free_moved: free,
+            };
+            // relation says None...
+            assert_eq!(
+                d.relation(),
+                None,
+                "impossibility corner {d:?} must yield None"
+            );
+            // ...and the wire refuses the same shape when reconstructed.
+            let wire = d.to_wire();
+            assert!(
+                WatermarkDelta::try_from_wire(&wire).is_err(),
+                "wire boundary must refuse the same shape relation refuses ({d:?})",
+            );
+        }
+    }
+
+    // ---------- ProofRelation cross-altitude coherence ----------
+
+    #[test]
+    fn variant_predicates_agree_with_progression_variant_watermark_payload() {
+        // A ProofRelation::Progression's MovedWatermarkDelta payload
+        // reaches the same restart_pending / hot_swappable_drift answers
+        // via .relation() on the underlying WatermarkDelta as it does via
+        // the payload's own delta predicates. Welds the two altitudes to
+        // one classification vocabulary.
+        use std::time::{Duration, UNIX_EPOCH};
+        let prior_wm = wm_of(&base());
+        let current_wm = wm_of(&both_edit());
+        let prior = ConfigSyncProof {
+            watermark: prior_wm,
+            generation: 1,
+            observed_at: UNIX_EPOCH,
+        };
+        let current = ConfigSyncProof {
+            watermark: current_wm,
+            generation: 2,
+            observed_at: UNIX_EPOCH + Duration::from_secs(1),
+        };
+        let rel = ProofRelation::between(&prior, &current);
+        let ProofRelation::Progression { watermark, .. } = rel else {
+            panic!("both-classes edit + generation advance must land in Progression, got {rel:?}");
+        };
+        let wr = watermark
+            .relation()
+            .expect("MovedWatermarkDelta must always classify");
+        assert_eq!(wr, WatermarkRelation::Both);
+        assert!(wr.restart_pending());
+        assert!(wr.hot_swappable_drift());
+    }
+
+    // ---------- Exhaustiveness pin ----------
+
+    #[test]
+    fn the_five_legitimate_tuples_reach_each_variant_exactly_once() {
+        // A hand-authored list of the five legitimate (full, restart,
+        // free) tuples must reach each variant exactly once. Pinning the
+        // count at 5 turns any future variant addition red — every new
+        // corner of the (fullMoved, restartRequiredMoved, freeMoved)
+        // grid (say, a new HotSwapClass axis) needs a corresponding
+        // tuple here.
+        let tuples = [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, false, true),
+            (true, true, true),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for (full, restart, free) in tuples {
+            let d = WatermarkDelta {
+                full_moved: full,
+                restart_required_moved: restart,
+                free_moved: free,
+            };
+            let r = d
+                .relation()
+                .expect("legitimate corner must classify to Some");
+            assert!(
+                seen.insert(format!("{r:?}")),
+                "variant {r:?} reached twice — the (full, restart, free) grid is not injective",
+            );
+        }
+        assert_eq!(seen.len(), 5, "must reach exactly 5 distinct variants");
+    }
+
+    // ---------- Structural equality ----------
+
+    #[test]
+    fn same_tuple_from_different_edits_yields_the_same_variant() {
+        // Two deltas with the same (full, restart, free) tuple land in
+        // the same variant regardless of which config edit produced
+        // them — the classification depends only on the boolean shape,
+        // as its documentation promises.
+        let d1 = WatermarkDelta::between(&wm_of(&base()), &wm_of(&free_edit()));
+        // Construct a second delta with the same shape from a different
+        // pair (same base + a different Free-classed edit).
+        let mut alt = base();
+        alt.log_level = "trace".into();
+        let d2 = WatermarkDelta::between(&wm_of(&base()), &wm_of(&alt));
+        assert_eq!(
+            d1.relation(),
+            d2.relation(),
+            "same (full, restart, free) tuple must yield the same variant",
         );
     }
 }
