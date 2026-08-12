@@ -1448,6 +1448,131 @@ impl ProofDelta {
     pub const fn same_store_consistent(&self) -> bool {
         !self.generations_regressed() && !self.cross_store_signal()
     }
+
+    /// Classify the delta into the exhaustive [`ProofRelation`] sum —
+    /// the delta-altitude classification receiver-sibling of
+    /// [`ConfigSyncProof::relation_since`].
+    ///
+    /// **Same-`Option::None` idiom as [`WatermarkDelta::relation`] one
+    /// altitude down.** Returns `None` on exactly two impossibility
+    /// buckets:
+    ///
+    /// 1. `self.generations_advanced.is_none()` — the delta folded the
+    ///    exact backwards-regression count into `Option::None` and
+    ///    cannot recover the [`std::num::NonZeroU64`] `by` that
+    ///    [`ProofRelation::Regressed`] carries. A consumer that needs
+    ///    the count reaches [`ProofRelation::between`] /
+    ///    [`ConfigSyncProof::relation_since`] on the original proof pair
+    ///    instead, where the count is preserved.
+    /// 2. `!self.watermark.class_moves_imply_full_moved()` — the
+    ///    underlying watermark is in the class-partition impossibility
+    ///    corner (`restart_required_moved || free_moved` while
+    ///    `!full_moved`, three tuples). [`ProofDelta::between`] on any
+    ///    pair of [`ConfigSyncProof`] values whose watermarks came from
+    ///    [`ConfigWatermark::compute`] never produces this shape, but a
+    ///    hand-constructed [`ProofDelta`] through the `pub`-field
+    ///    constructor can. Since the [`ProofRelation::Progression`] /
+    ///    [`ProofRelation::CrossStore`] payload's [`MovedWatermarkDelta`]
+    ///    welds moved-ness but NOT class-partition, letting the shape
+    ///    escape into the payload would surface as a downstream
+    ///    invariant break at a wire boundary far from the seam that
+    ///    produced it. Refusing here mirrors
+    ///    [`WatermarkDelta::relation`]'s `Option::None` filtering on the
+    ///    same three tuples one altitude down — the impossibility bucket
+    ///    travels as `Option::None`, not as a variant, on both altitudes.
+    ///
+    /// **Agreement with [`ConfigSyncProof::relation_since`] on the four
+    /// legitimate delta corners.** For any two [`ConfigSyncProof`]
+    /// values `prior` and `current` with `current.generation >=
+    /// prior.generation`, `current.delta_since(&prior).relation()`
+    /// equals `Some(current.relation_since(&prior))` pointwise. The two
+    /// diverge only on the regressed corner, where the delta lost the
+    /// count and can no longer fill the [`ProofRelation::Regressed`]
+    /// variant — this method returns `None`, the proof-pair sibling
+    /// returns `Some(Regressed { by })`.
+    ///
+    /// `const` so a compile-time-known delta classifies at compile time
+    /// — matching [`WatermarkDelta::relation`]'s `const`-ness one
+    /// altitude down.
+    #[must_use]
+    pub const fn relation(&self) -> Option<ProofRelation> {
+        let Some(generations_advanced) = self.generations_advanced else {
+            return None;
+        };
+        if !self.watermark.class_moves_imply_full_moved() {
+            return None;
+        }
+        if self.watermark.stationary() {
+            if generations_advanced == 0 {
+                Some(ProofRelation::Stationary)
+            } else {
+                // generations_advanced > 0 checked; NonZeroU64::new is Some.
+                match std::num::NonZeroU64::new(generations_advanced) {
+                    Some(generations) => Some(ProofRelation::IdentityRepublish { generations }),
+                    None => None,
+                }
+            }
+        } else {
+            // watermark non-stationary; MovedWatermarkDelta::new is Some.
+            let Some(watermark) = MovedWatermarkDelta::new(self.watermark) else {
+                return None;
+            };
+            if generations_advanced == 0 {
+                Some(ProofRelation::CrossStore { watermark })
+            } else {
+                match std::num::NonZeroU64::new(generations_advanced) {
+                    Some(generations) => Some(ProofRelation::Progression {
+                        watermark,
+                        generations,
+                    }),
+                    None => None,
+                }
+            }
+        }
+    }
+
+    /// The wire-side sibling of [`Self::relation`] — classifies this
+    /// delta into the [`ProofRelationWire`] sum and returns it wrapped
+    /// in the same `Option` shape [`Self::relation`] carries. Composes
+    /// `self.relation().map(|r| r.to_wire())` at one call, spelled
+    /// `const` (matching [`Self::relation`] and
+    /// [`ProofRelation::to_wire`], neither of which allocates) so a
+    /// delta known at compile time projects to its classification wire
+    /// at compile time too.
+    ///
+    /// **Closes the proof-delta-altitude (`bare`, `relation`) × (`value`,
+    /// `wire`) 2×2 grid.** Before this pair of methods the grid was
+    /// half-empty at the proof-delta altitude: the value-side bare
+    /// projection is the `ProofDelta` type itself, the wire-side bare
+    /// projection is [`Self::to_wire`], but neither classification cell
+    /// existed. This method IS the wire-side classification composition
+    /// at the delta altitude, matching the shape [`Self::to_wire`]
+    /// already carries for the bare projection and mirroring
+    /// [`WatermarkDelta::relation_wire`]'s discipline one altitude down.
+    ///
+    /// **Same-`None` invariant with [`Self::relation`].** Returns `None`
+    /// on exactly the two impossibility corners [`Self::relation`]
+    /// filters — the generation-regressed corner (delta lost the `by`
+    /// count) and the class-partition impossibility corner (only
+    /// reachable through the `pub`-field constructor).
+    ///
+    /// **Coherence with [`ConfigSyncProof::relation_wire_since`] on the
+    /// four legitimate corners.** For any two [`ConfigSyncProof`]
+    /// values `prior` and `current` with `current.generation >=
+    /// prior.generation`, `current.delta_since(&prior).relation_wire()`
+    /// equals `Some(current.relation_wire_since(&prior))` pointwise.
+    /// The two diverge only on the regressed corner, where the delta
+    /// lost the count and can no longer fill the
+    /// [`ProofRelationWire::Regressed`] arm — this method returns
+    /// `None`, the proof-pair sibling returns
+    /// `Some(Regressed { by })`.
+    #[must_use]
+    pub const fn relation_wire(&self) -> Option<ProofRelationWire> {
+        match self.relation() {
+            Some(r) => Some(r.to_wire()),
+            None => None,
+        }
+    }
 }
 
 /// The **wire projection** of a [`ProofDelta`] — the proof-altitude
@@ -8471,5 +8596,503 @@ mod watermark_delta_relation_wire_tests {
         };
         const W: Option<WatermarkRelationWire> = D.relation_wire();
         assert_eq!(W, Some(WatermarkRelationWire::RestartRequiredOnly));
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_relation_tests {
+    //! Weld the proof-delta-altitude classification receiver-sibling
+    //! pair on [`ProofDelta`] — [`ProofDelta::relation`] and
+    //! [`ProofDelta::relation_wire`] closing the two missing cells of
+    //! the (`bare`, `relation`) × (`value`, `wire`) 2×2 grid at the
+    //! proof-delta altitude. Mirrors the shape
+    //! [`WatermarkDelta::relation`] / [`WatermarkDelta::relation_wire`]
+    //! carry one altitude down at the watermark-delta altitude, so the
+    //! sibling-family shape stays uniform across altitudes. Together
+    //! the tests below cover:
+    //!
+    //! 1. [`ProofDelta::relation_wire`] composes through
+    //!    [`ProofDelta::relation`] + [`ProofRelation::to_wire`] — a
+    //!    future proof-altitude classification variant added to
+    //!    [`ProofRelation`] never reaches this method's body;
+    //!    `relation` stays the single source of truth for the delta →
+    //!    value-relation classification, and [`ProofRelation::to_wire`]
+    //!    stays the single source of truth for its wire projection.
+    //! 2. Same-`None` invariant with [`ProofDelta::relation`]:
+    //!    [`ProofDelta::relation_wire`] returns `None` on exactly the
+    //!    same two impossibility buckets [`ProofDelta::relation`]
+    //!    refuses — the generation-regressed corner (delta lost the
+    //!    `by` count) and the class-partition impossibility corner
+    //!    (only reachable through the `pub`-field constructor). The
+    //!    impossibility bucket travels as `Option::None` on both
+    //!    value and wire sides.
+    //! 3. Round-trip totality through [`ProofRelation::try_from_wire`]:
+    //!    every `Some(wire)` the sibling reaches on the authored flow
+    //!    reconstructs to the exact value-side relation
+    //!    [`ProofDelta::relation`] yields, so the wire projection
+    //!    composed with its inverse is the identity on the value-side
+    //!    relation across every legitimate proof-delta corner.
+    //! 4. Reaches every LEGITIMATE proof-relation variant in one call
+    //!    — [`ProofRelation::Stationary`],
+    //!    [`ProofRelation::IdentityRepublish`],
+    //!    [`ProofRelation::Progression`] across the three
+    //!    non-stationary watermark sub-corners, and
+    //!    [`ProofRelation::CrossStore`]. [`ProofRelation::Regressed`]
+    //!    is NOT reachable from a delta by design — that variant
+    //!    carries a [`std::num::NonZeroU64`] `by` count the delta
+    //!    folded into `Option::None`, so a consumer that needs the
+    //!    count reaches [`ProofRelation::between`] on the underlying
+    //!    proof pair instead. Pinned as the "why regressed lives
+    //!    behind None" property in test 6.
+    //! 5. Agreement with [`ConfigSyncProof::relation_since`] /
+    //!    [`ConfigSyncProof::relation_wire_since`] on the four
+    //!    legitimate delta corners: for any proof pair whose
+    //!    generation did NOT regress and whose watermark is class-
+    //!    partition-consistent (both true for every pair
+    //!    [`ConfigWatermark::compute`] produces),
+    //!    `current.delta_since(&prior).relation()` equals
+    //!    `Some(current.relation_since(&prior))` and analogously for
+    //!    the wire sibling. Cross-altitude coherence pinned across
+    //!    both classifications.
+    //! 6. Generation-regressed corner maps to `None` on both methods —
+    //!    even when the underlying watermark shape and generation
+    //!    modulo would otherwise be well-formed. Sanity-anchored
+    //!    against [`ConfigSyncProof::relation_since`] on the same
+    //!    pair, which reaches `ProofRelation::Regressed` with the
+    //!    exact `by` count the delta cannot recover.
+    //! 7. Class-partition impossibility corners map to `None` on both
+    //!    methods — the three (`full_moved=false`, class-scoped=`true`)
+    //!    tuples a consumer can hand-construct through the `pub`-field
+    //!    constructor land at `None` on both `relation` and
+    //!    `relation_wire`, matching [`WatermarkDelta::relation`]'s
+    //!    filtering behaviour on the same shapes.
+    //! 8. `const`-callable — a [`ProofDelta`] known at compile time
+    //!    classifies at compile time too, matching the `const`-ness of
+    //!    both [`ProofDelta::relation`] / [`ProofDelta::relation_wire`]
+    //!    and their transitive dependencies
+    //!    [`WatermarkDelta::stationary`],
+    //!    [`WatermarkDelta::class_moves_imply_full_moved`],
+    //!    [`MovedWatermarkDelta::new`], [`std::num::NonZeroU64::new`],
+    //!    and [`ProofRelation::to_wire`].
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: wm_of(cfg),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// Every legitimate proof pair the authored flow produces — one
+    /// case per non-regressed [`ProofRelation`] corner reachable from
+    /// [`ConfigWatermark::compute`]-style values. Excludes
+    /// [`ProofRelation::Regressed`] (delta can't recover the `by`
+    /// count) and the class-partition impossibility corners
+    /// ([`WatermarkDelta::between`] never produces them, and this is
+    /// the "authored flow" fixture).
+    fn authored_legitimate_pairs() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof)> {
+        vec![
+            // Stationary: same watermark, same generation.
+            (
+                "Stationary",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 5, 1_700_000_060),
+            ),
+            // IdentityRepublish: same watermark, generation advanced.
+            (
+                "IdentityRepublish",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&base(), 7, 1_700_000_060),
+            ),
+            // Progression (FreeOnly sub-corner).
+            (
+                "Progression:FreeOnly",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&free_edit(), 6, 1_700_000_060),
+            ),
+            // Progression (RestartRequiredOnly sub-corner).
+            (
+                "Progression:RestartRequiredOnly",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&restart_edit(), 6, 1_700_000_060),
+            ),
+            // Progression (Both sub-corner).
+            (
+                "Progression:Both",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 6, 1_700_000_060),
+            ),
+            // CrossStore: watermark moved but generation unchanged.
+            (
+                "CrossStore",
+                proof_at(&base(), 5, 1_700_000_000),
+                proof_at(&both_edit(), 5, 1_700_000_060),
+            ),
+        ]
+    }
+
+    // ---------- (1) composition through relation + ProofRelation::to_wire
+
+    #[test]
+    fn relation_wire_composes_through_relation_then_to_wire() {
+        // Pin (1): the proof-delta-altitude classification-wire sibling
+        // MUST fold through ProofDelta::relation + ProofRelation::to_wire
+        // on every authored pair. A future proof-altitude classification
+        // variant added to ProofRelation never reaches this method's
+        // body; relation stays the single source of truth for the delta →
+        // value-relation classification, and ProofRelation::to_wire stays
+        // the single source of truth for its wire projection.
+        for (name, prior, current) in authored_legitimate_pairs() {
+            let delta = current.delta_since(&prior);
+            assert_eq!(
+                delta.relation_wire(),
+                delta.relation().map(|r| r.to_wire()),
+                "{name}: relation_wire must equal relation().map(|r| r.to_wire())",
+            );
+        }
+    }
+
+    // ---------- (2) same-None invariant with relation
+
+    #[test]
+    fn relation_and_relation_wire_agree_on_some_none_on_authored_flow() {
+        // Pin (2a): on every ProofDelta the authored flow produces (via
+        // ProofDelta::between on well-formed ConfigSyncProof values with
+        // non-regressed generation), both methods return Some — neither
+        // impossibility bucket fires.
+        for (name, prior, current) in authored_legitimate_pairs() {
+            let delta = current.delta_since(&prior);
+            assert!(
+                delta.relation().is_some(),
+                "{name}: authored delta must have Some(relation)",
+            );
+            assert!(
+                delta.relation_wire().is_some(),
+                "{name}: authored delta must have Some(relation_wire)",
+            );
+            assert_eq!(
+                delta.relation().is_some(),
+                delta.relation_wire().is_some(),
+                "{name}: relation and relation_wire must have identical Some/None shape",
+            );
+        }
+    }
+
+    // ---------- (3) round-trip through ProofRelation::try_from_wire
+
+    #[test]
+    fn round_trips_through_try_from_wire_to_the_same_value_side_relation() {
+        // Pin (3): every Some(wire) the sibling reaches on the authored
+        // flow reconstructs through ProofRelation::try_from_wire to the
+        // exact value-side relation ProofDelta::relation yields. The
+        // wire projection composed with its inverse is the identity on
+        // the value-side relation across every legitimate proof-delta
+        // corner.
+        for (name, prior, current) in authored_legitimate_pairs() {
+            let delta = current.delta_since(&prior);
+            let wire = delta
+                .relation_wire()
+                .unwrap_or_else(|| panic!("{name}: authored delta must have Some(relation_wire)"));
+            let back = ProofRelation::try_from_wire(&wire).unwrap_or_else(|e| {
+                panic!("{name}: try_from_wire must succeed on the sibling's own output, got {e:?}")
+            });
+            assert_eq!(
+                Some(back),
+                delta.relation(),
+                "{name}: round-tripped wire must equal the value-side relation",
+            );
+        }
+    }
+
+    // ---------- (4) reaches every legitimate variant in one call
+
+    #[test]
+    fn reaches_every_legitimate_relation_variant_in_one_call() {
+        // Pin (4): the sibling reaches a ProofRelation on every legitimate
+        // corner — Stationary, IdentityRepublish, Progression across the
+        // three non-stationary watermark sub-corners, and CrossStore —
+        // through the authored ProofDelta::between flow, in ONE call.
+        // Regressed is NOT reachable from a delta by design (pinned in
+        // test 6).
+        let mut seen_stationary = false;
+        let mut seen_identity_republish = false;
+        let mut seen_progression_free = false;
+        let mut seen_progression_restart = false;
+        let mut seen_progression_both = false;
+        let mut seen_crossstore = false;
+        for (name, prior, current) in authored_legitimate_pairs() {
+            let delta = current.delta_since(&prior);
+            let r = delta
+                .relation()
+                .unwrap_or_else(|| panic!("{name}: authored delta must have Some(relation)"));
+            match r {
+                ProofRelation::Stationary => seen_stationary = true,
+                ProofRelation::IdentityRepublish { .. } => seen_identity_republish = true,
+                ProofRelation::Progression { watermark, .. } => {
+                    if watermark.restart_pending() && watermark.hot_swappable_drift() {
+                        seen_progression_both = true;
+                    } else if watermark.restart_pending() {
+                        seen_progression_restart = true;
+                    } else if watermark.hot_swappable_drift() {
+                        seen_progression_free = true;
+                    }
+                }
+                ProofRelation::CrossStore { .. } => seen_crossstore = true,
+                ProofRelation::Regressed { .. } => {
+                    panic!("{name}: Regressed unreachable from a delta by design")
+                }
+            }
+        }
+        assert!(seen_stationary, "must reach ProofRelation::Stationary");
+        assert!(
+            seen_identity_republish,
+            "must reach ProofRelation::IdentityRepublish"
+        );
+        assert!(
+            seen_progression_free,
+            "must reach ProofRelation::Progression (FreeOnly)"
+        );
+        assert!(
+            seen_progression_restart,
+            "must reach ProofRelation::Progression (RestartRequiredOnly)"
+        );
+        assert!(
+            seen_progression_both,
+            "must reach ProofRelation::Progression (Both)"
+        );
+        assert!(seen_crossstore, "must reach ProofRelation::CrossStore");
+    }
+
+    // ---------- (5) agreement with ConfigSyncProof::relation_since /
+    //             relation_wire_since on the four legitimate corners
+
+    #[test]
+    fn agrees_with_proof_pair_altitude_sibling_on_legitimate_corners() {
+        // Pin (5): on any proof pair whose generation did NOT regress
+        // and whose watermark is class-partition-consistent (both true
+        // for every pair ConfigWatermark::compute produces),
+        // current.delta_since(&prior).relation() equals
+        // Some(current.relation_since(&prior)) and analogously for the
+        // wire sibling. Cross-altitude coherence pinned across both
+        // classifications — the delta altitude and the proof-pair
+        // altitude reach the same classification through different
+        // paths (delta fold vs direct proof-pair classification).
+        for (name, prior, current) in authored_legitimate_pairs() {
+            let delta = current.delta_since(&prior);
+            let delta_relation = delta.relation();
+            let pair_relation = current.relation_since(&prior);
+            assert_eq!(
+                delta_relation,
+                Some(pair_relation),
+                "{name}: delta.relation() must equal Some(current.relation_since(&prior))",
+            );
+            let delta_relation_wire = delta.relation_wire();
+            let pair_relation_wire = current.relation_wire_since(&prior);
+            assert_eq!(
+                delta_relation_wire,
+                Some(pair_relation_wire),
+                "{name}: delta.relation_wire() must equal Some(current.relation_wire_since(&prior))",
+            );
+        }
+    }
+
+    // ---------- (6) generation-regressed corner is None on both;
+    //             proof-pair sibling recovers the `by` count
+
+    #[test]
+    fn generation_regressed_corner_is_none_on_both_methods() {
+        // Pin (6): a proof pair with prior.generation > current.generation
+        // has generations_advanced = None on the delta; the delta cannot
+        // recover the exact `by` regression count ProofRelation::Regressed
+        // carries. Both delta-altitude methods return None on this corner
+        // — even when the underlying watermark shape and everything else
+        // would otherwise be well-formed. Sanity-anchor against
+        // ConfigSyncProof::relation_since on the same pair, which reaches
+        // ProofRelation::Regressed with the exact `by` count.
+        let prior = proof_at(&base(), 10, 1_700_000_000);
+        let current = proof_at(&base(), 5, 1_700_000_060);
+        let delta = current.delta_since(&prior);
+        assert!(
+            delta.generations_regressed(),
+            "sanity: this pair must regress at the delta altitude",
+        );
+        assert_eq!(
+            delta.relation(),
+            None,
+            "regressed delta must map to None on relation (by count lost)",
+        );
+        assert_eq!(
+            delta.relation_wire(),
+            None,
+            "regressed delta must map to None on relation_wire (by count lost)",
+        );
+        // The proof-pair-altitude sibling recovers the exact by count.
+        let pair_relation = current.relation_since(&prior);
+        match pair_relation {
+            ProofRelation::Regressed { by } => {
+                assert_eq!(
+                    by.get(),
+                    5,
+                    "proof-pair sibling recovers the exact by count",
+                );
+            }
+            other => panic!("proof-pair sibling must reach Regressed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn regressed_corner_is_none_even_with_moved_watermark_and_zero_advance_alignment() {
+        // Pin (6-b): even a regressed pair whose bare (watermark,
+        // generation-modulo) tuple could look like a legitimate CrossStore
+        // corner (moved watermark) lands at None -- the None branch fires
+        // BEFORE any watermark shape inspection, so a consumer cannot
+        // confuse a regression for a cross-store signal at the delta
+        // altitude. Contrast with test 6 (stationary watermark) to pin
+        // the None short-circuit is orthogonal to watermark shape.
+        let prior = proof_at(&base(), 10, 1_700_000_000);
+        let current = proof_at(&both_edit(), 5, 1_700_000_060);
+        let delta = current.delta_since(&prior);
+        assert!(delta.generations_regressed());
+        assert!(delta.watermark.any_moved(), "sanity: watermark moved");
+        assert_eq!(delta.relation(), None);
+        assert_eq!(delta.relation_wire(), None);
+    }
+
+    // ---------- (7) class-partition impossibility corners are None
+
+    #[test]
+    fn class_partition_impossibility_corners_are_none_on_both_methods() {
+        // Pin (7): the three (full_moved=false, class-scoped=true)
+        // tuples a consumer can hand-construct through the pub-field
+        // constructor land at None on both relation and relation_wire.
+        // Enumerated by hand because ProofDelta::between on well-formed
+        // ConfigSyncProof values never produces them (class-partition
+        // is welded at ConfigWatermark::compute). This mirrors
+        // WatermarkDelta::relation's Option::None filtering on the same
+        // shapes one altitude down — the impossibility bucket travels
+        // as Option::None on both altitudes.
+        for (rr, free) in [(true, false), (false, true), (true, true)] {
+            let bad_watermark = WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: rr,
+                free_moved: free,
+            };
+            assert!(
+                !bad_watermark.class_moves_imply_full_moved(),
+                "sanity: {bad_watermark:?} must violate the class-partition invariant",
+            );
+            // Try each combination of generations_advanced that could
+            // otherwise reach a legitimate arm — Some(0), Some(3) — to
+            // pin the filter fires INDEPENDENTLY of the generation axis.
+            for generations_advanced in [Some(0_u64), Some(3_u64)] {
+                let delta = ProofDelta {
+                    watermark: bad_watermark,
+                    generations_advanced,
+                    observed_at_elapsed: Some(Duration::from_secs(30)),
+                };
+                assert_eq!(
+                    delta.relation(),
+                    None,
+                    "relation must refuse class-partition impossibility {delta:?}",
+                );
+                assert_eq!(
+                    delta.relation_wire(),
+                    None,
+                    "relation_wire must refuse the same class-partition impossibility {delta:?}",
+                );
+            }
+        }
+    }
+
+    // ---------- (8) const-callable
+
+    #[test]
+    fn relation_and_relation_wire_are_const_callable() {
+        // Pin (8): a ProofDelta known at compile time classifies at
+        // compile time too, matching the const-ness of both methods and
+        // every transitive dependency (WatermarkDelta::stationary,
+        // WatermarkDelta::class_moves_imply_full_moved,
+        // MovedWatermarkDelta::new, NonZeroU64::new,
+        // ProofRelation::to_wire). Assigned to `const` bindings so the
+        // const-ness of the whole pipeline fails to compile at these
+        // exact lines the moment any half of the composition loses its
+        // const-ness — a compile-time weld on the const-callability of
+        // the whole classification pipeline.
+        const D_STATIONARY: ProofDelta = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        };
+        const R_STATIONARY: Option<ProofRelation> = D_STATIONARY.relation();
+        const W_STATIONARY: Option<ProofRelationWire> = D_STATIONARY.relation_wire();
+        const D_REGRESSED: ProofDelta = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        };
+        const R_REGRESSED: Option<ProofRelation> = D_REGRESSED.relation();
+        const W_REGRESSED: Option<ProofRelationWire> = D_REGRESSED.relation_wire();
+        assert_eq!(R_STATIONARY, Some(ProofRelation::Stationary));
+        assert_eq!(W_STATIONARY, Some(ProofRelationWire::Stationary));
+        assert_eq!(R_REGRESSED, None);
+        assert_eq!(W_REGRESSED, None);
     }
 }
