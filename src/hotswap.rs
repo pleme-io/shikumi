@@ -1280,6 +1280,239 @@ impl ProofRelation {
     }
 }
 
+/// The **wire projection** of a [`ProofRelation`] — the sum-type peer of
+/// [`ProofDeltaWire`], carrying the same five variants under a serde
+/// **internally-tagged** encoding (`{"kind": "...", ...}`) so a consumer
+/// routes on `kind` without deserializing the whole payload first.
+///
+/// **Why this type exists — the sum-type wire pair to
+/// [`ProofDeltaWire`].** [`ProofDeltaWire`] carries the four axes of a
+/// [`ProofDelta`] but leaves the classification implicit — a consumer that
+/// wants to route on "was this a legitimate progression? an
+/// identity-republish? a same-store impossibility?" re-derives the
+/// classification inline at every seam. `ProofRelationWire` is the wire
+/// answer to the classification question itself: the payload IS the
+/// variant tag plus only the fields that variant actually carries, so the
+/// receiving consumer's `match` reaches the same exhaustive shape the
+/// value-side [`ProofRelation`] `match` reaches. Adding a sixth corner to
+/// the [`ProofRelation`] grid (a signed-attestation attestor, say) turns
+/// every wire consumer red at the same instant the value-side consumers
+/// turn red, closing the exhaustiveness gap the four boolean predicates
+/// on [`ProofDelta`] leave open.
+///
+/// **Weld chain at the parse boundary.** Each variant welds the exact
+/// same load-bearing invariants the value-side [`ProofRelation`] does,
+/// checked ONCE at the seam rather than at every downstream use:
+///
+/// - [`Self::IdentityRepublish`]: the `generations` field is a plain
+///   `u64` on the wire, refused at parse time if zero — a zero-count
+///   republish would be indistinguishable from [`Self::Stationary`].
+/// - [`Self::Progression`]: the `generations` field is refused if zero
+///   (indistinguishable from [`Self::CrossStore`]), AND the nested
+///   `watermark: WatermarkDeltaWire` routes through
+///   [`MovedWatermarkDelta::try_from_wire`] — chaining the class-partition
+///   sanity check (a class-scoped half moved without `fullMoved`) with
+///   the moved-ness constraint (all three halves stationary).
+/// - [`Self::CrossStore`]: the nested `watermark` routes through
+///   [`MovedWatermarkDelta::try_from_wire`] under the same two welds, so
+///   a hand-authored `crossStore` payload with a stationary watermark or
+///   a class-partition violation is refused before it can reach any
+///   consumer.
+/// - [`Self::Regressed`]: the `by` field is refused if zero
+///   (indistinguishable from any equal-generation corner).
+/// - [`Self::Stationary`]: no payload, no weld — the tag alone is the
+///   proof.
+///
+/// **Why internally-tagged (`{"kind": "...", ...}`) rather than serde's
+/// default externally-tagged shape (`{"stationary": null}`, etc.).** The
+/// internal tag puts the classification at a fixed JSON path a consumer
+/// can read with one `.get("kind")` lookup, without a variant-shaped
+/// wrapping envelope. A `/healthz/config` change-feed that only wants to
+/// count the ratio of legitimate progressions to same-store impossibilities
+/// reads `kind` alone; a consumer that wants the full payload
+/// deserializes the whole shape. Matches the `kind`-first vocabulary
+/// already established by [`crate::ShikumiErrorKind`] and
+/// [`crate::ConfigTierKind`]. camelCase tag values (`stationary`,
+/// `identityRepublish`, `progression`, `crossStore`, `regressed`) keep
+/// the on-the-wire word bank consistent with [`ProofDeltaWire`]'s field
+/// names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ProofRelationWire {
+    /// The wire mirror of [`ProofRelation::Stationary`] — the two proofs
+    /// are equal on every axis. Serializes as `{"kind": "stationary"}`
+    /// with no additional fields.
+    Stationary,
+    /// The wire mirror of [`ProofRelation::IdentityRepublish`] — the
+    /// watermark stayed still but the generation counter advanced. The
+    /// `generations` field is a plain `u64` on the wire; the parse
+    /// boundary refuses zero (indistinguishable from `stationary`).
+    IdentityRepublish {
+        /// How many publishes happened between the two observations. On
+        /// the wire this is a plain `u64` (serde has no
+        /// [`std::num::NonZeroU64`] representation distinct from `u64`);
+        /// the parse boundary welds nonzero via
+        /// [`std::num::NonZeroU64::new`]. A zero here at parse time is a
+        /// [`ShikumiError::Parse`].
+        generations: u64,
+    },
+    /// The wire mirror of [`ProofRelation::Progression`] — the watermark
+    /// moved AND the generation counter advanced. The `watermark`
+    /// nesting matches [`ProofDeltaWire::watermark`] pointwise, so a
+    /// consumer that already parses [`ProofDeltaWire`] pointers at the
+    /// same field for the watermark half; the parse boundary here chains
+    /// [`MovedWatermarkDelta::try_from_wire`] to weld the "at least one
+    /// class-scoped half moved" invariant in addition to the class-
+    /// partition sanity check.
+    Progression {
+        /// The class-scoped watermark comparison — the wire mirror of
+        /// [`ProofRelation::Progression::watermark`]. The parse boundary
+        /// routes this through [`MovedWatermarkDelta::try_from_wire`],
+        /// chaining the class-partition sanity check with the moved-ness
+        /// constraint (`Progression` never carries a stationary
+        /// payload). A hand-authored `progression` payload with an
+        /// all-false watermark is refused at parse time.
+        watermark: WatermarkDeltaWire,
+        /// Publishes between the two observations. `NonZeroU64` weld
+        /// applied at parse; zero is refused (indistinguishable from
+        /// `crossStore`).
+        generations: u64,
+    },
+    /// The wire mirror of [`ProofRelation::CrossStore`] — the same-store
+    /// impossibility of a moved watermark at an unchanged generation.
+    /// The `watermark` nesting parses through
+    /// [`MovedWatermarkDelta::try_from_wire`] under the same welds as
+    /// [`Self::Progression`]: a stationary payload or a class-partition
+    /// violation refuses the whole payload at the seam.
+    CrossStore {
+        /// The class-scoped watermark comparison — the wire mirror of
+        /// [`ProofRelation::CrossStore::watermark`]. The parse boundary
+        /// routes this through [`MovedWatermarkDelta::try_from_wire`],
+        /// chaining the two welds.
+        watermark: WatermarkDeltaWire,
+    },
+    /// The wire mirror of [`ProofRelation::Regressed`] — current's
+    /// generation is strictly less than prior's. The `by` field is a
+    /// plain `u64` on the wire; the parse boundary refuses zero
+    /// (indistinguishable from an equal-generation corner).
+    Regressed {
+        /// How many generations the counter went backwards.
+        /// [`std::num::NonZeroU64`] weld applied at parse; zero is
+        /// refused.
+        by: u64,
+    },
+}
+
+impl ProofRelation {
+    /// Project to the wire shape — each variant mirrors 1:1 to
+    /// [`ProofRelationWire`]'s peer, unwrapping every
+    /// [`std::num::NonZeroU64`] to `u64::get()` and folding each
+    /// [`MovedWatermarkDelta`] through [`MovedWatermarkDelta::to_wire`].
+    /// Pure, allocation-free, `const`.
+    ///
+    /// The reverse is [`Self::try_from_wire`], which re-establishes the
+    /// two welds ([`std::num::NonZeroU64`] on the three generation-
+    /// carrying arms, [`MovedWatermarkDelta`] on the two payload-
+    /// carrying arms) at the parse boundary so a consumer holding the
+    /// reconstructed value knows both invariants passed.
+    #[must_use]
+    pub const fn to_wire(&self) -> ProofRelationWire {
+        match *self {
+            Self::Stationary => ProofRelationWire::Stationary,
+            Self::IdentityRepublish { generations } => ProofRelationWire::IdentityRepublish {
+                generations: generations.get(),
+            },
+            Self::Progression {
+                watermark,
+                generations,
+            } => ProofRelationWire::Progression {
+                watermark: watermark.to_wire(),
+                generations: generations.get(),
+            },
+            Self::CrossStore { watermark } => ProofRelationWire::CrossStore {
+                watermark: watermark.to_wire(),
+            },
+            Self::Regressed { by } => ProofRelationWire::Regressed { by: by.get() },
+        }
+    }
+
+    /// Reconstruct a [`ProofRelation`] from its wire projection — the
+    /// inverse of [`Self::to_wire`], welding the two load-bearing
+    /// invariants at the parse boundary:
+    ///
+    /// 1. Every generation-carrying variant ([`Self::IdentityRepublish`],
+    ///    [`Self::Progression`], [`Self::Regressed`]) refuses a zero
+    ///    count via [`std::num::NonZeroU64::new`] — the same weld the
+    ///    value-side variant carries at the type.
+    /// 2. Every payload-carrying variant ([`Self::Progression`],
+    ///    [`Self::CrossStore`]) routes its `watermark` through
+    ///    [`MovedWatermarkDelta::try_from_wire`], which itself chains
+    ///    [`WatermarkDelta::try_from_wire`]'s class-partition sanity
+    ///    check with the moved-ness constraint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] when either weld fails: a
+    /// zero-count on a generation-carrying arm names the arm and the
+    /// impossibility corner it would collapse to; a malformed watermark
+    /// propagates the nested [`MovedWatermarkDelta::try_from_wire`]
+    /// error message, which itself names the offending triple.
+    pub fn try_from_wire(wire: &ProofRelationWire) -> Result<Self, ShikumiError> {
+        match *wire {
+            ProofRelationWire::Stationary => Ok(Self::Stationary),
+            ProofRelationWire::IdentityRepublish { generations } => {
+                let generations = std::num::NonZeroU64::new(generations).ok_or_else(|| {
+                    ShikumiError::Parse(
+                        "malformed ProofRelationWire: identityRepublish requires generations>0 \
+                         (got 0) -- a zero-count republish is indistinguishable from stationary"
+                            .to_owned(),
+                    )
+                })?;
+                Ok(Self::IdentityRepublish { generations })
+            }
+            ProofRelationWire::Progression {
+                ref watermark,
+                generations,
+            } => {
+                let generations = std::num::NonZeroU64::new(generations).ok_or_else(|| {
+                    ShikumiError::Parse(
+                        "malformed ProofRelationWire: progression requires generations>0 (got 0) \
+                         -- a zero-count progression is indistinguishable from crossStore"
+                            .to_owned(),
+                    )
+                })?;
+                let watermark = MovedWatermarkDelta::try_from_wire(watermark)?;
+                Ok(Self::Progression {
+                    watermark,
+                    generations,
+                })
+            }
+            ProofRelationWire::CrossStore { ref watermark } => {
+                let watermark = MovedWatermarkDelta::try_from_wire(watermark)?;
+                Ok(Self::CrossStore { watermark })
+            }
+            ProofRelationWire::Regressed { by } => {
+                let by = std::num::NonZeroU64::new(by).ok_or_else(|| {
+                    ShikumiError::Parse(
+                        "malformed ProofRelationWire: regressed requires by>0 (got 0) -- a \
+                         zero-count regression is indistinguishable from an equal-generation corner"
+                            .to_owned(),
+                    )
+                })?;
+                Ok(Self::Regressed { by })
+            }
+        }
+    }
+}
+
+impl TryFrom<&ProofRelationWire> for ProofRelation {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &ProofRelationWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
 impl ConfigSyncProof {
     /// The [`ProofRelation`] from `prior` to `self` — the exhaustive
     /// classification receiver-sibling, argument-order-matched to
@@ -3526,6 +3759,490 @@ mod proof_delta_wire_tests {
         assert_eq!(
             current.delta_since(&prior).to_wire(),
             ProofDelta::between(&prior, &current).to_wire(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_wire_tests {
+    //! Weld the wire projection of [`ProofRelation`] — the sum-type peer
+    //! of [`ProofDeltaWire`]. Together the tests below cover:
+    //!
+    //! 1. `to_wire` is a mechanical mirror on every one of the five
+    //!    [`ProofRelation`] corners (`Stationary`, `IdentityRepublish`,
+    //!    `Progression`, `CrossStore`, `Regressed`), so every legitimate
+    //!    variant round-trips.
+    //! 2. The wire round-trips through JSON under the internally-tagged
+    //!    (`{"kind": "...", ...}`) shape with camelCase tag values and
+    //!    field names — snake_case forms and the externally-tagged
+    //!    default shape MUST NOT appear.
+    //! 3. Every [`std::num::NonZeroU64`] weld fires at the parse boundary:
+    //!    zero-count `identityRepublish`, `progression`, and `regressed`
+    //!    payloads all yield [`ShikumiError::Parse`], with error messages
+    //!    that name the arm and the corner it would collapse to.
+    //! 4. Every [`MovedWatermarkDelta`] weld fires at the parse boundary:
+    //!    a class-partition violation OR a stationary payload on the
+    //!    `progression` or `crossStore` watermark half refuses the whole
+    //!    payload, propagating the nested error message so a consumer
+    //!    can localize the offending triple.
+    //! 5. Value → wire → value and wire → value → wire are both fixed
+    //!    points on every legitimate corner.
+    //! 6. `TryFrom<&ProofRelationWire>` and the inherent `try_from_wire`
+    //!    method agree pointwise.
+    //! 7. `ProofRelation::to_wire` composes through
+    //!    [`MovedWatermarkDelta::to_wire`] on the two payload-carrying
+    //!    arms — one source of truth for the value → wire projection on
+    //!    the class-scoped triple, so a future change to the watermark
+    //!    encoding never diverges between the bare and relation-nested
+    //!    paths.
+    //! 8. [`ProofRelation::same_store_consistent`] survives the wire —
+    //!    the two impossibility corners stay impossibility and the three
+    //!    legitimate corners stay legitimate after a wire round-trip.
+    //! 9. The `kind` tag ordering matches the value-side variant order
+    //!    (`stationary` before `identityRepublish` before `progression`
+    //!    etc.), so the wire vocabulary a consumer sees mirrors the
+    //!    `match` a value-side consumer writes.
+    //! 10. The ergonomic sibling `ConfigSyncProof::relation_since().to_wire()`
+    //!     agrees with `ProofRelation::between().to_wire()` at the wire
+    //!     boundary — the composition weld consumers of
+    //!     `/healthz/config` receive.
+    //!
+    //! Same test idiom as [`proof_delta_wire_tests`] (the peer wire
+    //! module) and [`watermark_delta_wire_tests`] / [`wire_tests`] (the
+    //! two altitudes below), so a future refactor that touches one of
+    //! the four wire surfaces surfaces consistent breakage across all
+    //! four.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: wm_of(cfg),
+            observed_at: UNIX_EPOCH + Duration::from_secs(secs),
+        }
+    }
+
+    /// Every legitimate corner of the ProofRelation grid, folded through
+    /// [`ProofRelation::between`]. The wire projection must round-trip
+    /// on every one of these — a legitimate consumer receives them all
+    /// and must reconstruct each.
+    fn every_corner() -> Vec<ProofRelation> {
+        vec![
+            // Stationary: identical observation twice.
+            ProofRelation::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&base(), 5, 1_700_000_060),
+            ),
+            // IdentityRepublish: same value, generation advance.
+            ProofRelation::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&base(), 6, 1_700_000_030),
+            ),
+            // Progression: value changed and generation advanced.
+            ProofRelation::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&mutated(), 6, 1_700_000_060),
+            ),
+            // CrossStore signal: value changed, generation stationary.
+            ProofRelation::between(
+                &proof_at(&base(), 5, 1_700_000_000),
+                &proof_at(&mutated(), 5, 1_700_000_060),
+            ),
+            // Regressed: current's generation strictly less than prior's.
+            ProofRelation::between(
+                &proof_at(&base(), 10, 1_700_000_000),
+                &proof_at(&base(), 5, 1_700_000_060),
+            ),
+        ]
+    }
+
+    #[test]
+    fn to_wire_is_a_mechanical_mirror_on_every_corner() {
+        for r in every_corner() {
+            let w = r.to_wire();
+            match (r, w) {
+                (ProofRelation::Stationary, ProofRelationWire::Stationary) => {}
+                (
+                    ProofRelation::IdentityRepublish { generations: g },
+                    ProofRelationWire::IdentityRepublish { generations: wg },
+                ) => assert_eq!(g.get(), wg),
+                (
+                    ProofRelation::Progression {
+                        watermark: wm,
+                        generations: g,
+                    },
+                    ProofRelationWire::Progression {
+                        watermark: ww,
+                        generations: wg,
+                    },
+                ) => {
+                    assert_eq!(wm.to_wire(), ww);
+                    assert_eq!(g.get(), wg);
+                }
+                (
+                    ProofRelation::CrossStore { watermark: wm },
+                    ProofRelationWire::CrossStore { watermark: ww },
+                ) => assert_eq!(wm.to_wire(), ww),
+                (ProofRelation::Regressed { by }, ProofRelationWire::Regressed { by: wby }) => {
+                    assert_eq!(by.get(), wby);
+                }
+                (v, w) => panic!("variant mismatch: value={v:?} wire={w:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_wire_shape_round_trips_through_json() {
+        for r in every_corner() {
+            let w = r.to_wire();
+            let json = serde_json::to_string(&w).expect("serialize");
+            let back: ProofRelationWire = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(w, back);
+        }
+    }
+
+    #[test]
+    fn the_wire_uses_internally_tagged_kind_with_camel_case_tags() {
+        // The pin: the wire uses serde's internally-tagged shape with a
+        // `kind` discriminator, so a consumer routes on a fixed JSON path
+        // (`.kind`) rather than a variant-shaped wrapping envelope. Tag
+        // values are camelCase (matching the field-name convention on
+        // the sibling wire types).
+        let cases: &[(ProofRelation, &str, &[&str])] = &[
+            (ProofRelation::Stationary, "stationary", &[]),
+            (
+                ProofRelation::between(
+                    &proof_at(&base(), 5, 1_700_000_000),
+                    &proof_at(&base(), 6, 1_700_000_030),
+                ),
+                "identityRepublish",
+                &["generations"],
+            ),
+            (
+                ProofRelation::between(
+                    &proof_at(&base(), 5, 1_700_000_000),
+                    &proof_at(&mutated(), 6, 1_700_000_060),
+                ),
+                "progression",
+                &["watermark", "generations"],
+            ),
+            (
+                ProofRelation::between(
+                    &proof_at(&base(), 5, 1_700_000_000),
+                    &proof_at(&mutated(), 5, 1_700_000_060),
+                ),
+                "crossStore",
+                &["watermark"],
+            ),
+            (
+                ProofRelation::between(
+                    &proof_at(&base(), 10, 1_700_000_000),
+                    &proof_at(&base(), 5, 1_700_000_060),
+                ),
+                "regressed",
+                &["by"],
+            ),
+        ];
+        for (r, tag, extra_fields) in cases {
+            let json = serde_json::to_string(&r.to_wire()).unwrap();
+            assert!(
+                json.contains(&format!("\"kind\":\"{tag}\"")),
+                "missing kind={tag} in {json}"
+            );
+            for f in *extra_fields {
+                assert!(
+                    json.contains(&format!("\"{f}\"")),
+                    "missing field {f} in {json}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn snake_case_and_externally_tagged_forms_are_absent_from_the_wire() {
+        // Snake_case tag renames and serde's default externally-tagged
+        // envelope have been silent regression sources before; pin
+        // BOTH absences so a stray `rename_all` swap OR a stray removal
+        // of `tag = "kind"` turns red.
+        for r in every_corner() {
+            let json = serde_json::to_string(&r.to_wire()).unwrap();
+            for snake in ["identity_republish", "cross_store"] {
+                assert!(
+                    !json.contains(snake),
+                    "snake_case tag leaked into wire: {snake} in {json}",
+                );
+            }
+            // externally-tagged shape would look like `{"stationary": null}`
+            // or `{"identityRepublish": {...}}` — refuse both by pinning
+            // that the JSON always starts with `{"kind":"..."` for a
+            // non-Stationary variant, and equals `{"kind":"stationary"}`
+            // for the Stationary variant.
+            assert!(
+                json.starts_with(r#"{"kind":""#),
+                "wire must start with kind tag: {json}",
+            );
+        }
+    }
+
+    #[test]
+    fn stationary_wire_shape_is_kind_alone() {
+        // The exact bit pattern for the null-hypothesis variant: no
+        // payload fields, no watermark, no generations count. Pinning
+        // this catches an accidental refactor that adds a field to the
+        // Stationary variant without a corresponding wire migration.
+        let w = ProofRelation::Stationary.to_wire();
+        let json = serde_json::to_string(&w).unwrap();
+        assert_eq!(json, r#"{"kind":"stationary"}"#);
+    }
+
+    #[test]
+    fn identity_republish_zero_generations_is_a_parse_error() {
+        // A zero-count republish is unrepresentable on the value side
+        // (NonZeroU64 field), so accepting one off the wire would let a
+        // consumer construct a variant the value-side type refuses. The
+        // parse boundary refuses it too, and the error message names
+        // both the arm and the corner it collapses to.
+        let w = ProofRelationWire::IdentityRepublish { generations: 0 };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(msg.contains("identityRepublish"), "arm named: {msg}");
+        assert!(msg.contains("stationary"), "collapsed-corner named: {msg}",);
+    }
+
+    #[test]
+    fn progression_zero_generations_is_a_parse_error() {
+        // Even with a legitimate (moved) watermark payload, a zero-count
+        // progression is refused — it would be indistinguishable from
+        // CrossStore. The generation weld fires before the watermark
+        // weld: pin the order so error messages are stable.
+        let w = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            generations: 0,
+        };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(msg.contains("progression"), "arm named: {msg}");
+        assert!(msg.contains("crossStore"), "collapsed-corner named: {msg}");
+    }
+
+    #[test]
+    fn regressed_zero_by_is_a_parse_error() {
+        let w = ProofRelationWire::Regressed { by: 0 };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(msg.contains("regressed"), "arm named: {msg}");
+        assert!(
+            msg.contains("equal-generation"),
+            "collapsed-corner named: {msg}",
+        );
+    }
+
+    #[test]
+    fn progression_class_partition_violation_on_watermark_is_a_parse_error() {
+        // The load-bearing chain: the nested watermark half routes
+        // through MovedWatermarkDelta::try_from_wire, which itself
+        // chains WatermarkDelta::try_from_wire's class-partition check.
+        // A class-scoped half moved without fullMoved refuses the whole
+        // ProofRelationWire at the seam.
+        let w = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            generations: 3,
+        };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("fullMoved"),
+            "nested class-partition error must surface at the ProofRelationWire boundary: {msg}"
+        );
+    }
+
+    #[test]
+    fn progression_stationary_watermark_is_a_parse_error() {
+        // The moved-ness weld: an all-false watermark payload on the
+        // Progression arm collapses semantically to IdentityRepublish
+        // (stationary watermark + generation advance). The
+        // MovedWatermarkDelta::try_from_wire chain refuses it.
+        let w = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations: 3,
+        };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("stationary payload"),
+            "moved-ness error must surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn cross_store_class_partition_violation_on_watermark_is_a_parse_error() {
+        let w = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        assert!(err.to_string().contains("fullMoved"));
+    }
+
+    #[test]
+    fn cross_store_stationary_watermark_is_a_parse_error() {
+        // A CrossStore payload with an all-false watermark collapses
+        // semantically to Stationary. Refused at the seam under the
+        // moved-ness weld chained through MovedWatermarkDelta.
+        let w = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+        };
+        let err = ProofRelation::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        assert!(err.to_string().contains("stationary payload"));
+    }
+
+    #[test]
+    fn value_wire_value_is_identity_on_every_corner() {
+        for r in every_corner() {
+            let back = ProofRelation::try_from_wire(&r.to_wire())
+                .expect("between-computed relation must round-trip through wire");
+            assert_eq!(back, r);
+        }
+    }
+
+    #[test]
+    fn wire_value_wire_is_fixed_point_on_every_well_formed_wire() {
+        for r in every_corner() {
+            let w = r.to_wire();
+            let back = ProofRelation::try_from_wire(&w)
+                .expect("well-formed round-trip")
+                .to_wire();
+            assert_eq!(back, w);
+        }
+    }
+
+    #[test]
+    fn try_from_impl_and_try_from_wire_method_agree_pointwise() {
+        for r in every_corner() {
+            let w = r.to_wire();
+            let via_method = ProofRelation::try_from_wire(&w).unwrap();
+            let via_trait = ProofRelation::try_from(&w).unwrap();
+            assert_eq!(via_method, via_trait);
+        }
+    }
+
+    #[test]
+    fn proof_relation_wire_watermark_matches_moved_watermark_delta_to_wire() {
+        // The composition weld: the watermark half on Progression /
+        // CrossStore wires MUST equal MovedWatermarkDelta::to_wire on
+        // the same payload. One source of truth for the value → wire
+        // projection on the class-scoped triple; a future refactor that
+        // touches MovedWatermarkDelta::to_wire must NOT need a parallel
+        // change on the relation-nested path.
+        for r in every_corner() {
+            match r {
+                ProofRelation::Progression { watermark, .. }
+                | ProofRelation::CrossStore { watermark } => {
+                    let wire = r.to_wire();
+                    let payload = match wire {
+                        ProofRelationWire::Progression { watermark: w, .. }
+                        | ProofRelationWire::CrossStore { watermark: w } => w,
+                        other => panic!("expected payload-carrying arm, got {other:?}"),
+                    };
+                    assert_eq!(payload, watermark.to_wire());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn same_store_consistent_survives_the_wire_on_every_corner() {
+        // The classification-preserving property: a wire round-trip
+        // MUST NOT reclassify an impossibility corner as legitimate or
+        // vice versa. Together with `value_wire_value_is_identity_on_every_corner`
+        // this pins that both the variant AND its derived predicates
+        // survive.
+        for r in every_corner() {
+            let back = ProofRelation::try_from_wire(&r.to_wire()).unwrap();
+            assert_eq!(
+                r.same_store_consistent(),
+                back.same_store_consistent(),
+                "same_store_consistent must be preserved by the wire round-trip on {r:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_sync_proof_relation_since_composes_with_wire_projection() {
+        // The consumer-facing composition: a receiver-style
+        // `current.relation_since(&prior).to_wire()` reaches the same
+        // wire as `ProofRelation::between(&prior, &current).to_wire()`.
+        // Welds "the ergonomic sibling never diverges from the named
+        // constructor" AT the wire boundary — the composition consumers
+        // of `/healthz/config` receive.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&mutated(), 6, 1_700_000_060);
+        assert_eq!(
+            current.relation_since(&prior).to_wire(),
+            ProofRelation::between(&prior, &current).to_wire(),
         );
     }
 }
