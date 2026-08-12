@@ -689,6 +689,175 @@ impl ProofDelta {
     }
 }
 
+/// Exhaustive sum-type classification of a proof pair — every possible
+/// relation between two [`ConfigSyncProof`] values lands in exactly one
+/// variant.
+///
+/// The (watermark moved?, generation delta) grid partitions into five
+/// disjoint corners: the three legitimate corners a single monotonic
+/// [`ConfigStore`](crate::ConfigStore) actually produces, and the two
+/// same-store impossibilities. Each corner is a variant here.
+///
+/// **Why name this as a type at all.** [`ProofDelta`] already carries the
+/// four boolean predicates ([`ProofDelta::stationary`],
+/// [`ProofDelta::identity_republish`], [`ProofDelta::cross_store_signal`],
+/// [`ProofDelta::generations_regressed`]) that answer "which corner is this
+/// pair in?" — but each independently, forcing every consumer that wants to
+/// route on the answer to write a nested if-else chain that the
+/// exhaustiveness checker cannot help with. A future sixth corner added to
+/// the grid (say, a signed-attestation attestor field on
+/// [`ConfigSyncProof`]) would silently overlap the existing predicates
+/// rather than turning every routing site red. `ProofRelation` promotes the
+/// classification to a `match`-able shape: consumers reason over the whole
+/// space with the exhaustiveness checker's help, and adding a new arm is
+/// what surfaces every consumer that must handle it.
+///
+/// **The previously-unnamed corner.** [`Self::Progression`] is the "normal
+/// happy path" of the grid — the watermark moved AND generation advanced,
+/// which is what every routine config-file edit produces. `ProofDelta`
+/// carries predicates for the other four corners
+/// (`stationary`/`identity_republish`/`cross_store_signal`/`generations_regressed`)
+/// and leaves this one implicit, so a consumer that wants to react to a
+/// legitimate value change had to hand-write `d.watermark.any_moved() &&
+/// matches!(d.generations_advanced, Some(n) if n > 0)` at every seam. Naming
+/// it lets the consumer bind the two carried quantities in one `if let`.
+///
+/// **The [`std::num::NonZeroU64`] welds.** Each variant that carries a
+/// generation count welds a load-bearing invariant at the type: an
+/// [`Self::IdentityRepublish`] with a zero generation count would be
+/// indistinguishable from [`Self::Stationary`], a [`Self::Progression`]
+/// with a zero count from [`Self::CrossStore`], and a [`Self::Regressed`]
+/// with a zero regression from any of the equal-generation corners. The
+/// nonzero constraint makes each of those confusions unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofRelation {
+    /// Same observation twice — watermark stationary AND generation
+    /// counter unchanged. The null hypothesis a poller checks before
+    /// doing any further inspection.
+    Stationary,
+    /// A re-publish of an identical value — watermark stationary, but
+    /// the generation counter advanced by `generations`. A running
+    /// [`ConfigStore`](crate::ConfigStore) may republish an identical
+    /// value (a reload cycle over a filesystem that flipped and flipped
+    /// back before the observer noticed), which bumps generation
+    /// without moving any watermark half.
+    IdentityRepublish {
+        /// How many publishes happened between the two observations —
+        /// always at least one, since a zero-count "republish" would be
+        /// indistinguishable from [`Self::Stationary`].
+        generations: std::num::NonZeroU64,
+    },
+    /// A legitimate publish that also changed the value — the watermark
+    /// moved AND the generation counter advanced by `generations`. The
+    /// "normal progression" corner of the grid: every routine
+    /// config-file edit surfaces here. This is the corner
+    /// [`ProofDelta`]'s four boolean predicates leave implicit.
+    Progression {
+        /// The class-scoped watermark comparison, so a consumer that
+        /// needs to route on [`WatermarkDelta::restart_pending`] /
+        /// [`WatermarkDelta::hot_swappable_drift`] reaches those
+        /// questions through the variant's payload without a second
+        /// computation.
+        watermark: WatermarkDelta,
+        /// How many publishes happened between the two observations —
+        /// always at least one, since a zero-count "progression" would
+        /// be indistinguishable from [`Self::CrossStore`].
+        generations: std::num::NonZeroU64,
+    },
+    /// Same-store impossibility: the watermark moved but the generation
+    /// counter did NOT advance. Moving the watermark requires a publish
+    /// which bumps generation; a monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce this pair.
+    /// Its appearance means the two proofs came from different stores
+    /// (a cross-replica comparison misplaced as a same-store one), or
+    /// the wire that carried them was tampered with.
+    CrossStore {
+        /// The class-scoped watermark comparison. Non-stationary by
+        /// construction — a stationary watermark at the same generation
+        /// lands in [`Self::Stationary`], not here.
+        watermark: WatermarkDelta,
+    },
+    /// Same-store impossibility: current's generation is strictly less
+    /// than prior's. A monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce this pair.
+    Regressed {
+        /// How many generations the counter went backwards — always at
+        /// least one, since a zero-count "regression" would be
+        /// indistinguishable from an equal-generation corner.
+        by: std::num::NonZeroU64,
+    },
+}
+
+impl ProofRelation {
+    /// Classify the proof pair from `prior` to `current` into the
+    /// exhaustive [`ProofRelation`] sum. The primary constructor for
+    /// this type — takes the two proofs directly rather than going
+    /// through [`ProofDelta`], so the exact regression count is
+    /// preserved on the [`Self::Regressed`] arm (a `ProofDelta` folds
+    /// that count into `Option::None` and cannot recover it).
+    ///
+    /// Argument order matches [`ProofDelta::between`] and
+    /// [`WatermarkDelta::between`]: prior first, current second.
+    #[must_use]
+    pub fn between(prior: &ConfigSyncProof, current: &ConfigSyncProof) -> Self {
+        let watermark = WatermarkDelta::between(&prior.watermark, &current.watermark);
+        match current.generation.cmp(&prior.generation) {
+            std::cmp::Ordering::Less => {
+                // Strictly regressing generation — nonzero by
+                // construction, so the unwrap cannot fire.
+                let by = std::num::NonZeroU64::new(prior.generation - current.generation)
+                    .expect("strictly-less generation yields a nonzero backwards delta");
+                Self::Regressed { by }
+            }
+            std::cmp::Ordering::Equal => {
+                if watermark.stationary() {
+                    Self::Stationary
+                } else {
+                    Self::CrossStore { watermark }
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                let generations = std::num::NonZeroU64::new(current.generation - prior.generation)
+                    .expect("strictly-greater generation yields a nonzero forward delta");
+                if watermark.stationary() {
+                    Self::IdentityRepublish { generations }
+                } else {
+                    Self::Progression {
+                        watermark,
+                        generations,
+                    }
+                }
+            }
+        }
+    }
+
+    /// True iff this classification is one of the three legitimate
+    /// corners — the two impossibility variants ([`Self::CrossStore`]
+    /// and [`Self::Regressed`]) return false. Equivalent to
+    /// [`ProofDelta::same_store_consistent`] but reached through the
+    /// variant shape, so a consumer already pattern-matching on the
+    /// enum doesn't have to fall back to a second projection through
+    /// the delta.
+    #[must_use]
+    pub const fn same_store_consistent(&self) -> bool {
+        matches!(
+            self,
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. }
+        )
+    }
+}
+
+impl ConfigSyncProof {
+    /// The [`ProofRelation`] from `prior` to `self` — the exhaustive
+    /// classification receiver-sibling, argument-order-matched to
+    /// [`Self::delta_since`] and [`Self::watermark_delta_since`]: the
+    /// receiver is the "current" half.
+    #[must_use]
+    pub fn relation_since(&self, prior: &Self) -> ProofRelation {
+        ProofRelation::between(prior, self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1688,6 +1857,245 @@ mod proof_delta_tests {
         assert!(
             !d.identity_republish(),
             "value changed -- not an identity re-publish"
+        );
+    }
+
+    // -- ProofRelation exhaustive-classification tests -----------------
+    // The (watermark moved?, generation delta) grid has five corners; each
+    // corner is a variant of ProofRelation. Each of the five tests below
+    // pins one corner, then a sixth agreement-check test welds the
+    // correspondence between the four ProofDelta predicates and the enum
+    // shape so a future divergence turns red at the seam rather than
+    // silently at a consumer.
+
+    fn mutated() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn proof_with(cfg: &Cfg, generation: u64, secs: u64) -> ConfigSyncProof {
+        proof_at(cfg, generation, secs)
+    }
+
+    #[test]
+    fn proof_relation_stationary_on_identical_observation() {
+        let p = proof_with(&base(), 5, 1_700_000_000);
+        assert_eq!(ProofRelation::between(&p, &p), ProofRelation::Stationary);
+    }
+
+    #[test]
+    fn proof_relation_identity_republish_when_gen_advances_on_same_value() {
+        let prior = proof_with(&base(), 5, 1_700_000_000);
+        let current = proof_with(&base(), 8, 1_700_000_030);
+        let r = ProofRelation::between(&prior, &current);
+        assert_eq!(
+            r,
+            ProofRelation::IdentityRepublish {
+                generations: std::num::NonZeroU64::new(3).unwrap(),
+            },
+        );
+    }
+
+    #[test]
+    fn proof_relation_progression_names_the_previously_unnamed_corner() {
+        // "watermark moved AND generation advanced" — a legitimate publish
+        // that also changed the value. Every routine config-file edit
+        // lands here. The variant carries BOTH the class-scoped watermark
+        // comparison and the exact generation delta so a consumer that
+        // wants to route on restart_pending() has one arm to bind rather
+        // than a nested boolean chain.
+        let prior = proof_with(&base(), 5, 1_700_000_000);
+        let current = proof_with(&mutated(), 6, 1_700_000_030);
+        let r = ProofRelation::between(&prior, &current);
+        let watermark = current.watermark_delta_since(&prior);
+        assert!(watermark.any_moved(), "precondition: watermark moved");
+        assert_eq!(
+            r,
+            ProofRelation::Progression {
+                watermark,
+                generations: std::num::NonZeroU64::new(1).unwrap(),
+            },
+        );
+    }
+
+    #[test]
+    fn proof_relation_cross_store_when_watermark_moved_without_gen_bump() {
+        let prior = proof_with(&base(), 5, 1_700_000_000);
+        let current = proof_with(&mutated(), 5, 1_700_000_030);
+        let r = ProofRelation::between(&prior, &current);
+        let watermark = current.watermark_delta_since(&prior);
+        assert!(watermark.any_moved());
+        assert_eq!(r, ProofRelation::CrossStore { watermark });
+    }
+
+    #[test]
+    fn proof_relation_regressed_preserves_the_exact_backwards_count() {
+        // The delta path (`ProofDelta::between → generations_advanced =
+        // Option::None`) throws the regression count away; classify via
+        // ProofRelation preserves it exactly, since the constructor
+        // takes the two proofs directly rather than going through the
+        // lossy delta. This is the load-bearing reason `between()` lives
+        // on ProofRelation and not on ProofDelta.
+        let prior = proof_with(&base(), 10, 1_700_000_000);
+        let current = proof_with(&base(), 3, 1_700_000_030);
+        let r = ProofRelation::between(&prior, &current);
+        assert_eq!(
+            r,
+            ProofRelation::Regressed {
+                by: std::num::NonZeroU64::new(7).unwrap(),
+            },
+        );
+        // Contrast: the ProofDelta path folds regression into None and
+        // cannot recover the "-7" figure.
+        let d = ProofDelta::between(&prior, &current);
+        assert_eq!(d.generations_advanced, None);
+    }
+
+    /// The five corners of the (watermark moved?, generation delta) grid
+    /// — one name per [`ProofRelation`] variant, lifted out of the
+    /// agreement test to serve as the single source of truth the
+    /// two-projection weld folds over.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Corner {
+        Stationary,
+        IdentityRepublish,
+        Progression,
+        CrossStore,
+        Regressed,
+    }
+
+    impl Corner {
+        /// Project a [`ProofDelta`] to the corner its four boolean
+        /// predicates name. The only corner `ProofDelta` does not name
+        /// with a dedicated predicate — "watermark moved AND generation
+        /// advanced" — falls through to [`Self::Progression`], which is
+        /// exactly why the enum exists.
+        fn from_delta(d: &ProofDelta) -> Self {
+            if d.generations_regressed() {
+                Self::Regressed
+            } else if d.stationary() {
+                Self::Stationary
+            } else if d.identity_republish() {
+                Self::IdentityRepublish
+            } else if d.cross_store_signal() {
+                Self::CrossStore
+            } else {
+                Self::Progression
+            }
+        }
+    }
+
+    impl From<&ProofRelation> for Corner {
+        fn from(r: &ProofRelation) -> Self {
+            match r {
+                ProofRelation::Stationary => Self::Stationary,
+                ProofRelation::IdentityRepublish { .. } => Self::IdentityRepublish,
+                ProofRelation::Progression { .. } => Self::Progression,
+                ProofRelation::CrossStore { .. } => Self::CrossStore,
+                ProofRelation::Regressed { .. } => Self::Regressed,
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_classification_agrees_with_proof_delta_predicates() {
+        // The correspondence weld: each of the four ProofDelta predicates
+        // projects to exactly the ProofRelation variant it names, and the
+        // previously-unnamed "progression" corner (watermark moved AND
+        // generation advanced) surfaces as its own variant on the enum
+        // side. A future change that adds a new corner MUST extend
+        // `Corner` and the enum in lockstep, or one side of the grid
+        // drifts from the other.
+        let anchor = base();
+        let alt = mutated();
+        let cases = [
+            (
+                Corner::Stationary,
+                proof_with(&anchor, 5, 1_700_000_000),
+                proof_with(&anchor, 5, 1_700_000_060),
+            ),
+            (
+                Corner::IdentityRepublish,
+                proof_with(&anchor, 5, 1_700_000_000),
+                proof_with(&anchor, 6, 1_700_000_060),
+            ),
+            (
+                Corner::Progression,
+                proof_with(&anchor, 5, 1_700_000_000),
+                proof_with(&alt, 6, 1_700_000_060),
+            ),
+            (
+                Corner::CrossStore,
+                proof_with(&anchor, 5, 1_700_000_000),
+                proof_with(&alt, 5, 1_700_000_060),
+            ),
+            (
+                Corner::Regressed,
+                proof_with(&anchor, 10, 1_700_000_000),
+                proof_with(&anchor, 5, 1_700_000_060),
+            ),
+        ];
+        for (want, prior, current) in &cases {
+            let d = ProofDelta::between(prior, current);
+            let r = ProofRelation::between(prior, current);
+            let from_delta = Corner::from_delta(&d);
+            let from_relation = Corner::from(&r);
+            assert_eq!(from_delta, *want, "delta projection mismatch on {want:?}");
+            assert_eq!(
+                from_relation, *want,
+                "relation variant mismatch on {want:?}",
+            );
+            assert_eq!(
+                from_delta, from_relation,
+                "delta and relation must project to the same corner on {want:?}",
+            );
+            assert_eq!(
+                r.same_store_consistent(),
+                d.same_store_consistent(),
+                "same_store_consistent agreement on {want:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_relation_since_agrees_with_between() {
+        // The receiver-style sibling must not diverge from the named
+        // associated constructor. Argument order is load-bearing: the
+        // receiver is the "current" half.
+        let prior = proof_with(&base(), 5, 1_700_000_000);
+        let current = proof_with(&mutated(), 6, 1_700_000_060);
+        assert_eq!(
+            current.relation_since(&prior),
+            ProofRelation::between(&prior, &current),
+        );
+    }
+
+    #[test]
+    fn proof_relation_progression_variant_carries_the_watermark_delta() {
+        // The Progression variant preserves the class-scoped watermark
+        // comparison, so a consumer routing on restart_pending() /
+        // hot_swappable_drift() reaches those questions through the
+        // variant payload rather than recomputing them.
+        let prior = proof_with(&base(), 5, 1_700_000_000);
+        let mut restart_edit = base();
+        restart_edit.bind_addr = "0.0.0.0:9090".into();
+        let current = proof_with(&restart_edit, 6, 1_700_000_060);
+        let ProofRelation::Progression {
+            watermark,
+            generations,
+        } = ProofRelation::between(&prior, &current)
+        else {
+            panic!("RequiresRestart edit must classify as Progression");
+        };
+        assert_eq!(generations.get(), 1);
+        assert!(
+            watermark.restart_pending(),
+            "the variant payload must carry the class-scoped answer"
+        );
+        assert!(
+            !watermark.hot_swappable_drift(),
+            "RequiresRestart-only edit leaves the Free half stable"
         );
     }
 }
