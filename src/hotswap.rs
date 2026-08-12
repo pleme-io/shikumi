@@ -2512,6 +2512,78 @@ impl ProofRelationWire {
             | Self::CrossStore { .. } => None,
         }
     }
+
+    /// True iff this classification is one of the three legitimate
+    /// corners — the two impossibility variants ([`Self::CrossStore`]
+    /// and [`Self::Regressed`]) return false — the wire-side receiver-
+    /// sibling of [`ProofRelation::same_store_consistent`], closing the
+    /// (value, wire) × (predicate) grid at the proof-altitude
+    /// classification altitude the [`WatermarkRelationWire`] predicate
+    /// family already closed one altitude down.
+    ///
+    /// A `/healthz/config` change-feed reader or a cross-replica
+    /// delta-log endpoint that holds a freshly deserialized
+    /// [`ProofRelationWire`] and wants the top-level "did this proof
+    /// pair land in one of the same-store consistent corners?" answer
+    /// previously had two inline paths, each paying a needless cost:
+    ///
+    /// - `ProofRelation::from_wire(&wire).same_store_consistent()` —
+    ///   detours through the full value-side classification for a
+    ///   question the wire tag alone answers, chaining
+    ///   [`MovedWatermarkDelta::try_from_wire`] and
+    ///   [`std::num::NonZeroU64::new`] parse-time welds a same-store-
+    ///   consistency check doesn't need. Also returns [`Result`]
+    ///   because [`ProofRelation::try_from_wire`] can fail on malformed
+    ///   inputs, leaving the caller to fold `Ok`/`Err` into a boolean.
+    /// - `matches!(wire, ProofRelationWire::Stationary
+    ///     | ProofRelationWire::IdentityRepublish { .. }
+    ///     | ProofRelationWire::Progression { .. })` inline — a shape
+    ///   the exhaustiveness checker cannot help keep in sync with a
+    ///   future variant addition. A sixth corner ([`ProofRelation`] +
+    ///   [`ProofRelationWire`] added in lockstep) would silently escape
+    ///   both arms of that pattern, and every hand-authored callsite
+    ///   would have to be re-audited by hand.
+    ///
+    /// The receiver-sibling here answers the same question at the wire
+    /// altitude with the same welded `match` the value-side accessor
+    /// carries, so adding a sixth variant to [`ProofRelationWire`] fails
+    /// to compile at this method's own `match` in lockstep with the
+    /// value-side sibling.
+    ///
+    /// **Same-answer invariant with [`ProofRelation::same_store_consistent`].**
+    /// For every legitimate value/wire pair the two accessors agree
+    /// pointwise: whenever `relation.same_store_consistent()` returns
+    /// `b`, `relation.to_wire().same_store_consistent()` returns the
+    /// same `b`. The wire is a lossless channel for the same-store-
+    /// consistency question the value-side sibling answers. The property
+    /// is exercised by the tests in the
+    /// `proof_relation_wire_same_store_consistent_tests` submodule.
+    ///
+    /// **The tag alone is sufficient.** Unlike the three payload
+    /// accessors ([`Self::watermark`], [`Self::generations`],
+    /// [`Self::regressed_by`]) whose return types surface the pre-parse
+    /// wire shape (`WatermarkDeltaWire`, `u64`) because the value-side
+    /// welds ([`MovedWatermarkDelta`], [`std::num::NonZeroU64`]) are
+    /// applied at parse time, this predicate reads only the variant tag
+    /// — no field payload participates in the answer, so no parse-time
+    /// weld is even conceptually involved. A wire consumer reaches the
+    /// same-store-consistency verdict without deserializing the payload
+    /// portion of a tagged JSON blob, matching the low-cost "route on
+    /// `kind` alone" seam [`ProofRelationWire`]'s internally-tagged
+    /// serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its same-store-consistency verdict at compile time too,
+    /// matching the `const`-ness of [`ProofRelation::same_store_consistent`]
+    /// one altitude up and every other classification accessor
+    /// (predicate or payload) at either altitude.
+    #[must_use]
+    pub const fn same_store_consistent(&self) -> bool {
+        matches!(
+            self,
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. }
+        )
+    }
 }
 
 impl TryFrom<&ProofRelationWire> for ProofRelation {
@@ -11077,6 +11149,426 @@ mod watermark_relation_wire_predicate_tests {
                 | WatermarkRelationWire::FreeOnly
                 | WatermarkRelationWire::Both => {}
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_wire_same_store_consistent_tests {
+    //! Weld the wire-side same-store-consistency predicate
+    //! ([`ProofRelationWire::same_store_consistent`]) — the wire-side
+    //! receiver-sibling of [`ProofRelation::same_store_consistent`],
+    //! closing the (value, wire) × (predicate) grid at the proof-
+    //! altitude classification altitude the [`WatermarkRelationWire`]
+    //! predicate family already closed one altitude down.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Pointwise agreement between value-side and wire-side predicate
+    //!    on every one of the five variants — for every
+    //!    [`ProofRelation`] value the value-side accessor and the wire-
+    //!    side sibling agree pointwise. The wire is a lossless channel
+    //!    for the same-store-consistency question the value-side
+    //!    sibling answers.
+    //! 2. Truth table pinned by variant identity — the three legitimate
+    //!    corners ([`ProofRelationWire::Stationary`],
+    //!    [`ProofRelationWire::IdentityRepublish`],
+    //!    [`ProofRelationWire::Progression`]) return `true`; the two
+    //!    impossibility corners ([`ProofRelationWire::CrossStore`],
+    //!    [`ProofRelationWire::Regressed`]) return `false`.
+    //! 3. Round-trip through [`ProofRelation::try_from_wire`] preserves
+    //!    the same-store-consistency verdict — the reconstructed
+    //!    relation carries the same predicate answer the original wire
+    //!    value does, so a wire consumer that follows the standard
+    //!    parse seam surfaces the same verdict the receiver-sibling
+    //!    reaches directly.
+    //! 4. `From` sibling agrees: for every wire variant, the round-trip
+    //!    through the `Into` idiom (`wire → &wire → value → wire`)
+    //!    surfaces an unchanged predicate answer — the `Into`-idiom
+    //!    consumer reaches the same shape as the named-method consumer.
+    //! 5. `const`-callable — a compile-time-known [`ProofRelationWire`]
+    //!    projects its same-store-consistency verdict at compile time
+    //!    too, matching the `const`-ness of
+    //!    [`ProofRelation::same_store_consistent`] and every other
+    //!    classification accessor at either altitude.
+    //! 6. Exhaustive variant enumeration: a hand-authored fixture names
+    //!    every one of the five variants exactly once, so a future
+    //!    addition to [`ProofRelationWire`] fails to compile at the
+    //!    fixture's `match` in the same instant it fails at the
+    //!    predicate accessor's own `match`.
+    //! 7. Payload-inspection independence: the predicate reads only the
+    //!    variant tag, not any field payload — the answer is invariant
+    //!    under any legitimate change to the payload fields, matching
+    //!    the "route on `kind` alone" seam the internally-tagged serde
+    //!    encoding established.
+    //! 8. Composition through the wire boundary: on every legitimate
+    //!    [`ProofRelation`] value, the predicate agrees pointwise on
+    //!    the three-hop path `value → to_wire → predicate` with the
+    //!    direct-value path `value → predicate` — a producer's
+    //!    receiver-side accessor and a consumer's wire-side accessor
+    //!    surface the same verdict on the same classification.
+    //! 9. Cross-altitude same-answer: at the proof altitude, the
+    //!    verdict on the wire equals
+    //!    `ProofDelta::same_store_consistent` reached through the
+    //!    delta-fold path on the four delta-reachable corners.
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    fn all_five_wire_variants() -> Vec<(&'static str, ProofRelationWire)> {
+        all_five_relations()
+            .into_iter()
+            .map(|(name, relation)| (name, relation.to_wire()))
+            .collect()
+    }
+
+    /// Pinned truth table (variant → expected answer). Read from
+    /// [`ProofRelation::same_store_consistent`]'s docstring: the three
+    /// legitimate corners return `true`; the two impossibility corners
+    /// return `false`.
+    const fn expected(wire: &ProofRelationWire) -> bool {
+        match wire {
+            ProofRelationWire::Stationary
+            | ProofRelationWire::IdentityRepublish { .. }
+            | ProofRelationWire::Progression { .. } => true,
+            ProofRelationWire::CrossStore { .. } | ProofRelationWire::Regressed { .. } => false,
+        }
+    }
+
+    // ---------- (1) Pointwise agreement between value and wire
+
+    #[test]
+    fn value_and_wire_predicates_agree_pointwise_on_every_variant() {
+        for (name, relation) in all_five_relations() {
+            let value = relation.same_store_consistent();
+            let wire = relation.to_wire().same_store_consistent();
+            assert_eq!(
+                value, wire,
+                "{name}: wire predicate must equal value predicate pointwise",
+            );
+        }
+    }
+
+    // ---------- (2) Truth table pinned by variant identity
+
+    #[test]
+    fn truth_table_matches_docstring_on_every_wire_variant() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.same_store_consistent(),
+                expected(&wire),
+                "{name}: wire predicate diverged from the pinned truth table",
+            );
+        }
+    }
+
+    #[test]
+    fn legitimate_corners_return_true() {
+        assert!(ProofRelationWire::Stationary.same_store_consistent());
+        assert!(
+            ProofRelationWire::IdentityRepublish { generations: 1 }.same_store_consistent(),
+            "IdentityRepublish is a legitimate corner",
+        );
+        assert!(
+            ProofRelationWire::Progression {
+                watermark: WatermarkDeltaWire {
+                    full_moved: true,
+                    restart_required_moved: true,
+                    free_moved: true,
+                },
+                generations: 2,
+            }
+            .same_store_consistent(),
+            "Progression is a legitimate corner",
+        );
+    }
+
+    #[test]
+    fn impossibility_corners_return_false() {
+        assert!(
+            !ProofRelationWire::CrossStore {
+                watermark: WatermarkDeltaWire {
+                    full_moved: true,
+                    restart_required_moved: false,
+                    free_moved: true,
+                },
+            }
+            .same_store_consistent(),
+            "CrossStore is a same-store impossibility corner",
+        );
+        assert!(
+            !ProofRelationWire::Regressed { by: 3 }.same_store_consistent(),
+            "Regressed is a same-store impossibility corner",
+        );
+    }
+
+    // ---------- (3) Round-trip through try_from_wire preserves the verdict
+
+    #[test]
+    fn try_from_wire_round_trip_preserves_the_verdict() {
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            let wire_verdict = wire.same_store_consistent();
+            let reconstructed =
+                ProofRelation::try_from_wire(&wire).expect("legitimate wire parses back");
+            assert_eq!(
+                wire_verdict,
+                reconstructed.same_store_consistent(),
+                "{name}: try_from_wire round-trip must preserve the same-store-consistency verdict",
+            );
+        }
+    }
+
+    // ---------- (4) TryFrom idiom agrees with named-method round-trip
+
+    #[test]
+    fn try_from_idiom_round_trip_preserves_the_verdict() {
+        for (name, wire) in all_five_wire_variants() {
+            let value: ProofRelation = (&wire)
+                .try_into()
+                .expect("legitimate wire parses back via TryFrom");
+            let wire_via_named: ProofRelationWire = value.to_wire();
+            assert_eq!(
+                wire.same_store_consistent(),
+                wire_via_named.same_store_consistent(),
+                "{name}: wire → value (via TryFrom) → wire (via to_wire) diverges on the \
+                 same-store-consistency verdict",
+            );
+        }
+    }
+
+    // ---------- (5) const-callable
+
+    #[test]
+    fn predicate_is_const_callable_on_every_variant() {
+        const STATIONARY: bool = ProofRelationWire::Stationary.same_store_consistent();
+        const IDENTITY_REPUBLISH: bool =
+            ProofRelationWire::IdentityRepublish { generations: 1 }.same_store_consistent();
+        const PROGRESSION: bool = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            generations: 2,
+        }
+        .same_store_consistent();
+        const CROSS_STORE: bool = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        }
+        .same_store_consistent();
+        const REGRESSED: bool = ProofRelationWire::Regressed { by: 3 }.same_store_consistent();
+        assert!(STATIONARY);
+        assert!(IDENTITY_REPUBLISH);
+        assert!(PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(!REGRESSED);
+    }
+
+    // ---------- (6) Exhaustive variant enumeration
+
+    #[test]
+    fn exhaustive_variant_enumeration_is_stable() {
+        let seen = all_five_wire_variants();
+        assert_eq!(seen.len(), 5);
+        for (_, wire) in &seen {
+            match wire {
+                ProofRelationWire::Stationary
+                | ProofRelationWire::IdentityRepublish { .. }
+                | ProofRelationWire::Progression { .. }
+                | ProofRelationWire::CrossStore { .. }
+                | ProofRelationWire::Regressed { .. } => {}
+            }
+        }
+    }
+
+    // ---------- (7) Payload-inspection independence
+
+    #[test]
+    fn predicate_is_invariant_under_payload_perturbations() {
+        // IdentityRepublish: any nonzero generations count yields the
+        // same verdict (true) since the predicate reads the tag alone.
+        for generations in [1_u64, 2, 5, 100, u64::MAX] {
+            assert!(
+                ProofRelationWire::IdentityRepublish { generations }.same_store_consistent(),
+                "IdentityRepublish verdict must be invariant under generations={generations}",
+            );
+        }
+        // Progression: any nonzero generations count and any legitimate
+        // watermark payload yield the same verdict (true).
+        let watermarks = [
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        ];
+        for watermark in watermarks {
+            for generations in [1_u64, 7, u64::MAX] {
+                assert!(
+                    ProofRelationWire::Progression {
+                        watermark,
+                        generations,
+                    }
+                    .same_store_consistent(),
+                    "Progression verdict must be invariant under \
+                     watermark={watermark:?} generations={generations}",
+                );
+            }
+        }
+        // CrossStore: any legitimate watermark payload yields the same
+        // verdict (false).
+        for watermark in watermarks {
+            assert!(
+                !ProofRelationWire::CrossStore { watermark }.same_store_consistent(),
+                "CrossStore verdict must be invariant under watermark={watermark:?}",
+            );
+        }
+        // Regressed: any nonzero backwards magnitude yields the same
+        // verdict (false).
+        for by in [1_u64, 2, 5, 100, u64::MAX] {
+            assert!(
+                !ProofRelationWire::Regressed { by }.same_store_consistent(),
+                "Regressed verdict must be invariant under by={by}",
+            );
+        }
+    }
+
+    // ---------- (8) Composition through the wire boundary
+
+    #[test]
+    fn composition_through_the_wire_boundary_agrees_with_direct_value_path() {
+        for (name, relation) in all_five_relations() {
+            let direct = relation.same_store_consistent();
+            let through_wire = relation.to_wire().same_store_consistent();
+            assert_eq!(
+                direct, through_wire,
+                "{name}: value → predicate must equal value → to_wire → predicate",
+            );
+        }
+    }
+
+    // ---------- (9) Cross-altitude same-answer with ProofDelta::same_store_consistent
+
+    #[test]
+    fn wire_verdict_matches_proof_delta_verdict_on_delta_reachable_corners() {
+        // Build proof pairs that reach the four delta-reachable
+        // corners (Stationary, IdentityRepublish, Progression,
+        // CrossStore) and verify the wire predicate equals
+        // ProofDelta::same_store_consistent on each. Regressed is not
+        // delta-reachable (its `by` count is folded to `None` by the
+        // delta path), so it is exercised only by the direct path in
+        // tests (1)-(8) above.
+        let now = std::time::UNIX_EPOCH;
+        let watermark_a = ConfigWatermark {
+            full: blake3::hash(b"full-a"),
+            restart_required: blake3::hash(b"restart-a"),
+            free: blake3::hash(b"free-a"),
+        };
+        let watermark_b = ConfigWatermark {
+            full: blake3::hash(b"full-b"),
+            restart_required: blake3::hash(b"restart-b"),
+            free: blake3::hash(b"free-b"),
+        };
+        let stationary_prior = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 1,
+            observed_at: now,
+        };
+        let stationary_current = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 1,
+            observed_at: now,
+        };
+        let republish_current = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 2,
+            observed_at: now,
+        };
+        let progression_current = ConfigSyncProof {
+            watermark: watermark_b,
+            generation: 2,
+            observed_at: now,
+        };
+        let cross_store_current = ConfigSyncProof {
+            watermark: watermark_b,
+            generation: 1,
+            observed_at: now,
+        };
+
+        for (name, prior, current) in [
+            ("Stationary", stationary_prior, stationary_current),
+            ("IdentityRepublish", stationary_prior, republish_current),
+            ("Progression", stationary_prior, progression_current),
+            ("CrossStore", stationary_prior, cross_store_current),
+        ] {
+            let delta = current.delta_since(&prior);
+            let relation_wire = current.relation_since(&prior).to_wire();
+            assert_eq!(
+                delta.same_store_consistent(),
+                relation_wire.same_store_consistent(),
+                "{name}: ProofDelta::same_store_consistent must equal \
+                 ProofRelationWire::same_store_consistent on the delta-reachable corners",
+            );
         }
     }
 }
