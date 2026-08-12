@@ -1137,6 +1137,71 @@ impl From<&WatermarkRelationWire> for WatermarkRelation {
     }
 }
 
+impl WatermarkRelationWire {
+    /// True iff the classification names at least one moved axis — the
+    /// wire-side receiver-sibling of [`WatermarkRelation::any_moved`].
+    /// Equivalent to `!self.stationary()`.
+    ///
+    /// A `/healthz/config` change-feed reader that holds a freshly
+    /// deserialized [`WatermarkRelationWire`] and wants the top-level
+    /// "did anything move?" answer previously had two inline paths, each
+    /// paying a needless cost: (a) `WatermarkRelation::from_wire(&wire).any_moved()`,
+    /// which detours through the value-side classification for a
+    /// question the wire tag alone answers; or (b)
+    /// `!matches!(wire, WatermarkRelationWire::Stationary)` inline, a
+    /// shape the exhaustiveness checker cannot help keep in sync with a
+    /// future variant addition. The receiver-sibling here answers the
+    /// same question at the wire altitude with the same welded `match`
+    /// the value-side accessor carries, so a sixth variant added to
+    /// [`WatermarkRelationWire`] fails to compile at this method's own
+    /// `match` in lockstep with the value-side sibling.
+    #[must_use]
+    pub const fn any_moved(&self) -> bool {
+        !matches!(self, Self::Stationary)
+    }
+
+    /// True iff the classification is the null hypothesis — the
+    /// wire-side receiver-sibling of [`WatermarkRelation::stationary`].
+    /// Equivalent to `!self.any_moved()`.
+    #[must_use]
+    pub const fn stationary(&self) -> bool {
+        matches!(self, Self::Stationary)
+    }
+
+    /// True iff the CALHA-side "pending restart signal" arm is
+    /// implicated — the wire-side receiver-sibling of
+    /// [`WatermarkRelation::restart_pending`]. Answers "did a
+    /// `RequiresRestart` field drift?" through the variant tag alone.
+    #[must_use]
+    pub const fn restart_pending(&self) -> bool {
+        matches!(self, Self::RestartRequiredOnly | Self::Both)
+    }
+
+    /// True iff the operator-side "hot-swap without a pending restart"
+    /// arm is implicated — the wire-side receiver-sibling of
+    /// [`WatermarkRelation::hot_swappable_drift`]. Answers "did a Free
+    /// field drift?" through the variant tag alone.
+    #[must_use]
+    pub const fn hot_swappable_drift(&self) -> bool {
+        matches!(self, Self::FreeOnly | Self::Both)
+    }
+
+    /// True iff the two-way class-partition invariant holds — every
+    /// variant except [`Self::UnclassifiedDrift`]. The wire-side
+    /// receiver-sibling of
+    /// [`WatermarkRelation::partitioned_class_invariant_holds`]:
+    /// the classification refuses the impossibility corners at
+    /// [`WatermarkDelta::relation`] (via `None`), so the only surviving
+    /// invariant-violating shape at this altitude is the "full moved
+    /// but neither class-scoped half did" corner a non-exhaustive
+    /// `field_classes` slice allows, and the same corner surfaces on
+    /// the wire under the same tag.
+    #[must_use]
+    pub const fn partitioned_class_invariant_holds(&self) -> bool {
+        !matches!(self, Self::UnclassifiedDrift)
+    }
+}
+
 impl ConfigWatermark {
     /// Convenience: the delta from `prior` to `self`. Equivalent to
     /// `WatermarkDelta::between(prior, self)` — spelled at the call site
@@ -10737,5 +10802,281 @@ mod proof_relation_regressed_by_tests {
         assert!(seen_progression, "must reach ProofRelation::Progression");
         assert!(seen_crossstore, "must reach ProofRelation::CrossStore");
         assert!(seen_regressed, "must reach ProofRelation::Regressed");
+    }
+}
+
+#[cfg(test)]
+mod watermark_relation_wire_predicate_tests {
+    //! Weld the five wire-side predicate accessors on
+    //! [`WatermarkRelationWire`] — [`WatermarkRelationWire::any_moved`],
+    //! [`WatermarkRelationWire::stationary`],
+    //! [`WatermarkRelationWire::restart_pending`],
+    //! [`WatermarkRelationWire::hot_swappable_drift`], and
+    //! [`WatermarkRelationWire::partitioned_class_invariant_holds`] — the
+    //! wire-side receiver-family closing the (value, wire) × (predicate)
+    //! grid at the classification altitude. Consumers reading a freshly
+    //! deserialized [`WatermarkRelationWire`] previously had to detour
+    //! through [`WatermarkRelation::from_wire`] to reach the same five
+    //! bool-questions the value side already exposes, or hand-write
+    //! `matches!(wire, ...)` inline at every seam without an
+    //! exhaustiveness-checked `match` behind the shape.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Pointwise agreement between value-side and wire-side predicates
+    //!    on every one of the five variants — for every
+    //!    [`WatermarkRelation`] value the five value-side accessors and
+    //!    the five wire-side siblings agree pointwise. The wire is a
+    //!    lossless channel for the classification vocabulary at every
+    //!    predicate axis.
+    //! 2. Round-trip preservation: on every variant,
+    //!    `wire.<predicate>() == WatermarkRelation::from_wire(&wire).<predicate>()`
+    //!    for every predicate — the two-hop path never diverges from the
+    //!    direct receiver-sibling.
+    //! 3. Duality invariants pinned at every variant: `any_moved` and
+    //!    `stationary` are complements (`p.any_moved() == !p.stationary()`),
+    //!    matching the value-side sibling's welded duality.
+    //! 4. `const`-callable on every predicate — the wire-side siblings
+    //!    are usable in const contexts, matching the value-side siblings
+    //!    the [`WatermarkRelation`] receiver-family already carries.
+    //! 5. Exhaustive variant enumeration: a hand-authored fixture names
+    //!    every one of the five variants exactly once, so a future
+    //!    addition to [`WatermarkRelationWire`] fails to compile at the
+    //!    fixture's `match` in the same instant it fails at each
+    //!    predicate accessor's own `match`.
+    //! 6. Payload matrix pinned at every variant: the exhaustive
+    //!    (`variant`, `predicate`) truth table — a single variant-swap
+    //!    accident in one predicate's `match` arms turns the
+    //!    corresponding row red without the two altitudes drifting
+    //!    silently apart.
+    //! 7. `partitioned_class_invariant_holds` is exactly the complement
+    //!    of "the tag is `UnclassifiedDrift`" on every variant — the
+    //!    only impossibility corner the classification carries at this
+    //!    altitude, matching the value-side sibling's shape.
+    //! 8. Composition through the wire boundary: on every legitimate
+    //!    [`WatermarkRelation`] value, the five predicates agree
+    //!    pointwise on the three-hop path `value → to_wire → predicate`
+    //!    with the direct-value path `value → predicate` — a producer's
+    //!    receiver-side accessor and a consumer's wire-side accessor
+    //!    surface the same five bool-questions on the same classification.
+    //! 9. `From` sibling agrees: for every wire variant, the round-trip
+    //!    through the `Into` idiom (`wire → &wire → value → wire`)
+    //!    surfaces an unchanged predicate row — the `Into`-idiom consumer
+    //!    reaches the same shape as the named-method consumer.
+    //!
+    //! Same test idiom as [`watermark_relation_wire_tests`] and the
+    //! sibling `proof_relation_*` predicate/accessor modules, so a
+    //! future refactor touching either altitude's classification surface
+    //! surfaces breakage across the wire receiver-family.
+
+    use super::*;
+
+    fn all_wire_variants() -> [WatermarkRelationWire; 5] {
+        [
+            WatermarkRelationWire::Stationary,
+            WatermarkRelationWire::UnclassifiedDrift,
+            WatermarkRelationWire::RestartRequiredOnly,
+            WatermarkRelationWire::FreeOnly,
+            WatermarkRelationWire::Both,
+        ]
+    }
+
+    fn all_value_variants() -> [WatermarkRelation; 5] {
+        [
+            WatermarkRelation::Stationary,
+            WatermarkRelation::UnclassifiedDrift,
+            WatermarkRelation::RestartRequiredOnly,
+            WatermarkRelation::FreeOnly,
+            WatermarkRelation::Both,
+        ]
+    }
+
+    /// Pinned truth table (variant × predicate) in the fixed order
+    /// (`any_moved`, `stationary`, `restart_pending`, `hot_swappable_drift`,
+    /// `partitioned_class_invariant_holds`). Read from
+    /// [`WatermarkRelation`]'s per-variant docstring.
+    const fn expected(variant: WatermarkRelationWire) -> [bool; 5] {
+        match variant {
+            WatermarkRelationWire::Stationary => [false, true, false, false, true],
+            WatermarkRelationWire::UnclassifiedDrift => [true, false, false, false, false],
+            WatermarkRelationWire::RestartRequiredOnly => [true, false, true, false, true],
+            WatermarkRelationWire::FreeOnly => [true, false, false, true, true],
+            WatermarkRelationWire::Both => [true, false, true, true, true],
+        }
+    }
+
+    fn wire_predicates(wire: &WatermarkRelationWire) -> [bool; 5] {
+        [
+            wire.any_moved(),
+            wire.stationary(),
+            wire.restart_pending(),
+            wire.hot_swappable_drift(),
+            wire.partitioned_class_invariant_holds(),
+        ]
+    }
+
+    fn value_predicates(value: &WatermarkRelation) -> [bool; 5] {
+        [
+            value.any_moved(),
+            value.stationary(),
+            value.restart_pending(),
+            value.hot_swappable_drift(),
+            value.partitioned_class_invariant_holds(),
+        ]
+    }
+
+    #[test]
+    fn wire_predicates_match_the_pinned_truth_table_on_every_variant() {
+        for wire in all_wire_variants() {
+            assert_eq!(
+                wire_predicates(&wire),
+                expected(wire),
+                "wire-side predicate row diverges from the pinned truth table on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn value_and_wire_predicate_rows_agree_pointwise_on_every_variant() {
+        for value in all_value_variants() {
+            let wire = value.to_wire();
+            assert_eq!(
+                value_predicates(&value),
+                wire_predicates(&wire),
+                "value-side and wire-side predicate rows diverge on {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_predicates_survive_a_from_wire_round_trip_on_every_variant() {
+        for wire in all_wire_variants() {
+            let reconstructed = WatermarkRelation::from_wire(&wire);
+            assert_eq!(
+                wire_predicates(&wire),
+                value_predicates(&reconstructed),
+                "wire → value round-trip diverges on the predicate row for {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn any_moved_and_stationary_are_complements_on_every_variant() {
+        for wire in all_wire_variants() {
+            assert_ne!(
+                wire.any_moved(),
+                wire.stationary(),
+                "any_moved and stationary must be complements on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partitioned_class_invariant_holds_iff_variant_is_not_unclassified_drift() {
+        for wire in all_wire_variants() {
+            let is_unclassified = matches!(wire, WatermarkRelationWire::UnclassifiedDrift);
+            assert_eq!(
+                wire.partitioned_class_invariant_holds(),
+                !is_unclassified,
+                "partitioned_class_invariant_holds must be `false` iff the tag is UnclassifiedDrift on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn stationary_is_the_sole_non_any_moved_variant() {
+        let count_stationary = all_wire_variants()
+            .iter()
+            .filter(|w| w.stationary())
+            .count();
+        let count_any_moved_false = all_wire_variants()
+            .iter()
+            .filter(|w| !w.any_moved())
+            .count();
+        assert_eq!(count_stationary, 1);
+        assert_eq!(count_any_moved_false, 1);
+    }
+
+    #[test]
+    fn restart_pending_covers_exactly_restart_required_only_and_both() {
+        let restart_variants: Vec<_> = all_wire_variants()
+            .into_iter()
+            .filter(WatermarkRelationWire::restart_pending)
+            .collect();
+        assert_eq!(
+            restart_variants,
+            vec![
+                WatermarkRelationWire::RestartRequiredOnly,
+                WatermarkRelationWire::Both,
+            ]
+        );
+    }
+
+    #[test]
+    fn hot_swappable_drift_covers_exactly_free_only_and_both() {
+        let hot_variants: Vec<_> = all_wire_variants()
+            .into_iter()
+            .filter(WatermarkRelationWire::hot_swappable_drift)
+            .collect();
+        assert_eq!(
+            hot_variants,
+            vec![WatermarkRelationWire::FreeOnly, WatermarkRelationWire::Both,]
+        );
+    }
+
+    #[test]
+    fn wire_predicates_are_const_callable_on_every_variant() {
+        const STATIONARY_ANY_MOVED: bool = WatermarkRelationWire::Stationary.any_moved();
+        const STATIONARY_STATIONARY: bool = WatermarkRelationWire::Stationary.stationary();
+        const STATIONARY_RESTART: bool = WatermarkRelationWire::Stationary.restart_pending();
+        const STATIONARY_HOT: bool = WatermarkRelationWire::Stationary.hot_swappable_drift();
+        const STATIONARY_PARTITIONED: bool =
+            WatermarkRelationWire::Stationary.partitioned_class_invariant_holds();
+        const UNCLASSIFIED_PARTITIONED: bool =
+            WatermarkRelationWire::UnclassifiedDrift.partitioned_class_invariant_holds();
+        const BOTH_RESTART: bool = WatermarkRelationWire::Both.restart_pending();
+        const BOTH_HOT: bool = WatermarkRelationWire::Both.hot_swappable_drift();
+        const FREE_ONLY_HOT: bool = WatermarkRelationWire::FreeOnly.hot_swappable_drift();
+        const RESTART_ONLY_RESTART: bool =
+            WatermarkRelationWire::RestartRequiredOnly.restart_pending();
+
+        assert!(!STATIONARY_ANY_MOVED);
+        assert!(STATIONARY_STATIONARY);
+        assert!(!STATIONARY_RESTART);
+        assert!(!STATIONARY_HOT);
+        assert!(STATIONARY_PARTITIONED);
+        assert!(!UNCLASSIFIED_PARTITIONED);
+        assert!(BOTH_RESTART);
+        assert!(BOTH_HOT);
+        assert!(FREE_ONLY_HOT);
+        assert!(RESTART_ONLY_RESTART);
+    }
+
+    #[test]
+    fn into_idiom_round_trip_preserves_the_predicate_row() {
+        for wire in all_wire_variants() {
+            let value: WatermarkRelation = (&wire).into();
+            let wire_via_into: WatermarkRelationWire = value.into();
+            assert_eq!(
+                wire_predicates(&wire_via_into),
+                wire_predicates(&wire),
+                "wire → value → wire via Into diverges on the predicate row for {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn exhaustive_variant_enumeration_is_stable() {
+        let seen: Vec<_> = all_wire_variants().into_iter().collect();
+        assert_eq!(seen.len(), 5);
+        for wire in &seen {
+            match wire {
+                WatermarkRelationWire::Stationary
+                | WatermarkRelationWire::UnclassifiedDrift
+                | WatermarkRelationWire::RestartRequiredOnly
+                | WatermarkRelationWire::FreeOnly
+                | WatermarkRelationWire::Both => {}
+            }
+        }
     }
 }
