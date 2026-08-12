@@ -246,19 +246,118 @@ impl ConfigSyncProof {
     pub fn to_wire(&self) -> ConfigSyncProofWire {
         ConfigSyncProofWire {
             generation: self.generation,
-            watermark: ConfigWatermarkWire {
-                full: self.watermark.full.to_hex().to_string(),
-                restart_required: self.watermark.restart_required.to_hex().to_string(),
-                free: self.watermark.free.to_hex().to_string(),
-            },
+            watermark: self.watermark.to_wire(),
             observed_at_epoch: self
                 .observed_at
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
         }
     }
+
+    /// Reconstruct a [`ConfigSyncProof`] from its wire projection — the
+    /// inverse of [`Self::to_wire`], closing the wire shape into a
+    /// full round-trip so a consumer that received a
+    /// [`ConfigSyncProofWire`] can hold a strongly-typed proof back
+    /// (real [`blake3::Hash`] values, a real [`std::time::SystemTime`]
+    /// timestamp) with one call instead of hand-parsing three hex
+    /// strings and an epoch integer at every seam.
+    ///
+    /// Before this method the wire shape was a monologue: `to_wire`
+    /// serialized outbound but nothing deserialized back. A consumer
+    /// wanting to compare two watermarks as *hashes* rather than as
+    /// hex *strings* (constant-time bytewise via `blake3::Hash`'s
+    /// `PartialEq` rather than character-by-character across a `String`)
+    /// had to re-derive [`blake3::Hash::from_hex`] plus the epoch →
+    /// [`std::time::SystemTime`] fold inline at every call site —
+    /// exactly the drift risk [`ConfigSyncProofWire`]'s own doc names
+    /// on the outbound side.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] when any of the three wire hash
+    /// fields is not valid `blake3` hex, or when `observed_at_epoch`
+    /// is negative (a running store cannot have produced a proof
+    /// stamped before the Unix epoch, so the sign is a malformedness
+    /// signal, not a legitimate value).
+    pub fn try_from_wire(wire: &ConfigSyncProofWire) -> Result<Self, ShikumiError> {
+        let watermark = ConfigWatermark::try_from_wire(&wire.watermark)?;
+        let secs = u64::try_from(wire.observed_at_epoch).map_err(|_| {
+            ShikumiError::Parse(format!(
+                "invalid negative observedAtEpoch in ConfigSyncProofWire: {}",
+                wire.observed_at_epoch
+            ))
+        })?;
+        let observed_at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        Ok(Self {
+            generation: wire.generation,
+            watermark,
+            observed_at,
+        })
+    }
 }
 
+impl ConfigWatermark {
+    /// Project to the wire shape — three `blake3::Hash` fields become
+    /// three lowercase-hex strings, matching the per-field encoding
+    /// [`ConfigSyncProof::to_wire`] used inline before this lift.
+    ///
+    /// One source of truth for the value → wire projection on the
+    /// watermark, so [`ConfigSyncProof::to_wire`] and any future
+    /// consumer that needs the wire encoding of a watermark alone
+    /// route through the same three `.to_hex().to_string()` calls
+    /// rather than hand-rolling the encoding at each site.
+    #[must_use]
+    pub fn to_wire(&self) -> ConfigWatermarkWire {
+        ConfigWatermarkWire {
+            full: self.full.to_hex().to_string(),
+            restart_required: self.restart_required.to_hex().to_string(),
+            free: self.free.to_hex().to_string(),
+        }
+    }
+
+    /// Reconstruct a [`ConfigWatermark`] from its wire projection —
+    /// the inverse of [`Self::to_wire`], parsing each hex field back
+    /// to a [`blake3::Hash`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] when any field is not valid
+    /// `blake3` hex. The error names the offending wire field
+    /// (`full` / `restartRequired` / `free`) so the consumer can
+    /// localize the malformed input without re-parsing the whole
+    /// payload.
+    pub fn try_from_wire(wire: &ConfigWatermarkWire) -> Result<Self, ShikumiError> {
+        Ok(Self {
+            full: parse_wire_hash(&wire.full, "full")?,
+            restart_required: parse_wire_hash(&wire.restart_required, "restartRequired")?,
+            free: parse_wire_hash(&wire.free, "free")?,
+        })
+    }
+}
+
+impl TryFrom<&ConfigWatermarkWire> for ConfigWatermark {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &ConfigWatermarkWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
+impl TryFrom<&ConfigSyncProofWire> for ConfigSyncProof {
+    type Error = ShikumiError;
+
+    fn try_from(wire: &ConfigSyncProofWire) -> Result<Self, Self::Error> {
+        Self::try_from_wire(wire)
+    }
+}
+
+fn parse_wire_hash(hex: &str, field: &'static str) -> Result<blake3::Hash, ShikumiError> {
+    blake3::Hash::from_hex(hex).map_err(|e| {
+        ShikumiError::Parse(format!(
+            "invalid blake3 hex in ConfigWatermarkWire field `{field}`: {e}"
+        ))
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -514,8 +613,18 @@ mod wire_tests {
     #[test]
     fn the_wire_field_names_are_pinned() {
         let json = serde_json::to_string(&proof().to_wire()).unwrap();
-        for key in ["generation", "watermark", "full", "restartRequired", "free", "observedAtEpoch"] {
-            assert!(json.contains(&format!("\"{key}\"")), "missing {key} in {json}");
+        for key in [
+            "generation",
+            "watermark",
+            "full",
+            "restartRequired",
+            "free",
+            "observedAtEpoch",
+        ] {
+            assert!(
+                json.contains(&format!("\"{key}\"")),
+                "missing {key} in {json}"
+            );
         }
     }
 
@@ -524,5 +633,92 @@ mod wire_tests {
     #[test]
     fn the_timestamp_is_epoch_seconds() {
         assert_eq!(proof().to_wire().observed_at_epoch, 1_700_000_000);
+    }
+
+    /// The wire projection is a full isomorphism, not a monologue: a proof
+    /// that goes out through `to_wire` comes back through `try_from_wire`
+    /// bit-identical. This is the pin the outbound-only wire shape lacked;
+    /// without it a consumer that parsed a wire and wanted to compare it
+    /// against a locally-computed proof had to hand-write the reverse
+    /// projection at every seam — exactly the drift risk we just closed
+    /// on the outbound side.
+    #[test]
+    fn value_wire_value_is_identity_on_a_well_formed_proof() {
+        let p = proof();
+        let back = ConfigSyncProof::try_from_wire(&p.to_wire()).expect("well-formed round-trip");
+        assert_eq!(back, p);
+    }
+
+    /// The reverse composition (`wire → value → wire`) is likewise a
+    /// fixed point on any well-formed wire, welding both directions of
+    /// the isomorphism at once.
+    #[test]
+    fn wire_value_wire_is_fixed_point_on_a_well_formed_wire() {
+        let w = proof().to_wire();
+        let back = ConfigSyncProof::try_from_wire(&w)
+            .expect("well-formed round-trip")
+            .to_wire();
+        assert_eq!(back, w);
+    }
+
+    /// The `TryFrom<&ConfigSyncProofWire>` impl and the inherent
+    /// `try_from_wire` method must agree pointwise — the trait exists so
+    /// generic code can use the standard conversion idiom, and it must
+    /// not silently diverge from the named entry point.
+    #[test]
+    fn try_from_impl_and_try_from_wire_method_agree_pointwise() {
+        let w = proof().to_wire();
+        let via_method = ConfigSyncProof::try_from_wire(&w).unwrap();
+        let via_trait = ConfigSyncProof::try_from(&w).unwrap();
+        assert_eq!(via_method, via_trait);
+    }
+
+    /// A malformed hex field is a `Parse` error, not a panic — every
+    /// wire is user-supplied bytes, so the parse boundary must be a
+    /// `Result`. The error message names the offending field so a
+    /// consumer can localize the fault without re-parsing.
+    #[test]
+    fn invalid_blake3_hex_in_the_wire_is_a_parse_error_naming_the_field() {
+        let mut w = proof().to_wire();
+        w.watermark.restart_required = "not-a-hash".to_owned();
+        let err = ConfigSyncProof::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("restartRequired"),
+            "error must name the field: {msg}"
+        );
+    }
+
+    /// A negative `observed_at_epoch` is malformed — a running store
+    /// cannot have produced a proof stamped before the Unix epoch, so
+    /// the sign is a signal, not a legitimate value. Refusing at the
+    /// parse boundary keeps the reconstructed `SystemTime` in the
+    /// well-defined positive range.
+    #[test]
+    fn a_negative_observed_at_epoch_is_a_parse_error() {
+        let mut w = proof().to_wire();
+        w.observed_at_epoch = -1;
+        let err = ConfigSyncProof::try_from_wire(&w).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Parse);
+    }
+
+    /// `ConfigWatermark::to_wire` is the same shape `ConfigSyncProof::to_wire`
+    /// composes inline: the lift removed a three-line duplication, so this
+    /// test welds the composition equivalence at the seam.
+    #[test]
+    fn config_sync_proof_to_wire_watermark_equals_watermark_to_wire() {
+        let p = proof();
+        assert_eq!(p.to_wire().watermark, p.watermark.to_wire());
+    }
+
+    /// The watermark's own round-trip stands on its own — a consumer
+    /// holding just a watermark wire (without generation/timestamp) can
+    /// reconstruct the three hashes.
+    #[test]
+    fn config_watermark_wire_round_trips_through_try_from_wire() {
+        let w = proof().watermark;
+        let back = ConfigWatermark::try_from_wire(&w.to_wire()).expect("round-trip");
+        assert_eq!(back, w);
     }
 }
