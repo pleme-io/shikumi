@@ -1138,6 +1138,81 @@ impl ConfigWatermark {
     pub fn relation_wire_since(&self, prior: &Self) -> Option<WatermarkRelationWire> {
         self.relation_since(prior).map(|r| r.to_wire())
     }
+
+    /// The [`WatermarkDeltaWire`] projection from `prior` to `self` —
+    /// the wire-side receiver-sibling of [`Self::delta_since`], fusing
+    /// the delta and its wire projection at one call site. Composes
+    /// `self.delta_since(prior).to_wire()`.
+    ///
+    /// **Closes the same-altitude (`delta`, `relation`) × (`value`,
+    /// `wire`) 2×2 grid at the watermark altitude.** The three peers
+    /// already carrying the grid are [`Self::delta_since`]
+    /// (value/delta), [`Self::relation_since`] (value/relation), and
+    /// [`Self::relation_wire_since`] (wire/relation). This method is
+    /// the wire/delta cell — the wire projection of the three-bool
+    /// [`WatermarkDelta`] shape, reached from a watermark pair in one
+    /// call. Mirrors the closure [`ConfigSyncProof::delta_wire_since`]
+    /// provided one altitude up at the proof grid.
+    ///
+    /// A `/healthz/config` change-feed or a cross-replica delta-log
+    /// endpoint that holds two [`ConfigWatermark`] values but wants to
+    /// broadcast the bare watermark-altitude wire (not the fuller
+    /// classification wire from [`Self::relation_wire_since`], and
+    /// not going through a [`ConfigSyncProof`] proof-altitude fold)
+    /// previously had two inline paths, each leaking work:
+    ///
+    /// - `self.delta_since(prior).to_wire()` — reach the value-side
+    ///   delta through the receiver sibling, then compose the wire
+    ///   projection ad hoc at every call site.
+    /// - `WatermarkDelta::between(prior, self).to_wire()` — bypass the
+    ///   receiver-sibling API entirely and reach
+    ///   [`WatermarkDelta::between`] by name, then compose the wire
+    ///   projection ad hoc; this path also inverts the "receiver is
+    ///   current" convention every peer `*_since` method carries.
+    ///
+    /// Both routes composed the watermark-altitude bare wire inline at
+    /// every seam. This method IS the composition, matching the
+    /// "receiver is current" argument-order convention every peer
+    /// `*_since` method (at either altitude) already carries.
+    ///
+    /// **Return type is total, matching [`Self::delta_since`].** Unlike
+    /// [`Self::relation_since`] / [`Self::relation_wire_since`] (which
+    /// return `Option` because the classification refuses a class-
+    /// partition-invariant violation the delta shape can express), the
+    /// bare wire projection [`WatermarkDelta::to_wire`] preserves every
+    /// shape a [`WatermarkDelta`] can hold — the class-partition
+    /// impossibility corner is not filtered here, it is welded at the
+    /// parse boundary via [`WatermarkDelta::try_from_wire`] on the
+    /// receiving side. A producer of a `WatermarkDeltaWire` reached
+    /// through this method cannot originate a class-partition-invariant
+    /// violation either, because the underlying [`WatermarkDelta`] came
+    /// from [`WatermarkDelta::between`] on two [`ConfigWatermark`]
+    /// values whose class-scoped hashes are subsets of the full hash
+    /// input by construction of [`Self::compute`].
+    ///
+    /// **Symmetric across argument-order swap**, unlike the proof-
+    /// altitude peer [`ConfigSyncProof::delta_wire_since`]. Moved-ness
+    /// at the watermark altitude uses `!=` (XOR-based comparison), so
+    /// `a.delta_wire_since(&b) == b.delta_wire_since(&a)` on any pair.
+    /// The direction axis a proof pair carries (generation and
+    /// observed-at) lives one altitude up and never reaches this
+    /// method's body.
+    ///
+    /// **Cross-altitude coherence.** The wire reached through this
+    /// method equals [`ConfigSyncProof::watermark_delta_wire_since`]
+    /// on any proof pair whose watermarks are this pair, and equals
+    /// the nested [`ProofDeltaWire::watermark`] field on the wire the
+    /// proof-altitude [`ConfigSyncProof::delta_wire_since`] reaches.
+    /// The three siblings (this method, the cross-altitude wire, the
+    /// nested field) reach the same wire tag pointwise.
+    ///
+    /// Argument order matches [`Self::delta_since`] /
+    /// [`Self::relation_since`] / [`Self::relation_wire_since`]: the
+    /// receiver is the "current" half.
+    #[must_use]
+    pub fn delta_wire_since(&self, prior: &Self) -> WatermarkDeltaWire {
+        self.delta_since(prior).to_wire()
+    }
 }
 
 impl ConfigSyncProof {
@@ -7644,6 +7719,329 @@ mod delta_wire_since_tests {
             assert_eq!(
                 via_sibling, via_wire_round_trip,
                 "delta_wire_since must be invariant across a ConfigSyncProofWire round-trip on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod watermark_delta_wire_since_tests {
+    //! Weld the same-altitude `delta_wire_since` receiver sibling on
+    //! [`ConfigWatermark`] — the wire peer of
+    //! [`ConfigWatermark::delta_since`], closing the fourth (and final)
+    //! cell of the (`delta`, `relation`) × (`value`, `wire`) 2×2 grid
+    //! at the WATERMARK altitude. Mirrors the closure
+    //! [`ConfigSyncProof::delta_wire_since`] provided one altitude up
+    //! at the proof grid, so the sibling-family shape stays uniform
+    //! across altitudes. Together the tests below cover:
+    //!
+    //! 1. [`ConfigWatermark::delta_wire_since`] composes through
+    //!    [`ConfigWatermark::delta_since`] + [`WatermarkDelta::to_wire`]
+    //!    — a future watermark-altitude axis added to
+    //!    [`WatermarkDelta`] never reaches this method's body;
+    //!    `delta_since` stays the single source of truth for the
+    //!    watermark-altitude value delta, and `to_wire` stays the
+    //!    single source of truth for its wire projection.
+    //! 2. Agreement with [`WatermarkDelta::between`] composed with
+    //!    [`WatermarkDelta::to_wire`] — the receiver-sibling altitude
+    //!    and the free-function altitude never diverge.
+    //! 3. Round-trip totality: every wire the sibling reaches on the
+    //!    authored flow reconstructs through
+    //!    [`WatermarkDelta::try_from_wire`] to the exact value-side
+    //!    delta [`ConfigWatermark::delta_since`] yields.
+    //! 4. Symmetric argument order at the watermark altitude —
+    //!    swapping receiver and argument reaches the SAME wire (moved
+    //!    -ness at this altitude uses XOR-based comparison, unlike the
+    //!    direction-sensitive proof altitude where `delta_wire_since`
+    //!    is asymmetric). This pins that the watermark altitude
+    //!    carries no direction axis for the receiver sibling to leak.
+    //! 5. Cross-altitude coherence: the sibling wire equals
+    //!    [`ConfigSyncProof::watermark_delta_wire_since`] on any proof
+    //!    pair whose watermarks are this pair, AND equals the nested
+    //!    [`ProofDeltaWire::watermark`] field on the wire the proof-
+    //!    altitude [`ConfigSyncProof::delta_wire_since`] reaches. The
+    //!    three siblings (this method, the cross-altitude wire on the
+    //!    proof, the nested field on the proof-altitude wire) all
+    //!    reach the same wire tag pointwise. A consumer never picks a
+    //!    different wire depending on which altitude's `*_wire_since`
+    //!    it called.
+    //! 6. Reaches every watermark corner in one call — `Stationary`,
+    //!    `FreeOnly`, `RestartRequiredOnly`, and `Both`. No routing on
+    //!    a classification tag needed to reach the bare three-bool
+    //!    wire triple.
+    //! 7. Every wire the sibling reaches is class-partition-consistent
+    //!    ([`WatermarkDelta::class_moves_imply_full_moved`] holds), so
+    //!    every wire round-trips through
+    //!    [`WatermarkDelta::try_from_wire`] cleanly — the parse
+    //!    boundary weld is a no-op for wires this sibling produces.
+    //!
+    //! Same test idiom as `delta_wire_since_tests` (the proof-altitude
+    //! peer above), so a future refactor touching either altitude's
+    //! delta wire pipeline surfaces breakage here too.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn restart_edit() -> Cfg {
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        c
+    }
+
+    fn both_edit() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:9090".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn authored_pairs() -> [(Cfg, Cfg); 4] {
+        [
+            (base(), base()),
+            (base(), free_edit()),
+            (base(), restart_edit()),
+            (base(), both_edit()),
+        ]
+    }
+
+    // ---------- (1) composition through delta_since + to_wire
+
+    #[test]
+    fn delta_wire_since_composes_through_delta_since_then_to_wire() {
+        // Pin (1): the watermark-altitude wire receiver sibling MUST
+        // fold through delta_since + WatermarkDelta::to_wire. A future
+        // watermark-altitude axis added to WatermarkDelta never reaches
+        // this method's body; delta_since stays the single source of
+        // truth for the watermark-altitude value delta, and to_wire
+        // stays the single source of truth for its wire projection.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            assert_eq!(
+                current.delta_wire_since(&prior),
+                current.delta_since(&prior).to_wire(),
+                "delta_wire_since must equal delta_since().to_wire() on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (2) agreement with the free-function altitude
+
+    #[test]
+    fn delta_wire_since_agrees_with_between_then_to_wire() {
+        // Pin (2): the receiver sibling equals the free-function
+        // WatermarkDelta::between composed with WatermarkDelta::to_wire
+        // on every authored pair. The receiver-sibling altitude and
+        // the free-function altitude never diverge.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            assert_eq!(
+                current.delta_wire_since(&prior),
+                WatermarkDelta::between(&prior, &current).to_wire(),
+                "delta_wire_since must equal WatermarkDelta::between().to_wire() on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (3) round-trip totality through try_from_wire
+
+    #[test]
+    fn round_trips_through_try_from_wire_to_the_same_value_side_delta() {
+        // Pin (3): every wire the sibling reaches on the authored flow
+        // reconstructs through WatermarkDelta::try_from_wire to the
+        // exact value-side delta ConfigWatermark::delta_since yields.
+        // The wire projection composed with its parse-boundary
+        // reconstruction is the identity on the value-side delta —
+        // the round-trip property WatermarkDelta already carries,
+        // extended through the same-altitude receiver.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let wire = current.delta_wire_since(&prior);
+            let back = WatermarkDelta::try_from_wire(&wire).unwrap_or_else(|e| {
+                panic!(
+                    "authored watermark pair {prior_cfg:?} -> {current_cfg:?} produced a wire that failed try_from_wire: {e:?}"
+                )
+            });
+            assert_eq!(
+                back,
+                current.delta_since(&prior),
+                "round-tripped wire must equal the value-side delta on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (4) argument-order symmetry at the watermark altitude
+
+    #[test]
+    fn argument_order_is_symmetric_at_the_watermark_altitude() {
+        // Pin (4): unlike the proof-altitude peer
+        // (ConfigSyncProof::delta_wire_since, which is asymmetric
+        // because the proof-altitude direction axis
+        // `generations_advanced` flips forward = Some(n) / backward =
+        // None), the watermark altitude carries NO direction axis —
+        // moved-ness uses XOR-based comparison in
+        // WatermarkDelta::between, so swapping receiver and argument
+        // MUST reach the same wire. This pins that the receiver
+        // sibling faithfully carries the watermark altitude's
+        // symmetry: no direction axis leaks into the wire projection.
+        let a = wm_of(&base());
+        let b = wm_of(&free_edit());
+        assert_eq!(
+            a.delta_wire_since(&b),
+            b.delta_wire_since(&a),
+            "delta_wire_since must be symmetric at the watermark altitude",
+        );
+        // Also pin symmetry on the both_edit case — every axis of the
+        // three-bool triple exercised.
+        let c = wm_of(&both_edit());
+        assert_eq!(
+            a.delta_wire_since(&c),
+            c.delta_wire_since(&a),
+            "delta_wire_since must be symmetric at the watermark altitude on both_edit",
+        );
+    }
+
+    // ---------- (5) cross-altitude coherence with ConfigSyncProof siblings
+
+    #[test]
+    fn agrees_with_proof_cross_altitude_and_nested_wire_field() {
+        // Pin (5): on any proof pair whose watermarks are the pair
+        // this sibling is called on, the wire reached through the
+        // watermark altitude MUST equal
+        // ConfigSyncProof::watermark_delta_wire_since (the cross-
+        // altitude sibling on the proof) AND MUST equal the nested
+        // ProofDeltaWire::watermark field on the wire the proof-
+        // altitude ConfigSyncProof::delta_wire_since reaches. The
+        // three siblings all reach the same wire tag pointwise.
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior_wm = wm_of(&prior_cfg);
+            let current_wm = wm_of(&current_cfg);
+            let prior_proof = ConfigSyncProof {
+                watermark: prior_wm,
+                generation: 1,
+                observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            };
+            let current_proof = ConfigSyncProof {
+                watermark: current_wm,
+                generation: 2,
+                observed_at: UNIX_EPOCH + Duration::from_secs(1_700_000_060),
+            };
+            let watermark_altitude_wire = current_wm.delta_wire_since(&prior_wm);
+            let proof_cross_altitude_wire = current_proof.watermark_delta_wire_since(&prior_proof);
+            let nested_on_proof_wire = current_proof.delta_wire_since(&prior_proof).watermark;
+            assert_eq!(
+                watermark_altitude_wire, proof_cross_altitude_wire,
+                "watermark-altitude sibling must equal ConfigSyncProof::watermark_delta_wire_since on {prior_cfg:?} -> {current_cfg:?}",
+            );
+            assert_eq!(
+                watermark_altitude_wire, nested_on_proof_wire,
+                "watermark-altitude sibling must equal ProofDeltaWire::watermark on {prior_cfg:?} -> {current_cfg:?}",
+            );
+        }
+    }
+
+    // ---------- (6) reaches every watermark corner in one call
+
+    #[test]
+    fn reaches_every_watermark_corner_in_one_call() {
+        // Pin (6): the sibling reaches a WatermarkDeltaWire on every
+        // watermark corner — Stationary (all-false triple), FreeOnly
+        // (full + free), RestartRequiredOnly (full + restart_required),
+        // and Both (all-true triple). No routing on a classification
+        // tag needed to reach the bare three-bool wire triple.
+        //
+        // Case row: (name, prior, current, want_triple as
+        // (full_moved, restart_required_moved, free_moved)).
+        type WantTriple = (bool, bool, bool);
+        type Case = (&'static str, Cfg, Cfg, WantTriple);
+        let cases: [Case; 4] = [
+            (
+                "Stationary (identical config)",
+                base(),
+                base(),
+                (false, false, false),
+            ),
+            ("FreeOnly", base(), free_edit(), (true, false, true)),
+            (
+                "RestartRequiredOnly",
+                base(),
+                restart_edit(),
+                (true, true, false),
+            ),
+            ("Both", base(), both_edit(), (true, true, true)),
+        ];
+        for (name, prior_cfg, current_cfg, want_triple) in cases {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let got = current.delta_wire_since(&prior);
+            let got_triple = (got.full_moved, got.restart_required_moved, got.free_moved);
+            assert_eq!(
+                got_triple, want_triple,
+                "{name}: watermark triple must reach {want_triple:?}, got {got:?}",
+            );
+        }
+    }
+
+    // ---------- (7) every reachable wire is class-partition-consistent
+
+    #[test]
+    fn every_reachable_wire_is_class_partition_consistent() {
+        // Pin (7): every wire the sibling reaches on the authored flow
+        // satisfies WatermarkDelta::class_moves_imply_full_moved — a
+        // class-scoped half moving implies full_moved. This is the
+        // weld WatermarkDelta::try_from_wire enforces at the parse
+        // boundary; on wires the sibling produces, the weld is a
+        // no-op, matching the doc-pin claim that "a producer of a
+        // WatermarkDeltaWire reached through this method cannot
+        // originate a class-partition-invariant violation."
+        for (prior_cfg, current_cfg) in authored_pairs() {
+            let prior = wm_of(&prior_cfg);
+            let current = wm_of(&current_cfg);
+            let wire = current.delta_wire_since(&prior);
+            let candidate = WatermarkDelta {
+                full_moved: wire.full_moved,
+                restart_required_moved: wire.restart_required_moved,
+                free_moved: wire.free_moved,
+            };
+            assert!(
+                candidate.class_moves_imply_full_moved(),
+                "sibling wire must be class-partition-consistent on {prior_cfg:?} -> {current_cfg:?}, got {wire:?}",
             );
         }
     }
