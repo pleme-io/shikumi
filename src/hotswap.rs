@@ -493,6 +493,108 @@ impl WatermarkDelta {
     }
 }
 
+/// A [`WatermarkDelta`] whose "at least one half moved" invariant is
+/// welded at the type — a stationary delta has no argument form.
+///
+/// The two [`ProofRelation`] variants that carry a watermark
+/// ([`ProofRelation::Progression`] and [`ProofRelation::CrossStore`])
+/// require by construction that the class-scoped comparison is
+/// non-stationary: a stationary watermark at the same generation lands
+/// in [`ProofRelation::Stationary`] instead of
+/// [`ProofRelation::CrossStore`], and a stationary watermark with a
+/// generation advance lands in [`ProofRelation::IdentityRepublish`]
+/// instead of [`ProofRelation::Progression`]. Before this newtype the
+/// invariant lived only in doc comments — a hand-constructed
+/// `ProofRelation::CrossStore { watermark: <stationary> }` was
+/// representable and semantically inconsistent. Making that variant's
+/// field a `MovedWatermarkDelta` closes the invariant into the type
+/// shape: the compiler refuses the confusion at the seam rather than
+/// leaving a runtime predicate to catch it.
+///
+/// **Tier: truly-unrepresentable *within this authored surface*** — a
+/// stationary payload has no argument form. The only constructor
+/// ([`Self::new`]) refuses a stationary delta at its argument boundary.
+/// This is the [`UNREPRESENTABILITY.md`](https://github.com/pleme-io/theory/blob/main/UNREPRESENTABILITY.md)
+/// tier the crate already reaches for [`ValidatedTieredConfig`] on the
+/// value side and [`std::num::NonZeroU64`] on the count side, extended
+/// to the watermark-delta payload.
+///
+/// The `Deref<Target = WatermarkDelta>` impl preserves ergonomic access
+/// to every predicate on the underlying delta ([`WatermarkDelta::restart_pending`],
+/// [`WatermarkDelta::hot_swappable_drift`], etc.) — a consumer that
+/// receives a `MovedWatermarkDelta` through a variant payload never has
+/// to unwrap to read the class-scoped questions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MovedWatermarkDelta(WatermarkDelta);
+
+impl MovedWatermarkDelta {
+    /// Wrap `delta` iff at least one class-scoped half moved. Returns
+    /// `None` on a stationary delta rather than panicking — a consumer
+    /// that receives a delta from an untrusted source (e.g. one
+    /// reconstructed from a wire) uses this constructor to filter out
+    /// the null hypothesis without a second `.stationary()` check at
+    /// every seam.
+    ///
+    /// `const` so a compile-time-known delta can be lifted at compile
+    /// time, matching [`WatermarkDelta::stationary`]'s `const`-ness.
+    #[must_use]
+    pub const fn new(delta: WatermarkDelta) -> Option<Self> {
+        if delta.stationary() {
+            None
+        } else {
+            Some(Self(delta))
+        }
+    }
+
+    /// Unwrap to the underlying [`WatermarkDelta`]. The class-scoped
+    /// moved-ness invariant survives the projection (the returned value
+    /// is still non-stationary), but the type-level weld is gone — a
+    /// consumer that wants to keep the invariant should keep the
+    /// [`MovedWatermarkDelta`] wrapper.
+    #[must_use]
+    pub const fn into_inner(self) -> WatermarkDelta {
+        self.0
+    }
+
+    /// Borrow the underlying [`WatermarkDelta`] without unwrapping — the
+    /// same access `Deref` gives, spelled explicitly for the receiver
+    /// idiom (`self.as_delta()` reads more naturally than `&*self` in
+    /// some call sites).
+    #[must_use]
+    pub const fn as_delta(&self) -> &WatermarkDelta {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for MovedWatermarkDelta {
+    type Target = WatermarkDelta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TryFrom<WatermarkDelta> for MovedWatermarkDelta {
+    type Error = ShikumiError;
+
+    /// Total conversion from a bare [`WatermarkDelta`] — returns
+    /// [`ShikumiError::Validation`] on the stationary null hypothesis
+    /// so a consumer using the standard `TryFrom` idiom (`let m:
+    /// MovedWatermarkDelta = d.try_into()?;`) surfaces a typed error
+    /// at the boundary rather than an `Option::None` a `?` cannot
+    /// short-circuit.
+    fn try_from(delta: WatermarkDelta) -> Result<Self, Self::Error> {
+        Self::new(delta).ok_or_else(|| {
+            ShikumiError::Validation(
+                "stationary WatermarkDelta cannot be a MovedWatermarkDelta \
+                 -- the class-partition moved-ness invariant requires at least \
+                 one half to move"
+                    .to_owned(),
+            )
+        })
+    }
+}
+
 impl ConfigWatermark {
     /// Convenience: the delta from `prior` to `self`. Equivalent to
     /// `WatermarkDelta::between(prior, self)` — spelled at the call site
@@ -757,8 +859,17 @@ pub enum ProofRelation {
         /// needs to route on [`WatermarkDelta::restart_pending`] /
         /// [`WatermarkDelta::hot_swappable_drift`] reaches those
         /// questions through the variant's payload without a second
-        /// computation.
-        watermark: WatermarkDelta,
+        /// computation. Non-stationary by construction: a stationary
+        /// watermark with a generation advance lands in
+        /// [`Self::IdentityRepublish`] instead, and the
+        /// [`MovedWatermarkDelta`] type welds that invariant at the
+        /// field shape — a hand-constructed `Progression` with a
+        /// stationary payload is unrepresentable. `Deref` preserves
+        /// ergonomic access to every predicate on the underlying
+        /// [`WatermarkDelta`], so consumers reading `watermark.restart_pending()`
+        /// through the variant payload keep the same syntax they had
+        /// before the weld.
+        watermark: MovedWatermarkDelta,
         /// How many publishes happened between the two observations —
         /// always at least one, since a zero-count "progression" would
         /// be indistinguishable from [`Self::CrossStore`].
@@ -774,8 +885,14 @@ pub enum ProofRelation {
     CrossStore {
         /// The class-scoped watermark comparison. Non-stationary by
         /// construction — a stationary watermark at the same generation
-        /// lands in [`Self::Stationary`], not here.
-        watermark: WatermarkDelta,
+        /// lands in [`Self::Stationary`], not here. The
+        /// [`MovedWatermarkDelta`] type welds that invariant at the
+        /// field shape: a hand-constructed `CrossStore` with a
+        /// stationary payload is unrepresentable, so the "the two
+        /// impossibility variants overlap on the stationary edge"
+        /// confusion that lived only in doc comments before now fails
+        /// to type-check.
+        watermark: MovedWatermarkDelta,
     },
     /// Same-store impossibility: current's generation is strictly less
     /// than prior's. A monotonic
@@ -810,22 +927,33 @@ impl ProofRelation {
                 Self::Regressed { by }
             }
             std::cmp::Ordering::Equal => {
-                if watermark.stationary() {
-                    Self::Stationary
-                } else {
+                if let Some(watermark) = MovedWatermarkDelta::new(watermark) {
+                    // Non-stationary at the same generation: same-store
+                    // impossibility. The `if let` fold is what welds the
+                    // "CrossStore never carries a stationary payload"
+                    // invariant — the stationary case is already handled
+                    // by the `None` branch below, so this arm cannot
+                    // reach an empty `MovedWatermarkDelta`.
                     Self::CrossStore { watermark }
+                } else {
+                    Self::Stationary
                 }
             }
             std::cmp::Ordering::Greater => {
                 let generations = std::num::NonZeroU64::new(current.generation - prior.generation)
                     .expect("strictly-greater generation yields a nonzero forward delta");
-                if watermark.stationary() {
-                    Self::IdentityRepublish { generations }
-                } else {
+                if let Some(watermark) = MovedWatermarkDelta::new(watermark) {
+                    // Non-stationary with a generation advance: the
+                    // "normal progression" corner. The `if let` fold
+                    // welds "Progression never carries a stationary
+                    // payload" — the stationary case is handled by the
+                    // `IdentityRepublish` branch below.
                     Self::Progression {
                         watermark,
                         generations,
                     }
+                } else {
+                    Self::IdentityRepublish { generations }
                 }
             }
         }
@@ -1913,7 +2041,8 @@ mod proof_delta_tests {
         assert_eq!(
             r,
             ProofRelation::Progression {
-                watermark,
+                watermark: MovedWatermarkDelta::new(watermark)
+                    .expect("precondition: watermark moved"),
                 generations: std::num::NonZeroU64::new(1).unwrap(),
             },
         );
@@ -1926,7 +2055,13 @@ mod proof_delta_tests {
         let r = ProofRelation::between(&prior, &current);
         let watermark = current.watermark_delta_since(&prior);
         assert!(watermark.any_moved());
-        assert_eq!(r, ProofRelation::CrossStore { watermark });
+        assert_eq!(
+            r,
+            ProofRelation::CrossStore {
+                watermark: MovedWatermarkDelta::new(watermark)
+                    .expect("precondition: watermark moved"),
+            },
+        );
     }
 
     #[test]
@@ -2097,5 +2232,297 @@ mod proof_delta_tests {
             !watermark.hot_swappable_drift(),
             "RequiresRestart-only edit leaves the Free half stable"
         );
+    }
+}
+
+#[cfg(test)]
+mod moved_watermark_delta_tests {
+    //! Weld the "at least one half moved" invariant on
+    //! [`MovedWatermarkDelta`] — the type-level pin for the payload
+    //! carried by [`ProofRelation::Progression`] and
+    //! [`ProofRelation::CrossStore`]. Together the tests below cover:
+    //!
+    //! 1. The stationary delta has NO argument form
+    //!    ([`MovedWatermarkDelta::new`] returns `None`,
+    //!    [`TryFrom<WatermarkDelta>`] returns
+    //!    [`ShikumiError::Validation`]).
+    //! 2. A non-stationary delta round-trips through
+    //!    [`MovedWatermarkDelta::new`] / [`MovedWatermarkDelta::into_inner`]
+    //!    bit-identically, so wrapping is lossless.
+    //! 3. `Deref` reaches every underlying [`WatermarkDelta`] predicate
+    //!    — the ergonomic pin the wrapper's docs promise.
+    //! 4. The `ProofRelation` variants that carry a `MovedWatermarkDelta`
+    //!    only ever see non-stationary payloads, and the classification
+    //!    of every legitimate corner is preserved by the wrap
+    //!    (the [`ProofRelation::between`] fold's route through
+    //!    `MovedWatermarkDelta::new` never loses a case).
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn wm_of(c: &Cfg) -> ConfigWatermark {
+        ConfigWatermark::compute(c, FIELD_CLASSES)
+    }
+
+    fn free_edit() -> Cfg {
+        let mut c = base();
+        c.log_level = "debug".into();
+        c
+    }
+
+    fn stationary_delta() -> WatermarkDelta {
+        let w = wm_of(&base());
+        WatermarkDelta::between(&w, &w)
+    }
+
+    fn moved_delta() -> WatermarkDelta {
+        WatermarkDelta::between(&wm_of(&base()), &wm_of(&free_edit()))
+    }
+
+    #[test]
+    fn new_refuses_a_stationary_delta() {
+        // The load-bearing invariant: a stationary WatermarkDelta has
+        // NO MovedWatermarkDelta form. This is why ProofRelation's two
+        // payload-carrying variants (Progression, CrossStore) cannot
+        // hold a stationary payload — the wrap fails at construction.
+        let d = stationary_delta();
+        assert!(
+            d.stationary(),
+            "precondition: the delta between identical watermarks is stationary"
+        );
+        assert!(
+            MovedWatermarkDelta::new(d).is_none(),
+            "MovedWatermarkDelta::new must reject the null hypothesis"
+        );
+    }
+
+    #[test]
+    fn new_accepts_a_delta_where_any_half_moved() {
+        let d = moved_delta();
+        assert!(d.any_moved(), "precondition: at least one half moved");
+        let m = MovedWatermarkDelta::new(d).expect("moved delta must wrap");
+        assert_eq!(m.into_inner(), d, "unwrap must round-trip bit-identically");
+    }
+
+    #[test]
+    fn deref_reaches_every_watermark_delta_predicate() {
+        // The wrapper's docs promise Deref-transparent access to every
+        // predicate on the underlying delta. Weld that promise: a
+        // Free-only edit's answers reached through the wrapper match the
+        // answers on the bare delta pointwise, so a consumer that reads
+        // `payload.restart_pending()` through a variant binding gets the
+        // same bit as `payload.into_inner().restart_pending()`.
+        let d = moved_delta();
+        let m = MovedWatermarkDelta::new(d).unwrap();
+        // Every WatermarkDelta predicate reachable through Deref.
+        assert_eq!(m.full_moved, d.full_moved);
+        assert_eq!(m.restart_required_moved, d.restart_required_moved);
+        assert_eq!(m.free_moved, d.free_moved);
+        assert_eq!(m.any_moved(), d.any_moved());
+        assert_eq!(m.stationary(), d.stationary());
+        assert_eq!(m.restart_pending(), d.restart_pending());
+        assert_eq!(m.hot_swappable_drift(), d.hot_swappable_drift());
+        assert_eq!(
+            m.class_moves_imply_full_moved(),
+            d.class_moves_imply_full_moved(),
+        );
+        assert_eq!(
+            m.partitioned_class_invariant_holds(),
+            d.partitioned_class_invariant_holds(),
+        );
+        // A MovedWatermarkDelta is by construction never stationary —
+        // the assertion below welds that invariant beside the Deref
+        // agreement so a future refactor that loosens the constructor
+        // turns this red as well as `new_refuses_a_stationary_delta`.
+        assert!(!m.stationary(), "MovedWatermarkDelta is never stationary");
+        assert!(m.any_moved(), "MovedWatermarkDelta always has any_moved");
+    }
+
+    #[test]
+    fn as_delta_borrows_the_underlying_watermark_delta() {
+        // `as_delta` is the explicit-borrow spelling of the Deref
+        // access — it must reach the same bytes.
+        let d = moved_delta();
+        let m = MovedWatermarkDelta::new(d).unwrap();
+        assert_eq!(*m.as_delta(), d);
+        assert_eq!(m.as_delta(), &*m, "as_delta and Deref must agree");
+    }
+
+    #[test]
+    fn try_from_stationary_delta_is_a_typed_validation_error() {
+        // The TryFrom idiom (`let m: MovedWatermarkDelta = d.try_into()?;`)
+        // must surface a typed ShikumiError at the boundary — a `?`
+        // cannot short-circuit an `Option::None`, so a consumer using
+        // the standard idiom gets a `Result::Err` to propagate.
+        let d = stationary_delta();
+        let err = MovedWatermarkDelta::try_from(d).unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Validation);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("stationary"),
+            "error message must name the null hypothesis: {msg}"
+        );
+    }
+
+    #[test]
+    fn try_from_moved_delta_agrees_with_new() {
+        let d = moved_delta();
+        let via_new = MovedWatermarkDelta::new(d).unwrap();
+        let via_try_from = MovedWatermarkDelta::try_from(d).unwrap();
+        assert_eq!(via_new, via_try_from);
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: wm_of(cfg),
+            observed_at: UNIX_EPOCH + Duration::from_secs(secs),
+        }
+    }
+
+    #[test]
+    fn proof_relation_progression_payload_is_moved_by_construction() {
+        // The load-bearing pin: ProofRelation::between's fold routes the
+        // watermark through MovedWatermarkDelta::new, so the Progression
+        // variant CANNOT carry a stationary payload -- the type refuses
+        // it. Any input pair that would have produced a stationary
+        // Progression under the old (bare-WatermarkDelta) shape now
+        // falls through to IdentityRepublish instead.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&free_edit(), 6, 1_700_000_060);
+        let ProofRelation::Progression { watermark, .. } = ProofRelation::between(&prior, &current)
+        else {
+            panic!("Free edit with generation advance must classify as Progression");
+        };
+        assert!(
+            !watermark.stationary(),
+            "Progression's payload is guaranteed non-stationary by MovedWatermarkDelta"
+        );
+        assert!(
+            watermark.any_moved(),
+            "any_moved is the definition of MovedWatermarkDelta"
+        );
+    }
+
+    #[test]
+    fn proof_relation_cross_store_payload_is_moved_by_construction() {
+        // Symmetric peer of the Progression test above: CrossStore also
+        // carries a MovedWatermarkDelta, so a hand-constructed
+        // `CrossStore { watermark: <stationary> }` fails to type-check.
+        // Any pair whose watermark IS stationary at the same generation
+        // lands in Stationary, not here — the "impossibility corners
+        // never carry the null hypothesis" invariant, welded.
+        let prior = proof_at(&base(), 5, 1_700_000_000);
+        let current = proof_at(&free_edit(), 5, 1_700_000_060);
+        let ProofRelation::CrossStore { watermark } = ProofRelation::between(&prior, &current)
+        else {
+            panic!("watermark-move without generation bump must classify as CrossStore");
+        };
+        assert!(
+            !watermark.stationary(),
+            "CrossStore's payload is guaranteed non-stationary by MovedWatermarkDelta"
+        );
+    }
+
+    #[test]
+    fn every_legitimate_between_input_still_classifies_correctly() {
+        // The wrap must not lose a case: the five ProofRelation variants
+        // survive the routing through MovedWatermarkDelta::new. This is
+        // the fold-preservation check that welds "the refactor is
+        // semantics-preserving" at the corner grid, not just at each
+        // variant individually. Regression protection against a future
+        // change that accidentally routed a legitimate case through the
+        // `None` branch (e.g. classifying a non-stationary delta as
+        // Stationary).
+        let anchor = base();
+        let alt = free_edit();
+
+        // Stationary: same value, same generation.
+        assert!(matches!(
+            ProofRelation::between(
+                &proof_at(&anchor, 5, 1_700_000_000),
+                &proof_at(&anchor, 5, 1_700_000_060),
+            ),
+            ProofRelation::Stationary,
+        ));
+
+        // IdentityRepublish: same value, generation advance.
+        assert!(matches!(
+            ProofRelation::between(
+                &proof_at(&anchor, 5, 1_700_000_000),
+                &proof_at(&anchor, 6, 1_700_000_060),
+            ),
+            ProofRelation::IdentityRepublish { .. },
+        ));
+
+        // Progression: value changed, generation advance -- payload is
+        // MovedWatermarkDelta by construction.
+        assert!(matches!(
+            ProofRelation::between(
+                &proof_at(&anchor, 5, 1_700_000_000),
+                &proof_at(&alt, 6, 1_700_000_060),
+            ),
+            ProofRelation::Progression { .. },
+        ));
+
+        // CrossStore: value changed, same generation -- payload is
+        // MovedWatermarkDelta by construction.
+        assert!(matches!(
+            ProofRelation::between(
+                &proof_at(&anchor, 5, 1_700_000_000),
+                &proof_at(&alt, 5, 1_700_000_060),
+            ),
+            ProofRelation::CrossStore { .. },
+        ));
+
+        // Regressed: generation went backwards, watermark irrelevant.
+        assert!(matches!(
+            ProofRelation::between(
+                &proof_at(&anchor, 10, 1_700_000_000),
+                &proof_at(&anchor, 5, 1_700_000_060),
+            ),
+            ProofRelation::Regressed { .. },
+        ));
+    }
+
+    #[test]
+    fn moved_watermark_delta_equals_iff_underlying_deltas_equal() {
+        // PartialEq on the newtype must lift PartialEq on the delta
+        // pointwise -- otherwise two logically-identical variants would
+        // fail `assert_eq!`. Weld both the equal and unequal directions.
+        let m_a = MovedWatermarkDelta::new(moved_delta()).unwrap();
+        let m_b = MovedWatermarkDelta::new(moved_delta()).unwrap();
+        assert_eq!(m_a, m_b, "identical wrapped deltas must compare equal");
+
+        // A different edit produces a different delta.
+        let mut c = base();
+        c.bind_addr = "0.0.0.0:9090".into();
+        let d_restart = WatermarkDelta::between(&wm_of(&base()), &wm_of(&c));
+        let m_restart = MovedWatermarkDelta::new(d_restart).unwrap();
+        assert_ne!(m_a, m_restart, "different edits produce different wraps");
     }
 }
