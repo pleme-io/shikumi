@@ -2327,6 +2327,59 @@ pub enum SameStoreImpossibilityKind {
     CrossStore,
 }
 
+impl SameStoreImpossibilityKind {
+    /// The stable operational identifier of this impossibility corner —
+    /// `"regressed"` for [`Self::Regressed`] and `"cross_store"` for
+    /// [`Self::CrossStore`]. The receiver-side view of the same-named
+    /// atomic delta-altitude predicates ([`ProofDelta::generations_regressed`]
+    /// and [`ProofDelta::cross_store_signal`]) and of the same-named
+    /// classification-altitude variant tags ([`ProofRelation::Regressed`]
+    /// and [`ProofRelation::CrossStore`]) — the string carries the SAME
+    /// snake-case name every prior receiver in the classification lattice
+    /// already uses, so a metrics label / log field / attester JSON key
+    /// reads the same identifier at every altitude.
+    ///
+    /// **Why lift a `match` into a receiver.** A metrics exporter, log
+    /// formatter, or attester serializer that wants to label the corner
+    /// previously had two inline paths, each leaking work: (a) a
+    /// two-arm `match k { Regressed => "regressed", CrossStore =>
+    /// "cross_store" }` folded at every seam, whose two-arm shape the
+    /// exhaustiveness checker cannot help keep in sync with a future
+    /// impossibility corner (a hypothetical third would silently escape
+    /// a `matches!` fold on the sum), and whose string constants the
+    /// consumer must remember to keep snake-case in lockstep with the
+    /// variant names; or (b) a `format!("{k:?}")` folded at every seam,
+    /// whose `Debug`-shape output is PascalCase (`"Regressed"` /
+    /// `"CrossStore"`), diverges from every predicate name in the
+    /// classification lattice, and carries `Debug`'s no-stability
+    /// contract on top. This receiver lifts the naming into a single
+    /// point whose exhaustive `match` the compiler enforces on every
+    /// future impossibility corner — the string is stable snake-case
+    /// matching the classification lattice's own naming, and the
+    /// exhaustive `match` is the same lockstep already enforced on
+    /// every other tag-only receiver on this enum.
+    ///
+    /// **Snake-case, matching the predicates.** Both strings are the
+    /// snake-case rendering of the variant name, matching the
+    /// predicates [`ProofDelta::generations_regressed`],
+    /// [`ProofDelta::cross_store_signal`],
+    /// [`ProofRelation::regressed`], and [`ProofRelation::cross_store`]
+    /// — a metric label switched between the two altitudes reads the
+    /// same identifier without a spelling transform.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreImpossibilityKind`] projects its stable name at
+    /// compile time too, matching the `const`-ness of every other
+    /// receiver on this enum.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match *self {
+            Self::Regressed => "regressed",
+            Self::CrossStore => "cross_store",
+        }
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -2456,6 +2509,49 @@ pub enum SameStoreConsistencyKind {
     /// matches!(generations_advanced, Some(n) if n > 0)` at the delta
     /// altitude) lives at whichever altitude carries it.
     Progression,
+}
+
+impl SameStoreConsistencyKind {
+    /// The stable operational identifier of this legitimate corner —
+    /// `"stationary"` for [`Self::Stationary`], `"identity_republish"`
+    /// for [`Self::IdentityRepublish`], and `"progression"` for
+    /// [`Self::Progression`]. The receiver-side view of the same-named
+    /// atomic delta-altitude predicates ([`ProofDelta::stationary`],
+    /// [`ProofDelta::identity_republish`], [`ProofDelta::progression`])
+    /// and of the same-named classification-altitude predicate/variant
+    /// pair ([`ProofRelation::stationary`] /
+    /// [`ProofRelation::identity_republish`] /
+    /// [`ProofRelation::progression`], and their [`Self::Stationary`] /
+    /// [`Self::IdentityRepublish`] / [`Self::Progression`] variant tags)
+    /// — the string carries the SAME snake-case name every prior
+    /// receiver in the classification lattice already uses, so a metrics
+    /// label / log field / attester JSON key reads the same identifier
+    /// at every altitude.
+    ///
+    /// **The mirror of [`SameStoreImpossibilityKind::name`] on the
+    /// consistent half.** The impossibility-side receiver answers "WHICH
+    /// impossibility corner, by name?" with a two-arm snake-case
+    /// projection; this receiver answers "WHICH legitimate corner, by
+    /// name?" with a three-arm snake-case projection. Together the two
+    /// receivers weld the two-way partition of the classification space
+    /// into a pair of stable identifiers, each visible from the two
+    /// [`Option<Kind>`] receivers ([`ProofRelation::consistency_kind`] /
+    /// [`ProofRelation::impossibility_kind`]) and from the fused
+    /// [`ProofRelationKind`] the pair projects into — every altitude
+    /// reads the same five identifiers through the same-named receiver.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreConsistencyKind`] projects its stable name at compile
+    /// time too, matching the `const`-ness of every other receiver on
+    /// this enum.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match *self {
+            Self::Stationary => "stationary",
+            Self::IdentityRepublish => "identity_republish",
+            Self::Progression => "progression",
+        }
+    }
 }
 
 /// The **fused classification tag** of a [`ProofRelation`] — an exhaustive
@@ -2643,6 +2739,44 @@ impl ProofRelationKind {
     #[must_use]
     pub const fn is_impossible(&self) -> bool {
         matches!(self, Self::Impossible(_))
+    }
+
+    /// The stable operational identifier of this fused corner — the
+    /// SAME snake-case name the two half-side
+    /// [`SameStoreConsistencyKind::name`] and
+    /// [`SameStoreImpossibilityKind::name`] receivers already project
+    /// (`"stationary"` / `"identity_republish"` / `"progression"` on the
+    /// consistent arm, `"cross_store"` / `"regressed"` on the
+    /// impossibility arm). A monitoring dashboard, log formatter, or
+    /// attester serializer routing on the fused sum reaches all FIVE
+    /// classification corners through a single receiver whose exhaustive
+    /// `match` the compiler enforces on every future variant added to
+    /// either half — the same lockstep enforced on
+    /// [`Self::consistency`] / [`Self::impossibility`] and on the two
+    /// half-side receivers.
+    ///
+    /// **The round-trip identity.** For every value `v` at every
+    /// altitude (delta, value classification, wire classification),
+    /// `v.kind().name()` equals `v.consistency_kind().map(|k|
+    /// k.name()).or_else(|| v.impossibility_kind().map(|k| k.name()))`
+    /// unwrapped through the pair's XOR-identity — the fused name
+    /// receiver is a LOSSLESS projection of the pair of half-side name
+    /// receivers, matching the round-trip identities the pair-side
+    /// receivers already carry ([`Self::consistency`] /
+    /// [`Self::impossibility`] on the `Option<Kind>` shapes, and
+    /// [`Self::is_consistent`] / [`Self::is_impossible`] on the boolean
+    /// shapes).
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its stable name at compile time too, matching the
+    /// `const`-ness of every other receiver on this enum and its two
+    /// half-side peers.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match *self {
+            Self::Consistent(k) => k.name(),
+            Self::Impossible(k) => k.name(),
+        }
     }
 }
 
@@ -19246,5 +19380,389 @@ mod kind_tests {
             ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
             ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
         );
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    //! Weld the stable-identifier receiver-family `name()` on the three
+    //! classification-tag enums at once:
+    //! [`SameStoreImpossibilityKind::name`],
+    //! [`SameStoreConsistencyKind::name`], and
+    //! [`ProofRelationKind::name`]. Every classification corner projects
+    //! through the SAME snake-case identifier that every prior receiver in
+    //! the classification lattice already uses (the atomic delta
+    //! predicates, the classification-altitude predicates, and the enum
+    //! variant tags in `snake_case`), so a metrics label / log field /
+    //! attester JSON key reads the same identifier at every altitude, and
+    //! the fused receiver's answer is the lossless projection of the
+    //! pair-of-half-side-name receivers.
+    //!
+    //! The tests below cover, in one exhaustive fixture:
+    //!
+    //! 1. Truth table pin on both half-side enums (all 2 + 3 = 5
+    //!    variants map to their pinned snake-case identifier).
+    //! 2. Truth table pin on the fused enum's `name()` — the fused
+    //!    receiver picks up the inner half's identifier on both arms
+    //!    (`Consistent(_).name()` == inner consistency's name;
+    //!    `Impossible(_).name()` == inner impossibility's name).
+    //! 3. Names are pairwise distinct across all five corners — no two
+    //!    variants across the two half-side enums project to the same
+    //!    identifier, so a metrics label uniquely determines the corner
+    //!    it came from without a companion tag.
+    //! 4. Names are stable identifiers — every name is nonempty ASCII
+    //!    snake_case (`[a-z_]+`, no leading/trailing/adjacent
+    //!    underscores).
+    //! 5. Round-trip identity at every altitude: for every value `v`,
+    //!    `v.kind().name()` equals
+    //!    `v.consistency_kind().map(|k| k.name())
+    //!    .or_else(|| v.impossibility_kind().map(|k| k.name())).unwrap()`.
+    //! 6. Cross-altitude same-answer: for every corner, the fused
+    //!    `name()` reads the same identifier through the delta, value,
+    //!    and wire altitudes.
+    //! 7. Consistency with the atomic delta-altitude predicates: for
+    //!    every delta-reachable corner, the predicate whose name matches
+    //!    the projected identifier is exactly the predicate that fires
+    //!    (the delta's `stationary`/`identity_republish`/`progression`/
+    //!    `cross_store_signal`/`generations_regressed` five-way partition
+    //!    is the same partition the name receiver projects).
+    //! 8. `const`-callable at every altitude on hand-constructed values.
+    //!
+    //! Genuinely new — no prior receiver at any altitude carried a
+    //! stable-identifier projection of the classification. The three
+    //! half-side and fused `_kind` receivers project the tag as a typed
+    //! enum whose `Debug` output diverges from the classification
+    //! lattice's own snake-case naming; the atomic delta predicates
+    //! carry the identifiers as method NAMES rather than as returnable
+    //! strings; and there was previously no receiver on any of the three
+    //! kind enums that projected the classification's name as a stable
+    //! `&'static str` a metrics label / log field / attester JSON key
+    //! could read at every altitude through the same-named receiver.
+    //! `name_tests` is the compile-time-enforced pin that a future sixth
+    //! corner (adding a variant to either half-side enum) surfaces at
+    //! this receiver-family in lockstep with the two `_kind` `match`
+    //! bodies and the fused `kind` `match` bodies at every altitude.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(
+        &'static str,
+        ConfigSyncProof,
+        ConfigSyncProof,
+        ProofRelationKind,
+    )> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ),
+            (
+                "identity_republish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ),
+            (
+                "progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ),
+            (
+                "cross_store",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ),
+            (
+                "regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pin on both half-side enums
+
+    #[test]
+    fn truth_table_pins_the_half_side_identifiers() {
+        assert_eq!(SameStoreImpossibilityKind::Regressed.name(), "regressed");
+        assert_eq!(SameStoreImpossibilityKind::CrossStore.name(), "cross_store",);
+        assert_eq!(SameStoreConsistencyKind::Stationary.name(), "stationary");
+        assert_eq!(
+            SameStoreConsistencyKind::IdentityRepublish.name(),
+            "identity_republish",
+        );
+        assert_eq!(SameStoreConsistencyKind::Progression.name(), "progression",);
+    }
+
+    // ---------- (2) Truth table pin on the fused enum's `name()`
+
+    #[test]
+    fn truth_table_pins_the_fused_identifiers_via_inner_projection() {
+        // Consistent arm: every legitimate corner projects the inner
+        // consistency tag's name.
+        for &k in &[
+            SameStoreConsistencyKind::Stationary,
+            SameStoreConsistencyKind::IdentityRepublish,
+            SameStoreConsistencyKind::Progression,
+        ] {
+            assert_eq!(
+                ProofRelationKind::Consistent(k).name(),
+                k.name(),
+                "the fused Consistent(k) arm projects k.name() pointwise",
+            );
+        }
+        // Impossible arm: every impossibility corner projects the inner
+        // impossibility tag's name.
+        for &k in &[
+            SameStoreImpossibilityKind::Regressed,
+            SameStoreImpossibilityKind::CrossStore,
+        ] {
+            assert_eq!(
+                ProofRelationKind::Impossible(k).name(),
+                k.name(),
+                "the fused Impossible(k) arm projects k.name() pointwise",
+            );
+        }
+    }
+
+    // ---------- (3) Names are pairwise distinct across all five corners
+
+    #[test]
+    fn every_name_is_pairwise_distinct_across_the_five_corners() {
+        let names = [
+            SameStoreConsistencyKind::Stationary.name(),
+            SameStoreConsistencyKind::IdentityRepublish.name(),
+            SameStoreConsistencyKind::Progression.name(),
+            SameStoreImpossibilityKind::Regressed.name(),
+            SameStoreImpossibilityKind::CrossStore.name(),
+        ];
+        let unique: std::collections::BTreeSet<&str> = names.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            names.len(),
+            "the five classification-corner identifiers must be pairwise \
+             distinct so a metrics label uniquely determines the corner: {names:?}",
+        );
+    }
+
+    // ---------- (4) Names are stable ASCII snake_case identifiers
+
+    #[test]
+    fn every_name_is_a_stable_snake_case_ascii_identifier() {
+        fn is_snake_case_identifier(s: &str) -> bool {
+            if s.is_empty() {
+                return false;
+            }
+            if s.starts_with('_') || s.ends_with('_') {
+                return false;
+            }
+            if s.contains("__") {
+                return false;
+            }
+            s.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+        }
+        let names = [
+            SameStoreConsistencyKind::Stationary.name(),
+            SameStoreConsistencyKind::IdentityRepublish.name(),
+            SameStoreConsistencyKind::Progression.name(),
+            SameStoreImpossibilityKind::Regressed.name(),
+            SameStoreImpossibilityKind::CrossStore.name(),
+        ];
+        for name in names {
+            assert!(
+                is_snake_case_identifier(name),
+                "{name:?} must be a nonempty ASCII snake_case identifier so a \
+                 metrics label reads the same shape at every altitude",
+            );
+        }
+    }
+
+    // ---------- (5) Round-trip identity: the fused `name()` is the
+    //                lossless projection of the pair-of-half-side names
+
+    #[test]
+    fn fused_name_is_the_lossless_projection_of_the_pair_at_every_altitude() {
+        for (label, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            let w = r.to_wire();
+            for (altitude, fused_name, cons, imp) in [
+                (
+                    "delta",
+                    d.kind().name(),
+                    d.consistency_kind(),
+                    d.impossibility_kind(),
+                ),
+                (
+                    "relation",
+                    r.kind().name(),
+                    r.consistency_kind(),
+                    r.impossibility_kind(),
+                ),
+                (
+                    "wire",
+                    w.kind().name(),
+                    w.consistency_kind(),
+                    w.impossibility_kind(),
+                ),
+            ] {
+                let projected = cons
+                    .map(|k| k.name())
+                    .or_else(|| imp.map(|k| k.name()))
+                    .expect("pair-of-half-side XOR-identity: exactly one is Some");
+                assert_eq!(
+                    fused_name, projected,
+                    "{label}/{altitude}: fused kind().name() must equal the \
+                     pair-of-half-side name via the XOR-identity",
+                );
+            }
+        }
+    }
+
+    // ---------- (6) Cross-altitude same-answer on the fused name
+
+    #[test]
+    fn fused_name_is_the_same_string_at_every_altitude() {
+        for (label, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            let w = r.to_wire();
+            let want_name = want.name();
+            assert_eq!(
+                d.kind().name(),
+                want_name,
+                "{label}: delta-altitude fused name diverged from the pinned identifier",
+            );
+            assert_eq!(
+                r.kind().name(),
+                want_name,
+                "{label}: relation-altitude fused name diverged from the pinned identifier",
+            );
+            assert_eq!(
+                w.kind().name(),
+                want_name,
+                "{label}: wire-altitude fused name diverged from the pinned identifier",
+            );
+        }
+    }
+
+    // ---------- (7) Consistency with the atomic delta-altitude predicates:
+    //                the identifier names the exact predicate that fires
+
+    #[test]
+    fn identifier_agrees_with_the_atomic_delta_predicate_that_fires() {
+        for (label, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            // The delta altitude carries a five-way partition through
+            // five disjoint boolean predicates; the projected identifier
+            // must be the same-named predicate.
+            let firing: Vec<&'static str> = [
+                ("stationary", d.stationary()),
+                ("identity_republish", d.identity_republish()),
+                ("progression", d.progression()),
+                ("cross_store", d.cross_store_signal()),
+                ("regressed", d.generations_regressed()),
+            ]
+            .into_iter()
+            .filter_map(|(n, on)| on.then_some(n))
+            .collect();
+            assert_eq!(
+                firing.len(),
+                1,
+                "{label}: exactly one delta-altitude predicate must fire \
+                 (the five-way partition invariant), observed: {firing:?}",
+            );
+            assert_eq!(
+                firing[0],
+                d.kind().name(),
+                "{label}: the projected identifier must name the firing \
+                 delta-altitude predicate",
+            );
+        }
+    }
+
+    // ---------- (8) const-callable at every altitude
+
+    #[test]
+    fn const_callable_on_hand_constructed_values_at_every_altitude() {
+        // Half-side enums project their identifiers in const position.
+        const CS: &str = SameStoreConsistencyKind::Stationary.name();
+        const CR: &str = SameStoreConsistencyKind::IdentityRepublish.name();
+        const CP: &str = SameStoreConsistencyKind::Progression.name();
+        const IR: &str = SameStoreImpossibilityKind::Regressed.name();
+        const IX: &str = SameStoreImpossibilityKind::CrossStore.name();
+        assert_eq!(CS, "stationary");
+        assert_eq!(CR, "identity_republish");
+        assert_eq!(CP, "progression");
+        assert_eq!(IR, "regressed");
+        assert_eq!(IX, "cross_store");
+        // Fused enum projects its identifier in const position, on both arms.
+        const FC: &str =
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression).name();
+        const FI: &str =
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore).name();
+        assert_eq!(FC, "progression");
+        assert_eq!(FI, "cross_store");
+        // The fused receiver composed with `kind()` at the delta
+        // altitude projects the identifier in const position too.
+        const D_NAME: &str = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .kind()
+        .name();
+        assert_eq!(D_NAME, "identity_republish");
     }
 }
