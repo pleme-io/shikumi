@@ -2047,6 +2047,76 @@ impl ProofRelation {
         matches!(self, Self::IdentityRepublish { .. })
     }
 
+    /// True iff this classification is [`Self::Regressed`] — the sole
+    /// same-store impossibility corner whose signal is a strictly-backwards
+    /// generation counter (as opposed to [`Self::CrossStore`], the other
+    /// impossibility corner, whose signal is a moved watermark at an
+    /// unchanged generation). The four other variants
+    /// ([`Self::Stationary`], [`Self::IdentityRepublish`],
+    /// [`Self::Progression`], [`Self::CrossStore`]) all return `false`.
+    ///
+    /// **The tag-only classifier for the "did the counter go backwards?"
+    /// question.** A monitoring consumer holding a freshly computed
+    /// [`ProofRelation`] previously had three inline paths, each leaking
+    /// work: (a) `!self.same_store_consistent() && self.watermark().is_none()`
+    /// — a two-hop composition through a payload accessor and a predicate
+    /// that reaches the answer through the negative space of every other
+    /// variant, chaining a [`MovedWatermarkDelta`] payload lookup a
+    /// tag-only classification doesn't need; (b) `self.regressed_by().is_some()`
+    /// — a projection through the payload accessor for a question the
+    /// variant tag alone already answers, which forces a consumer that
+    /// doesn't care about the magnitude to reach past the tag anyway; or
+    /// (c) `matches!(relation, ProofRelation::Regressed { .. })` inline
+    /// at every seam, a shape the exhaustiveness checker cannot help keep
+    /// in sync with a future variant addition. The receiver-sibling here
+    /// answers the same question through a single welded [`matches!`]:
+    /// adding a sixth variant to [`ProofRelation`] fails to compile at
+    /// this method's pattern in lockstep with [`Self::stationary`],
+    /// [`Self::identity_republish`], [`Self::same_store_consistent`], and
+    /// every other classification receiver in this impl.
+    ///
+    /// **Payload agreement invariant with [`Self::regressed_by`].** The
+    /// tag-only predicate and the payload accessor are two projections of
+    /// the same variant, so they agree pointwise on the "is this the
+    /// [`Self::Regressed`] arm?" question: `self.regressed().is_some() ==
+    /// self.regressed_by().is_some()` at both altitudes (the value side
+    /// via [`std::num::NonZeroU64`], the wire side via [`u64`]). A
+    /// consumer that only wants the tag reaches this receiver without
+    /// paying for the payload projection; a consumer that wants the
+    /// backwards magnitude reaches [`Self::regressed_by`]. Together the
+    /// pair covers both faces of the [`Self::Regressed`] arm at the same
+    /// receiver-family altitude, without collapsing tag and payload under
+    /// a single receiver.
+    ///
+    /// **Same-store-inconsistency corner.** The other tag-only
+    /// classifiers ([`Self::stationary`], [`Self::identity_republish`]) pin
+    /// same-store-CONSISTENT variants; this one pins a same-store-
+    /// INCONSISTENT variant, so `self.regressed()` implies
+    /// `!self.same_store_consistent()` at both altitudes. The converse
+    /// does NOT hold: [`Self::CrossStore`] is also same-store-inconsistent
+    /// and is not [`Self::Regressed`], so `!self.same_store_consistent()`
+    /// covers two DISTINCT impossibility corners the pair
+    /// `(regressed, cross_store)` will one day partition.
+    ///
+    /// **Pairwise disjoint with every other tag-only classifier.** No
+    /// variant satisfies both `regressed()` AND `stationary()`, nor both
+    /// `regressed()` AND `identity_republish()`, at either altitude — the
+    /// three tag-only classifiers together pin three DISTINCT single-
+    /// variant corners of the classification's `Xor` partition.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`]
+    /// projects its regression verdict at compile time too, matching
+    /// the `const`-ness of every other classification accessor
+    /// (predicate or payload) in this impl.
+    ///
+    /// The wire-side sibling is [`ProofRelationWire::regressed`], which
+    /// answers the same question at the wire altitude with the same
+    /// welded pattern.
+    #[must_use]
+    pub const fn regressed(&self) -> bool {
+        matches!(self, Self::Regressed { .. })
+    }
+
     /// The class-scoped watermark payload iff this classification carries
     /// one — `Some(&watermark)` on [`Self::Progression`] and
     /// [`Self::CrossStore`] (the two variants whose payloads weld the
@@ -2771,6 +2841,73 @@ impl ProofRelationWire {
     #[must_use]
     pub const fn identity_republish(&self) -> bool {
         matches!(self, Self::IdentityRepublish { .. })
+    }
+
+    /// True iff the wire classification is [`Self::Regressed`] — the sole
+    /// same-store impossibility corner whose signal is a strictly-backwards
+    /// generation counter. The wire-side receiver-sibling of
+    /// [`ProofRelation::regressed`], closing the (value, wire) ×
+    /// (predicate) grid at the proof altitude one further cell after
+    /// [`Self::identity_republish`] / [`Self::stationary`] /
+    /// [`Self::same_store_consistent`].
+    ///
+    /// A `/healthz/config` change-feed reader or a cross-replica delta-log
+    /// endpoint that holds a freshly deserialized [`ProofRelationWire`]
+    /// and wants the top-level "did the counter go backwards?" answer
+    /// previously had three inline paths, each paying a needless cost:
+    /// (a) `ProofRelation::try_from_wire(&wire).map(|r| r.regressed())` —
+    /// chaining a [`MovedWatermarkDelta::try_from_wire`] on the payload-
+    /// carrying corners and a [`std::num::NonZeroU64::new`] on the
+    /// generation-carrying corners, none of which the regression
+    /// classification's tag-only answer needs; (b) `wire.regressed_by().is_some()`
+    /// — a projection through the payload accessor for a question the
+    /// variant tag alone already answers, forcing a consumer that doesn't
+    /// care about the magnitude to reach past the tag anyway; or (c)
+    /// `matches!(wire, ProofRelationWire::Regressed { .. })` inline at
+    /// every seam, a shape the exhaustiveness checker cannot help keep
+    /// in sync with a future variant addition. The receiver-sibling here
+    /// answers the same question at the wire altitude with the same
+    /// welded pattern the value-side accessor carries, so adding a sixth
+    /// variant to [`ProofRelationWire`] fails to compile at this method's
+    /// pattern in lockstep with the value-side sibling.
+    ///
+    /// **Payload agreement invariant with [`Self::regressed_by`].** The
+    /// tag-only predicate and the payload accessor are two projections of
+    /// the same variant, so they agree pointwise on the "is this the
+    /// [`Self::Regressed`] arm?" question: `wire.regressed() ==
+    /// wire.regressed_by().is_some()`. A consumer that only wants the
+    /// tag reaches this receiver without paying for the payload
+    /// projection.
+    ///
+    /// **Same-answer invariant with [`ProofRelation::regressed`].**
+    /// For every value/wire pair the two accessors agree pointwise:
+    /// whenever `relation.regressed()` returns `b`,
+    /// `relation.to_wire().regressed()` returns the same `b`. The wire
+    /// is a lossless channel for the regression question the value-side
+    /// sibling answers. The property is exercised by the tests in the
+    /// `proof_relation_regressed_tests` submodule.
+    ///
+    /// **Same-store-inconsistency corner.** The other two tag-only
+    /// classifiers ([`Self::stationary`], [`Self::identity_republish`])
+    /// pin same-store-CONSISTENT variants; this one pins a same-store-
+    /// INCONSISTENT variant, so `wire.regressed()` implies
+    /// `!wire.same_store_consistent()`. The converse does NOT hold:
+    /// [`Self::CrossStore`] is also same-store-inconsistent and is not
+    /// [`Self::Regressed`].
+    ///
+    /// **The tag alone is sufficient.** No payload field participates
+    /// in the answer, so no parse-time weld is even conceptually
+    /// involved — a wire consumer routing on the internally-tagged
+    /// `kind` field alone reaches the verdict without deserializing any
+    /// payload portion, matching the low-cost seam
+    /// [`ProofRelationWire`]'s serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its regression verdict at compile time too, matching
+    /// the `const`-ness of [`ProofRelation::regressed`] one altitude up.
+    #[must_use]
+    pub const fn regressed(&self) -> bool {
+        matches!(self, Self::Regressed { .. })
     }
 }
 
@@ -12761,6 +12898,563 @@ mod proof_relation_identity_republish_tests {
             assert!(
                 !(wire.identity_republish() && !wire.same_store_consistent()),
                 "{name}: wire cannot be identity_republish and same-store-inconsistent",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_regressed_tests {
+    //! Weld the regressed predicate at both altitudes —
+    //! [`ProofRelation::regressed`] and its wire-side receiver-sibling
+    //! [`ProofRelationWire::regressed`] — closing the (value, wire) ×
+    //! (predicate) grid at the proof altitude one further cell after
+    //! [`ProofRelation::identity_republish`] /
+    //! [`ProofRelationWire::identity_republish`].
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Truth table pinned by variant identity at both altitudes: only
+    //!    the [`ProofRelation::Regressed`] / [`ProofRelationWire::Regressed`]
+    //!    variant returns `true`; the four other variants
+    //!    ([`Stationary`][`ProofRelation::Stationary`],
+    //!    [`IdentityRepublish`][`ProofRelation::IdentityRepublish`],
+    //!    [`Progression`][`ProofRelation::Progression`],
+    //!    [`CrossStore`][`ProofRelation::CrossStore`]) return `false`.
+    //! 2. Pointwise value/wire agreement across every variant — the
+    //!    wire is a lossless channel for the regression question.
+    //! 3. Round-trip preservation through [`ProofRelation::try_from_wire`]
+    //!    (both the named-method idiom and the `TryFrom` idiom).
+    //! 4. `const`-callable at both altitudes on every variant.
+    //! 5. Exhaustive variant enumeration is stable: a hand-authored
+    //!    fixture names every one of the five variants exactly once,
+    //!    so a future variant addition fails to compile at the fixture's
+    //!    `match` in the same instant it fails at each predicate
+    //!    accessor's own `match`.
+    //! 6. Payload-inspection independence: the wire predicate reads
+    //!    only the variant tag, not any field payload — the answer is
+    //!    invariant under any legitimate perturbation of every payload-
+    //!    carrying variant's fields.
+    //! 7. Composition through the wire boundary agrees with the direct
+    //!    value path.
+    //! 8. Cross-altitude same-answer with
+    //!    [`ProofDelta::generations_regressed`] on the delta-reachable
+    //!    corners built from [`ConfigSyncProof`] pairs (the `Regressed`
+    //!    corner IS delta-reachable — the delta preserves the boolean
+    //!    signal even though it folds the exact backwards `by` count
+    //!    into `Option::None`).
+    //! 9. Regression implies same-store-INCONSISTENCY (a duality
+    //!    ordering pin distinct from the identity-republish sibling's
+    //!    same-store-CONSISTENCY implication): whenever `regressed()`
+    //!    returns `true`, `same_store_consistent()` returns `false`
+    //!    — but the converse does NOT hold, since
+    //!    [`ProofRelation::CrossStore`] is same-store-inconsistent
+    //!    without being regressed.
+    //! 10. Disjointness with [`ProofRelation::stationary`] and
+    //!     [`ProofRelation::identity_republish`]: no variant is both
+    //!     regressed AND stationary, nor both regressed AND identity-
+    //!     republish, at either altitude — the three tag-only
+    //!     classifiers pin three DISTINCT single-variant corners of
+    //!     the classification's `Xor` partition.
+    //! 11. Tag/payload agreement with [`ProofRelation::regressed_by`]
+    //!     / [`ProofRelationWire::regressed_by`]: the tag-only
+    //!     predicate and the payload accessor are two projections of
+    //!     the same variant, so `self.regressed() ==
+    //!     self.regressed_by().is_some()` at both altitudes. A genuinely
+    //!     new class of invariant the two prior tag-only classifiers
+    //!     ([`ProofRelation::stationary`] and
+    //!     [`ProofRelation::identity_republish`]) cannot pin, because
+    //!     neither has a companion payload accessor on the same variant.
+    //!
+    //! Same test idiom as the sibling `proof_relation_identity_republish_tests`
+    //! module.
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    fn all_five_wire_variants() -> Vec<(&'static str, ProofRelationWire)> {
+        all_five_relations()
+            .into_iter()
+            .map(|(name, relation)| (name, relation.to_wire()))
+            .collect()
+    }
+
+    // ---------- (1) Truth table pinned by variant identity, both altitudes
+
+    #[test]
+    fn value_truth_table_reads_the_regressed_variant_alone() {
+        for (name, relation) in all_five_relations() {
+            let expected = matches!(relation, ProofRelation::Regressed { .. });
+            assert_eq!(
+                relation.regressed(),
+                expected,
+                "{name}: value predicate diverged from the pinned truth table",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_truth_table_reads_the_regressed_variant_alone() {
+        for (name, wire) in all_five_wire_variants() {
+            let expected = matches!(wire, ProofRelationWire::Regressed { .. });
+            assert_eq!(
+                wire.regressed(),
+                expected,
+                "{name}: wire predicate diverged from the pinned truth table",
+            );
+        }
+    }
+
+    #[test]
+    fn regressed_variant_returns_true_at_both_altitudes() {
+        assert!(ProofRelation::Regressed { by: nz(1) }.regressed());
+        assert!(ProofRelationWire::Regressed { by: 1 }.regressed());
+    }
+
+    #[test]
+    fn non_regressed_variants_return_false_at_both_altitudes() {
+        assert!(!ProofRelation::Stationary.regressed());
+        assert!(!ProofRelation::IdentityRepublish { generations: nz(1) }.regressed());
+        assert!(
+            !ProofRelation::Progression {
+                watermark: moved_all(),
+                generations: nz(2),
+            }
+            .regressed()
+        );
+        assert!(
+            !ProofRelation::CrossStore {
+                watermark: moved_free_only(),
+            }
+            .regressed()
+        );
+
+        assert!(!ProofRelationWire::Stationary.regressed());
+        assert!(!ProofRelationWire::IdentityRepublish { generations: 1 }.regressed());
+        assert!(
+            !ProofRelationWire::Progression {
+                watermark: WatermarkDeltaWire {
+                    full_moved: true,
+                    restart_required_moved: true,
+                    free_moved: true,
+                },
+                generations: 2,
+            }
+            .regressed()
+        );
+        assert!(
+            !ProofRelationWire::CrossStore {
+                watermark: WatermarkDeltaWire {
+                    full_moved: true,
+                    restart_required_moved: false,
+                    free_moved: true,
+                },
+            }
+            .regressed()
+        );
+    }
+
+    // ---------- (2) Pointwise value/wire agreement
+
+    #[test]
+    fn value_and_wire_predicates_agree_pointwise_on_every_variant() {
+        for (name, relation) in all_five_relations() {
+            let value = relation.regressed();
+            let wire = relation.to_wire().regressed();
+            assert_eq!(
+                value, wire,
+                "{name}: wire predicate must equal value predicate pointwise",
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through try_from_wire preserves the verdict
+
+    #[test]
+    fn try_from_wire_round_trip_preserves_the_verdict() {
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            let wire_verdict = wire.regressed();
+            let reconstructed =
+                ProofRelation::try_from_wire(&wire).expect("legitimate wire parses back");
+            assert_eq!(
+                wire_verdict,
+                reconstructed.regressed(),
+                "{name}: try_from_wire round-trip must preserve the regressed verdict",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_idiom_round_trip_preserves_the_verdict() {
+        for (name, wire) in all_five_wire_variants() {
+            let value: ProofRelation = (&wire)
+                .try_into()
+                .expect("legitimate wire parses back via TryFrom");
+            let wire_via_named: ProofRelationWire = value.to_wire();
+            assert_eq!(
+                wire.regressed(),
+                wire_via_named.regressed(),
+                "{name}: wire → value (via TryFrom) → wire (via to_wire) diverges on \
+                 the regressed verdict",
+            );
+        }
+    }
+
+    // ---------- (4) const-callable at both altitudes
+
+    #[test]
+    fn value_predicate_is_const_callable() {
+        // A payload-carrying variant (Regressed) is verbose in const
+        // position because NonZeroU64::new is not const-callable in
+        // stable Rust in the .expect() form; a Stationary witness alone
+        // is sufficient to catch any regression in the receiver's own
+        // `const` qualifier — matching the discipline of the neighboring
+        // `value_predicate_is_const_callable` test on the identity-
+        // republish sibling.
+        const R_STATIONARY: ProofRelation = ProofRelation::Stationary;
+        const P_STATIONARY: bool = R_STATIONARY.regressed();
+        assert!(!P_STATIONARY);
+    }
+
+    #[test]
+    fn wire_predicate_is_const_callable_on_every_variant() {
+        const STATIONARY: bool = ProofRelationWire::Stationary.regressed();
+        const IDENTITY_REPUBLISH: bool =
+            ProofRelationWire::IdentityRepublish { generations: 1 }.regressed();
+        const PROGRESSION: bool = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            generations: 2,
+        }
+        .regressed();
+        const CROSS_STORE: bool = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        }
+        .regressed();
+        const REGRESSED: bool = ProofRelationWire::Regressed { by: 3 }.regressed();
+        assert!(!STATIONARY);
+        assert!(!IDENTITY_REPUBLISH);
+        assert!(!PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(REGRESSED);
+    }
+
+    // ---------- (5) Exhaustive variant enumeration
+
+    #[test]
+    fn exhaustive_variant_enumeration_is_stable() {
+        let value = all_five_relations();
+        assert_eq!(value.len(), 5);
+        for (_, relation) in &value {
+            match relation {
+                ProofRelation::Stationary
+                | ProofRelation::IdentityRepublish { .. }
+                | ProofRelation::Progression { .. }
+                | ProofRelation::CrossStore { .. }
+                | ProofRelation::Regressed { .. } => {}
+            }
+        }
+        let wire = all_five_wire_variants();
+        assert_eq!(wire.len(), 5);
+        for (_, wire) in &wire {
+            match wire {
+                ProofRelationWire::Stationary
+                | ProofRelationWire::IdentityRepublish { .. }
+                | ProofRelationWire::Progression { .. }
+                | ProofRelationWire::CrossStore { .. }
+                | ProofRelationWire::Regressed { .. } => {}
+            }
+        }
+    }
+
+    // ---------- (6) Payload-inspection independence
+
+    #[test]
+    fn wire_predicate_is_invariant_under_payload_perturbations() {
+        // The Regressed arm reads `true` for every legitimate `by`
+        // payload the wire can carry (>= 1 at the parse boundary; the
+        // tag-only accessor is even permissive of the parse-refused 0
+        // case, since it reads only the variant tag).
+        for by in [1_u64, 2, 5, 100, u64::MAX] {
+            assert!(
+                ProofRelationWire::Regressed { by }.regressed(),
+                "Regressed verdict must be invariant under by={by}",
+            );
+        }
+        for generations in [1_u64, 2, 5, 100, u64::MAX] {
+            assert!(
+                !ProofRelationWire::IdentityRepublish { generations }.regressed(),
+                "IdentityRepublish verdict must be invariant under generations={generations}",
+            );
+        }
+        let watermarks = [
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: false,
+            },
+            WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        ];
+        for watermark in watermarks {
+            for generations in [1_u64, 7, u64::MAX] {
+                assert!(
+                    !ProofRelationWire::Progression {
+                        watermark,
+                        generations,
+                    }
+                    .regressed(),
+                    "Progression verdict must be invariant under \
+                     watermark={watermark:?} generations={generations}",
+                );
+            }
+        }
+        for watermark in watermarks {
+            assert!(
+                !ProofRelationWire::CrossStore { watermark }.regressed(),
+                "CrossStore verdict must be invariant under watermark={watermark:?}",
+            );
+        }
+    }
+
+    // ---------- (7) Composition through the wire boundary
+
+    #[test]
+    fn composition_through_the_wire_boundary_agrees_with_direct_value_path() {
+        for (name, relation) in all_five_relations() {
+            let direct = relation.regressed();
+            let through_wire = relation.to_wire().regressed();
+            assert_eq!(
+                direct, through_wire,
+                "{name}: value → predicate must equal value → to_wire → predicate",
+            );
+        }
+    }
+
+    // ---------- (8) Cross-altitude same-answer with ProofDelta::generations_regressed
+
+    #[test]
+    fn verdict_matches_proof_delta_verdict_on_delta_reachable_corners() {
+        let now = std::time::UNIX_EPOCH;
+        let watermark_a = ConfigWatermark {
+            full: blake3::hash(b"full-a"),
+            restart_required: blake3::hash(b"restart-a"),
+            free: blake3::hash(b"free-a"),
+        };
+        let watermark_b = ConfigWatermark {
+            full: blake3::hash(b"full-b"),
+            restart_required: blake3::hash(b"restart-b"),
+            free: blake3::hash(b"free-b"),
+        };
+        let prior_early = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 1,
+            observed_at: now,
+        };
+        let prior_late = ConfigSyncProof {
+            watermark: watermark_b,
+            generation: 5,
+            observed_at: now,
+        };
+        let stationary_current = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 1,
+            observed_at: now,
+        };
+        let republish_current = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 2,
+            observed_at: now,
+        };
+        let progression_current = ConfigSyncProof {
+            watermark: watermark_b,
+            generation: 2,
+            observed_at: now,
+        };
+        let cross_store_current = ConfigSyncProof {
+            watermark: watermark_b,
+            generation: 1,
+            observed_at: now,
+        };
+        let regressed_current = ConfigSyncProof {
+            watermark: watermark_a,
+            generation: 2,
+            observed_at: now,
+        };
+
+        // Unlike the IdentityRepublish sibling's cross-altitude test,
+        // the Regressed corner IS reachable from a ProofDelta: the
+        // ProofDelta::generations_regressed predicate reads the
+        // `generations_advanced.is_none()` boolean, which the delta
+        // preserves even though it folds the exact backwards `by` count.
+        // A regressed prior/current pair therefore lets us check both
+        // corners of the wider (value-altitude, delta-altitude) grid.
+        for (name, prior, current) in [
+            ("Stationary", prior_early, stationary_current),
+            ("IdentityRepublish", prior_early, republish_current),
+            ("Progression", prior_early, progression_current),
+            ("CrossStore", prior_early, cross_store_current),
+            ("Regressed", prior_late, regressed_current),
+        ] {
+            let delta = current.delta_since(&prior);
+            let relation = current.relation_since(&prior);
+            let relation_wire = relation.to_wire();
+            assert_eq!(
+                delta.generations_regressed(),
+                relation.regressed(),
+                "{name}: ProofDelta::generations_regressed must equal \
+                 ProofRelation::regressed on the delta-reachable corners",
+            );
+            assert_eq!(
+                delta.generations_regressed(),
+                relation_wire.regressed(),
+                "{name}: ProofDelta::generations_regressed must equal \
+                 ProofRelationWire::regressed on the delta-reachable corners",
+            );
+        }
+    }
+
+    // ---------- (9) Regressed implies same-store-INCONSISTENCY
+
+    #[test]
+    fn regressed_implies_same_store_inconsistency() {
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            if relation.regressed() {
+                assert!(
+                    !relation.same_store_consistent(),
+                    "{name}: value regressed ⇒ !same_store_consistent",
+                );
+                assert!(
+                    !wire.same_store_consistent(),
+                    "{name}: wire regressed ⇒ !same_store_consistent",
+                );
+            }
+        }
+        // The converse does NOT hold: CrossStore is also same-store-
+        // inconsistent without being regressed, at both altitudes.
+        let cross_store = ProofRelation::CrossStore {
+            watermark: moved_free_only(),
+        };
+        assert!(!cross_store.same_store_consistent() && !cross_store.regressed());
+        assert!(
+            !cross_store.to_wire().same_store_consistent() && !cross_store.to_wire().regressed(),
+        );
+    }
+
+    // ---------- (10) Disjointness with every other tag-only classifier
+
+    #[test]
+    fn regressed_is_pairwise_disjoint_from_stationary_and_identity_republish() {
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            assert!(
+                !(relation.regressed() && relation.stationary()),
+                "{name}: value cannot be regressed AND stationary — the two tag-only \
+                 classifiers pin two distinct single-variant corners",
+            );
+            assert!(
+                !(wire.regressed() && wire.stationary()),
+                "{name}: wire cannot be regressed AND stationary — the two tag-only \
+                 classifiers pin two distinct single-variant corners",
+            );
+            assert!(
+                !(relation.regressed() && relation.identity_republish()),
+                "{name}: value cannot be regressed AND identity_republish — the two \
+                 tag-only classifiers pin two distinct single-variant corners",
+            );
+            assert!(
+                !(wire.regressed() && wire.identity_republish()),
+                "{name}: wire cannot be regressed AND identity_republish — the two \
+                 tag-only classifiers pin two distinct single-variant corners",
+            );
+        }
+    }
+
+    // ---------- (11) Tag/payload agreement with regressed_by
+
+    #[test]
+    fn regressed_agrees_with_regressed_by_is_some_at_both_altitudes() {
+        // A genuinely new class of invariant the two prior tag-only
+        // classifiers cannot pin: `stationary` and `identity_republish`
+        // have no companion payload accessor on their own variant, so
+        // there is no `Option`-shaped projection to check against. The
+        // Regressed corner is the only single-variant tag whose payload
+        // ALSO surfaces through a dedicated accessor (`regressed_by`),
+        // and this test pins the two projections in lockstep at both
+        // altitudes.
+        for (name, relation) in all_five_relations() {
+            let wire = relation.to_wire();
+            assert_eq!(
+                relation.regressed(),
+                relation.regressed_by().is_some(),
+                "{name}: value regressed() must equal regressed_by().is_some()",
+            );
+            assert_eq!(
+                wire.regressed(),
+                wire.regressed_by().is_some(),
+                "{name}: wire regressed() must equal regressed_by().is_some()",
             );
         }
     }
