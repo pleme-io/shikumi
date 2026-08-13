@@ -1852,6 +1852,126 @@ impl ProofDelta {
         }
     }
 
+    /// The **fused classification tag** — the [`ProofRelationKind`] value
+    /// welding [`Self::consistency_kind`] and [`Self::impossibility_kind`]
+    /// into a single always-[`Some`] typed-tag projection at the delta
+    /// altitude. Every [`ProofDelta`] value lands in exactly one arm of
+    /// the two-arm outer sum:
+    ///
+    /// * [`ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)`]
+    ///   iff [`Self::stationary`].
+    /// * [`ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)`]
+    ///   iff [`Self::identity_republish`].
+    /// * [`ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)`]
+    ///   iff [`Self::progression`].
+    /// * [`ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)`]
+    ///   iff [`Self::cross_store_signal`].
+    /// * [`ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)`]
+    ///   iff [`Self::generations_regressed`].
+    ///
+    /// The five [`ProofDelta`] atomic predicates
+    /// ([`Self::stationary`], [`Self::identity_republish`],
+    /// [`Self::progression`], [`Self::cross_store_signal`],
+    /// [`Self::generations_regressed`]) partition every [`ProofDelta`]
+    /// value into exactly one bucket — [`Self::stationary`] +
+    /// [`Self::identity_republish`] + [`Self::progression`] cover the
+    /// three legitimate corners on the [`Self::watermark`]-stationarity
+    /// × [`Self::generations_advanced`]-partition (`{stationary, moved} ×
+    /// {Some(0), Some(n>0)}`), and [`Self::cross_store_signal`] +
+    /// [`Self::generations_regressed`] cover the two impossibility corners
+    /// (`{moved} × {Some(0)}` and `{_} × {None}`). No other combination
+    /// of [`Self::watermark`]-stationarity and
+    /// [`Self::generations_advanced`] exists, so the five buckets are
+    /// disjoint AND cover the [`ProofDelta`] space totally — the fallback
+    /// `else` arm below fires only on the [`Self::generations_regressed`]
+    /// bucket and reaches its verdict without any [`Option`] unwrapping.
+    ///
+    /// The delta-altitude receiver-sibling of [`ProofRelation::kind`] and
+    /// [`ProofRelationWire::kind`], lifting the two typed-tag
+    /// [`Option<Kind>`] receivers [`Self::consistency_kind`] and
+    /// [`Self::impossibility_kind`] into a single always-[`Some`] fused
+    /// receiver whose two-arm outer sum discriminates the two halves of
+    /// the classification partition, and whose within-half payload
+    /// discriminates the three legitimate corners or two impossibility
+    /// corners the [`ProofRelation`] sum-type distinguishes.
+    ///
+    /// A hot-reload observer or a monitoring dashboard holding a freshly
+    /// computed [`ProofDelta`] and wanting the fused "WHICH corner, in
+    /// which half of the partition?" answer previously had three inline
+    /// paths, each leaking work: (a) the pair
+    /// `(self.consistency_kind(), self.impossibility_kind())` unwrapped
+    /// at every seam — a shape whose fourth quadrant `(Some, Some)` is
+    /// representable in the type-space but never fires (its impossibility
+    /// is the XOR-identity invariant, not a type-shape constraint), so
+    /// the consumer must disprove it at every seam; (b) a nested
+    /// `if let Some(k) = self.consistency_kind() { .. } else if let
+    /// Some(k) = self.impossibility_kind() { .. } else { unreachable!() }`
+    /// spelled at every seam, whose two-hop composition through two
+    /// half-side receivers reaches the fused answer through the same
+    /// XOR-identity the fourth quadrant impossibility already carries;
+    /// or (c) a five-arm nested `match` on
+    /// `(self.watermark.stationary(), self.generations_advanced)` spelled
+    /// at every seam, whose five-way branch the five disjoint atomic
+    /// predicates already carry once as booleans. The receiver-sibling
+    /// here answers the fused question through a single welded five-arm
+    /// conditional whose fallback `else` arm reaches its verdict directly
+    /// on the [`Self::generations_regressed`] bucket without any
+    /// [`Option`] unwrapping — the total five-way partition IS the
+    /// exhaustiveness the receiver reads from.
+    ///
+    /// **Round-trip identities with the two half-side receivers.** For
+    /// every [`ProofDelta`] value:
+    ///
+    /// * `self.kind().consistency()` equals `self.consistency_kind()`
+    ///   pointwise.
+    /// * `self.kind().impossibility()` equals `self.impossibility_kind()`
+    ///   pointwise.
+    /// * `self.kind().is_consistent()` equals `self.same_store_consistent()`
+    ///   pointwise.
+    /// * `self.kind().is_impossible()` equals
+    ///   `self.same_store_inconsistent()` pointwise.
+    ///
+    /// The fused receiver is a lossless projection of the pair of
+    /// half-side receivers — no information is dropped by the fusion,
+    /// only the XOR-identity is lifted from a two-receiver invariant
+    /// into the type shape.
+    ///
+    /// **Cross-altitude same-answer with the classification receivers.**
+    /// For every [`ProofDelta`] value that [`Self::relation`] classifies
+    /// as `Some(r)`, `self.kind() == r.kind()` — the delta-altitude fused
+    /// tag equals the classification-altitude fused tag on the four
+    /// delta-reachable corners. On the regressed corner
+    /// [`Self::relation`] returns [`None`] (the count folded away and
+    /// cannot fill the [`ProofRelation::Regressed`] payload), but the
+    /// fused kind itself is payload-free and IS preserved at the delta
+    /// altitude: `self.kind()` returns
+    /// [`ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)`]
+    /// even where the classification path drops out — the delta-altitude
+    /// fused kind is a lossless five-corner classifier that reaches every
+    /// corner including the one the value-classification path folds away.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its fused kind at compile time too, matching the `const`-ness of
+    /// every other classification accessor at every altitude.
+    #[must_use]
+    pub const fn kind(&self) -> ProofRelationKind {
+        if self.stationary() {
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+        } else if self.identity_republish() {
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+        } else if self.progression() {
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+        } else if self.cross_store_signal() {
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+        } else {
+            // Total five-way partition: the four other atomic predicates
+            // exhaust the {stationary, moved} × {Some(0), Some(n>0)} grid,
+            // so this arm fires iff generations_advanced.is_none() — the
+            // generations_regressed bucket.
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+        }
+    }
+
     /// Classify the delta into the exhaustive [`ProofRelation`] sum —
     /// the delta-altitude classification receiver-sibling of
     /// [`ConfigSyncProof::relation_since`].
@@ -2338,6 +2458,194 @@ pub enum SameStoreConsistencyKind {
     Progression,
 }
 
+/// The **fused classification tag** of a [`ProofRelation`] — an exhaustive
+/// two-arm sum welding [`SameStoreConsistencyKind`] and
+/// [`SameStoreImpossibilityKind`] into a single always-[`Some`] typed-tag
+/// projection. Yielded by [`ProofDelta::kind`], [`ProofRelation::kind`],
+/// and [`ProofRelationWire::kind`], each returning a bare
+/// [`ProofRelationKind`] (never wrapped in [`Option`]) whose
+/// [`Self::Consistent`] / [`Self::Impossible`] arms exhaustively cover
+/// the five delta-reachable corners: the three legitimate corners project
+/// through [`Self::Consistent`] carrying the consistent tag, and the two
+/// impossibility corners project through [`Self::Impossible`] carrying
+/// the impossibility tag.
+///
+/// **The fusion of the two `Option<Kind>` receiver-families into a
+/// single always-`Some` typed-tag projection.**
+/// [`ProofRelation::consistency_kind`] and
+/// [`ProofRelation::impossibility_kind`] (and their siblings at the
+/// delta and wire altitudes) already carry the two halves of the
+/// classification partition as two typed [`Option<Kind>`] receivers
+/// whose XOR-identity — exactly one of the pair is [`Some`] on every
+/// value — pins the two-way partition of the classification space.
+/// That XOR-identity is a load-bearing invariant, but its shape ("exactly
+/// one of two `Option`s is `Some`") is not visible to the exhaustiveness
+/// checker: a consumer routing on the fused pair must still unwrap two
+/// [`Option`]s and disprove the fourth quadrant `(Some, Some)` at every
+/// seam, and the fourth quadrant `(None, None)` is representable in the
+/// type-space even though it never fires. This receiver collapses that
+/// pair into a single sum-type value whose two arms exhaustively cover
+/// the classification space, so a `match` on this type discriminates all
+/// five classification corners without any [`Option`] unwrapping — the
+/// always-`Some` invariant is baked into the type shape, not carried as
+/// an implicit XOR-identity over two receivers.
+///
+/// **Why a fused sum instead of a five-variant flat sum.** The five
+/// classification corners could be projected into a flat five-variant
+/// sum (say, `enum Corner { Stationary, IdentityRepublish, Progression,
+/// CrossStore, Regressed }`), but that shape would drop the two-way
+/// partition boundary the classification carries — a consumer routing on
+/// "consistent vs impossible" would have to re-derive the partition at
+/// every seam through a five-arm `match` whose three consistent arms and
+/// two impossibility arms the routing question doesn't distinguish. The
+/// two-arm nested sum here preserves the partition boundary as the
+/// outer arm and the within-half discrimination as the inner arm, so a
+/// consumer routing on the two-way partition matches on the outer arm
+/// alone (`match k { Consistent(_) => .., Impossible(_) => .. }`) and a
+/// consumer that also wants the within-half tag reaches through the
+/// inner arm without a second `match` (`Consistent(Stationary)`,
+/// `Impossible(Regressed)`, etc.). The nested shape carries both
+/// discriminations at once, in exactly one place, in exactly the shape
+/// each consumer already reads from.
+///
+/// **Payload-free by design.** All three altitudes' payloads live at the
+/// classification altitude on the underlying [`ProofRelation`] variants
+/// ([`MovedWatermarkDelta`] on [`ProofRelation::CrossStore`] /
+/// [`ProofRelation::Progression`], [`std::num::NonZeroU64`] on
+/// [`ProofRelation::IdentityRepublish`] / [`ProofRelation::Progression`]
+/// / [`ProofRelation::Regressed`]); this type carries none of them. The
+/// fused kind question ("WHICH corner, in which half of the partition?")
+/// is a projection of the variant tag alone, whose answer is decidable
+/// from every altitude (delta, value classification, wire classification)
+/// without touching a payload field. A consumer that wants the payloads
+/// reaches [`ProofRelation::watermark`] / [`ProofRelation::generations`] /
+/// [`ProofRelation::regressed_by`] at the classification altitude where
+/// the payloads live; a consumer that only wants the fused kind reaches
+/// THIS receiver at whichever altitude it already holds.
+///
+/// **Same tag at all three altitudes.** [`ProofDelta`], [`ProofRelation`],
+/// and [`ProofRelationWire`] all project through the SAME two-arm nested
+/// sum, so the (delta, value, wire) × (kind) grid closes with a single
+/// shared receiver type — a consumer routing on the fused classification
+/// tag alone reaches the same-named answer through the same-named
+/// receiver at every altitude, and the cross-altitude same-answer
+/// invariant reads as pointwise [`ProofRelationKind`] equality without
+/// any [`Option`] unwrapping on the way. On the delta altitude the
+/// receiver reaches the [`Self::Impossible(Regressed)`] answer even
+/// where [`ProofDelta::relation`] returns [`None`] (the regressed corner
+/// where the count folded away), so the fused kind is a lossless
+/// classification projection at the delta altitude too.
+///
+/// **XOR-identity, lifted into type shape.** The load-bearing invariant
+/// that pins the pair of `Option<Kind>` receivers as a two-way partition
+/// — "exactly one of `consistency_kind()` / `impossibility_kind()` is
+/// [`Some`] on every value" — is here folded into the type shape itself:
+/// every [`ProofRelationKind`] value is in exactly one of the two arms
+/// [`Self::Consistent`] / [`Self::Impossible`], and neither arm's inner
+/// tag can be `None` (there is no `Option` in the type shape). So the
+/// XOR-identity between the two `Option<Kind>` receivers becomes the
+/// tautology "every `ProofRelationKind` has exactly one arm" that the
+/// exhaustiveness checker enforces on every `match` at every altitude.
+///
+/// **Adding a hypothetical corner fails to compile in lockstep.** A
+/// hypothetical sixth [`ProofRelation`] variant fails to compile at
+/// every altitude's `kind` `match` body in lockstep with either
+/// [`SameStoreConsistencyKind`] (if the new variant is a legitimate
+/// corner) or [`SameStoreImpossibilityKind`] (if it is an impossibility
+/// corner) — the same lockstep already enforced on the two half-side
+/// receiver-families, welded here into a single fused receiver whose
+/// two-arm outer `match` and within-half inner `match` both surface the
+/// new variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofRelationKind {
+    /// The consistent half of the classification — the [`ProofRelation`]
+    /// value landed in one of the three legitimate corners
+    /// [`ProofRelation::Stationary`] / [`ProofRelation::IdentityRepublish`]
+    /// / [`ProofRelation::Progression`], whose within-half discrimination
+    /// this arm's [`SameStoreConsistencyKind`] payload carries. Reached
+    /// from [`ProofRelation::same_store_consistent`] and
+    /// [`ProofRelation::consistency_kind`] one altitude down (whose
+    /// answers agree with `matches!(self.kind(), Self::Consistent(_))`
+    /// and `self.consistency_kind() ==
+    /// self.kind().consistency_kind_or_none()` respectively).
+    Consistent(SameStoreConsistencyKind),
+    /// The impossibility half of the classification — the
+    /// [`ProofRelation`] value landed in one of the two impossibility
+    /// corners [`ProofRelation::CrossStore`] / [`ProofRelation::Regressed`],
+    /// whose within-half discrimination this arm's
+    /// [`SameStoreImpossibilityKind`] payload carries. Reached from
+    /// [`ProofRelation::same_store_inconsistent`] and
+    /// [`ProofRelation::impossibility_kind`] one altitude down.
+    Impossible(SameStoreImpossibilityKind),
+}
+
+impl ProofRelationKind {
+    /// The [`SameStoreConsistencyKind`] payload iff this fused kind is
+    /// [`Self::Consistent`], else [`None`]. The receiver-side view of
+    /// the pair-of-`Option<Kind>` shape that the pair
+    /// (`consistency_kind`, `impossibility_kind`) at every altitude
+    /// carries — this method projects the fused sum back to the
+    /// consistent half's `Option<Kind>` shape.
+    ///
+    /// **The round-trip identity.** For every value `v` at every
+    /// altitude (delta, value classification, wire classification),
+    /// `v.kind().consistency()` equals `v.consistency_kind()`
+    /// pointwise. The fused kind receiver and the pair of half-side
+    /// [`Option<Kind>`] receivers are two shapes of the same
+    /// classification: the fused shape carries the XOR-identity in its
+    /// type, and the half-side shapes carry it as an invariant over two
+    /// separate receivers.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its consistent-half tag at compile time too.
+    #[must_use]
+    pub const fn consistency(&self) -> Option<SameStoreConsistencyKind> {
+        match *self {
+            Self::Consistent(k) => Some(k),
+            Self::Impossible(_) => None,
+        }
+    }
+
+    /// The [`SameStoreImpossibilityKind`] payload iff this fused kind is
+    /// [`Self::Impossible`], else [`None`]. The mirror of
+    /// [`Self::consistency`] on the impossibility half of the fused sum.
+    ///
+    /// **The round-trip identity.** For every value `v` at every
+    /// altitude (delta, value classification, wire classification),
+    /// `v.kind().impossibility()` equals `v.impossibility_kind()`
+    /// pointwise.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its impossibility-half tag at compile time too.
+    #[must_use]
+    pub const fn impossibility(&self) -> Option<SameStoreImpossibilityKind> {
+        match *self {
+            Self::Impossible(k) => Some(k),
+            Self::Consistent(_) => None,
+        }
+    }
+
+    /// True iff this fused kind is [`Self::Consistent`] — the outer-arm
+    /// tag alone, without projecting the within-half payload. The
+    /// receiver-side view of [`ProofRelation::same_store_consistent`]
+    /// at every altitude: for every value `v`,
+    /// `v.kind().is_consistent() == v.same_store_consistent()`.
+    #[must_use]
+    pub const fn is_consistent(&self) -> bool {
+        matches!(self, Self::Consistent(_))
+    }
+
+    /// True iff this fused kind is [`Self::Impossible`] — the outer-arm
+    /// tag alone, without projecting the within-half payload. The
+    /// receiver-side view of [`ProofRelation::same_store_inconsistent`]
+    /// at every altitude: for every value `v`,
+    /// `v.kind().is_impossible() == v.same_store_inconsistent()`.
+    #[must_use]
+    pub const fn is_impossible(&self) -> bool {
+        matches!(self, Self::Impossible(_))
+    }
+}
+
 /// Exhaustive sum-type classification of a proof pair — every possible
 /// relation between two [`ConfigSyncProof`] values lands in exactly one
 /// variant.
@@ -2754,6 +3062,105 @@ impl ProofRelation {
             Self::IdentityRepublish { .. } => Some(SameStoreConsistencyKind::IdentityRepublish),
             Self::Progression { .. } => Some(SameStoreConsistencyKind::Progression),
             Self::CrossStore { .. } | Self::Regressed { .. } => None,
+        }
+    }
+
+    /// The **fused classification tag** — the [`ProofRelationKind`] value
+    /// welding [`Self::consistency_kind`] and [`Self::impossibility_kind`]
+    /// into a single always-[`Some`] typed-tag projection at the value
+    /// classification altitude. Every [`ProofRelation`] variant lands in
+    /// exactly one arm of the two-arm outer sum:
+    ///
+    /// * [`Self::Stationary`] →
+    ///   [`ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)`].
+    /// * [`Self::IdentityRepublish`] →
+    ///   [`ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)`].
+    /// * [`Self::Progression`] →
+    ///   [`ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)`].
+    /// * [`Self::CrossStore`] →
+    ///   [`ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)`].
+    /// * [`Self::Regressed`] →
+    ///   [`ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)`].
+    ///
+    /// The classification-altitude receiver-sibling of [`ProofDelta::kind`]
+    /// and [`ProofRelationWire::kind`], closing the (delta, value, wire)
+    /// × (fused-kind) grid at all three altitudes through the same shared
+    /// [`ProofRelationKind`] two-arm nested sum. A consumer routing on
+    /// the fused classification tag alone reaches the same-named answer
+    /// through the same-named receiver at every altitude; the
+    /// cross-altitude same-answer invariant reads as pointwise
+    /// [`ProofRelationKind`] equality without any [`Option`] unwrapping.
+    ///
+    /// A consumer that holds a freshly-classified [`ProofRelation`] and
+    /// wants the fused "WHICH corner, in which half of the partition?"
+    /// answer previously had three inline paths, each leaking work:
+    /// (a) the pair `(self.consistency_kind(), self.impossibility_kind())`
+    /// unwrapped at every seam — a shape whose fourth quadrant
+    /// `(Some, Some)` is representable in the type-space but never fires,
+    /// so the consumer must disprove it at every seam; (b) a five-arm
+    /// `match` on `self` mapping each variant to its `(half, kind)`
+    /// pair spelled at every seam — a shape whose two-way partition
+    /// boundary the consumer re-derives at every seam by grouping the
+    /// arms manually; or (c) a two-hop composition
+    /// `self.consistency_kind().map(ProofRelationKind::Consistent)
+    /// .or_else(|| self.impossibility_kind().map(ProofRelationKind::Impossible))
+    /// .expect("XOR-identity")` spelled at every seam, whose
+    /// [`Option`]-fold and terminating `expect` reach the fused answer
+    /// only by relying on the XOR-identity invariant the fourth quadrant
+    /// impossibility already carries — an invariant the exhaustiveness
+    /// checker cannot see. The receiver-sibling here answers the fused
+    /// question through a single welded five-arm `match` whose
+    /// exhaustiveness IS the always-`Some` invariant the fused type
+    /// shape carries.
+    ///
+    /// **Round-trip identities with the two half-side receivers and the
+    /// two boolean predicates.** For every [`ProofRelation`] variant:
+    ///
+    /// * `self.kind().consistency()` equals `self.consistency_kind()`
+    ///   pointwise — the fused kind's consistent-half projection agrees
+    ///   with the half-side [`Option<Kind>`] receiver.
+    /// * `self.kind().impossibility()` equals `self.impossibility_kind()`
+    ///   pointwise — the fused kind's impossibility-half projection
+    ///   agrees with the mirror half-side receiver.
+    /// * `self.kind().is_consistent()` equals `self.same_store_consistent()`
+    ///   pointwise — the fused kind's outer-arm tag agrees with the
+    ///   half-side boolean predicate.
+    /// * `self.kind().is_impossible()` equals `self.same_store_inconsistent()`
+    ///   pointwise — the mirror on the impossibility outer arm.
+    ///
+    /// The fused receiver is a lossless projection of every prior
+    /// classification receiver at this altitude — a consumer can reach
+    /// the fused shape from the half-side receivers, and can reach the
+    /// half-side receivers back from the fused shape, without any
+    /// information loss on either direction.
+    ///
+    /// **Payload-free by design.** The fused kind question is a
+    /// projection of the variant tag alone; a consumer that wants the
+    /// payloads reaches [`Self::watermark`], [`Self::generations`], or
+    /// [`Self::regressed_by`] instead — the payload accessors that
+    /// already carry the [`MovedWatermarkDelta`] and
+    /// [`std::num::NonZeroU64`] welds at the same altitude.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`] projects
+    /// its fused kind at compile time too, matching the `const`-ness of
+    /// every other classification accessor (predicate, payload, or
+    /// half-side kind) in this impl.
+    #[must_use]
+    pub const fn kind(&self) -> ProofRelationKind {
+        match *self {
+            Self::Stationary => ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            Self::IdentityRepublish { .. } => {
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+            }
+            Self::Progression { .. } => {
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+            }
+            Self::CrossStore { .. } => {
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+            }
+            Self::Regressed { .. } => {
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+            }
         }
     }
 
@@ -3936,6 +4343,93 @@ impl ProofRelationWire {
             Self::IdentityRepublish { .. } => Some(SameStoreConsistencyKind::IdentityRepublish),
             Self::Progression { .. } => Some(SameStoreConsistencyKind::Progression),
             Self::CrossStore { .. } | Self::Regressed { .. } => None,
+        }
+    }
+
+    /// The **fused classification tag** — the [`ProofRelationKind`] value
+    /// welding [`Self::consistency_kind`] and [`Self::impossibility_kind`]
+    /// into a single always-[`Some`] typed-tag projection at the wire
+    /// classification altitude. Every [`ProofRelationWire`] variant lands
+    /// in exactly one arm of the two-arm outer sum, mirroring
+    /// [`ProofRelation::kind`] one altitude up.
+    ///
+    /// The wire-side receiver-sibling of [`ProofDelta::kind`] and
+    /// [`ProofRelation::kind`], closing the (delta, value, wire) ×
+    /// (fused-kind) grid at the third and final altitude through the
+    /// same shared [`ProofRelationKind`] two-arm nested sum the
+    /// delta-side and value-side accessors return. A monitoring dashboard
+    /// or a cross-replica delta-log endpoint that broadcasts the wire
+    /// form reaches the fused kind tag through the SAME sum-type the
+    /// other altitudes already yield, so the cross-altitude same-answer
+    /// invariant reads as pointwise [`ProofRelationKind`] equality
+    /// without a wire-side tag re-projection.
+    ///
+    /// A wire consumer holding a freshly deserialized
+    /// [`ProofRelationWire`] and wanting the fused "WHICH corner, in
+    /// which half of the partition?" answer previously had four inline
+    /// paths, each paying a needless cost: (a)
+    /// `ProofRelation::try_from_wire(&wire).map(|r| r.kind())` — chaining
+    /// a [`MovedWatermarkDelta::try_from_wire`] weld on the two
+    /// payload-carrying corners AND a [`std::num::NonZeroU64::new`]
+    /// weld on the three generation-carrying corners, none of which
+    /// the tag-only fused-kind question needs, plus a [`Result`]-fold
+    /// on top since the parse can fail; (b) the pair
+    /// `(wire.consistency_kind(), wire.impossibility_kind())` unwrapped
+    /// at every seam — a shape whose fourth quadrant `(Some, Some)` is
+    /// representable in the type-space but never fires; (c) a five-arm
+    /// `match` on `wire` mapping each variant to its `(half, kind)` pair
+    /// spelled at every seam; or (d) a two-hop composition
+    /// `wire.consistency_kind().map(ProofRelationKind::Consistent)
+    /// .or_else(|| wire.impossibility_kind().map(ProofRelationKind::Impossible))
+    /// .expect("XOR-identity")`. The receiver-sibling here answers the
+    /// fused question at the wire altitude through the same welded
+    /// five-arm `match` the value-side accessor carries.
+    ///
+    /// **Same-answer invariant with [`ProofRelation::kind`].** For every
+    /// value/wire pair the two accessors agree pointwise: whenever
+    /// `relation.kind()` returns `k`, `relation.to_wire().kind()`
+    /// returns the same `k`. The wire is a lossless channel for the
+    /// fused-kind question the value-side sibling answers.
+    ///
+    /// **Round-trip identities with the two half-side receivers and the
+    /// two boolean predicates.** For every [`ProofRelationWire`]
+    /// variant:
+    ///
+    /// * `wire.kind().consistency()` equals `wire.consistency_kind()`
+    ///   pointwise.
+    /// * `wire.kind().impossibility()` equals `wire.impossibility_kind()`
+    ///   pointwise.
+    /// * `wire.kind().is_consistent()` equals `wire.same_store_consistent()`
+    ///   pointwise.
+    /// * `wire.kind().is_impossible()` equals `wire.same_store_inconsistent()`
+    ///   pointwise.
+    ///
+    /// **The tag alone is sufficient.** No payload field participates
+    /// in the answer, so no parse-time weld is even conceptually
+    /// involved — a wire consumer routing on the internally-tagged
+    /// `kind` field alone reaches the fused verdict without
+    /// deserializing any payload portion, matching the low-cost seam
+    /// [`ProofRelationWire`]'s serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its fused kind at compile time too, matching the
+    /// `const`-ness of [`ProofRelation::kind`] one altitude up.
+    #[must_use]
+    pub const fn kind(&self) -> ProofRelationKind {
+        match *self {
+            Self::Stationary => ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            Self::IdentityRepublish { .. } => {
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+            }
+            Self::Progression { .. } => {
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+            }
+            Self::CrossStore { .. } => {
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+            }
+            Self::Regressed { .. } => {
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+            }
         }
     }
 
@@ -18249,6 +18743,508 @@ mod consistency_kind_tests {
             Some(SameStoreConsistencyKind::Progression),
             Some(k),
             "the shared tag survives Option-wrapping and pattern equality",
+        );
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    //! Weld the fused [`ProofRelationKind`] receiver at all THREE
+    //! altitudes — [`ProofDelta::kind`], [`ProofRelation::kind`], and
+    //! [`ProofRelationWire::kind`] — all yielding the SAME shared
+    //! [`ProofRelationKind`] two-arm nested sum. The (delta, value,
+    //! wire) × (fused-kind) grid closes through a single shared
+    //! receiver type whose always-`Some` invariant is baked into the
+    //! type shape (no `Option` in the return type), so the
+    //! cross-altitude same-answer invariant reads as pointwise
+    //! [`ProofRelationKind`] equality without any [`Option`] unwrapping.
+    //!
+    //! The tests below cover, at every altitude in one exhaustive
+    //! fixture:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners —
+    //!    the three legitimate corners project to
+    //!    [`ProofRelationKind::Consistent`] with the matching
+    //!    within-half tag, the two impossibility corners project to
+    //!    [`ProofRelationKind::Impossible`] with the matching within-half
+    //!    tag.
+    //! 2. Cross-altitude same-answer between the delta altitude and
+    //!    the value-classification altitude on the four
+    //!    delta-reachable corners.
+    //! 3. Cross-altitude same-answer on ALL five corners including
+    //!    Regressed, through the lossless
+    //!    [`ConfigSyncProof::relation_since`] path: the fused kind
+    //!    receiver at the delta altitude is a lossless five-corner
+    //!    classifier that reaches every corner including the one the
+    //!    value-classification path folds away.
+    //! 4. Value/wire same-answer: for every [`ProofRelation`],
+    //!    `r.kind() == r.to_wire().kind()` pointwise on every variant.
+    //! 5. Round-trip identity with `consistency_kind` at every
+    //!    altitude: `x.kind().consistency() == x.consistency_kind()`.
+    //! 6. Round-trip identity with `impossibility_kind` at every
+    //!    altitude: `x.kind().impossibility() == x.impossibility_kind()`.
+    //! 7. Round-trip identity with `same_store_consistent` at every
+    //!    altitude: `x.kind().is_consistent() == x.same_store_consistent()`.
+    //! 8. Round-trip identity with `same_store_inconsistent` at every
+    //!    altitude: `x.kind().is_impossible() == x.same_store_inconsistent()`.
+    //! 9. `const`-callable at every altitude on hand-constructed
+    //!    values at every corner.
+    //! 10. `Copy`/`Eq` closure on the fused enum: the two-arm nested
+    //!     sum's Copy/Eq derives let it round-trip through pattern
+    //!     matching and equality comparison, and the fused type's
+    //!     equality is INDUCED from the two nested tags' equality (a
+    //!     fused kind equals another iff their outer arms match and their
+    //!     inner tags match).
+    //!
+    //! Genuinely new — no prior receiver at any altitude carried a
+    //! FUSED always-`Some` typed-tag classification of the two-way
+    //! partition; the pair [`ProofRelation::consistency_kind`] /
+    //! [`ProofRelation::impossibility_kind`] carried the two halves as
+    //! two [`Option<Kind>`] receivers whose XOR-identity was a
+    //! two-receiver invariant, and the exhaustive five-arm
+    //! [`ProofRelation`] `match` reached the five corners as a flat
+    //! sum whose two-way partition boundary the consumer re-derived at
+    //! every seam. The fused shape carries BOTH discriminations at
+    //! once in exactly one place.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(
+        &'static str,
+        ConfigSyncProof,
+        ConfigSyncProof,
+        ProofRelationKind,
+    )> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned at all three altitudes
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid_at_every_altitude() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.kind(),
+                want,
+                "{name}: delta kind diverged from the pinned truth table",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.kind(),
+                want,
+                "{name}: value classification kind diverged from the pinned truth table",
+            );
+            let w = current.relation_wire_since(&prior);
+            assert_eq!(
+                w.kind(),
+                want,
+                "{name}: wire classification kind diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer on the four
+    //                delta-reachable corners (via ProofDelta::relation)
+
+    #[test]
+    fn delta_and_relation_agree_on_the_four_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.kind(),
+                    relation.kind(),
+                    "{name}: delta and classification kind verdicts must agree on the \
+                     four delta-reachable corners",
+                );
+            } else {
+                // Regressed corner: the delta path folds the count away
+                // so relation() is None. The fused kind at the delta
+                // altitude is still Impossible(Regressed) — a lossless
+                // classification the value-side path drops.
+                assert_eq!(
+                    d.kind(),
+                    ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                    "{name}: delta.relation() == None (regressed corner) still projects \
+                     Impossible(Regressed) at the delta altitude",
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer on ALL five corners
+    //                via the lossless proof-pair path
+
+    #[test]
+    fn delta_and_full_classification_agree_on_every_corner_including_regressed() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.kind(),
+                r.kind(),
+                "{name}: delta and full-classification kind verdicts must agree on \
+                 every corner (including regressed, where the delta fold drops the \
+                 count but the fused tag itself is payload-free)",
+            );
+            assert_eq!(
+                r.kind(),
+                want,
+                "{name}: full classification must also match the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (4) Value/wire same-answer
+
+    #[test]
+    fn value_and_wire_altitudes_agree_on_every_variant() {
+        for (name, prior, current, _) in corners() {
+            let r = current.relation_since(&prior);
+            let w = r.to_wire();
+            assert_eq!(
+                r.kind(),
+                w.kind(),
+                "{name}: value/wire kind verdicts must agree pointwise",
+            );
+        }
+    }
+
+    // ---------- (5)/(6) Round-trip identity with the two half-side
+    //                    Option<Kind> receivers at every altitude
+
+    #[test]
+    fn round_trips_through_the_two_half_side_option_receivers_at_every_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.kind().consistency(),
+                d.consistency_kind(),
+                "{name}: delta kind().consistency() must equal consistency_kind()",
+            );
+            assert_eq!(
+                d.kind().impossibility(),
+                d.impossibility_kind(),
+                "{name}: delta kind().impossibility() must equal impossibility_kind()",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.kind().consistency(),
+                r.consistency_kind(),
+                "{name}: relation kind().consistency() must equal consistency_kind()",
+            );
+            assert_eq!(
+                r.kind().impossibility(),
+                r.impossibility_kind(),
+                "{name}: relation kind().impossibility() must equal impossibility_kind()",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.kind().consistency(),
+                w.consistency_kind(),
+                "{name}: wire kind().consistency() must equal consistency_kind()",
+            );
+            assert_eq!(
+                w.kind().impossibility(),
+                w.impossibility_kind(),
+                "{name}: wire kind().impossibility() must equal impossibility_kind()",
+            );
+        }
+    }
+
+    // ---------- (7)/(8) Round-trip identity with the two boolean
+    //                    predicates at every altitude — the outer-arm
+    //                    tag alone
+
+    #[test]
+    fn round_trips_through_the_two_boolean_predicates_at_every_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.kind().is_consistent(),
+                d.same_store_consistent(),
+                "{name}: delta kind().is_consistent() must equal same_store_consistent()",
+            );
+            assert_eq!(
+                d.kind().is_impossible(),
+                d.same_store_inconsistent(),
+                "{name}: delta kind().is_impossible() must equal same_store_inconsistent()",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.kind().is_consistent(),
+                r.same_store_consistent(),
+                "{name}: relation kind().is_consistent() must equal same_store_consistent()",
+            );
+            assert_eq!(
+                r.kind().is_impossible(),
+                r.same_store_inconsistent(),
+                "{name}: relation kind().is_impossible() must equal same_store_inconsistent()",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.kind().is_consistent(),
+                w.same_store_consistent(),
+                "{name}: wire kind().is_consistent() must equal same_store_consistent()",
+            );
+            assert_eq!(
+                w.kind().is_impossible(),
+                w.same_store_inconsistent(),
+                "{name}: wire kind().is_impossible() must equal same_store_inconsistent()",
+            );
+        }
+    }
+
+    // ---------- (9) const-callable at every altitude
+
+    #[test]
+    fn const_callable_on_hand_constructed_values_at_every_altitude() {
+        // Delta altitude — five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const D_STATIONARY: ProofRelationKind = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .kind();
+        const D_IDENTITY_REPUBLISH: ProofRelationKind = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .kind();
+        const D_PROGRESSION: ProofRelationKind = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .kind();
+        const D_CROSS_STORE: ProofRelationKind = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .kind();
+        const D_REGRESSED: ProofRelationKind = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .kind();
+        assert_eq!(
+            D_STATIONARY,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            D_IDENTITY_REPUBLISH,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(
+            D_PROGRESSION,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+        );
+        assert_eq!(
+            D_CROSS_STORE,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        );
+        assert_eq!(
+            D_REGRESSED,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+
+        // Value classification altitude.
+        const R_STATIONARY: ProofRelationKind = ProofRelation::Stationary.kind();
+        assert_eq!(
+            R_STATIONARY,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+
+        // Wire classification altitude.
+        const W_STATIONARY: ProofRelationKind = ProofRelationWire::Stationary.kind();
+        const W_IDENTITY_REPUBLISH: ProofRelationKind =
+            ProofRelationWire::IdentityRepublish { generations: 2 }.kind();
+        const W_REGRESSED: ProofRelationKind = ProofRelationWire::Regressed { by: 3 }.kind();
+        assert_eq!(
+            W_STATIONARY,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            W_IDENTITY_REPUBLISH,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(
+            W_REGRESSED,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+
+        // ProofRelationKind's own const accessors round-trip too.
+        const K_CONS_STATIONARY: ProofRelationKind =
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary);
+        const K_IMP_REGRESSED: ProofRelationKind =
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed);
+        const K_CONS_STATIONARY_CONS: Option<SameStoreConsistencyKind> =
+            K_CONS_STATIONARY.consistency();
+        const K_CONS_STATIONARY_IMP: Option<SameStoreImpossibilityKind> =
+            K_CONS_STATIONARY.impossibility();
+        const K_IMP_REGRESSED_CONS: Option<SameStoreConsistencyKind> =
+            K_IMP_REGRESSED.consistency();
+        const K_IMP_REGRESSED_IMP: Option<SameStoreImpossibilityKind> =
+            K_IMP_REGRESSED.impossibility();
+        const K_CONS_IS_CONSISTENT: bool = K_CONS_STATIONARY.is_consistent();
+        const K_CONS_IS_IMPOSSIBLE: bool = K_CONS_STATIONARY.is_impossible();
+        const K_IMP_IS_CONSISTENT: bool = K_IMP_REGRESSED.is_consistent();
+        const K_IMP_IS_IMPOSSIBLE: bool = K_IMP_REGRESSED.is_impossible();
+        assert_eq!(
+            K_CONS_STATIONARY_CONS,
+            Some(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(K_CONS_STATIONARY_IMP, None);
+        assert_eq!(K_IMP_REGRESSED_CONS, None);
+        assert_eq!(
+            K_IMP_REGRESSED_IMP,
+            Some(SameStoreImpossibilityKind::Regressed),
+        );
+        assert!(K_CONS_IS_CONSISTENT);
+        assert!(!K_CONS_IS_IMPOSSIBLE);
+        assert!(!K_IMP_IS_CONSISTENT);
+        assert!(K_IMP_IS_IMPOSSIBLE);
+    }
+
+    // ---------- (10) Copy/Eq closure on the fused enum
+
+    #[test]
+    fn copy_and_eq_derives_round_trip_through_the_fused_tag() {
+        // Copy: the value can be bound and reused without a move.
+        let k = ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression);
+        let k2 = k;
+        let _both: [ProofRelationKind; 2] = [k, k2];
+        // Eq: the enum's derives let it compare pointwise through the
+        // fused tag's Copy/Eq closure.
+        assert_eq!(
+            k,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+        );
+        assert_ne!(
+            k,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+        assert_ne!(
+            k,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        // Cross-arm inequality: a Consistent kind never equals an
+        // Impossible kind, regardless of the two inner tags' values.
+        assert_ne!(
+            k,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        );
+        assert_ne!(
+            k,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+        // Induced equality: two Impossible kinds are equal iff their
+        // inner impossibility tags match.
+        assert_eq!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+        assert_ne!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
         );
     }
 }
