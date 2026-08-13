@@ -1514,6 +1514,81 @@ impl ProofDelta {
         !self.generations_regressed() && !self.cross_store_signal()
     }
 
+    /// True iff the pair of proofs is NOT consistent with having come from
+    /// a single monotonic [`ConfigStore`](crate::ConfigStore) — either
+    /// generation regressed, or the watermark moved without a generation
+    /// advance. The typed disjunction of the two impossibility predicates
+    /// ([`Self::generations_regressed`] and [`Self::cross_store_signal`]),
+    /// spelled once so a consumer that wants the "should I refuse this
+    /// pair?" question doesn't have to hand-write the boolean at every
+    /// seam.
+    ///
+    /// **The direct dual of [`Self::same_store_consistent`], and the
+    /// delta-altitude receiver-sibling of
+    /// [`ProofRelation::same_store_inconsistent`] and
+    /// [`ProofRelationWire::same_store_inconsistent`].** Both classification
+    /// altitudes carry the impossibility-half predicate as a welded
+    /// two-variant [`matches!`] on the sum-type tag; the delta altitude
+    /// reaches the same verdict through the two boolean impossibility
+    /// predicates the [`ProofDelta`] shape carries directly, without
+    /// needing to classify into [`ProofRelation`] first. A consumer holding
+    /// a freshly computed [`ProofDelta`] and wanting the top-level "did we
+    /// see a same-store impossibility?" answer previously had two inline
+    /// paths, each leaking work: (a) `!self.same_store_consistent()` — a
+    /// single-hop negation through the legitimate-corners predicate that
+    /// reaches the answer through the negative space; or (b)
+    /// `self.generations_regressed() || self.cross_store_signal()` — a
+    /// two-hop composition through both impossibility predicates,
+    /// spelled at every seam. The receiver-sibling here spells the
+    /// disjunction once so a consumer routing on the impossibility
+    /// question reaches the verdict through a single-hop call.
+    ///
+    /// **Complement identity with [`Self::same_store_consistent`].**
+    /// `self.same_store_inconsistent() == !self.same_store_consistent()`
+    /// pointwise on every [`ProofDelta`] value — the two receivers
+    /// partition the delta space into two receiver-family half-spaces
+    /// whose disjunction is the constant `true` and whose conjunction
+    /// is the constant `false`. Together they weld the two-way
+    /// partition of the delta into a pair of receiver-visible
+    /// predicates.
+    ///
+    /// **Union identity with [`Self::generations_regressed`] and
+    /// [`Self::cross_store_signal`].**
+    /// `self.same_store_inconsistent() == (self.generations_regressed()
+    /// || self.cross_store_signal())` pointwise on every [`ProofDelta`]
+    /// value — the composed predicate equals the disjunction of the two
+    /// atomic impossibility predicates whose bodies it welds. The two
+    /// impossibility predicates are mutually exclusive at the delta
+    /// altitude (a delta that regressed cannot also carry a moved
+    /// watermark at a same-generation observation, since
+    /// `generations_advanced.is_none()` disqualifies the
+    /// `matches!(_, Some(0))` shape [`Self::cross_store_signal`]
+    /// requires), so the disjunction is also an XOR — the receiver
+    /// alone reaches the verdict through the shortest composition.
+    ///
+    /// **Cross-altitude same-answer with the classification predicates.**
+    /// For every [`ProofDelta`] value that
+    /// [`Self::relation`] classifies as `Some(r)`,
+    /// `r.same_store_inconsistent()` equals `self.same_store_inconsistent()`
+    /// — the delta-altitude verdict agrees pointwise with the
+    /// classification-altitude verdict on the four delta-reachable
+    /// corners. The regressed corner is `Option::None` on the delta path
+    /// (the count was folded away), so the classification-altitude
+    /// answer is only reachable through
+    /// [`ConfigSyncProof::relation_since`], but the delta-altitude
+    /// answer is preserved: `self.same_store_inconsistent()` is `true`
+    /// on the regressed corner too, since
+    /// [`Self::generations_regressed`] fires.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its same-store-inconsistency verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate or payload) at every altitude.
+    #[must_use]
+    pub const fn same_store_inconsistent(&self) -> bool {
+        self.generations_regressed() || self.cross_store_signal()
+    }
+
     /// Classify the delta into the exhaustive [`ProofRelation`] sum —
     /// the delta-altitude classification receiver-sibling of
     /// [`ConfigSyncProof::relation_since`].
@@ -15785,5 +15860,351 @@ mod proof_relation_same_store_inconsistent_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_same_store_inconsistent_tests {
+    //! Weld the same-store-inconsistency predicate at the delta altitude —
+    //! [`ProofDelta::same_store_inconsistent`], the delta-altitude
+    //! receiver-sibling of
+    //! [`ProofRelation::same_store_inconsistent`] and
+    //! [`ProofRelationWire::same_store_inconsistent`] at the two
+    //! classification altitudes.
+    //!
+    //! The two classification altitudes reach the impossibility verdict
+    //! through a welded two-variant [`matches!`] on the sum-type tag;
+    //! the delta altitude reaches it through the disjunction of the two
+    //! atomic impossibility predicates
+    //! ([`ProofDelta::generations_regressed`] and
+    //! [`ProofDelta::cross_store_signal`]) the [`ProofDelta`] shape
+    //! already carries. Both routes must agree — that agreement is the
+    //! load-bearing cross-altitude weld this module pins.
+    //!
+    //! The tests below cover:
+    //!
+    //! 1. Truth table pinned across the (watermark moved?, generation
+    //!    delta) grid: the two impossibility corners
+    //!    (`generations_regressed`, `cross_store_signal`) return `true`;
+    //!    the three legitimate corners (`stationary`,
+    //!    `identity_republish`, watermark-and-generation-both-advanced)
+    //!    return `false`.
+    //! 2. Complement identity with
+    //!    [`ProofDelta::same_store_consistent`]:
+    //!    `d.same_store_inconsistent() == !d.same_store_consistent()`
+    //!    on every corner — the two receivers partition the delta space
+    //!    into two receiver-family half-spaces.
+    //! 3. Union identity with the two atomic impossibility predicates:
+    //!    `d.same_store_inconsistent() == (d.generations_regressed() ||
+    //!    d.cross_store_signal())` on every corner.
+    //! 4. XOR identity: the two atomic impossibility predicates are
+    //!    mutually exclusive at the delta altitude, so
+    //!    `d.same_store_inconsistent() == (d.generations_regressed() ^
+    //!    d.cross_store_signal())` on every corner.
+    //! 5. Cross-altitude same-answer with [`ProofRelation`]: for every
+    //!    delta whose [`ProofDelta::relation`] classifies as `Some(r)`,
+    //!    `d.same_store_inconsistent() == r.same_store_inconsistent()`.
+    //! 6. Cross-altitude same-answer with [`ProofRelationWire`] via
+    //!    [`ProofDelta::relation_wire`], mirroring test 5.
+    //! 7. Full-classification same-answer via
+    //!    [`ConfigSyncProof::relation_since`]: on every legitimate corner
+    //!    AND on the regressed corner (where [`ProofDelta::relation`]
+    //!    folds the count away and returns `None`), the delta-altitude
+    //!    verdict equals the classification-altitude verdict reached
+    //!    through the lossless proof-pair path.
+    //! 8. `const`-callable on hand-constructed deltas at every corner.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners of the (watermark moved?,
+    /// generation delta) grid, one row per corner. Each row carries a
+    /// label, the prior/current proofs to fold into a delta, and the
+    /// pinned truth-table verdict for `same_store_inconsistent()`.
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof, bool)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                false,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                false,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                true,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                true,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned across the delta-reachable grid
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.same_store_inconsistent(),
+                want,
+                "{name}: same_store_inconsistent diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Complement identity with same_store_consistent
+
+    #[test]
+    fn complement_identity_with_same_store_consistent() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.same_store_inconsistent(),
+                !d.same_store_consistent(),
+                "{name}: same_store_inconsistent must be the pointwise complement \
+                 of same_store_consistent",
+            );
+        }
+    }
+
+    // ---------- (3) Union identity with the two atomic impossibilities
+
+    #[test]
+    fn union_identity_with_generations_regressed_or_cross_store_signal() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.same_store_inconsistent(),
+                d.generations_regressed() || d.cross_store_signal(),
+                "{name}: same_store_inconsistent must equal the disjunction \
+                 of the two atomic impossibility predicates",
+            );
+        }
+    }
+
+    // ---------- (4) XOR identity — the two impossibilities are disjoint
+
+    #[test]
+    fn xor_identity_at_the_delta_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert!(
+                !(d.generations_regressed() && d.cross_store_signal()),
+                "{name}: the two atomic impossibility predicates are mutually \
+                 exclusive at the delta altitude — cross_store_signal requires \
+                 generations_advanced == Some(0) which disqualifies \
+                 generations_regressed",
+            );
+            assert_eq!(
+                d.same_store_inconsistent(),
+                d.generations_regressed() ^ d.cross_store_signal(),
+                "{name}: XOR agreement follows from mutual exclusion",
+            );
+        }
+    }
+
+    // ---------- (5) Cross-altitude same-answer with ProofRelation
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.same_store_inconsistent(),
+                    relation.same_store_inconsistent(),
+                    "{name}: delta and classification verdicts must agree \
+                     on the four delta-reachable corners",
+                );
+            } else {
+                // Only the regressed corner folds the count away and
+                // returns None here; the delta-altitude verdict must
+                // still fire because generations_regressed() does.
+                assert!(
+                    d.same_store_inconsistent(),
+                    "{name}: delta.relation() == None implies \
+                     generations_regressed(), which implies \
+                     same_store_inconsistent()",
+                );
+                assert!(
+                    d.generations_regressed(),
+                    "{name}: the None branch of delta.relation() is only \
+                     reached on the regressed corner (or the class-partition \
+                     impossibility corner, unreachable via between())",
+                );
+            }
+        }
+    }
+
+    // ---------- (6) Cross-altitude same-answer with ProofRelationWire
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_wire_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(wire) = d.relation_wire() {
+                assert_eq!(
+                    d.same_store_inconsistent(),
+                    wire.same_store_inconsistent(),
+                    "{name}: delta and wire-classification verdicts must \
+                     agree on the four delta-reachable corners",
+                );
+            }
+        }
+    }
+
+    // ---------- (7) Full-classification same-answer via
+    //                ConfigSyncProof::relation_since
+
+    #[test]
+    fn full_classification_agrees_on_every_corner_including_regressed() {
+        // ConfigSyncProof::relation_since preserves the regression count
+        // through the lossless proof-pair path — where ProofDelta::relation
+        // returns None on the regressed corner (the count was folded away),
+        // relation_since fills in the ProofRelation::Regressed variant.
+        // The delta-altitude verdict must equal the
+        // classification-altitude verdict on all five corners, including
+        // regressed.
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.same_store_inconsistent(),
+                r.same_store_inconsistent(),
+                "{name}: delta and full-classification verdicts must agree \
+                 on every corner (including regressed, which the delta path \
+                 folds to None but ProofDelta::same_store_inconsistent \
+                 preserves via generations_regressed())",
+            );
+            assert_eq!(
+                r.same_store_inconsistent(),
+                want,
+                "{name}: full classification must also match the pinned \
+                 truth table",
+            );
+        }
+    }
+
+    // ---------- (8) const-callable on hand-constructed deltas
+
+    #[test]
+    fn const_callable_on_hand_constructed_deltas_at_every_corner() {
+        // A compile-time-known ProofDelta must project its verdict at
+        // compile time too. Five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const STATIONARY: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .same_store_inconsistent();
+        const IDENTITY_REPUBLISH: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .same_store_inconsistent();
+        const PROGRESSION: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .same_store_inconsistent();
+        const CROSS_STORE: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .same_store_inconsistent();
+        const REGRESSED: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .same_store_inconsistent();
+        assert!(!STATIONARY);
+        assert!(!IDENTITY_REPUBLISH);
+        assert!(!PROGRESSION);
+        assert!(CROSS_STORE);
+        assert!(REGRESSED);
     }
 }
