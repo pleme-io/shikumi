@@ -2380,6 +2380,26 @@ impl SameStoreImpossibilityKind {
     }
 }
 
+/// The [`std::fmt::Display`] impl projects the stable snake-case
+/// [`Self::name`] identifier — a `format!("{k}")` /
+/// `tracing::warn!(kind = %k, "same-store impossibility")` /
+/// `write!(f, "{k}")` seam reads the SAME identifier every other
+/// receiver in the classification lattice already carries, without a
+/// `.name()` postfix at every seam. The projection is lossless (every
+/// [`Self`] value maps to a unique [`&'static str`]), so a
+/// [`format!`]-based log line uniquely determines the corner it came
+/// from without a companion tag — the same round-trip identity
+/// [`Self::name`] itself carries, lifted into the standard trait every
+/// [`format!`] macro, tracing macro, and `Result::unwrap_err`
+/// diagnostic already reaches. Delegates to [`Self::name`] to keep the
+/// two projections in lockstep by construction: adding a new variant
+/// updates ONE `match` body, not two.
+impl std::fmt::Display for SameStoreImpossibilityKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -2551,6 +2571,25 @@ impl SameStoreConsistencyKind {
             Self::IdentityRepublish => "identity_republish",
             Self::Progression => "progression",
         }
+    }
+}
+
+/// The [`std::fmt::Display`] impl projects the stable snake-case
+/// [`Self::name`] identifier — the mirror of
+/// [`SameStoreImpossibilityKind`]'s [`std::fmt::Display`] impl on the
+/// consistent half of the classification. A `format!("{k}")` /
+/// `tracing::info!(kind = %k, "same-store consistent")` /
+/// `write!(f, "{k}")` seam reads the SAME three identifiers
+/// (`"stationary"` / `"identity_republish"` / `"progression"`)
+/// [`Self::name`] itself projects, without a `.name()` postfix at
+/// every seam. Delegates to [`Self::name`] to keep the two projections
+/// in lockstep by construction — a hypothetical fourth legitimate
+/// corner updates ONE `match` body, not two, and the new variant
+/// surfaces at every [`format!`] site through the standard trait's
+/// resolution.
+impl std::fmt::Display for SameStoreConsistencyKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
     }
 }
 
@@ -2777,6 +2816,29 @@ impl ProofRelationKind {
             Self::Consistent(k) => k.name(),
             Self::Impossible(k) => k.name(),
         }
+    }
+}
+
+/// The [`std::fmt::Display`] impl projects the stable snake-case
+/// [`Self::name`] identifier — the fused-arm sibling of the two
+/// half-side [`std::fmt::Display`] impls on
+/// [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`].
+/// A `format!("{k}")` / `tracing::info!(kind = %k, ..)` /
+/// `write!(f, "{k}")` seam holding the fused sum reads the SAME five
+/// identifiers (`"stationary"` / `"identity_republish"` /
+/// `"progression"` on the [`Self::Consistent`] arm; `"cross_store"` /
+/// `"regressed"` on the [`Self::Impossible`] arm) [`Self::name`]
+/// itself projects, and the fused impl delegates through [`Self::name`]
+/// — which in turn delegates through the two half-side [`Self::name`]
+/// receivers — so the two-arm outer `match` and within-half inner
+/// `match` both project the SAME identifier the two half-side
+/// [`std::fmt::Display`] impls project at every altitude. Adding a
+/// hypothetical sixth corner (to either half-side enum) updates ONE
+/// `match` body, not four, and the new variant surfaces at every
+/// [`format!`] site through the standard trait's resolution.
+impl std::fmt::Display for ProofRelationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
     }
 }
 
@@ -19764,5 +19826,315 @@ mod name_tests {
         .kind()
         .name();
         assert_eq!(D_NAME, "identity_republish");
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    //! The three [`std::fmt::Display`] impls on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`],
+    //! and [`ProofRelationKind`] — the receiver-family lifting the
+    //! stable snake-case [`SameStoreImpossibilityKind::name`] /
+    //! [`SameStoreConsistencyKind::name`] / [`ProofRelationKind::name`]
+    //! projections into the standard trait every [`format!`] /
+    //! `write!` / tracing macro / `Result::unwrap_err` diagnostic
+    //! already reaches. Every classification corner reads the SAME
+    //! identifier through `format!("{k}")` a `.name()` call already
+    //! projects, and the fused impl reads the SAME identifier the
+    //! two half-side impls project on their respective arms — so a
+    //! `tracing::warn!(kind = %k, ..)` field reaches all FIVE
+    //! classification corners through a single receiver whose
+    //! exhaustive `match` (in the three [`Self::name`] receivers the
+    //! [`std::fmt::Display`] impls delegate through) the compiler
+    //! enforces on every future variant added to either half-side
+    //! enum.
+    //!
+    //! The tests below cover, in one exhaustive fixture:
+    //!
+    //! 1. Truth table pin: each of the 2 + 3 half-side variants and
+    //!    each of the two fused arms formats to the SAME identifier
+    //!    the sibling [`Self::name`] receiver projects.
+    //! 2. `format!("{k}")` and [`ToString::to_string`] agree pointwise
+    //!    with `k.name()` on all five corners at every altitude —
+    //!    the [`std::fmt::Display`] impl is a LOSSLESS projection of
+    //!    [`Self::name`], carrying no extra padding, punctuation, or
+    //!    quoting.
+    //! 3. Cross-altitude same-answer: the fused `format!("{}", d.kind())`
+    //!    reads the SAME five identifiers through the delta, value,
+    //!    and wire altitudes.
+    //! 4. Round-trip identity to the half-side impls: for every
+    //!    [`ProofRelationKind`] arm, `format!("{fused}")` equals
+    //!    `format!("{inner}")` on the arm's payload, so a
+    //!    fused-side seam and a half-side seam produce
+    //!    string-identical output.
+    //!
+    //! Genuinely new — [`Self::name`] projects the identifier as
+    //! `&'static str`, forcing every [`format!`] / `write!` / tracing
+    //! seam to spell `format!("{}", k.name())` (an extra token
+    //! reviewers must remember and a shape the exhaustiveness checker
+    //! cannot help with — a hypothetical missed `.name()` postfix
+    //! silently formats through `Debug`'s PascalCase output, which
+    //! diverges from the classification lattice's snake-case naming
+    //! and carries `Debug`'s no-stability contract on top). The
+    //! [`std::fmt::Display`] impls fold the postfix into the standard
+    //! trait every macro already reaches, and `display_tests` is the
+    //! compile-time-enforced pin that the two projections remain
+    //! pointwise identical under every future variant addition.
+
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    // Match the corner fixture the surrounding `name_tests` /
+    // `kind_tests` modules already use — a proof pair at every
+    // classification corner, so the Display projection reaches the
+    // delta / value / wire altitudes through their existing
+    // classification receivers.
+
+    #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+            (
+                "identity_republish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+            ),
+            (
+                "progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+            ),
+            (
+                "cross_store",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+            ),
+            (
+                "regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pin on all three impls
+
+    #[test]
+    fn truth_table_pins_display_output_to_the_stable_identifier() {
+        // Half-side impossibility.
+        assert_eq!(
+            format!("{}", SameStoreImpossibilityKind::Regressed),
+            "regressed"
+        );
+        assert_eq!(
+            format!("{}", SameStoreImpossibilityKind::CrossStore),
+            "cross_store",
+        );
+        // Half-side consistency.
+        assert_eq!(
+            format!("{}", SameStoreConsistencyKind::Stationary),
+            "stationary"
+        );
+        assert_eq!(
+            format!("{}", SameStoreConsistencyKind::IdentityRepublish),
+            "identity_republish",
+        );
+        assert_eq!(
+            format!("{}", SameStoreConsistencyKind::Progression),
+            "progression",
+        );
+        // Fused sum, both arms.
+        assert_eq!(
+            format!(
+                "{}",
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ),
+            "stationary",
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ),
+            "identity_republish",
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ),
+            "progression",
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ),
+            "cross_store",
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ),
+            "regressed",
+        );
+    }
+
+    // ---------- (2) Lossless projection of `name()`
+
+    #[test]
+    fn display_and_name_agree_pointwise_on_every_variant() {
+        for k in [
+            SameStoreImpossibilityKind::Regressed,
+            SameStoreImpossibilityKind::CrossStore,
+        ] {
+            assert_eq!(
+                format!("{k}"),
+                k.name(),
+                "impossibility half-side: format!(\"{{k}}\") must equal k.name()"
+            );
+            assert_eq!(
+                k.to_string(),
+                k.name(),
+                "impossibility half-side: ToString::to_string must equal k.name()"
+            );
+        }
+        for k in [
+            SameStoreConsistencyKind::Stationary,
+            SameStoreConsistencyKind::IdentityRepublish,
+            SameStoreConsistencyKind::Progression,
+        ] {
+            assert_eq!(
+                format!("{k}"),
+                k.name(),
+                "consistency half-side: format!(\"{{k}}\") must equal k.name()"
+            );
+            assert_eq!(
+                k.to_string(),
+                k.name(),
+                "consistency half-side: ToString::to_string must equal k.name()"
+            );
+        }
+        for k in [
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        ] {
+            assert_eq!(
+                format!("{k}"),
+                k.name(),
+                "fused sum: format!(\"{{k}}\") must equal k.name()"
+            );
+            assert_eq!(
+                k.to_string(),
+                k.name(),
+                "fused sum: ToString::to_string must equal k.name()"
+            );
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer
+
+    #[test]
+    fn fused_display_reads_the_same_identifier_at_every_altitude() {
+        for (label, prior, current) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = ProofRelation::between(&prior, &current);
+            let w = r.to_wire();
+            assert_eq!(
+                format!("{}", d.kind()),
+                label,
+                "delta altitude: fused kind formats to the corner's identifier",
+            );
+            assert_eq!(
+                format!("{}", r.kind()),
+                label,
+                "value altitude: fused kind formats to the corner's identifier",
+            );
+            assert_eq!(
+                format!("{}", w.kind()),
+                label,
+                "wire altitude: fused kind formats to the corner's identifier",
+            );
+            // The three altitudes must produce string-identical
+            // output — the same cross-altitude same-answer invariant
+            // the underlying `kind().name()` receiver-family already
+            // carries.
+            assert_eq!(format!("{}", d.kind()), format!("{}", r.kind()));
+            assert_eq!(format!("{}", r.kind()), format!("{}", w.kind()));
+        }
+    }
+
+    // ---------- (4) Fused-arm delegates to the half-side impl
+
+    #[test]
+    fn fused_arm_display_delegates_to_the_half_side_display() {
+        for c in [
+            SameStoreConsistencyKind::Stationary,
+            SameStoreConsistencyKind::IdentityRepublish,
+            SameStoreConsistencyKind::Progression,
+        ] {
+            assert_eq!(
+                format!("{}", ProofRelationKind::Consistent(c)),
+                format!("{c}"),
+                "fused Consistent(c) formats to the same string as the half-side c",
+            );
+        }
+        for i in [
+            SameStoreImpossibilityKind::CrossStore,
+            SameStoreImpossibilityKind::Regressed,
+        ] {
+            assert_eq!(
+                format!("{}", ProofRelationKind::Impossible(i)),
+                format!("{i}"),
+                "fused Impossible(i) formats to the same string as the half-side i",
+            );
+        }
     }
 }
