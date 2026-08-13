@@ -2720,6 +2720,51 @@ impl From<&SameStoreImpossibilityKind> for &'static str {
     }
 }
 
+/// The [`TryFrom<&str>`] impl on [`SameStoreImpossibilityKind`] — the
+/// standard-trait sibling of the [`std::str::FromStr`] impl already at
+/// this altitude. Both project the same closed set of stable snake-case
+/// identifiers (`"regressed"` / `"cross_store"`) into a [`Self`] value
+/// or a [`ParseKindError`] on unknown input, delegating through the
+/// SAME [`std::str::FromStr::from_str`] body so the two parse-side
+/// receivers stay lockstep-identical by construction.
+///
+/// **Why lift a second parse-side receiver.** [`std::str::FromStr`]
+/// projects into the ecosystem-standard `&str.parse::<K>()`
+/// combinator; [`TryFrom<&str>`] projects into the ecosystem-standard
+/// `&str.try_into::<K>()` combinator and the generic
+/// `impl TryFrom<&str, Error = ParseKindError>` bound. The two
+/// combinators reach the same body, but a downstream caller bounded on
+/// [`TryFrom`] cannot reach a [`FromStr`](std::str::FromStr)-only
+/// receiver — [`TryFrom`] is NOT auto-derived from [`FromStr`] in the
+/// standard library, nor the other way around, so any generic bounded
+/// on the [`TryFrom<&str>`] shape (a `serde` deserializer building
+/// a `HashMap<K, V>` from `HashMap<String, V>` through
+/// [`TryInto::try_into`] on each key; a codegen visitor over a
+/// per-corner registration site whose parser slot is a
+/// [`TryFrom<&str>`] trait bound; a CLI argument parser bounded on
+/// `T: TryFrom<&str, Error: Into<clap::Error>>`; the ecosystem-standard
+/// `#[serde(try_from = "&str")]` container attribute) previously had
+/// to reach the parse-side body through a manual
+/// `<K as FromStr>::from_str(s)` postfix and could not cross a
+/// [`TryFrom`]-bounded seam at all. Delegates through
+/// [`Self::from_str`](std::str::FromStr::from_str) — one line — so the
+/// projection stays lockstep-identical with the sibling
+/// [`FromStr`](std::str::FromStr) impl by construction. Sibling of
+/// [`strum::EnumString`] in the ecosystem (which emits BOTH [`FromStr`]
+/// and [`TryFrom<&str>`] for a stringly-tagged enum); shipped
+/// hand-rolled to stay dependency-neutral and to keep the
+/// delegation-through-[`FromStr`](std::str::FromStr::from_str) shape
+/// parallel to the sibling standard-trait projections
+/// (`AsRef<str>` / [`std::fmt::Display`] / [`From<Kind>`] for
+/// `&'static str` all also delegate through [`Self::name`]).
+impl TryFrom<&str> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        <Self as std::str::FromStr>::from_str(s)
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3098,6 +3143,28 @@ impl From<SameStoreConsistencyKind> for &'static str {
 impl From<&SameStoreConsistencyKind> for &'static str {
     fn from(kind: &SameStoreConsistencyKind) -> &'static str {
         kind.name()
+    }
+}
+
+/// The [`TryFrom<&str>`] impl on [`SameStoreConsistencyKind`] — the
+/// mirror of the [`TryFrom<&str>`] impl on
+/// [`SameStoreImpossibilityKind`] on the consistent half of the
+/// classification lattice, and the standard-trait sibling of the
+/// [`std::str::FromStr`] impl already at this altitude. Projects the
+/// closed set of stable snake-case identifiers (`"stationary"` /
+/// `"identity_republish"` / `"progression"`) into a [`Self`] value or
+/// a [`ParseKindError`] on unknown input, delegating through the SAME
+/// [`std::str::FromStr::from_str`] body so both parse-side receivers
+/// on the consistent half stay lockstep-identical by construction.
+/// Composes out of the standard trait alone for every downstream
+/// [`TryFrom<&str>`]-bounded slot (`serde` `#[serde(try_from)]`
+/// deserializers, [`TryInto::try_into`] callsites, generic parser
+/// bounds).
+impl TryFrom<&str> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        <Self as std::str::FromStr>::from_str(s)
     }
 }
 
@@ -3593,6 +3660,36 @@ impl From<ProofRelationKind> for &'static str {
 impl From<&ProofRelationKind> for &'static str {
     fn from(kind: &ProofRelationKind) -> &'static str {
         kind.name()
+    }
+}
+
+/// The [`TryFrom<&str>`] impl on [`ProofRelationKind`] — the fused-arm
+/// sibling of the two half-side [`TryFrom<&str>`] impls above,
+/// welding the union of the two half-side parsers' accepted-sets into
+/// a single fused-sum receiver whose two arms delegate to the same
+/// half-side [`FromStr`](std::str::FromStr) bodies. Projects the
+/// closed set of five stable snake-case identifiers
+/// (`"stationary"` / `"identity_republish"` / `"progression"` — the
+/// consistent half — plus `"regressed"` / `"cross_store"` — the
+/// impossibility half) into a fused [`ProofRelationKind`] value or a
+/// [`ParseKindError`] on unknown input, delegating through the SAME
+/// [`std::str::FromStr::from_str`] body so both parse-side receivers
+/// on the fused sum stay lockstep-identical by construction, and so
+/// the fused [`TryFrom<&str>`] projection agrees with the routed
+/// half-side [`TryFrom<&str>`] projection through the two-arm
+/// partition of the fused sum on every accepted identifier. Every
+/// downstream [`TryFrom<&str>`]-bounded slot at the fused-sum altitude
+/// (a `serde` `#[serde(try_from = "&str")]` container attribute on a
+/// [`ProofRelationKind`] field, a [`TryInto::try_into`] on a `&str`
+/// key of a `HashMap<ProofRelationKind, V>` builder, a generic
+/// parser bounded on
+/// `T: TryFrom<&str, Error = ParseKindError>`) now composes out of
+/// the standard trait alone at the fused-sum altitude.
+impl TryFrom<&str> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        <Self as std::str::FromStr>::from_str(s)
     }
 }
 
@@ -24293,5 +24390,513 @@ mod from_static_str_tests {
                 "fused {k:?}: From<Kind>::from(k).parse() must round-trip through FromStr",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod try_from_str_tests {
+    //! [`TryFrom<&str>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! standard-trait sibling of the [`std::str::FromStr`] impl
+    //! already at this altitude, welding the closed set of stable
+    //! snake-case identifiers into the ecosystem-standard
+    //! `&str.try_into::<K>()` combinator and the generic
+    //! `impl TryFrom<&str, Error = ParseKindError>` bound every
+    //! downstream [`TryFrom`]-bounded slot already reaches through.
+    //!
+    //! **Why lift a second parse-side receiver.** The prior
+    //! [`std::str::FromStr`] pass (`8338245`) closed the
+    //! `&str.parse::<K>()` combinator; but [`TryFrom`] is NOT
+    //! auto-derived from [`FromStr`] in the standard library, nor
+    //! the other way around, so every downstream slot bounded on
+    //! `T: TryFrom<&str, ...>` (a `serde` deserializer building a
+    //! `HashMap<K, V>` from `HashMap<String, V>` through
+    //! [`TryInto::try_into`] on each key; the ecosystem-standard
+    //! `#[serde(try_from = "&str")]` container attribute; a
+    //! `clap::builder::TypedValueParser` bounded on
+    //! `T: TryFrom<&str, Error: Into<clap::Error>>`; a codegen
+    //! visitor whose parser slot is a [`TryFrom<&str>`] trait bound)
+    //! previously had to reach the parse-side body through a manual
+    //! `<K as FromStr>::from_str(s)` postfix, and could not cross a
+    //! [`TryFrom`]-bounded seam at all. The three impls close the
+    //! [`TryFrom<&str>`] cell of the standard-trait grid the prior
+    //! ten runs opened for these enums, in exactly the shape
+    //! [`strum::EnumString`] emits alongside its [`FromStr`] impl
+    //! for a stringly-tagged enum.
+    //!
+    //! **Delegates through [`FromStr`](std::str::FromStr::from_str),
+    //! and inherits every [`FromStr`](std::str::FromStr) invariant.**
+    //! Each `try_from` body
+    //! is a one-line delegation
+    //! `<Self as std::str::FromStr>::from_str(s)`, so every
+    //! invariant the sibling [`FromStr`] impl already carries
+    //! (pointwise-inverse of [`Self::name`] / [`std::fmt::Display`];
+    //! the closed-set acceptance the [`Self::NAMES`] constant pins;
+    //! error-path fidelity through [`ParseKindError::input`] /
+    //! [`ParseKindError::expected`]; case-sensitivity — no
+    //! `PascalCase` or all-caps re-spelling accepted; empty-string
+    //! rejection;
+    //! fused-arm delegation on the fused sum) is inherited by the
+    //! [`TryFrom`] impl by construction.
+    //!
+    //! **Pointwise identity with the sibling parse-side receivers.**
+    //! For every value `k` at every altitude and every input `s`,
+    //! the three parse-side projections `<K as
+    //! FromStr>::from_str(s)`, `s.parse::<K>()`, and
+    //! `<K>::try_from(s)` return the same [`Result`]. The standard
+    //! [`TryFrom<&str>`] trait projects into the SAME accepted-set
+    //! and rejects the SAME unknown-input set the sibling
+    //! [`FromStr`] impl and the sibling `&str.parse::<K>()`
+    //! combinator project, so a downstream consumer routing on any
+    //! of the three reaches the same value.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The
+    //! fused [`ProofRelationKind`] [`TryFrom`] impl delegates
+    //! through [`ProofRelationKind`]'s [`FromStr`] body, whose
+    //! two-arm partition of the accepted-set routes a consistent
+    //! identifier through [`ProofRelationKind::Consistent`] and an
+    //! impossibility identifier through
+    //! [`ProofRelationKind::Impossible`] — so the fused
+    //! [`TryFrom<&str>`] projection agrees with the routed
+    //! half-side [`TryFrom<&str>`] projection through the two-arm
+    //! partition of the fused sum on every accepted identifier.
+    //!
+    //! The tests below pin the structural invariants that keep the
+    //! three impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Ok pointwise identity with [`FromStr`] on every variant
+    //!    name of every kind enum —
+    //!    `<K>::try_from(k.name()) == Ok(k)`, matching
+    //!    `<K as FromStr>::from_str(k.name())`.
+    //! 2. Ok pointwise identity with `&str.parse::<K>()` on every
+    //!    variant name — `<K>::try_from(s) == s.parse::<K>()`.
+    //! 3. Round-trip through [`std::fmt::Display`] — for every
+    //!    variant `k`, `<K>::try_from(&k.to_string()) == Ok(k)`.
+    //! 4. Round-trip through [`From<Kind>`] for [`&'static str`] —
+    //!    for every variant `k`,
+    //!    `<K>::try_from(<&'static str>::from(k)) == Ok(k)`.
+    //! 5. Ok pointwise identity through the standard
+    //!    [`TryInto::try_into`] combinator on every variant name.
+    //! 6. Err pointwise identity with [`FromStr`] on unknown input —
+    //!    empty string, `PascalCase` re-spelling, all-caps
+    //!    re-spelling, a cross-half hypothetical (an identifier
+    //!    valid on ONE half-side enum must fail on the OTHER
+    //!    half-side enum).
+    //! 7. Err-body fidelity — [`ParseKindError::input`] preserves
+    //!    the malformed input verbatim, and
+    //!    [`ParseKindError::expected`] equals the sibling
+    //!    [`Self::NAMES`] constant.
+    //! 8. Fused-arm lockstep — for every consistent name the fused
+    //!    [`TryFrom<&str>`] agrees with
+    //!    `SameStoreConsistencyKind::try_from(...)` mapped through
+    //!    [`ProofRelationKind::Consistent`]; for every impossibility
+    //!    name it agrees with
+    //!    `SameStoreImpossibilityKind::try_from(...)` mapped through
+    //!    [`ProofRelationKind::Impossible`].
+    //! 9. Generic composability at an
+    //!    `impl TryFrom<&str, Error = ParseKindError>` seam —
+    //!    a `fn parse_kind<K>(...)` bounded ONLY on the standard
+    //!    trait projects the same value the direct
+    //!    [`Self::try_from`] projects.
+    //!
+    //! Genuinely new — before this pass the three kind enums could
+    //! not flow through any downstream API bounded on
+    //! `T: TryFrom<&str>` without a per-callsite manual
+    //! `<K as FromStr>::from_str(s)` postfix, and could not carry a
+    //! `#[serde(try_from = "&str")]` container attribute (the
+    //! ecosystem-standard shape a serde deserializer routing a
+    //! stringly-tagged field through a validating parser reaches
+    //! for). The three impls close the [`TryFrom<&str>`] cell of
+    //! the standard-trait grid.
+    //!
+    //! Prior commits: `8338245` (`FromStr` — the sibling parse-side
+    //! receiver whose body [`TryFrom<&str>`] delegates through),
+    //! `8480040` (`name()` — the `&'static str` source-of-truth the
+    //! round-trip tests reach through), `f33f5b0` (`Display` — the
+    //! forward direction of the identifier bijection the round-trip
+    //! test 3 uses), `4cf3fb2` (`Serialize` / `Deserialize` — the
+    //! serde-side sibling `TryFrom<&str>` welds into `#[serde(
+    //! try_from = "&str")]`-bounded deserializers), `6ce765b`
+    //! (`From<Kind>` for `&'static str` — the owned identifier
+    //! projection round-trip test 4 uses), `8ceeeab` (`VARIANTS` +
+    //! `NAMES` — the closed-set constants the test iteration and
+    //! the error-body fidelity check reach through).
+
+    use super::*;
+
+    // ---------- (1) Ok pointwise identity with FromStr
+
+    #[test]
+    fn try_from_matches_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s),
+                <SameStoreImpossibilityKind as std::str::FromStr>::from_str(s),
+                "impossibility {k:?}: TryFrom<&str> must agree with FromStr",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s),
+                <SameStoreConsistencyKind as std::str::FromStr>::from_str(s),
+                "consistency {k:?}: TryFrom<&str> must agree with FromStr",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                ProofRelationKind::try_from(s),
+                <ProofRelationKind as std::str::FromStr>::from_str(s),
+                "fused {k:?}: TryFrom<&str> must agree with FromStr",
+            );
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with s.parse::<K>()
+
+    #[test]
+    fn try_from_matches_parse_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s),
+                s.parse::<SameStoreImpossibilityKind>(),
+                "impossibility {k:?}: TryFrom<&str> must agree with s.parse::<K>()",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_parse_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s),
+                s.parse::<SameStoreConsistencyKind>(),
+                "consistency {k:?}: TryFrom<&str> must agree with s.parse::<K>()",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_parse_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s = k.name();
+            assert_eq!(
+                ProofRelationKind::try_from(s),
+                s.parse::<ProofRelationKind>(),
+                "fused {k:?}: TryFrom<&str> must agree with s.parse::<K>()",
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through Display
+
+    #[test]
+    fn try_from_round_trips_through_display_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s = k.to_string();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s.as_str()),
+                Ok(k),
+                "impossibility {k:?}: TryFrom(&k.to_string()) must round-trip through Display",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_round_trips_through_display_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s = k.to_string();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s.as_str()),
+                Ok(k),
+                "consistency {k:?}: TryFrom(&k.to_string()) must round-trip through Display",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_round_trips_through_display_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s = k.to_string();
+            assert_eq!(
+                ProofRelationKind::try_from(s.as_str()),
+                Ok(k),
+                "fused {k:?}: TryFrom(&k.to_string()) must round-trip through Display",
+            );
+        }
+    }
+
+    // ---------- (4) Round-trip through From<Kind> for &'static str
+
+    #[test]
+    fn try_from_round_trips_through_into_static_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s),
+                Ok(k),
+                "impossibility {k:?}: TryFrom(<&'static str>::from(k)) must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_round_trips_through_into_static_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s),
+                Ok(k),
+                "consistency {k:?}: TryFrom(<&'static str>::from(k)) must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_round_trips_through_into_static_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(s),
+                Ok(k),
+                "fused {k:?}: TryFrom(<&'static str>::from(k)) must round-trip",
+            );
+        }
+    }
+
+    // ---------- (5) Ok pointwise identity through TryInto::try_into
+
+    #[test]
+    fn try_into_matches_try_from_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s = k.name();
+            let via_try_into: Result<SameStoreImpossibilityKind, _> = s.try_into();
+            assert_eq!(
+                via_try_into,
+                Ok(k),
+                "impossibility {k:?}: s.try_into::<K>() must equal Ok(k)",
+            );
+        }
+    }
+
+    #[test]
+    fn try_into_matches_try_from_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s = k.name();
+            let via_try_into: Result<SameStoreConsistencyKind, _> = s.try_into();
+            assert_eq!(
+                via_try_into,
+                Ok(k),
+                "consistency {k:?}: s.try_into::<K>() must equal Ok(k)",
+            );
+        }
+    }
+
+    #[test]
+    fn try_into_matches_try_from_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s = k.name();
+            let via_try_into: Result<ProofRelationKind, _> = s.try_into();
+            assert_eq!(
+                via_try_into,
+                Ok(k),
+                "fused {k:?}: s.try_into::<K>() must equal Ok(k)",
+            );
+        }
+    }
+
+    // ---------- (6) Err pointwise identity with FromStr on unknown
+    // input (empty, PascalCase, all-caps, cross-half)
+
+    fn unknown_inputs() -> &'static [&'static str] {
+        &["", "Regressed", "REGRESSED", "unknown_kind", " regressed"]
+    }
+
+    #[test]
+    fn try_from_matches_from_str_on_unknown_impossibility() {
+        for &s in unknown_inputs() {
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s)
+                    .map_err(|e| (e.input().to_owned(), e.expected())),
+                <SameStoreImpossibilityKind as std::str::FromStr>::from_str(s)
+                    .map_err(|e| (e.input().to_owned(), e.expected())),
+                "impossibility {s:?}: TryFrom<&str> err must match FromStr err",
+            );
+        }
+        // Cross-half — a consistent identifier must fail on the
+        // impossibility half.
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s = k.name();
+            assert!(
+                SameStoreImpossibilityKind::try_from(s).is_err(),
+                "impossibility {s:?}: consistent identifier must fail on impossibility half",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_from_str_on_unknown_consistency() {
+        for &s in unknown_inputs() {
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s)
+                    .map_err(|e| (e.input().to_owned(), e.expected())),
+                <SameStoreConsistencyKind as std::str::FromStr>::from_str(s)
+                    .map_err(|e| (e.input().to_owned(), e.expected())),
+                "consistency {s:?}: TryFrom<&str> err must match FromStr err",
+            );
+        }
+        // Cross-half — an impossibility identifier must fail on the
+        // consistent half.
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s = k.name();
+            assert!(
+                SameStoreConsistencyKind::try_from(s).is_err(),
+                "consistency {s:?}: impossibility identifier must fail on consistent half",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_matches_from_str_on_unknown_fused() {
+        for &s in unknown_inputs() {
+            assert_eq!(
+                ProofRelationKind::try_from(s).map_err(|e| (e.input().to_owned(), e.expected())),
+                <ProofRelationKind as std::str::FromStr>::from_str(s)
+                    .map_err(|e| (e.input().to_owned(), e.expected())),
+                "fused {s:?}: TryFrom<&str> err must match FromStr err",
+            );
+        }
+    }
+
+    // ---------- (7) Err-body fidelity — input preserved verbatim
+    // and expected equals Self::NAMES
+
+    #[test]
+    fn err_body_fidelity_impossibility() {
+        for &s in unknown_inputs() {
+            let err =
+                SameStoreImpossibilityKind::try_from(s).expect_err("unknown input must not parse");
+            assert_eq!(err.input(), s, "input must be preserved verbatim");
+            assert_eq!(
+                err.expected(),
+                SameStoreImpossibilityKind::NAMES,
+                "expected set must equal Self::NAMES",
+            );
+        }
+    }
+
+    #[test]
+    fn err_body_fidelity_consistency() {
+        for &s in unknown_inputs() {
+            let err =
+                SameStoreConsistencyKind::try_from(s).expect_err("unknown input must not parse");
+            assert_eq!(err.input(), s, "input must be preserved verbatim");
+            assert_eq!(
+                err.expected(),
+                SameStoreConsistencyKind::NAMES,
+                "expected set must equal Self::NAMES",
+            );
+        }
+    }
+
+    #[test]
+    fn err_body_fidelity_fused() {
+        for &s in unknown_inputs() {
+            let err = ProofRelationKind::try_from(s).expect_err("unknown input must not parse");
+            assert_eq!(err.input(), s, "input must be preserved verbatim");
+            assert_eq!(
+                err.expected(),
+                ProofRelationKind::NAMES,
+                "expected set must equal Self::NAMES",
+            );
+        }
+    }
+
+    // ---------- (8) Fused-arm lockstep — fused TryFrom agrees with
+    // routed half-side TryFrom through the two-arm partition
+
+    #[test]
+    fn fused_try_from_matches_routed_half_side_consistent() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let s = c.name();
+            let fused = ProofRelationKind::try_from(s);
+            let routed = SameStoreConsistencyKind::try_from(s).map(ProofRelationKind::Consistent);
+            assert_eq!(
+                fused, routed,
+                "consistent {c:?}: fused TryFrom<&str> must equal routed half-side",
+            );
+        }
+    }
+
+    #[test]
+    fn fused_try_from_matches_routed_half_side_impossibility() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let s = i.name();
+            let fused = ProofRelationKind::try_from(s);
+            let routed = SameStoreImpossibilityKind::try_from(s).map(ProofRelationKind::Impossible);
+            assert_eq!(
+                fused, routed,
+                "impossibility {i:?}: fused TryFrom<&str> must equal routed half-side",
+            );
+        }
+    }
+
+    // ---------- (9) Generic impl TryFrom<&str, Error = ParseKindError>
+    // composability at a `fn`-typed callsite
+
+    fn parse_kind<K>(s: &str) -> Result<K, ParseKindError>
+    where
+        for<'a> K: TryFrom<&'a str, Error = ParseKindError>,
+    {
+        K::try_from(s)
+    }
+
+    #[test]
+    fn generic_try_from_str_bound_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                parse_kind::<SameStoreImpossibilityKind>(k.name()),
+                Ok(k),
+                "impossibility {k:?}: generic TryFrom<&str> bound must reach Ok(k)",
+            );
+        }
+        assert!(parse_kind::<SameStoreImpossibilityKind>("nope").is_err());
+    }
+
+    #[test]
+    fn generic_try_from_str_bound_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                parse_kind::<SameStoreConsistencyKind>(k.name()),
+                Ok(k),
+                "consistency {k:?}: generic TryFrom<&str> bound must reach Ok(k)",
+            );
+        }
+        assert!(parse_kind::<SameStoreConsistencyKind>("nope").is_err());
+    }
+
+    #[test]
+    fn generic_try_from_str_bound_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                parse_kind::<ProofRelationKind>(k.name()),
+                Ok(k),
+                "fused {k:?}: generic TryFrom<&str> bound must reach Ok(k)",
+            );
+        }
+        assert!(parse_kind::<ProofRelationKind>("nope").is_err());
     }
 }
