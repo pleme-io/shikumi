@@ -2231,6 +2231,86 @@ impl TryFrom<&ProofDeltaWire> for ProofDelta {
     }
 }
 
+/// The parse-side error returned by the [`std::str::FromStr`] impls on
+/// [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+/// [`ProofRelationKind`] — the inverse-projection error of the same
+/// three enums' [`std::fmt::Display`] impls (which project the stable
+/// snake-case identifier through the same [`SameStoreImpossibilityKind::name`]
+/// / [`SameStoreConsistencyKind::name`] / [`ProofRelationKind::name`]
+/// receivers the parser is welded against).
+///
+/// **Diagnostic fidelity by construction.** The error carries the
+/// offending input verbatim through [`Self::input`], and the closed
+/// set of expected identifiers as a `&'static [&'static str]` through
+/// [`Self::expected`] — so a consumer routing on the error reaches
+/// BOTH the malformed value (for a "you sent `Regressd`" diagnostic)
+/// AND the set of accepted alternatives (for a "expected one of
+/// `regressed` / `cross_store`" diagnostic) without a second lookup,
+/// and the [`std::fmt::Display`] impl folds the two into a single
+/// self-describing line every `Result::unwrap_err` / `?` diagnostic
+/// already reaches. The expected slice is the SAME set of identifiers
+/// the sibling [`SameStoreImpossibilityKind::name`] /
+/// [`SameStoreConsistencyKind::name`] / [`ProofRelationKind::name`]
+/// receivers project, so the (parser, formatter) pair remains in
+/// lockstep by construction: the parser accepts exactly what the
+/// formatter emits, and adding a new variant updates ONE `match` body
+/// on the enum's `name` / `FromStr::from_str` pair.
+///
+/// **A single shared error, not three parallel ones.** The same shape
+/// carries both diagnostic fields for all three parsers — a caller
+/// routing on the parse error reaches the same-named receivers on
+/// [`Self::input`] and [`Self::expected`] at every altitude of the
+/// classification lattice, matching the same cross-altitude
+/// same-answer invariant the [`SameStoreImpossibilityKind`] /
+/// [`SameStoreConsistencyKind`] / [`ProofRelationKind`] receiver-family
+/// already carries at every altitude.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseKindError {
+    input: String,
+    expected: &'static [&'static str],
+}
+
+impl ParseKindError {
+    /// The offending input verbatim — the same [`&str`] slice the
+    /// [`std::str::FromStr::from_str`] call was handed, preserved as
+    /// an owned [`String`] so the error is `'static` and can flow
+    /// through a `?`-boundary without borrowing the input's lifetime.
+    /// Reached by every consumer routing a "you sent `<x>`" diagnostic
+    /// on the parse-side error.
+    #[must_use]
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+
+    /// The closed set of identifiers the parser accepts, in a stable
+    /// order matching the enum's variant declaration order — the SAME
+    /// set of strings the sibling [`SameStoreImpossibilityKind::name`]
+    /// / [`SameStoreConsistencyKind::name`] / [`ProofRelationKind::name`]
+    /// receivers project (on the corresponding enum), so the (parser,
+    /// formatter) pair remains lockstep-identical under every future
+    /// variant addition: the parser and the formatter delegate through
+    /// the SAME two `match` bodies whose exhaustiveness the compiler
+    /// enforces in lockstep. Reached by every consumer routing a
+    /// "expected one of `<x>` / `<y>`" diagnostic on the parse-side
+    /// error.
+    #[must_use]
+    pub const fn expected(&self) -> &'static [&'static str] {
+        self.expected
+    }
+}
+
+impl std::fmt::Display for ParseKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown kind identifier `{}`; expected one of {:?}",
+            self.input, self.expected,
+        )
+    }
+}
+
+impl std::error::Error for ParseKindError {}
+
 /// The **impossibility-corner tag** of a same-store [`ProofRelation`] —
 /// a tag-only sum-type discriminator over the two variants
 /// [`ProofRelation::same_store_inconsistent`] fires on. Yielded by
@@ -2397,6 +2477,41 @@ impl SameStoreImpossibilityKind {
 impl std::fmt::Display for SameStoreImpossibilityKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+/// The [`std::str::FromStr`] impl is the inverse projection of
+/// [`std::fmt::Display`] — the two `match` bodies form a lossless
+/// bijection between the enum's two variants and the two stable
+/// snake-case identifiers the sibling [`Self::name`] receiver
+/// projects. For every value `k`, `k.to_string().parse::<Self>()`
+/// yields `Ok(k)` (the round-trip identity every classification
+/// altitude reaches through the same `.name()` / `Display` /
+/// `FromStr` triple). An unknown input surfaces through
+/// [`ParseKindError`] carrying BOTH the malformed value verbatim
+/// AND the two expected identifiers — a `.parse::<Self>()?` seam
+/// diagnoses the received input alongside the accepted alternatives
+/// in one self-describing line (`unknown kind identifier <input>;
+/// expected one of [<alternatives>]`) without a second lookup,
+/// matching the error-fidelity contract [`crate::error::ShikumiError`]
+/// already carries elsewhere in the crate. The accepted-set
+/// enumerated in the `Err` arm is the SAME closed set the sibling
+/// `match` in
+/// [`Self::name`] projects, so the (formatter, parser) pair remains
+/// lockstep-identical under every future variant addition by
+/// construction.
+impl std::str::FromStr for SameStoreImpossibilityKind {
+    type Err = ParseKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "regressed" => Ok(Self::Regressed),
+            "cross_store" => Ok(Self::CrossStore),
+            _ => Err(ParseKindError {
+                input: s.to_owned(),
+                expected: &["regressed", "cross_store"],
+            }),
+        }
     }
 }
 
@@ -2590,6 +2705,41 @@ impl SameStoreConsistencyKind {
 impl std::fmt::Display for SameStoreConsistencyKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+/// The [`std::str::FromStr`] impl is the inverse projection of
+/// [`std::fmt::Display`] on the consistent half of the classification
+/// — the mirror of [`SameStoreImpossibilityKind`]'s
+/// [`std::str::FromStr`] impl on the impossibility half. The two
+/// `match` bodies form a lossless bijection between the enum's three
+/// variants and the three stable snake-case identifiers the sibling
+/// [`Self::name`] receiver projects. For every value `k`,
+/// `k.to_string().parse::<Self>()` yields `Ok(k)` (the round-trip
+/// identity every classification altitude reaches through the same
+/// `.name()` / `Display` / `FromStr` triple). An unknown input
+/// surfaces through [`ParseKindError`] carrying BOTH the malformed
+/// value verbatim AND the three expected identifiers. The
+/// accepted-set enumerated in the `Err` arm is the SAME closed set
+/// the sibling `match` in [`Self::name`] projects, so the
+/// (formatter, parser) pair remains lockstep-identical under every
+/// future variant addition by construction — a hypothetical fourth
+/// legitimate corner updates the three bodies (`name`,
+/// `Display::fmt`, `FromStr::from_str`) in lockstep with the enum
+/// itself.
+impl std::str::FromStr for SameStoreConsistencyKind {
+    type Err = ParseKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "stationary" => Ok(Self::Stationary),
+            "identity_republish" => Ok(Self::IdentityRepublish),
+            "progression" => Ok(Self::Progression),
+            _ => Err(ParseKindError {
+                input: s.to_owned(),
+                expected: &["stationary", "identity_republish", "progression"],
+            }),
+        }
     }
 }
 
@@ -2839,6 +2989,58 @@ impl ProofRelationKind {
 impl std::fmt::Display for ProofRelationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+/// The [`std::str::FromStr`] impl is the fused-arm sibling of the two
+/// half-side [`std::str::FromStr`] impls on
+/// [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`] —
+/// the inverse projection of [`std::fmt::Display`] on the fused sum,
+/// closing the round-trip bijection at every altitude. For every
+/// value `k`, `k.to_string().parse::<Self>()` yields `Ok(k)` (the
+/// same round-trip identity the two half-side impls carry on their
+/// respective arms). Delegation is by design: `from_str` first tries
+/// the consistent half's parser (three legitimate corners), then the
+/// impossibility half's parser (two impossibility corners), and only
+/// emits its own [`ParseKindError`] with all FIVE expected
+/// identifiers when both half-side parsers rejected the input — so
+/// the accepted-set surfaces the union of the two half-side accepted
+/// sets, matching the union of the two half-side [`Self::name`]
+/// projections. The two-arm delegation keeps the (fused, half-side)
+/// pair lockstep-identical under every future variant addition to
+/// either half-side enum: adding a hypothetical sixth corner (to
+/// either half-side) updates the ONE half-side `match` body the
+/// fused parser delegates through, and the fused parser inherits
+/// the new identifier without a second edit.
+///
+/// **Cross-half disjointness by construction.** The five identifiers
+/// the two half-side parsers accept are pairwise disjoint (three
+/// snake-case consistent identifiers vs. two snake-case impossibility
+/// identifiers, no overlap), so the delegation is order-independent
+/// — the second `try_parse_consistent` / `try_parse_impossible`
+/// arrangement in either order yields the same value on every input,
+/// matching the pairwise-disjoint partition of the classification
+/// space the two half-side enums already carry.
+impl std::str::FromStr for ProofRelationKind {
+    type Err = ParseKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(k) = s.parse::<SameStoreConsistencyKind>() {
+            return Ok(Self::Consistent(k));
+        }
+        if let Ok(k) = s.parse::<SameStoreImpossibilityKind>() {
+            return Ok(Self::Impossible(k));
+        }
+        Err(ParseKindError {
+            input: s.to_owned(),
+            expected: &[
+                "stationary",
+                "identity_republish",
+                "progression",
+                "regressed",
+                "cross_store",
+            ],
+        })
     }
 }
 
@@ -20136,5 +20338,387 @@ mod display_tests {
                 "fused Impossible(i) formats to the same string as the half-side i",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod from_str_tests {
+    //! The three [`std::str::FromStr`] impls on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`],
+    //! and [`ProofRelationKind`] — the receiver-family closing the
+    //! round-trip bijection with the stable snake-case identifier
+    //! [`SameStoreImpossibilityKind::name`] /
+    //! [`SameStoreConsistencyKind::name`] /
+    //! [`ProofRelationKind::name`] project (and
+    //! [`std::fmt::Display`] lifts into the standard trait). The
+    //! (formatter, parser) pair welds a lossless bijection between
+    //! each enum's variants and its accepted-set of identifiers,
+    //! and the shared [`ParseKindError`] carries BOTH the malformed
+    //! input verbatim AND the closed set of accepted alternatives —
+    //! so a `.parse::<K>()?` seam surfaces the same-named diagnostic
+    //! fields at every altitude of the classification lattice.
+    //!
+    //! The tests below cover, in one exhaustive fixture:
+    //!
+    //! 1. Round-trip identity: every variant of every enum
+    //!    round-trips through
+    //!    `format!("{k}").parse::<K>() == Ok(k)` — the parser
+    //!    accepts EXACTLY what the formatter emits, pinning the
+    //!    (formatter, parser) bijection pointwise.
+    //! 2. Cross-altitude round-trip: for every classification corner,
+    //!    the fused `format!("{}", d.kind()).parse::<ProofRelationKind>()`
+    //!    equals `Ok(d.kind())` at the delta, value, and wire
+    //!    altitudes — the cross-altitude same-answer invariant
+    //!    survives the round-trip through the parser.
+    //! 3. Fused delegation: the fused parser accepts EXACTLY the
+    //!    union of the two half-side parsers' accepted sets and
+    //!    projects each identifier into the correct arm
+    //!    ([`ProofRelationKind::Consistent`] on a consistent
+    //!    identifier, [`ProofRelationKind::Impossible`] on an
+    //!    impossibility identifier).
+    //! 4. Error-path fidelity: an unknown input on each of the
+    //!    three parsers returns an [`Err(ParseKindError)`] whose
+    //!    [`ParseKindError::input`] preserves the malformed value
+    //!    verbatim and whose [`ParseKindError::expected`] carries
+    //!    the SAME closed set the sibling `name` receiver projects
+    //!    across all variants — the accepted-set the (formatter,
+    //!    parser) pair is welded against.
+    //! 5. Cross-half disjointness: no identifier accepted by one
+    //!    half-side parser is accepted by the other, so the fused
+    //!    parser's two-arm delegation is order-independent.
+    //! 6. [`ParseKindError`] itself implements [`std::fmt::Display`]
+    //!    and [`std::error::Error`], projecting a self-describing
+    //!    line every `Result::unwrap_err` / `?` diagnostic already
+    //!    reaches.
+    //!
+    //! Genuinely new — before this pass the three enums carried
+    //! `Display` (the forward half of the bijection) but no `FromStr`
+    //! (the inverse half), so a consumer wanting the round-trip
+    //! (a CLI arg parser accepting `--kind regressed`, a JSON string
+    //! field deserialized into a typed variant, a `/healthz/config`
+    //! metrics label routed on the received identifier) had to hand-write
+    //! the two-way `match` at every seam, and the parser's
+    //! accepted-set could silently drift from the formatter's
+    //! emitted-set (both hand-rolled `match` bodies edited
+    //! independently on every variant addition). `FromStr` welds the
+    //! two-way translation into the standard trait every `.parse()`
+    //! seam already reaches, and the receiver-family delegation
+    //! through the same-named `match` in `name` / `Display::fmt` /
+    //! `FromStr::from_str` keeps the two projections lockstep-identical
+    //! under every future variant addition by construction.
+
+    use super::*;
+    use std::str::FromStr;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    // Match the corner fixture the surrounding `name_tests` /
+    // `display_tests` / `kind_tests` modules already use — a proof
+    // pair at every classification corner, so the FromStr round-trip
+    // reaches the delta / value / wire altitudes through their
+    // existing classification receivers.
+
+    #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+            (
+                "identity_republish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+            ),
+            (
+                "progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+            ),
+            (
+                "cross_store",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+            ),
+            (
+                "regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+        ]
+    }
+
+    fn all_consistent() -> [SameStoreConsistencyKind; 3] {
+        [
+            SameStoreConsistencyKind::Stationary,
+            SameStoreConsistencyKind::IdentityRepublish,
+            SameStoreConsistencyKind::Progression,
+        ]
+    }
+
+    fn all_impossible() -> [SameStoreImpossibilityKind; 2] {
+        [
+            SameStoreImpossibilityKind::Regressed,
+            SameStoreImpossibilityKind::CrossStore,
+        ]
+    }
+
+    fn all_fused() -> [ProofRelationKind; 5] {
+        [
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        ]
+    }
+
+    // ---------- (1) Round-trip identity — parser accepts EXACTLY
+    // what the formatter emits, pointwise.
+
+    #[test]
+    fn round_trip_bijection_holds_on_every_variant() {
+        for k in all_impossible() {
+            let s = k.to_string();
+            let parsed = SameStoreImpossibilityKind::from_str(&s)
+                .expect("impossibility identifier must round-trip");
+            assert_eq!(parsed, k, "impossibility round-trip mismatch on {k:?}");
+            // Same round-trip through the `&str` parse method the
+            // standard library reaches for every printable type.
+            let parsed2: SameStoreImpossibilityKind =
+                s.parse().expect("s.parse::<K>() must round-trip");
+            assert_eq!(parsed2, k);
+        }
+        for k in all_consistent() {
+            let s = k.to_string();
+            let parsed = SameStoreConsistencyKind::from_str(&s)
+                .expect("consistency identifier must round-trip");
+            assert_eq!(parsed, k, "consistency round-trip mismatch on {k:?}");
+            let parsed2: SameStoreConsistencyKind =
+                s.parse().expect("s.parse::<K>() must round-trip");
+            assert_eq!(parsed2, k);
+        }
+        for k in all_fused() {
+            let s = k.to_string();
+            let parsed = ProofRelationKind::from_str(&s).expect("fused identifier must round-trip");
+            assert_eq!(parsed, k, "fused round-trip mismatch on {k:?}");
+            let parsed2: ProofRelationKind = s.parse().expect("s.parse::<K>() must round-trip");
+            assert_eq!(parsed2, k);
+        }
+    }
+
+    // ---------- (2) Cross-altitude round-trip
+
+    #[test]
+    fn fused_round_trip_holds_at_every_altitude() {
+        for (label, prior, current) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = ProofRelation::between(&prior, &current);
+            let w = r.to_wire();
+            // Parse the corner label directly.
+            let parsed: ProofRelationKind = label
+                .parse()
+                .expect("corner label must be parseable as a fused kind");
+            assert_eq!(parsed, r.kind(), "value altitude round-trip");
+            assert_eq!(parsed, d.kind(), "delta altitude round-trip");
+            assert_eq!(parsed, w.kind(), "wire altitude round-trip");
+            // The full round-trip: format the fused kind at each
+            // altitude, parse it, get back the same fused kind.
+            assert_eq!(
+                format!("{}", d.kind()).parse::<ProofRelationKind>(),
+                Ok(d.kind()),
+            );
+            assert_eq!(
+                format!("{}", r.kind()).parse::<ProofRelationKind>(),
+                Ok(r.kind()),
+            );
+            assert_eq!(
+                format!("{}", w.kind()).parse::<ProofRelationKind>(),
+                Ok(w.kind()),
+            );
+        }
+    }
+
+    // ---------- (3) Fused delegation projects each identifier into
+    // the correct arm
+
+    #[test]
+    fn fused_parser_delegates_each_identifier_to_the_right_arm() {
+        for c in all_consistent() {
+            let s = c.name();
+            let fused: ProofRelationKind = s.parse().expect("consistent identifier parses");
+            assert_eq!(
+                fused,
+                ProofRelationKind::Consistent(c),
+                "consistent identifier `{s}` must project into Consistent(_)",
+            );
+        }
+        for i in all_impossible() {
+            let s = i.name();
+            let fused: ProofRelationKind = s.parse().expect("impossible identifier parses");
+            assert_eq!(
+                fused,
+                ProofRelationKind::Impossible(i),
+                "impossible identifier `{s}` must project into Impossible(_)",
+            );
+        }
+    }
+
+    // ---------- (4) Error-path fidelity
+
+    #[test]
+    fn unknown_input_returns_typed_error_with_verbatim_input_and_accepted_set() {
+        // Impossibility half.
+        let err = SameStoreImpossibilityKind::from_str("Regressd")
+            .expect_err("misspelled input must be rejected");
+        assert_eq!(err.input(), "Regressd");
+        assert_eq!(err.expected(), &["regressed", "cross_store"]);
+        // Consistency half.
+        let err = SameStoreConsistencyKind::from_str("STATIONARY")
+            .expect_err("case-mismatched input must be rejected");
+        assert_eq!(err.input(), "STATIONARY");
+        assert_eq!(
+            err.expected(),
+            &["stationary", "identity_republish", "progression"],
+        );
+        // Fused sum.
+        let err = ProofRelationKind::from_str("cross-store")
+            .expect_err("hyphenated (non-snake) input must be rejected");
+        assert_eq!(err.input(), "cross-store");
+        assert_eq!(
+            err.expected(),
+            &[
+                "stationary",
+                "identity_republish",
+                "progression",
+                "regressed",
+                "cross_store",
+            ],
+        );
+        // Empty input path — carries the empty verbatim, and the
+        // accepted set is the same closed set.
+        let err = ProofRelationKind::from_str("").expect_err("empty input must be rejected");
+        assert_eq!(err.input(), "");
+        assert_eq!(err.expected().len(), 5);
+    }
+
+    #[test]
+    fn parse_error_display_is_self_describing() {
+        let err = SameStoreImpossibilityKind::from_str("bogus")
+            .expect_err("bogus input must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bogus"),
+            "Display must include the offending input verbatim: {msg}"
+        );
+        assert!(
+            msg.contains("regressed") && msg.contains("cross_store"),
+            "Display must include the accepted-set identifiers: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_error_is_a_std_error() {
+        // ParseKindError implements std::error::Error, so it flows
+        // through `?` into any `Box<dyn Error>` sink and any
+        // `anyhow::Result`-style consumer without wrapping.
+        fn assert_std_error<E: std::error::Error>() {}
+        assert_std_error::<ParseKindError>();
+    }
+
+    // ---------- (5) Cross-half disjointness
+
+    #[test]
+    fn no_identifier_is_accepted_by_both_half_side_parsers() {
+        for c in all_consistent() {
+            assert!(
+                SameStoreImpossibilityKind::from_str(c.name()).is_err(),
+                "consistent identifier `{}` must not parse as impossibility",
+                c.name(),
+            );
+        }
+        for i in all_impossible() {
+            assert!(
+                SameStoreConsistencyKind::from_str(i.name()).is_err(),
+                "impossible identifier `{}` must not parse as consistency",
+                i.name(),
+            );
+        }
+    }
+
+    // ---------- (6) The accepted-set the parser advertises is the
+    // SAME set of identifiers the formatter emits, pointwise.
+
+    #[test]
+    fn advertised_accepted_set_matches_the_emitted_identifier_set() {
+        // Impossibility half.
+        let err = SameStoreImpossibilityKind::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
+        let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
+        let emitted: std::collections::HashSet<&str> =
+            all_impossible().iter().map(|k| k.name()).collect();
+        assert_eq!(
+            accepted, emitted,
+            "impossibility parser accepts EXACTLY what the formatter emits",
+        );
+        // Consistency half.
+        let err = SameStoreConsistencyKind::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
+        let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
+        let emitted: std::collections::HashSet<&str> =
+            all_consistent().iter().map(|k| k.name()).collect();
+        assert_eq!(
+            accepted, emitted,
+            "consistency parser accepts EXACTLY what the formatter emits",
+        );
+        // Fused sum — the union of the two half-side accepted sets.
+        let err =
+            ProofRelationKind::from_str("_never_matches_").expect_err("sentinel must not parse");
+        let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
+        let emitted: std::collections::HashSet<&str> =
+            all_fused().iter().map(|k| k.name()).collect();
+        assert_eq!(
+            accepted, emitted,
+            "fused parser accepts EXACTLY what the formatter emits (union of the two half-sides)",
+        );
     }
 }
