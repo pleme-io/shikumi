@@ -2515,6 +2515,60 @@ impl std::str::FromStr for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`serde::Serialize`] impl projects the stable snake-case
+/// [`Self::name`] identifier through [`serde::Serializer::serialize_str`]
+/// — the serde-side sibling of the [`std::fmt::Display`] impl on the
+/// impossibility half of the classification. Every human-facing serde
+/// codec (JSON, YAML, TOML, `MessagePack` in text mode) reads the SAME
+/// snake-case identifier every prior receiver in the classification
+/// lattice already projects: a JSON-encoded proof envelope carries
+/// `"regressed"` / `"cross_store"` verbatim, matching the
+/// [`crate::hotswap::ProofRelationKind::name`] receiver and the
+/// [`std::fmt::Display`] impl the human-facing formatter reaches
+/// through. Delegates through [`Self::name`] to keep the four
+/// projections ([`Self::name`], [`std::fmt::Display`],
+/// [`std::str::FromStr`], and [`serde::Serialize`]) lockstep-identical
+/// by construction: adding a new variant updates ONE `match` body
+/// (`Self::name`), and every downstream projection surfaces the new
+/// identifier through the standard trait's resolution.
+impl serde::Serialize for SameStoreImpossibilityKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+/// The [`serde::Deserialize`] impl is the inverse projection of
+/// [`serde::Serialize`] on the impossibility half — the serde-side
+/// sibling of the [`std::str::FromStr`] impl, welded through the same
+/// [`Self::from_str`] parser so the two-way translation stays in one
+/// place. For every value `k`, `serde_json::from_str::<Self>(&
+/// serde_json::to_string(&k).unwrap()).unwrap() == k` (the round-trip
+/// identity every classification altitude reaches through the
+/// [`Self::name`] / [`std::fmt::Display`] / [`std::str::FromStr`] /
+/// [`serde::Serialize`] quadruple). An unknown identifier surfaces
+/// through [`serde::de::Error::custom`] carrying the same
+/// [`ParseKindError`] diagnostic line the standard-trait parser
+/// projects — the malformed input verbatim AND the closed set of
+/// accepted alternatives — so a `serde_json::from_str::<Self>(..)?`
+/// seam surfaces the same-shape diagnostic the sibling
+/// `.parse::<Self>()?` seam does, matching the error-fidelity
+/// contract the parser already carries.
+impl<'de> serde::Deserialize<'de> for SameStoreImpossibilityKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = SameStoreImpossibilityKind;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("one of `regressed` or `cross_store`")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                s.parse::<Self::Value>().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(V)
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -2740,6 +2794,47 @@ impl std::str::FromStr for SameStoreConsistencyKind {
                 expected: &["stationary", "identity_republish", "progression"],
             }),
         }
+    }
+}
+
+/// The [`serde::Serialize`] impl projects the stable snake-case
+/// [`Self::name`] identifier through [`serde::Serializer::serialize_str`]
+/// — the mirror of [`SameStoreImpossibilityKind`]'s [`serde::Serialize`]
+/// impl on the consistent half. A JSON-encoded proof envelope carries
+/// `"stationary"` / `"identity_republish"` / `"progression"` verbatim,
+/// matching the [`Self::name`] receiver and the [`std::fmt::Display`]
+/// impl the human-facing formatter reaches through. Delegates through
+/// [`Self::name`] to keep the four projections lockstep-identical by
+/// construction — a hypothetical fourth legitimate corner updates ONE
+/// `match` body, and every downstream serde codec surfaces the new
+/// identifier through the standard trait's resolution.
+impl serde::Serialize for SameStoreConsistencyKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+/// The [`serde::Deserialize`] impl is the inverse projection of
+/// [`serde::Serialize`] on the consistent half — the mirror of
+/// [`SameStoreImpossibilityKind`]'s [`serde::Deserialize`] impl on the
+/// impossibility half. Delegates through [`Self::from_str`] so the
+/// two-way translation stays in one place; every unknown identifier
+/// surfaces the shared [`ParseKindError`] diagnostic through
+/// [`serde::de::Error::custom`], matching the error-fidelity contract
+/// the sibling `.parse::<Self>()?` seam already carries.
+impl<'de> serde::Deserialize<'de> for SameStoreConsistencyKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = SameStoreConsistencyKind;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("one of `stationary`, `identity_republish`, or `progression`")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                s.parse::<Self::Value>().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(V)
     }
 }
 
@@ -3041,6 +3136,58 @@ impl std::str::FromStr for ProofRelationKind {
                 "cross_store",
             ],
         })
+    }
+}
+
+/// The [`serde::Serialize`] impl is the fused-arm sibling of the two
+/// half-side [`serde::Serialize`] impls on [`SameStoreConsistencyKind`]
+/// and [`SameStoreImpossibilityKind`]. Projects the stable snake-case
+/// [`Self::name`] identifier through [`serde::Serializer::serialize_str`]
+/// — the SAME five identifiers (`"stationary"` / `"identity_republish"`
+/// / `"progression"` on the [`Self::Consistent`] arm; `"cross_store"` /
+/// `"regressed"` on the [`Self::Impossible`] arm) the human-facing
+/// [`std::fmt::Display`] impl already projects. So a JSON-encoded proof
+/// envelope reading the fused kind field reads it as a bare snake-case
+/// string, not as an internally-tagged nested object; the flat-string
+/// wire shape matches the flat-string log line and the flat-string
+/// metrics label the classification lattice already emits at every
+/// altitude. Delegates through [`Self::name`] so the fused impl and the
+/// two half-side impls stay lockstep-identical under every future
+/// variant addition to either half-side enum by construction.
+impl serde::Serialize for ProofRelationKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+/// The [`serde::Deserialize`] impl is the fused-arm sibling of the two
+/// half-side [`serde::Deserialize`] impls, and the inverse projection
+/// of [`serde::Serialize`] on the fused sum. Delegates through
+/// [`Self::from_str`] so the two-arm consistent/impossibility
+/// discrimination stays in exactly one place — the same fused parser
+/// the sibling `.parse::<Self>()?` seam already reaches. Every
+/// consistent identifier deserializes into [`Self::Consistent`]
+/// carrying the correct [`SameStoreConsistencyKind`]; every
+/// impossibility identifier deserializes into [`Self::Impossible`]
+/// carrying the correct [`SameStoreImpossibilityKind`]; any other
+/// input surfaces the shared [`ParseKindError`] diagnostic through
+/// [`serde::de::Error::custom`] with all FIVE expected identifiers
+/// enumerated in the message.
+impl<'de> serde::Deserialize<'de> for ProofRelationKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = ProofRelationKind;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "one of `stationary`, `identity_republish`, `progression`, `regressed`, or `cross_store`",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                s.parse::<Self::Value>().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(V)
     }
 }
 
@@ -20720,5 +20867,400 @@ mod from_str_tests {
             accepted, emitted,
             "fused parser accepts EXACTLY what the formatter emits (union of the two half-sides)",
         );
+    }
+}
+
+#[cfg(test)]
+mod serde_tests {
+    //! The three [`serde::Serialize`] + [`serde::Deserialize`] impls on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the receiver-family lifting the
+    //! [`std::fmt::Display`] / [`std::str::FromStr`] bijection into the
+    //! serde ecosystem so every classification-encoded proof envelope,
+    //! metrics label, and YAML/JSON/TOML config field carries the SAME
+    //! snake-case identifier the sibling [`SameStoreImpossibilityKind::name`]
+    //! / [`SameStoreConsistencyKind::name`] / [`ProofRelationKind::name`]
+    //! receivers project. All three impls delegate through the
+    //! [`Self::name`] / [`Self::from_str`] pair, so the four projections
+    //! (`name`, `Display`, `FromStr`, `Serialize`/`Deserialize`) stay
+    //! lockstep-identical by construction: adding a new variant updates
+    //! ONE `match` body and every downstream serde codec surfaces the
+    //! new identifier through the standard trait's resolution.
+    //!
+    //! The tests below cover, in one exhaustive fixture:
+    //!
+    //! 1. JSON round-trip: every variant of every enum satisfies
+    //!    `serde_json::from_str::<K>(&serde_json::to_string(&k)?)? == k`
+    //!    — the serde bijection is pointwise-identity, pinning the
+    //!    (`Serialize`, `Deserialize`) pair against the (`Display`,
+    //!    `FromStr`) pair.
+    //! 2. Wire shape: every variant serializes as a bare JSON string
+    //!    literal (`"regressed"`), not as an internally-tagged nested
+    //!    object (the derive default `{"Regressed":null}`). The
+    //!    flat-string wire shape matches the flat-string log line and
+    //!    the flat-string metrics label every prior receiver in the
+    //!    classification lattice emits.
+    //! 3. Cross-codec identity: JSON and YAML round-trips produce the
+    //!    same value at every variant — every serde codec reaches the
+    //!    same-named answer through the same-named receiver.
+    //! 4. Cross-altitude round-trip: for every classification corner,
+    //!    the fused `serde_json::to_string(&d.kind())` /
+    //!    `serde_json::from_str::<ProofRelationKind>(..)` pair at the
+    //!    delta, value, and wire altitudes yields the same
+    //!    [`ProofRelationKind`] — the cross-altitude same-answer
+    //!    invariant survives the serde round-trip.
+    //! 5. Fused delegation: every consistent identifier deserializes
+    //!    into [`ProofRelationKind::Consistent(_)`], every
+    //!    impossibility identifier into
+    //!    [`ProofRelationKind::Impossible(_)`], matching the
+    //!    [`ProofRelationKind::from_str`] delegation.
+    //! 6. Error-path fidelity: an unknown identifier surfaces a serde
+    //!    error whose message includes both the malformed input
+    //!    verbatim and the accepted-set of identifiers the sibling
+    //!    [`ParseKindError`] carries.
+    //! 7. Non-string inputs (numeric, boolean, null) are rejected —
+    //!    the classification identifier is text-encoded at every
+    //!    codec.
+    //! 8. The three enums compose inside a `#[derive(Deserialize)]`
+    //!    struct without a `#[serde(with = ..)]` shim — the manual
+    //!    impls satisfy serde's derive machinery directly.
+    //!
+    //! Genuinely new — before this pass the three enums carried
+    //! `Display` + `FromStr` (the human-facing forward and inverse
+    //! projections) but no serde-side counterpart, so every consumer
+    //! wanting a JSON-encoded proof envelope carrying the typed
+    //! classification (a `/healthz/config` API returning
+    //! `{"kind":"progression"}`, a YAML config field pinning an
+    //! expected corner, an MCP tool receiving the identifier from a
+    //! JSON-schema-typed input) had to hand-wire a
+    //! `#[serde(with = "shim")]` per field, and the shim's projection
+    //! could silently drift from the human-facing pair. Manual
+    //! delegation through the same [`Self::name`] / [`Self::from_str`]
+    //! `match` bodies welds the four projections into a single
+    //! lockstep-identical quadruple by construction.
+
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+            (
+                "identity_republish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+            ),
+            (
+                "progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+            ),
+            (
+                "cross_store",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+            ),
+            (
+                "regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+            ),
+        ]
+    }
+
+    fn all_consistent() -> [SameStoreConsistencyKind; 3] {
+        [
+            SameStoreConsistencyKind::Stationary,
+            SameStoreConsistencyKind::IdentityRepublish,
+            SameStoreConsistencyKind::Progression,
+        ]
+    }
+
+    fn all_impossible() -> [SameStoreImpossibilityKind; 2] {
+        [
+            SameStoreImpossibilityKind::Regressed,
+            SameStoreImpossibilityKind::CrossStore,
+        ]
+    }
+
+    fn all_fused() -> [ProofRelationKind; 5] {
+        [
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        ]
+    }
+
+    // ---------- (1) JSON round-trip identity — the serde bijection
+    // is pointwise-identity on every variant.
+
+    #[test]
+    fn json_round_trip_holds_on_every_variant() {
+        for k in all_impossible() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            let parsed: SameStoreImpossibilityKind =
+                serde_json::from_str(&s).expect("Deserialize must succeed");
+            assert_eq!(parsed, k, "impossibility JSON round-trip mismatch on {k:?}");
+        }
+        for k in all_consistent() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            let parsed: SameStoreConsistencyKind =
+                serde_json::from_str(&s).expect("Deserialize must succeed");
+            assert_eq!(parsed, k, "consistency JSON round-trip mismatch on {k:?}");
+        }
+        for k in all_fused() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            let parsed: ProofRelationKind =
+                serde_json::from_str(&s).expect("Deserialize must succeed");
+            assert_eq!(parsed, k, "fused JSON round-trip mismatch on {k:?}");
+        }
+    }
+
+    // ---------- (2) Wire shape — every variant serializes as a bare
+    // snake-case JSON string, not as an internally-tagged object.
+
+    #[test]
+    fn json_wire_shape_is_bare_snake_case_string() {
+        for k in all_impossible() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            assert_eq!(
+                s,
+                format!("\"{}\"", k.name()),
+                "impossibility must serialize as bare snake-case string",
+            );
+        }
+        for k in all_consistent() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            assert_eq!(
+                s,
+                format!("\"{}\"", k.name()),
+                "consistency must serialize as bare snake-case string",
+            );
+        }
+        for k in all_fused() {
+            let s = serde_json::to_string(&k).expect("Serialize must succeed");
+            assert_eq!(
+                s,
+                format!("\"{}\"", k.name()),
+                "fused must serialize as bare snake-case string (both arms)",
+            );
+        }
+    }
+
+    // ---------- (3) Cross-codec identity — JSON and YAML reach the
+    // same value at every variant.
+
+    #[test]
+    fn cross_codec_round_trip_holds_on_every_variant() {
+        for k in all_fused() {
+            let json = serde_json::to_string(&k).expect("json Serialize");
+            let yaml = serde_yaml::to_string(&k).expect("yaml Serialize");
+            let from_json: ProofRelationKind =
+                serde_json::from_str(&json).expect("json Deserialize");
+            let from_yaml: ProofRelationKind =
+                serde_yaml::from_str(&yaml).expect("yaml Deserialize");
+            assert_eq!(from_json, k, "json codec identity");
+            assert_eq!(from_yaml, k, "yaml codec identity");
+            assert_eq!(from_json, from_yaml, "cross-codec agreement");
+        }
+    }
+
+    // ---------- (4) Cross-altitude round-trip through JSON.
+
+    #[test]
+    fn fused_json_round_trip_holds_at_every_altitude() {
+        for (label, prior, current) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = ProofRelation::between(&prior, &current);
+            let w = r.to_wire();
+            let json_from_label = format!("\"{label}\"");
+            let parsed: ProofRelationKind =
+                serde_json::from_str(&json_from_label).expect("label parses");
+            assert_eq!(parsed, r.kind(), "value altitude serde round-trip");
+            assert_eq!(parsed, d.kind(), "delta altitude serde round-trip");
+            assert_eq!(parsed, w.kind(), "wire altitude serde round-trip");
+            // Full serde round-trip at each altitude.
+            let d_json = serde_json::to_string(&d.kind()).expect("delta Serialize");
+            let r_json = serde_json::to_string(&r.kind()).expect("value Serialize");
+            let w_json = serde_json::to_string(&w.kind()).expect("wire Serialize");
+            assert_eq!(d_json, r_json, "delta and value emit the same JSON");
+            assert_eq!(r_json, w_json, "value and wire emit the same JSON");
+            assert_eq!(
+                serde_json::from_str::<ProofRelationKind>(&d_json).expect("delta re-parse"),
+                d.kind(),
+            );
+        }
+    }
+
+    // ---------- (5) Fused delegation projects each identifier into
+    // the correct arm at the serde layer too.
+
+    #[test]
+    fn fused_deserialization_delegates_each_identifier_to_the_right_arm() {
+        for c in all_consistent() {
+            let s = format!("\"{}\"", c.name());
+            let fused: ProofRelationKind = serde_json::from_str(&s).expect("consistent parses");
+            assert_eq!(
+                fused,
+                ProofRelationKind::Consistent(c),
+                "consistent identifier `{}` must project into Consistent(_)",
+                c.name(),
+            );
+        }
+        for i in all_impossible() {
+            let s = format!("\"{}\"", i.name());
+            let fused: ProofRelationKind = serde_json::from_str(&s).expect("impossible parses");
+            assert_eq!(
+                fused,
+                ProofRelationKind::Impossible(i),
+                "impossible identifier `{}` must project into Impossible(_)",
+                i.name(),
+            );
+        }
+    }
+
+    // ---------- (6) Error-path fidelity — unknown input surfaces the
+    // shared ParseKindError diagnostic through serde::de::Error::custom.
+
+    #[test]
+    fn unknown_json_identifier_reports_malformed_input_and_accepted_set() {
+        let err = serde_json::from_str::<SameStoreImpossibilityKind>("\"Regressd\"")
+            .expect_err("misspelled input must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Regressd"),
+            "serde error must include the malformed input verbatim: {msg}",
+        );
+        assert!(
+            msg.contains("regressed") && msg.contains("cross_store"),
+            "serde error must enumerate the accepted-set: {msg}",
+        );
+        let err = serde_json::from_str::<SameStoreConsistencyKind>("\"STATIONARY\"")
+            .expect_err("case-mismatched input must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("STATIONARY"));
+        assert!(
+            msg.contains("stationary")
+                && msg.contains("identity_republish")
+                && msg.contains("progression"),
+        );
+        let err = serde_json::from_str::<ProofRelationKind>("\"cross-store\"")
+            .expect_err("hyphenated input must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("cross-store"));
+        // All five identifiers surface in the fused-arm error.
+        for id in [
+            "stationary",
+            "identity_republish",
+            "progression",
+            "regressed",
+            "cross_store",
+        ] {
+            assert!(msg.contains(id), "fused error must enumerate `{id}`: {msg}",);
+        }
+    }
+
+    // ---------- (7) Non-string inputs — the identifier is text-encoded
+    // at every codec, so numeric, boolean, and null inputs are rejected.
+
+    #[test]
+    fn non_string_json_inputs_are_rejected() {
+        assert!(serde_json::from_str::<SameStoreImpossibilityKind>("0").is_err());
+        assert!(serde_json::from_str::<SameStoreConsistencyKind>("true").is_err());
+        assert!(serde_json::from_str::<ProofRelationKind>("null").is_err());
+        assert!(serde_json::from_str::<ProofRelationKind>("42").is_err());
+        assert!(serde_json::from_str::<ProofRelationKind>("[]").is_err());
+    }
+
+    // ---------- (8) The manual impls satisfy serde's derive machinery
+    // — every enum composes inside a downstream `#[derive(Deserialize)]`
+    // struct without a `#[serde(with = ..)]` shim.
+
+    #[test]
+    fn composes_inside_a_derived_struct_without_a_shim() {
+        #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        struct Envelope {
+            impossibility: SameStoreImpossibilityKind,
+            consistency: SameStoreConsistencyKind,
+            fused: ProofRelationKind,
+        }
+        let env = Envelope {
+            impossibility: SameStoreImpossibilityKind::Regressed,
+            consistency: SameStoreConsistencyKind::Progression,
+            fused: ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        };
+        let json = serde_json::to_string(&env).expect("compound Serialize");
+        assert!(json.contains("\"regressed\""));
+        assert!(json.contains("\"progression\""));
+        assert!(json.contains("\"cross_store\""));
+        // The wire shape is three bare snake-case strings, not three
+        // internally-tagged nested objects.
+        let expected = "{\"impossibility\":\"regressed\",\"consistency\":\"progression\",\"fused\":\"cross_store\"}";
+        assert_eq!(json, expected);
+        let parsed: Envelope = serde_json::from_str(&json).expect("compound Deserialize");
+        assert_eq!(parsed, env);
+    }
+
+    // ---------- The Serialize and Display projections agree pointwise:
+    // the serde-side identifier and the human-facing identifier are the
+    // SAME snake-case name — the four projections stay lockstep-identical.
+
+    #[test]
+    fn serde_and_display_projections_agree_pointwise() {
+        for k in all_fused() {
+            let display_id = format!("{k}");
+            let serde_str: String =
+                serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
+            assert_eq!(
+                display_id, serde_str,
+                "Display and Serialize project the SAME identifier",
+            );
+        }
     }
 }
