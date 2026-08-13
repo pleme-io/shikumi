@@ -2765,6 +2765,82 @@ impl TryFrom<&str> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`String`] impl projects
+/// the stable snake-case [`Self::name`] identifier as a **heap-owned**
+/// [`String`] — the owning-forward sibling of the borrowed
+/// [`AsRef<str>`] impl and the [`&'static str`]-tight
+/// [`From<SameStoreImpossibilityKind>`] for [`&'static str`] impl above.
+/// Where [`AsRef<str>`] yields a `&str` borrowing from the kind
+/// reference and [`From<Kind>`] for `&'static str` yields the same
+/// identifier as a `'static`-lifetime borrow, this [`From`] impl yields
+/// the same identifier as a fresh [`String`] the caller owns — the
+/// shape every downstream slot bounded on `T: Into<String>` demands (a
+/// [`serde_json::json!`] value routed through
+/// [`serde_json::Value::String`], a [`std::path::PathBuf::from`] over a
+/// stringly-tagged path segment, a `Vec<String>` builder collecting
+/// per-corner metric labels through `.map(String::from).collect()`, a
+/// `HashMap<String, V>` builder using owned string keys, an
+/// [`std::process::Command::arg`] slot bounded on `AsRef<OsStr>`
+/// through [`String`], any [`String`]-returning closure `.map(|k|
+/// k.into())` in an iterator combinator, any codegen visitor whose
+/// per-kind slot is a [`String`] field).
+///
+/// **Why lift a heap-owning receiver alongside the two borrowed ones.**
+/// The blanket [`ToString`] impl on every [`std::fmt::Display`] type
+/// already gives `k.to_string()` returning [`String`]; but a downstream
+/// generic bounded on `T: Into<String>` cannot reach that blanket —
+/// [`Into<String>`] requires an explicit [`From<T>`] for [`String`]
+/// impl, not a [`Display`] bound, and [`String: From<&'static str>`]
+/// alone leaves a [`Kind`] value stranded (Rust does NOT chain [`Into`]
+/// impls, so a `T: Into<String>` bound is not satisfied by
+/// `T: Into<&'static str>` alone). Every downstream slot bounded on
+/// `T: Into<String>` previously had to reach the [`String`] body
+/// through a manual `k.name().to_owned()` postfix or a
+/// `k.to_string()` postfix that the [`Into<String>`]-bounded generic
+/// cannot compose with — the [`From`] impl closes that gap.
+///
+/// Delegates to [`Self::name`] followed by a single owning
+/// `.to_owned()` — the [`String`] carries the SAME stable snake-case
+/// identifier every prior forward-side projection carries, and adding
+/// a hypothetical third impossibility corner updates the ONE `match`
+/// body in [`Self::name`] with every standard-trait projection
+/// (including this one) surfacing the new identifier in lockstep. The
+/// heap allocation is the trade-off for owning transfer — unlike the
+/// [`&'static str`] projection above, this [`String`] can be moved
+/// into a heap-owning slot (a `Vec<String>` grown past the kind
+/// value's scope, a `Cow::Owned` variant, a [`String`]-returning
+/// closure) that the [`&'static str`] projection cannot cross-mutate.
+/// Sibling of [`derive_more::Into`] / [`strum::IntoString`] in the
+/// ecosystem; shipped hand-rolled to stay dependency-neutral and to
+/// keep the delegation-through-[`Self::name`] shape parallel to the
+/// existing standard-trait projections.
+impl From<SameStoreImpossibilityKind> for String {
+    fn from(kind: SameStoreImpossibilityKind) -> String {
+        kind.name().to_owned()
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`String`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above,
+/// delegating through the same [`Self::name`] source of truth. Enables
+/// `.into()` on a borrowed kind (a `&kind` iterator over `&[Kind]` in
+/// a `.map(String::from).collect::<Vec<String>>()` combinator, a
+/// `.into()` in a `HashMap<String, V>` builder consuming borrowed
+/// kinds, a codegen visitor over per-corner registration sites where
+/// the kind arrives by reference) without a per-callsite dereference.
+/// Both directions of the standard [`Into<String>`] projection now
+/// compose out of the same [`Self::name`] receiver by construction;
+/// adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in [`Self::name`], and the new identifier surfaces
+/// through both [`From`] impls, the sibling [`AsRef<str>`] impl, the
+/// sibling [`From<Kind>`] for [`&'static str`] pair, and every
+/// downstream [`Into<String>`]-bounded slot in lockstep.
+impl From<&SameStoreImpossibilityKind> for String {
+    fn from(kind: &SameStoreImpossibilityKind) -> String {
+        kind.name().to_owned()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3165,6 +3241,40 @@ impl TryFrom<&str> for SameStoreConsistencyKind {
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         <Self as std::str::FromStr>::from_str(s)
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`String`] impl — the
+/// mirror of the [`From<SameStoreImpossibilityKind>`] for [`String`]
+/// impl on the consistent half of the classification lattice, and the
+/// heap-owning forward sibling of the borrowed [`AsRef<str>`] and
+/// [`&'static str`]-tight [`From<Kind>`] for [`&'static str`] impls
+/// already at this altitude. Projects the stable snake-case
+/// [`Self::name`] identifier (`"stationary"` / `"identity_republish"` /
+/// `"progression"`) as a fresh heap-owned [`String`] the caller owns —
+/// the shape every downstream slot bounded on `T: Into<String>`
+/// demands. Delegates to [`Self::name`] followed by a single owning
+/// `.to_owned()` — the [`String`] carries the SAME stable snake-case
+/// identifier every prior forward-side projection carries on the
+/// consistent half, and every downstream [`Into<String>`]-bounded slot
+/// now composes out of the standard trait alone on the consistent
+/// half.
+impl From<SameStoreConsistencyKind> for String {
+    fn from(kind: SameStoreConsistencyKind) -> String {
+        kind.name().to_owned()
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`String`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above
+/// on the consistent half, delegating through the same [`Self::name`]
+/// source of truth. Enables `.into()` on a borrowed kind without a
+/// per-callsite dereference; both directions of the standard
+/// [`Into<String>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction on the consistent half.
+impl From<&SameStoreConsistencyKind> for String {
+    fn from(kind: &SameStoreConsistencyKind) -> String {
+        kind.name().to_owned()
     }
 }
 
@@ -3690,6 +3800,53 @@ impl TryFrom<&str> for ProofRelationKind {
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         <Self as std::str::FromStr>::from_str(s)
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`String`] impl — the fused-arm
+/// sibling of the two half-side [`From<Kind>`] for [`String`] impls
+/// above, welding the [`Into<String>`] projections of the two
+/// half-side enums into a single fused-sum receiver whose body
+/// delegates through the fused [`Self::name`]. Projects the stable
+/// snake-case identifier at the fused-sum altitude — one of the five
+/// stable snake-case names (`"stationary"` / `"identity_republish"` /
+/// `"progression"` — the consistent half — plus `"regressed"` /
+/// `"cross_store"` — the impossibility half) — as a fresh heap-owned
+/// [`String`]. Every downstream [`Into<String>`]-bounded slot at the
+/// fused-sum altitude (a `serde_json::Value::String`-yielding
+/// serializer of a [`ProofRelationKind`] field, a `Vec<String>`
+/// builder collecting labels through
+/// `.map(String::from).collect()`, a `HashMap<String, V>` builder
+/// using owned string keys) now composes out of the standard
+/// [`Into<String>`] trait alone at the fused-sum altitude.
+///
+/// **Fused-arm lockstep with the two half-side impls.** The fused
+/// [`ProofRelationKind`] [`From`] impl delegates through
+/// [`ProofRelationKind::name`], which delegates through the two
+/// half-side [`Self::name`] receivers — so the fused [`String`]
+/// projection agrees with the routed half-side [`String`] projection
+/// through the two-arm partition of the fused sum on every fused
+/// kind. Adding a hypothetical corner to either half-side enum
+/// updates the ONE `match` body in that half's [`Self::name`], and
+/// the new identifier surfaces through the fused [`Into<String>`]
+/// projection in lockstep.
+impl From<ProofRelationKind> for String {
+    fn from(kind: ProofRelationKind) -> String {
+        kind.name().to_owned()
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`String`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above
+/// on the fused sum, delegating through the same [`Self::name`] source
+/// of truth. Enables `.into()` on a borrowed fused kind without a
+/// per-callsite dereference; both directions of the standard
+/// [`Into<String>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction on the fused sum, matching
+/// the pair already welded on both half-side enums.
+impl From<&ProofRelationKind> for String {
+    fn from(kind: &ProofRelationKind) -> String {
+        kind.name().to_owned()
     }
 }
 
@@ -24898,5 +25055,494 @@ mod try_from_str_tests {
             );
         }
         assert!(parse_kind::<ProofRelationKind>("nope").is_err());
+    }
+}
+
+#[cfg(test)]
+mod into_string_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`String`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`],
+    //! and [`ProofRelationKind`] — the **heap-owned** [`String`]
+    //! projection lifting the three kind enums into the standard
+    //! [`Into<String>`] receiver-family every downstream slot bounded
+    //! on `T: Into<String>` already reaches through.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of
+    //! the three enums).** The prior [`AsRef<str>`] pass (`064e7d4`)
+    //! closed the *borrowed* projection — `fn as_ref(&self) -> &str` —
+    //! whose returned `&str` borrows from the kind reference. The
+    //! [`From<Kind>`] for [`&'static str`] pass (`6ce765b`) closed the
+    //! `'static`-lifetime projection — an immutable borrow whose
+    //! lifetime outlives every consumer. Neither reaches a
+    //! [`String`]-bounded slot: [`AsRef<str>`]'s borrow cannot cross a
+    //! move-into-owning-slot seam (a `Vec<String>` grown past the
+    //! kind's scope, a `HashMap<String, V>` builder with owned string
+    //! keys, a [`serde_json::Value::String`]-yielding serializer),
+    //! and [`&'static str`] is not [`Into<String>`]-satisfying in a
+    //! generic-bound-only path because Rust does NOT chain [`Into`]
+    //! impls — a `T: Into<String>` bound is not satisfied by
+    //! `T: Into<&'static str>` alone, so every downstream slot bounded
+    //! on `T: Into<String>` previously stranded a [`Kind`] value at
+    //! the type-checker with no [`Into<String>`] path. The blanket
+    //! [`ToString`] impl on every [`std::fmt::Display`] type
+    //! (`k.to_string()`) reaches a [`String`] but does NOT satisfy the
+    //! [`From<Kind>`] for [`String`] bound the [`Into<String>`]
+    //! generic requires. The six impls close the [`Into<String>`]
+    //! cell of the standard-trait grid the prior eleven runs opened
+    //! for these enums — every `T: Into<String>`-bounded downstream
+    //! slot now composes out of the standard [`Into`] trait alone.
+    //!
+    //! **Pointwise identity with [`Self::name`] and with the two
+    //! borrowed forward-side receivers.** For every value `k` at every
+    //! altitude, the four forward-side identifier projections
+    //! `k.name()`, `k.as_ref() as &str`, `<&'static str>::from(k)`,
+    //! and `<String>::from(k).as_str()` return the same bytes. The
+    //! standard [`Into<String>`] trait projects the SAME identifier
+    //! the sibling `.name()` accessor, the sibling
+    //! [`std::fmt::Display`] impl, the sibling [`AsRef<str>`] impl,
+    //! and the sibling [`From<Kind>`] for [`&'static str`] impl
+    //! project — so a downstream consumer routing on any of the five
+    //! reaches the same bytes.
+    //!
+    //! **Owning-transfer, heap-allocating.** Unlike the sibling
+    //! [`&'static str`] projection above, the [`String`] projection
+    //! allocates on the heap and yields an *owned* value the caller
+    //! can move into a heap-owning slot. That trade-off is the point:
+    //! a `Vec<String>` grown past the kind value's scope, a
+    //! [`Cow::Owned`](std::borrow::Cow::Owned) variant, a
+    //! [`String`]-returning closure — all require an owned [`String`]
+    //! the [`&'static str`] projection cannot cross-mutate.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] [`From`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so the fused [`String`]
+    //! projection agrees with the routed half-side [`String`]
+    //! projection through the two-arm partition of the fused sum on
+    //! every fused kind.
+    //!
+    //! The tests below pin the structural invariants that keep the
+    //! six impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`] on every variant of
+    //!    every kind enum — `<String>::from(k) == k.name()`.
+    //! 2. Pointwise identity with the sibling [`AsRef<str>`] impl on
+    //!    every variant of every kind enum —
+    //!    `<String>::from(k).as_str() == <K as AsRef<str>>::as_ref(&k)`.
+    //! 3. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`&'static str`] impl on every variant of every kind enum —
+    //!    `<String>::from(k) == <&'static str>::from(k)`.
+    //! 4. Pointwise identity between the owned and reference-taking
+    //!    [`From`] impls — `<String>::from(k) == <String>::from(&k)`.
+    //! 5. Pointwise identity with the blanket [`ToString`] path —
+    //!    `<String>::from(k) == k.to_string()`. The two paths reach
+    //!    the same [`String`] but flow through different traits
+    //!    ([`Into<String>`] vs. [`Display`]); the pin catches any
+    //!    silent drift between the two projections.
+    //! 6. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`String`] projection agrees with the two half-side
+    //!    [`String`] projections through the fused sum's two-arm
+    //!    partition.
+    //! 7. [`impl Into<String>`] composability at a generic-typed
+    //!    callsite — the six impls flow through a generic
+    //!    `fn take<S: Into<String>>(s: S) -> String` seam with the
+    //!    same result as an explicit `.name().to_owned()` at the
+    //!    callsite. This is the load-bearing pin the sibling
+    //!    [`From<Kind>`] for [`&'static str`] impls cannot satisfy:
+    //!    Rust does NOT chain [`Into`] impls, so `T: Into<String>` is
+    //!    NOT satisfied by `T: Into<&'static str>` alone.
+    //! 8. Owning-transfer pin — the projected [`String`] can be moved
+    //!    into a heap-owning slot (a `Vec<String>` grown past the
+    //!    kind value's scope) that the sibling borrowed projections
+    //!    cannot fill; the vector's contents equal
+    //!    [`Self::NAMES`] after the kind values drop.
+    //! 9. Round-trip identity through [`FromStr`] — for every variant
+    //!    `k`, `<String>::from(k).parse::<K>() == Ok(k)`, and
+    //!    `<K>::try_from(<String>::from(k).as_str()) == Ok(k)`.
+
+    use super::*;
+
+    // ---------- (1) Pointwise identity with name()
+
+    #[test]
+    fn into_string_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "impossibility {k:?}: From<Kind> for String must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "consistency {k:?}: From<Kind> for String must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "fused {k:?}: From<Kind> for String must equal name()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<str>
+
+    #[test]
+    fn into_string_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.into();
+            let borrowed: &str = <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned.as_str(),
+                borrowed,
+                "impossibility {k:?}: From<Kind> for String must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.into();
+            let borrowed: &str = <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned.as_str(),
+                borrowed,
+                "consistency {k:?}: From<Kind> for String must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.into();
+            let borrowed: &str = <ProofRelationKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned.as_str(),
+                borrowed,
+                "fused {k:?}: From<Kind> for String must agree with AsRef<str>",
+            );
+        }
+    }
+
+    // ---------- (3) Pointwise identity with From<Kind> for &'static str
+
+    #[test]
+    fn into_string_matches_into_static_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.into();
+            let static_str: &'static str = k.into();
+            assert_eq!(
+                owned, static_str,
+                "impossibility {k:?}: From<Kind> for String must agree with \
+                 From<Kind> for &'static str",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_into_static_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.into();
+            let static_str: &'static str = k.into();
+            assert_eq!(
+                owned, static_str,
+                "consistency {k:?}: From<Kind> for String must agree with \
+                 From<Kind> for &'static str",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_into_static_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.into();
+            let static_str: &'static str = k.into();
+            assert_eq!(
+                owned, static_str,
+                "fused {k:?}: From<Kind> for String must agree with \
+                 From<Kind> for &'static str",
+            );
+        }
+    }
+
+    // ---------- (4) Owned/reference-taking From agree
+
+    #[test]
+    fn into_string_owned_matches_from_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let by_value: String = k.into();
+            let by_ref: String = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "impossibility {k:?}: From<Kind> for String must agree with \
+                 From<&Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_owned_matches_from_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let by_value: String = k.into();
+            let by_ref: String = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "consistency {k:?}: From<Kind> for String must agree with \
+                 From<&Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_owned_matches_from_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let by_value: String = k.into();
+            let by_ref: String = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "fused {k:?}: From<Kind> for String must agree with \
+                 From<&Kind> for String",
+            );
+        }
+    }
+
+    // ---------- (5) Pointwise identity with ToString (Display path)
+
+    #[test]
+    fn into_string_matches_to_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let via_from: String = k.into();
+            let via_to_string: String = k.to_string();
+            assert_eq!(
+                via_from, via_to_string,
+                "impossibility {k:?}: From<Kind> for String must agree with \
+                 the blanket ToString path via Display",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_to_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let via_from: String = k.into();
+            let via_to_string: String = k.to_string();
+            assert_eq!(
+                via_from, via_to_string,
+                "consistency {k:?}: From<Kind> for String must agree with \
+                 the blanket ToString path via Display",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_matches_to_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let via_from: String = k.into();
+            let via_to_string: String = k.to_string();
+            assert_eq!(
+                via_from, via_to_string,
+                "fused {k:?}: From<Kind> for String must agree with \
+                 the blanket ToString path via Display",
+            );
+        }
+    }
+
+    // ---------- (6) Fused-arm lockstep with half-side projections
+
+    #[test]
+    fn into_string_fused_matches_routed_half_sides() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: String = k.into();
+            let routed: String = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused From<Kind> for String must equal \
+                 routed half-side From<Kind> for String",
+            );
+        }
+    }
+
+    // ---------- (7) impl Into<String> composability at a generic
+    // callsite — the load-bearing pin the sibling
+    // From<Kind> for &'static str impls cannot satisfy, because Rust
+    // does NOT chain Into impls (T: Into<String> is NOT satisfied by
+    // T: Into<&'static str> alone)
+
+    fn take<S: Into<String>>(s: S) -> String {
+        s.into()
+    }
+
+    #[test]
+    fn into_string_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "impossibility {k:?}: generic Into<String> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "consistency {k:?}: generic Into<String> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "fused {k:?}: generic Into<String> must equal name()",
+            );
+        }
+    }
+
+    // ---------- (8) Owning-transfer pin — the projected String
+    // can be moved past the kind value's scope into a heap-owning
+    // Vec<String>, exactly the shape borrowed projections cannot
+    // satisfy
+
+    #[test]
+    fn into_string_projection_can_be_owned_impossibility() {
+        let mut cache: Vec<String> = Vec::new();
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: String = k.into();
+            cache.push(s);
+            // `k` (and any borrow of it) drops here at the end of the
+            // loop body; the pushed owned String outlives it.
+        }
+        let expected: Vec<String> = SameStoreImpossibilityKind::NAMES
+            .iter()
+            .map(|&s| s.to_owned())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "Vec<String> of owned projections must equal NAMES after the \
+             kind values drop",
+        );
+    }
+
+    #[test]
+    fn into_string_projection_can_be_owned_consistency() {
+        let mut cache: Vec<String> = Vec::new();
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: String = k.into();
+            cache.push(s);
+        }
+        let expected: Vec<String> = SameStoreConsistencyKind::NAMES
+            .iter()
+            .map(|&s| s.to_owned())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "Vec<String> of owned projections must equal NAMES after the \
+             kind values drop",
+        );
+    }
+
+    #[test]
+    fn into_string_projection_can_be_owned_fused() {
+        let mut cache: Vec<String> = Vec::new();
+        for &k in ProofRelationKind::VARIANTS {
+            let s: String = k.into();
+            cache.push(s);
+        }
+        let expected: Vec<String> = ProofRelationKind::NAMES
+            .iter()
+            .map(|&s| s.to_owned())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "Vec<String> of owned projections must equal NAMES after the \
+             kind values drop",
+        );
+    }
+
+    // ---------- (9) Round-trip identity through FromStr and TryFrom<&str>
+
+    #[test]
+    fn into_string_round_trips_through_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s.parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: From<Kind> for String must round-trip \
+                 through FromStr",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(s.as_str()),
+                Ok(k),
+                "impossibility {k:?}: From<Kind> for String must round-trip \
+                 through TryFrom<&str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_round_trips_through_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s.parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: From<Kind> for String must round-trip \
+                 through FromStr",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(s.as_str()),
+                Ok(k),
+                "consistency {k:?}: From<Kind> for String must round-trip \
+                 through TryFrom<&str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_string_round_trips_through_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: String = k.into();
+            assert_eq!(
+                s.parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: From<Kind> for String must round-trip through \
+                 FromStr",
+            );
+            assert_eq!(
+                ProofRelationKind::try_from(s.as_str()),
+                Ok(k),
+                "fused {k:?}: From<Kind> for String must round-trip through \
+                 TryFrom<&str>",
+            );
+        }
     }
 }
