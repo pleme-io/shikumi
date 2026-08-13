@@ -3407,6 +3407,57 @@ impl<'de> serde::Deserialize<'de> for ProofRelationKind {
     }
 }
 
+/// Lift a [`SameStoreConsistencyKind`] to the fused [`ProofRelationKind`]
+/// through the standard [`From`] trait — the constructor-side sibling of
+/// the [`ProofRelationKind::consistency`] accessor already at this
+/// altitude. Every `.into::<ProofRelationKind>()` seam on a consistent
+/// half-side kind reaches the [`ProofRelationKind::Consistent`] wrapping
+/// through the standard trait, without an open-coded
+/// `ProofRelationKind::Consistent(k)` variant constructor at every
+/// callsite. The pair
+/// (`impl From<SameStoreConsistencyKind> for ProofRelationKind`,
+///  `impl From<SameStoreImpossibilityKind> for ProofRelationKind`)
+/// welds the two variant constructors of the fused sum into the
+/// standard-trait idiom every downstream consumer already reaches
+/// through: a `.map(ProofRelationKind::from)` on a
+/// [`Result<SameStoreConsistencyKind, E>`], a `.map` on an
+/// [`Option<SameStoreConsistencyKind>`], a generic-typed function
+/// accepting `impl Into<ProofRelationKind>`, and any downstream code
+/// bounded on `T: From<SameStoreConsistencyKind>` now compose out of
+/// the standard trait alone. The impl is the inverse of the
+/// [`ProofRelationKind::consistency`] accessor: for every consistent
+/// kind `c`, `ProofRelationKind::from(c).consistency() == Some(c)` and
+/// `ProofRelationKind::from(c).impossibility() == None` — the
+/// round-trip identity welding the (constructor, accessor) pair on the
+/// consistent half of the fused sum through the standard trait.
+impl From<SameStoreConsistencyKind> for ProofRelationKind {
+    fn from(kind: SameStoreConsistencyKind) -> Self {
+        Self::Consistent(kind)
+    }
+}
+
+/// Lift a [`SameStoreImpossibilityKind`] to the fused [`ProofRelationKind`]
+/// through the standard [`From`] trait — the mirror of the
+/// [`From<SameStoreConsistencyKind>`] impl on the impossibility half of
+/// the fused sum, and the constructor-side sibling of the
+/// [`ProofRelationKind::impossibility`] accessor already at this
+/// altitude. Every `.into::<ProofRelationKind>()` seam on an
+/// impossibility half-side kind reaches the
+/// [`ProofRelationKind::Impossible`] wrapping through the standard
+/// trait, without an open-coded `ProofRelationKind::Impossible(k)`
+/// variant constructor at every callsite. The impl is the inverse of
+/// the [`ProofRelationKind::impossibility`] accessor: for every
+/// impossibility kind `i`, `ProofRelationKind::from(i).impossibility()
+/// == Some(i)` and `ProofRelationKind::from(i).consistency() == None`
+/// — the round-trip identity welding the (constructor, accessor) pair
+/// on the impossibility half of the fused sum through the standard
+/// trait.
+impl From<SameStoreImpossibilityKind> for ProofRelationKind {
+    fn from(kind: SameStoreImpossibilityKind) -> Self {
+        Self::Impossible(kind)
+    }
+}
+
 /// Exhaustive sum-type classification of a proof pair — every possible
 /// relation between two [`ConfigSyncProof`] values lands in exactly one
 /// variant.
@@ -22369,5 +22420,338 @@ mod hash_ord_tests {
         check_total_order(SameStoreImpossibilityKind::VARIANTS);
         check_total_order(SameStoreConsistencyKind::VARIANTS);
         check_total_order(ProofRelationKind::VARIANTS);
+    }
+}
+
+#[cfg(test)]
+mod from_tests {
+    //! [`From<SameStoreConsistencyKind>`] and
+    //! [`From<SameStoreImpossibilityKind>`] for [`ProofRelationKind`] —
+    //! the two variant constructors of the fused sum welded into the
+    //! standard [`From`] trait every downstream consumer already reaches
+    //! through.
+    //!
+    //! **The constructor-side sibling of the accessor pair.** The
+    //! [`ProofRelationKind::consistency`] and
+    //! [`ProofRelationKind::impossibility`] accessors already project the
+    //! fused sum back to the two [`Option<Kind>`] half-side shapes: for
+    //! every fused kind `k`, `k.consistency()` returns [`Some`] iff
+    //! `k` is [`ProofRelationKind::Consistent(c)`] with payload `c`, and
+    //! [`None`] otherwise. Before this pass the two constructors of the
+    //! fused sum — the pair [`ProofRelationKind::Consistent`] /
+    //! [`ProofRelationKind::Impossible`] — were reachable only through
+    //! their variant spellings, forcing every callsite that lifted a
+    //! half-side kind to the fused kind to open-code the correct wrapping
+    //! at every seam. The two [`From`] impls fold both variant
+    //! constructors into the standard trait every `.into()` / generic
+    //! `T: From<K>` bound already reaches, so a `.map(ProofRelationKind::from)`
+    //! on a [`Result<SameStoreConsistencyKind, E>`], a
+    //! [`Option::map`] on an [`Option<SameStoreImpossibilityKind>`], or a
+    //! generic-typed function accepting `impl Into<ProofRelationKind>`
+    //! composes out of the standard trait alone — the same lockstep the
+    //! sibling standard-trait pairs [`std::fmt::Display`] /
+    //! [`std::str::FromStr`] and [`serde::Serialize`] /
+    //! [`serde::Deserialize`] already carry.
+    //!
+    //! **Round-trip identity, welding the (constructor, accessor) pair.**
+    //! For every consistent kind `c`,
+    //! `ProofRelationKind::from(c).consistency() == Some(c)` and
+    //! `ProofRelationKind::from(c).impossibility() == None`; and for
+    //! every impossibility kind `i`,
+    //! `ProofRelationKind::from(i).impossibility() == Some(i)` and
+    //! `ProofRelationKind::from(i).consistency() == None`. The two
+    //! [`From`] impls are the inverses of the two
+    //! [`Option<Kind>`]-shaped accessors on the fused sum — the same
+    //! (constructor, accessor) pair the [`std::str::FromStr`] /
+    //! [`std::fmt::Display`] bijection already welds on the identifier
+    //! projection, lifted here to the type-level variant constructors.
+    //!
+    //! **Cross-projection lockstep.** Every prior receiver on the fused
+    //! sum ([`ProofRelationKind::name`], [`ProofRelationKind::is_consistent`],
+    //! [`ProofRelationKind::is_impossible`], [`std::fmt::Display`],
+    //! [`serde::Serialize`]) is stable under the lift: for every
+    //! consistent kind `c`, `ProofRelationKind::from(c).name() ==
+    //! c.name()` and `.is_consistent()` reads `true`; and for every
+    //! impossibility kind `i`, `ProofRelationKind::from(i).name() ==
+    //! i.name()` and `.is_impossible()` reads `true`. The two constructors
+    //! preserve every projection the fused kind already carries.
+    //!
+    //! The tests below pin the structural invariants that keep the two
+    //! [`From`] impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Truth table on both impls — every variant of the two half-side
+    //!    kind enums lifts to the correctly-wrapped fused kind.
+    //! 2. Round-trip identity: for every consistent kind `c`,
+    //!    `ProofRelationKind::from(c).consistency() == Some(c)` and
+    //!    `.impossibility() == None`; and the mirror on the impossibility
+    //!    half.
+    //! 3. Tag preservation: for every consistent kind `c`,
+    //!    `ProofRelationKind::from(c).is_consistent()`; and for every
+    //!    impossibility kind `i`, `ProofRelationKind::from(i).is_impossible()`
+    //!    — the boolean partition-at-index-3 pin the `variants_tests`
+    //!    module already carries is preserved by the constructors.
+    //! 4. Name preservation: `ProofRelationKind::from(c).name() ==
+    //!    c.name()` on all three consistent variants, and the mirror
+    //!    on the two impossibility variants — the fused kind's
+    //!    [`ProofRelationKind::name`] receiver already delegates to the
+    //!    half-side [`Self::name`] on both arms, so this pin holds by
+    //!    construction; the test reasserts it to catch any silent
+    //!    divergence.
+    //! 5. [`VARIANTS`] coverage: for every element of
+    //!    [`SameStoreConsistencyKind::VARIANTS`], the lifted fused kind
+    //!    is a member of [`ProofRelationKind::VARIANTS`]; and the mirror
+    //!    on [`SameStoreImpossibilityKind::VARIANTS`] — the two
+    //!    constructors together cover every element of the fused
+    //!    closed set.
+    //! 6. [`.into()`] composability at generic-typed callsites — a
+    //!    helper generic on [`Into<ProofRelationKind>`] accepts both
+    //!    half-side kinds and yields the same wrapping the direct
+    //!    [`From::from`] call yields, matching the standard-trait
+    //!    resolution rule.
+    //! 7. [`Option::map`] and [`Result::map`] composability — the two
+    //!    [`From`] impls compose with `Option::map(ProofRelationKind::from)`
+    //!    and `Result::map(ProofRelationKind::from)` at every half-side
+    //!    variant, matching the standard-trait resolution rule at the
+    //!    combinator seam.
+    //! 8. Cross-derive lockstep — the fused kind produced by
+    //!    [`From::from`] round-trips through
+    //!    [`std::fmt::Display`] / [`std::str::FromStr`] to the SAME
+    //!    fused kind, pinning the two [`From`] impls as lockstep-identical
+    //!    with the identifier bijection on both half-side alphabets.
+
+    use super::*;
+
+    // ---------- (1) Truth table on both From impls
+
+    #[test]
+    fn from_consistency_truth_table() {
+        assert_eq!(
+            ProofRelationKind::from(SameStoreConsistencyKind::Stationary),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            ProofRelationKind::from(SameStoreConsistencyKind::IdentityRepublish),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(
+            ProofRelationKind::from(SameStoreConsistencyKind::Progression),
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+        );
+    }
+
+    #[test]
+    fn from_impossibility_truth_table() {
+        assert_eq!(
+            ProofRelationKind::from(SameStoreImpossibilityKind::Regressed),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+        assert_eq!(
+            ProofRelationKind::from(SameStoreImpossibilityKind::CrossStore),
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+        );
+    }
+
+    // ---------- (2) Round-trip identity through the accessor pair
+
+    #[test]
+    fn from_consistency_round_trips_through_accessors() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            assert_eq!(
+                fused.consistency(),
+                Some(c),
+                "consistency({fused:?}) should read Some({c:?})",
+            );
+            assert_eq!(
+                fused.impossibility(),
+                None,
+                "impossibility({fused:?}) should read None on the consistent arm",
+            );
+        }
+    }
+
+    #[test]
+    fn from_impossibility_round_trips_through_accessors() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            assert_eq!(
+                fused.impossibility(),
+                Some(i),
+                "impossibility({fused:?}) should read Some({i:?})",
+            );
+            assert_eq!(
+                fused.consistency(),
+                None,
+                "consistency({fused:?}) should read None on the impossibility arm",
+            );
+        }
+    }
+
+    // ---------- (3) Tag preservation (is_consistent / is_impossible)
+
+    #[test]
+    fn from_preserves_tag_on_both_halves() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            assert!(
+                fused.is_consistent(),
+                "from({c:?}).is_consistent() should be true"
+            );
+            assert!(
+                !fused.is_impossible(),
+                "from({c:?}).is_impossible() should be false"
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            assert!(
+                fused.is_impossible(),
+                "from({i:?}).is_impossible() should be true"
+            );
+            assert!(
+                !fused.is_consistent(),
+                "from({i:?}).is_consistent() should be false"
+            );
+        }
+    }
+
+    // ---------- (4) Name preservation across the lift
+
+    #[test]
+    fn from_preserves_name_on_both_halves() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                ProofRelationKind::from(c).name(),
+                c.name(),
+                "from({c:?}).name() should equal {c:?}.name()",
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                ProofRelationKind::from(i).name(),
+                i.name(),
+                "from({i:?}).name() should equal {i:?}.name()",
+            );
+        }
+    }
+
+    // ---------- (5) VARIANTS coverage: every half-side variant lifts
+    // into the fused closed set
+
+    #[test]
+    fn from_covers_fused_variants() {
+        let fused: std::collections::HashSet<ProofRelationKind> =
+            ProofRelationKind::VARIANTS.iter().copied().collect();
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            assert!(
+                fused.contains(&ProofRelationKind::from(c)),
+                "from({c:?}) should be an element of ProofRelationKind::VARIANTS",
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            assert!(
+                fused.contains(&ProofRelationKind::from(i)),
+                "from({i:?}) should be an element of ProofRelationKind::VARIANTS",
+            );
+        }
+        // And the two lifted-VARIANTS sets together cover the fused closed set exactly.
+        let lifted: std::collections::HashSet<ProofRelationKind> =
+            SameStoreConsistencyKind::VARIANTS
+                .iter()
+                .copied()
+                .map(ProofRelationKind::from)
+                .chain(
+                    SameStoreImpossibilityKind::VARIANTS
+                        .iter()
+                        .copied()
+                        .map(ProofRelationKind::from),
+                )
+                .collect();
+        assert_eq!(
+            lifted, fused,
+            "the union of the two half-side lifts should equal ProofRelationKind::VARIANTS",
+        );
+    }
+
+    // ---------- (6) .into() composability at generic-typed callsites
+
+    fn wrap<K: Into<ProofRelationKind>>(k: K) -> ProofRelationKind {
+        k.into()
+    }
+
+    #[test]
+    fn into_composes_with_generic_typed_callsites() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                wrap(c),
+                ProofRelationKind::from(c),
+                "wrap({c:?}) via Into should equal From::from({c:?})",
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                wrap(i),
+                ProofRelationKind::from(i),
+                "wrap({i:?}) via Into should equal From::from({i:?})",
+            );
+        }
+    }
+
+    // ---------- (7) Option::map and Result::map composability
+
+    #[test]
+    fn from_composes_with_option_and_result_map() {
+        // Bind the constructor through a variable to exercise the combinator
+        // seam Option::map / Result::map composes through, rather than the
+        // literal `Some(x).map(..)` shape a downstream reader could rewrite
+        // to `Some(f(x))` — the interesting question is that the function
+        // pointer `ProofRelationKind::from` composes with `Option::map` and
+        // `Result::map` at every half-side variant, not the literal wrapper.
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let opt: Option<SameStoreConsistencyKind> = Some(c);
+            let res: Result<SameStoreConsistencyKind, ()> = Ok(c);
+            assert_eq!(
+                opt.map(ProofRelationKind::from),
+                Some(ProofRelationKind::from(c))
+            );
+            assert_eq!(
+                res.map(ProofRelationKind::from),
+                Ok(ProofRelationKind::from(c))
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let opt: Option<SameStoreImpossibilityKind> = Some(i);
+            let res: Result<SameStoreImpossibilityKind, ()> = Ok(i);
+            assert_eq!(
+                opt.map(ProofRelationKind::from),
+                Some(ProofRelationKind::from(i))
+            );
+            assert_eq!(
+                res.map(ProofRelationKind::from),
+                Ok(ProofRelationKind::from(i))
+            );
+        }
+    }
+
+    // ---------- (8) Cross-derive lockstep with the identifier bijection
+
+    #[test]
+    fn from_round_trips_through_display_and_from_str() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            let round_tripped: ProofRelationKind = fused
+                .to_string()
+                .parse()
+                .expect("consistent-half fused kind should round-trip through Display + FromStr");
+            assert_eq!(round_tripped, fused);
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            let round_tripped: ProofRelationKind = fused.to_string().parse().expect(
+                "impossibility-half fused kind should round-trip through Display + FromStr",
+            );
+            assert_eq!(round_tripped, fused);
+        }
     }
 }
