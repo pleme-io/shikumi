@@ -1746,6 +1746,112 @@ impl ProofDelta {
         }
     }
 
+    /// The consistent-corner tag iff this delta lands in one of the
+    /// three legitimate corners — [`Self::stationary`] maps to
+    /// `Some(SameStoreConsistencyKind::Stationary)`,
+    /// [`Self::identity_republish`] maps to
+    /// `Some(SameStoreConsistencyKind::IdentityRepublish)`,
+    /// [`Self::progression`] maps to
+    /// `Some(SameStoreConsistencyKind::Progression)`, and the two
+    /// impossibility corners ([`Self::cross_store_signal`],
+    /// [`Self::generations_regressed`]) map to [`Option::None`].
+    ///
+    /// The delta-altitude receiver-sibling of
+    /// [`ProofRelation::consistency_kind`] and
+    /// [`ProofRelationWire::consistency_kind`], lifting the three-variant
+    /// consistency discrimination into a typed
+    /// [`SameStoreConsistencyKind`] receiver whose `match` body pins
+    /// the three legitimate corners at compile time even when the
+    /// caller wants to distinguish which one fired.
+    ///
+    /// **The direct mirror of [`Self::impossibility_kind`] on the
+    /// consistent half.** The two receivers are the pair of typed
+    /// tag-only sum-type projections whose two `Some`-sets exhaustively
+    /// cover the five delta-reachable corners — exactly one of
+    /// `self.consistency_kind()` / `self.impossibility_kind()` is
+    /// [`Some`] on every [`ProofDelta`] value, and the pair's XOR is a
+    /// total five-variant identity that neither half alone can pin.
+    ///
+    /// A hot-reload observer or a monitoring dashboard holding a
+    /// freshly computed [`ProofDelta`] and wanting the "WHICH
+    /// legitimate corner fired?" answer previously had two inline
+    /// paths, each leaking work: (a) a nested `if self.stationary() {
+    /// Some(Kind::Stationary) } else if self.identity_republish() {
+    /// Some(Kind::IdentityRepublish) } else if self.progression() {
+    /// Some(Kind::Progression) } else { None }` spelled at every
+    /// seam, whose three-way branch the three disjoint atomic
+    /// legitimate-corner predicates already carry once as booleans;
+    /// or (b) `self.relation().and_then(|r| r.consistency_kind())` —
+    /// a fold through the classification seam whose [`Option`]
+    /// unwrapping the tag-only consistency-kind question doesn't need
+    /// (and which on the regressed corner folds
+    /// [`Self::generations_advanced`] to `None` and short-circuits to
+    /// `None` before the classification even runs — which happens to
+    /// agree with this receiver on the regressed corner, since a
+    /// regressed delta is not consistent, but agreement-by-accident on
+    /// one corner doesn't save the round-trip through the payload
+    /// welds the tag-only answer doesn't touch). The receiver-sibling
+    /// here answers the same question through a single welded
+    /// conditional, pinned once at the delta altitude, without any
+    /// payload welds on the way.
+    ///
+    /// **Agreement with [`Self::same_store_consistent`].**
+    /// `self.consistency_kind().is_some() ==
+    /// self.same_store_consistent()` pointwise on every [`ProofDelta`]
+    /// value — the [`Option`] shape of this receiver's return type
+    /// projects to the boolean shape of the three-variant union
+    /// predicate. The two receivers weld the same three-way / two-way
+    /// partition of the delta space (two impossibility corners on the
+    /// `Option::None` side, three legitimate corners on the `Some`
+    /// side) at two different receiver-family altitudes: the boolean
+    /// altitude and the tag-only sum-type altitude.
+    ///
+    /// **XOR-identity with [`Self::impossibility_kind`].** For every
+    /// [`ProofDelta`] value, exactly one of
+    /// `self.consistency_kind()` / `self.impossibility_kind()` is
+    /// [`Some`] — the two receivers partition the delta space into
+    /// two disjoint half-spaces whose union is total, so
+    /// `self.consistency_kind().is_some() ^
+    /// self.impossibility_kind().is_some()` is the constant `true`,
+    /// and `self.consistency_kind().is_some() &&
+    /// self.impossibility_kind().is_some()` is the constant `false`.
+    /// This is the FIRST typed-tag XOR-identity between two
+    /// `Option<Kind>` receivers at the delta altitude — a shape the
+    /// two-boolean pair (`same_store_consistent` +
+    /// `same_store_inconsistent`) already pins as a boolean identity
+    /// but which no prior tag-only receiver alone can lift.
+    ///
+    /// **Cross-altitude same-answer with the classification
+    /// receivers.** For every [`ProofDelta`] value that
+    /// [`Self::relation`] classifies as `Some(r)`,
+    /// `self.consistency_kind() == r.consistency_kind()` — the
+    /// delta-altitude tag equals the classification-altitude tag on
+    /// the four delta-reachable corners. On the regressed corner
+    /// [`Self::relation`] returns `None`, but the consistency tag
+    /// itself is preserved at the delta altitude:
+    /// `self.consistency_kind()` returns `None` there too, in
+    /// lockstep with `r.consistency_kind()`'s `None` at the
+    /// classification altitude, since the impossibility half's
+    /// [`Option::None`] projection of the consistency receiver
+    /// carries no altitude-specific dependency.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its consistency-kind verdict at compile time too, matching the
+    /// `const`-ness of every other classification accessor at every
+    /// altitude.
+    #[must_use]
+    pub const fn consistency_kind(&self) -> Option<SameStoreConsistencyKind> {
+        if self.stationary() {
+            Some(SameStoreConsistencyKind::Stationary)
+        } else if self.identity_republish() {
+            Some(SameStoreConsistencyKind::IdentityRepublish)
+        } else if self.progression() {
+            Some(SameStoreConsistencyKind::Progression)
+        } else {
+            None
+        }
+    }
+
     /// Classify the delta into the exhaustive [`ProofRelation`] sum —
     /// the delta-altitude classification receiver-sibling of
     /// [`ConfigSyncProof::relation_since`].
@@ -2101,6 +2207,137 @@ pub enum SameStoreImpossibilityKind {
     CrossStore,
 }
 
+/// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
+/// tag-only sum-type discriminator over the three variants
+/// [`ProofRelation::same_store_consistent`] fires on. Yielded by
+/// [`ProofDelta::consistency_kind`],
+/// [`ProofRelation::consistency_kind`], and
+/// [`ProofRelationWire::consistency_kind`], each returning
+/// `Option<SameStoreConsistencyKind>` and mapping the two impossibility
+/// corners to [`Option::None`] and the three legitimate corners to their
+/// [`Self::Stationary`] / [`Self::IdentityRepublish`] /
+/// [`Self::Progression`] tag.
+///
+/// **The direct mirror of [`SameStoreImpossibilityKind`] on the
+/// consistent half.** The impossibility receiver-family answers "WHICH
+/// impossibility?" with a two-variant tag; this receiver-family answers
+/// "WHICH legitimate corner?" with a three-variant tag. Together the
+/// two receivers weld the two-way partition of the classification
+/// space into a `(Option<SameStoreConsistencyKind>,
+/// Option<SameStoreImpossibilityKind>)` pair whose two `Some`-sets
+/// exhaustively cover the five variants: exactly one of the two
+/// [`Option`]s is [`Some`] on every [`ProofRelation`] value, and their
+/// XOR is a total five-variant identity that neither half alone can
+/// pin.
+///
+/// **Why a dedicated tag-only sum for the consistent half.**
+/// [`ProofRelation::same_store_consistent`] (and its siblings at the
+/// [`ProofDelta`] and [`ProofRelationWire`] altitudes) already welds the
+/// three-variant union into a single boolean; but a monitoring
+/// dashboard or a hot-reload observer that wants to distinguish WHICH
+/// legitimate corner fired (the null hypothesis vs. an identical-value
+/// republish vs. a legitimate value change) previously had two inline
+/// paths, each leaking work: (a) route on the underlying
+/// [`ProofRelation`] / [`ProofRelationWire`] variant tag itself — a
+/// five-arm `match` whose two impossibility arms the consistency-kind
+/// question doesn't care about, and whose three-arm consistent fold
+/// the exhaustiveness checker cannot help keep in sync with a future
+/// legitimate corner (a hypothetical fourth would silently escape a
+/// three-arm `matches!` on the sum); or (b) at the delta altitude, a
+/// nested `if self.stationary() { Kind::Stationary } else if
+/// self.identity_republish() { Kind::IdentityRepublish } else if
+/// self.progression() { Kind::Progression } else { .. }` spelled at
+/// every seam, whose three-way branch the three disjoint delta-altitude
+/// atomic predicates already carry once as booleans. This tag-only sum
+/// lifts the three-variant consistency discrimination into a
+/// `match`-able typed enum whose exhaustiveness the checker enforces:
+/// adding a hypothetical fourth legitimate corner (say, a
+/// generation-only advance the store could produce through a rekey
+/// that both preserves the class-scoped watermark AND bumps generation
+/// through a distinguishable code path) fails to compile at every
+/// altitude's `consistency_kind` `match` body in lockstep with the
+/// enum itself.
+///
+/// **Payload-free by design.** Two of the three legitimate corners
+/// carry payload on [`ProofRelation`] (a [`std::num::NonZeroU64`] on
+/// [`ProofRelation::IdentityRepublish`] and a
+/// [`MovedWatermarkDelta`] + [`std::num::NonZeroU64`] pair on
+/// [`ProofRelation::Progression`]); this type carries none of them. The
+/// consistency-kind question ("WHICH legitimate corner?") is a
+/// projection of the variant tag alone, whose answer is decidable from
+/// every altitude (delta, value classification, wire classification)
+/// without touching a payload field or paying the
+/// [`std::num::NonZeroU64`] / [`MovedWatermarkDelta`] parse-time welds
+/// those payloads carry. A consumer that wants the payloads reaches
+/// [`ProofRelation::watermark`] / [`ProofRelation::generations`] at the
+/// classification altitude where the payloads live; a consumer that
+/// only wants the consistency tag reaches THIS receiver at whichever
+/// altitude it already holds.
+///
+/// **Same tag at all three altitudes.** [`ProofDelta`] carries the
+/// three legitimate corners through [`ProofDelta::stationary`] (the
+/// [`Self::Stationary`] tag), [`ProofDelta::identity_republish`] (the
+/// [`Self::IdentityRepublish`] tag), and [`ProofDelta::progression`]
+/// (the [`Self::Progression`] tag). [`ProofRelation`] carries them
+/// through its `Stationary`, `IdentityRepublish { generations }`, and
+/// `Progression { watermark, generations }` variants.
+/// [`ProofRelationWire`] carries them through its wire-side mirrors.
+/// All three altitudes project through the SAME three-variant tag-only
+/// sum-type, so the (delta, value, wire) × (consistency-kind) grid
+/// closes with a single shared receiver type — a consumer routing on
+/// the consistency tag alone reaches the same-named answer through the
+/// same-named receiver at every altitude, and the cross-altitude
+/// same-answer invariant reads as pointwise
+/// `Option<SameStoreConsistencyKind>` equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SameStoreConsistencyKind {
+    /// The null-hypothesis legitimate corner — the same observation
+    /// twice, watermark stationary AND generation unchanged. The
+    /// `/healthz/config` polling case a consumer skips further
+    /// inspection on.
+    ///
+    /// Reached from [`ProofDelta::stationary`] at the delta altitude,
+    /// from the [`ProofRelation::Stationary`] variant at the value
+    /// classification altitude, and from the
+    /// [`ProofRelationWire::Stationary`] variant at the wire
+    /// classification altitude — the tag is the same at every
+    /// altitude, and this corner is payload-free at every altitude
+    /// (the variant carries nothing to project).
+    Stationary,
+    /// The identical-value republish legitimate corner — watermark
+    /// stationary, but generation advanced by one or more (a reload
+    /// cycle over a filesystem that flipped and flipped back before
+    /// the observer noticed).
+    ///
+    /// Reached from [`ProofDelta::identity_republish`] at the delta
+    /// altitude, from the [`ProofRelation::IdentityRepublish`] variant
+    /// at the value classification altitude, and from the
+    /// [`ProofRelationWire::IdentityRepublish`] variant at the wire
+    /// classification altitude — the tag is the same at every
+    /// altitude, though the payload generation count
+    /// ([`std::num::NonZeroU64`] on the value side, [`u64`] on the
+    /// wire, folded to the boolean `matches!(generations_advanced,
+    /// Some(n) if n > 0)` at the delta altitude) lives at whichever
+    /// altitude carries it.
+    IdentityRepublish,
+    /// The normal-progression legitimate corner — the watermark moved
+    /// AND generation advanced by one or more. Every routine
+    /// config-file edit surfaces here.
+    ///
+    /// Reached from [`ProofDelta::progression`] at the delta altitude,
+    /// from the [`ProofRelation::Progression`] variant at the value
+    /// classification altitude, and from the
+    /// [`ProofRelationWire::Progression`] variant at the wire
+    /// classification altitude — the tag is the same at every
+    /// altitude, though the paired payload
+    /// ([`MovedWatermarkDelta`] + [`std::num::NonZeroU64`] on the
+    /// value side, the wire mirrors on the wire side, and the
+    /// two-conjunct predicate `!watermark.stationary() &&
+    /// matches!(generations_advanced, Some(n) if n > 0)` at the delta
+    /// altitude) lives at whichever altitude carries it.
+    Progression,
+}
+
 /// Exhaustive sum-type classification of a proof pair — every possible
 /// relation between two [`ConfigSyncProof`] values lands in exactly one
 /// variant.
@@ -2427,6 +2664,96 @@ impl ProofRelation {
             Self::Regressed { .. } => Some(SameStoreImpossibilityKind::Regressed),
             Self::CrossStore { .. } => Some(SameStoreImpossibilityKind::CrossStore),
             Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. } => None,
+        }
+    }
+
+    /// The consistent-corner tag iff this classification lands in one
+    /// of the three legitimate corners — [`Self::Stationary`] maps to
+    /// `Some(SameStoreConsistencyKind::Stationary)`,
+    /// [`Self::IdentityRepublish`] maps to
+    /// `Some(SameStoreConsistencyKind::IdentityRepublish)`,
+    /// [`Self::Progression`] maps to
+    /// `Some(SameStoreConsistencyKind::Progression)`, and the two
+    /// impossibility variants ([`Self::CrossStore`], [`Self::Regressed`])
+    /// map to [`Option::None`].
+    ///
+    /// The classification-altitude receiver-sibling of
+    /// [`ProofDelta::consistency_kind`] and
+    /// [`ProofRelationWire::consistency_kind`], lifting the three-variant
+    /// [`Self::same_store_consistent`] union into a typed
+    /// [`SameStoreConsistencyKind`] whose `match` body distinguishes
+    /// WHICH legitimate corner fired — a shape the exhaustiveness
+    /// checker keeps in sync with any future legitimate corner (a
+    /// hypothetical fourth would fail to compile at this method's own
+    /// `match` in lockstep with the enum itself and with every other
+    /// altitude's `consistency_kind`).
+    ///
+    /// **The direct mirror of [`Self::impossibility_kind`] on the
+    /// consistent half.** The two receivers are the pair of typed
+    /// tag-only sum-type projections whose two `Some`-sets exhaustively
+    /// cover the five variants — exactly one of
+    /// `self.consistency_kind()` / `self.impossibility_kind()` is
+    /// [`Some`] on every [`ProofRelation`] value, and the pair's XOR is
+    /// a total five-variant identity that neither half alone can pin.
+    /// Together they weld the two-way partition of the classification
+    /// space into a `(Option<SameStoreConsistencyKind>,
+    /// Option<SameStoreImpossibilityKind>)` pair whose two `Some`-sets
+    /// exhaustively cover the five variants.
+    ///
+    /// **Agreement with [`Self::same_store_consistent`] at the same
+    /// altitude.** `self.consistency_kind().is_some() ==
+    /// self.same_store_consistent()` pointwise on every variant — the
+    /// [`Option`] shape of this receiver's return type projects to the
+    /// boolean shape of the three-variant union predicate. The two
+    /// receivers weld the same partition of the classification space
+    /// at two different receiver-family altitudes: the boolean
+    /// altitude and the tag-only sum-type altitude.
+    ///
+    /// **Agreement with the three atomic legitimate-corner
+    /// predicates.** At this altitude, `self.consistency_kind() ==
+    /// Some(SameStoreConsistencyKind::Stationary)` iff
+    /// `self.stationary()`, `self.consistency_kind() ==
+    /// Some(SameStoreConsistencyKind::IdentityRepublish)` iff
+    /// `self.identity_republish()`, and `self.consistency_kind() ==
+    /// Some(SameStoreConsistencyKind::Progression)` iff
+    /// `self.progression()` — the tag-only sum-type projection agrees
+    /// pointwise with the three single-variant tag-only predicates
+    /// whose disjunction covers the consistent half of the partition.
+    ///
+    /// **XOR-identity with [`Self::impossibility_kind`].** For every
+    /// variant, exactly one of `self.consistency_kind()` /
+    /// `self.impossibility_kind()` is [`Some`]; the two receivers
+    /// partition the classification space into two disjoint
+    /// half-spaces whose union is total. This is the FIRST typed-tag
+    /// XOR-identity between two `Option<Kind>` receivers at the value
+    /// classification altitude.
+    ///
+    /// **Payload-free by design.** The consistency-kind question is a
+    /// projection of the variant tag alone; a consumer that wants the
+    /// payloads reaches [`Self::watermark`] (on [`Self::Progression`])
+    /// or [`Self::generations`] (on [`Self::IdentityRepublish`] and
+    /// [`Self::Progression`]) instead — the payload accessors that
+    /// already carry the [`MovedWatermarkDelta`] and
+    /// [`std::num::NonZeroU64`] welds at the same altitude.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`]
+    /// projects its consistency-kind verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate or payload) in this impl.
+    ///
+    /// The wire-side sibling is
+    /// [`ProofRelationWire::consistency_kind`], which answers the same
+    /// question at the wire altitude with the same welded pattern, and
+    /// the delta-altitude sibling is
+    /// [`ProofDelta::consistency_kind`], which answers the same
+    /// question one altitude down.
+    #[must_use]
+    pub const fn consistency_kind(&self) -> Option<SameStoreConsistencyKind> {
+        match *self {
+            Self::Stationary => Some(SameStoreConsistencyKind::Stationary),
+            Self::IdentityRepublish { .. } => Some(SameStoreConsistencyKind::IdentityRepublish),
+            Self::Progression { .. } => Some(SameStoreConsistencyKind::Progression),
+            Self::CrossStore { .. } | Self::Regressed { .. } => None,
         }
     }
 
@@ -3532,6 +3859,83 @@ impl ProofRelationWire {
             Self::Regressed { .. } => Some(SameStoreImpossibilityKind::Regressed),
             Self::CrossStore { .. } => Some(SameStoreImpossibilityKind::CrossStore),
             Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. } => None,
+        }
+    }
+
+    /// The consistent-corner tag iff this wire classification lands in
+    /// one of the three legitimate corners — [`Self::Stationary`] maps
+    /// to `Some(SameStoreConsistencyKind::Stationary)`,
+    /// [`Self::IdentityRepublish`] maps to
+    /// `Some(SameStoreConsistencyKind::IdentityRepublish)`,
+    /// [`Self::Progression`] maps to
+    /// `Some(SameStoreConsistencyKind::Progression)`, and the two
+    /// impossibility variants ([`Self::CrossStore`], [`Self::Regressed`])
+    /// map to [`Option::None`].
+    ///
+    /// The wire-side receiver-sibling of
+    /// [`ProofRelation::consistency_kind`] and
+    /// [`ProofDelta::consistency_kind`], closing the (delta, value,
+    /// wire) × (consistency-kind) grid at the third and final altitude
+    /// through the same shared [`SameStoreConsistencyKind`] sum-type
+    /// the value-side and delta-side accessors return.
+    ///
+    /// A `/healthz/config` change-feed reader or a hot-reload observer
+    /// that holds a freshly deserialized [`ProofRelationWire`] and
+    /// wants the "WHICH legitimate corner fired?" answer previously had
+    /// three inline paths, each paying a needless cost: (a)
+    /// `ProofRelation::try_from_wire(&wire).map(|r| r.consistency_kind())`
+    /// — chaining a [`MovedWatermarkDelta::try_from_wire`] weld on the
+    /// two payload-carrying corners AND a [`std::num::NonZeroU64::new`]
+    /// weld on the three generation-carrying corners, none of which
+    /// the tag-only consistency-kind question needs; (b) a nested
+    /// `matches!` cascade over the underlying variant tag whose
+    /// three-arm consistent fold the exhaustiveness checker cannot
+    /// help keep in sync with a future legitimate corner; or (c)
+    /// `wire.stationary().then_some(Kind::Stationary).or_else(|| ...)`
+    /// folded into the [`Option`] shape by hand — a three-hop
+    /// composition through three single-variant tag-only predicates
+    /// spelled at every seam. The receiver-sibling here answers the
+    /// same question at the wire altitude through the same welded
+    /// pattern the value-side accessor carries.
+    ///
+    /// **Same-answer invariant with
+    /// [`ProofRelation::consistency_kind`].** For every value/wire
+    /// pair the two accessors agree pointwise: whenever
+    /// `relation.consistency_kind()` returns `k`,
+    /// `relation.to_wire().consistency_kind()` returns the same `k`.
+    /// The wire is a lossless channel for the consistency-kind
+    /// question the value-side sibling answers.
+    ///
+    /// **Agreement with [`Self::same_store_consistent`] at the same
+    /// altitude.** `wire.consistency_kind().is_some() ==
+    /// wire.same_store_consistent()` pointwise on every variant.
+    ///
+    /// **XOR-identity with [`Self::impossibility_kind`] at the same
+    /// altitude.** For every variant, exactly one of
+    /// `wire.consistency_kind()` / `wire.impossibility_kind()` is
+    /// [`Some`]; the two receivers partition the wire classification
+    /// space into two disjoint half-spaces whose union is total. This
+    /// is the FIRST typed-tag XOR-identity between two `Option<Kind>`
+    /// receivers at the wire classification altitude.
+    ///
+    /// **The tag alone is sufficient.** No payload field participates
+    /// in the answer, so no parse-time weld is even conceptually
+    /// involved — a wire consumer routing on the internally-tagged
+    /// `kind` field alone reaches the verdict without deserializing
+    /// any payload portion, matching the low-cost seam
+    /// [`ProofRelationWire`]'s serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its consistency-kind verdict at compile time too,
+    /// matching the `const`-ness of
+    /// [`ProofRelation::consistency_kind`] one altitude up.
+    #[must_use]
+    pub const fn consistency_kind(&self) -> Option<SameStoreConsistencyKind> {
+        match *self {
+            Self::Stationary => Some(SameStoreConsistencyKind::Stationary),
+            Self::IdentityRepublish { .. } => Some(SameStoreConsistencyKind::IdentityRepublish),
+            Self::Progression { .. } => Some(SameStoreConsistencyKind::Progression),
+            Self::CrossStore { .. } | Self::Regressed { .. } => None,
         }
     }
 
@@ -17394,6 +17798,455 @@ mod impossibility_kind_tests {
         assert_ne!(k, SameStoreImpossibilityKind::Regressed);
         assert_eq!(
             Some(SameStoreImpossibilityKind::CrossStore),
+            Some(k),
+            "the shared tag survives Option-wrapping and pattern equality",
+        );
+    }
+}
+
+#[cfg(test)]
+mod consistency_kind_tests {
+    //! Weld the tag-only consistency-kind receiver at all THREE
+    //! altitudes — [`ProofDelta::consistency_kind`],
+    //! [`ProofRelation::consistency_kind`], and
+    //! [`ProofRelationWire::consistency_kind`] — all yielding the SAME
+    //! shared [`SameStoreConsistencyKind`] sum-type. The (delta, value,
+    //! wire) × (consistency-kind) grid closes through a single shared
+    //! receiver type, so a cross-altitude same-answer invariant reads
+    //! as pointwise `Option<SameStoreConsistencyKind>` equality without
+    //! any altitude-specific tag re-projection.
+    //!
+    //! The tests below cover, at every altitude in one exhaustive
+    //! fixture:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners
+    //!    — the three legitimate corners project to their
+    //!    [`SameStoreConsistencyKind::Stationary`] /
+    //!    [`SameStoreConsistencyKind::IdentityRepublish`] /
+    //!    [`SameStoreConsistencyKind::Progression`] tag, the two
+    //!    impossibility corners project to [`Option::None`].
+    //! 2. Cross-altitude same-answer between the delta altitude and
+    //!    the value-classification altitude on the four
+    //!    delta-reachable corners.
+    //! 3. Cross-altitude same-answer on ALL five corners including
+    //!    Regressed, through the lossless
+    //!    [`ConfigSyncProof::relation_since`] path: the tag is
+    //!    payload-free and stays [`Option::None`] on both altitudes for
+    //!    the impossibility corners.
+    //! 4. Value/wire same-answer: for every [`ProofRelation`],
+    //!    `r.consistency_kind() == r.to_wire().consistency_kind()`
+    //!    pointwise on every variant — the wire is a lossless channel
+    //!    for the consistency-kind question.
+    //! 5. Agreement with `same_store_consistent` at every altitude:
+    //!    `x.consistency_kind().is_some() == x.same_store_consistent()`.
+    //! 6. Agreement with the three atomic legitimate-corner
+    //!    classifiers at the two classification altitudes:
+    //!    `r.consistency_kind() == Some(Stationary)` iff `r.stationary()`;
+    //!    `r.consistency_kind() == Some(IdentityRepublish)` iff
+    //!    `r.identity_republish()`; `r.consistency_kind() ==
+    //!    Some(Progression)` iff `r.progression()`.
+    //! 7. XOR-identity with [`SameStoreImpossibilityKind`] at every
+    //!    altitude: exactly one of `x.consistency_kind()` /
+    //!    `x.impossibility_kind()` is [`Some`] on every value — the
+    //!    two receivers partition the classification space into two
+    //!    disjoint half-spaces whose union is total.
+    //! 8. `const`-callable at every altitude on hand-constructed
+    //!    values at every corner.
+    //! 9. `Copy`/`Eq` closure: the enum's Copy/Eq derives let it live
+    //!    in a `const` and compare through the pattern the tests use.
+    //!
+    //! Genuinely new — no prior receiver at any altitude carried a
+    //! typed `Option<Kind>` discrimination of the CONSISTENT half; the
+    //! three-variant union was reachable only as a boolean predicate
+    //! ([`ProofRelation::same_store_consistent`] et al.) or through
+    //! the underlying variant tag whose two impossibility arms the
+    //! consistency-kind question doesn't care about.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    fn corners() -> Vec<(
+        &'static str,
+        ConfigSyncProof,
+        ConfigSyncProof,
+        Option<SameStoreConsistencyKind>,
+    )> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                Some(SameStoreConsistencyKind::Stationary),
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                Some(SameStoreConsistencyKind::IdentityRepublish),
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                Some(SameStoreConsistencyKind::Progression),
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                None,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                None,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned at all three altitudes
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid_at_every_altitude() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.consistency_kind(),
+                want,
+                "{name}: delta consistency_kind diverged from the pinned truth table",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.consistency_kind(),
+                want,
+                "{name}: value classification consistency_kind diverged from the \
+                 pinned truth table",
+            );
+            let w = current.relation_wire_since(&prior);
+            assert_eq!(
+                w.consistency_kind(),
+                want,
+                "{name}: wire classification consistency_kind diverged from the \
+                 pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer on the four
+    //                delta-reachable corners (via ProofDelta::relation)
+
+    #[test]
+    fn delta_and_relation_agree_on_the_four_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.consistency_kind(),
+                    relation.consistency_kind(),
+                    "{name}: delta and classification consistency_kind verdicts \
+                     must agree on the four delta-reachable corners",
+                );
+            } else {
+                // Regressed corner: the delta path folds the count away
+                // so relation() is None; the consistency-kind tag is
+                // still None at the delta altitude, consistent with the
+                // impossibility half's Option::None projection.
+                assert_eq!(
+                    d.consistency_kind(),
+                    None,
+                    "{name}: delta.relation() == None (regressed corner) still \
+                     projects None at the delta altitude",
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer on ALL five corners
+    //                via the lossless proof-pair path
+
+    #[test]
+    fn delta_and_full_classification_agree_on_every_corner_including_regressed() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.consistency_kind(),
+                r.consistency_kind(),
+                "{name}: delta and full-classification consistency_kind verdicts \
+                 must agree on every corner (including regressed, where the delta \
+                 fold drops the count but the tag itself is payload-free)",
+            );
+            assert_eq!(
+                r.consistency_kind(),
+                want,
+                "{name}: full classification must also match the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (4) Value/wire same-answer
+
+    #[test]
+    fn value_and_wire_altitudes_agree_on_every_variant() {
+        for (name, prior, current, _) in corners() {
+            let r = current.relation_since(&prior);
+            let w = r.to_wire();
+            assert_eq!(
+                r.consistency_kind(),
+                w.consistency_kind(),
+                "{name}: value/wire consistency_kind verdicts must agree pointwise",
+            );
+        }
+    }
+
+    // ---------- (5) Agreement with same_store_consistent
+
+    #[test]
+    fn agrees_with_same_store_consistent_at_every_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.consistency_kind().is_some(),
+                d.same_store_consistent(),
+                "{name}: delta consistency_kind.is_some() must equal same_store_consistent",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.consistency_kind().is_some(),
+                r.same_store_consistent(),
+                "{name}: classification consistency_kind.is_some() must equal \
+                 same_store_consistent",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.consistency_kind().is_some(),
+                w.same_store_consistent(),
+                "{name}: wire consistency_kind.is_some() must equal same_store_consistent",
+            );
+        }
+    }
+
+    // ---------- (6) Agreement with the three atomic classifiers at
+    //                the two classification altitudes
+
+    #[test]
+    fn agrees_with_atomic_classifiers_at_the_classification_altitudes() {
+        for (name, prior, current, _) in corners() {
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.consistency_kind() == Some(SameStoreConsistencyKind::Stationary),
+                r.stationary(),
+                "{name}: r.consistency_kind() == Some(Stationary) must equal r.stationary()",
+            );
+            assert_eq!(
+                r.consistency_kind() == Some(SameStoreConsistencyKind::IdentityRepublish),
+                r.identity_republish(),
+                "{name}: r.consistency_kind() == Some(IdentityRepublish) must equal \
+                 r.identity_republish()",
+            );
+            assert_eq!(
+                r.consistency_kind() == Some(SameStoreConsistencyKind::Progression),
+                r.progression(),
+                "{name}: r.consistency_kind() == Some(Progression) must equal r.progression()",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.consistency_kind() == Some(SameStoreConsistencyKind::Stationary),
+                w.stationary(),
+                "{name}: w.consistency_kind() == Some(Stationary) must equal w.stationary()",
+            );
+            assert_eq!(
+                w.consistency_kind() == Some(SameStoreConsistencyKind::IdentityRepublish),
+                w.identity_republish(),
+                "{name}: w.consistency_kind() == Some(IdentityRepublish) must equal \
+                 w.identity_republish()",
+            );
+            assert_eq!(
+                w.consistency_kind() == Some(SameStoreConsistencyKind::Progression),
+                w.progression(),
+                "{name}: w.consistency_kind() == Some(Progression) must equal w.progression()",
+            );
+        }
+    }
+
+    // ---------- (7) XOR-identity with the impossibility half at every
+    //                altitude — the two typed-tag receivers partition
+    //                the classification space into two disjoint
+    //                half-spaces whose union is total.
+
+    #[test]
+    fn xor_identity_with_impossibility_kind_at_every_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let d_cons = d.consistency_kind().is_some();
+            let d_imp = d.impossibility_kind().is_some();
+            assert!(
+                d_cons ^ d_imp,
+                "{name}: exactly one of delta consistency_kind / impossibility_kind \
+                 must be Some (got consistency={d_cons}, impossibility={d_imp})",
+            );
+            let r = current.relation_since(&prior);
+            let r_cons = r.consistency_kind().is_some();
+            let r_imp = r.impossibility_kind().is_some();
+            assert!(
+                r_cons ^ r_imp,
+                "{name}: exactly one of relation consistency_kind / impossibility_kind \
+                 must be Some (got consistency={r_cons}, impossibility={r_imp})",
+            );
+            let w = r.to_wire();
+            let w_cons = w.consistency_kind().is_some();
+            let w_imp = w.impossibility_kind().is_some();
+            assert!(
+                w_cons ^ w_imp,
+                "{name}: exactly one of wire consistency_kind / impossibility_kind \
+                 must be Some (got consistency={w_cons}, impossibility={w_imp})",
+            );
+        }
+    }
+
+    // ---------- (8) const-callable at every altitude
+
+    #[test]
+    fn const_callable_on_hand_constructed_values_at_every_altitude() {
+        // Delta altitude — five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const D_STATIONARY: Option<SameStoreConsistencyKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .consistency_kind();
+        const D_IDENTITY_REPUBLISH: Option<SameStoreConsistencyKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .consistency_kind();
+        const D_PROGRESSION: Option<SameStoreConsistencyKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .consistency_kind();
+        const D_CROSS_STORE: Option<SameStoreConsistencyKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .consistency_kind();
+        const D_REGRESSED: Option<SameStoreConsistencyKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .consistency_kind();
+        assert_eq!(D_STATIONARY, Some(SameStoreConsistencyKind::Stationary));
+        assert_eq!(
+            D_IDENTITY_REPUBLISH,
+            Some(SameStoreConsistencyKind::IdentityRepublish)
+        );
+        assert_eq!(D_PROGRESSION, Some(SameStoreConsistencyKind::Progression));
+        assert_eq!(D_CROSS_STORE, None);
+        assert_eq!(D_REGRESSED, None);
+
+        // Value classification altitude.
+        const R_STATIONARY: Option<SameStoreConsistencyKind> =
+            ProofRelation::Stationary.consistency_kind();
+        assert_eq!(R_STATIONARY, Some(SameStoreConsistencyKind::Stationary));
+
+        // Wire classification altitude.
+        const W_STATIONARY: Option<SameStoreConsistencyKind> =
+            ProofRelationWire::Stationary.consistency_kind();
+        const W_IDENTITY_REPUBLISH: Option<SameStoreConsistencyKind> =
+            ProofRelationWire::IdentityRepublish { generations: 2 }.consistency_kind();
+        const W_REGRESSED: Option<SameStoreConsistencyKind> =
+            ProofRelationWire::Regressed { by: 3 }.consistency_kind();
+        assert_eq!(W_STATIONARY, Some(SameStoreConsistencyKind::Stationary));
+        assert_eq!(
+            W_IDENTITY_REPUBLISH,
+            Some(SameStoreConsistencyKind::IdentityRepublish)
+        );
+        assert_eq!(W_REGRESSED, None);
+    }
+
+    // ---------- (9) Copy/Eq closure — the enum's derives round-trip
+    //                through pattern matching and equality comparison
+
+    #[test]
+    fn copy_and_eq_derives_round_trip_through_the_shared_tag() {
+        // Copy: the value can be bound and reused without a move.
+        let k = SameStoreConsistencyKind::Progression;
+        let k2 = k;
+        let _both: [SameStoreConsistencyKind; 2] = [k, k2];
+        // Eq: the enum's derives let it compare pointwise through the
+        // Option shape the receiver returns.
+        assert_eq!(k, SameStoreConsistencyKind::Progression);
+        assert_ne!(k, SameStoreConsistencyKind::Stationary);
+        assert_ne!(k, SameStoreConsistencyKind::IdentityRepublish);
+        assert_eq!(
+            Some(SameStoreConsistencyKind::Progression),
             Some(k),
             "the shared tag survives Option-wrapping and pattern equality",
         );
