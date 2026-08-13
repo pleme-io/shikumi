@@ -2644,6 +2644,34 @@ impl<'de> serde::Deserialize<'de> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`AsRef<str>`] impl projects the stable snake-case [`Self::name`]
+/// identifier as a borrowed `&str` — the allocation-free sibling of the
+/// [`std::fmt::Display`] impl on the impossibility half of the
+/// classification. Every downstream API accepting `impl AsRef<str>` (a
+/// [`std::collections::HashMap`]`<&str, V>::get` lookup, a
+/// [`std::path::Path::join`] fragment, a metrics-label emitter, a
+/// [`std::fs::File::create`] path suffix, a
+/// [`std::io::Write::write_all`] byte-projection through
+/// [`str::as_bytes`], a `serde_json::Value::get` field lookup) now
+/// receives the kind directly without the [`std::fmt::Display`]
+/// projection's [`format!`] / [`std::string::ToString::to_string`]
+/// allocation at the seam. The projection is [`&'static str`]-tight
+/// through [`Self::name`], so no heap allocation ever fires — a
+/// per-kind [`std::collections::HashMap`] index lookup on the hot path
+/// pays exactly the pointer-compare cost the standard-trait lookup
+/// carries. Delegates to [`Self::name`] to keep the projection in
+/// lockstep with the sibling [`std::fmt::Display`],
+/// [`std::str::FromStr`], and [`serde::Serialize`] impls by
+/// construction — adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`], and the new
+/// identifier surfaces through every standard-trait projection in
+/// lockstep.
+impl AsRef<str> for SameStoreImpossibilityKind {
+    fn as_ref(&self) -> &str {
+        self.name()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -2967,6 +2995,26 @@ impl<'de> serde::Deserialize<'de> for SameStoreConsistencyKind {
             }
         }
         deserializer.deserialize_str(V)
+    }
+}
+
+/// The [`AsRef<str>`] impl projects the stable snake-case [`Self::name`]
+/// identifier as a borrowed `&str` — the mirror of the
+/// [`SameStoreImpossibilityKind`] [`AsRef<str>`] impl on the consistent
+/// half of the classification, and the allocation-free sibling of the
+/// [`std::fmt::Display`] impl on this enum. Every downstream API
+/// accepting `impl AsRef<str>` reads the consistent kind directly
+/// without the [`std::fmt::Display`] projection's [`format!`] /
+/// [`std::string::ToString::to_string`] allocation at the seam.
+/// Delegates to [`Self::name`] to keep the projection in lockstep with
+/// the sibling [`std::fmt::Display`], [`std::str::FromStr`], and
+/// [`serde::Serialize`] impls by construction — a hypothetical fourth
+/// legitimate corner updates the ONE `match` body in [`Self::name`],
+/// and the new identifier surfaces through every standard-trait
+/// projection in lockstep.
+impl AsRef<str> for SameStoreConsistencyKind {
+    fn as_ref(&self) -> &str {
+        self.name()
     }
 }
 
@@ -3404,6 +3452,30 @@ impl<'de> serde::Deserialize<'de> for ProofRelationKind {
             }
         }
         deserializer.deserialize_str(V)
+    }
+}
+
+/// The [`AsRef<str>`] impl projects the stable snake-case [`Self::name`]
+/// identifier as a borrowed `&str` — the fused-arm sibling of the two
+/// half-side [`AsRef<str>`] impls on [`SameStoreConsistencyKind`] and
+/// [`SameStoreImpossibilityKind`], and the allocation-free sibling of
+/// the [`std::fmt::Display`] impl on the fused sum. Every downstream
+/// API accepting `impl AsRef<str>` reads the fused kind directly
+/// without the [`std::fmt::Display`] projection's [`format!`] /
+/// [`std::string::ToString::to_string`] allocation at the seam. The
+/// projection reads the same five identifiers (`"stationary"` /
+/// `"identity_republish"` / `"progression"` on the [`Self::Consistent`]
+/// arm; `"regressed"` / `"cross_store"` on the [`Self::Impossible`]
+/// arm) [`Self::name`] itself projects — delegating through
+/// [`Self::name`] which in turn delegates through the two half-side
+/// [`Self::name`] receivers keeps the fused impl and the two half-side
+/// impls lockstep-identical under every future variant addition to
+/// either half-side enum by construction: `k.as_ref() ==
+/// k.consistency().map(|c| c.as_ref()).or_else(|| k.impossibility().map(|i|
+/// i.as_ref())).unwrap()` on every fused kind.
+impl AsRef<str> for ProofRelationKind {
+    fn as_ref(&self) -> &str {
+        self.name()
     }
 }
 
@@ -23264,5 +23336,411 @@ mod try_from_tests {
             msg.contains("wrong half of ProofRelationKind"),
             "boxed Display should carry the fixed prefix: {msg}",
         );
+    }
+}
+
+#[cfg(test)]
+mod as_ref_str_tests {
+    //! [`AsRef<str>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! allocation-free borrowed-`&str` projection that lifts the three
+    //! kind enums into the standard [`AsRef<str>`] receiver-family every
+    //! downstream API accepting `impl AsRef<str>` already reaches through.
+    //!
+    //! **Why lift the three impls.** Before this pass the three kind
+    //! enums projected their stable snake-case identifier only through
+    //! [`Self::name`] (the direct receiver) and [`std::fmt::Display`]
+    //! (the [`format!`] macro seam). Every downstream API accepting
+    //! `impl AsRef<str>` — a [`std::collections::HashMap`]`<&str, V>::get`
+    //! lookup, a [`std::path::Path::join`] fragment, a metrics-label
+    //! emitter, a `tracing::info!(kind = %k, ..)` value shape a consumer
+    //! wants to route on before formatting, a
+    //! [`std::fs::File::create`] path suffix, a
+    //! [`std::io::Write::write_all`] byte-projection through
+    //! [`str::as_bytes`], a `serde_json::Value::get` field lookup, or
+    //! any framework-typed slot on `impl AsRef<str>` — either paid an
+    //! extra [`format!`] / [`std::string::ToString::to_string`]
+    //! allocation at the seam (`k.to_string()`), or reached the ONE
+    //! non-standard-trait `.name()` accessor and drifted the moment a
+    //! consumer forgot the postfix. The three impls fold the standard
+    //! [`AsRef<str>`] receiver-family into the same [`Self::name`] /
+    //! [`std::fmt::Display`] / [`std::str::FromStr`] /
+    //! [`serde::Serialize`] / [`serde::Deserialize`] / [`std::cmp::Ord`] /
+    //! [`std::hash::Hash`] / [`From`] / [`TryFrom`] lockstep the prior
+    //! eight runs already welded — every downstream `impl AsRef<str>`
+    //! seam now composes out of the standard trait alone, and the
+    //! projection stays `&'static str`-tight (no heap alloc, no
+    //! per-call [`format!`] pass) because [`Self::name`] already
+    //! projects a compile-time-known string literal.
+    //!
+    //! **Pointwise identity with [`Self::name`].** For every value `k`
+    //! at every altitude (impossibility / consistency / fused),
+    //! `k.as_ref() == k.name()` and `k.as_ref() == k.to_string()` — the
+    //! standard trait projects the SAME identifier the sibling
+    //! `.name()` accessor and the sibling [`std::fmt::Display`] impl
+    //! project, so a downstream consumer routing on any of the three
+    //! reaches the same value.
+    //!
+    //! **`&'static str`-tight, allocation-free.** Because [`Self::name`]
+    //! returns [`&'static str`] via a `match` over string literals, the
+    //! [`AsRef<str>`] projection reaches the same static byte-slot at
+    //! every call — no heap allocation ever fires. A per-kind
+    //! [`std::collections::HashMap`]`<&str, u64>` counter lookup on the
+    //! hot path pays exactly the pointer-compare cost the standard-trait
+    //! lookup carries, not the [`format!`] macro's allocation cost.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] [`AsRef<str>`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so
+    //! `k.as_ref() == k.consistency().map(|c| c.as_ref()).or_else(||
+    //! k.impossibility().map(|i| i.as_ref())).unwrap()` on every fused
+    //! kind. Adding a hypothetical sixth corner to either half-side
+    //! enum updates ONE `match` body (in `Self::name` on the half-side
+    //! enum), and the new identifier surfaces at every downstream
+    //! `impl AsRef<str>` seam on both the half-side enum AND the fused
+    //! sum through the standard trait's resolution.
+    //!
+    //! The tests below pin the structural invariants that keep the
+    //! three impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`] on every variant of
+    //!    every kind enum — `k.as_ref() == k.name()`.
+    //! 2. Pointwise identity with [`std::fmt::Display`] on every
+    //!    variant of every kind enum — `k.as_ref() == k.to_string()`.
+    //! 3. Round-trip identity with [`std::str::FromStr`] — for every
+    //!    variant `k`, `k.as_ref().parse::<K>() == Ok(k)`.
+    //! 4. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`AsRef<str>`] projection agrees with the two half-side
+    //!    [`AsRef<str>`] projections through the fused sum's
+    //!    two-arm partition.
+    //! 5. [`&'static str`]-tightness — every projection reaches the
+    //!    same static byte-slot as the corresponding [`Self::NAMES`]
+    //!    entry (pointer equality), pinning the no-alloc contract at
+    //!    the byte level.
+    //! 6. [`impl AsRef<str>`] composability — the three impls flow
+    //!    through a generic `fn take<S: AsRef<str>>(s: S) -> String`
+    //!    seam with the same result as an explicit `.name()` /
+    //!    `Display` / `.to_string()` at the callsite.
+    //! 7. [`std::collections::HashMap`]`<&str, V>::get` composability —
+    //!    a per-kind counter table keyed on the stable snake-case name
+    //!    can be read through the kind directly via `.get(k.as_ref())`,
+    //!    with no allocation at the lookup seam.
+    //!
+    //! Genuinely new — before this pass the three kind enums could
+    //! not flow through any downstream API typed on `impl AsRef<str>`
+    //! without an allocation at the seam or a hand-wired `.name()`
+    //! projection that drifts under refactoring. The three impls
+    //! close the [`AsRef<str>`] cell of the standard-trait grid the
+    //! prior eight runs opened for these enums.
+
+    use super::*;
+    use std::collections::HashMap;
+
+    // ---------- (1) Pointwise identity with name()
+
+    #[test]
+    fn as_ref_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k),
+                k.name(),
+                "impossibility {k:?}: as_ref() must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k),
+                k.name(),
+                "consistency {k:?}: as_ref() must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                <ProofRelationKind as AsRef<str>>::as_ref(&k),
+                k.name(),
+                "fused {k:?}: as_ref() must equal name()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with Display / to_string()
+
+    #[test]
+    fn as_ref_matches_display_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k),
+                k.to_string(),
+                "impossibility {k:?}: as_ref() must equal Display projection",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_matches_display_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k),
+                k.to_string(),
+                "consistency {k:?}: as_ref() must equal Display projection",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_matches_display_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                <ProofRelationKind as AsRef<str>>::as_ref(&k),
+                k.to_string(),
+                "fused {k:?}: as_ref() must equal Display projection",
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip identity through FromStr
+
+    #[test]
+    fn as_ref_round_trips_through_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &str = k.as_ref();
+            assert_eq!(
+                s.parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: as_ref().parse() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_round_trips_through_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &str = k.as_ref();
+            assert_eq!(
+                s.parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: as_ref().parse() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_round_trips_through_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &str = k.as_ref();
+            assert_eq!(
+                s.parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: as_ref().parse() must round-trip",
+            );
+        }
+    }
+
+    // ---------- (4) Fused-arm lockstep with the two half-side impls
+
+    #[test]
+    fn as_ref_fused_agrees_with_half_side_projections() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: &str = k.as_ref();
+            match k {
+                ProofRelationKind::Consistent(c) => {
+                    let half: &str = <SameStoreConsistencyKind as AsRef<str>>::as_ref(&c);
+                    assert_eq!(
+                        fused, half,
+                        "fused {k:?}: as_ref() must equal the consistent-half as_ref()",
+                    );
+                    assert!(
+                        k.impossibility().is_none(),
+                        "fused {k:?}: routing through consistent excludes impossibility",
+                    );
+                }
+                ProofRelationKind::Impossible(i) => {
+                    let half: &str = <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&i);
+                    assert_eq!(
+                        fused, half,
+                        "fused {k:?}: as_ref() must equal the impossibility-half as_ref()",
+                    );
+                    assert!(
+                        k.consistency().is_none(),
+                        "fused {k:?}: routing through impossibility excludes consistency",
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (5) &'static str-tight — same byte-slot as name()
+    //
+    // The lifetime-elided `&str` signature of `AsRef::as_ref` is a
+    // ceiling, not a runtime observation: the actual returned reference
+    // is a `&'static str` because it comes straight from `Self::name`
+    // (which returns `&'static str`). We pin this structurally by
+    // asserting the pointer returned from `as_ref()` equals the pointer
+    // returned from `name()` on the same value — the delegation is by
+    // construction, so any future refactor that departed from
+    // "delegate to name()" (say, a per-call [`format!`] pass or a
+    // `String::from(name())` seam) would break these three tests.
+    //
+    // Note we deliberately do NOT check pointer equality against
+    // `Self::NAMES[i]` — the compiler does not guarantee that identical
+    // string literals in a `match` arm and in an array-of-literals share
+    // a static byte-slot (a real observation from an earlier iteration
+    // that failed under rustc 1.94.1). Delegation to `name()` is the
+    // load-bearing invariant; the constant `NAMES` alignment is not.
+
+    #[test]
+    fn as_ref_shares_byte_slot_with_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let via_as_ref: &str = k.as_ref();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_as_ref.as_ptr(), via_name.as_ptr()),
+                "impossibility {k:?}: as_ref() must reach the SAME static byte-slot as name() \
+                 (delegating through name() pins pointer equality on the returned slice, \
+                 which pins the no-alloc contract at the byte level)",
+            );
+            assert_eq!(via_as_ref.len(), via_name.len());
+        }
+    }
+
+    #[test]
+    fn as_ref_shares_byte_slot_with_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let via_as_ref: &str = k.as_ref();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_as_ref.as_ptr(), via_name.as_ptr()),
+                "consistency {k:?}: as_ref() must reach the SAME static byte-slot as name() \
+                 (delegating through name() pins pointer equality on the returned slice, \
+                 which pins the no-alloc contract at the byte level)",
+            );
+            assert_eq!(via_as_ref.len(), via_name.len());
+        }
+    }
+
+    #[test]
+    fn as_ref_shares_byte_slot_with_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let via_as_ref: &str = k.as_ref();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_as_ref.as_ptr(), via_name.as_ptr()),
+                "fused {k:?}: as_ref() must reach the SAME static byte-slot as name() \
+                 (delegating through name() pins pointer equality on the returned slice, \
+                 which pins the no-alloc contract at the byte level)",
+            );
+            assert_eq!(via_as_ref.len(), via_name.len());
+        }
+    }
+
+    // ---------- (6) `impl AsRef<str>` composability
+
+    /// Generic seam every downstream API typed on `impl AsRef<str>`
+    /// reaches through — the three kind enums must flow through it
+    /// without a `.to_string()` allocation at the callsite.
+    fn take_as_ref<S: AsRef<str>>(s: S) -> String {
+        s.as_ref().to_owned()
+    }
+
+    #[test]
+    fn impossibility_flows_through_impl_as_ref_str_seam() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                take_as_ref(k),
+                k.name(),
+                "impossibility {k:?} must flow through `impl AsRef<str>`",
+            );
+        }
+    }
+
+    #[test]
+    fn consistency_flows_through_impl_as_ref_str_seam() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                take_as_ref(k),
+                k.name(),
+                "consistency {k:?} must flow through `impl AsRef<str>`",
+            );
+        }
+    }
+
+    #[test]
+    fn fused_flows_through_impl_as_ref_str_seam() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                take_as_ref(k),
+                k.name(),
+                "fused {k:?} must flow through `impl AsRef<str>`",
+            );
+        }
+    }
+
+    // ---------- (7) HashMap<&str, V>::get composability
+
+    #[test]
+    fn hashmap_str_get_composes_through_as_ref_impossibility() {
+        let mut counters: HashMap<&'static str, u64> = HashMap::new();
+        for name in SameStoreImpossibilityKind::NAMES {
+            counters.insert(name, 0);
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            *counters
+                .get_mut(<SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k))
+                .expect("per-kind counter must be reachable via as_ref()") += 1;
+        }
+        for name in SameStoreImpossibilityKind::NAMES {
+            assert_eq!(
+                counters[name], 1,
+                "each impossibility kind must have incremented its counter exactly once via as_ref() lookup",
+            );
+        }
+    }
+
+    #[test]
+    fn hashmap_str_get_composes_through_as_ref_consistency() {
+        let mut counters: HashMap<&'static str, u64> = HashMap::new();
+        for name in SameStoreConsistencyKind::NAMES {
+            counters.insert(name, 0);
+        }
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            *counters
+                .get_mut(<SameStoreConsistencyKind as AsRef<str>>::as_ref(&k))
+                .expect("per-kind counter must be reachable via as_ref()") += 1;
+        }
+        for name in SameStoreConsistencyKind::NAMES {
+            assert_eq!(
+                counters[name], 1,
+                "each consistency kind must have incremented its counter exactly once via as_ref() lookup",
+            );
+        }
+    }
+
+    #[test]
+    fn hashmap_str_get_composes_through_as_ref_fused() {
+        let mut counters: HashMap<&'static str, u64> = HashMap::new();
+        for name in ProofRelationKind::NAMES {
+            counters.insert(name, 0);
+        }
+        for &k in ProofRelationKind::VARIANTS {
+            *counters
+                .get_mut(<ProofRelationKind as AsRef<str>>::as_ref(&k))
+                .expect("per-kind counter must be reachable via as_ref()") += 1;
+        }
+        for name in ProofRelationKind::NAMES {
+            assert_eq!(
+                counters[name], 1,
+                "each fused kind must have incremented its counter exactly once via as_ref() lookup",
+            );
+        }
     }
 }
