@@ -2458,6 +2458,81 @@ impl SameStoreImpossibilityKind {
             Self::CrossStore => "cross_store",
         }
     }
+
+    /// The closed set of variant values in declaration order — an
+    /// ordered slice of every possible [`SameStoreImpossibilityKind`]
+    /// value, whose length ([`slice::len`](slice)) is the axis
+    /// cardinality of the impossibility half of the classification
+    /// (two). The single compile-time-known witness of the closed set
+    /// every future consumer that wants to visit both impossibility
+    /// corners programmatically reaches through: a `for k in
+    /// SameStoreImpossibilityKind::VARIANTS` iterator visits both
+    /// corners in declaration order, and every consumer wanting to
+    /// project a per-corner surface (a metrics-label registration
+    /// loop, a schemars / JSON-schema `enum: [...]` projection, an
+    /// MCP tool advertising the accepted-set of identifiers, a
+    /// completeness check that every corner is covered by a
+    /// downstream `match`) reaches this constant instead of a
+    /// hand-spelled `[Self::Regressed, Self::CrossStore]` array
+    /// literal at each seam.
+    ///
+    /// **Declaration order matches [`Self::NAMES`].** The i-th slot
+    /// of [`Self::VARIANTS`] is the variant whose [`Self::name`]
+    /// equals the i-th slot of [`Self::NAMES`]; the two constants
+    /// stay lockstep-identical under every future variant addition
+    /// (a structural pin the `variants_tests` module reasserts:
+    /// `Self::VARIANTS.len() == Self::NAMES.len()` and
+    /// `Self::VARIANTS[i].name() == Self::NAMES[i]` for every `i`).
+    /// A hypothetical third impossibility corner (a
+    /// signed-attestation mismatch, say) added to the enum must
+    /// extend both constants in lockstep or the compile-time-known
+    /// closed set silently loses coverage — the pinning tests turn
+    /// that silent drift into a `cargo test` failure.
+    pub const VARIANTS: &'static [Self] = &[Self::Regressed, Self::CrossStore];
+
+    /// The closed set of stable snake-case identifiers this enum
+    /// accepts, in declaration order matching [`Self::VARIANTS`] —
+    /// the ordered slice whose i-th element is
+    /// `Self::VARIANTS[i].name()`. The single compile-time-known
+    /// witness of the accepted-set the [`std::str::FromStr`] parser
+    /// advertises through [`ParseKindError::expected`], the same
+    /// closed set the sibling [`serde::Deserialize`] impl surfaces
+    /// through its human-readable `expecting` message, and the same
+    /// closed set any future [`schemars::JsonSchema`]-style
+    /// projection would emit as a JSON-schema `enum: [...]` array.
+    ///
+    /// **Lifted out of the two prior seams.** Before this constant,
+    /// the accepted-set of identifiers was hand-spelled twice — once
+    /// as a `&[&str]` literal in [`std::str::FromStr::from_str`]'s
+    /// `Err` arm and once (implicitly) as the union of the two
+    /// [`Self::name`] `match` arm right-hand-sides. Routing
+    /// [`ParseKindError::expected`] through this constant collapses
+    /// the accepted-set into one source of truth: the [`FromStr`]
+    /// parser and any future schema projection reach the SAME slice
+    /// the [`Self::name`] receiver has been welded against, so a
+    /// hypothetical new impossibility corner extends the accepted-set
+    /// in exactly one edit rather than two.
+    pub const NAMES: &'static [&'static str] = &["regressed", "cross_store"];
+
+    /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
+    /// the compile-time closed set of variant values. `const`-callable,
+    /// projecting the same `'static` reference at compile time and at
+    /// runtime, so a caller reaching this receiver from a `const`
+    /// context inherits the same closed set the associated constant
+    /// carries.
+    #[must_use]
+    pub const fn variants() -> &'static [Self] {
+        Self::VARIANTS
+    }
+
+    /// Accessor for [`Self::NAMES`] — the receiver-side view of the
+    /// compile-time closed set of stable snake-case identifiers.
+    /// `const`-callable, projecting the same `'static` reference at
+    /// compile time and at runtime.
+    #[must_use]
+    pub const fn names() -> &'static [&'static str] {
+        Self::NAMES
+    }
 }
 
 /// The [`std::fmt::Display`] impl projects the stable snake-case
@@ -2509,7 +2584,7 @@ impl std::str::FromStr for SameStoreImpossibilityKind {
             "cross_store" => Ok(Self::CrossStore),
             _ => Err(ParseKindError {
                 input: s.to_owned(),
-                expected: &["regressed", "cross_store"],
+                expected: Self::NAMES,
             }),
         }
     }
@@ -2741,6 +2816,63 @@ impl SameStoreConsistencyKind {
             Self::Progression => "progression",
         }
     }
+
+    /// The closed set of variant values in declaration order — the
+    /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
+    /// consistent half of the classification. An ordered slice of
+    /// every possible [`SameStoreConsistencyKind`] value, whose
+    /// length is the axis cardinality of the consistent half (three).
+    /// The single compile-time-known witness of the closed set every
+    /// future consumer wanting to visit all three legitimate corners
+    /// programmatically reaches through: a `for k in
+    /// SameStoreConsistencyKind::VARIANTS` iterator visits the three
+    /// corners in declaration order, matching the same-named
+    /// receiver on the impossibility half.
+    ///
+    /// **Declaration order matches [`Self::NAMES`].** The i-th slot
+    /// of [`Self::VARIANTS`] is the variant whose [`Self::name`]
+    /// equals the i-th slot of [`Self::NAMES`]; the two constants
+    /// stay lockstep-identical under every future variant addition
+    /// (a structural pin the `variants_tests` module reasserts:
+    /// `Self::VARIANTS.len() == Self::NAMES.len()` and
+    /// `Self::VARIANTS[i].name() == Self::NAMES[i]` for every `i`).
+    /// A hypothetical fourth legitimate corner added to the enum
+    /// must extend both constants in lockstep, and the pinning tests
+    /// turn a silent divergence into a `cargo test` failure.
+    pub const VARIANTS: &'static [Self] =
+        &[Self::Stationary, Self::IdentityRepublish, Self::Progression];
+
+    /// The closed set of stable snake-case identifiers this enum
+    /// accepts, in declaration order matching [`Self::VARIANTS`] —
+    /// the mirror of [`SameStoreImpossibilityKind::NAMES`] on the
+    /// consistent half. The single compile-time-known witness of
+    /// the accepted-set the [`std::str::FromStr`] parser advertises
+    /// through [`ParseKindError::expected`], the same closed set
+    /// the sibling [`serde::Deserialize`] impl surfaces through its
+    /// `expecting` message, and the same closed set any future
+    /// [`schemars::JsonSchema`]-style projection would emit as a
+    /// JSON-schema `enum: [...]` array — routed through this
+    /// constant so a hypothetical fourth legitimate corner extends
+    /// the accepted-set in one edit rather than two.
+    pub const NAMES: &'static [&'static str] = &["stationary", "identity_republish", "progression"];
+
+    /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
+    /// the compile-time closed set of variant values, the mirror of
+    /// [`SameStoreImpossibilityKind::variants`] on the consistent
+    /// half. `const`-callable.
+    #[must_use]
+    pub const fn variants() -> &'static [Self] {
+        Self::VARIANTS
+    }
+
+    /// Accessor for [`Self::NAMES`] — the receiver-side view of the
+    /// compile-time closed set of stable snake-case identifiers, the
+    /// mirror of [`SameStoreImpossibilityKind::names`] on the
+    /// consistent half. `const`-callable.
+    #[must_use]
+    pub const fn names() -> &'static [&'static str] {
+        Self::NAMES
+    }
 }
 
 /// The [`std::fmt::Display`] impl projects the stable snake-case
@@ -2791,7 +2923,7 @@ impl std::str::FromStr for SameStoreConsistencyKind {
             "progression" => Ok(Self::Progression),
             _ => Err(ParseKindError {
                 input: s.to_owned(),
-                expected: &["stationary", "identity_republish", "progression"],
+                expected: Self::NAMES,
             }),
         }
     }
@@ -3062,6 +3194,96 @@ impl ProofRelationKind {
             Self::Impossible(k) => k.name(),
         }
     }
+
+    /// The closed set of variant values in declaration order — the
+    /// fused-arm sibling of [`SameStoreConsistencyKind::VARIANTS`]
+    /// and [`SameStoreImpossibilityKind::VARIANTS`]. An ordered slice
+    /// of every possible [`ProofRelationKind`] value: the three
+    /// consistent corners projected through [`Self::Consistent`]
+    /// followed by the two impossibility corners projected through
+    /// [`Self::Impossible`], for the axis cardinality of the full
+    /// classification (five). The single compile-time-known witness
+    /// of the closed set every future consumer wanting to visit all
+    /// five corners programmatically reaches through — a `for k in
+    /// ProofRelationKind::VARIANTS` iterator visits every corner in
+    /// the fused declaration order, and any downstream
+    /// dashboard-registration loop, JSON-schema `enum: [...]`
+    /// projection, or MCP-tool accepted-set advertisement reaches
+    /// this constant instead of open-coding a five-element array
+    /// literal at each seam.
+    ///
+    /// **Fused declaration order.** The first three slots are the
+    /// [`SameStoreConsistencyKind::VARIANTS`] elements wrapped in
+    /// [`Self::Consistent`]; the last two slots are the
+    /// [`SameStoreImpossibilityKind::VARIANTS`] elements wrapped in
+    /// [`Self::Impossible`]. The pairwise-disjoint accepted-set
+    /// partition the two half-side enums carry (three consistent
+    /// snake-case identifiers vs. two impossibility identifiers, no
+    /// overlap) is preserved by the fused ordering — a
+    /// `matches!(v, Self::Consistent(_))` test partitions the slice
+    /// at index 3.
+    ///
+    /// **Declaration order matches [`Self::NAMES`].** The i-th slot
+    /// of [`Self::VARIANTS`] is the fused corner whose [`Self::name`]
+    /// equals the i-th slot of [`Self::NAMES`]; the two constants
+    /// stay lockstep-identical under every future variant addition to
+    /// either half-side enum (a structural pin the `variants_tests`
+    /// module reasserts: `Self::VARIANTS.len() == Self::NAMES.len()`
+    /// and `Self::VARIANTS[i].name() == Self::NAMES[i]` for every
+    /// `i`).
+    pub const VARIANTS: &'static [Self] = &[
+        Self::Consistent(SameStoreConsistencyKind::Stationary),
+        Self::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        Self::Consistent(SameStoreConsistencyKind::Progression),
+        Self::Impossible(SameStoreImpossibilityKind::Regressed),
+        Self::Impossible(SameStoreImpossibilityKind::CrossStore),
+    ];
+
+    /// The closed set of stable snake-case identifiers this enum
+    /// accepts, in declaration order matching [`Self::VARIANTS`] —
+    /// the fused-arm sibling of [`SameStoreConsistencyKind::NAMES`]
+    /// and [`SameStoreImpossibilityKind::NAMES`]. The single
+    /// compile-time-known witness of the accepted-set the fused
+    /// [`std::str::FromStr`] parser advertises through
+    /// [`ParseKindError::expected`], the same closed set the sibling
+    /// [`serde::Deserialize`] impl surfaces through its `expecting`
+    /// message, and the same closed set any future
+    /// [`schemars::JsonSchema`]-style projection would emit as a
+    /// JSON-schema `enum: [...]` array — routed through this
+    /// constant so a hypothetical sixth corner added to either
+    /// half-side enum extends the accepted-set in exactly one edit
+    /// rather than two.
+    ///
+    /// **Concatenation of the two half-side accepted-sets.** The
+    /// first three slots are [`SameStoreConsistencyKind::NAMES`]
+    /// elements; the last two are [`SameStoreImpossibilityKind::NAMES`]
+    /// elements. The pairwise-disjoint partition of the classification
+    /// space the two half-side enums carry (three consistent
+    /// snake-case identifiers vs. two impossibility identifiers, no
+    /// overlap) is preserved by the fused concatenation.
+    pub const NAMES: &'static [&'static str] = &[
+        "stationary",
+        "identity_republish",
+        "progression",
+        "regressed",
+        "cross_store",
+    ];
+
+    /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
+    /// the compile-time closed set of fused variant values.
+    /// `const`-callable.
+    #[must_use]
+    pub const fn variants() -> &'static [Self] {
+        Self::VARIANTS
+    }
+
+    /// Accessor for [`Self::NAMES`] — the receiver-side view of the
+    /// compile-time closed set of stable snake-case identifiers.
+    /// `const`-callable.
+    #[must_use]
+    pub const fn names() -> &'static [&'static str] {
+        Self::NAMES
+    }
 }
 
 /// The [`std::fmt::Display`] impl projects the stable snake-case
@@ -3128,13 +3350,7 @@ impl std::str::FromStr for ProofRelationKind {
         }
         Err(ParseKindError {
             input: s.to_owned(),
-            expected: &[
-                "stationary",
-                "identity_republish",
-                "progression",
-                "regressed",
-                "cross_store",
-            ],
+            expected: Self::NAMES,
         })
     }
 }
@@ -21262,5 +21478,406 @@ mod serde_tests {
                 "Display and Serialize project the SAME identifier",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod variants_tests {
+    //! The `VARIANTS` + `NAMES` compile-time closed-set constants on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the single source of truth every
+    //! programmatic consumer of the classification's closed set (a
+    //! JSON-schema `enum: [...]` projection, a schemars derive, an
+    //! MCP-tool accepted-set advertisement, a dashboard-registration
+    //! loop enumerating every corner) reaches, matching the same
+    //! `'static` reference the [`std::str::FromStr`] parser advertises
+    //! through [`ParseKindError::expected`].
+    //!
+    //! The tests below pin the structural invariants that keep the two
+    //! constants in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Axis cardinality: `VARIANTS.len()` equals the number of
+    //!    variants declared by each enum (2 / 3 / 5) — a hypothetical
+    //!    new variant added to the enum without extending
+    //!    [`Self::VARIANTS`] silently loses one slot, and this
+    //!    assertion turns that drift into a `cargo test` failure.
+    //! 2. `VARIANTS ↔ NAMES` pointwise link: `VARIANTS.len() ==
+    //!    NAMES.len()` and `VARIANTS[i].name() == NAMES[i]` for every
+    //!    `i` — the two closed-set constants stay welded to each other
+    //!    and to [`Self::name`] under every future variant addition.
+    //! 3. No duplicates: every element of [`Self::VARIANTS`] appears
+    //!    exactly once (a pin against copy-paste errors in the array
+    //!    literal — a new variant added twice inflates the accepted-set
+    //!    silently), and every element of [`Self::NAMES`] appears
+    //!    exactly once.
+    //! 4. Round-trip closure: for every `k` in [`Self::VARIANTS`],
+    //!    `k.name().parse::<Self>() == Ok(k)` and `Self::NAMES[i]
+    //!    .parse::<Self>() == Ok(Self::VARIANTS[i])` — the parser
+    //!    accepts EXACTLY the accepted-set the constants advertise.
+    //! 5. [`ParseKindError::expected`] routes through [`Self::NAMES`]:
+    //!    every unknown input surfaces an error whose accepted-set is
+    //!    the same `'static` slice [`Self::NAMES`] carries, so a
+    //!    consumer routing on the error's accepted-set reads the same
+    //!    closed set the schema projection would emit.
+    //! 6. Fused / half-side concatenation: [`ProofRelationKind::VARIANTS`]
+    //!    is the concatenation of the two half-side VARIANTS (in the
+    //!    Consistent-then-Impossible fused order); the same holds for
+    //!    [`ProofRelationKind::NAMES`] against the two half-side NAMES.
+    //! 7. Consistent-vs-impossible partition: [`ProofRelationKind::VARIANTS`]
+    //!    partitions at index 3 — the first three slots satisfy
+    //!    [`ProofRelationKind::is_consistent`] and the last two satisfy
+    //!    [`ProofRelationKind::is_impossible`].
+    //! 8. The accessors [`Self::variants`] and [`Self::names`] project
+    //!    the SAME `'static` reference the associated constants carry
+    //!    (pointer identity, not merely value equality) — the receiver
+    //!    is a pure alias, not a copy.
+    //! 9. `const`-evaluable in a `const` context: [`Self::VARIANTS`],
+    //!    [`Self::NAMES`], [`Self::variants`], and [`Self::names`] all
+    //!    evaluate at compile time, matching the `const`-ness the rest
+    //!    of the receiver-family already carries.
+    //!
+    //! Genuinely new — before this pass the closed set of variants
+    //! and identifiers was reachable only through the [`Self::name`]
+    //! match and (implicitly) the [`std::str::FromStr::from_str`]
+    //! match arms; every consumer wanting to iterate the axis
+    //! programmatically had to hand-spell a `[Self::A, Self::B, ..]`
+    //! array literal, and the accepted-set fed to
+    //! [`ParseKindError::expected`] was a second hand-spelled
+    //! `&[&str]` literal drifting independently of the [`Self::name`]
+    //! match. Lifting the two closed sets into associated constants
+    //! collapses both duplications into one source of truth and pins
+    //! the (VARIANTS, NAMES, name, FromStr) quadruple in lockstep.
+    #![allow(clippy::float_cmp)]
+
+    use super::*;
+    use std::str::FromStr;
+
+    // ---------- (1) Axis cardinality per enum matches the declared
+    // variant count.
+
+    #[test]
+    fn variants_len_matches_axis_cardinality() {
+        assert_eq!(
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            2,
+            "impossibility half has two corners",
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::VARIANTS.len(),
+            3,
+            "consistent half has three corners",
+        );
+        assert_eq!(
+            ProofRelationKind::VARIANTS.len(),
+            5,
+            "fused sum has five corners (three consistent + two impossibility)",
+        );
+    }
+
+    // ---------- (2) VARIANTS ↔ NAMES pointwise link
+
+    #[test]
+    fn variants_and_names_agree_pointwise_via_name() {
+        assert_eq!(
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            SameStoreImpossibilityKind::NAMES.len(),
+            "impossibility VARIANTS and NAMES must have the same length",
+        );
+        for (i, k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.name(),
+                SameStoreImpossibilityKind::NAMES[i],
+                "impossibility VARIANTS[{i}].name() must equal NAMES[{i}]",
+            );
+        }
+        assert_eq!(
+            SameStoreConsistencyKind::VARIANTS.len(),
+            SameStoreConsistencyKind::NAMES.len(),
+            "consistency VARIANTS and NAMES must have the same length",
+        );
+        for (i, k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.name(),
+                SameStoreConsistencyKind::NAMES[i],
+                "consistency VARIANTS[{i}].name() must equal NAMES[{i}]",
+            );
+        }
+        assert_eq!(
+            ProofRelationKind::VARIANTS.len(),
+            ProofRelationKind::NAMES.len(),
+            "fused VARIANTS and NAMES must have the same length",
+        );
+        for (i, k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.name(),
+                ProofRelationKind::NAMES[i],
+                "fused VARIANTS[{i}].name() must equal NAMES[{i}]",
+            );
+        }
+    }
+
+    // ---------- (3) No duplicates in either constant
+
+    #[test]
+    fn variants_and_names_have_no_duplicates() {
+        for k in SameStoreImpossibilityKind::VARIANTS {
+            let count = SameStoreImpossibilityKind::VARIANTS
+                .iter()
+                .filter(|v| *v == k)
+                .count();
+            assert_eq!(
+                count, 1,
+                "impossibility VARIANTS must not contain {k:?} twice"
+            );
+        }
+        let names: std::collections::HashSet<&&'static str> =
+            SameStoreImpossibilityKind::NAMES.iter().collect();
+        assert_eq!(
+            names.len(),
+            SameStoreImpossibilityKind::NAMES.len(),
+            "impossibility NAMES must not contain any identifier twice",
+        );
+
+        for k in SameStoreConsistencyKind::VARIANTS {
+            let count = SameStoreConsistencyKind::VARIANTS
+                .iter()
+                .filter(|v| *v == k)
+                .count();
+            assert_eq!(
+                count, 1,
+                "consistency VARIANTS must not contain {k:?} twice"
+            );
+        }
+        let names: std::collections::HashSet<&&'static str> =
+            SameStoreConsistencyKind::NAMES.iter().collect();
+        assert_eq!(
+            names.len(),
+            SameStoreConsistencyKind::NAMES.len(),
+            "consistency NAMES must not contain any identifier twice",
+        );
+
+        for k in ProofRelationKind::VARIANTS {
+            let count = ProofRelationKind::VARIANTS
+                .iter()
+                .filter(|v| *v == k)
+                .count();
+            assert_eq!(count, 1, "fused VARIANTS must not contain {k:?} twice");
+        }
+        let names: std::collections::HashSet<&&'static str> =
+            ProofRelationKind::NAMES.iter().collect();
+        assert_eq!(
+            names.len(),
+            ProofRelationKind::NAMES.len(),
+            "fused NAMES must not contain any identifier twice",
+        );
+    }
+
+    // ---------- (4) Round-trip closure: NAMES[i].parse() == Ok(VARIANTS[i])
+
+    #[test]
+    fn round_trip_holds_between_variants_and_names_via_from_str() {
+        for (i, name) in SameStoreImpossibilityKind::NAMES.iter().enumerate() {
+            let parsed = SameStoreImpossibilityKind::from_str(name)
+                .expect("NAMES[i] must be accepted by the parser");
+            assert_eq!(
+                parsed,
+                SameStoreImpossibilityKind::VARIANTS[i],
+                "NAMES[{i}] must parse to VARIANTS[{i}]",
+            );
+        }
+        for k in SameStoreImpossibilityKind::VARIANTS {
+            let parsed = SameStoreImpossibilityKind::from_str(k.name())
+                .expect("VARIANTS[i].name() must round-trip through the parser");
+            assert_eq!(parsed, *k);
+        }
+
+        for (i, name) in SameStoreConsistencyKind::NAMES.iter().enumerate() {
+            let parsed = SameStoreConsistencyKind::from_str(name)
+                .expect("NAMES[i] must be accepted by the parser");
+            assert_eq!(parsed, SameStoreConsistencyKind::VARIANTS[i]);
+        }
+        for k in SameStoreConsistencyKind::VARIANTS {
+            let parsed = SameStoreConsistencyKind::from_str(k.name())
+                .expect("VARIANTS[i].name() must round-trip through the parser");
+            assert_eq!(parsed, *k);
+        }
+
+        for (i, name) in ProofRelationKind::NAMES.iter().enumerate() {
+            let parsed =
+                ProofRelationKind::from_str(name).expect("NAMES[i] must be accepted by the parser");
+            assert_eq!(parsed, ProofRelationKind::VARIANTS[i]);
+        }
+        for k in ProofRelationKind::VARIANTS {
+            let parsed = ProofRelationKind::from_str(k.name())
+                .expect("VARIANTS[i].name() must round-trip through the parser");
+            assert_eq!(parsed, *k);
+        }
+    }
+
+    // ---------- (5) ParseKindError::expected surfaces exactly
+    // [`Self::NAMES`] pointwise — the parser's advertised accepted-set
+    // is welded against the compile-time-known constant, so any
+    // downstream schema projection reading [`ParseKindError::expected`]
+    // and any downstream schema projection reading [`Self::NAMES`]
+    // read the SAME closed set.
+    //
+    // A pointer-identity assertion via [`std::ptr::eq`] would be
+    // strictly stronger but is not guaranteed: Rust's `const` items are
+    // permitted (and, in practice, may or may not choose) to duplicate
+    // the underlying static storage at each use site, so two references
+    // spelled through the same `Self::NAMES` const at two different
+    // seams need not compare pointer-equal — the value-equality
+    // assertion below carries the real semantic contract (same closed
+    // set, same ordering) without relying on that implementation
+    // detail.
+
+    #[test]
+    fn parse_error_expected_matches_names_pointwise() {
+        let err = SameStoreImpossibilityKind::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
+        assert_eq!(
+            err.expected(),
+            SameStoreImpossibilityKind::NAMES,
+            "impossibility ParseKindError::expected must surface \
+             SameStoreImpossibilityKind::NAMES pointwise",
+        );
+
+        let err = SameStoreConsistencyKind::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
+        assert_eq!(
+            err.expected(),
+            SameStoreConsistencyKind::NAMES,
+            "consistency ParseKindError::expected must surface \
+             SameStoreConsistencyKind::NAMES pointwise",
+        );
+
+        let err =
+            ProofRelationKind::from_str("_never_matches_").expect_err("sentinel must not parse");
+        assert_eq!(
+            err.expected(),
+            ProofRelationKind::NAMES,
+            "fused ParseKindError::expected must surface ProofRelationKind::NAMES pointwise",
+        );
+    }
+
+    // ---------- (6) Fused VARIANTS / NAMES equals concat(consistent, impossibility)
+
+    #[test]
+    fn fused_variants_is_concat_of_the_two_half_sides_in_order() {
+        let expected: Vec<ProofRelationKind> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .map(ProofRelationKind::Consistent)
+            .chain(
+                SameStoreImpossibilityKind::VARIANTS
+                    .iter()
+                    .copied()
+                    .map(ProofRelationKind::Impossible),
+            )
+            .collect();
+        assert_eq!(
+            ProofRelationKind::VARIANTS,
+            expected.as_slice(),
+            "fused VARIANTS must be Consistent-half then Impossible-half in declaration order",
+        );
+    }
+
+    #[test]
+    fn fused_names_is_concat_of_the_two_half_side_names() {
+        let expected: Vec<&'static str> = SameStoreConsistencyKind::NAMES
+            .iter()
+            .copied()
+            .chain(SameStoreImpossibilityKind::NAMES.iter().copied())
+            .collect();
+        assert_eq!(
+            ProofRelationKind::NAMES,
+            expected.as_slice(),
+            "fused NAMES must be Consistent-half then Impossible-half in declaration order",
+        );
+    }
+
+    // ---------- (7) Consistent-vs-impossible partition at index 3
+
+    #[test]
+    fn fused_variants_partition_at_index_three() {
+        for (i, k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            if i < 3 {
+                assert!(
+                    k.is_consistent(),
+                    "fused VARIANTS[{i}] must be a consistent corner",
+                );
+                assert!(!k.is_impossible());
+            } else {
+                assert!(
+                    k.is_impossible(),
+                    "fused VARIANTS[{i}] must be an impossibility corner",
+                );
+                assert!(!k.is_consistent());
+            }
+        }
+    }
+
+    // ---------- (8) Accessors project the SAME closed set — the
+    // value-equality contract of a pure alias. (Pointer identity via
+    // [`std::ptr::eq`] would be strictly stronger but is not guaranteed
+    // for `const` items, whose backing static storage the compiler may
+    // duplicate at each use site.)
+
+    #[test]
+    fn accessors_project_the_same_closed_set_as_the_associated_constants() {
+        assert_eq!(
+            SameStoreImpossibilityKind::variants(),
+            SameStoreImpossibilityKind::VARIANTS,
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::names(),
+            SameStoreImpossibilityKind::NAMES,
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::variants(),
+            SameStoreConsistencyKind::VARIANTS,
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::names(),
+            SameStoreConsistencyKind::NAMES,
+        );
+        assert_eq!(ProofRelationKind::variants(), ProofRelationKind::VARIANTS,);
+        assert_eq!(ProofRelationKind::names(), ProofRelationKind::NAMES,);
+    }
+
+    // ---------- (9) The associated constants and accessors are
+    // reachable from a `const` context — the length is a `const`
+    // expression, matching the `const`-ness the receiver-family
+    // already carries on `.name()`, `.consistency()`, etc.
+
+    #[test]
+    fn constants_and_accessors_are_const_evaluable() {
+        const IMP_LEN: usize = SameStoreImpossibilityKind::VARIANTS.len();
+        const IMP_NAMES_LEN: usize = SameStoreImpossibilityKind::NAMES.len();
+        const IMP_VAR_ACC_LEN: usize = SameStoreImpossibilityKind::variants().len();
+        const IMP_NAM_ACC_LEN: usize = SameStoreImpossibilityKind::names().len();
+        assert_eq!(IMP_LEN, 2);
+        assert_eq!(IMP_NAMES_LEN, 2);
+        assert_eq!(IMP_VAR_ACC_LEN, 2);
+        assert_eq!(IMP_NAM_ACC_LEN, 2);
+
+        const CON_LEN: usize = SameStoreConsistencyKind::VARIANTS.len();
+        const CON_NAMES_LEN: usize = SameStoreConsistencyKind::NAMES.len();
+        const CON_VAR_ACC_LEN: usize = SameStoreConsistencyKind::variants().len();
+        const CON_NAM_ACC_LEN: usize = SameStoreConsistencyKind::names().len();
+        assert_eq!(CON_LEN, 3);
+        assert_eq!(CON_NAMES_LEN, 3);
+        assert_eq!(CON_VAR_ACC_LEN, 3);
+        assert_eq!(CON_NAM_ACC_LEN, 3);
+
+        const FUS_LEN: usize = ProofRelationKind::VARIANTS.len();
+        const FUS_NAMES_LEN: usize = ProofRelationKind::NAMES.len();
+        const FUS_VAR_ACC_LEN: usize = ProofRelationKind::variants().len();
+        const FUS_NAM_ACC_LEN: usize = ProofRelationKind::names().len();
+        assert_eq!(FUS_LEN, 5);
+        assert_eq!(FUS_NAMES_LEN, 5);
+        assert_eq!(FUS_VAR_ACC_LEN, 5);
+        assert_eq!(FUS_NAM_ACC_LEN, 5);
     }
 }
