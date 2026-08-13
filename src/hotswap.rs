@@ -3458,6 +3458,175 @@ impl From<SameStoreImpossibilityKind> for ProofRelationKind {
     }
 }
 
+/// A fused [`ProofRelationKind`] landed in the WRONG half for the
+/// standard [`TryFrom`] projection the caller reached through — the
+/// caller demanded (say) a [`SameStoreConsistencyKind`] via
+/// `SameStoreConsistencyKind::try_from(fused)`, but `fused` was
+/// [`ProofRelationKind::Impossible(_)`]. Carries BOTH the fused value
+/// verbatim ([`Self::actual`]) and the closed set of stable snake-case
+/// identifiers the target half accepts ([`Self::expected`], the
+/// [`SameStoreConsistencyKind::NAMES`] slice on a failed-consistent
+/// projection, the [`SameStoreImpossibilityKind::NAMES`] slice on a
+/// failed-impossibility projection), so a caller routing on the error
+/// reaches a full "you sent `<x>`; expected one of `<y>` / `<z>` /
+/// `<w>`" diagnostic through two typed receivers rather than a
+/// stringly-typed message body.
+///
+/// **Mirror of [`ParseKindError`] on the type-level projection side.**
+/// The parse-side error [`ParseKindError`] carries the SAME
+/// (`input`/`actual`, `expected`) two-field shape for the identifier
+/// bijection ([`std::str::FromStr`] / [`std::fmt::Display`]); this
+/// error carries the mirror shape for the type-level bijection
+/// ([`TryFrom`] / [`From`]). The (parse-side, type-level) pair of
+/// standard-trait projections uses two errors whose diagnostic
+/// carrying-shape is identical: a caller that already routes on
+/// [`ParseKindError::expected`] reaches the same-named receiver on
+/// [`Self::expected`] on the type-level side.
+///
+/// **Inverse of the two [`From`] impls.** For every consistent kind
+/// `c`, `SameStoreConsistencyKind::try_from(ProofRelationKind::from(c))
+/// == Ok(c)`; for every impossibility kind `i`,
+/// `SameStoreImpossibilityKind::try_from(ProofRelationKind::from(i))
+/// == Ok(i)`. The two [`TryFrom`] impls are the [`Result`]-returning
+/// inverses of the two [`From`] impls just above, closing the standard-
+/// trait sum injection/projection pair through the [`From`] /
+/// [`TryFrom`] round-trip — the same lockstep the identifier bijection
+/// [`std::fmt::Display`] / [`std::str::FromStr`] already carries at the
+/// parse altitude, lifted here to the type-level constructor pair.
+///
+/// **The pair-of-`Option<Kind>` sibling.** The two accessors
+/// [`ProofRelationKind::consistency`] / [`ProofRelationKind::impossibility`]
+/// already project the fused sum to the two [`Option<Kind>`] shapes;
+/// the two [`TryFrom`] impls carry the same projection through the
+/// standard [`Result`]-returning trait, with the wrong-half branch
+/// carrying diagnostic detail the [`Option::None`] shape discards. A
+/// caller using the `?` combinator to short-circuit on a wrong-half
+/// projection reaches the diagnostic through this error; a caller
+/// that only wants the "did the projection land?" bit still has
+/// [`ProofRelationKind::consistency`] / [`ProofRelationKind::impossibility`]
+/// through the [`Option<Kind>`] shape at zero-cost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrongHalfError {
+    actual: ProofRelationKind,
+    expected: &'static [&'static str],
+}
+
+impl WrongHalfError {
+    /// The fused kind that landed in the wrong half for the caller's
+    /// [`TryFrom`] projection — the value verbatim, so a downstream
+    /// consumer routing a "you sent `<x>`" diagnostic reads the exact
+    /// fused kind the caller passed in (its stable snake-case
+    /// identifier available through [`ProofRelationKind::name`], its
+    /// consistent/impossibility half through
+    /// [`ProofRelationKind::is_consistent`] / [`ProofRelationKind::is_impossible`],
+    /// its half-side payload through [`ProofRelationKind::consistency`] /
+    /// [`ProofRelationKind::impossibility`]).
+    #[must_use]
+    pub const fn actual(&self) -> ProofRelationKind {
+        self.actual
+    }
+
+    /// The closed set of stable snake-case identifiers the target half
+    /// of the [`TryFrom`] projection accepts, in the target enum's
+    /// variant declaration order — the SAME
+    /// [`SameStoreConsistencyKind::NAMES`] slice a failed
+    /// `SameStoreConsistencyKind::try_from(_)` produces, and the SAME
+    /// [`SameStoreImpossibilityKind::NAMES`] slice a failed
+    /// `SameStoreImpossibilityKind::try_from(_)` produces. The (target
+    /// half, expected-set) pair delegates through the target enum's
+    /// [`NAMES`] constant, so a hypothetical sixth corner added to
+    /// either half-side enum extends this diagnostic's accepted-set in
+    /// exactly one edit (the `NAMES` constant) rather than at every
+    /// error-construction site.
+    #[must_use]
+    pub const fn expected(&self) -> &'static [&'static str] {
+        self.expected
+    }
+}
+
+impl std::fmt::Display for WrongHalfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "wrong half of ProofRelationKind: got `{}`; expected one of {:?}",
+            self.actual.name(),
+            self.expected,
+        )
+    }
+}
+
+impl std::error::Error for WrongHalfError {}
+
+/// Project a [`ProofRelationKind`] to its consistent-half payload
+/// through the standard [`TryFrom`] trait — the [`Result`]-returning
+/// inverse of the [`From<SameStoreConsistencyKind>`] constructor
+/// immediately above, and the standard-trait sibling of the
+/// [`ProofRelationKind::consistency`] [`Option<Kind>`]-shaped accessor
+/// already at this altitude. Every
+/// `SameStoreConsistencyKind::try_from(fused)` seam reaches the
+/// [`ProofRelationKind::Consistent`] arm's payload through the
+/// standard trait, without an open-coded `match` at every callsite —
+/// on the wrong half, yields a typed [`WrongHalfError`] carrying both
+/// the fused value verbatim and the accepted-set of consistent
+/// identifiers.
+///
+/// **Round-trip identity.** For every consistent kind `c`,
+/// `SameStoreConsistencyKind::try_from(ProofRelationKind::from(c)) ==
+/// Ok(c)`; and for every impossibility kind `i`,
+/// `SameStoreConsistencyKind::try_from(ProofRelationKind::from(i))`
+/// yields `Err(WrongHalfError { actual: ProofRelationKind::Impossible(i),
+/// expected: SameStoreConsistencyKind::NAMES })`. The impl is the
+/// [`Result`]-returning inverse of the [`From`] constructor on the
+/// consistent half, closing the standard-trait sum injection/projection
+/// pair.
+impl TryFrom<ProofRelationKind> for SameStoreConsistencyKind {
+    type Error = WrongHalfError;
+    fn try_from(fused: ProofRelationKind) -> Result<Self, Self::Error> {
+        match fused {
+            ProofRelationKind::Consistent(k) => Ok(k),
+            ProofRelationKind::Impossible(_) => Err(WrongHalfError {
+                actual: fused,
+                expected: Self::NAMES,
+            }),
+        }
+    }
+}
+
+/// Project a [`ProofRelationKind`] to its impossibility-half payload
+/// through the standard [`TryFrom`] trait — the mirror of the
+/// consistent-half impl on the impossibility half of the fused sum,
+/// and the standard-trait sibling of the
+/// [`ProofRelationKind::impossibility`] [`Option<Kind>`]-shaped
+/// accessor. Every
+/// `SameStoreImpossibilityKind::try_from(fused)` seam reaches the
+/// [`ProofRelationKind::Impossible`] arm's payload through the
+/// standard trait, without an open-coded `match` at every callsite —
+/// on the wrong half, yields a typed [`WrongHalfError`] carrying both
+/// the fused value verbatim and the accepted-set of impossibility
+/// identifiers.
+///
+/// **Round-trip identity.** For every impossibility kind `i`,
+/// `SameStoreImpossibilityKind::try_from(ProofRelationKind::from(i)) ==
+/// Ok(i)`; and for every consistent kind `c`,
+/// `SameStoreImpossibilityKind::try_from(ProofRelationKind::from(c))`
+/// yields `Err(WrongHalfError { actual: ProofRelationKind::Consistent(c),
+/// expected: SameStoreImpossibilityKind::NAMES })`. The impl is the
+/// [`Result`]-returning inverse of the [`From`] constructor on the
+/// impossibility half, closing the standard-trait sum
+/// injection/projection pair.
+impl TryFrom<ProofRelationKind> for SameStoreImpossibilityKind {
+    type Error = WrongHalfError;
+    fn try_from(fused: ProofRelationKind) -> Result<Self, Self::Error> {
+        match fused {
+            ProofRelationKind::Impossible(k) => Ok(k),
+            ProofRelationKind::Consistent(_) => Err(WrongHalfError {
+                actual: fused,
+                expected: Self::NAMES,
+            }),
+        }
+    }
+}
+
 /// Exhaustive sum-type classification of a proof pair — every possible
 /// relation between two [`ConfigSyncProof`] values lands in exactly one
 /// variant.
@@ -22753,5 +22922,347 @@ mod from_tests {
             );
             assert_eq!(round_tripped, fused);
         }
+    }
+}
+
+#[cfg(test)]
+mod try_from_tests {
+    //! [`TryFrom<ProofRelationKind>`] for [`SameStoreConsistencyKind`] and
+    //! [`SameStoreImpossibilityKind`] — the [`Result`]-returning
+    //! projection-side of the fused sum, welded into the standard
+    //! [`TryFrom`] trait every downstream `?`-composing consumer already
+    //! reaches through.
+    //!
+    //! **The projection-side sibling of the constructor pair.** The two
+    //! [`From<SameStoreConsistencyKind>`] / [`From<SameStoreImpossibilityKind>`]
+    //! impls shipped in the prior run (`021a28c`) lift both half-side kinds
+    //! to the fused sum through the standard [`From`] trait. Before this
+    //! pass the SUM PROJECTION direction — folding a fused kind back to a
+    //! half-side kind — was reachable only through the two
+    //! [`ProofRelationKind::consistency`] / [`ProofRelationKind::impossibility`]
+    //! [`Option<Kind>`]-shaped accessors, which discard the wrong-half
+    //! diagnostic detail every caller using `?` to short-circuit on a
+    //! wrong-half projection would want to keep. The two [`TryFrom`] impls
+    //! carry the projection through the standard [`Result`]-returning trait
+    //! every `?`-composing consumer already reaches, with a typed
+    //! [`WrongHalfError`] carrying both the fused value verbatim and the
+    //! target half's accepted-set on the wrong-half branch — the same
+    //! (`actual`/`input`, `expected`) two-field diagnostic shape the
+    //! parse-side [`ParseKindError`] already carries at the identifier
+    //! bijection altitude, lifted here to the type-level projection.
+    //!
+    //! **Round-trip identity, welding the standard-trait sum
+    //! injection/projection pair.** For every consistent kind `c`,
+    //! `SameStoreConsistencyKind::try_from(ProofRelationKind::from(c)) ==
+    //! Ok(c)`; and for every impossibility kind `i`,
+    //! `SameStoreImpossibilityKind::try_from(ProofRelationKind::from(i)) ==
+    //! Ok(i)`. The two [`TryFrom`] impls are the [`Result`]-returning
+    //! inverses of the two [`From`] impls, closing the sum
+    //! injection/projection pair through the standard [`From`] /
+    //! [`TryFrom`] round-trip — the same lockstep the sibling
+    //! standard-trait bijection [`std::fmt::Display`] /
+    //! [`std::str::FromStr`] already carries on the identifier projection.
+    //!
+    //! **The wrong-half branch is fully typed.** On a wrong-half
+    //! projection, [`WrongHalfError`] carries the fused value verbatim
+    //! ([`WrongHalfError::actual`]) and the target half's accepted-set of
+    //! stable snake-case identifiers ([`WrongHalfError::expected`], the
+    //! [`SameStoreConsistencyKind::NAMES`] slice on a failed-consistent
+    //! projection, the [`SameStoreImpossibilityKind::NAMES`] slice on a
+    //! failed-impossibility projection). The two receivers stay in
+    //! lockstep with the sibling parse-side [`ParseKindError::input`] /
+    //! [`ParseKindError::expected`] shape, so a caller that already routes
+    //! on the parse-side diagnostic reaches the same-named typed receivers
+    //! on the type-level side.
+    //!
+    //! The tests below pin the structural invariants that keep the two
+    //! [`TryFrom`] impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Truth table on the OK arm — every variant of the two half-side
+    //!    kind enums, lifted through [`From`] then projected through
+    //!    [`TryFrom`], round-trips to itself.
+    //! 2. Truth table on the ERR arm — every wrong-half projection yields
+    //!    an [`Err(WrongHalfError)`] carrying the fused value verbatim and
+    //!    the target half's [`NAMES`] slice.
+    //! 3. Round-trip identity through the accessor pair —
+    //!    `try_from(k).ok() == k.consistency()` on every fused kind for the
+    //!    consistent-half projection, and the mirror on the impossibility
+    //!    half; the [`TryFrom`] impl and the [`Option<Kind>`]-shaped
+    //!    accessor project through the SAME two-arm partition.
+    //! 4. Wrong-half error diagnostic pins — [`WrongHalfError::actual`]
+    //!    reads the fused value verbatim, and [`WrongHalfError::expected`]
+    //!    reads the target half's [`NAMES`] slice by pointer equality.
+    //! 5. [`Display`] pin — the wrong-half error formats to a stable
+    //!    `"wrong half of ProofRelationKind: got `<x>`; expected one of
+    //!    <y>"` message body a downstream log formatter routes on.
+    //! 6. [`?`] composability at a fallible-boundary callsite — a helper
+    //!    returning `Result<SameStoreConsistencyKind, WrongHalfError>`
+    //!    composes with `try_from(fused)?` at every fused variant.
+    //! 7. Cross-derive lockstep — the fused kind produced by
+    //!    [`From::from`] projects through [`TryFrom::try_from`] back to
+    //!    the original half-side kind, on both half-side alphabets. The
+    //!    ([`From`], [`TryFrom`]) pair is the type-level mirror of the
+    //!    ([`Display`], [`FromStr`]) identifier bijection.
+    //! 8. Full covering — for every fused variant across
+    //!    [`ProofRelationKind::VARIANTS`], exactly one of the two
+    //!    [`TryFrom`] impls yields [`Ok`] and the other yields [`Err`]
+    //!    (the XOR-partition [`ProofRelationKind::is_consistent`] /
+    //!    [`ProofRelationKind::is_impossible`] already welds, preserved
+    //!    through the [`Result`]-returning projections).
+    //! 9. Fused-kind [`is_consistent`] / [`is_impossible`] agreement — the
+    //!    [`Result::is_ok`] side of the two projections agrees with the
+    //!    two boolean receivers on the fused kind (`try_from(k).is_ok()`
+    //!    for consistent iff `k.is_consistent()`; mirror on the
+    //!    impossibility half).
+    //! 10. The [`std::error::Error`] trait is welded — the wrong-half
+    //!     error erases through `Box<dyn std::error::Error>` at a
+    //!     dyn-erasing boundary and formats through the boxed
+    //!     [`std::fmt::Display`] impl.
+    #![allow(clippy::items_after_statements)]
+    use super::*;
+
+    // ---------- (1) Truth table on the OK arm
+
+    #[test]
+    fn try_from_consistency_ok_truth_table() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(fused),
+                Ok(c),
+                "try_from({fused:?}) should recover Ok({c:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_impossibility_ok_truth_table() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(fused),
+                Ok(i),
+                "try_from({fused:?}) should recover Ok({i:?})",
+            );
+        }
+    }
+
+    // ---------- (2) Truth table on the ERR arm
+
+    #[test]
+    fn try_from_consistency_err_on_impossibility_half() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            let expected = WrongHalfError {
+                actual: fused,
+                expected: SameStoreConsistencyKind::NAMES,
+            };
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(fused),
+                Err(expected),
+                "try_from({fused:?}) on the wrong half should yield Err(WrongHalfError)",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_impossibility_err_on_consistency_half() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            let expected = WrongHalfError {
+                actual: fused,
+                expected: SameStoreImpossibilityKind::NAMES,
+            };
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(fused),
+                Err(expected),
+                "try_from({fused:?}) on the wrong half should yield Err(WrongHalfError)",
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip identity through the accessor pair
+
+    #[test]
+    fn try_from_agrees_with_option_kind_accessors() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(k).ok(),
+                k.consistency(),
+                "try_from({k:?}).ok() should agree with {k:?}.consistency()",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(k).ok(),
+                k.impossibility(),
+                "try_from({k:?}).ok() should agree with {k:?}.impossibility()",
+            );
+        }
+    }
+
+    // ---------- (4) Wrong-half error diagnostic pins
+
+    #[test]
+    fn wrong_half_error_actual_and_expected_are_wired() {
+        // Consistent-half projection on the impossibility half.
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            let err = SameStoreConsistencyKind::try_from(fused)
+                .expect_err("wrong-half projection should Err");
+            assert_eq!(err.actual(), fused, "actual() should equal the input");
+            assert_eq!(
+                err.expected(),
+                SameStoreConsistencyKind::NAMES,
+                "expected() should equal the target half's NAMES slice",
+            );
+        }
+        // Impossibility-half projection on the consistent half.
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            let err = SameStoreImpossibilityKind::try_from(fused)
+                .expect_err("wrong-half projection should Err");
+            assert_eq!(err.actual(), fused, "actual() should equal the input");
+            assert_eq!(
+                err.expected(),
+                SameStoreImpossibilityKind::NAMES,
+                "expected() should equal the target half's NAMES slice",
+            );
+        }
+    }
+
+    // ---------- (5) Display pin
+
+    #[test]
+    fn wrong_half_error_display_carries_input_and_expected() {
+        let fused = ProofRelationKind::from(SameStoreImpossibilityKind::Regressed);
+        let err = SameStoreConsistencyKind::try_from(fused).expect_err("wrong-half projection");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("regressed"),
+            "Display should carry the fused kind's snake-case name: {msg}",
+        );
+        for &accepted in SameStoreConsistencyKind::NAMES {
+            assert!(
+                msg.contains(accepted),
+                "Display should list every accepted target-half identifier `{accepted}`: {msg}",
+            );
+        }
+        assert!(
+            msg.contains("wrong half of ProofRelationKind"),
+            "Display should carry the fixed prefix: {msg}",
+        );
+    }
+
+    // ---------- (6) ? composability at a fallible-boundary callsite
+
+    fn project_consistent(
+        fused: ProofRelationKind,
+    ) -> Result<SameStoreConsistencyKind, WrongHalfError> {
+        let k = SameStoreConsistencyKind::try_from(fused)?;
+        Ok(k)
+    }
+    fn project_impossible(
+        fused: ProofRelationKind,
+    ) -> Result<SameStoreImpossibilityKind, WrongHalfError> {
+        let k = SameStoreImpossibilityKind::try_from(fused)?;
+        Ok(k)
+    }
+
+    #[test]
+    fn question_mark_composes_at_fallible_boundary() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(project_consistent(ProofRelationKind::from(c)), Ok(c));
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(project_impossible(ProofRelationKind::from(i)), Ok(i));
+        }
+        // Wrong-half projections short-circuit through `?` with the typed
+        // error surfaced to the caller.
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::from(i);
+            assert_eq!(
+                project_consistent(fused),
+                SameStoreConsistencyKind::try_from(fused),
+            );
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::from(c);
+            assert_eq!(
+                project_impossible(fused),
+                SameStoreImpossibilityKind::try_from(fused),
+            );
+        }
+    }
+
+    // ---------- (7) Cross-derive lockstep: (From, TryFrom) round-trip
+
+    #[test]
+    fn from_try_from_round_trips_on_both_halves() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let round_tripped = SameStoreConsistencyKind::try_from(ProofRelationKind::from(c))
+                .expect("consistent round-trip should Ok");
+            assert_eq!(round_tripped, c);
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let round_tripped = SameStoreImpossibilityKind::try_from(ProofRelationKind::from(i))
+                .expect("impossibility round-trip should Ok");
+            assert_eq!(round_tripped, i);
+        }
+    }
+
+    // ---------- (8) Full XOR covering across VARIANTS
+
+    #[test]
+    fn try_from_pair_xor_partitions_variants() {
+        for &k in ProofRelationKind::VARIANTS {
+            let c = SameStoreConsistencyKind::try_from(k).is_ok();
+            let i = SameStoreImpossibilityKind::try_from(k).is_ok();
+            assert!(
+                c ^ i,
+                "exactly one of the two TryFrom impls should Ok on {k:?}",
+            );
+        }
+    }
+
+    // ---------- (9) is_consistent / is_ok agreement
+
+    #[test]
+    fn try_from_ok_agrees_with_fused_predicates() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(k).is_ok(),
+                k.is_consistent(),
+                "try_from({k:?}).is_ok() should agree with {k:?}.is_consistent()",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(k).is_ok(),
+                k.is_impossible(),
+                "try_from({k:?}).is_ok() should agree with {k:?}.is_impossible()",
+            );
+        }
+    }
+
+    // ---------- (10) std::error::Error dyn-erasing weld
+
+    #[test]
+    fn wrong_half_error_erases_through_boxed_error_trait() {
+        fn boxed_display(
+            fused: ProofRelationKind,
+        ) -> Result<SameStoreConsistencyKind, Box<dyn std::error::Error>> {
+            let k = SameStoreConsistencyKind::try_from(fused)?;
+            Ok(k)
+        }
+
+        let fused = ProofRelationKind::from(SameStoreImpossibilityKind::CrossStore);
+        let err = boxed_display(fused).expect_err("wrong-half projection should Err");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cross_store"),
+            "boxed Display should carry the fused kind's snake-case name: {msg}",
+        );
+        assert!(
+            msg.contains("wrong half of ProofRelationKind"),
+            "boxed Display should carry the fixed prefix: {msg}",
+        );
     }
 }
