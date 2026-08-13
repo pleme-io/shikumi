@@ -1503,6 +1503,86 @@ impl ProofDelta {
         !self.watermark.stationary() && matches!(self.generations_advanced, Some(0))
     }
 
+    /// True iff the delta lands in the legitimate progression corner —
+    /// the watermark moved AND the generation advanced by one or more.
+    /// The delta-altitude receiver-sibling of
+    /// [`ProofRelation::progression`] and
+    /// [`ProofRelationWire::progression`], and the FIFTH and CLOSING
+    /// single-variant atomic classifier at the delta altitude.
+    ///
+    /// **Closes the exhaustive-partition of the five delta-reachable
+    /// corners into five receiver-visible atomic predicates.** Before
+    /// this receiver, the delta altitude carried four single-variant
+    /// atomic classifiers — [`Self::stationary`] (the (`0`, `0`)
+    /// corner), [`Self::identity_republish`] (the (`0`, `1+`) corner),
+    /// [`Self::cross_store_signal`] (the (`moved`, `0`) impossibility
+    /// corner), and [`Self::generations_regressed`] (the (`_`, `None`)
+    /// impossibility corner) — leaving the (`moved`, `1+`) legitimate
+    /// corner reachable at the delta altitude ONLY through the
+    /// compositional predicates or through
+    /// [`ProofDelta::relation`]. A consumer holding a freshly computed
+    /// [`ProofDelta`] and wanting the "did we see a legitimate
+    /// progression?" answer previously had four inline paths, each
+    /// leaking work: (a) `self.same_store_consistent() &&
+    /// !self.stationary() && !self.identity_republish()` — a three-hop
+    /// composition through one compositional predicate and two atomic
+    /// classifiers that reaches the answer through the negative space
+    /// of the two other consistent corners; (b)
+    /// `matches!(self.relation(), Some(ProofRelation::Progression { .. }))`
+    /// — a fold through the classification seam whose `Option`
+    /// unwrapping the tag-only question doesn't need; (c)
+    /// `self.watermark.any_moved() && matches!(self.generations_advanced,
+    /// Some(n) if n > 0)` inline at every seam, which the exhaustiveness
+    /// checker cannot help keep in sync with a future variant addition;
+    /// or (d) `!self.stationary() && !self.identity_republish() &&
+    /// !self.cross_store_signal() && !self.generations_regressed()` —
+    /// a four-hop composition through the OTHER four atomic classifiers
+    /// whose complement is exactly this corner, forcing the consumer
+    /// through the negative space of every other classifier. The
+    /// receiver-sibling here answers the same question through a single
+    /// welded conjunction (`!self.watermark.stationary() &&
+    /// matches!(self.generations_advanced, Some(n) if n > 0)`), pinned
+    /// once at the seam that already carries the delta shape.
+    ///
+    /// **The two-way partition of the delta space into five atomic
+    /// half-spaces is now welded at the delta altitude too.** With
+    /// [`Self::stationary`], [`Self::identity_republish`], this
+    /// receiver, [`Self::cross_store_signal`], and
+    /// [`Self::generations_regressed`], every [`ProofDelta`] value
+    /// satisfies EXACTLY ONE of the five atomic predicates — a
+    /// [`ConfigDiff`](crate::ConfigDiff)-style five-way partition that
+    /// no prior single-variant atomic classifier at the delta altitude
+    /// could pin alone, since it needs all five in the same fold. The
+    /// wire-side and value-side classification altitudes already carried
+    /// this closing partition (via the disjoint-union invariant welded
+    /// by the fifth `cross_store` predicate at both classification
+    /// altitudes); this method carries it at the delta altitude too, so
+    /// adding a hypothetical sixth [`ProofRelation`] variant fails to
+    /// compile at every one of the five atomic classifier accessors'
+    /// `match` bodies at every altitude in lockstep.
+    ///
+    /// **Cross-altitude same-answer with the classification predicates.**
+    /// For every [`ProofDelta`] value that [`Self::relation`] classifies
+    /// as `Some(r)`, `r.progression()` equals `self.progression()` — the
+    /// delta-altitude verdict agrees pointwise with the
+    /// classification-altitude verdict on the four delta-reachable
+    /// corners. The regressed corner is `Option::None` on the delta path
+    /// (the count was folded away), so the classification-altitude
+    /// answer is only reachable through
+    /// [`ConfigSyncProof::relation_since`], but the delta-altitude
+    /// answer is preserved: `self.progression()` is `false` on the
+    /// regressed corner (the atomic predicate reads the (`moved`, `1+`)
+    /// cell alone, and a regressed delta has `generations_advanced ==
+    /// None`, which fails the second conjunct).
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its progression verdict at compile time too, matching the
+    /// `const`-ness of every other atomic predicate at every altitude.
+    #[must_use]
+    pub const fn progression(&self) -> bool {
+        !self.watermark.stationary() && matches!(self.generations_advanced, Some(n) if n > 0)
+    }
+
     /// True iff the pair of proofs is consistent with having come from a
     /// single monotonic [`ConfigStore`](crate::ConfigStore) — no
     /// generation regression AND no watermark-move-without-generation-bump.
@@ -16206,5 +16286,402 @@ mod proof_delta_same_store_inconsistent_tests {
         assert!(!PROGRESSION);
         assert!(CROSS_STORE);
         assert!(REGRESSED);
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_progression_tests {
+    //! Weld the progression predicate at the delta altitude —
+    //! [`ProofDelta::progression`], the delta-altitude receiver-sibling
+    //! of [`ProofRelation::progression`] and
+    //! [`ProofRelationWire::progression`] at the two classification
+    //! altitudes.
+    //!
+    //! This is the FIFTH and CLOSING single-variant atomic classifier
+    //! at the delta altitude. The four prior atomic classifiers
+    //! ([`ProofDelta::stationary`], [`ProofDelta::identity_republish`],
+    //! [`ProofDelta::cross_store_signal`],
+    //! [`ProofDelta::generations_regressed`]) each pin one of the five
+    //! delta-reachable corners; this receiver pins the last, closing
+    //! the exhaustive-partition of the delta space into five
+    //! receiver-visible half-spaces whose disjunction is the constant
+    //! `true` and whose pairwise intersection is the constant `false`.
+    //! The FIRST five-way exactly-one-of-the-five invariant at the
+    //! delta altitude — a shape only reachable once all five atomic
+    //! classifiers exist — is welded here (test 6).
+    //!
+    //! The tests below cover:
+    //!
+    //! 1. Truth table pinned across the (watermark moved?, generation
+    //!    delta) grid: the Progression corner returns `true`; the four
+    //!    other corners (Stationary, IdentityRepublish, CrossStore,
+    //!    Regressed) return `false`.
+    //! 2. Cross-altitude same-answer with [`ProofRelation`]: for every
+    //!    delta whose [`ProofDelta::relation`] classifies as `Some(r)`,
+    //!    `d.progression() == r.progression()`.
+    //! 3. Cross-altitude same-answer with [`ProofRelationWire`] via
+    //!    [`ProofDelta::relation_wire`], mirroring test 2.
+    //! 4. Full-classification same-answer via
+    //!    [`ConfigSyncProof::relation_since`]: on every legitimate
+    //!    corner AND on the regressed corner (where
+    //!    [`ProofDelta::relation`] folds the count away and returns
+    //!    `None`), the delta-altitude verdict equals the
+    //!    classification-altitude verdict reached through the lossless
+    //!    proof-pair path — `progression()` is `false` on the regressed
+    //!    corner at both altitudes.
+    //! 5. Pairwise disjointness with the four other atomic classifiers
+    //!    at the delta altitude: no delta satisfies both `progression()`
+    //!    and any other single-variant atomic classifier
+    //!    (`stationary`, `identity_republish`, `cross_store_signal`,
+    //!    `generations_regressed`).
+    //! 6. **Exactly-one-of-the-five partition at the delta altitude —
+    //!    genuinely new.** On every corner, EXACTLY one of the five
+    //!    atomic classifiers returns `true`; the other four return
+    //!    `false`. This is the FIRST exhaustive-five-way-partition
+    //!    invariant at the delta altitude — a shape no prior atomic
+    //!    classifier alone could pin, since it needs all five in the
+    //!    same fold.
+    //! 7. Complement identity with the disjunction of the four other
+    //!    atomic classifiers: `d.progression() == !(d.stationary() ||
+    //!    d.identity_republish() || d.cross_store_signal() ||
+    //!    d.generations_regressed())` on every corner — the fifth
+    //!    atomic classifier is the exact complement of the disjunction
+    //!    of the four prior ones inside the five-way partition.
+    //! 8. `const`-callable on hand-constructed deltas at every corner.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners of the (watermark moved?,
+    /// generation delta) grid, one row per corner. Each row carries a
+    /// label, the prior/current proofs to fold into a delta, and the
+    /// pinned truth-table verdict for `progression()`.
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof, bool)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                false,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                true,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned across the delta-reachable grid
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.progression(),
+                want,
+                "{name}: progression diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer with ProofRelation
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.progression(),
+                    relation.progression(),
+                    "{name}: delta and classification progression verdicts must agree \
+                     on the four delta-reachable corners",
+                );
+            } else {
+                // Only the regressed corner folds the count away and
+                // returns None here; progression() must be false at
+                // the delta altitude on that corner too.
+                assert!(
+                    !d.progression(),
+                    "{name}: delta.relation() == None (regressed corner) implies \
+                     !progression() — the (moved, 1+) cell requires generations_advanced \
+                     to be Some(n) with n > 0, but a regressed delta has \
+                     generations_advanced == None",
+                );
+                assert!(
+                    d.generations_regressed(),
+                    "{name}: the None branch of delta.relation() is only \
+                     reached on the regressed corner (or the class-partition \
+                     impossibility corner, unreachable via between())",
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer with ProofRelationWire
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_wire_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(wire) = d.relation_wire() {
+                assert_eq!(
+                    d.progression(),
+                    wire.progression(),
+                    "{name}: delta and wire-classification progression verdicts must \
+                     agree on the four delta-reachable corners",
+                );
+            }
+        }
+    }
+
+    // ---------- (4) Full-classification same-answer via
+    //                ConfigSyncProof::relation_since
+
+    #[test]
+    fn full_classification_agrees_on_every_corner_including_regressed() {
+        // ConfigSyncProof::relation_since preserves the regression count
+        // through the lossless proof-pair path — where
+        // ProofDelta::relation returns None on the regressed corner
+        // (the count was folded away), relation_since fills in the
+        // ProofRelation::Regressed variant. The delta-altitude
+        // progression verdict must equal the classification-altitude
+        // verdict on all five corners, including regressed (where both
+        // altitudes report `false`).
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.progression(),
+                r.progression(),
+                "{name}: delta and full-classification progression verdicts must agree \
+                 on every corner (including regressed, which the delta path folds to \
+                 None but progression() reads as false at both altitudes)",
+            );
+            assert_eq!(
+                r.progression(),
+                want,
+                "{name}: full classification must also match the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (5) Pairwise disjointness with the four other atomic
+    //                classifiers at the delta altitude
+
+    #[test]
+    fn pairwise_disjoint_from_every_other_atomic_classifier() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert!(
+                !(d.progression() && d.stationary()),
+                "{name}: progression and stationary must be pairwise disjoint",
+            );
+            assert!(
+                !(d.progression() && d.identity_republish()),
+                "{name}: progression and identity_republish must be pairwise disjoint",
+            );
+            assert!(
+                !(d.progression() && d.cross_store_signal()),
+                "{name}: progression and cross_store_signal must be pairwise disjoint",
+            );
+            assert!(
+                !(d.progression() && d.generations_regressed()),
+                "{name}: progression and generations_regressed must be pairwise disjoint",
+            );
+        }
+    }
+
+    // ---------- (6) Exactly-one-of-the-five partition — genuinely new
+
+    #[test]
+    fn exactly_one_of_the_five_atomic_predicates_holds_on_every_corner() {
+        // The Xor partition of the delta space is now receiver-visible
+        // along all five of its single-variant atomic projections. This
+        // closing invariant welds them together: on every corner,
+        // EXACTLY one of stationary / identity_republish / progression /
+        // cross_store_signal / generations_regressed returns true; the
+        // other four return false. A future variant addition either
+        // fails to compile at each predicate accessor's own `match` /
+        // conjunction body (if it is a new single-variant atomic
+        // classification) or forces the partition to be re-welded (if
+        // it introduces overlap with an existing corner, which the
+        // exhaustive fixture would catch as a doubled-true or
+        // dropped-true count).
+        //
+        // Genuinely new — no prior atomic classifier at the delta
+        // altitude could pin this invariant alone, since it needs all
+        // five in the same fold. The FIRST five-way partition invariant
+        // at the delta altitude, matching the shape ProofRelation and
+        // ProofRelationWire already carry at the two classification
+        // altitudes.
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let true_count = [
+                d.stationary(),
+                d.identity_republish(),
+                d.progression(),
+                d.cross_store_signal(),
+                d.generations_regressed(),
+            ]
+            .into_iter()
+            .filter(|b| *b)
+            .count();
+            assert_eq!(
+                true_count, 1,
+                "{name}: delta must satisfy EXACTLY one of the five atomic classifiers \
+                 (got {true_count})",
+            );
+        }
+    }
+
+    // ---------- (7) Complement identity with the disjunction of the
+    //                four other atomic classifiers
+
+    #[test]
+    fn complement_of_the_other_four_atomic_classifiers() {
+        // Inside the five-way partition of the delta space, the fifth
+        // atomic classifier is the exact complement of the disjunction
+        // of the four prior ones — a shape only reachable once the
+        // partition is closed (test 6 above).
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let others = d.stationary()
+                || d.identity_republish()
+                || d.cross_store_signal()
+                || d.generations_regressed();
+            assert_eq!(
+                d.progression(),
+                !others,
+                "{name}: progression must be the pointwise complement of the \
+                 disjunction of the four other atomic classifiers",
+            );
+        }
+    }
+
+    // ---------- (8) const-callable on hand-constructed deltas
+
+    #[test]
+    fn const_callable_on_hand_constructed_deltas_at_every_corner() {
+        // A compile-time-known ProofDelta must project its verdict at
+        // compile time too. Five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const STATIONARY: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .progression();
+        const IDENTITY_REPUBLISH: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .progression();
+        const PROGRESSION: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .progression();
+        const CROSS_STORE: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .progression();
+        const REGRESSED: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .progression();
+        assert!(!STATIONARY);
+        assert!(!IDENTITY_REPUBLISH);
+        assert!(PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(!REGRESSED);
     }
 }
