@@ -2672,6 +2672,54 @@ impl AsRef<str> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`&'static str`] impl
+/// projects the stable snake-case [`Self::name`] identifier as an
+/// **owned** [`&'static str`] — the standard-trait sibling of the
+/// [`AsRef<str>`] impl above. Where [`AsRef<str>`] yields a `&str`
+/// borrowing from the kind reference (`fn as_ref(&self) -> &str`), the
+/// [`From`] impl yields the same identifier as an [`&'static str`]
+/// whose lifetime outlives every consumer — the shape every
+/// `'static`-bounded downstream slot requires (a
+/// [`std::sync::OnceLock`]`<&'static str>` cell, a
+/// [`prometheus::labels!`]`[…]` map key, a `phf::Map<&'static str, V>`
+/// lookup, a `tracing::field::Field::name`, a
+/// [`std::collections::HashMap`]`<&'static str, V>` builder used past
+/// the kind value's own scope, any code carrying the identifier past
+/// the reference's lifetime). Delegates to [`Self::name`] — one line —
+/// so the projection stays [`&'static str`]-tight (no heap alloc, no
+/// [`format!`] pass) and lockstep-identical with the sibling
+/// [`AsRef<str>`] / [`std::fmt::Display`] / [`std::str::FromStr`] /
+/// [`serde::Serialize`] impls by construction. Sibling of
+/// [`derive_more::IntoStaticStr`] / [`strum::IntoStaticStr`] in the
+/// ecosystem; shipped hand-rolled to stay dependency-neutral and to
+/// keep the delegation-through-[`Self::name`] shape parallel to the
+/// existing standard-trait projections.
+impl From<SameStoreImpossibilityKind> for &'static str {
+    fn from(kind: SameStoreImpossibilityKind) -> &'static str {
+        kind.name()
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`&'static str`]
+/// impl — the reference-taking sibling of the owned [`From`] impl
+/// directly above, delegating through the same [`Self::name`] source
+/// of truth. Enables `.into()` on a borrowed kind (a `&kind` handle
+/// held past the value's own scope, an iterator over `&[Kind]` where
+/// each kind projects its identifier through the same standard trait,
+/// a `&kind` inside a `.map(|k| k.into())` combinator) without a
+/// per-callsite dereference. Both directions of the standard-trait
+/// projection now compose out of the same [`Self::name`] receiver by
+/// construction; adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`], and the new
+/// identifier surfaces through both [`From`] impls, the sibling
+/// [`AsRef<str>`] impl, and every downstream `impl Into<&'static
+/// str>`-bounded slot in lockstep.
+impl From<&SameStoreImpossibilityKind> for &'static str {
+    fn from(kind: &SameStoreImpossibilityKind) -> &'static str {
+        kind.name()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3015,6 +3063,41 @@ impl<'de> serde::Deserialize<'de> for SameStoreConsistencyKind {
 impl AsRef<str> for SameStoreConsistencyKind {
     fn as_ref(&self) -> &str {
         self.name()
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`&'static str`] impl
+/// projects the stable snake-case [`Self::name`] identifier as an
+/// **owned** [`&'static str`] — the mirror of the
+/// [`SameStoreImpossibilityKind`] [`From`] impl on the consistent half
+/// of the classification, and the standard-trait sibling of the
+/// [`AsRef<str>`] impl above. Delegates to [`Self::name`] — one line
+/// — so the projection stays [`&'static str`]-tight and
+/// lockstep-identical with the sibling [`AsRef<str>`] /
+/// [`std::fmt::Display`] / [`std::str::FromStr`] / [`serde::Serialize`]
+/// impls by construction. Every `'static`-bounded downstream slot (a
+/// [`std::sync::OnceLock`]`<&'static str>` cell, a `phf::Map<&'static
+/// str, V>` lookup, a [`std::collections::HashMap`]`<&'static str, V>`
+/// builder used past the kind value's own scope, any code carrying
+/// the identifier past the reference's lifetime) now composes out of
+/// the standard [`Into<&'static str>`] trait alone on the consistent
+/// half.
+impl From<SameStoreConsistencyKind> for &'static str {
+    fn from(kind: SameStoreConsistencyKind) -> &'static str {
+        kind.name()
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`&'static str`] impl —
+/// the reference-taking sibling of the owned [`From`] impl directly
+/// above on the consistent half, delegating through the same
+/// [`Self::name`] source of truth. Enables `.into()` on a borrowed
+/// kind without a per-callsite dereference; both directions of the
+/// standard-trait projection now compose out of the same
+/// [`Self::name`] receiver by construction on the consistent half.
+impl From<&SameStoreConsistencyKind> for &'static str {
+    fn from(kind: &SameStoreConsistencyKind) -> &'static str {
+        kind.name()
     }
 }
 
@@ -3476,6 +3559,40 @@ impl<'de> serde::Deserialize<'de> for ProofRelationKind {
 impl AsRef<str> for ProofRelationKind {
     fn as_ref(&self) -> &str {
         self.name()
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`&'static str`] impl projects
+/// the stable snake-case [`Self::name`] identifier as an **owned**
+/// [`&'static str`] — the fused-arm sibling of the two half-side
+/// [`From`] impls on [`SameStoreConsistencyKind`] and
+/// [`SameStoreImpossibilityKind`], and the standard-trait sibling of
+/// the [`AsRef<str>`] impl above on the fused sum. Delegates to
+/// [`Self::name`] — one line — which in turn delegates through the two
+/// half-side [`Self::name`] receivers, keeping the fused [`From`] impl
+/// and the two half-side [`From`] impls lockstep-identical under every
+/// future variant addition to either half-side enum by construction:
+/// for every fused kind `k`, the owned static-str projection agrees
+/// with the routed half-side projection through the two-arm partition
+/// of the fused sum, exactly as the sibling [`AsRef<str>`] impls
+/// already agree.
+impl From<ProofRelationKind> for &'static str {
+    fn from(kind: ProofRelationKind) -> &'static str {
+        kind.name()
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`&'static str`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above
+/// on the fused sum, delegating through the same [`Self::name`] source
+/// of truth. Enables `.into()` on a borrowed fused kind without a
+/// per-callsite dereference; both directions of the standard-trait
+/// projection now compose out of the same [`Self::name`] receiver by
+/// construction on the fused sum, matching the pair already welded
+/// on both half-side enums.
+impl From<&ProofRelationKind> for &'static str {
+    fn from(kind: &ProofRelationKind) -> &'static str {
+        kind.name()
     }
 }
 
@@ -23740,6 +23857,440 @@ mod as_ref_str_tests {
             assert_eq!(
                 counters[name], 1,
                 "each fused kind must have incremented its counter exactly once via as_ref() lookup",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod from_static_str_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`&'static str`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`],
+    //! and [`ProofRelationKind`] — the **owned** [`&'static str`]
+    //! projection lifting the three kind enums into the standard
+    //! [`Into<&'static str>`] receiver-family every downstream
+    //! `'static`-bounded slot already reaches through.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of
+    //! the three enums).** The prior [`AsRef<str>`] pass (`064e7d4`)
+    //! closed the *borrowed* projection — `fn as_ref(&self) -> &str` —
+    //! whose returned `&str` borrows from the kind reference and
+    //! therefore cannot outlive it. Every downstream slot demanding a
+    //! [`&'static str`] (a [`std::sync::OnceLock`]`<&'static str>`
+    //! cell, a `phf::Map<&'static str, V>` lookup, a
+    //! [`prometheus::Registry`] label whose lifetime must outlive the
+    //! request scope, a [`tracing::field::Field`] name kept past the
+    //! kind value's own scope, any code carrying the identifier past
+    //! the reference's lifetime) still had to reach through the
+    //! non-standard-trait [`Self::name`] accessor (which returns
+    //! [`&'static str`] but is not a standard trait) or through a
+    //! per-call [`String`] allocation (a `k.to_string()` slot the
+    //! `'static`-bounded downstream reader cannot use as-is). The six
+    //! impls close the [`Into<&'static str>`] cell of the
+    //! standard-trait grid the prior nine runs opened for these
+    //! enums, in exactly the shape [`derive_more::IntoStaticStr`] /
+    //! [`strum::IntoStaticStr`] produces in the ecosystem — every
+    //! `'static`-bounded downstream slot now composes out of the
+    //! standard [`Into`] trait alone.
+    //!
+    //! **Pointwise identity with [`Self::name`] and with [`AsRef<str>`].**
+    //! For every value `k` at every altitude, the four identifier
+    //! projections `k.name()`, `k.as_ref() as &str`,
+    //! `<&'static str>::from(k)`, and `<&'static str>::from(&k)`
+    //! return the same string. The standard [`Into<&'static str>`]
+    //! trait projects the SAME identifier the sibling `.name()`
+    //! accessor, the sibling [`std::fmt::Display`] impl, and the
+    //! sibling [`AsRef<str>`] impl project — so a downstream consumer
+    //! routing on any of the four reaches the same value.
+    //!
+    //! **`&'static str`-tight, allocation-free.** Because [`Self::name`]
+    //! returns [`&'static str`] via a `match` over string literals,
+    //! the projection reaches the same static byte-slot at every call
+    //! — no heap allocation ever fires. A pointer-equality pin on
+    //! `<&'static str>::from(k).as_ptr() == k.name().as_ptr()` welds
+    //! the no-alloc contract at the byte level.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] [`From`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so the fused
+    //! [`&'static str`] projection agrees with the routed half-side
+    //! [`&'static str`] projection through the two-arm partition of
+    //! the fused sum on every fused kind.
+    //!
+    //! **The `'static`-lifetime pin (the key contract this pass adds
+    //! that [`AsRef<str>`] cannot).** A `&'static str` reachable
+    //! through `From::from` outlives the kind value: the projection
+    //! can be stored in a `'static`-bounded slot (a
+    //! [`std::sync::OnceLock`], a `Vec<&'static str>` builder used
+    //! after the kind value drops, a per-thread cache) that the
+    //! borrowed [`AsRef<str>`] projection cannot fill. The tests pin
+    //! this by dropping the kind value in one scope, keeping the
+    //! projected [`&'static str`] in an outer scope, and using it
+    //! after the kind's own scope ends — exactly the shape every
+    //! `'static`-bounded downstream slot already reaches.
+    //!
+    //! The tests below pin the structural invariants that keep the
+    //! six impls in lockstep with the rest of the classification
+    //! lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`] on every variant of
+    //!    every kind enum — `<&'static str>::from(k) == k.name()`.
+    //! 2. Pointwise identity with the sibling [`AsRef<str>`] impl on
+    //!    every variant of every kind enum —
+    //!    `<&'static str>::from(k) == <K as AsRef<str>>::as_ref(&k)`.
+    //! 3. Pointwise identity between the owned and reference-taking
+    //!    [`From`] impls — `<&'static str>::from(k) ==
+    //!    <&'static str>::from(&k)`.
+    //! 4. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`&'static str`] projection agrees with the two half-side
+    //!    [`&'static str`] projections through the fused sum's
+    //!    two-arm partition.
+    //! 5. Pointer-equality pin — the projection reaches the same
+    //!    static byte-slot as the sibling [`Self::name`] projection
+    //!    (`.as_ptr() == k.name().as_ptr()`), pinning the no-alloc
+    //!    contract at the byte level. The [`Self::NAMES`] constant
+    //!    is a separate string-literal set the compiler is not
+    //!    required to dedupe with the `name()` match arms — the
+    //!    load-bearing invariant is that [`From`] delegates through
+    //!    [`Self::name`] and returns the same byte-slot.
+    //! 6. [`'static`]-lifetime pin — a projected [`&'static str`] can
+    //!    be moved past the kind value's own scope and read in an
+    //!    outer scope, exactly the shape every `'static`-bounded
+    //!    downstream slot already reaches.
+    //! 7. [`impl Into<&'static str>`] composability — the six impls
+    //!    flow through a generic
+    //!    `fn take<S: Into<&'static str>>(s: S) -> &'static str` seam
+    //!    with the same result as an explicit `.name()` at the
+    //!    callsite.
+    //! 8. Round-trip identity through [`FromStr`] — for every variant
+    //!    `k`, `<&'static str>::from(k).parse::<K>() == Ok(k)`.
+    //!
+    //! Genuinely new — before this pass the three kind enums could
+    //! not flow through any downstream API typed on `impl
+    //! Into<&'static str>` or on a `'static`-bounded [`&str`] slot
+    //! without a per-callsite `.name()` postfix that drifts under
+    //! refactoring or a per-call [`String`] allocation that the
+    //! `'static`-bounded slot cannot use. The six impls close the
+    //! [`Into<&'static str>`] cell of the standard-trait grid.
+    //!
+    //! Prior commits: `064e7d4` (`AsRef<str>` — the sibling borrowed
+    //! projection whose `'static`-lifetime this owned `From` impl
+    //! extends), `8480040` (`name()` — the `&'static str`
+    //! source-of-truth the `From` impls delegate through), `f33f5b0`
+    //! (`Display`), `8338245` (`FromStr` — the inverse projection the
+    //! round-trip test 8 validates through), `4cf3fb2`
+    //! (`Serialize` / `Deserialize`), `8ceeeab` (`VARIANTS` +
+    //! `NAMES`), `f5f284a` (`Hash` + `PartialOrd` + `Ord`), `021a28c`
+    //! / `6856585` (`From` / `TryFrom` constructor pair — the
+    //! type-level projection sibling this identifier-level `From`
+    //! impl closes the ecosystem-standard [`Into<&'static str>`]
+    //! pattern for).
+
+    use super::*;
+
+    // ---------- (1) Pointwise identity with name()
+
+    #[test]
+    fn from_owned_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "impossibility {k:?}: From<Kind>::from(k) must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "consistency {k:?}: From<Kind>::from(k) must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s,
+                k.name(),
+                "fused {k:?}: From<Kind>::from(k) must equal name()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<str>
+
+    #[test]
+    fn from_owned_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: &'static str = k.into();
+            let borrowed: &str = <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned, borrowed,
+                "impossibility {k:?}: From<Kind> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: &'static str = k.into();
+            let borrowed: &str = <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned, borrowed,
+                "consistency {k:?}: From<Kind> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: &'static str = k.into();
+            let borrowed: &str = <ProofRelationKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                owned, borrowed,
+                "fused {k:?}: From<Kind> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    // ---------- (3) Owned/reference-taking From agree
+
+    #[test]
+    fn from_owned_matches_from_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let by_value: &'static str = k.into();
+            let by_ref: &'static str = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "impossibility {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let by_value: &'static str = k.into();
+            let by_ref: &'static str = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "consistency {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let by_value: &'static str = k.into();
+            let by_ref: &'static str = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "fused {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    // ---------- (4) Fused-arm lockstep with half-side projections
+
+    #[test]
+    fn from_fused_matches_routed_half_sides() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: &'static str = k.into();
+            let routed: &'static str = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused From<Kind> must equal routed half-side From<Kind>",
+            );
+        }
+    }
+
+    // ---------- (5) Pointer equality with Self::name (delegation
+    // pins the no-alloc contract at the byte level; the `NAMES`
+    // constant is a separate string-literal set the compiler is not
+    // required to dedupe with the `name()` match arms, so it is not
+    // the right pin — the load-bearing invariant is that From<Kind>
+    // delegates to name() and returns the same byte-slot, mirroring
+    // the sibling `as_ref_shares_byte_slot_with_name_*` tests above)
+
+    #[test]
+    fn from_owned_shares_byte_slot_with_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let via_from: &'static str = k.into();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_from.as_ptr(), via_name.as_ptr()),
+                "impossibility {k:?}: From<Kind> must reach the SAME static \
+                 byte-slot as name() — pinning the no-alloc contract",
+            );
+            assert_eq!(via_from.len(), via_name.len());
+        }
+    }
+
+    #[test]
+    fn from_owned_shares_byte_slot_with_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let via_from: &'static str = k.into();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_from.as_ptr(), via_name.as_ptr()),
+                "consistency {k:?}: From<Kind> must reach the SAME static \
+                 byte-slot as name() — pinning the no-alloc contract",
+            );
+            assert_eq!(via_from.len(), via_name.len());
+        }
+    }
+
+    #[test]
+    fn from_owned_shares_byte_slot_with_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let via_from: &'static str = k.into();
+            let via_name: &'static str = k.name();
+            assert!(
+                std::ptr::eq(via_from.as_ptr(), via_name.as_ptr()),
+                "fused {k:?}: From<Kind> must reach the SAME static \
+                 byte-slot as name() — pinning the no-alloc contract",
+            );
+            assert_eq!(via_from.len(), via_name.len());
+        }
+    }
+
+    // ---------- (6) 'static-lifetime pin — the projection outlives
+    // the kind value
+
+    #[test]
+    fn from_owned_projection_outlives_kind_impossibility() {
+        let mut cache: Vec<&'static str> = Vec::new();
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &'static str = k.into();
+            cache.push(s);
+            // `k` (and any borrow of it) drops here at the end of the
+            // loop body; the pushed `&'static str` outlives it.
+        }
+        assert_eq!(
+            cache,
+            SameStoreImpossibilityKind::NAMES,
+            "cache of &'static strs must equal NAMES after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn from_owned_projection_outlives_kind_consistency() {
+        let mut cache: Vec<&'static str> = Vec::new();
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &'static str = k.into();
+            cache.push(s);
+        }
+        assert_eq!(
+            cache,
+            SameStoreConsistencyKind::NAMES,
+            "cache of &'static strs must equal NAMES after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn from_owned_projection_outlives_kind_fused() {
+        let mut cache: Vec<&'static str> = Vec::new();
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &'static str = k.into();
+            cache.push(s);
+        }
+        assert_eq!(
+            cache,
+            ProofRelationKind::NAMES,
+            "cache of &'static strs must equal NAMES after the kind values drop",
+        );
+    }
+
+    // ---------- (7) impl Into<&'static str> composability at a
+    // generic-typed callsite
+
+    fn take<S: Into<&'static str>>(s: S) -> &'static str {
+        s.into()
+    }
+
+    #[test]
+    fn into_static_str_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "impossibility {k:?}: generic Into<&'static str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_static_str_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "consistency {k:?}: generic Into<&'static str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_static_str_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                take(k),
+                k.name(),
+                "fused {k:?}: generic Into<&'static str> must equal name()",
+            );
+        }
+    }
+
+    // ---------- (8) Round-trip identity through FromStr
+
+    #[test]
+    fn from_owned_round_trips_through_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s.parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: From<Kind>::from(k).parse() must round-trip through FromStr",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_round_trips_through_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s.parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: From<Kind>::from(k).parse() must round-trip through FromStr",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_round_trips_through_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &'static str = k.into();
+            assert_eq!(
+                s.parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: From<Kind>::from(k).parse() must round-trip through FromStr",
             );
         }
     }
