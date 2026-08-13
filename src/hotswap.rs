@@ -2373,7 +2373,7 @@ impl std::error::Error for ParseKindError {}
 /// reaches the same-named answer through the same-named receiver at
 /// every altitude, and the cross-altitude same-answer invariant reads
 /// as pointwise `Option<SameStoreImpossibilityKind>` equality.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SameStoreImpossibilityKind {
     /// The same-store impossibility whose signal is a strictly-backwards
     /// generation counter (`current.generation < prior.generation`). A
@@ -2726,7 +2726,7 @@ impl<'de> serde::Deserialize<'de> for SameStoreImpossibilityKind {
 /// same-named receiver at every altitude, and the cross-altitude
 /// same-answer invariant reads as pointwise
 /// `Option<SameStoreConsistencyKind>` equality.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SameStoreConsistencyKind {
     /// The null-hypothesis legitimate corner — the same observation
     /// twice, watermark stationary AND generation unchanged. The
@@ -3068,7 +3068,7 @@ impl<'de> serde::Deserialize<'de> for SameStoreConsistencyKind {
 /// receiver-families, welded here into a single fused receiver whose
 /// two-arm outer `match` and within-half inner `match` both surface the
 /// new variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ProofRelationKind {
     /// The consistent half of the classification — the [`ProofRelation`]
     /// value landed in one of the three legitimate corners
@@ -21879,5 +21879,495 @@ mod variants_tests {
         assert_eq!(FUS_NAMES_LEN, 5);
         assert_eq!(FUS_VAR_ACC_LEN, 5);
         assert_eq!(FUS_NAM_ACC_LEN, 5);
+    }
+}
+
+#[cfg(test)]
+mod hash_ord_tests {
+    //! `Hash`, `PartialOrd`, and `Ord` on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the three derives that let a closed-set
+    //! enum flow through the standard [`std::collections`] receiver
+    //! family without a hand-wired shim.
+    //!
+    //! **Why lift the three derives.** Before this pass the three kind
+    //! enums derived only `Debug, Clone, Copy, PartialEq, Eq`, which
+    //! blocked EVERY standard-library map/set typed on the kind: a
+    //! per-corner counter table (`HashMap<Kind, u64>`), a deterministic
+    //! dashboard row order (`BTreeMap<Kind, Row>`), a rejected-set
+    //! comparison (`HashSet<Kind>`), a sorted classification-fixture
+    //! (`Vec::sort_unstable` on `Vec<Kind>`), and a persistent-cache
+    //! digest keyed on the fused kind (`HashMap<K, Digest>`) all failed
+    //! to compile without a hand-rolled `AsRef<str>` / `to_string()`
+    //! projection at the seam — an extra allocation at every per-kind
+    //! index and a spelling that drifts from [`Self::name`] the moment
+    //! a consumer forgets the postfix. The three standard derives fold
+    //! the four downstream receiver-families ([`std::collections::HashMap`],
+    //! [`std::collections::HashSet`], [`std::collections::BTreeMap`],
+    //! [`std::collections::BTreeSet`]) into the standard trait every
+    //! consumer already reaches through, and weld the ordering to the
+    //! `#[derive(Ord)]` contract Rust already carries: **variants in
+    //! top-to-bottom declaration order**, matching [`Self::VARIANTS`]
+    //! pointwise.
+    //!
+    //! **Ordering is declaration order, welded against [`Self::VARIANTS`].**
+    //! `#[derive(Ord)]` orders enum variants by their declaration index,
+    //! and [`Self::VARIANTS`] is defined as the ordered slice of every
+    //! variant in the SAME declaration order — so the two are welded by
+    //! construction: `Self::VARIANTS[i] < Self::VARIANTS[j]` iff `i < j`
+    //! for every pair. The fused [`ProofRelationKind`] extends the pin
+    //! across the two half-side variants: every `Consistent(_)` < every
+    //! `Impossible(_)`, matching the [`is_consistent`] / [`is_impossible`]
+    //! partition at index 3 the `variants_tests` module already pins.
+    //!
+    //! **[`Hash`] is welded to [`PartialEq`]**: for every `k1`, `k2`,
+    //! `k1 == k2` implies `hash(k1) == hash(k2)` — the standard trait's
+    //! consistency contract [`std::collections::HashMap`] and
+    //! [`std::collections::HashSet`] rely on. A per-corner metric
+    //! registration loop `HashSet<Kind> = VARIANTS.iter().copied().collect()`
+    //! yields cardinality equal to the closed-set's axis cardinality
+    //! (2 / 3 / 5), matching the no-duplicates pin the `variants_tests`
+    //! module already carries on the constants themselves.
+    //!
+    //! The tests below pin the structural invariants that keep the three
+    //! derives in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. [`Ord`] matches [`Self::VARIANTS`] declaration order pointwise
+    //!    — for every pair `(i, j)` with `i < j`, `VARIANTS[i] <
+    //!    VARIANTS[j]` (and symmetrically for `>` / `==`). The three
+    //!    enums are welded to the same ordering the `variants_tests`
+    //!    module already pins for [`Self::NAMES`].
+    //! 2. [`PartialOrd`] agrees with [`Ord`] pointwise — every
+    //!    `k1.partial_cmp(&k2) == Some(k1.cmp(&k2))`, matching the
+    //!    total-order contract [`Ord`] carries.
+    //! 3. [`Hash`] is consistent with [`PartialEq`] — every
+    //!    `k1 == k2 ⇒ hash(k1) == hash(k2)`, tested through insertion
+    //!    into a [`std::collections::HashSet`] whose cardinality equals
+    //!    [`Self::VARIANTS`]'s axis cardinality (no unintended
+    //!    hash-collisions collapse the closed set, and no accidental
+    //!    inequality inflates it).
+    //! 4. [`std::collections::HashMap`] composability — every variant
+    //!    round-trips through `.insert()` + `.get()` with the same
+    //!    value, matching the standard trait's own contract.
+    //! 5. [`std::collections::BTreeMap`] iteration order matches
+    //!    [`Self::VARIANTS`] pointwise — the BTree's ordered iteration
+    //!    (welded through [`Ord`]) reads the closed set in the SAME
+    //!    order any downstream dashboard registration or deterministic
+    //!    metrics label sequence reads it.
+    //! 6. `Vec::sort` on a random permutation of [`Self::VARIANTS`]
+    //!    yields the declaration-order sequence back — a downstream
+    //!    consumer receiving kinds in an arbitrary order can normalize
+    //!    to the canonical declaration order with a single `.sort()`.
+    //! 7. Fused cross-half ordering: every `Consistent(_)` <
+    //!    `Impossible(_)` on [`ProofRelationKind`], matching the
+    //!    partition-at-index-3 pin the `variants_tests` module already
+    //!    carries against [`ProofRelationKind::is_consistent`] /
+    //!    [`ProofRelationKind::is_impossible`].
+    //! 8. Cross-derive lockstep: for every pair of variants, [`Ord`],
+    //!    [`PartialEq`], and (indirectly) [`Hash`] agree — an ordering
+    //!    of `Equal` implies value-equality, and value-equality implies
+    //!    hash-equality, closing the standard-trait triple around the
+    //!    same underlying identity.
+    //!
+    //! Genuinely new — before this pass the three kind enums could not
+    //! be used as [`std::collections::HashMap`] / [`std::collections::HashSet`]
+    //! keys, [`std::collections::BTreeMap`] keys, or `.sort()`-target
+    //! elements without a hand-wired `.name()` / [`std::fmt::Display`]
+    //! projection at each seam. The three derives lift the four
+    //! standard receiver-families into the same [`Self::name`] /
+    //! [`Self::VARIANTS`] / [`Self::NAMES`] / [`std::str::FromStr`] /
+    //! [`serde::Serialize`] / [`serde::Deserialize`] lockstep the prior
+    //! seven runs already welded — every downstream per-kind map,
+    //! per-kind set, and per-kind sort now composes out of the standard
+    //! traits alone.
+    #![allow(clippy::float_cmp)]
+
+    use super::*;
+    use std::cmp::Ordering;
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    fn hash_of<K: Hash>(k: &K) -> u64 {
+        let mut h = DefaultHasher::new();
+        k.hash(&mut h);
+        h.finish()
+    }
+
+    // ---------- (1) Ord matches VARIANTS declaration order pointwise
+
+    #[test]
+    fn ord_matches_variants_declaration_order_impossibility() {
+        for i in 0..SameStoreImpossibilityKind::VARIANTS.len() {
+            for j in 0..SameStoreImpossibilityKind::VARIANTS.len() {
+                let a = SameStoreImpossibilityKind::VARIANTS[i];
+                let b = SameStoreImpossibilityKind::VARIANTS[j];
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "impossibility VARIANTS[{i}].cmp(&VARIANTS[{j}]) must match {expected:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ord_matches_variants_declaration_order_consistency() {
+        for i in 0..SameStoreConsistencyKind::VARIANTS.len() {
+            for j in 0..SameStoreConsistencyKind::VARIANTS.len() {
+                let a = SameStoreConsistencyKind::VARIANTS[i];
+                let b = SameStoreConsistencyKind::VARIANTS[j];
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "consistency VARIANTS[{i}].cmp(&VARIANTS[{j}]) must match {expected:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ord_matches_variants_declaration_order_fused() {
+        for i in 0..ProofRelationKind::VARIANTS.len() {
+            for j in 0..ProofRelationKind::VARIANTS.len() {
+                let a = ProofRelationKind::VARIANTS[i];
+                let b = ProofRelationKind::VARIANTS[j];
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "fused VARIANTS[{i}].cmp(&VARIANTS[{j}]) must match {expected:?}",
+                );
+            }
+        }
+    }
+
+    // ---------- (2) PartialOrd agrees with Ord pointwise
+
+    #[test]
+    fn partial_ord_agrees_with_ord_pointwise() {
+        for a in SameStoreImpossibilityKind::VARIANTS {
+            for b in SameStoreImpossibilityKind::VARIANTS {
+                assert_eq!(
+                    a.partial_cmp(b),
+                    Some(a.cmp(b)),
+                    "impossibility PartialOrd::partial_cmp must delegate to Ord::cmp",
+                );
+            }
+        }
+        for a in SameStoreConsistencyKind::VARIANTS {
+            for b in SameStoreConsistencyKind::VARIANTS {
+                assert_eq!(
+                    a.partial_cmp(b),
+                    Some(a.cmp(b)),
+                    "consistency PartialOrd::partial_cmp must delegate to Ord::cmp",
+                );
+            }
+        }
+        for a in ProofRelationKind::VARIANTS {
+            for b in ProofRelationKind::VARIANTS {
+                assert_eq!(
+                    a.partial_cmp(b),
+                    Some(a.cmp(b)),
+                    "fused PartialOrd::partial_cmp must delegate to Ord::cmp",
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Hash is consistent with PartialEq — equal values
+    // hash equally; the HashSet-of-VARIANTS cardinality equals the axis
+    // cardinality (no collision collapses two variants; no inequality
+    // inflates the set).
+
+    #[test]
+    fn hash_agrees_with_partial_eq_on_all_variants() {
+        for a in SameStoreImpossibilityKind::VARIANTS {
+            for b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    assert_eq!(
+                        hash_of(a),
+                        hash_of(b),
+                        "impossibility Hash must agree with PartialEq: {a:?} == {b:?}",
+                    );
+                }
+            }
+        }
+        for a in SameStoreConsistencyKind::VARIANTS {
+            for b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    assert_eq!(
+                        hash_of(a),
+                        hash_of(b),
+                        "consistency Hash must agree with PartialEq: {a:?} == {b:?}",
+                    );
+                }
+            }
+        }
+        for a in ProofRelationKind::VARIANTS {
+            for b in ProofRelationKind::VARIANTS {
+                if a == b {
+                    assert_eq!(
+                        hash_of(a),
+                        hash_of(b),
+                        "fused Hash must agree with PartialEq: {a:?} == {b:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn hash_set_of_variants_has_axis_cardinality() {
+        let imp: HashSet<SameStoreImpossibilityKind> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            imp.len(),
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            "impossibility HashSet<VARIANTS> must have axis-cardinality len",
+        );
+        let con: HashSet<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::VARIANTS.iter().copied().collect();
+        assert_eq!(
+            con.len(),
+            SameStoreConsistencyKind::VARIANTS.len(),
+            "consistency HashSet<VARIANTS> must have axis-cardinality len",
+        );
+        let fus: HashSet<ProofRelationKind> = ProofRelationKind::VARIANTS.iter().copied().collect();
+        assert_eq!(
+            fus.len(),
+            ProofRelationKind::VARIANTS.len(),
+            "fused HashSet<VARIANTS> must have axis-cardinality len",
+        );
+    }
+
+    // ---------- (4) HashMap<Kind, V> composability — every variant
+    // round-trips through .insert() + .get() with the same value.
+
+    #[test]
+    fn hash_map_keyed_on_kind_round_trips_every_variant() {
+        let mut m: HashMap<SameStoreImpossibilityKind, usize> = HashMap::new();
+        for (i, k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            m.insert(*k, i);
+        }
+        assert_eq!(m.len(), SameStoreImpossibilityKind::VARIANTS.len());
+        for (i, k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            assert_eq!(m.get(k), Some(&i));
+        }
+
+        let mut m: HashMap<SameStoreConsistencyKind, usize> = HashMap::new();
+        for (i, k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate() {
+            m.insert(*k, i);
+        }
+        assert_eq!(m.len(), SameStoreConsistencyKind::VARIANTS.len());
+        for (i, k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate() {
+            assert_eq!(m.get(k), Some(&i));
+        }
+
+        let mut m: HashMap<ProofRelationKind, usize> = HashMap::new();
+        for (i, k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            m.insert(*k, i);
+        }
+        assert_eq!(m.len(), ProofRelationKind::VARIANTS.len());
+        for (i, k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            assert_eq!(m.get(k), Some(&i));
+        }
+    }
+
+    // ---------- (5) BTreeMap iteration order matches VARIANTS pointwise
+    // — BTree's Ord-driven ordering surfaces the closed set in the same
+    // declaration order the constants carry, even when inserted in
+    // reverse.
+
+    #[test]
+    fn btree_map_iteration_order_matches_variants_declaration_order() {
+        let mut m: BTreeMap<SameStoreImpossibilityKind, usize> = BTreeMap::new();
+        for (i, k) in SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .enumerate()
+            .rev()
+        {
+            m.insert(*k, i);
+        }
+        let iter_order: Vec<SameStoreImpossibilityKind> = m.keys().copied().collect();
+        assert_eq!(
+            iter_order.as_slice(),
+            SameStoreImpossibilityKind::VARIANTS,
+            "impossibility BTreeMap iteration order must match VARIANTS",
+        );
+
+        let mut m: BTreeMap<SameStoreConsistencyKind, usize> = BTreeMap::new();
+        for (i, k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate().rev() {
+            m.insert(*k, i);
+        }
+        let iter_order: Vec<SameStoreConsistencyKind> = m.keys().copied().collect();
+        assert_eq!(
+            iter_order.as_slice(),
+            SameStoreConsistencyKind::VARIANTS,
+            "consistency BTreeMap iteration order must match VARIANTS",
+        );
+
+        let mut m: BTreeMap<ProofRelationKind, usize> = BTreeMap::new();
+        for (i, k) in ProofRelationKind::VARIANTS.iter().enumerate().rev() {
+            m.insert(*k, i);
+        }
+        let iter_order: Vec<ProofRelationKind> = m.keys().copied().collect();
+        assert_eq!(
+            iter_order.as_slice(),
+            ProofRelationKind::VARIANTS,
+            "fused BTreeMap iteration order must match VARIANTS",
+        );
+    }
+
+    // ---------- BTreeSet cardinality — the ordered-set sibling of the
+    // HashSet cardinality pin, welded through the Ord contract.
+
+    #[test]
+    fn btree_set_of_variants_has_axis_cardinality_in_declaration_order() {
+        let imp: BTreeSet<SameStoreImpossibilityKind> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(imp.len(), SameStoreImpossibilityKind::VARIANTS.len());
+        let iter_order: Vec<SameStoreImpossibilityKind> = imp.iter().copied().collect();
+        assert_eq!(iter_order.as_slice(), SameStoreImpossibilityKind::VARIANTS);
+
+        let con: BTreeSet<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::VARIANTS.iter().copied().collect();
+        assert_eq!(con.len(), SameStoreConsistencyKind::VARIANTS.len());
+        let iter_order: Vec<SameStoreConsistencyKind> = con.iter().copied().collect();
+        assert_eq!(iter_order.as_slice(), SameStoreConsistencyKind::VARIANTS);
+
+        let fus: BTreeSet<ProofRelationKind> =
+            ProofRelationKind::VARIANTS.iter().copied().collect();
+        assert_eq!(fus.len(), ProofRelationKind::VARIANTS.len());
+        let iter_order: Vec<ProofRelationKind> = fus.iter().copied().collect();
+        assert_eq!(iter_order.as_slice(), ProofRelationKind::VARIANTS);
+    }
+
+    // ---------- (6) Vec::sort on a reversed VARIANTS yields the
+    // declaration-order sequence back — a downstream consumer receiving
+    // kinds in arbitrary order normalizes to canonical declaration order
+    // with a single .sort() call.
+
+    #[test]
+    fn sort_normalizes_arbitrary_permutation_to_variants_order() {
+        let mut imp: Vec<SameStoreImpossibilityKind> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .rev()
+            .collect();
+        imp.sort();
+        assert_eq!(imp.as_slice(), SameStoreImpossibilityKind::VARIANTS);
+
+        let mut con: Vec<SameStoreConsistencyKind> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .rev()
+            .collect();
+        con.sort();
+        assert_eq!(con.as_slice(), SameStoreConsistencyKind::VARIANTS);
+
+        let mut fus: Vec<ProofRelationKind> =
+            ProofRelationKind::VARIANTS.iter().copied().rev().collect();
+        fus.sort();
+        assert_eq!(fus.as_slice(), ProofRelationKind::VARIANTS);
+    }
+
+    // ---------- (7) Fused cross-half ordering — every Consistent(_) is
+    // strictly less than every Impossible(_) on ProofRelationKind. This
+    // welds the Ord contract to the partition-at-index-3 pin the
+    // `variants_tests` module already carries against is_consistent /
+    // is_impossible.
+
+    #[test]
+    fn fused_ord_puts_every_consistent_below_every_impossibility() {
+        for c in SameStoreConsistencyKind::VARIANTS {
+            let cf = ProofRelationKind::Consistent(*c);
+            for i in SameStoreImpossibilityKind::VARIANTS {
+                let ii = ProofRelationKind::Impossible(*i);
+                assert!(
+                    cf < ii,
+                    "every Consistent(_) < every Impossible(_): got {cf:?} vs {ii:?}",
+                );
+                assert_eq!(cf.cmp(&ii), Ordering::Less);
+                assert_eq!(ii.cmp(&cf), Ordering::Greater);
+            }
+        }
+    }
+
+    // ---------- (8) Cross-derive lockstep — Ord's Equal implies
+    // PartialEq's equality, and PartialEq's equality implies Hash's
+    // equality, closing the standard-trait triple around a single
+    // identity.
+
+    #[test]
+    fn ord_equal_implies_eq_which_implies_hash_equal() {
+        for a in SameStoreImpossibilityKind::VARIANTS {
+            for b in SameStoreImpossibilityKind::VARIANTS {
+                if a.cmp(b) == Ordering::Equal {
+                    assert_eq!(a, b);
+                    assert_eq!(hash_of(a), hash_of(b));
+                }
+            }
+        }
+        for a in SameStoreConsistencyKind::VARIANTS {
+            for b in SameStoreConsistencyKind::VARIANTS {
+                if a.cmp(b) == Ordering::Equal {
+                    assert_eq!(a, b);
+                    assert_eq!(hash_of(a), hash_of(b));
+                }
+            }
+        }
+        for a in ProofRelationKind::VARIANTS {
+            for b in ProofRelationKind::VARIANTS {
+                if a.cmp(b) == Ordering::Equal {
+                    assert_eq!(a, b);
+                    assert_eq!(hash_of(a), hash_of(b));
+                }
+            }
+        }
+    }
+
+    // ---------- Ord is a total order — antisymmetric, reflexive,
+    // transitive on the closed set.
+
+    #[test]
+    fn ord_is_a_total_order_on_variants() {
+        fn check_total_order<T: Ord + Copy + std::fmt::Debug>(vs: &[T]) {
+            for a in vs {
+                assert_eq!(a.cmp(a), Ordering::Equal, "reflexive: {a:?}.cmp({a:?})");
+            }
+            for a in vs {
+                for b in vs {
+                    let ab = a.cmp(b);
+                    let ba = b.cmp(a);
+                    assert_eq!(
+                        ab,
+                        ba.reverse(),
+                        "antisymmetric: {a:?}.cmp({b:?}) vs reverse of {b:?}.cmp({a:?})",
+                    );
+                }
+            }
+            for a in vs {
+                for b in vs {
+                    for c in vs {
+                        if a.cmp(b) == Ordering::Less && b.cmp(c) == Ordering::Less {
+                            assert_eq!(
+                                a.cmp(c),
+                                Ordering::Less,
+                                "transitive: {a:?} < {b:?} < {c:?}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        check_total_order(SameStoreImpossibilityKind::VARIANTS);
+        check_total_order(SameStoreConsistencyKind::VARIANTS);
+        check_total_order(ProofRelationKind::VARIANTS);
     }
 }
