@@ -1487,9 +1487,26 @@ closed_axis_label_string_surface! {
 /// on the `(builder override × env var)` axis and stay as separate
 /// primitives.
 fn dir_override_or_env(override_dir: Option<&Path>, env_var: &str) -> Option<PathBuf> {
-    override_dir
-        .map(Path::to_path_buf)
-        .or_else(|| env::var(env_var).ok().map(PathBuf::from))
+    override_dir.map(Path::to_path_buf).or_else(|| {
+        // A non-absolute value from the ENVIRONMENT is IGNORED, not joined.
+        // This function is the shared resolution primitive for both
+        // $XDG_CONFIG_HOME and $HOME, and shikumi is a dependency of 81 fleet
+        // repos, so a relative value here made config discovery resolve
+        // against the invoking directory everywhere at once — the
+        // masked-branch class (theory/MASKED-BRANCH.md) at its widest reach.
+        //
+        // `env::var` is kept rather than `var_os`: switching would newly
+        // accept non-UTF-8 values that today fall through as NotUnicode, and
+        // this change is meant to REMOVE a resolution, not add one.
+        //
+        // The builder-override arm is deliberately untouched. That path is a
+        // programmatic choice by the consuming program, not an operator
+        // environment; a caller passing a relative Path did so on purpose.
+        env::var(env_var)
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+    })
 }
 
 /// Builder for config file discovery.
@@ -1775,8 +1792,13 @@ impl ConfigDiscovery {
     /// user-supplied path that was the first place stat'd.
     fn resolve_env_override(&self) -> Option<PathBuf> {
         let var = self.env_override.as_ref()?;
-        let path_str = env::var(var).ok()?;
-        Some(PathBuf::from(path_str))
+        // Absolute-only, for the same reason as `dir_override_or_env`: this is
+        // an operator-set variable naming a config file, and a relative one
+        // made which file loads depend on the working directory.
+        env::var(var)
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
     }
 
     /// Resolve `XDG_CONFIG_HOME`, preferring the builder override.
@@ -3532,7 +3554,14 @@ mod tests {
         // Pin equivalence to the `if let Some(ref dir) = override { Some(dir.clone()) }
         // else env::var(NAME).ok().map(PathBuf::from)` shape the two
         // call sites previously inlined, across the four
-        // `(override × env)` cells. A future refactor that drifts the
+        // `(override × env)` cells.
+        //
+        // NARROWED: the equivalence now holds for an ABSOLUTE env value only.
+        // A relative one is deliberately IGNORED rather than resolved against
+        // the cwd — see the primitive's own comment. The env value used below
+        // is absolute, so this test still pins what it was written to pin; the
+        // divergence is covered by
+        // `dir_override_or_env_ignores_a_relative_env_value`. A future refactor that drifts the
         // primitive away from the open-coded shape (e.g. swapping the
         // order of resolution, canonicalizing on entry) breaks this
         // test before reaching the call sites. Uses a unique env-var
@@ -3567,6 +3596,42 @@ mod tests {
             dir_override_or_env(Some(pinned.as_path()), var),
             open_coded(Some(pinned), var),
         );
+    }
+
+    /// The masked-branch fix, at the widest reach in the fleet: shikumi is a
+    /// dependency of 81 repos, and this is the SHARED primitive resolving both
+    /// `$XDG_CONFIG_HOME` and `$HOME`. A relative value here made config
+    /// discovery resolve against the invoking directory in every one of them.
+    #[test]
+    fn dir_override_or_env_ignores_a_relative_env_value() {
+        let var = "SHIKUMI_DOE_TEST_RELATIVE_IGNORED";
+        for bad in ["", "rel/config", "./config", "../config"] {
+            unsafe { env::set_var(var, bad) };
+            assert_eq!(
+                dir_override_or_env(None, var),
+                None,
+                "{bad:?} must be ignored, not resolved against the cwd"
+            );
+        }
+        // ...while an absolute one is still honoured verbatim.
+        unsafe { env::set_var(var, "/abs/config") };
+        assert_eq!(
+            dir_override_or_env(None, var),
+            Some(PathBuf::from("/abs/config"))
+        );
+        unsafe { env::remove_var(var) };
+    }
+
+    /// The builder-override arm is deliberately NOT filtered: that path is a
+    /// programmatic choice by the consuming program, not an operator
+    /// environment, so a caller passing a relative Path did so on purpose.
+    /// Pinned so the asymmetry reads as intentional rather than missed.
+    #[test]
+    fn a_relative_builder_override_is_still_honoured() {
+        let var = "SHIKUMI_DOE_TEST_REL_OVERRIDE";
+        unsafe { env::remove_var(var) };
+        let rel = PathBuf::from("rel/from/builder");
+        assert_eq!(dir_override_or_env(Some(rel.as_path()), var), Some(rel));
     }
 
     #[test]
