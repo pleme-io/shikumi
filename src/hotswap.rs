@@ -1669,6 +1669,83 @@ impl ProofDelta {
         self.generations_regressed() || self.cross_store_signal()
     }
 
+    /// The impossibility-corner tag iff this delta lands in one of the
+    /// two same-store impossibilities — [`Self::generations_regressed`]
+    /// maps to `Some(SameStoreImpossibilityKind::Regressed)`,
+    /// [`Self::cross_store_signal`] maps to
+    /// `Some(SameStoreImpossibilityKind::CrossStore)`, and the three
+    /// legitimate corners ([`Self::stationary`],
+    /// [`Self::identity_republish`], [`Self::progression`]) map to
+    /// [`Option::None`].
+    ///
+    /// The delta-altitude receiver-sibling of
+    /// [`ProofRelation::impossibility_kind`] and
+    /// [`ProofRelationWire::impossibility_kind`], lifting the two-variant
+    /// impossibility discrimination into a typed
+    /// [`SameStoreImpossibilityKind`] receiver whose `match` body pins
+    /// the two impossibility corners at compile time even when the
+    /// caller wants to distinguish which one triggered.
+    ///
+    /// A monitoring dashboard or a cross-replica delta-log endpoint
+    /// holding a freshly computed [`ProofDelta`] and wanting the "WHICH
+    /// impossibility fired?" answer previously had two inline paths,
+    /// each leaking work: (a) a nested `if self.generations_regressed()
+    /// { Some(Kind::Regressed) } else if self.cross_store_signal() {
+    /// Some(Kind::CrossStore) } else { None }` spelled at every seam,
+    /// whose two-way branch the two disjoint atomic impossibility
+    /// predicates already carry once as booleans; or (b)
+    /// `self.relation().and_then(|r| r.impossibility_kind())` — a fold
+    /// through the classification seam whose [`Option`] unwrapping AND
+    /// [`MovedWatermarkDelta`] / [`std::num::NonZeroU64`] classification
+    /// welds the tag-only impossibility-kind question doesn't need
+    /// (and which on the regressed corner folds
+    /// [`Self::generations_advanced`] to `None` and short-circuits to
+    /// `None` before the impossibility-kind fold sees it, silently
+    /// dropping the tag altogether). The receiver-sibling here
+    /// answers the same question through a single welded conditional,
+    /// pinned once at the delta altitude, and covers the regressed
+    /// corner too — where [`Self::relation`] returns `None`, this
+    /// receiver returns `Some(Kind::Regressed)`.
+    ///
+    /// **Agreement with [`Self::same_store_inconsistent`].**
+    /// `self.impossibility_kind().is_some() ==
+    /// self.same_store_inconsistent()` pointwise on every
+    /// [`ProofDelta`] value — the `Option` shape of this receiver's
+    /// return type projects to the boolean shape of the two-variant
+    /// union predicate. The two receivers weld the same two-way
+    /// partition of the delta space (three legitimate corners on the
+    /// `Option::None` side, two impossibility corners on the `Some`
+    /// side) at two different receiver-family altitudes: the boolean
+    /// altitude and the tag-only sum-type altitude.
+    ///
+    /// **Cross-altitude same-answer with the classification
+    /// receivers.** For every [`ProofDelta`] value that
+    /// [`Self::relation`] classifies as `Some(r)`,
+    /// `self.impossibility_kind() == r.impossibility_kind()` — the
+    /// delta-altitude tag equals the classification-altitude tag on
+    /// the four delta-reachable corners. On the regressed corner
+    /// [`Self::relation`] returns `None` (the count folded away and
+    /// cannot fill the [`ProofRelation::Regressed`] payload), but the
+    /// impossibility tag itself is payload-free and IS preserved at
+    /// the delta altitude: `self.impossibility_kind()` returns
+    /// `Some(Kind::Regressed)` even where the classification path
+    /// drops out.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its impossibility-kind verdict at compile time too, matching
+    /// the `const`-ness of every other classification accessor at
+    /// every altitude.
+    #[must_use]
+    pub const fn impossibility_kind(&self) -> Option<SameStoreImpossibilityKind> {
+        if self.generations_regressed() {
+            Some(SameStoreImpossibilityKind::Regressed)
+        } else if self.cross_store_signal() {
+            Some(SameStoreImpossibilityKind::CrossStore)
+        } else {
+            None
+        }
+    }
+
     /// Classify the delta into the exhaustive [`ProofRelation`] sum —
     /// the delta-altitude classification receiver-sibling of
     /// [`ConfigSyncProof::relation_since`].
@@ -1926,6 +2003,102 @@ impl TryFrom<&ProofDeltaWire> for ProofDelta {
     fn try_from(wire: &ProofDeltaWire) -> Result<Self, Self::Error> {
         Self::try_from_wire(wire)
     }
+}
+
+/// The **impossibility-corner tag** of a same-store [`ProofRelation`] —
+/// a tag-only sum-type discriminator over the two variants
+/// [`ProofRelation::same_store_inconsistent`] fires on. Yielded by
+/// [`ProofDelta::impossibility_kind`],
+/// [`ProofRelation::impossibility_kind`], and
+/// [`ProofRelationWire::impossibility_kind`], each returning
+/// `Option<SameStoreImpossibilityKind>` and mapping the three legitimate
+/// corners to [`Option::None`] and the two impossibility corners to
+/// their [`Self::Regressed`] / [`Self::CrossStore`] tag.
+///
+/// **Why a dedicated tag-only sum for the impossibility half.**
+/// [`ProofRelation::same_store_inconsistent`] (and its siblings at the
+/// [`ProofDelta`] and [`ProofRelationWire`] altitudes) already welds the
+/// two-variant union into a single boolean; but a monitoring dashboard
+/// that wants to distinguish WHICH impossibility corner triggered (a
+/// strictly-backwards generation counter vs. a moved watermark at an
+/// unchanged generation) previously had two inline paths, each leaking
+/// work: (a) route on the underlying [`ProofRelation`] /
+/// [`ProofRelationWire`] variant tag itself — a five-arm `match` whose
+/// three legitimate arms the impossibility-kind question doesn't care
+/// about, and whose two-arm impossibility fold the exhaustiveness
+/// checker cannot help keep in sync with a future impossibility corner
+/// (a hypothetical third would silently escape a two-arm `matches!` on
+/// the sum); or (b) at the delta altitude, a nested
+/// `if self.generations_regressed() { Kind::Regressed } else if
+/// self.cross_store_signal() { Kind::CrossStore } else { .. }` spelled
+/// at every seam, whose two-way branch the two disjoint delta-altitude
+/// impossibility predicates already carry once as booleans. This
+/// tag-only sum lifts the two-variant impossibility discrimination into
+/// a `match`-able typed enum whose exhaustiveness the checker enforces:
+/// adding a hypothetical third impossibility corner (say, a
+/// signed-attestation mismatch) fails to compile at every altitude's
+/// `impossibility_kind` `match` body in lockstep with the enum itself.
+///
+/// **Payload-free by design.** Both impossibility corners carry a
+/// payload on [`ProofRelation`] (a [`MovedWatermarkDelta`] on
+/// [`ProofRelation::CrossStore`] and a [`std::num::NonZeroU64`] on
+/// [`ProofRelation::Regressed`]); this type carries neither. The
+/// impossibility-kind question ("WHICH impossibility?") is a projection
+/// of the variant tag alone, whose answer is decidable from every
+/// altitude (delta, value classification, wire classification) without
+/// touching a payload field or paying the [`std::num::NonZeroU64`] /
+/// [`MovedWatermarkDelta`] parse-time welds those payloads carry. A
+/// consumer that wants the payloads reaches
+/// [`ProofRelation::watermark`] / [`ProofRelation::regressed_by`] at
+/// the classification altitude where the payloads live; a consumer that
+/// only wants the impossibility tag reaches THIS receiver at whichever
+/// altitude it already holds.
+///
+/// **Same tag at all three altitudes.** [`ProofDelta`] carries the two
+/// impossibility corners through [`ProofDelta::generations_regressed`]
+/// (the [`Self::Regressed`] tag) and
+/// [`ProofDelta::cross_store_signal`] (the [`Self::CrossStore`] tag).
+/// [`ProofRelation`] carries them through its `Regressed { by }` and
+/// `CrossStore { watermark }` variants. [`ProofRelationWire`] carries
+/// them through its wire-side mirrors. All three altitudes project
+/// through the SAME two-variant tag-only sum-type, so the (delta,
+/// value, wire) × (impossibility-kind) grid closes with a single shared
+/// receiver type — a consumer routing on the impossibility tag alone
+/// reaches the same-named answer through the same-named receiver at
+/// every altitude, and the cross-altitude same-answer invariant reads
+/// as pointwise `Option<SameStoreImpossibilityKind>` equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SameStoreImpossibilityKind {
+    /// The same-store impossibility whose signal is a strictly-backwards
+    /// generation counter (`current.generation < prior.generation`). A
+    /// monotonic [`ConfigStore`](crate::ConfigStore) cannot produce this
+    /// pair; its appearance is a diagnostic signal of a cross-replica
+    /// comparison misplaced as a same-store one, or of wire tampering.
+    ///
+    /// Reached from [`ProofDelta::generations_regressed`] at the delta
+    /// altitude, from the [`ProofRelation::Regressed`] variant at the
+    /// value classification altitude, and from the
+    /// [`ProofRelationWire::Regressed`] variant at the wire
+    /// classification altitude — the tag is the same at every altitude,
+    /// though the payload magnitude ([`std::num::NonZeroU64`] on the
+    /// value side, [`u64`] on the wire, folded to [`Option::None`] at
+    /// the delta altitude) lives at whichever altitude carries it.
+    Regressed,
+    /// The same-store impossibility whose signal is a moved watermark
+    /// at an unchanged generation counter. Moving the watermark
+    /// requires a publish which bumps generation; a monotonic
+    /// [`ConfigStore`](crate::ConfigStore) cannot produce this pair.
+    ///
+    /// Reached from [`ProofDelta::cross_store_signal`] at the delta
+    /// altitude, from the [`ProofRelation::CrossStore`] variant at the
+    /// value classification altitude, and from the
+    /// [`ProofRelationWire::CrossStore`] variant at the wire
+    /// classification altitude — the tag is the same at every altitude,
+    /// though the payload watermark ([`MovedWatermarkDelta`] on the
+    /// value side, [`WatermarkDeltaWire`] on the wire side, and only
+    /// the boolean `!watermark.stationary()` at the delta altitude)
+    /// lives at whichever altitude carries it.
+    CrossStore,
 }
 
 /// Exhaustive sum-type classification of a proof pair — every possible
@@ -2189,6 +2362,72 @@ impl ProofRelation {
     #[must_use]
     pub const fn same_store_inconsistent(&self) -> bool {
         matches!(self, Self::CrossStore { .. } | Self::Regressed { .. })
+    }
+
+    /// The impossibility-corner tag iff this classification lands in one
+    /// of the two same-store impossibilities — [`Self::Regressed`] maps
+    /// to `Some(SameStoreImpossibilityKind::Regressed)`,
+    /// [`Self::CrossStore`] maps to
+    /// `Some(SameStoreImpossibilityKind::CrossStore)`, and the three
+    /// legitimate variants ([`Self::Stationary`],
+    /// [`Self::IdentityRepublish`], [`Self::Progression`]) map to
+    /// [`Option::None`].
+    ///
+    /// The classification-altitude receiver-sibling of
+    /// [`ProofDelta::impossibility_kind`] and
+    /// [`ProofRelationWire::impossibility_kind`], lifting the
+    /// two-variant [`Self::same_store_inconsistent`] union into a
+    /// typed [`SameStoreImpossibilityKind`] whose `match` body
+    /// distinguishes WHICH impossibility corner fired — a shape the
+    /// exhaustiveness checker keeps in sync with any future
+    /// impossibility corner (a hypothetical third would fail to compile
+    /// at this method's own `match` in lockstep with the enum itself
+    /// and with every other altitude's `impossibility_kind`).
+    ///
+    /// **Agreement with [`Self::same_store_inconsistent`] at the same
+    /// altitude.** `self.impossibility_kind().is_some() ==
+    /// self.same_store_inconsistent()` pointwise on every variant —
+    /// the `Option` shape of this receiver's return type projects to
+    /// the boolean shape of the two-variant union predicate. The two
+    /// receivers weld the same two-way partition of the classification
+    /// space at two different receiver-family altitudes: the boolean
+    /// altitude and the tag-only sum-type altitude.
+    ///
+    /// **Agreement with the two atomic impossibility predicates.** At
+    /// this altitude, `self.impossibility_kind() ==
+    /// Some(SameStoreImpossibilityKind::Regressed)` iff
+    /// `self.regressed()`, and
+    /// `self.impossibility_kind() ==
+    /// Some(SameStoreImpossibilityKind::CrossStore)` iff
+    /// `self.cross_store()` — the tag-only sum-type projection agrees
+    /// pointwise with the two single-variant tag-only predicates whose
+    /// disjunction covers the impossibility half of the partition.
+    ///
+    /// **Payload-free by design.** The impossibility-kind question is
+    /// a projection of the variant tag alone; a consumer that wants the
+    /// payloads reaches [`Self::watermark`] (on [`Self::CrossStore`]) or
+    /// [`Self::regressed_by`] (on [`Self::Regressed`]) instead — the
+    /// payload accessors that already carry the [`MovedWatermarkDelta`]
+    /// and [`std::num::NonZeroU64`] welds at the same altitude.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`]
+    /// projects its impossibility-kind verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate or payload) in this impl.
+    ///
+    /// The wire-side sibling is
+    /// [`ProofRelationWire::impossibility_kind`], which answers the
+    /// same question at the wire altitude with the same welded
+    /// pattern, and the delta-altitude sibling is
+    /// [`ProofDelta::impossibility_kind`], which answers the same
+    /// question one altitude down.
+    #[must_use]
+    pub const fn impossibility_kind(&self) -> Option<SameStoreImpossibilityKind> {
+        match *self {
+            Self::Regressed { .. } => Some(SameStoreImpossibilityKind::Regressed),
+            Self::CrossStore { .. } => Some(SameStoreImpossibilityKind::CrossStore),
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. } => None,
+        }
     }
 
     /// True iff this classification is the null hypothesis — the
@@ -3219,6 +3458,81 @@ impl ProofRelationWire {
     #[must_use]
     pub const fn same_store_inconsistent(&self) -> bool {
         matches!(self, Self::CrossStore { .. } | Self::Regressed { .. })
+    }
+
+    /// The impossibility-corner tag iff this wire classification lands
+    /// in one of the two same-store impossibilities — [`Self::Regressed`]
+    /// maps to `Some(SameStoreImpossibilityKind::Regressed)`,
+    /// [`Self::CrossStore`] maps to
+    /// `Some(SameStoreImpossibilityKind::CrossStore)`, and the three
+    /// legitimate variants ([`Self::Stationary`],
+    /// [`Self::IdentityRepublish`], [`Self::Progression`]) map to
+    /// [`Option::None`].
+    ///
+    /// The wire-side receiver-sibling of
+    /// [`ProofRelation::impossibility_kind`] and
+    /// [`ProofDelta::impossibility_kind`], closing the (delta, value,
+    /// wire) × (impossibility-kind) grid at all three altitudes with a
+    /// single shared receiver type — a monitoring dashboard or a
+    /// cross-replica delta-log endpoint that broadcasts the wire form
+    /// reaches the impossibility-kind tag through the SAME
+    /// [`SameStoreImpossibilityKind`] enum the delta and value-side
+    /// receivers already yield, so the cross-altitude same-answer
+    /// invariant reads as pointwise `Option<SameStoreImpossibilityKind>`
+    /// equality without a wire-side tag re-projection.
+    ///
+    /// A wire consumer that holds a freshly deserialized
+    /// [`ProofRelationWire`] and wants the "WHICH impossibility?"
+    /// answer previously had three inline paths, each paying a needless
+    /// cost: (a) `ProofRelation::try_from_wire(&wire).map(|r|
+    /// r.impossibility_kind())` — chaining a
+    /// [`MovedWatermarkDelta::try_from_wire`] weld on the two
+    /// payload-carrying corners AND a [`std::num::NonZeroU64::new`]
+    /// weld on the three generation-carrying corners, none of which
+    /// the tag-only impossibility-kind answer needs, plus a
+    /// [`Result`]-fold on top since the parse can fail; (b) a hand-
+    /// written `match` on `wire` mapping [`Self::Regressed`] /
+    /// [`Self::CrossStore`] to their tags and everything else to
+    /// `None` — a shape the exhaustiveness checker cannot help keep in
+    /// sync with a future impossibility corner (a hypothetical third
+    /// impossibility variant would silently fall into the `_ => None`
+    /// arm and drop its tag); or (c) `wire.regressed() ||
+    /// wire.cross_store()` folded into the [`Option`] shape by hand —
+    /// a two-hop composition through two single-variant tag-only
+    /// predicates spelled at every seam. The receiver-sibling here
+    /// answers the same question at the wire altitude through the same
+    /// welded pattern the value-side accessor carries.
+    ///
+    /// **Same-answer invariant with
+    /// [`ProofRelation::impossibility_kind`].** For every value/wire
+    /// pair the two accessors agree pointwise: whenever
+    /// `relation.impossibility_kind()` returns `k`,
+    /// `relation.to_wire().impossibility_kind()` returns the same `k`.
+    /// The wire is a lossless channel for the impossibility-kind
+    /// question the value-side sibling answers.
+    ///
+    /// **Agreement with [`Self::same_store_inconsistent`] at the same
+    /// altitude.** `wire.impossibility_kind().is_some() ==
+    /// wire.same_store_inconsistent()` pointwise on every variant.
+    ///
+    /// **The tag alone is sufficient.** No payload field participates
+    /// in the answer, so no parse-time weld is even conceptually
+    /// involved — a wire consumer routing on the internally-tagged
+    /// `kind` field alone reaches the verdict without deserializing
+    /// any payload portion, matching the low-cost seam
+    /// [`ProofRelationWire`]'s serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its impossibility-kind verdict at compile time too,
+    /// matching the `const`-ness of
+    /// [`ProofRelation::impossibility_kind`] one altitude up.
+    #[must_use]
+    pub const fn impossibility_kind(&self) -> Option<SameStoreImpossibilityKind> {
+        match *self {
+            Self::Regressed { .. } => Some(SameStoreImpossibilityKind::Regressed),
+            Self::CrossStore { .. } => Some(SameStoreImpossibilityKind::CrossStore),
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Progression { .. } => None,
+        }
     }
 
     /// True iff the wire classification is the null hypothesis — the
@@ -16683,5 +16997,405 @@ mod proof_delta_progression_tests {
         assert!(PROGRESSION);
         assert!(!CROSS_STORE);
         assert!(!REGRESSED);
+    }
+}
+
+#[cfg(test)]
+mod impossibility_kind_tests {
+    //! Weld the tag-only impossibility-kind receiver at all THREE
+    //! altitudes — [`ProofDelta::impossibility_kind`],
+    //! [`ProofRelation::impossibility_kind`], and
+    //! [`ProofRelationWire::impossibility_kind`] — all yielding the
+    //! SAME shared [`SameStoreImpossibilityKind`] sum-type. The
+    //! (delta, value, wire) × (impossibility-kind) grid closes through
+    //! a single shared receiver type, so a cross-altitude same-answer
+    //! invariant reads as pointwise
+    //! `Option<SameStoreImpossibilityKind>` equality without any
+    //! altitude-specific tag re-projection.
+    //!
+    //! The tests below cover, at every altitude in one exhaustive
+    //! fixture:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners
+    //!    (Stationary, IdentityRepublish, Progression, CrossStore,
+    //!    Regressed) — the three legitimate corners project to
+    //!    [`Option::None`], the two impossibility corners project to
+    //!    their [`SameStoreImpossibilityKind::CrossStore`] /
+    //!    [`SameStoreImpossibilityKind::Regressed`] tag.
+    //! 2. Cross-altitude same-answer between the delta altitude and the
+    //!    value-classification altitude on the four delta-reachable
+    //!    corners (where [`ProofDelta::relation`] returns
+    //!    [`Option::Some`]) — the delta-altitude tag equals the
+    //!    classification-altitude tag pointwise.
+    //! 3. Cross-altitude same-answer on the REGRESSED corner too,
+    //!    reached through the lossless
+    //!    [`ConfigSyncProof::relation_since`] path where the count is
+    //!    preserved: the delta-altitude tag ([`ProofDelta::impossibility_kind`])
+    //!    equals the classification-altitude tag
+    //!    ([`ProofRelation::impossibility_kind`] via
+    //!    [`ConfigSyncProof::relation_since`]) even where the
+    //!    [`ProofDelta::relation`] fold drops out — the tag itself is
+    //!    payload-free so it survives the [`ProofDelta`] fold that
+    //!    drops the payload magnitude.
+    //! 4. Value/wire same-answer: for every [`ProofRelation`],
+    //!    `r.impossibility_kind() == r.to_wire().impossibility_kind()`
+    //!    pointwise on every variant — the wire is a lossless channel
+    //!    for the impossibility-kind question.
+    //! 5. Agreement with [`Self::same_store_inconsistent`] at every
+    //!    altitude: `x.impossibility_kind().is_some() ==
+    //!    x.same_store_inconsistent()` — the `Option` shape projects
+    //!    to the boolean shape of the two-variant union predicate.
+    //! 6. Agreement with the two atomic classifiers at the two
+    //!    classification altitudes: `r.impossibility_kind() ==
+    //!    Some(Kind::Regressed)` iff `r.regressed()`; `r.impossibility_kind()
+    //!    == Some(Kind::CrossStore)` iff `r.cross_store()` — the
+    //!    tag-only sum-type projection agrees pointwise with the two
+    //!    single-variant tag-only predicates whose disjunction covers
+    //!    the impossibility half.
+    //! 7. `const`-callable at every altitude on hand-constructed values
+    //!    at every corner.
+    //! 8. `Copy`/`Eq` closure: the enum's Copy/Eq derives let it live
+    //!    in a `const` and compare through the pattern the tests use.
+    //!
+    //! Genuinely new — no prior receiver at any altitude carried a
+    //! typed `Option<Kind>` discrimination of the impossibility half;
+    //! the two-variant union was reachable only as a boolean predicate
+    //! ([`ProofRelation::same_store_inconsistent`] et al.) or through
+    //! the underlying variant tag whose three legitimate arms the
+    //! impossibility-kind question doesn't care about.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners, one row per corner. Each row
+    /// carries a label, the prior/current proofs to fold, and the
+    /// pinned impossibility-kind verdict.
+    fn corners() -> Vec<(
+        &'static str,
+        ConfigSyncProof,
+        ConfigSyncProof,
+        Option<SameStoreImpossibilityKind>,
+    )> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                None,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                None,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                None,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                Some(SameStoreImpossibilityKind::CrossStore),
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                Some(SameStoreImpossibilityKind::Regressed),
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned at all three altitudes
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid_at_every_altitude() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.impossibility_kind(),
+                want,
+                "{name}: delta impossibility_kind diverged from the pinned truth table",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.impossibility_kind(),
+                want,
+                "{name}: value classification impossibility_kind diverged from the \
+                 pinned truth table",
+            );
+            let w = current.relation_wire_since(&prior);
+            assert_eq!(
+                w.impossibility_kind(),
+                want,
+                "{name}: wire classification impossibility_kind diverged from the \
+                 pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer on the four
+    //                delta-reachable corners
+
+    #[test]
+    fn delta_and_relation_agree_on_the_four_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.impossibility_kind(),
+                    relation.impossibility_kind(),
+                    "{name}: delta and classification impossibility_kind verdicts \
+                     must agree on the four delta-reachable corners",
+                );
+            } else {
+                // Regressed corner: the delta-altitude tag itself is
+                // payload-free, so it survives the ProofDelta::relation
+                // fold that drops the payload magnitude.
+                assert_eq!(
+                    d.impossibility_kind(),
+                    Some(SameStoreImpossibilityKind::Regressed),
+                    "{name}: delta.relation() == None (regressed corner) still projects \
+                     Some(Regressed) at the delta altitude",
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer on ALL five corners
+    //                via the lossless proof-pair path
+
+    #[test]
+    fn delta_and_full_classification_agree_on_every_corner_including_regressed() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.impossibility_kind(),
+                r.impossibility_kind(),
+                "{name}: delta and full-classification impossibility_kind verdicts \
+                 must agree on every corner (including regressed, where the delta \
+                 path folds the count away but the tag itself is payload-free)",
+            );
+            assert_eq!(
+                r.impossibility_kind(),
+                want,
+                "{name}: full classification must also match the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (4) Value/wire same-answer
+
+    #[test]
+    fn value_and_wire_altitudes_agree_on_every_variant() {
+        for (name, prior, current, _) in corners() {
+            let r = current.relation_since(&prior);
+            let w = r.to_wire();
+            assert_eq!(
+                r.impossibility_kind(),
+                w.impossibility_kind(),
+                "{name}: value/wire impossibility_kind verdicts must agree pointwise",
+            );
+        }
+    }
+
+    // ---------- (5) Agreement with same_store_inconsistent
+
+    #[test]
+    fn agrees_with_same_store_inconsistent_at_every_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.impossibility_kind().is_some(),
+                d.same_store_inconsistent(),
+                "{name}: delta impossibility_kind.is_some() must equal same_store_inconsistent",
+            );
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.impossibility_kind().is_some(),
+                r.same_store_inconsistent(),
+                "{name}: classification impossibility_kind.is_some() must equal \
+                 same_store_inconsistent",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.impossibility_kind().is_some(),
+                w.same_store_inconsistent(),
+                "{name}: wire impossibility_kind.is_some() must equal same_store_inconsistent",
+            );
+        }
+    }
+
+    // ---------- (6) Agreement with the two atomic classifiers at the
+    //                classification altitudes
+
+    #[test]
+    fn agrees_with_atomic_classifiers_at_the_classification_altitudes() {
+        for (name, prior, current, _) in corners() {
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                r.impossibility_kind() == Some(SameStoreImpossibilityKind::Regressed),
+                r.regressed(),
+                "{name}: r.impossibility_kind() == Some(Regressed) must equal r.regressed()",
+            );
+            assert_eq!(
+                r.impossibility_kind() == Some(SameStoreImpossibilityKind::CrossStore),
+                r.cross_store(),
+                "{name}: r.impossibility_kind() == Some(CrossStore) must equal r.cross_store()",
+            );
+            let w = r.to_wire();
+            assert_eq!(
+                w.impossibility_kind() == Some(SameStoreImpossibilityKind::Regressed),
+                w.regressed(),
+                "{name}: w.impossibility_kind() == Some(Regressed) must equal w.regressed()",
+            );
+            assert_eq!(
+                w.impossibility_kind() == Some(SameStoreImpossibilityKind::CrossStore),
+                w.cross_store(),
+                "{name}: w.impossibility_kind() == Some(CrossStore) must equal w.cross_store()",
+            );
+        }
+    }
+
+    // ---------- (7) const-callable at every altitude
+
+    #[test]
+    fn const_callable_on_hand_constructed_values_at_every_altitude() {
+        // Delta altitude — five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const D_STATIONARY: Option<SameStoreImpossibilityKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .impossibility_kind();
+        const D_IDENTITY_REPUBLISH: Option<SameStoreImpossibilityKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .impossibility_kind();
+        const D_PROGRESSION: Option<SameStoreImpossibilityKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .impossibility_kind();
+        const D_CROSS_STORE: Option<SameStoreImpossibilityKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .impossibility_kind();
+        const D_REGRESSED: Option<SameStoreImpossibilityKind> = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .impossibility_kind();
+        assert_eq!(D_STATIONARY, None);
+        assert_eq!(D_IDENTITY_REPUBLISH, None);
+        assert_eq!(D_PROGRESSION, None);
+        assert_eq!(D_CROSS_STORE, Some(SameStoreImpossibilityKind::CrossStore));
+        assert_eq!(D_REGRESSED, Some(SameStoreImpossibilityKind::Regressed));
+
+        // Value classification altitude.
+        const R_STATIONARY: Option<SameStoreImpossibilityKind> =
+            ProofRelation::Stationary.impossibility_kind();
+        assert_eq!(R_STATIONARY, None);
+
+        // Wire classification altitude.
+        const W_STATIONARY: Option<SameStoreImpossibilityKind> =
+            ProofRelationWire::Stationary.impossibility_kind();
+        const W_REGRESSED: Option<SameStoreImpossibilityKind> =
+            ProofRelationWire::Regressed { by: 3 }.impossibility_kind();
+        assert_eq!(W_STATIONARY, None);
+        assert_eq!(W_REGRESSED, Some(SameStoreImpossibilityKind::Regressed));
+    }
+
+    // ---------- (8) Copy/Eq closure — the enum's derives round-trip
+    //                through pattern matching and equality comparison
+
+    #[test]
+    fn copy_and_eq_derives_round_trip_through_the_shared_tag() {
+        // Copy: the value can be bound and reused without a move.
+        let k = SameStoreImpossibilityKind::CrossStore;
+        let k2 = k;
+        let _both: [SameStoreImpossibilityKind; 2] = [k, k2];
+        // Eq: the enum's derives let it compare pointwise through the
+        // Option shape the receiver returns.
+        assert_eq!(k, SameStoreImpossibilityKind::CrossStore);
+        assert_ne!(k, SameStoreImpossibilityKind::Regressed);
+        assert_eq!(
+            Some(SameStoreImpossibilityKind::CrossStore),
+            Some(k),
+            "the shared tag survives Option-wrapping and pattern equality",
+        );
     }
 }
