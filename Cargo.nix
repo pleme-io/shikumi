@@ -9478,7 +9478,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.524";
+        version = "0.1.525";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9925,9 +9925,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.44";
+        version = "0.3.46";
         edition = "2021";
-        sha256 = "1dr5kmwpnj6vx8fgkmzgrfnr2lmy267jy2m52wlvrzimwvlg5cmg";
+        sha256 = "1bnwb18xdb8gh1a4nrs8pp09b5idw61r36q7lq4n4vb7rkzlsaaz";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9942,9 +9942,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.44";
+        version = "0.3.46";
         edition = "2021";
-        sha256 = "1ix7m407mazp0ylzdqjzsx9wanpijgbdv8r4a09yc98viiqp3k3a";
+        sha256 = "1bdav5kiz54lfq94lx6warrpq923lisvy81z12nywidq155rzg7b";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
@@ -9969,9 +9969,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.44";
+        version = "0.3.46";
         edition = "2021";
-        sha256 = "13wz7f6d6k7565g0k0ddb979ygwb2ci420ampcb7zq7pxfs93k89";
+        sha256 = "15vz23jwdg6lrjvsx39hlc31w863y3vmhcdszjk0d1cgc9iwa175";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -10009,9 +10009,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.44";
+        version = "0.3.46";
         edition = "2021";
-        sha256 = "0z2kdgdwqmzi01wv182im6gi8v8n1syihfd87xa0rn47qqgdq7pm";
+        sha256 = "0ww7z5i08qz8hf8w1578zdpzyhvc9lrdqxh8hwqka0izm8sdfqzw";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
