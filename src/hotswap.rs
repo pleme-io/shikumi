@@ -3441,6 +3441,108 @@ impl TryFrom<&[u8]> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`Vec<u8>`] impl — the
+/// **byte-side heap-owning projection sibling** of the borrowed
+/// [`AsRef<[u8]>`] impl and the owned-static [`From<Kind>`] for
+/// [`&'static [u8]`] impl above, and of the string-side
+/// [`From<SameStoreImpossibilityKind>`] for [`String`] impl already at
+/// this altitude, closing the byte-side (borrowed, owned-static,
+/// heap-owned) projection triple on the impossibility half in exactly
+/// the shape the string-side (borrowed, owned-static, heap-owned)
+/// projection triple already carries end-to-end.
+///
+/// **Why lift a heap-owning byte-side receiver alongside the two borrowed
+/// ones.** The two prior byte-side forward-side receivers — the borrowed
+/// [`AsRef<[u8]>`] projection whose returned `&[u8]` borrows from the
+/// kind reference and cannot outlive it, and the [`From<Kind>`] for
+/// [`&'static [u8]`] projection whose returned slice is bound to the
+/// crate's `'static` byte-slot and cannot be moved into a heap-owning
+/// slot — both close the borrow-shaped side of the standard-trait grid,
+/// but leave every downstream slot bounded on `T: Into<Vec<u8>>` (a
+/// [`bytes::BytesMut`] builder that needs to grow the buffer past the
+/// static slice, a [`std::io::Write::write`] receiver that needs to
+/// serialize the identifier as bytes past the borrow, an
+/// [`http::HeaderValue::from_bytes`]-shaped seam that consumes a
+/// [`Vec<u8>`], a codegen visitor writing per-corner registration entries
+/// into a `HashMap<Vec<u8>, V>` byte-keyed map, a `Vec<Vec<u8>>` builder
+/// collecting per-corner byte-tags through
+/// `.map(Vec::<u8>::from).collect()`, any [`Vec<u8>`]-returning closure
+/// `.map(|k| k.into())` in an iterator combinator, any generic
+/// `fn take<B: Into<Vec<u8>>>` accepting either owned or borrowed
+/// identifier bytes) stranded at the type-checker with no
+/// [`Into<Vec<u8>>`] path. Rust does NOT chain [`Into`] impls — a
+/// `T: Into<Vec<u8>>` bound is NOT satisfied by `T: Into<&'static [u8]>`
+/// alone (the standard-library blanket goes the OTHER way,
+/// [`Vec<u8>: From<&[u8]>`], and that blanket does not give an
+/// `Into<Vec<u8>>` impl on the source type) — so the explicit
+/// [`From<Kind>`] for [`Vec<u8>`] impl is the ONLY receiver that closes
+/// the [`Into<Vec<u8>>`] cell of the standard-trait grid.
+///
+/// **Delegates to [`Self::name`] followed by a single
+/// [`str::as_bytes`] reborrow and a [`slice::to_vec`] heap-copy.** The
+/// heap allocation is the trade-off for owning transfer — unlike the two
+/// borrowed byte-side projections above, this [`Vec<u8>`] can be moved
+/// into a heap-owning byte-slot (a `Vec<Vec<u8>>` grown past the kind
+/// value's scope, a [`bytes::BytesMut`] builder, a
+/// [`std::io::Cursor`]`<Vec<u8>>` writer, a `Cow::Owned` byte variant)
+/// that neither the borrowed [`AsRef<[u8]>`] projection nor the
+/// [`&'static [u8]`] projection can cross-mutate. Sibling with the
+/// string-side [`From<Kind>`] for [`String`] impl at this altitude, whose
+/// body is [`Self::name`] followed by [`str::to_owned`]: the same
+/// identifier, the same one-line delegation, the same allocation
+/// trade-off for the same reason.
+///
+/// **Sibling agreement with the string-side [`From<Kind>`] for
+/// [`String`] and with the borrowed byte-side projections.** For every
+/// value `k`, the four byte-projections
+/// `<Self as AsRef<[u8]>>::as_ref(&k)`, `<&'static [u8]>::from(k)`,
+/// `<Vec<u8>>::from(k)`, and `<String>::from(k).into_bytes()` all carry
+/// the same underlying byte range — differing only in the projection's
+/// typed shape and lifetime and in whether the byte range is borrowed
+/// or heap-owned. A downstream consumer bounded on `impl Into<Vec<u8>>
+/// + AsRef<[u8]>` (a two-sink recorder logging the identifier both as a
+/// borrowed byte-view on a hot path and as a heap-owned byte-vec on the
+/// wire) now reaches both projections through the standard traits alone,
+/// without any per-callsite `.name().as_bytes().to_vec()` glue.
+///
+/// **Adding a hypothetical corner surfaces here in lockstep.** The impl
+/// delegates through [`Self::name`] — one line — so adding a hypothetical
+/// third impossibility corner updates the ONE `match` body in
+/// [`Self::name`], and the new byte-encoded identifier surfaces through
+/// this impl (as the heap-owned byte projection) and every prior
+/// standard-trait projection through [`Self::name`] in lockstep with the
+/// enum itself. Sibling of [`derive_more::Into`] / [`strum::IntoStaticStr`]
+/// in the ecosystem's byte-side counterpart; shipped hand-rolled to stay
+/// dependency-neutral and to keep the delegation-through-[`Self::name`]
+/// shape parallel to the existing standard-trait projections.
+impl From<SameStoreImpossibilityKind> for Vec<u8> {
+    fn from(kind: SameStoreImpossibilityKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`Vec<u8>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above,
+/// delegating through the same [`Self::name`]-then-[`str::as_bytes`]-then-
+/// [`slice::to_vec`] source of truth. Enables `.into()` on a borrowed
+/// kind (a `&kind` iterator in a
+/// `.map(Vec::<u8>::from).collect::<Vec<Vec<u8>>>()` combinator, a
+/// `.into()` in a `HashMap<Vec<u8>, V>` builder consuming borrowed kinds,
+/// a codegen visitor over per-corner registration sites where the kind
+/// arrives by reference and is serialized as bytes) without a
+/// per-callsite dereference. Both directions of the standard
+/// [`Into<Vec<u8>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction; adding a hypothetical third
+/// impossibility corner updates the ONE `match` body in [`Self::name`]
+/// and the new byte-encoded identifier surfaces through both [`From`]
+/// impls in lockstep with the rest of the byte-side of the
+/// standard-trait grid.
+impl From<&SameStoreImpossibilityKind> for Vec<u8> {
+    fn from(kind: &SameStoreImpossibilityKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -4161,6 +4263,37 @@ impl TryFrom<&[u8]> for SameStoreConsistencyKind {
                 expected: Self::NAMES,
             }),
         }
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`Vec<u8>`] impl — the
+/// **byte-side heap-owning projection sibling** on the consistent half,
+/// mirroring the impossibility-side [`From<Kind>`] for [`Vec<u8>`] impl
+/// already at its altitude. Same one-line delegation through
+/// [`Self::name`]-then-[`str::as_bytes`]-then-[`slice::to_vec`], closing
+/// the byte-side heap-owning projection cell on the consistent half in
+/// exactly the shape the impossibility half already carries — every
+/// downstream slot bounded on `T: Into<Vec<u8>>` at the consistent
+/// altitude (a wire-side sink recording the identifier as bytes past
+/// the `'static` borrow, a
+/// [`http::HeaderValue::from_bytes`]-neighboring seam, a
+/// [`bytes::BytesMut`] builder collecting per-corner byte-tags, a
+/// generic `impl Into<Vec<u8>>` bound) now composes out of the standard
+/// trait alone on the consistent half.
+impl From<SameStoreConsistencyKind> for Vec<u8> {
+    fn from(kind: SameStoreConsistencyKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`Vec<u8>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the consistent half, mirroring the impossibility-side reference impl.
+/// Same one-line delegation through [`Self::name`], enabling `.into()`
+/// on a borrowed consistent kind wherever the owned form is unavailable.
+impl From<&SameStoreConsistencyKind> for Vec<u8> {
+    fn from(kind: &SameStoreConsistencyKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
     }
 }
 
@@ -5117,6 +5250,38 @@ impl TryFrom<&[u8]> for ProofRelationKind {
                 expected: Self::NAMES,
             }),
         }
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`Vec<u8>`] impl — the
+/// **byte-side heap-owning projection sibling** on the fused sum,
+/// mirroring the two half-side [`From<Kind>`] for [`Vec<u8>`] impls
+/// already at their altitudes and welded into the same two-arm partition
+/// the fused sum's sibling [`Self::name`] impl already carries.
+///
+/// **Fused-arm lockstep with the two half-side impls — by delegation.**
+/// The body reaches [`Self::name`], whose two-arm partition routes a
+/// consistent identifier through [`ProofRelationKind::Consistent`] and
+/// an impossibility identifier through [`ProofRelationKind::Impossible`]
+/// — so the fused [`Vec<u8>`] projection agrees with the routed
+/// half-side [`Vec<u8>`] projection through the two-arm partition of the
+/// fused sum on every variant, matching the fused-arm lockstep every
+/// prior standard-trait projection through [`Self::name`] on the fused
+/// sum already carries.
+impl From<ProofRelationKind> for Vec<u8> {
+    fn from(kind: ProofRelationKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`Vec<u8>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the fused sum, mirroring the two half-side reference impls. Same
+/// one-line delegation through [`Self::name`], enabling `.into()` on a
+/// borrowed fused kind wherever the owned form is unavailable.
+impl From<&ProofRelationKind> for Vec<u8> {
+    fn from(kind: &ProofRelationKind) -> Vec<u8> {
+        kind.name().as_bytes().to_vec()
     }
 }
 
@@ -30775,6 +30940,414 @@ mod from_static_bytes_tests {
                 s.parse::<ProofRelationKind>(),
                 Ok(k),
                 "fused {k:?}: <&'static [u8]>::from(k) -> from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_bytes_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`Vec<u8>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side heap-owning projection
+    //! sibling** of the borrowed [`AsRef<[u8]>`] impls lifted by
+    //! [`super::as_ref_bytes_tests`], of the owned-static [`From<Kind>`]
+    //! for [`&'static [u8]`] impls lifted by
+    //! [`super::from_static_bytes_tests`], and of the string-side
+    //! [`From<Kind>`] for [`String`] impls lifted by
+    //! [`super::into_string_tests`], closing the byte-side (borrowed,
+    //! owned-static, heap-owned) projection triple on the three kind enums
+    //! with the SAME shape the string-side (borrowed, owned-static,
+    //! heap-owned) projection triple already carries end-to-end.
+    //!
+    //! **What the tests below pin.** (1) Pointwise identity with
+    //! `k.name().as_bytes().to_vec()` on every variant of every kind enum;
+    //! (2) sibling agreement with [`AsRef<[u8]>`] pointwise; (3) sibling
+    //! agreement with the string-side [`From<Kind>`] for [`String`]
+    //! projected through [`String::into_bytes`]; (4) owned/reference-taking
+    //! [`From`] agreement pointwise; (5) fused-arm lockstep — for every
+    //! fused kind, the fused [`Vec<u8>`] projection agrees with the routed
+    //! half-side [`Vec<u8>`] projection through the fused sum's two-arm
+    //! partition; (6) byte-content agreement with the [`&'static [u8]`]
+    //! projection — the heap-owned [`Vec<u8>`] carries the SAME byte range
+    //! as the sibling `'static`-borrow projection, differing only in
+    //! typed-shape and ownership; (7) heap-owned pin — the projected
+    //! [`Vec<u8>`] survives after the kind value drops, exactly the shape
+    //! every [`Into<Vec<u8>>`]-bounded slot already reaches; (8) [`impl
+    //! Into<Vec<u8>>`] composability at a generic-typed callsite;
+    //! (9) round-trip identity through [`String::from_utf8`] +
+    //! [`std::str::FromStr`] — for every variant `k`, feeding the projected
+    //! [`Vec<u8>`] back through `String::from_utf8` then `.parse` returns
+    //! `Ok(k)`.
+    //!
+    //! Genuinely new — before this pass the three kind enums could not
+    //! flow through any downstream API typed on `impl Into<Vec<u8>>` or on
+    //! a heap-owned [`Vec<u8>`] slot without a per-callsite
+    //! `.name().as_bytes().to_vec()` postfix or a per-callsite
+    //! `String::from(k).into_bytes()` two-step through the string-side
+    //! projection. The six impls close the [`Into<Vec<u8>>`] cell of the
+    //! standard-trait grid the prior twenty runs opened for these enums,
+    //! and complete the byte-side (borrowed, owned-static, heap-owned)
+    //! projection triple in exact parallel with the string-side triple.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity with name().as_bytes().to_vec() ----------
+
+    #[test]
+    fn from_owned_matches_name_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            assert_eq!(
+                v,
+                k.name().as_bytes().to_vec(),
+                "impossibility {k:?}: <Vec<u8>>::from(k) must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_name_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            assert_eq!(
+                v,
+                k.name().as_bytes().to_vec(),
+                "consistency {k:?}: <Vec<u8>>::from(k) must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_name_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            assert_eq!(
+                v,
+                k.name().as_bytes().to_vec(),
+                "fused {k:?}: <Vec<u8>>::from(k) must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    #[test]
+    fn from_owned_matches_as_ref_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed: &[u8] = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                owned.as_slice(),
+                borrowed,
+                "impossibility {k:?}: <Vec<u8>>::from(k) must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_as_ref_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed: &[u8] = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                owned.as_slice(),
+                borrowed,
+                "consistency {k:?}: <Vec<u8>>::from(k) must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_as_ref_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed: &[u8] = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                owned.as_slice(),
+                borrowed,
+                "fused {k:?}: <Vec<u8>>::from(k) must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (3) Sibling agreement with the string-side From<Kind>
+    // for String projected through String::into_bytes ----------
+
+    #[test]
+    fn from_owned_bytes_matches_from_owned_string_into_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let bytes: Vec<u8> = k.into();
+            let via_string: String = k.into();
+            assert_eq!(
+                bytes,
+                via_string.into_bytes(),
+                "impossibility {k:?}: byte projection must equal string projection's into_bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_matches_from_owned_string_into_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let bytes: Vec<u8> = k.into();
+            let via_string: String = k.into();
+            assert_eq!(
+                bytes,
+                via_string.into_bytes(),
+                "consistency {k:?}: byte projection must equal string projection's into_bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_matches_from_owned_string_into_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let bytes: Vec<u8> = k.into();
+            let via_string: String = k.into();
+            assert_eq!(
+                bytes,
+                via_string.into_bytes(),
+                "fused {k:?}: byte projection must equal string projection's into_bytes",
+            );
+        }
+    }
+
+    // ---------- (4) Owned/reference-taking From agree ----------
+
+    #[test]
+    fn from_owned_matches_from_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let by_value: Vec<u8> = k.into();
+            let by_ref: Vec<u8> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "impossibility {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let by_value: Vec<u8> = k.into();
+            let by_ref: Vec<u8> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "consistency {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let by_value: Vec<u8> = k.into();
+            let by_ref: Vec<u8> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "fused {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep with routed half-side ----------
+
+    #[test]
+    fn from_fused_bytes_match_routed_half_side_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: Vec<u8> = k.into();
+            let routed: Vec<u8> = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused <Vec<u8>>::from must equal routed half-side <Vec<u8>>::from",
+            );
+        }
+    }
+
+    // ---------- (6) Byte-content agreement with the &'static [u8] projection
+    // — the heap-owned Vec<u8> carries the SAME byte range as the sibling
+    // 'static-borrow projection, differing only in typed-shape and ownership ----------
+
+    #[test]
+    fn from_owned_bytes_match_from_static_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed_static: &'static [u8] = k.into();
+            assert_eq!(
+                owned.as_slice(),
+                borrowed_static,
+                "impossibility {k:?}: heap-owned Vec<u8> and &'static [u8] projections \
+                 must carry the SAME byte range (differing only in ownership)",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_match_from_static_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed_static: &'static [u8] = k.into();
+            assert_eq!(
+                owned.as_slice(),
+                borrowed_static,
+                "consistency {k:?}: heap-owned Vec<u8> and &'static [u8] projections \
+                 must carry the SAME byte range (differing only in ownership)",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_match_from_static_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Vec<u8> = k.into();
+            let borrowed_static: &'static [u8] = k.into();
+            assert_eq!(
+                owned.as_slice(),
+                borrowed_static,
+                "fused {k:?}: heap-owned Vec<u8> and &'static [u8] projections \
+                 must carry the SAME byte range (differing only in ownership)",
+            );
+        }
+    }
+
+    // ---------- (7) Heap-owned pin — the projected Vec<u8> survives after
+    // the kind value drops (trivially by ownership; verified by moving the
+    // source out and reading the bytes) ----------
+
+    #[test]
+    fn from_owned_bytes_outlive_kind_impossibility() {
+        let mut cache: Vec<Vec<u8>> = Vec::new();
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            cache.push(v);
+        }
+        let expected: Vec<Vec<u8>> = SameStoreImpossibilityKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes().to_vec())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "cache of Vec<u8> must equal NAMES.map(str::as_bytes.to_vec) after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn from_owned_bytes_outlive_kind_consistency() {
+        let mut cache: Vec<Vec<u8>> = Vec::new();
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            cache.push(v);
+        }
+        let expected: Vec<Vec<u8>> = SameStoreConsistencyKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes().to_vec())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "cache of Vec<u8> must equal NAMES.map(str::as_bytes.to_vec) after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn from_owned_bytes_outlive_kind_fused() {
+        let mut cache: Vec<Vec<u8>> = Vec::new();
+        for &k in ProofRelationKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            cache.push(v);
+        }
+        let expected: Vec<Vec<u8>> = ProofRelationKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes().to_vec())
+            .collect();
+        assert_eq!(
+            cache, expected,
+            "cache of Vec<u8> must equal NAMES.map(str::as_bytes.to_vec) after the kind values drop",
+        );
+    }
+
+    // ---------- (8) impl Into<Vec<u8>> composability ----------
+
+    fn take_owned_bytes<B: Into<Vec<u8>>>(b: B) -> Vec<u8> {
+        b.into()
+    }
+
+    #[test]
+    fn into_owned_bytes_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                take_owned_bytes(k),
+                k.name().as_bytes().to_vec(),
+                "impossibility {k:?}: generic Into<Vec<u8>> must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_owned_bytes_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                take_owned_bytes(k),
+                k.name().as_bytes().to_vec(),
+                "consistency {k:?}: generic Into<Vec<u8>> must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_owned_bytes_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                take_owned_bytes(k),
+                k.name().as_bytes().to_vec(),
+                "fused {k:?}: generic Into<Vec<u8>> must equal name().as_bytes().to_vec()",
+            );
+        }
+    }
+
+    // ---------- (9) Round-trip identity through String::from_utf8 + FromStr ----------
+
+    #[test]
+    fn from_owned_bytes_round_trip_through_from_utf8_and_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            let s: String = String::from_utf8(v)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: <Vec<u8>>::from(k) -> String::from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_round_trip_through_from_utf8_and_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            let s: String = String::from_utf8(v)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: <Vec<u8>>::from(k) -> String::from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_bytes_round_trip_through_from_utf8_and_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let v: Vec<u8> = k.into();
+            let s: String = String::from_utf8(v)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: <Vec<u8>>::from(k) -> String::from_utf8 -> parse must round-trip",
             );
         }
     }
