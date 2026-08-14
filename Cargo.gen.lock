@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "10cc8f6960bf88e301f2eb38a6618536dff2a188ffc065826462165f05a30247",
+  "cargo_lock_sha256": "b404077ab71a27045cba9ae75d41a594de228bdcbb4db91c8d05a2f90f15d2b9",
   "manifest_sha256": {
-    "Cargo.toml": "c13e830ef173f4df053e12279bc3e6e0e169c2d13a3f8a863255c8a48f452950"
+    "Cargo.toml": "1122cf976d203bd897258e2fe1fb63339ed7b3e70ef0765484f9f0730834e39e"
   },
   "target_resolves": {
     "base": {
@@ -1175,7 +1175,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.551": {
+      "shikumi-0.1.552": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -2239,7 +2239,7 @@
               "fallback"
             ]
           },
-          "inotify-0.11.4": {
+          "inotify-0.11.5": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -2338,7 +2338,7 @@
             "runtime_dependencies": [
               {
                 "name": "inotify",
-                "package_key": "inotify-0.11.4",
+                "package_key": "inotify-0.11.5",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -2590,7 +2590,7 @@
               "fallback"
             ]
           },
-          "inotify-0.11.4": {
+          "inotify-0.11.5": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -2689,7 +2689,7 @@
             "runtime_dependencies": [
               {
                 "name": "inotify",
-                "package_key": "inotify-0.11.4",
+                "package_key": "inotify-0.11.5",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3217,7 +3217,7 @@
               "fallback"
             ]
           },
-          "inotify-0.11.4": {
+          "inotify-0.11.5": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3316,7 +3316,7 @@
             "runtime_dependencies": [
               {
                 "name": "inotify",
-                "package_key": "inotify-0.11.4",
+                "package_key": "inotify-0.11.5",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3583,7 +3583,7 @@
               "fallback"
             ]
           },
-          "inotify-0.11.4": {
+          "inotify-0.11.5": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -3682,7 +3682,7 @@
             "runtime_dependencies": [
               {
                 "name": "inotify",
-                "package_key": "inotify-0.11.4",
+                "package_key": "inotify-0.11.5",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3954,7 +3954,7 @@
     "inlinable_string-0.1.15": {
       "edition": "2018"
     },
-    "inotify-0.11.4": {
+    "inotify-0.11.5": {
       "edition": "2018"
     },
     "inotify-sys-0.1.8": {
@@ -4059,7 +4059,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.551": {
+    "shikumi-0.1.552": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
