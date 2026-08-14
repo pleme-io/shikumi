@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "d02ba90e0bd9a54404838d743b14268f7aefd14be1b52aec7b95391e1e4b188d",
+  "cargo_lock_sha256": "95f9caf8fc6bfeaa1db2e23dd3ecdcd7e20d33b3d8e25bc545691dc8add28891",
   "manifest_sha256": {
-    "Cargo.toml": "b694b4c54e1cd88193c9d5da54ccdff9f13a31425164bb2489e8a07bf4ee7d4b"
+    "Cargo.toml": "4a352c34547984b53c1c36fad49a2e49e950e0042449c56c4ff4417634722b66"
   },
   "target_resolves": {
     "base": {
@@ -87,11 +87,11 @@
           "std"
         ]
       },
-      "cc-1.4.2": {
+      "cc-1.4.3": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
-            "package_key": "find-msvc-tools-0.1.10",
+            "package_key": "find-msvc-tools-0.1.11",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -303,7 +303,7 @@
           "yaml"
         ]
       },
-      "find-msvc-tools-0.1.10": {
+      "find-msvc-tools-0.1.11": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -1175,7 +1175,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.547": {
+      "shikumi-0.1.548": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1972,7 +1972,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2218,7 +2218,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2569,7 +2569,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2930,7 +2930,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3191,7 +3191,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3557,7 +3557,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.2",
+                "package_key": "cc-1.4.3",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3891,7 +3891,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.4.2": {
+    "cc-1.4.3": {
       "edition": "2021"
     },
     "cfg-if-1.0.4": {
@@ -3922,7 +3922,7 @@
       "edition": "2018",
       "build_script": "build.rs"
     },
-    "find-msvc-tools-0.1.10": {
+    "find-msvc-tools-0.1.11": {
       "edition": "2021"
     },
     "fsevent-sys-4.1.0": {
@@ -4059,7 +4059,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.547": {
+    "shikumi-0.1.548": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
