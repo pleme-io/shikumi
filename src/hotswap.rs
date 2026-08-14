@@ -3881,6 +3881,57 @@ impl PartialEq<SameStoreImpossibilityKind> for Vec<u8> {
     }
 }
 
+/// The [`PartialEq<Cow<'_, [u8]>>`] impl on [`SameStoreImpossibilityKind`]
+/// — the **byte-side borrowed-or-owned-carrier sibling** of the string-side
+/// [`PartialEq<Cow<'_, str>>`] impl already at this altitude and the
+/// borrowed-or-owned-carrier extension of the byte-side [`PartialEq<[u8]>`]
+/// + [`PartialEq<&[u8]>`] + [`PartialEq<Vec<u8>>`] impls directly above,
+/// closing the (borrowed `[u8]`, borrowed `&[u8]`, owned `Vec<u8>`,
+/// borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`]) receiver-quadruple on
+/// the byte-side comparison with the SAME shape [`TryFrom<&[u8]>`],
+/// [`TryFrom<Vec<u8>>`], and [`TryFrom<Cow<'_, [u8]>>`] already carry on
+/// the byte-side parse side and [`From<Kind>`] for `&'static [u8]` +
+/// [`From<Kind>`] for [`Vec<u8>`] + [`From<Kind>`] for [`Cow<'static, [u8]>`]
+/// already carry on the byte-side projection side. A caller holding a
+/// `Cow<'_, [u8]>` from a code path that indifferently returns borrowed or
+/// owned bytes (a [`bytes::Bytes`]-into-[`Cow`] adapter, a `serde_bytes`
+/// visitor that borrows-when-possible-else-owns, a `Cow::Borrowed` static
+/// magic-number registration table interleaved with a `Cow::Owned`
+/// hot-path allocation, a `zerocopy`-neighbouring seam that yields either
+/// spelling, or any wire framer that returns `Cow<[u8]>` to indifferently
+/// route zero-copy slices and owned buffers through the same receiver)
+/// previously stranded the caller at either a per-callsite `.as_ref()` /
+/// `&**` deref (a coordinated silent rewrite of the callsite, not a lift
+/// into the type-checker) or a [`std::str::from_utf8`] parse detour
+/// (paying UTF-8 validation to answer a byte-compare question).
+/// Delegates through the same [`Self::name`]-then-[`str::as_bytes`] source
+/// of truth every prior byte-shape receiver already uses, so the
+/// closed-variant set (adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`]) surfaces through this
+/// impl in lockstep.
+impl PartialEq<std::borrow::Cow<'_, [u8]>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, [u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`Cow<'_, [u8]>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<Cow<'_, [u8]>>`] impl directly above, welding the symmetric
+/// `borrowed_or_owned_bytes_from_wire == kind` seam through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Both directions
+/// of the byte-side borrowed-or-owned cross-type comparison now compose
+/// out of the same allocation-free receiver by construction; adding a
+/// hypothetical third impossibility corner updates the ONE `match` body
+/// in [`Self::name`], and the new identifier surfaces through BOTH
+/// [`PartialEq<Cow<'_, [u8]>>`] impls (and every sibling projection
+/// through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for std::borrow::Cow<'_, [u8]> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -4810,6 +4861,34 @@ impl PartialEq<Vec<u8>> for SameStoreConsistencyKind {
 impl PartialEq<SameStoreConsistencyKind> for Vec<u8> {
     fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
         self.as_slice() == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<Cow<'_, [u8]>>`] impl on [`SameStoreConsistencyKind`] —
+/// the mirror on the consistent half of the classification lattice of the
+/// [`PartialEq<Cow<'_, [u8]>>`] impl on [`SameStoreImpossibilityKind`], and
+/// the **byte-side borrowed-or-owned-carrier sibling** of the string-side
+/// [`PartialEq<Cow<'_, str>>`] impl at this altitude, closing the (borrowed
+/// `[u8]`, borrowed `&[u8]`, owned `Vec<u8>`, borrowed-or-owned
+/// [`std::borrow::Cow<'_, [u8]>`]) receiver-quadruple on the byte-side
+/// comparison with the same shape [`TryFrom<Cow<'_, [u8]>>`] already
+/// carries on the byte-side parse side and [`From<Kind>`] for
+/// [`Cow<'static, [u8]>`] already carries on the byte-side projection
+/// side.
+impl PartialEq<std::borrow::Cow<'_, [u8]>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, [u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`Cow<'_, [u8]>`] impl — closing the byte-side borrowed-or-owned
+/// reverse-direction cell so `borrowed_or_owned_bytes == kind` composes at
+/// this altitude. Mirror of the impossibility-half receiver at this
+/// altitude.
+impl PartialEq<SameStoreConsistencyKind> for std::borrow::Cow<'_, [u8]> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
     }
 }
 
@@ -6041,6 +6120,39 @@ impl PartialEq<Vec<u8>> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for Vec<u8> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_slice() == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<Cow<'_, [u8]>>`] impl on [`ProofRelationKind`] — the
+/// fused-arm sibling of the two half-side [`PartialEq<Cow<'_, [u8]>>`]
+/// impls on [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`],
+/// and the **byte-side borrowed-or-owned-carrier sibling** of the
+/// string-side [`PartialEq<Cow<'_, str>>`] impl at the fused altitude.
+/// Delegates through [`Self::name`] (which in turn delegates through the
+/// two half-side [`Self::name`] receivers) then [`str::as_bytes`] — one
+/// line — so the fused byte-side borrowed-or-owned compare stays
+/// lockstep-identical with the routed half-side borrowed-or-owned byte
+/// compare under every future variant addition to either half-side enum
+/// by construction: `fused == cow_bytes` iff `routed_half == cow_bytes`
+/// through the two-arm partition. Every downstream slot bounded on
+/// `impl PartialEq<Cow<'_, [u8]>>` at the fused-sum altitude (a wire
+/// framer returning a `Cow<[u8]>` to indifferently route zero-copy
+/// slices and owned buffers, a `serde_bytes` tag deserializer, any
+/// generic receiver-family bounded on the borrowed-or-owned-carrier
+/// standard trait) now composes out of the standard trait alone.
+impl PartialEq<std::borrow::Cow<'_, [u8]>> for ProofRelationKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, [u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`Cow<'_, [u8]>`]
+/// impl — closing the byte-side borrowed-or-owned reverse-direction cell
+/// at the fused altitude so `borrowed_or_owned_bytes == kind` composes at
+/// this altitude. Mirror of the two half-side receivers at this altitude.
+impl PartialEq<ProofRelationKind> for std::borrow::Cow<'_, [u8]> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
     }
 }
 
@@ -34615,6 +34727,550 @@ mod partial_eq_owned_bytes_tests {
             let owned: Vec<u8> = k.name().as_bytes().to_vec();
             assert!(cmp_kind_owned_bytes(&k, &owned));
             assert!(!cmp_kind_owned_bytes(&k, &b"unknown".to_vec()));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_cow_bytes_tests {
+    //! [`PartialEq<Cow<'_, [u8]>>`] and [`PartialEq<Kind> for Cow<'_, [u8]>`]
+    //! on [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side borrowed-or-owned-carrier
+    //! sibling** of the string-side [`PartialEq<Cow<'_, str>>`] pair
+    //! already lifted by `super::partial_eq_cow_tests` at each altitude,
+    //! and the borrowed-or-owned-carrier extension of the byte-side
+    //! [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] quadruple already lifted
+    //! by `super::partial_eq_bytes_tests` and the [`PartialEq<Vec<u8>>`] pair
+    //! already lifted by `super::partial_eq_owned_bytes_tests` at each
+    //! altitude.
+    //!
+    //! **Why lift the borrowed-or-owned-`Cow<[u8]>` cross-type comparison
+    //! alongside the borrowed byte pair and the owned `Vec<u8>` pair.** A
+    //! caller holding a `Cow<'_, [u8]>` from a code path that
+    //! indifferently returns borrowed or owned bytes (a
+    //! [`bytes::Bytes`]-into-[`Cow`] adapter, a `serde_bytes` visitor that
+    //! borrows-when-possible-else-owns, a `Cow::Borrowed` static
+    //! magic-number table interleaved with a `Cow::Owned` hot-path
+    //! allocation, a `zerocopy`-neighbouring seam that yields either
+    //! spelling, or any wire framer that returns `Cow<[u8]>` to
+    //! indifferently route zero-copy slices and owned buffers through the
+    //! same receiver) previously stranded at either a per-callsite
+    //! `.as_ref()` / `&**` deref or a [`std::str::from_utf8`] parse detour.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both cells
+    //! (`k == cow`, `cow == k`) for `cow = Cow::Borrowed(k.name().as_bytes())`
+    //! and for `cow = Cow::Owned(k.name().as_bytes().to_vec())` on every
+    //! variant of every kind enum; (2) sibling agreement with
+    //! [`AsRef<[u8]>`] — for every variant and every input `Cow<'_, [u8]>`,
+    //! both directions of the cow pair agree with `k.as_ref() ==
+    //! cow.as_ref()`; (3) sibling agreement with the borrowed byte-side
+    //! [`PartialEq<[u8]>`] receiver and the owned-carrier
+    //! [`PartialEq<Vec<u8>>`] receiver — for every probe byte-slice the
+    //! cow-side answer matches the borrowed and owned answers on both
+    //! `Cow::Borrowed` and `Cow::Owned` incarnations of that probe; (4)
+    //! sibling agreement with the string-side [`PartialEq<Cow<'_, str>>`]
+    //! receiver — for every valid UTF-8 probe the byte-side cow answer
+    //! matches the string-side cow answer; (5) inequality on unknown
+    //! byte-cows (including invalid UTF-8); (6) cross-variant inequality
+    //! — for every pair `(a, b)` of distinct variants, `a != Cow::Borrowed(
+    //! b.name().as_bytes())` and `a != Cow::Owned(b.name().as_bytes()
+    //! .to_vec())`; (7) fused-arm lockstep on [`ProofRelationKind`] — a
+    //! fused kind constructed from either half-side variant equals BOTH
+    //! the half-side name-as-bytes-cow AND its own projected
+    //! name-as-bytes-cow through both directions on both `Cow` spellings;
+    //! (8) generic composability at an `impl PartialEq<Cow<'_, [u8]>>`
+    //! seam — a `fn cmp<K: for<'a> PartialEq<Cow<'a, [u8]>>>(k: &K, c:
+    //! &Cow<'_, [u8]>) -> bool` bounded ONLY on the standard trait
+    //! projects the same value the direct `*k == *c` projects at each
+    //! altitude.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_borrowed_cow_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            assert!(k == cow, "kind == Cow::Borrowed for {}", k.name());
+            assert!(cow == k, "Cow::Borrowed == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn impossibility_identity_owned_cow_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert!(k == cow, "kind == Cow::Owned for {}", k.name());
+            assert!(cow == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_borrowed_cow_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            assert!(k == cow, "kind == Cow::Borrowed for {}", k.name());
+            assert!(cow == k, "Cow::Borrowed == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_owned_cow_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert!(k == cow, "kind == Cow::Owned for {}", k.name());
+            assert!(cow == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_borrowed_cow_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            assert!(k == cow, "kind == Cow::Borrowed for {}", k.name());
+            assert!(cow == k, "Cow::Borrowed == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_owned_cow_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert!(k == cow, "kind == Cow::Owned for {}", k.name());
+            assert!(cow == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            &[0xff, 0xfe, 0xfd],
+            &[0x72, 0x65, 0x67, 0xff, 0x65, 0x64],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_bytes_on_every_cow_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    let via_as_ref = AsRef::<[u8]>::as_ref(&k) == cow.as_ref();
+                    assert_eq!(k == cow, via_as_ref, "k == cow drift for {probe:?}");
+                    assert_eq!(cow == k, via_as_ref, "cow == k drift for {probe:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_bytes_on_every_cow_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    let via_as_ref = AsRef::<[u8]>::as_ref(&k) == cow.as_ref();
+                    assert_eq!(k == cow, via_as_ref, "k == cow drift for {probe:?}");
+                    assert_eq!(cow == k, via_as_ref, "cow == k drift for {probe:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_bytes_on_every_cow_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    let via_as_ref = AsRef::<[u8]>::as_ref(&k) == cow.as_ref();
+                    assert_eq!(k == cow, via_as_ref, "k == cow drift for {probe:?}");
+                    assert_eq!(cow == k, via_as_ref, "cow == k drift for {probe:?}");
+                }
+            }
+        }
+    }
+
+    // ---------- (3) Sibling agreement with borrowed [u8] and owned Vec<u8> ----------
+
+    #[test]
+    fn impossibility_cow_agrees_with_borrowed_and_owned_bytes_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(owned.clone());
+                assert_eq!(k == cow_b, k == *probe, "cow-b vs [u8] drift for {probe:?}");
+                assert_eq!(
+                    k == cow_o,
+                    k == owned,
+                    "cow-o vs Vec<u8> drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_b == k,
+                    *probe == k,
+                    "reciprocal cow-b drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_o == k,
+                    owned == k,
+                    "reciprocal cow-o drift for {probe:?}"
+                );
+                assert_eq!(k == cow_b, k == cow_o, "cow variant drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cow_agrees_with_borrowed_and_owned_bytes_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(owned.clone());
+                assert_eq!(k == cow_b, k == *probe, "cow-b vs [u8] drift for {probe:?}");
+                assert_eq!(
+                    k == cow_o,
+                    k == owned,
+                    "cow-o vs Vec<u8> drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_b == k,
+                    *probe == k,
+                    "reciprocal cow-b drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_o == k,
+                    owned == k,
+                    "reciprocal cow-o drift for {probe:?}"
+                );
+                assert_eq!(k == cow_b, k == cow_o, "cow variant drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_cow_agrees_with_borrowed_and_owned_bytes_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(owned.clone());
+                assert_eq!(k == cow_b, k == *probe, "cow-b vs [u8] drift for {probe:?}");
+                assert_eq!(
+                    k == cow_o,
+                    k == owned,
+                    "cow-o vs Vec<u8> drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_b == k,
+                    *probe == k,
+                    "reciprocal cow-b drift for {probe:?}"
+                );
+                assert_eq!(
+                    cow_o == k,
+                    owned == k,
+                    "reciprocal cow-o drift for {probe:?}"
+                );
+                assert_eq!(k == cow_b, k == cow_o, "cow variant drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Sibling agreement with string-side PartialEq<Cow<'_, str>> ----------
+
+    fn utf8_probes() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_byte_side_cow_agrees_with_string_side_cow_on_utf8_probes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let cow_bytes: Cow<'_, [u8]> = Cow::Borrowed(probe.as_bytes());
+                let cow_str: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == cow_bytes, k == cow_str, "k drift on probe={probe:?}");
+                assert_eq!(
+                    cow_bytes == k,
+                    cow_str == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_byte_side_cow_agrees_with_string_side_cow_on_utf8_probes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let cow_bytes: Cow<'_, [u8]> = Cow::Borrowed(probe.as_bytes());
+                let cow_str: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == cow_bytes, k == cow_str, "k drift on probe={probe:?}");
+                assert_eq!(
+                    cow_bytes == k,
+                    cow_str == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_byte_side_cow_agrees_with_string_side_cow_on_utf8_probes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let cow_bytes: Cow<'_, [u8]> = Cow::Borrowed(probe.as_bytes());
+                let cow_str: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == cow_bytes, k == cow_str, "k drift on probe={probe:?}");
+                assert_eq!(
+                    cow_bytes == k,
+                    cow_str == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (5) Inequality on unknown cow-bytes ----------
+
+    #[test]
+    fn impossibility_ne_unknown_cow_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Regressed",
+                b" regressed",
+                b"regressed\t",
+                &[0xff, 0xfe][..],
+            ] {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    assert!(k != cow, "unexpected match: {k:?} == {cow:?}");
+                    assert!(cow != k, "unexpected match: {cow:?} == {k:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_cow_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Stationary",
+                b"identity-republish",
+                b"progression\n",
+                &[0xff, 0xfe][..],
+            ] {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    assert!(k != cow, "unexpected match: {k:?} == {cow:?}");
+                    assert!(cow != k, "unexpected match: {cow:?} == {k:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_cow_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Consistent",
+                b"Impossible",
+                b"consistent\n",
+                &[0xff, 0xfe][..],
+            ] {
+                for cow in [
+                    Cow::<'_, [u8]>::Borrowed(probe),
+                    Cow::<'_, [u8]>::Owned(probe.to_vec()),
+                ] {
+                    assert!(k != cow, "unexpected match: {k:?} == {cow:?}");
+                    assert!(cow != k, "unexpected match: {cow:?} == {k:?}");
+                }
+            }
+        }
+    }
+
+    // ---------- (6) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_cow_name_bytes() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a != b {
+                    for cow in [
+                        Cow::<'_, [u8]>::Borrowed(b.name().as_bytes()),
+                        Cow::<'_, [u8]>::Owned(b.name().as_bytes().to_vec()),
+                    ] {
+                        assert!(a != cow, "{a:?} incorrectly equals {cow:?}");
+                        assert!(cow != a, "{cow:?} incorrectly equals {a:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_cow_name_bytes() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a != b {
+                    for cow in [
+                        Cow::<'_, [u8]>::Borrowed(b.name().as_bytes()),
+                        Cow::<'_, [u8]>::Owned(b.name().as_bytes().to_vec()),
+                    ] {
+                        assert!(a != cow, "{a:?} incorrectly equals {cow:?}");
+                        assert!(cow != a, "{cow:?} incorrectly equals {a:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_cow_name_bytes() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b in ProofRelationKind::VARIANTS {
+                if a != b {
+                    for cow in [
+                        Cow::<'_, [u8]>::Borrowed(b.name().as_bytes()),
+                        Cow::<'_, [u8]>::Owned(b.name().as_bytes().to_vec()),
+                    ] {
+                        assert!(a != cow, "{a:?} incorrectly equals {cow:?}");
+                        assert!(cow != a, "{cow:?} incorrectly equals {a:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------- (7) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_cow_name_bytes_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            for cow in [
+                Cow::<'_, [u8]>::Borrowed(half.name().as_bytes()),
+                Cow::<'_, [u8]>::Owned(half.name().as_bytes().to_vec()),
+            ] {
+                assert!(fused == cow, "fused == cow for {:?}", half.name());
+                assert!(cow == fused, "cow == fused for {:?}", half.name());
+                assert_eq!(
+                    fused == cow,
+                    half == cow,
+                    "cross-altitude drift for {:?}",
+                    half.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_cow_name_bytes_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            for cow in [
+                Cow::<'_, [u8]>::Borrowed(half.name().as_bytes()),
+                Cow::<'_, [u8]>::Owned(half.name().as_bytes().to_vec()),
+            ] {
+                assert!(fused == cow, "fused == cow for {:?}", half.name());
+                assert!(cow == fused, "cow == fused for {:?}", half.name());
+                assert_eq!(
+                    fused == cow,
+                    half == cow,
+                    "cross-altitude drift for {:?}",
+                    half.name()
+                );
+            }
+        }
+    }
+
+    // ---------- (8) Generic composability at a PartialEq<Cow<'_, [u8]>>-bounded seam ----------
+
+    #[allow(clippy::ptr_arg)]
+    fn cmp_kind_cow_bytes<K>(k: &K, c: &Cow<'_, [u8]>) -> bool
+    where
+        for<'a> K: PartialEq<Cow<'a, [u8]>>,
+    {
+        *k == *c
+    }
+
+    #[test]
+    fn generic_composability_impossibility_cow_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow_b: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let cow_o: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let miss: Cow<'_, [u8]> = Cow::Borrowed(b"unknown");
+            assert!(cmp_kind_cow_bytes(&k, &cow_b));
+            assert!(cmp_kind_cow_bytes(&k, &cow_o));
+            assert!(!cmp_kind_cow_bytes(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_cow_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow_b: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let cow_o: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let miss: Cow<'_, [u8]> = Cow::Borrowed(b"unknown");
+            assert!(cmp_kind_cow_bytes(&k, &cow_b));
+            assert!(cmp_kind_cow_bytes(&k, &cow_o));
+            assert!(!cmp_kind_cow_bytes(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_cow_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow_b: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let cow_o: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let miss: Cow<'_, [u8]> = Cow::Borrowed(b"unknown");
+            assert!(cmp_kind_cow_bytes(&k, &cow_b));
+            assert!(cmp_kind_cow_bytes(&k, &cow_o));
+            assert!(!cmp_kind_cow_bytes(&k, &miss));
         }
     }
 }
