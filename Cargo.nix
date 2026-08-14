@@ -5160,9 +5160,9 @@ rec {
       };
       "inotify" = rec {
         crateName = "inotify";
-        version = "0.11.4";
+        version = "0.11.5";
         edition = "2018";
-        sha256 = "1j7jkacw6cxra4jf1sbndkpkbm5qm0bvxpcms36cjghq3aaf2fqm";
+        sha256 = "14p5gkhk95yk536zncfrjywy2yxrxf06yrfsnx89bd6a0ylhxh2c";
         dependencies = [
           {
             name = "bitflags";
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.552";
+        version = "0.1.553";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
