@@ -3130,6 +3130,53 @@ impl PartialEq<SameStoreImpossibilityKind> for &str {
     }
 }
 
+/// The [`PartialEq<String>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **owned-carrier sibling** of the [`PartialEq<str>`] and
+/// [`PartialEq<&str>`] impls above, lifting the cross-type
+/// comparison receiver-family onto the owned [`String`] carrier the
+/// deserialize side ([`serde::Deserialize`] on this enum, on
+/// [`ProofRelationWire`], on any [`ConfigStore`]-loaded typed carrier
+/// holding one of these tag fields) hands the caller. Closes the
+/// borrowed-`str`/borrowed-`&str`/owned-`String` receiver-triple on
+/// the **comparison side** with the same shape [`TryFrom<&str>`],
+/// [`TryFrom<String>`], and [`TryFrom<Cow<'_, str>>`] already carry on
+/// the parse side: a `.iter().find(|k| **k == some_owned_key)` on a
+/// slice of kinds, a `matches!(k, k if k == cfg_string)` predicate on
+/// a hot reload path, a `HashMap<Kind, V>::iter().find(|(k, _)| **k
+/// == some_string)`, or any generic slot bounded on `T:
+/// PartialEq<String>` previously stranded the caller at either a
+/// per-callsite `.as_str()` / `.as_ref()` (a coordinated silent
+/// rewrite of the callsite, not a lift into the type-checker) or an
+/// [`http::HeaderName`]-shaped receiver-family that never composed at
+/// the type-checker. Delegates through the same [`Self::name`] source
+/// of truth every prior string-shape receiver already uses, so the
+/// closed-variant set (adding a hypothetical third impossibility
+/// corner updates the ONE `match` body in [`Self::name`]) surfaces
+/// through this impl in lockstep.
+///
+/// [`ConfigStore`]: crate::ConfigStore
+impl PartialEq<String> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &String) -> bool {
+        self.name() == other.as_str()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`String`] impl — the reverse-direction sibling of the
+/// [`PartialEq<String>`] impl directly above, welding the symmetric
+/// `owned_from_serde == kind` seam through the same [`Self::name`]
+/// source of truth. Both directions of the owned-string cross-type
+/// comparison now compose out of the same allocation-free receiver by
+/// construction; adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`], and the new
+/// identifier surfaces through BOTH [`PartialEq<String>`] impls (and
+/// every sibling projection through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for String {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_str() == other.name()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3723,6 +3770,33 @@ impl PartialEq<&str> for SameStoreConsistencyKind {
 impl PartialEq<SameStoreConsistencyKind> for &str {
     fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
         *self == other.name()
+    }
+}
+
+/// The [`PartialEq<String>`] impl on [`SameStoreConsistencyKind`] —
+/// the consistent-half sibling of the impossibility-half
+/// [`PartialEq<String>`] impl above, lifting the owned-string
+/// cross-type comparison receiver-family onto the three-variant
+/// consistent partition through the same [`Self::name`] source of
+/// truth every prior receiver in the classification lattice already
+/// uses. Mirror of the impossibility-half receiver at this altitude:
+/// any consumer bounded on `T: PartialEq<String>` (or holding either
+/// kind as `T`) reaches the same owned-string compare seam at both
+/// altitudes.
+impl PartialEq<String> for SameStoreConsistencyKind {
+    fn eq(&self, other: &String) -> bool {
+        self.name() == other.as_str()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`String`] impl — the reverse-direction sibling of the
+/// [`PartialEq<String>`] impl directly above, mirroring the
+/// impossibility-half receiver through the same [`Self::name`] source
+/// of truth so `owned_from_serde == kind` composes at both altitudes.
+impl PartialEq<SameStoreConsistencyKind> for String {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_str() == other.name()
     }
 }
 
@@ -4524,6 +4598,37 @@ impl PartialEq<&str> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &str {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         *self == other.name()
+    }
+}
+
+/// The [`PartialEq<String>`] impl on the fused [`ProofRelationKind`] —
+/// the third-altitude sibling of the two half-side
+/// [`PartialEq<String>`] impls above, closing the (impossibility,
+/// consistency, fused) × (`String`) grid at the fused-sum altitude and
+/// lifting `k == owned_from_serde_or_reload` past the type-checker
+/// without a per-callsite `.as_str()` or `.as_ref()`. The fused body
+/// dispatches on the variant to reach [`Self::name`], so a hypothetical
+/// sixth corner in either half-side surfaces through the ONE fused
+/// [`Self::name`] `match` body and BOTH [`PartialEq<String>`] impls
+/// (and every prior [`Self::name`]-projected receiver) in lockstep with
+/// the enum itself. See the impossibility-half impl for the full lift
+/// rationale.
+impl PartialEq<String> for ProofRelationKind {
+    fn eq(&self, other: &String) -> bool {
+        self.name() == other.as_str()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`String`] impl —
+/// the reverse-direction sibling of the [`PartialEq<String>`] impl
+/// directly above at the fused altitude, welding the symmetric
+/// `owned_from_serde == kind` seam through the same [`Self::name`]
+/// source of truth. Both directions of the owned-string cross-type
+/// comparison now compose out of the same allocation-free receiver by
+/// construction at the fused altitude.
+impl PartialEq<ProofRelationKind> for String {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_str() == other.name()
     }
 }
 
@@ -28226,6 +28331,286 @@ mod partial_eq_str_tests {
             assert!(cmp_kind_amp_str(&k, k.name()));
             assert!(!cmp_kind_str(&k, "unknown"));
             assert!(!cmp_kind_amp_str(&k, "unknown"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_string_tests {
+    //! [`PartialEq<String>`] and [`PartialEq<Kind> for String`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **owned-carrier sibling** of the
+    //! [`PartialEq<str>`] / [`PartialEq<&str>`] quadruple lifted by
+    //! [`super::partial_eq_str_tests`], closing the
+    //! (borrowed `str`, borrowed `&str`, owned `String`) receiver-triple
+    //! on the comparison side of the three kind enums with the SAME
+    //! shape the parse side already carries through [`TryFrom<&str>`] +
+    //! [`TryFrom<String>`].
+    //!
+    //! **Why lift the owned-`String` cross-type comparison alongside
+    //! the borrowed pair.** [`serde::Deserialize`] on these enums (and
+    //! on [`ProofRelationWire`], and on any [`ConfigStore`]-loaded
+    //! typed carrier holding one of these tag fields) hands the caller
+    //! an owned [`String`] — not a borrowed [`&str`]. The
+    //! [`PartialEq<str>`]/[`PartialEq<&str>`] quadruple lifted by
+    //! sibling module `super::partial_eq_str_tests` composes `k == s`
+    //! where `s: &str`, but a caller holding `s: String` from a reload
+    //! path previously stranded at either a per-callsite `s.as_str()`
+    //! (a coordinated silent rewrite of the callsite, not a lift into
+    //! the type-checker) or a `Kind::from_str(&s).ok() == Some(k)`
+    //! (a parse detour that pays the whole [`FromStr`] fold to answer
+    //! a comparison question). This module pins that `k == owned_from_serde`
+    //! and `owned_from_serde == k` both compose at the type-checker
+    //! for every variant of every kind enum, allocation-free.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both
+    //! cells (`k == s`, `s == k`) for `s = k.name().to_owned()` on every
+    //! variant of every kind enum; (2) sibling agreement with
+    //! [`AsRef<str>`] — for every variant and every input string, both
+    //! directions of the owned pair agree with `k.as_ref() == s`; (3)
+    //! inequality on unknown owned strings; (4) cross-variant
+    //! inequality — for every pair `(a, b)` of distinct variants,
+    //! `a != b.name().to_owned()`; (5) fused-arm lockstep on
+    //! [`ProofRelationKind`] — a fused kind constructed from either
+    //! half-side variant equals the owned half-side name through both
+    //! directions; (6) generic composability at an `impl
+    //! PartialEq<String>` seam — a `fn cmp<K: PartialEq<String>>(k:
+    //! &K, s: &String) -> bool` bounded ONLY on the standard trait
+    //! projects the same value the direct `*k == *s` projects at each
+    //! altitude.
+    //!
+    //! [`ConfigStore`]: crate::ConfigStore
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<str> ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_str_on_every_owned_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_str_on_every_owned_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_str_on_every_owned_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown owned strings ----------
+
+    #[test]
+    fn impossibility_ne_unknown_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in ["", "unknown", "Regressed", " regressed", "regressed\t"] {
+                let owned: String = probe.to_owned();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                "",
+                "unknown",
+                "Stationary",
+                "identity-republish",
+                "progression\n",
+            ] {
+                let owned: String = probe.to_owned();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in ["", "unknown", "Consistent", "Impossible", "consistent\n"] {
+                let owned: String = probe.to_owned();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_owned_names() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a != b {
+                    let owned: String = b.name().to_owned();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_owned_names() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a != b {
+                    let owned: String = b.name().to_owned();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_owned_names() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b in ProofRelationKind::VARIANTS {
+                if a != b {
+                    let owned: String = b.name().to_owned();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_owned_names_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let owned: String = half.name().to_owned();
+            assert!(fused == owned, "fused == owned for {owned:?}");
+            assert!(owned == fused, "owned == fused for {owned:?}");
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift for {owned:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_owned_names_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let owned: String = half.name().to_owned();
+            assert!(fused == owned, "fused == owned for {owned:?}");
+            assert!(owned == fused, "owned == fused for {owned:?}");
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift for {owned:?}"
+            );
+        }
+    }
+
+    // ---------- (6) Generic composability at a PartialEq<String>-bounded seam ----------
+
+    fn cmp_kind_string<K: PartialEq<String>>(k: &K, s: &String) -> bool {
+        *k == *s
+    }
+
+    #[test]
+    fn generic_composability_impossibility_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(cmp_kind_string(&k, &owned));
+            assert!(!cmp_kind_string(&k, &String::from("unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(cmp_kind_string(&k, &owned));
+            assert!(!cmp_kind_string(&k, &String::from("unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            assert!(cmp_kind_string(&k, &owned));
+            assert!(!cmp_kind_string(&k, &String::from("unknown")));
         }
     }
 }
