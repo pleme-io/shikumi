@@ -3835,6 +3835,52 @@ impl PartialEq<SameStoreImpossibilityKind> for &[u8] {
     }
 }
 
+/// The [`PartialEq<Vec<u8>>`] impl on [`SameStoreImpossibilityKind`] — the
+/// **byte-side owned-carrier sibling** of the string-side
+/// [`PartialEq<String>`] impl at this altitude and the owned-carrier
+/// sibling of the byte-side [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`]
+/// quadruple directly above, closing the (borrowed `[u8]`, borrowed
+/// `&[u8]`, owned `Vec<u8>`) receiver-triple on the byte-side comparison
+/// with the same shape [`TryFrom<&[u8]>`] + [`TryFrom<Vec<u8>>`] already
+/// carry on the byte-side parse side and [`From<Kind>`] for `&'static
+/// [u8]` + [`From<Kind>`] for [`Vec<u8>`] already carry on the byte-side
+/// projection side. A caller holding a [`Vec<u8>`] from an
+/// [`std::io::Read::read_to_end`] pass, an [`http::HeaderValue::as_bytes`]-
+/// then-`.to_vec()` seam, a [`bytes::Bytes::to_vec`] adapter, a
+/// [`base64::Engine::decode`] output, a [`hex::decode`] output, a
+/// [`serde_bytes`] deserializer that yields owned bytes, or any wire
+/// framer that hands back an owned byte buffer previously stranded the
+/// caller at either a per-callsite `.as_slice()` postfix (a coordinated
+/// silent rewrite of the callsite, not a lift into the type-checker) or a
+/// [`std::str::from_utf8`] parse detour (paying the UTF-8 validation to
+/// answer a byte-compare question). Delegates through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth every prior
+/// byte-shape receiver already uses, so the closed-variant set (adding a
+/// hypothetical third impossibility corner updates the ONE `match` body
+/// in [`Self::name`]) surfaces through this impl in lockstep.
+impl PartialEq<Vec<u8>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.name().as_bytes() == other.as_slice()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`Vec<u8>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<Vec<u8>>`] impl directly above, welding the symmetric
+/// `owned_bytes_from_wire == kind` seam through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Both
+/// directions of the byte-side owned cross-type comparison now compose
+/// out of the same allocation-free receiver by construction; adding a
+/// hypothetical third impossibility corner updates the ONE `match` body
+/// in [`Self::name`], and the new identifier surfaces through BOTH
+/// [`PartialEq<Vec<u8>>`] impls (and every sibling projection through
+/// [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for Vec<u8> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_slice() == other.name().as_bytes()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -4740,6 +4786,30 @@ impl PartialEq<&[u8]> for SameStoreConsistencyKind {
 impl PartialEq<SameStoreConsistencyKind> for &[u8] {
     fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
         *self == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<Vec<u8>>`] impl on [`SameStoreConsistencyKind`] — the
+/// **byte-side owned-carrier sibling** of the string-side
+/// [`PartialEq<String>`] impl at this altitude, mirror of the
+/// impossibility-half receiver at this altitude, closing the (borrowed
+/// `[u8]`, borrowed `&[u8]`, owned `Vec<u8>`) receiver-triple on the
+/// byte-side comparison with the same shape [`TryFrom<Vec<u8>>`]
+/// already carries on the byte-side parse side and [`From<Kind>`] for
+/// [`Vec<u8>`] already carries on the byte-side projection side.
+impl PartialEq<Vec<u8>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.name().as_bytes() == other.as_slice()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for [`Vec<u8>`]
+/// impl — closing the byte-side owned reverse-direction cell so
+/// `owned_bytes == kind` composes at this altitude. Mirror of the
+/// impossibility-half receiver at this altitude.
+impl PartialEq<SameStoreConsistencyKind> for Vec<u8> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_slice() == other.name().as_bytes()
     }
 }
 
@@ -5940,6 +6010,37 @@ impl PartialEq<&[u8]> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &[u8] {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         *self == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<Vec<u8>>`] impl on the fused [`ProofRelationKind`] —
+/// the **byte-side owned-carrier sibling** of the string-side
+/// [`PartialEq<String>`] impl at the fused altitude, mirror of the two
+/// half-side receivers at this altitude. Delegates through
+/// [`Self::name`] (which in turn delegates through the two half-side
+/// [`Self::name`] receivers) then [`str::as_bytes`] — one line — so the
+/// fused byte-side owned compare stays lockstep-identical with the
+/// routed half-side owned byte compare under every future variant
+/// addition to either half-side enum by construction: `fused ==
+/// owned_bytes` iff `routed_half == owned_bytes` through the two-arm
+/// partition. Every downstream slot bounded on `impl PartialEq<Vec<u8>>`
+/// at the fused-sum altitude (a wire-framer handing back an owned byte
+/// buffer, a `serde_bytes`-deserialized tag field, any generic
+/// receiver-family bounded on the owned-carrier standard trait) now
+/// composes out of the standard trait alone.
+impl PartialEq<Vec<u8>> for ProofRelationKind {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.name().as_bytes() == other.as_slice()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`Vec<u8>`] impl —
+/// closing the byte-side owned reverse-direction cell at the fused
+/// altitude so `owned_bytes == kind` composes at this altitude. Mirror
+/// of the two half-side receivers at this altitude.
+impl PartialEq<ProofRelationKind> for Vec<u8> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_slice() == other.name().as_bytes()
     }
 }
 
@@ -34064,6 +34165,456 @@ mod partial_eq_bytes_tests {
             assert!(cmp_kind_amp_bytes(&k, k.name().as_bytes()));
             assert!(!cmp_kind_bytes(&k, b"unknown"));
             assert!(!cmp_kind_amp_bytes(&k, b"unknown"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_owned_bytes_tests {
+    //! [`PartialEq<Vec<u8>>`] and [`PartialEq<Kind> for Vec<u8>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side owned-carrier sibling** of
+    //! the string-side [`PartialEq<String>`] pair already lifted by
+    //! `super::partial_eq_string_tests` at each altitude, and the
+    //! owned-carrier extension of the byte-side [`PartialEq<[u8]>`] +
+    //! [`PartialEq<&[u8]>`] quadruple already lifted by
+    //! `super::partial_eq_bytes_tests` at each altitude.
+    //!
+    //! **Why lift the owned-`Vec<u8>` cross-type comparison alongside
+    //! the borrowed byte pair.** A caller holding a [`Vec<u8>`] from an
+    //! [`std::io::Read::read_to_end`] pass, an
+    //! [`http::HeaderValue::as_bytes`]-then-`.to_vec()` seam, a
+    //! [`bytes::Bytes::to_vec`] adapter, a [`base64::Engine::decode`]
+    //! output, a [`hex::decode`] output, a [`serde_bytes`] deserializer
+    //! that yields owned bytes, or any wire framer that hands back an
+    //! owned byte buffer previously stranded at either a per-callsite
+    //! `.as_slice()` postfix (a coordinated silent rewrite of the
+    //! callsite, not a lift into the type-checker) or a
+    //! [`std::str::from_utf8`] parse detour (paying UTF-8 validation to
+    //! answer a byte-compare question).
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both
+    //! cells (`k == v`, `v == k`) for `v = k.name().as_bytes().to_vec()`
+    //! on every variant of every kind enum; (2) sibling agreement with
+    //! [`AsRef<[u8]>`] — for every variant and every input byte-vector,
+    //! both directions of the owned pair agree with `k.as_ref() ==
+    //! v.as_slice()`; (3) sibling agreement with the borrowed byte-side
+    //! [`PartialEq<[u8]>`] receiver — for every probe byte-slice the
+    //! owned-side answer matches the borrowed-side answer; (4) sibling
+    //! agreement with the string-side [`PartialEq<String>`] receiver —
+    //! for every valid UTF-8 probe the byte-side owned answer matches
+    //! the string-side owned answer; (5) inequality on unknown owned
+    //! byte-vectors (including invalid UTF-8); (6) cross-variant
+    //! inequality — for every pair `(a, b)` of distinct variants,
+    //! `a != b.name().as_bytes().to_vec()`; (7) fused-arm lockstep on
+    //! [`ProofRelationKind`] — a fused kind constructed from either
+    //! half-side variant equals BOTH the half-side name-as-bytes-owned
+    //! AND its own projected name-as-bytes-owned through both
+    //! directions; (8) generic composability at an `impl
+    //! PartialEq<Vec<u8>>` seam — a `fn cmp<K: PartialEq<Vec<u8>>>(k:
+    //! &K, v: &Vec<u8>) -> bool` bounded ONLY on the standard trait
+    //! projects the same value the direct `*k == *v` projects at each
+    //! altitude.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_owned_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_owned_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_owned_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(k == owned, "kind == owned for {}", k.name());
+            assert!(owned == k, "owned == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            &[0xff, 0xfe, 0xfd],
+            &[0x72, 0x65, 0x67, 0xff, 0x65, 0x64],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_bytes_on_every_owned_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let via_as_ref = AsRef::<[u8]>::as_ref(&k) == owned.as_slice();
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_bytes_on_every_owned_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let via_as_ref = AsRef::<[u8]>::as_ref(&k) == owned.as_slice();
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_bytes_on_every_owned_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                let via_as_ref = AsRef::<[u8]>::as_ref(&k) == owned.as_slice();
+                assert_eq!(k == owned, via_as_ref, "k == owned drift for {probe:?}");
+                assert_eq!(owned == k, via_as_ref, "owned == k drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (3) Sibling agreement with borrowed byte-side PartialEq<[u8]> ----------
+
+    #[test]
+    fn impossibility_owned_agrees_with_borrowed_bytes_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                assert_eq!(
+                    k == owned,
+                    k == *probe,
+                    "owned vs borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    *probe == k,
+                    "reciprocal owned vs borrowed drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_owned_agrees_with_borrowed_bytes_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                assert_eq!(
+                    k == owned,
+                    k == *probe,
+                    "owned vs borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    *probe == k,
+                    "reciprocal owned vs borrowed drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_owned_agrees_with_borrowed_bytes_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let owned: Vec<u8> = probe.to_vec();
+                assert_eq!(
+                    k == owned,
+                    k == *probe,
+                    "owned vs borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    *probe == k,
+                    "reciprocal owned vs borrowed drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (4) Sibling agreement with string-side PartialEq<String> ----------
+
+    fn utf8_probes() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_byte_side_agrees_with_string_side_on_utf8_owned_probes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let owned_bytes: Vec<u8> = probe.as_bytes().to_vec();
+                let owned_string: String = probe.to_owned();
+                assert_eq!(
+                    k == owned_bytes,
+                    k == owned_string,
+                    "k drift on probe={probe:?}"
+                );
+                assert_eq!(
+                    owned_bytes == k,
+                    owned_string == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_byte_side_agrees_with_string_side_on_utf8_owned_probes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let owned_bytes: Vec<u8> = probe.as_bytes().to_vec();
+                let owned_string: String = probe.to_owned();
+                assert_eq!(
+                    k == owned_bytes,
+                    k == owned_string,
+                    "k drift on probe={probe:?}"
+                );
+                assert_eq!(
+                    owned_bytes == k,
+                    owned_string == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_byte_side_agrees_with_string_side_on_utf8_owned_probes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in utf8_probes() {
+                let owned_bytes: Vec<u8> = probe.as_bytes().to_vec();
+                let owned_string: String = probe.to_owned();
+                assert_eq!(
+                    k == owned_bytes,
+                    k == owned_string,
+                    "k drift on probe={probe:?}"
+                );
+                assert_eq!(
+                    owned_bytes == k,
+                    owned_string == k,
+                    "reciprocal drift on probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (5) Inequality on unknown owned byte-vectors ----------
+
+    #[test]
+    fn impossibility_ne_unknown_owned_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Regressed",
+                b" regressed",
+                b"regressed\t",
+                &[0xff, 0xfe][..],
+            ] {
+                let owned: Vec<u8> = probe.to_vec();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_owned_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Stationary",
+                b"identity-republish",
+                b"progression\n",
+                &[0xff, 0xfe][..],
+            ] {
+                let owned: Vec<u8> = probe.to_vec();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_owned_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in [
+                &b""[..],
+                b"unknown",
+                b"Consistent",
+                b"Impossible",
+                b"consistent\n",
+                &[0xff, 0xfe][..],
+            ] {
+                let owned: Vec<u8> = probe.to_vec();
+                assert!(k != owned, "unexpected match: {k:?} == {owned:?}");
+                assert!(owned != k, "unexpected match: {owned:?} == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (6) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_owned_name_bytes() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a != b {
+                    let owned: Vec<u8> = b.name().as_bytes().to_vec();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_owned_name_bytes() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a != b {
+                    let owned: Vec<u8> = b.name().as_bytes().to_vec();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_owned_name_bytes() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b in ProofRelationKind::VARIANTS {
+                if a != b {
+                    let owned: Vec<u8> = b.name().as_bytes().to_vec();
+                    assert!(a != owned, "{a:?} incorrectly equals {owned:?}");
+                    assert!(owned != a, "{owned:?} incorrectly equals {a:?}");
+                }
+            }
+        }
+    }
+
+    // ---------- (7) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_owned_name_bytes_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let owned: Vec<u8> = half.name().as_bytes().to_vec();
+            assert!(fused == owned, "fused == owned for {:?}", half.name());
+            assert!(owned == fused, "owned == fused for {:?}", half.name());
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift for {:?}",
+                half.name()
+            );
+            assert_eq!(
+                fused.name().as_bytes().to_vec(),
+                owned,
+                "fused.name().as_bytes().to_vec() != half.name().as_bytes().to_vec() for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_owned_name_bytes_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let owned: Vec<u8> = half.name().as_bytes().to_vec();
+            assert!(fused == owned, "fused == owned for {:?}", half.name());
+            assert!(owned == fused, "owned == fused for {:?}", half.name());
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift for {:?}",
+                half.name()
+            );
+            assert_eq!(
+                fused.name().as_bytes().to_vec(),
+                owned,
+                "fused.name().as_bytes().to_vec() != half.name().as_bytes().to_vec() for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    // ---------- (8) Generic composability at a PartialEq<Vec<u8>>-bounded seam ----------
+
+    fn cmp_kind_owned_bytes<K: PartialEq<Vec<u8>>>(k: &K, v: &Vec<u8>) -> bool {
+        *k == *v
+    }
+
+    #[test]
+    fn generic_composability_impossibility_owned_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(cmp_kind_owned_bytes(&k, &owned));
+            assert!(!cmp_kind_owned_bytes(&k, &b"unknown".to_vec()));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_owned_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(cmp_kind_owned_bytes(&k, &owned));
+            assert!(!cmp_kind_owned_bytes(&k, &b"unknown".to_vec()));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_owned_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Vec<u8> = k.name().as_bytes().to_vec();
+            assert!(cmp_kind_owned_bytes(&k, &owned));
+            assert!(!cmp_kind_owned_bytes(&k, &b"unknown".to_vec()));
         }
     }
 }
