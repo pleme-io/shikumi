@@ -3177,6 +3177,48 @@ impl PartialEq<SameStoreImpossibilityKind> for String {
     }
 }
 
+/// The [`PartialEq<Cow<'_, str>>`] impl on [`SameStoreImpossibilityKind`]
+/// — the **borrowed-or-owned-carrier sibling** of the [`PartialEq<str>`],
+/// [`PartialEq<&str>`], and [`PartialEq<String>`] impls above, closing the
+/// (borrowed `str`, borrowed `&str`, owned `String`, borrowed-or-owned
+/// [`std::borrow::Cow<'_, str>`]) receiver-quadruple on the comparison side
+/// with the SAME shape [`TryFrom<&str>`], [`TryFrom<String>`], and
+/// [`TryFrom<Cow<'_, str>>`] already carry on the parse side. A caller
+/// holding a `Cow<'_, str>` from a code path that indifferently returns
+/// borrowed or owned (`env::var_os`-then-lossy, a `serde` visitor that
+/// borrows-when-possible-else-owns, a `figment::Value::into_string`, a
+/// `figment::Provider` extract, an [`http::HeaderValue::to_str`]-then-`Cow`
+/// adapter, or any `std::env`-driven Xdg lookup that yields either
+/// spelling) previously stranded at either a per-callsite `.as_ref()` / `&*`
+/// deref (a coordinated silent rewrite of the callsite, not a lift into
+/// the type-checker) or an [`std::str::FromStr::from_str`] parse detour
+/// (paying the full [`FromStr`] fold to answer a comparison question).
+/// Delegates through the same [`Self::name`] source of truth every prior
+/// string-shape receiver already uses, so the closed-variant set (adding
+/// a hypothetical third impossibility corner updates the ONE `match`
+/// body in [`Self::name`]) surfaces through this impl in lockstep.
+impl PartialEq<std::borrow::Cow<'_, str>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`Cow<'_, str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<Cow<'_, str>>`] impl directly above, welding the symmetric
+/// `borrowed_or_owned_from_config_layer == kind` seam through the same
+/// [`Self::name`] source of truth. Both directions of the borrowed-or-owned
+/// cross-type comparison now compose out of the same allocation-free
+/// receiver by construction; adding a hypothetical third impossibility
+/// corner updates the ONE `match` body in [`Self::name`], and the new
+/// identifier surfaces through BOTH [`PartialEq<Cow<'_, str>>`] impls
+/// (and every sibling projection through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for std::borrow::Cow<'_, str> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_ref() == other.name()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3797,6 +3839,30 @@ impl PartialEq<String> for SameStoreConsistencyKind {
 impl PartialEq<SameStoreConsistencyKind> for String {
     fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
         self.as_str() == other.name()
+    }
+}
+
+/// The [`PartialEq<Cow<'_, str>>`] impl on [`SameStoreConsistencyKind`] —
+/// the consistent-half sibling of the impossibility-half
+/// [`PartialEq<Cow<'_, str>>`] impl above, lifting the borrowed-or-owned
+/// cross-type comparison onto the consistent-corner tag. Closes the
+/// (borrowed `str`, borrowed `&str`, owned `String`, borrowed-or-owned
+/// [`std::borrow::Cow<'_, str>`]) receiver-quadruple on the comparison
+/// side of the consistent-half kind. See the impossibility-half impl for
+/// the full lift rationale.
+impl PartialEq<std::borrow::Cow<'_, str>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`Cow<'_, str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<Cow<'_, str>>`] impl directly above, mirroring the
+/// symmetric `borrowed_or_owned == kind` seam on the consistent half.
+impl PartialEq<SameStoreConsistencyKind> for std::borrow::Cow<'_, str> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_ref() == other.name()
     }
 }
 
@@ -4629,6 +4695,37 @@ impl PartialEq<String> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for String {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_str() == other.name()
+    }
+}
+
+/// The [`PartialEq<Cow<'_, str>>`] impl on the fused [`ProofRelationKind`]
+/// — the third-altitude sibling of the two half-side
+/// [`PartialEq<Cow<'_, str>>`] impls above, closing the (impossibility,
+/// consistency, fused) × ([`Cow<'_, str>`]) grid at the fused-sum
+/// altitude and lifting `k == borrowed_or_owned_from_config_layer` past
+/// the type-checker without a per-callsite `.as_ref()` or `&*` deref. The
+/// fused body dispatches on the variant to reach [`Self::name`], so a
+/// hypothetical sixth corner in either half-side surfaces through the
+/// ONE fused [`Self::name`] `match` body and BOTH
+/// [`PartialEq<Cow<'_, str>>`] impls (and every prior
+/// [`Self::name`]-projected receiver) in lockstep with the enum itself.
+/// See the impossibility-half impl for the full lift rationale.
+impl PartialEq<std::borrow::Cow<'_, str>> for ProofRelationKind {
+    fn eq(&self, other: &std::borrow::Cow<'_, str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`Cow<'_, str>`]
+/// impl — the reverse-direction sibling of the [`PartialEq<Cow<'_, str>>`]
+/// impl directly above at the fused altitude, welding the symmetric
+/// `borrowed_or_owned == kind` seam through the same [`Self::name`]
+/// source of truth. Both directions of the borrowed-or-owned cross-type
+/// comparison now compose out of the same allocation-free receiver by
+/// construction at the fused altitude.
+impl PartialEq<ProofRelationKind> for std::borrow::Cow<'_, str> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_ref() == other.name()
     }
 }
 
@@ -28611,6 +28708,510 @@ mod partial_eq_string_tests {
             let owned: String = k.name().to_owned();
             assert!(cmp_kind_string(&k, &owned));
             assert!(!cmp_kind_string(&k, &String::from("unknown")));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_cow_tests {
+    //! [`PartialEq<Cow<'_, str>>`] and [`PartialEq<Kind> for Cow<'_, str>`]
+    //! on [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`],
+    //! and [`ProofRelationKind`] — the **borrowed-or-owned-carrier
+    //! sibling** of the [`PartialEq<str>`] / [`PartialEq<&str>`]
+    //! quadruple lifted by [`super::partial_eq_str_tests`] and the
+    //! [`PartialEq<String>`] pair lifted by
+    //! [`super::partial_eq_string_tests`], closing the
+    //! (borrowed `str`, borrowed `&str`, owned `String`,
+    //! borrowed-or-owned [`std::borrow::Cow<'_, str>`]) receiver-quadruple
+    //! on the comparison side of the three kind enums with the SAME shape
+    //! the parse side already carries through [`TryFrom<&str>`] +
+    //! [`TryFrom<String>`] + [`TryFrom<Cow<'_, str>>`].
+    //!
+    //! **Why lift the borrowed-or-owned cross-type comparison alongside
+    //! the borrowed and owned pairs.** A code path that indifferently
+    //! yields borrowed or owned strings — a `serde` visitor that
+    //! borrows-when-possible-else-owns, a `figment::Value::into_string`,
+    //! a [`std::env::VarOs`] adapter that returns [`Cow::Borrowed`] on
+    //! valid UTF-8 and [`Cow::Owned`] on lossy paths, a
+    //! [`std::path::Path::to_string_lossy`], a
+    //! [`http::HeaderValue::to_str`]-then-`Cow` adapter — previously
+    //! stranded the caller at either a per-callsite `.as_ref()` / `&*`
+    //! deref (a coordinated silent rewrite of the callsite, not a lift
+    //! into the type-checker) or an [`std::str::FromStr::from_str`] parse
+    //! detour (paying the full [`FromStr`] fold to answer a comparison
+    //! question). This module pins that `k == cow` and `cow == k` both
+    //! compose at the type-checker for every variant of every kind enum
+    //! and BOTH `Cow` arms — [`Cow::Borrowed`] and [`Cow::Owned`] —
+    //! allocation-free.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both
+    //! cells (`k == cow`, `cow == k`) for `cow = Cow::Borrowed(k.name())`
+    //! AND `cow = Cow::Owned(k.name().to_owned())` on every variant of
+    //! every kind enum — the borrowed and owned `Cow` arms MUST agree
+    //! with one another; (2) sibling agreement with [`AsRef<str>`] —
+    //! for every variant and every input string, both directions of the
+    //! borrowed-or-owned pair agree with `k.as_ref() == s`; (3)
+    //! inequality on unknown `Cow` inputs; (4) cross-variant inequality
+    //! — for every pair `(a, b)` of distinct variants, `a !=
+    //! Cow::Borrowed(b.name())` AND `a != Cow::Owned(b.name().to_owned())`;
+    //! (5) fused-arm lockstep on [`ProofRelationKind`] — a fused kind
+    //! constructed from either half-side variant equals the borrowed AND
+    //! owned `Cow` half-side name through both directions; (6) generic
+    //! composability at an `impl PartialEq<Cow<'_, str>>` seam — a `fn
+    //! cmp<K: PartialEq<Cow<'a, str>>>(k: &K, c: &Cow<'a, str>) -> bool`
+    //! bounded ONLY on the standard trait projects the same value the
+    //! direct `*k == *c` projects at each altitude.
+    //!
+    //! [`ConfigStore`]: crate::ConfigStore
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity, both Cow arms ----------
+
+    #[test]
+    fn impossibility_identity_cow_borrowed_and_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            assert!(k == borrowed, "kind == Cow::Borrowed for {}", k.name());
+            assert!(borrowed == k, "Cow::Borrowed == kind for {}", k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(k == owned, "kind == Cow::Owned for {}", k.name());
+            assert!(owned == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_cow_borrowed_and_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            assert!(k == borrowed, "kind == Cow::Borrowed for {}", k.name());
+            assert!(borrowed == k, "Cow::Borrowed == kind for {}", k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(k == owned, "kind == Cow::Owned for {}", k.name());
+            assert!(owned == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_cow_borrowed_and_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            assert!(k == borrowed, "kind == Cow::Borrowed for {}", k.name());
+            assert!(borrowed == k, "Cow::Borrowed == kind for {}", k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(k == owned, "kind == Cow::Owned for {}", k.name());
+            assert!(owned == k, "Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<str>, both Cow arms ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_str_on_every_cow_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert_eq!(
+                    k == borrowed,
+                    via_as_ref,
+                    "k == Cow::Borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    borrowed == k,
+                    via_as_ref,
+                    "Cow::Borrowed == k drift for {probe:?}"
+                );
+                assert_eq!(
+                    k == owned,
+                    via_as_ref,
+                    "k == Cow::Owned drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    via_as_ref,
+                    "Cow::Owned == k drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_str_on_every_cow_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert_eq!(
+                    k == borrowed,
+                    via_as_ref,
+                    "k == Cow::Borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    borrowed == k,
+                    via_as_ref,
+                    "Cow::Borrowed == k drift for {probe:?}"
+                );
+                assert_eq!(
+                    k == owned,
+                    via_as_ref,
+                    "k == Cow::Owned drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    via_as_ref,
+                    "Cow::Owned == k drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_str_on_every_cow_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert_eq!(
+                    k == borrowed,
+                    via_as_ref,
+                    "k == Cow::Borrowed drift for {probe:?}"
+                );
+                assert_eq!(
+                    borrowed == k,
+                    via_as_ref,
+                    "Cow::Borrowed == k drift for {probe:?}"
+                );
+                assert_eq!(
+                    k == owned,
+                    via_as_ref,
+                    "k == Cow::Owned drift for {probe:?}"
+                );
+                assert_eq!(
+                    owned == k,
+                    via_as_ref,
+                    "Cow::Owned == k drift for {probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown Cow inputs ----------
+
+    #[test]
+    fn impossibility_ne_unknown_cow() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in ["", "unknown", "Regressed", " regressed", "regressed\t"] {
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert!(
+                    k != borrowed,
+                    "unexpected match: {k:?} == Cow::Borrowed({probe:?})"
+                );
+                assert!(
+                    borrowed != k,
+                    "unexpected match: Cow::Borrowed({probe:?}) == {k:?}"
+                );
+                assert!(
+                    k != owned,
+                    "unexpected match: {k:?} == Cow::Owned({probe:?})"
+                );
+                assert!(
+                    owned != k,
+                    "unexpected match: Cow::Owned({probe:?}) == {k:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_cow() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                "",
+                "unknown",
+                "Stationary",
+                "identity-republish",
+                "progression\n",
+            ] {
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert!(
+                    k != borrowed,
+                    "unexpected match: {k:?} == Cow::Borrowed({probe:?})"
+                );
+                assert!(
+                    borrowed != k,
+                    "unexpected match: Cow::Borrowed({probe:?}) == {k:?}"
+                );
+                assert!(
+                    k != owned,
+                    "unexpected match: {k:?} == Cow::Owned({probe:?})"
+                );
+                assert!(
+                    owned != k,
+                    "unexpected match: Cow::Owned({probe:?}) == {k:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_cow() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in ["", "unknown", "Consistent", "Impossible", "consistent\n"] {
+                let borrowed: Cow<'_, str> = Cow::Borrowed(probe);
+                let owned: Cow<'_, str> = Cow::Owned(probe.to_owned());
+                assert!(
+                    k != borrowed,
+                    "unexpected match: {k:?} == Cow::Borrowed({probe:?})"
+                );
+                assert!(
+                    borrowed != k,
+                    "unexpected match: Cow::Borrowed({probe:?}) == {k:?}"
+                );
+                assert!(
+                    k != owned,
+                    "unexpected match: {k:?} == Cow::Owned({probe:?})"
+                );
+                assert!(
+                    owned != k,
+                    "unexpected match: Cow::Owned({probe:?}) == {k:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality, both Cow arms ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_cow_names() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a != b {
+                    let borrowed: Cow<'_, str> = Cow::Borrowed(b.name());
+                    let owned: Cow<'_, str> = Cow::Owned(b.name().to_owned());
+                    assert!(
+                        a != borrowed,
+                        "{a:?} incorrectly equals Cow::Borrowed({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        borrowed != a,
+                        "Cow::Borrowed({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                    assert!(
+                        a != owned,
+                        "{a:?} incorrectly equals Cow::Owned({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        owned != a,
+                        "Cow::Owned({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_cow_names() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a != b {
+                    let borrowed: Cow<'_, str> = Cow::Borrowed(b.name());
+                    let owned: Cow<'_, str> = Cow::Owned(b.name().to_owned());
+                    assert!(
+                        a != borrowed,
+                        "{a:?} incorrectly equals Cow::Borrowed({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        borrowed != a,
+                        "Cow::Borrowed({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                    assert!(
+                        a != owned,
+                        "{a:?} incorrectly equals Cow::Owned({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        owned != a,
+                        "Cow::Owned({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_cow_names() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b in ProofRelationKind::VARIANTS {
+                if a != b {
+                    let borrowed: Cow<'_, str> = Cow::Borrowed(b.name());
+                    let owned: Cow<'_, str> = Cow::Owned(b.name().to_owned());
+                    assert!(
+                        a != borrowed,
+                        "{a:?} incorrectly equals Cow::Borrowed({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        borrowed != a,
+                        "Cow::Borrowed({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                    assert!(
+                        a != owned,
+                        "{a:?} incorrectly equals Cow::Owned({:?})",
+                        b.name()
+                    );
+                    assert!(
+                        owned != a,
+                        "Cow::Owned({:?}) incorrectly equals {a:?}",
+                        b.name()
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_cow_names_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let borrowed: Cow<'_, str> = Cow::Borrowed(half.name());
+            let owned: Cow<'_, str> = Cow::Owned(half.name().to_owned());
+            assert!(
+                fused == borrowed,
+                "fused == Cow::Borrowed for {:?}",
+                half.name()
+            );
+            assert!(
+                borrowed == fused,
+                "Cow::Borrowed == fused for {:?}",
+                half.name()
+            );
+            assert!(fused == owned, "fused == Cow::Owned for {:?}", half.name());
+            assert!(owned == fused, "Cow::Owned == fused for {:?}", half.name());
+            assert_eq!(
+                fused == borrowed,
+                half == borrowed,
+                "cross-altitude drift on Cow::Borrowed for {:?}",
+                half.name()
+            );
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift on Cow::Owned for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_cow_names_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let borrowed: Cow<'_, str> = Cow::Borrowed(half.name());
+            let owned: Cow<'_, str> = Cow::Owned(half.name().to_owned());
+            assert!(
+                fused == borrowed,
+                "fused == Cow::Borrowed for {:?}",
+                half.name()
+            );
+            assert!(
+                borrowed == fused,
+                "Cow::Borrowed == fused for {:?}",
+                half.name()
+            );
+            assert!(fused == owned, "fused == Cow::Owned for {:?}", half.name());
+            assert!(owned == fused, "Cow::Owned == fused for {:?}", half.name());
+            assert_eq!(
+                fused == borrowed,
+                half == borrowed,
+                "cross-altitude drift on Cow::Borrowed for {:?}",
+                half.name()
+            );
+            assert_eq!(
+                fused == owned,
+                half == owned,
+                "cross-altitude drift on Cow::Owned for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    // ---------- (6) Generic composability at a PartialEq<Cow<'_, str>>-bounded seam ----------
+
+    // `&Cow<'a, str>` is the whole point: the helper is bounded on
+    // `PartialEq<Cow<'a, str>>` to pin that the trait resolves at that
+    // exact receiver-shape. `&str` would prove nothing.
+    #[allow(clippy::ptr_arg)]
+    fn cmp_kind_cow<'a, K: PartialEq<Cow<'a, str>>>(k: &K, c: &Cow<'a, str>) -> bool {
+        *k == *c
+    }
+
+    #[test]
+    fn generic_composability_impossibility_cow() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(cmp_kind_cow(&k, &borrowed));
+            assert!(cmp_kind_cow(&k, &owned));
+            assert!(!cmp_kind_cow(&k, &Cow::Borrowed("unknown")));
+            assert!(!cmp_kind_cow(&k, &Cow::Owned(String::from("unknown"))));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_cow() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(cmp_kind_cow(&k, &borrowed));
+            assert!(cmp_kind_cow(&k, &owned));
+            assert!(!cmp_kind_cow(&k, &Cow::Borrowed("unknown")));
+            assert!(!cmp_kind_cow(&k, &Cow::Owned(String::from("unknown"))));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_cow() {
+        for &k in ProofRelationKind::VARIANTS {
+            let borrowed: Cow<'_, str> = Cow::Borrowed(k.name());
+            let owned: Cow<'_, str> = Cow::Owned(k.name().to_owned());
+            assert!(cmp_kind_cow(&k, &borrowed));
+            assert!(cmp_kind_cow(&k, &owned));
+            assert!(!cmp_kind_cow(&k, &Cow::Borrowed("unknown")));
+            assert!(!cmp_kind_cow(&k, &Cow::Owned(String::from("unknown"))));
         }
     }
 }
