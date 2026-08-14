@@ -2842,6 +2842,69 @@ impl TryFrom<String> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<Cow<'_, str>>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **borrowed-or-owned dual** parse-side sibling of the borrowed
+/// [`TryFrom<&str>`] impl and the owned [`TryFrom<String>`] impl already
+/// at this altitude, closing the third leg of the (borrowed, owned,
+/// borrowed-or-owned) receiver-triple on the PARSE side in lockstep with
+/// the three-leg triple already welded on the FORWARD side by
+/// [`AsRef<str>`], [`From<Kind>`] for [`&'static str`], [`From<Kind>`]
+/// for [`String`], and [`From<Kind>`] for [`Cow<'static, str>`].
+///
+/// **Why lift a borrowed-or-owned parse-side receiver alongside the two
+/// single-shape ones.** Rust does NOT chain [`TryFrom`] impls — a
+/// `T: TryFrom<Cow<'_, str>>` bound is NOT satisfied by
+/// `T: TryFrom<&str>` alone or by `T: TryFrom<String>` alone, because
+/// the receiver types are distinct. Every downstream slot bounded on
+/// `T: TryFrom<Cow<'_, str>>` (a generic parser accepting either a
+/// borrowed slice from a zero-copy deserializer or an owned buffer
+/// materialized from a JSON escape sequence, an
+/// [`http::HeaderName::from_bytes`]-shaped API that yields either a
+/// borrowed static token or a heap-owned decoded string, a `serde_yaml`
+/// visitor whose per-value parse arrives as a
+/// [`serde_yaml_ng::Value::String`] wrapped in a [`Cow`], a codegen
+/// visitor whose parser slot is a `TryFrom<Cow<'_, str>>` trait bound,
+/// any generic `fn parse<K: TryFrom<Cow<'_, str>>>` accepting either
+/// owned or borrowed identifier strings) previously stranded a [`Kind`]
+/// value at the type-checker with no [`TryFrom<Cow<'_, str>>`] path.
+///
+/// **Dispatch preserves the sibling receivers' allocation properties by
+/// construction.** On [`Cow::Borrowed`] the body reaches the sibling
+/// [`TryFrom<&str>`] receiver (which delegates to
+/// [`FromStr`](std::str::FromStr), allocating once on the error arm via
+/// `s.to_owned()` to preserve the malformed input verbatim in
+/// [`ParseKindError::input`]). On [`Cow::Owned`] the body reaches the
+/// sibling [`TryFrom<String>`] receiver, which MOVES the input verbatim
+/// into [`ParseKindError::input`] on the error arm — the same
+/// zero-heap-allocation property the [`TryFrom<String>`] impl provides.
+/// So a caller reaching this receiver pays exactly the allocations of
+/// the [`Cow`] variant they already hold, no worse than the shape-tight
+/// sibling on either arm. The `try_from_cow_str_tests` module below
+/// pins both allocation properties structurally through the
+/// input-consumption pin on the [`Cow::Owned`] arm.
+///
+/// **Match-body lockstep with the two sibling parse-side impls —
+/// enforced by delegation, not open-coding.** The body dispatches on
+/// the [`Cow`] variant to reach one of the two sibling
+/// [`TryFrom<&str>`] / [`TryFrom<String>`] impls; it never open-codes
+/// the two accepted identifier strings. Adding a hypothetical third
+/// impossibility corner updates the ONE `match` body in the sibling
+/// [`FromStr`](std::str::FromStr) impl (the source of truth) and the
+/// ONE `match` body in the sibling [`TryFrom<String>`] impl in lockstep
+/// with the enum itself; this impl surfaces the new identifier through
+/// both dispatch arms in lockstep with the rest of the parse-side of
+/// the standard-trait grid.
+impl TryFrom<std::borrow::Cow<'_, str>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::borrow::Cow<'_, str>) -> Result<Self, Self::Error> {
+        match input {
+            std::borrow::Cow::Borrowed(s) => Self::try_from(s),
+            std::borrow::Cow::Owned(s) => Self::try_from(s),
+        }
+    }
+}
+
 /// The [`From<SameStoreImpossibilityKind>`] for [`String`] impl projects
 /// the stable snake-case [`Self::name`] identifier as a **heap-owned**
 /// [`String`] — the owning-forward sibling of the borrowed
@@ -3426,6 +3489,45 @@ impl TryFrom<String> for SameStoreConsistencyKind {
                 input,
                 expected: Self::NAMES,
             }),
+        }
+    }
+}
+
+/// The [`TryFrom<Cow<'_, str>>`] impl on [`SameStoreConsistencyKind`] —
+/// the mirror on the consistent half of the classification lattice of
+/// the [`TryFrom<Cow<'_, str>>`] impl on [`SameStoreImpossibilityKind`],
+/// and the **borrowed-or-owned dual** parse-side sibling of the
+/// borrowed [`TryFrom<&str>`] impl and the owned [`TryFrom<String>`]
+/// impl already at this altitude. Projects the closed set of three
+/// stable snake-case identifiers (`"stationary"` /
+/// `"identity_republish"` / `"progression"`) into a [`Self`] value or a
+/// [`ParseKindError`] on unknown input, dispatching on the [`Cow`]
+/// variant to reach the sibling [`TryFrom<&str>`] receiver on the
+/// [`Cow::Borrowed`] arm and the sibling [`TryFrom<String>`] receiver
+/// on the [`Cow::Owned`] arm.
+///
+/// See the sibling [`TryFrom<Cow<'_, str>>`] impl on
+/// [`SameStoreImpossibilityKind`] above for the full rationale — why
+/// [`TryFrom<Cow<'_, str>>`] is a distinct standard-trait cell from
+/// [`TryFrom<&str>`] and [`TryFrom<String>`] (Rust does NOT chain
+/// [`TryFrom`] impls), the ecosystem slots the borrowed-or-owned
+/// shape unlocks (a zero-copy deserializer routing borrowed slices, a
+/// JSON escape sequence yielding an owned decoded string, a
+/// `serde_yaml_ng` visitor whose per-value parse arrives as a
+/// [`Cow`]-wrapped string, a codegen visitor whose parser slot is a
+/// `TryFrom<Cow<'_, str>>` trait bound, any generic bounded on
+/// `T: TryFrom<Cow<'_, str>>`), and the by-construction preservation of
+/// the sibling receivers' allocation properties. The match-body
+/// lockstep with the two sibling parse-side impls is pinned by the
+/// `try_from_cow_str_tests` module below through the sibling
+/// [`Self::VARIANTS`] / [`Self::NAMES`] constants.
+impl TryFrom<std::borrow::Cow<'_, str>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::borrow::Cow<'_, str>) -> Result<Self, Self::Error> {
+        match input {
+            std::borrow::Cow::Borrowed(s) => Self::try_from(s),
+            std::borrow::Cow::Owned(s) => Self::try_from(s),
         }
     }
 }
@@ -4072,6 +4174,79 @@ impl TryFrom<String> for ProofRelationKind {
 
     fn try_from(input: String) -> Result<Self, Self::Error> {
         let input = match SameStoreConsistencyKind::try_from(input) {
+            Ok(k) => return Ok(Self::Consistent(k)),
+            Err(e) => e.input,
+        };
+        let input = match SameStoreImpossibilityKind::try_from(input) {
+            Ok(k) => return Ok(Self::Impossible(k)),
+            Err(e) => e.input,
+        };
+        Err(ParseKindError {
+            input,
+            expected: Self::NAMES,
+        })
+    }
+}
+
+/// The [`TryFrom<Cow<'_, str>>`] impl on [`ProofRelationKind`] — the
+/// fused-arm sibling of the two half-side [`TryFrom<Cow<'_, str>>`]
+/// impls on [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`]
+/// above, welding the union of the two half-side borrowed-or-owned
+/// parsers' accepted-sets into a single fused-sum receiver whose body
+/// composes them SEQUENTIALLY through the recovered [`String`] input
+/// on the error path. Projects the closed set of five stable
+/// snake-case identifiers (`"stationary"` / `"identity_republish"` /
+/// `"progression"` on the [`Self::Consistent`] arm; `"regressed"` /
+/// `"cross_store"` on the [`Self::Impossible`] arm) into a fused
+/// [`ProofRelationKind`] value or a [`ParseKindError`] on unknown input.
+///
+/// **First-arm dispatch preserves the sibling receivers' allocation
+/// properties by construction.** The first attempt reaches the sibling
+/// [`SameStoreConsistencyKind::try_from`] over [`Cow<'_, str>`], whose
+/// body dispatches on the [`Cow`] variant to the shape-tight sibling —
+/// [`TryFrom<&str>`] on [`Cow::Borrowed`], [`TryFrom<String>`] on
+/// [`Cow::Owned`]. On the [`Cow::Owned`] arm the caller's owned bytes
+/// flow verbatim through the first half; on failure the moved input is
+/// recovered from the returned [`ParseKindError::input`] field and
+/// re-attempted through the impossibility half's [`TryFrom<String>`]
+/// (the input has already been materialized as a [`String`] by the
+/// error boundary, so the fused re-attempt shape is fixed). If the
+/// impossibility half also fails, the moved input is recovered a
+/// second time and threaded into the final fused [`ParseKindError`]
+/// with [`Self::NAMES`] as the accepted-set. Total heap allocations on
+/// the error path across ALL FIVE potential misses when the caller
+/// supplies [`Cow::Owned`]: **0** — matching the sibling
+/// [`TryFrom<String>`] fused impl's zero-alloc property, one better
+/// than the sibling `.parse::<Self>()` / `<Self>::try_from(&s)`
+/// receivers when dispatched from a caller that already owns the input.
+/// On the [`Cow::Borrowed`] arm the first half's borrowed-slice error
+/// path allocates once (via [`FromStr`](std::str::FromStr)'s
+/// `s.to_owned()`) to materialize the input as a [`String`], and the
+/// impossibility half's [`TryFrom<String>`] re-attempt then moves that
+/// [`String`] through — 1 alloc total across all five potential misses,
+/// matching the [`TryFrom<&str>`] fused impl's error-path cost.
+///
+/// **Fused-arm lockstep with the two half-side impls — enforced by
+/// composition, not open-coded.** The fused body reaches the half-side
+/// accepted-sets ONLY through the two half-side [`TryFrom`] impls; it
+/// never open-codes the five identifier strings. So adding a
+/// hypothetical variant to either half-side enum surfaces through the
+/// corresponding half-side [`TryFrom<Cow<'_, str>>`] / [`TryFrom<String>`]
+/// match body AND is picked up by the fused body in lockstep — the
+/// fused impl and the two half-side impls stay lockstep-identical
+/// under every future variant addition to either half-side enum by
+/// construction, matching the fused-arm delegation pattern the sibling
+/// [`FromStr`](std::str::FromStr) / [`TryFrom<&str>`] / [`TryFrom<String>`]
+/// impls at the fused-sum altitude already carry.
+///
+/// **Field access.** The recovery of `input` from
+/// [`ParseKindError::input`] uses direct field access, valid because
+/// [`ParseKindError`] and this impl live in the same module.
+impl TryFrom<std::borrow::Cow<'_, str>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::borrow::Cow<'_, str>) -> Result<Self, Self::Error> {
+        let input: String = match SameStoreConsistencyKind::try_from(input) {
             Ok(k) => return Ok(Self::Consistent(k)),
             Err(e) => e.input,
         };
@@ -27080,6 +27255,443 @@ mod try_from_string_tests {
     fn generic_composability_fused() {
         for &k in ProofRelationKind::VARIANTS {
             assert_eq!(parse_kind::<ProofRelationKind>(k.name().to_owned()), Ok(k),);
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_cow_str_tests {
+    //! [`TryFrom<Cow<'_, str>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **borrowed-or-owned dual** parse-side sibling of the borrowed
+    //! [`TryFrom<&str>`] impl and the owned [`TryFrom<String>`] impl
+    //! already at each altitude, closing the third leg of the (borrowed,
+    //! owned, borrowed-or-owned) receiver-triple on the PARSE side in
+    //! lockstep with the three-leg triple already welded on the FORWARD
+    //! side by [`AsRef<str>`], [`From<Kind>`] for [`&'static str`],
+    //! [`From<Kind>`] for [`String`], and [`From<Kind>`] for
+    //! [`Cow<'static, str>`].
+    //!
+    //! **Why lift a third parse-side receiver over the [`Cow`] input.**
+    //! Rust does NOT chain [`TryFrom`] impls — a
+    //! `T: TryFrom<Cow<'_, str>>` bound is NOT satisfied by
+    //! `T: TryFrom<&str>` alone or by `T: TryFrom<String>` alone,
+    //! because the receiver types are distinct. Every downstream slot
+    //! bounded on `T: TryFrom<Cow<'_, str>>` previously stranded a
+    //! [`Kind`] value at the type-checker with no
+    //! [`TryFrom<Cow<'_, str>>`] path (a generic parser accepting
+    //! either a borrowed slice from a zero-copy deserializer or an
+    //! owned buffer materialized from a JSON escape sequence, an
+    //! [`http::HeaderName::from_bytes`]-shaped API yielding either a
+    //! borrowed static token or a heap-owned decoded string, a
+    //! `serde_yaml_ng` visitor whose per-value parse arrives as a
+    //! [`Cow`]-wrapped string, a codegen visitor whose parser slot is a
+    //! `TryFrom<Cow<'_, str>>` trait bound).
+    //!
+    //! **Dispatch preserves the sibling receivers' allocation
+    //! properties.** On [`Cow::Borrowed`] the half-side body reaches
+    //! the sibling [`TryFrom<&str>`] receiver (which delegates to
+    //! [`FromStr`](std::str::FromStr), allocating once on the error arm
+    //! via `s.to_owned()` to preserve the malformed input verbatim in
+    //! [`ParseKindError::input`]). On [`Cow::Owned`] the half-side body
+    //! reaches the sibling [`TryFrom<String>`] receiver, which MOVES
+    //! the input verbatim into [`ParseKindError::input`] on the error
+    //! arm — the same zero-heap-allocation property the
+    //! [`TryFrom<String>`] impl provides.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on
+    //! [`Cow::Borrowed`] and [`Cow::Owned`] for every variant of every
+    //! kind enum, matching the sibling [`TryFrom<&str>`] /
+    //! [`TryFrom<String>`] receivers; (2) round-trip through
+    //! [`From<Kind>`] for [`Cow<'static, str>`] — the forward-side
+    //! projection whose parse-side dual THIS impl provides; (3) sibling
+    //! agreement — for every variant, the [`Cow::Borrowed`] arm agrees
+    //! with the sibling [`TryFrom<&str>`] receiver, and the
+    //! [`Cow::Owned`] arm agrees with the sibling [`TryFrom<String>`]
+    //! receiver, on both the success and the error paths (including
+    //! `input()` and `expected()` fidelity); (4) fused-arm lockstep —
+    //! every fused parse on both [`Cow`] arms agrees with the
+    //! corresponding half-side [`TryFrom<Cow<'_, str>>`] receiver
+    //! wrapped in the appropriate [`ProofRelationKind`] variant
+    //! constructor; (5) **owned-input consumption pin** — the owned
+    //! [`String`] inside [`Cow::Owned`] flows verbatim into
+    //! [`ParseKindError::input`] on the error arm, with a
+    //! distinguishing long, mixed-case, whitespace-padded input a
+    //! silent regression to a `.to_owned()` cleanup body would drop;
+    //! (6) **borrowed-lifetime pin** — accepts both a `'static` borrow
+    //! and a non-`'static` borrow with a local lifetime, so a downstream
+    //! consumer routing a non-`'static` `Cow` (a stack-local
+    //! buffer) reaches the same receiver; (7) generic composability at
+    //! an `impl TryFrom<Cow<'_, str>, Error = ParseKindError>` seam —
+    //! a `fn parse_kind_from_cow<K>(...)` bounded ONLY on the standard
+    //! trait projects the same value the direct `Self::try_from`
+    //! projects, on both [`Cow`] arms.
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity on Cow::Borrowed ----------
+
+    #[test]
+    fn borrowed_impossibility_identity_pointwise() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Cow::Borrowed(k.name())),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_consistency_identity_pointwise() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Cow::Borrowed(k.name())),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_fused_identity_pointwise() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(ProofRelationKind::try_from(Cow::Borrowed(k.name())), Ok(k));
+        }
+    }
+
+    // ---------- (2) Pointwise identity on Cow::Owned ----------
+
+    #[test]
+    fn owned_impossibility_identity_pointwise() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Cow::<str>::Owned(k.name().to_owned())),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn owned_consistency_identity_pointwise() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Cow::<str>::Owned(k.name().to_owned())),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn owned_fused_identity_pointwise() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                ProofRelationKind::try_from(Cow::<str>::Owned(k.name().to_owned())),
+                Ok(k),
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through From<Kind> for Cow<'static, str> ----------
+
+    #[test]
+    fn roundtrip_through_from_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(SameStoreImpossibilityKind::try_from(cow), Ok(k));
+        }
+    }
+
+    #[test]
+    fn roundtrip_through_from_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(SameStoreConsistencyKind::try_from(cow), Ok(k));
+        }
+    }
+
+    #[test]
+    fn roundtrip_through_from_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(ProofRelationKind::try_from(cow), Ok(k));
+        }
+    }
+
+    // ---------- (4) Sibling agreement: Cow::Borrowed vs TryFrom<&str> ----------
+
+    #[test]
+    fn borrowed_agrees_with_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name = k.name();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Cow::Borrowed(name)),
+                SameStoreImpossibilityKind::try_from(name),
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_agrees_with_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name = k.name();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Cow::Borrowed(name)),
+                SameStoreConsistencyKind::try_from(name),
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_agrees_with_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name = k.name();
+            assert_eq!(
+                ProofRelationKind::try_from(Cow::Borrowed(name)),
+                ProofRelationKind::try_from(name),
+            );
+        }
+    }
+
+    // ---------- (5) Sibling agreement: Cow::Owned vs TryFrom<String> ----------
+
+    #[test]
+    fn owned_agrees_with_try_from_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned = k.name().to_owned();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Cow::<str>::Owned(owned.clone())),
+                SameStoreImpossibilityKind::try_from(owned),
+            );
+        }
+    }
+
+    #[test]
+    fn owned_agrees_with_try_from_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned = k.name().to_owned();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Cow::<str>::Owned(owned.clone())),
+                SameStoreConsistencyKind::try_from(owned),
+            );
+        }
+    }
+
+    #[test]
+    fn owned_agrees_with_try_from_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned = k.name().to_owned();
+            assert_eq!(
+                ProofRelationKind::try_from(Cow::<str>::Owned(owned.clone())),
+                ProofRelationKind::try_from(owned),
+            );
+        }
+    }
+
+    // ---------- (6) Err-body fidelity on both arms ----------
+
+    const BAD_INPUTS: &[&str] = &[
+        "",
+        "Regressed",
+        "REGRESSED",
+        " regressed ",
+        "stationary_but_not",
+        "stationaryregressed",
+        "\tprogression\n",
+    ];
+
+    #[test]
+    fn err_borrowed_agrees_with_try_from_str_impossibility() {
+        for &bad in BAD_INPUTS {
+            let cow_err = SameStoreImpossibilityKind::try_from(Cow::Borrowed(bad)).unwrap_err();
+            let str_err = SameStoreImpossibilityKind::try_from(bad).unwrap_err();
+            assert_eq!(cow_err.input(), str_err.input());
+            assert_eq!(cow_err.expected(), str_err.expected());
+            assert_eq!(cow_err.input(), bad);
+            assert_eq!(cow_err.expected(), SameStoreImpossibilityKind::NAMES,);
+        }
+    }
+
+    #[test]
+    fn err_owned_agrees_with_try_from_string_impossibility() {
+        for &bad in BAD_INPUTS {
+            let owned = bad.to_owned();
+            let cow_err =
+                SameStoreImpossibilityKind::try_from(Cow::<str>::Owned(owned.clone())).unwrap_err();
+            let string_err = SameStoreImpossibilityKind::try_from(owned).unwrap_err();
+            assert_eq!(cow_err.input(), string_err.input());
+            assert_eq!(cow_err.expected(), string_err.expected());
+            assert_eq!(cow_err.input(), bad);
+            assert_eq!(cow_err.expected(), SameStoreImpossibilityKind::NAMES,);
+        }
+    }
+
+    #[test]
+    fn err_fused_carries_names_and_input_on_both_arms() {
+        for &bad in BAD_INPUTS {
+            let borrowed_err = ProofRelationKind::try_from(Cow::Borrowed(bad)).unwrap_err();
+            let owned_err =
+                ProofRelationKind::try_from(Cow::<str>::Owned(bad.to_owned())).unwrap_err();
+            assert_eq!(borrowed_err.input(), bad);
+            assert_eq!(borrowed_err.expected(), ProofRelationKind::NAMES);
+            assert_eq!(owned_err.input(), bad);
+            assert_eq!(owned_err.expected(), ProofRelationKind::NAMES);
+        }
+    }
+
+    // ---------- (7) Fused-arm lockstep with the two half-side impls ----------
+
+    #[test]
+    fn fused_borrowed_lifts_consistency_half() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name = k.name();
+            let via_half = SameStoreConsistencyKind::try_from(Cow::Borrowed(name))
+                .map(ProofRelationKind::Consistent);
+            let via_fused = ProofRelationKind::try_from(Cow::Borrowed(name));
+            assert_eq!(via_half, via_fused);
+        }
+    }
+
+    #[test]
+    fn fused_borrowed_lifts_impossibility_half() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name = k.name();
+            let via_half = SameStoreImpossibilityKind::try_from(Cow::Borrowed(name))
+                .map(ProofRelationKind::Impossible);
+            let via_fused = ProofRelationKind::try_from(Cow::Borrowed(name));
+            assert_eq!(via_half, via_fused);
+        }
+    }
+
+    #[test]
+    fn fused_owned_lifts_consistency_half() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned = k.name().to_owned();
+            let via_half = SameStoreConsistencyKind::try_from(Cow::<str>::Owned(owned.clone()))
+                .map(ProofRelationKind::Consistent);
+            let via_fused = ProofRelationKind::try_from(Cow::<str>::Owned(owned));
+            assert_eq!(via_half, via_fused);
+        }
+    }
+
+    #[test]
+    fn fused_owned_lifts_impossibility_half() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned = k.name().to_owned();
+            let via_half = SameStoreImpossibilityKind::try_from(Cow::<str>::Owned(owned.clone()))
+                .map(ProofRelationKind::Impossible);
+            let via_fused = ProofRelationKind::try_from(Cow::<str>::Owned(owned));
+            assert_eq!(via_half, via_fused);
+        }
+    }
+
+    // ---------- (8) Owned-input consumption pin ----------
+
+    #[test]
+    fn owned_input_preserved_verbatim_impossibility() {
+        let raw = "  NotAValidVariantIdentifier_1234_you_should_see_this_verbatim  ";
+        let owned = raw.to_owned();
+        let err = SameStoreImpossibilityKind::try_from(Cow::<str>::Owned(owned)).unwrap_err();
+        assert_eq!(err.input(), raw);
+    }
+
+    #[test]
+    fn owned_input_preserved_verbatim_consistency() {
+        let raw = "\tPROGRESSION_but_padded_and_mixed_case\n";
+        let owned = raw.to_owned();
+        let err = SameStoreConsistencyKind::try_from(Cow::<str>::Owned(owned)).unwrap_err();
+        assert_eq!(err.input(), raw);
+    }
+
+    #[test]
+    fn owned_input_preserved_verbatim_fused() {
+        let raw = "  \t  Cross_Store_or_Stationary_but_not_actually_a_variant_verbatim   \n";
+        let owned = raw.to_owned();
+        let err = ProofRelationKind::try_from(Cow::<str>::Owned(owned)).unwrap_err();
+        assert_eq!(err.input(), raw);
+    }
+
+    // ---------- (9) Cow<'static> and Cow<'a> both dispatch through the same impl ----------
+
+    #[test]
+    fn accepts_static_and_non_static_cow_lifetimes() {
+        // Non-static borrow: a stack-local buffer with a local lifetime.
+        let local_a = String::from("regressed");
+        let borrowed_a: Cow<'_, str> = Cow::Borrowed(local_a.as_str());
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(borrowed_a),
+            Ok(SameStoreImpossibilityKind::Regressed),
+        );
+
+        // 'static borrow.
+        let static_borrowed: Cow<'static, str> = Cow::Borrowed("cross_store");
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(static_borrowed),
+            Ok(SameStoreImpossibilityKind::CrossStore),
+        );
+
+        // Non-static owned.
+        let owned = String::from("stationary");
+        let owned_cow: Cow<'_, str> = Cow::Owned(owned);
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(owned_cow),
+            Ok(SameStoreConsistencyKind::Stationary),
+        );
+    }
+
+    // ---------- (10) Generic composability at impl TryFrom<Cow<'_, str>> ----------
+
+    fn parse_kind_from_cow<'a, K>(cow: Cow<'a, str>) -> Result<K, ParseKindError>
+    where
+        K: TryFrom<Cow<'a, str>, Error = ParseKindError>,
+    {
+        K::try_from(cow)
+    }
+
+    #[test]
+    fn generic_composability_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                parse_kind_from_cow::<SameStoreImpossibilityKind>(Cow::Borrowed(k.name())),
+                Ok(k),
+            );
+            assert_eq!(
+                parse_kind_from_cow::<SameStoreImpossibilityKind>(Cow::<str>::Owned(
+                    k.name().to_owned()
+                )),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                parse_kind_from_cow::<SameStoreConsistencyKind>(Cow::Borrowed(k.name())),
+                Ok(k),
+            );
+            assert_eq!(
+                parse_kind_from_cow::<SameStoreConsistencyKind>(Cow::<str>::Owned(
+                    k.name().to_owned()
+                )),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                parse_kind_from_cow::<ProofRelationKind>(Cow::Borrowed(k.name())),
+                Ok(k),
+            );
+            assert_eq!(
+                parse_kind_from_cow::<ProofRelationKind>(Cow::<str>::Owned(k.name().to_owned())),
+                Ok(k),
+            );
         }
     }
 }
