@@ -3543,6 +3543,78 @@ impl From<&SameStoreImpossibilityKind> for Vec<u8> {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`Cow<'static, [u8]>`] impl
+/// projects the stable snake-case [`Self::name`] identifier as a
+/// [`Cow::Borrowed`] wrapping the `'static`-lifetime byte range —
+/// the **byte-side sibling** of the [`From<SameStoreImpossibilityKind>`]
+/// for [`Cow<'static, str>`] impl above (the string-side borrowed-or-owned
+/// dual) and the **byte-side borrowed-or-owned dual** of the three
+/// byte-side forward-side siblings already welded at this altitude
+/// ([`AsRef<[u8]>`] borrowed, [`From<Kind>`] for [`&'static [u8]`]
+/// owned-static, [`From<Kind>`] for [`Vec<u8>`] heap-owned). Where the
+/// [`&'static [u8]`] projection is borrow-only and the [`Vec<u8>`]
+/// projection is owned-only, this [`Cow<'static, [u8]>`] projection is
+/// **both**: the value carries the same byte range as a zero-allocation
+/// [`Cow::Borrowed`] on construction and can be upgraded to an owned
+/// [`Cow::Owned`] by any downstream consumer that needs to mutate or grow
+/// it, without a per-callsite allocation on the common read-only path.
+///
+/// **Why lift a `Cow<'static, [u8]>` receiver alongside the three borrowed
+/// and owned byte-side ones.** Every downstream slot bounded on
+/// `T: Into<Cow<'static, [u8]>>` (a byte-oriented interner keyed on
+/// `Cow<'static, [u8]>` that stays borrowed until a growth op forces an
+/// owned copy, a wire-frame builder whose per-corner tag arrives as a
+/// [`Cow<'static, [u8]>`] and is written directly into the frame buffer
+/// on the borrow path, an owning-optional byte-writer receiver-family
+/// `fn take<C: Into<Cow<'static, [u8]>>>` accepting either borrowed or
+/// owned byte identifiers) previously stranded a [`Kind`] value at the
+/// type-checker with no [`Into<Cow<'static, [u8]>>`] path. Rust does
+/// NOT chain [`Into`] impls, so a `T: Into<Cow<'static, [u8]>>` bound is
+/// NOT satisfied by `T: Into<&'static [u8]>` alone or by
+/// `T: Into<Vec<u8>>` alone — the explicit [`From<Kind>`] for
+/// [`Cow<'static, [u8]>`] impl is the ONLY receiver that closes it.
+///
+/// **Allocation-free by construction.** Unlike the sibling [`From<Kind>`]
+/// for [`Vec<u8>`] impl above, this projection allocates ZERO heap bytes:
+/// the returned [`Cow<'static, [u8]>`] wraps the same `'static`-lifetime
+/// byte range the sibling [`From<Kind>`] for [`&'static [u8]`] impl
+/// already yields. A downstream reader (a byte-keyed
+/// [`std::collections::HashMap`] lookup, a wire-frame writer that streams
+/// the identifier bytes directly, a byte-oriented tag registration
+/// slot bounded on [`Cow<'static, [u8]>`]) reads bytes without a heap-copy
+/// pass; a downstream writer that needs to grow the buffer upgrades via
+/// [`Cow::into_owned`] on demand. The allocation is caller-driven, not
+/// projection-driven — the exact shape the string-side sibling already
+/// carries end-to-end at cell 13.
+///
+/// Delegates to [`Self::name`]-then-[`str::as_bytes`] wrapped in
+/// [`Cow::Borrowed`] — one line — so the projection stays lockstep-identical
+/// with every prior forward-side receiver on this enum by construction.
+/// Sibling of [`http::HeaderName`]'s standard `From<Cow<'static, str>>`
+/// receiver in the ecosystem, on the byte side and at the closed-set
+/// classification altitude.
+impl From<SameStoreImpossibilityKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: SameStoreImpossibilityKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`Cow<'static, [u8]>`]
+/// impl — the reference-taking sibling of the owned [`From`] impl
+/// directly above, delegating through the same [`Self::name`] source of
+/// truth. Enables `.into()` on a borrowed kind without a per-callsite
+/// dereference; both directions of the standard
+/// [`Into<Cow<'static, [u8]>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction, matching the (owned,
+/// reference-taking) pair already welded on the sibling byte-side
+/// [`From<Kind>`] for [`&'static [u8]`] and [`From<Kind>`] for
+/// [`Vec<u8>`] impls.
+impl From<&SameStoreImpossibilityKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: &SameStoreImpossibilityKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -4294,6 +4366,42 @@ impl From<SameStoreConsistencyKind> for Vec<u8> {
 impl From<&SameStoreConsistencyKind> for Vec<u8> {
     fn from(kind: &SameStoreConsistencyKind) -> Vec<u8> {
         kind.name().as_bytes().to_vec()
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`Cow<'static, [u8]>`] impl —
+/// the mirror on the consistent half of the
+/// [`From<SameStoreImpossibilityKind>`] for [`Cow<'static, [u8]>`] impl on
+/// the impossibility half, and the byte-side sibling of the
+/// [`From<SameStoreConsistencyKind>`] for [`Cow<'static, str>`] impl
+/// above. Every `.into::<Cow<'static, [u8]>>()` seam on a consistent
+/// kind reaches the same allocation-free [`Cow::Borrowed`] wrapping of
+/// the [`Self::name`] byte range through the standard trait, without a
+/// per-callsite `Cow::Borrowed(k.name().as_bytes())` postfix or a
+/// per-callsite two-step through [`Vec::from`] then [`Cow::Owned`]. The
+/// pair
+/// (`impl From<SameStoreImpossibilityKind> for Cow<'static, [u8]>`,
+///  `impl From<SameStoreConsistencyKind>   for Cow<'static, [u8]>`)
+/// closes the byte-side borrowed-or-owned receiver-corner on both halves
+/// of the fused sum in exact parallel with the string-side pair already
+/// carried at cell 13.
+impl From<SameStoreConsistencyKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: SameStoreConsistencyKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`Cow<'static, [u8]>`] impl
+/// — the reference-taking sibling of the owned [`From`] impl directly
+/// above on the consistent half, mirroring the impossibility-side
+/// reference impl. Same one-line delegation through [`Self::name`]-then-
+/// [`str::as_bytes`], enabling `.into()` on a borrowed consistent kind
+/// wherever the owned form is unavailable; both directions of the
+/// standard [`Into<Cow<'static, [u8]>>`] projection now compose out of
+/// the same [`Self::name`] receiver on this half of the sum.
+impl From<&SameStoreConsistencyKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: &SameStoreConsistencyKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
     }
 }
 
@@ -5282,6 +5390,40 @@ impl From<ProofRelationKind> for Vec<u8> {
 impl From<&ProofRelationKind> for Vec<u8> {
     fn from(kind: &ProofRelationKind) -> Vec<u8> {
         kind.name().as_bytes().to_vec()
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`Cow<'static, [u8]>`] impl on the
+/// fused sum — third-altitude sibling of the two half-side
+/// [`From<Kind>`] for [`Cow<'static, [u8]>`] impls above and byte-side
+/// sibling of the [`From<ProofRelationKind>`] for [`Cow<'static, str>`]
+/// impl already at this altitude. The fused body reaches [`Self::name`]
+/// (whose two-arm partition routes a consistent identifier through
+/// [`ProofRelationKind::Consistent`] and an impossibility identifier
+/// through [`ProofRelationKind::Impossible`]) then wraps the byte range
+/// in [`Cow::Borrowed`] — so the fused [`Cow<'static, [u8]>`] projection
+/// agrees with the routed half-side projection through the fused sum's
+/// two-arm partition on every variant, matching the fused-arm lockstep
+/// every prior standard-trait projection through [`Self::name`] on the
+/// fused sum already carries. Allocation-free by construction, exactly
+/// like the string-side sibling on the fused sum.
+impl From<ProofRelationKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: ProofRelationKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`Cow<'static, [u8]>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the fused sum, mirroring the two half-side reference impls. Same
+/// one-line delegation through [`Self::name`]-then-[`str::as_bytes`],
+/// enabling `.into()` on a borrowed fused kind wherever the owned form
+/// is unavailable; both directions of the standard
+/// [`Into<Cow<'static, [u8]>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction on the fused sum.
+impl From<&ProofRelationKind> for std::borrow::Cow<'static, [u8]> {
+    fn from(kind: &ProofRelationKind) -> std::borrow::Cow<'static, [u8]> {
+        std::borrow::Cow::Borrowed(kind.name().as_bytes())
     }
 }
 
@@ -31348,6 +31490,521 @@ mod into_bytes_tests {
                 s.parse::<ProofRelationKind>(),
                 Ok(k),
                 "fused {k:?}: <Vec<u8>>::from(k) -> String::from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_cow_static_bytes_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`std::borrow::Cow<'static, [u8]>`]
+    //! on [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side borrowed-or-owned dual** of
+    //! the three byte-side forward-side siblings lifted by
+    //! [`super::as_ref_bytes_tests`] (borrowed [`AsRef<[u8]>`]),
+    //! [`super::from_static_bytes_tests`] (owned-static [`From<Kind>`] for
+    //! [`&'static [u8]`]), and [`super::into_bytes_tests`] (heap-owned
+    //! [`From<Kind>`] for [`Vec<u8>`]); and the **byte-side sibling** of
+    //! the string-side [`From<Kind>`] for [`Cow<'static, str>`] impls
+    //! lifted by [`super::into_cow_static_str_tests`]. Closes the
+    //! byte-side (borrowed, owned-static, heap-owned, borrowed-or-owned)
+    //! projection quadruple on the three kind enums with the SAME shape
+    //! the string-side quadruple already carries end-to-end.
+    //!
+    //! **What the tests below pin.** (1) Pointwise identity with
+    //! `Cow::Borrowed(k.name().as_bytes())` on every variant of every
+    //! kind enum; (2) sibling agreement with [`AsRef<[u8]>`] pointwise
+    //! (the [`Cow`]'s `as_ref()` slice matches the borrowed byte-side
+    //! projection); (3) sibling agreement with the string-side
+    //! [`From<Kind>`] for [`Cow<'static, str>`] projection through
+    //! [`str::as_bytes`] on the wrapped `str`; (4) owned/reference-taking
+    //! [`From`] agreement pointwise; (5) fused-arm lockstep — for every
+    //! fused kind, the fused [`Cow`] projection agrees with the routed
+    //! half-side [`Cow`] projection through the fused sum's two-arm
+    //! partition; (6) byte-content agreement with the [`&'static [u8]`]
+    //! projection AND with the [`Vec<u8>`] projection — all four
+    //! byte-side projections carry the SAME byte range, differing only
+    //! in typed-shape and ownership; (7) **always [`Cow::Borrowed`]**
+    //! (allocation-free contract) — the projected [`Cow`] is
+    //! [`Cow::Borrowed`] and its wrapped slice is pointer-equal to
+    //! [`Self::name`]'s bytes (no heap allocation on construction);
+    //! (8) [`'static`] lifetime pin — the projection outlives the kind
+    //! value; (9) [`impl Into<Cow<'static, [u8]>>`] composability at a
+    //! generic-typed callsite; (10) round-trip identity through
+    //! [`Cow::into_owned`] + [`String::from_utf8`] + [`std::str::FromStr`]
+    //! — for every variant `k`, feeding the projected [`Cow`] through
+    //! `into_owned()` then `String::from_utf8` then `.parse` returns
+    //! `Ok(k)`.
+    //!
+    //! Genuinely new — before this cell the three kind enums could not
+    //! flow through any downstream API typed on
+    //! `impl Into<Cow<'static, [u8]>>` without either a per-callsite
+    //! `Cow::Borrowed(k.name().as_bytes())` postfix (a coordinated
+    //! silent rewrite of the callsite, not a lift into the type-checker),
+    //! a wasteful `Cow::Owned(Vec::from(k))` two-step through the
+    //! heap-owned byte projection, or a
+    //! `Cow::Borrowed(<&'static [u8]>::from(k))` two-step through the
+    //! owned-static byte projection followed by manual re-wrapping. The
+    //! six impls close the [`Into<Cow<'static, [u8]>>`] cell of the
+    //! standard-trait grid the prior twenty-one runs opened for these
+    //! enums, and complete the byte-side (borrowed, owned-static,
+    //! heap-owned, borrowed-or-owned) receiver-quadruple in exact
+    //! parallel with the string-side quadruple already carried at cells
+    //! 9/10/12/13.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity with Cow::Borrowed(name().as_bytes()) ----------
+
+    #[test]
+    fn from_owned_matches_borrowed_name_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                c,
+                Cow::Borrowed(k.name().as_bytes()),
+                "impossibility {k:?}: <Cow<'static, [u8]>>::from(k) must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_borrowed_name_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                c,
+                Cow::Borrowed(k.name().as_bytes()),
+                "consistency {k:?}: <Cow<'static, [u8]>>::from(k) must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_borrowed_name_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                c,
+                Cow::Borrowed(k.name().as_bytes()),
+                "fused {k:?}: <Cow<'static, [u8]>>::from(k) must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    #[test]
+    fn cow_matches_as_ref_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                c.as_ref(),
+                borrowed,
+                "impossibility {k:?}: Cow<'static, [u8]>::as_ref must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_matches_as_ref_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                c.as_ref(),
+                borrowed,
+                "consistency {k:?}: Cow<'static, [u8]>::as_ref must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_matches_as_ref_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let borrowed: &[u8] = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                c.as_ref(),
+                borrowed,
+                "fused {k:?}: Cow<'static, [u8]>::as_ref must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (3) Sibling agreement with the string-side Cow<'static, str>
+    // projection through str::as_bytes on the wrapped str ----------
+
+    #[test]
+    fn cow_bytes_matches_cow_str_as_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow_bytes: Cow<'static, [u8]> = k.into();
+            let cow_str: Cow<'static, str> = k.into();
+            assert_eq!(
+                cow_bytes.as_ref(),
+                cow_str.as_ref().as_bytes(),
+                "impossibility {k:?}: byte Cow must equal string Cow's as_bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_bytes_matches_cow_str_as_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow_bytes: Cow<'static, [u8]> = k.into();
+            let cow_str: Cow<'static, str> = k.into();
+            assert_eq!(
+                cow_bytes.as_ref(),
+                cow_str.as_ref().as_bytes(),
+                "consistency {k:?}: byte Cow must equal string Cow's as_bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_bytes_matches_cow_str_as_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow_bytes: Cow<'static, [u8]> = k.into();
+            let cow_str: Cow<'static, str> = k.into();
+            assert_eq!(
+                cow_bytes.as_ref(),
+                cow_str.as_ref().as_bytes(),
+                "fused {k:?}: byte Cow must equal string Cow's as_bytes",
+            );
+        }
+    }
+
+    // ---------- (4) Owned/reference-taking From agree ----------
+
+    #[test]
+    fn from_owned_matches_from_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let by_value: Cow<'static, [u8]> = k.into();
+            let by_ref: Cow<'static, [u8]> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "impossibility {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let by_value: Cow<'static, [u8]> = k.into();
+            let by_ref: Cow<'static, [u8]> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "consistency {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    #[test]
+    fn from_owned_matches_from_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let by_value: Cow<'static, [u8]> = k.into();
+            let by_ref: Cow<'static, [u8]> = (&k).into();
+            assert_eq!(
+                by_value, by_ref,
+                "fused {k:?}: From<Kind> must agree with From<&Kind>",
+            );
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep with routed half-side ----------
+
+    #[test]
+    fn from_fused_cow_matches_routed_half_side_cow() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: Cow<'static, [u8]> = k.into();
+            let routed: Cow<'static, [u8]> = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused <Cow<'static, [u8]>>::from must equal routed half-side",
+            );
+        }
+    }
+
+    // ---------- (6) Byte-content agreement with the &'static [u8] AND Vec<u8>
+    // projections — all four byte-side projections carry the SAME byte range ----------
+
+    #[test]
+    fn cow_matches_static_and_vec_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            let static_bytes: &'static [u8] = k.into();
+            let vec_bytes: Vec<u8> = k.into();
+            assert_eq!(
+                cow.as_ref(),
+                static_bytes,
+                "impossibility {k:?}: Cow bytes must equal &'static [u8] projection",
+            );
+            assert_eq!(
+                cow.as_ref(),
+                vec_bytes.as_slice(),
+                "impossibility {k:?}: Cow bytes must equal Vec<u8> projection",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_matches_static_and_vec_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            let static_bytes: &'static [u8] = k.into();
+            let vec_bytes: Vec<u8> = k.into();
+            assert_eq!(
+                cow.as_ref(),
+                static_bytes,
+                "consistency {k:?}: Cow bytes must equal &'static [u8] projection",
+            );
+            assert_eq!(
+                cow.as_ref(),
+                vec_bytes.as_slice(),
+                "consistency {k:?}: Cow bytes must equal Vec<u8> projection",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_matches_static_and_vec_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            let static_bytes: &'static [u8] = k.into();
+            let vec_bytes: Vec<u8> = k.into();
+            assert_eq!(
+                cow.as_ref(),
+                static_bytes,
+                "fused {k:?}: Cow bytes must equal &'static [u8] projection",
+            );
+            assert_eq!(
+                cow.as_ref(),
+                vec_bytes.as_slice(),
+                "fused {k:?}: Cow bytes must equal Vec<u8> projection",
+            );
+        }
+    }
+
+    // ---------- (7) Always Cow::Borrowed (allocation-free contract) — the
+    // projected Cow is Cow::Borrowed AND its wrapped slice is pointer-equal
+    // to name()'s bytes (no heap allocation on construction) ----------
+
+    #[test]
+    fn cow_is_always_borrowed_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert!(
+                matches!(cow, Cow::Borrowed(_)),
+                "impossibility {k:?}: Cow<'static, [u8]>::from(k) must be Cow::Borrowed (allocation-free)",
+            );
+            if let Cow::Borrowed(slice) = cow {
+                assert_eq!(
+                    slice.as_ptr(),
+                    k.name().as_bytes().as_ptr(),
+                    "impossibility {k:?}: Cow::Borrowed slice must be pointer-equal to name().as_bytes()",
+                );
+                assert_eq!(
+                    slice.len(),
+                    k.name().len(),
+                    "impossibility {k:?}: Cow::Borrowed slice must have same length as name().as_bytes()",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cow_is_always_borrowed_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert!(
+                matches!(cow, Cow::Borrowed(_)),
+                "consistency {k:?}: Cow<'static, [u8]>::from(k) must be Cow::Borrowed (allocation-free)",
+            );
+            if let Cow::Borrowed(slice) = cow {
+                assert_eq!(
+                    slice.as_ptr(),
+                    k.name().as_bytes().as_ptr(),
+                    "consistency {k:?}: Cow::Borrowed slice must be pointer-equal to name().as_bytes()",
+                );
+                assert_eq!(
+                    slice.len(),
+                    k.name().len(),
+                    "consistency {k:?}: Cow::Borrowed slice must have same length as name().as_bytes()",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cow_is_always_borrowed_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert!(
+                matches!(cow, Cow::Borrowed(_)),
+                "fused {k:?}: Cow<'static, [u8]>::from(k) must be Cow::Borrowed (allocation-free)",
+            );
+            if let Cow::Borrowed(slice) = cow {
+                assert_eq!(
+                    slice.as_ptr(),
+                    k.name().as_bytes().as_ptr(),
+                    "fused {k:?}: Cow::Borrowed slice must be pointer-equal to name().as_bytes()",
+                );
+                assert_eq!(
+                    slice.len(),
+                    k.name().len(),
+                    "fused {k:?}: Cow::Borrowed slice must have same length as name().as_bytes()",
+                );
+            }
+        }
+    }
+
+    // ---------- (8) 'static lifetime pin — the projected Cow outlives the
+    // kind value (trivially by the 'static lifetime; verified by caching
+    // across scopes and reading the bytes) ----------
+
+    #[test]
+    fn cow_outlives_kind_impossibility() {
+        let mut cache: Vec<Cow<'static, [u8]>> = Vec::new();
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            cache.push(c);
+        }
+        let expected: Vec<&[u8]> = SameStoreImpossibilityKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes())
+            .collect();
+        let cached_slices: Vec<&[u8]> = cache.iter().map(Cow::as_ref).collect();
+        assert_eq!(
+            cached_slices, expected,
+            "impossibility: cache of Cow<'static, [u8]> must equal NAMES.map(str::as_bytes) after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn cow_outlives_kind_consistency() {
+        let mut cache: Vec<Cow<'static, [u8]>> = Vec::new();
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            cache.push(c);
+        }
+        let expected: Vec<&[u8]> = SameStoreConsistencyKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes())
+            .collect();
+        let cached_slices: Vec<&[u8]> = cache.iter().map(Cow::as_ref).collect();
+        assert_eq!(
+            cached_slices, expected,
+            "consistency: cache of Cow<'static, [u8]> must equal NAMES.map(str::as_bytes) after the kind values drop",
+        );
+    }
+
+    #[test]
+    fn cow_outlives_kind_fused() {
+        let mut cache: Vec<Cow<'static, [u8]>> = Vec::new();
+        for &k in ProofRelationKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            cache.push(c);
+        }
+        let expected: Vec<&[u8]> = ProofRelationKind::NAMES
+            .iter()
+            .map(|s| s.as_bytes())
+            .collect();
+        let cached_slices: Vec<&[u8]> = cache.iter().map(Cow::as_ref).collect();
+        assert_eq!(
+            cached_slices, expected,
+            "fused: cache of Cow<'static, [u8]> must equal NAMES.map(str::as_bytes) after the kind values drop",
+        );
+    }
+
+    // ---------- (9) impl Into<Cow<'static, [u8]>> composability ----------
+
+    fn take_cow_bytes<C: Into<Cow<'static, [u8]>>>(c: C) -> Cow<'static, [u8]> {
+        c.into()
+    }
+
+    #[test]
+    fn into_cow_bytes_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                take_cow_bytes(k),
+                Cow::<'static, [u8]>::Borrowed(k.name().as_bytes()),
+                "impossibility {k:?}: generic Into<Cow<'static, [u8]>> must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    #[test]
+    fn into_cow_bytes_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                take_cow_bytes(k),
+                Cow::<'static, [u8]>::Borrowed(k.name().as_bytes()),
+                "consistency {k:?}: generic Into<Cow<'static, [u8]>> must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    #[test]
+    fn into_cow_bytes_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                take_cow_bytes(k),
+                Cow::<'static, [u8]>::Borrowed(k.name().as_bytes()),
+                "fused {k:?}: generic Into<Cow<'static, [u8]>> must equal Cow::Borrowed(name().as_bytes())",
+            );
+        }
+    }
+
+    // ---------- (10) Round-trip identity through Cow::into_owned +
+    // String::from_utf8 + FromStr ----------
+
+    #[test]
+    fn cow_round_trip_through_into_owned_utf8_parse_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let owned: Vec<u8> = c.into_owned();
+            let s: String = String::from_utf8(owned)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: Cow -> into_owned -> String::from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_round_trip_through_into_owned_utf8_parse_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let owned: Vec<u8> = c.into_owned();
+            let s: String = String::from_utf8(owned)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: Cow -> into_owned -> String::from_utf8 -> parse must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn cow_round_trip_through_into_owned_utf8_parse_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let c: Cow<'static, [u8]> = k.into();
+            let owned: Vec<u8> = c.into_owned();
+            let s: String = String::from_utf8(owned)
+                .expect("byte projection is UTF-8 (sourced from a compile-time-known str literal)");
+            assert_eq!(
+                s.parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: Cow -> into_owned -> String::from_utf8 -> parse must round-trip",
             );
         }
     }
