@@ -3675,6 +3675,72 @@ impl From<&SameStoreImpossibilityKind> for std::borrow::Cow<'static, [u8]> {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`Box<[u8]>`] impl — the
+/// **byte-side compact-owned carrier projection**, the byte-side dual of
+/// the string-side [`From<Kind>`] for [`Box<str>`] impl above and the
+/// two-word compact sibling of the byte-side [`From<Kind>`] for
+/// [`Vec<u8>`] impl already at this altitude. Delegates to
+/// [`Self::name`] followed by [`str::as_bytes`] then
+/// [`Box::<[u8]>::from`], which allocates a tight [`Box<[u8]>`] sized
+/// exactly to the identifier's length.
+///
+/// **Why lift a `Box<[u8]>` receiver alongside [`Vec<u8>`] and
+/// [`Cow<'static, [u8]>`].** Rust does NOT chain [`Into`] impls — a
+/// `T: Into<Box<[u8]>>` bound is NOT satisfied by `T: Into<Vec<u8>>`
+/// alone, `T: Into<&'static [u8]>` alone, or
+/// `T: Into<Cow<'static, [u8]>>` alone. Every downstream slot bounded
+/// on `T: Into<Box<[u8]>>` — a [`Vec<Box<[u8]>>`] byte-key table, a
+/// struct field of type [`Box<[u8]>`] carrying a compact byte-encoded
+/// classification tag, a
+/// `.map(Box::<[u8]>::from).collect::<Vec<Box<[u8]>>>()` combinator
+/// over a variant iterator whose per-entry memory cost matters, a
+/// `HashMap<Box<[u8]>, V>` per-corner tag registry that stays compact
+/// under long-lived retention, any generic
+/// `fn take<B: Into<Box<[u8]>>>(b: B)` receiver — previously stranded a
+/// [`Kind`] value at the type-checker with no [`Into<Box<[u8]>>`] path.
+///
+/// **Compact byte-side owned carrier — one word less per entry than
+/// [`Vec<u8>`].** The [`Box<[u8]>`] projection has no capacity slack:
+/// the underlying allocation is exactly `name.len()` bytes and the
+/// carrier occupies TWO words (data pointer + length) on 64-bit versus
+/// the [`Vec<u8>`] projection's THREE (data pointer + length +
+/// capacity). Downstream slots that build long-lived tables of owned
+/// byte-encoded identifiers (a [`Vec<Box<[u8]>>`] label table, a
+/// [`HashMap<Box<[u8]>, V>`](std::collections::HashMap) per-corner tag
+/// registry, a `[Box<[u8]>; N]` closed-set constant array, a struct
+/// field carrying a compact byte-tag) save one word per entry versus a
+/// [`Vec<Vec<u8>>`] of the same identifiers — a real memory saving at
+/// the scale a metrics registry or a config store reaches, closed at
+/// the type-checker rather than at a per-callsite manual
+/// `.into_boxed_slice()` postfix. Adding a hypothetical third
+/// impossibility corner updates the ONE `match` body in [`Self::name`]
+/// and the new byte-encoded identifier surfaces through this impl and
+/// every sibling byte-side projection in lockstep.
+impl From<SameStoreImpossibilityKind> for Box<[u8]> {
+    fn from(kind: SameStoreImpossibilityKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`Box<[u8]>`] impl —
+/// the reference-taking sibling of the owned [`From`] impl directly
+/// above, delegating through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Enables
+/// `.into()` on a borrowed kind (a `&kind` iterator over `&[Kind]` in a
+/// `.map(Box::<[u8]>::from).collect::<Vec<Box<[u8]>>>()` combinator, a
+/// codegen visitor over per-corner registration sites where the kind
+/// arrives by reference and is serialized as compact-owned bytes)
+/// without a per-callsite dereference. Both directions of the standard
+/// [`Into<Box<[u8]>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction, matching the (owned,
+/// reference-taking) pair already welded on every sibling byte-side
+/// [`From<Kind>`] impl at this altitude.
+impl From<&SameStoreImpossibilityKind> for Box<[u8]> {
+    fn from(kind: &SameStoreImpossibilityKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
 /// The [`TryFrom<Vec<u8>>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **byte-side owned-input parse-side dual** of the string-side
 /// [`TryFrom<String>`] impl already at this altitude and the byte-side
@@ -4806,6 +4872,40 @@ impl From<SameStoreConsistencyKind> for std::borrow::Cow<'static, [u8]> {
 impl From<&SameStoreConsistencyKind> for std::borrow::Cow<'static, [u8]> {
     fn from(kind: &SameStoreConsistencyKind) -> std::borrow::Cow<'static, [u8]> {
         std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`Box<[u8]>`] impl — the
+/// mirror on the consistent half of the [`From<SameStoreImpossibilityKind>`]
+/// for [`Box<[u8]>`] impl on the impossibility half, delegating through
+/// the same [`Self::name`]-then-[`str::as_bytes`]-then-[`Box::<[u8]>::from`]
+/// source of truth. Every `.into::<Box<[u8]>>()` seam on a consistent
+/// kind (a `Vec::<Box<[u8]>>::push` slot, a struct field of type
+/// [`Box<[u8]>`], a [`HashMap<Box<[u8]>, V>`](std::collections::HashMap)
+/// builder consuming keys through owning [`Into`], any generic
+/// `fn take<B: Into<Box<[u8]>>>(b: B)` receiver) now composes out of
+/// the standard trait alone on the consistent half, matching the
+/// (`impl From<SameStoreImpossibilityKind> for Box<[u8]>`,
+///  `impl From<SameStoreConsistencyKind>   for Box<[u8]>`) pair the
+/// two half-side altitudes now welded jointly. See the impossibility-half
+/// impl for the full lift rationale.
+impl From<SameStoreConsistencyKind> for Box<[u8]> {
+    fn from(kind: SameStoreConsistencyKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`Box<[u8]>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above,
+/// delegating through the same
+/// [`Self::name`]-then-[`str::as_bytes`]-then-[`Box::<[u8]>::from`]
+/// source of truth. Both directions of the standard [`Into<Box<[u8]>>`]
+/// projection now compose out of the same [`Self::name`] receiver by
+/// construction on the consistent half, matching the (owned,
+/// reference-taking) pair already welded on the impossibility half.
+impl From<&SameStoreConsistencyKind> for Box<[u8]> {
+    fn from(kind: &SameStoreConsistencyKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
     }
 }
 
@@ -6027,6 +6127,37 @@ impl From<ProofRelationKind> for std::borrow::Cow<'static, [u8]> {
 impl From<&ProofRelationKind> for std::borrow::Cow<'static, [u8]> {
     fn from(kind: &ProofRelationKind) -> std::borrow::Cow<'static, [u8]> {
         std::borrow::Cow::Borrowed(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`Box<[u8]>`] impl — the
+/// **byte-side compact-owned carrier projection** on the fused sum,
+/// mirroring the two half-side [`From<Kind>`] for [`Box<[u8]>`] impls
+/// already at their altitudes and delegating through the same fused
+/// [`Self::name`] receiver whose two-arm partition routes to the two
+/// half-side [`Self::name`] receivers. Both directions of the standard
+/// [`Into<Box<[u8]>>`] projection compose out of the same [`Self::name`]
+/// receiver by construction on the fused sum — so a hypothetical
+/// variant added to either half-side enum updates the ONE match body in
+/// [`Self::name`] (source of truth) and this cell surfaces the new
+/// byte-encoded identifier through every dispatch arm in lockstep with
+/// the rest of the byte-side of the standard-trait grid.
+impl From<ProofRelationKind> for Box<[u8]> {
+    fn from(kind: ProofRelationKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`Box<[u8]>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above
+/// on the fused sum, delegating through the same [`Self::name`] source
+/// of truth. Both directions of the standard [`Into<Box<[u8]>>`]
+/// projection now compose out of the same [`Self::name`] receiver by
+/// construction on the fused sum, matching the pair already welded on
+/// both half-side enums.
+impl From<&ProofRelationKind> for Box<[u8]> {
+    fn from(kind: &ProofRelationKind) -> Box<[u8]> {
+        Box::<[u8]>::from(kind.name().as_bytes())
     }
 }
 
@@ -35950,6 +36081,614 @@ mod into_box_str_tests {
         assert_eq!(collected.len(), ProofRelationKind::VARIANTS.len());
         for (b, &k) in collected.iter().zip(ProofRelationKind::VARIANTS) {
             assert_eq!(b.as_ref(), k.name());
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_box_bytes_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`Box<[u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side compact-owned carrier
+    //! projection** lifting the three kind enums into the standard
+    //! [`Into<Box<[u8]>>`] receiver-family every downstream slot bounded on
+    //! `T: Into<Box<[u8]>>` already reaches through.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of the
+    //! three enums).** The prior [`From<Kind>`] for [`Vec<u8>`] pass
+    //! closed the owned-only heap byte projection with a three-word carrier
+    //! (data pointer + length + capacity). The prior [`From<Kind>`] for
+    //! [`Cow<'static, [u8]>`] pass closed the borrowed-or-owned dual.
+    //! Neither reaches a [`Box<[u8]>`]-bounded slot: Rust does NOT chain
+    //! [`Into`] impls, so a `T: Into<Box<[u8]>>` bound is NOT satisfied
+    //! by `T: Into<Vec<u8>>` alone, `T: Into<&'static [u8]>` alone, or
+    //! `T: Into<Cow<'static, [u8]>>` alone — every downstream slot
+    //! bounded on `T: Into<Box<[u8]>>` (a `Vec::<Box<[u8]>>::push` slot,
+    //! a struct field of type [`Box<[u8]>`], a
+    //! `.map(Box::<[u8]>::from).collect::<Vec<Box<[u8]>>>()` combinator, a
+    //! [`HashMap<Box<[u8]>, V>`](std::collections::HashMap) builder, any
+    //! generic `fn take<B: Into<Box<[u8]>>>(b: B)` receiver) previously
+    //! stranded a [`Kind`] value at the type-checker with no
+    //! [`Into<Box<[u8]>>`] path.
+    //!
+    //! **Compact byte-side owned carrier — one word less per entry than
+    //! [`Vec<u8>`].** The [`Box<[u8]>`] projection has no capacity
+    //! slack: the underlying allocation is exactly `name.len()` bytes
+    //! and the carrier occupies TWO words (data pointer + length) on
+    //! 64-bit versus the [`Vec<u8>`] projection's THREE (data pointer +
+    //! length + capacity). Downstream slots that build long-lived tables
+    //! of owned byte-encoded identifiers (a [`Vec<Box<[u8]>>`] label
+    //! table, a [`HashMap<Box<[u8]>, V>`](std::collections::HashMap)
+    //! per-corner tag registry, a `[Box<[u8]>; N]` closed-set constant
+    //! array, a struct field carrying a compact byte-tag) save one word
+    //! per entry versus a [`Vec<Vec<u8>>`] of the same identifiers. The
+    //! tests below pin this size-shape structurally (test 9) so a future
+    //! silent regression to a larger owned carrier fails at `cargo test`
+    //! rather than at runtime through per-entry memory pressure.
+    //!
+    //! **Pointwise identity with [`Self::name`] and with every prior
+    //! forward-side byte-side receiver.** For every value `k` at every
+    //! altitude, the projected [`Box<[u8]>`] carries the same bytes as
+    //! `k.name().as_bytes()`, `<K as AsRef<[u8]>>::as_ref(&k)`,
+    //! `<&'static [u8]>::from(k)`, `<Vec<u8>>::from(k)`, and
+    //! `<Cow<'static, [u8]>>::from(k).as_ref()`. The standard
+    //! [`Into<Box<[u8]>>`] trait projects the SAME identifier every
+    //! prior byte-side forward-side receiver projects, so a downstream
+    //! consumer routing on any of the six reaches the same bytes. The
+    //! byte-side and string-side [`Box`] projections agree on the byte
+    //! range too — `<Box<[u8]>>::from(k).as_ref() ==
+    //! <Box<str>>::from(k).as_bytes()`.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so the fused [`Box<[u8]>`]
+    //! projection agrees with the routed half-side [`Box<[u8]>`]
+    //! projection through the two-arm partition of the fused sum on
+    //! every fused kind.
+    //!
+    //! The tests below pin the structural invariants that keep the six
+    //! impls in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`]-then-[`str::as_bytes`]
+    //!    on every variant of every kind enum —
+    //!    `<Box<[u8]>>::from(k).as_ref() == k.name().as_bytes()`.
+    //! 2. Pointwise identity with the sibling [`AsRef<[u8]>`] impl on
+    //!    every variant of every kind enum.
+    //! 3. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Vec<u8>`] impl.
+    //! 4. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Cow<'static, [u8]>`] impl.
+    //! 5. Owned/reference-taking [`From`] impl agreement.
+    //! 6. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`Box<[u8]>`] projection agrees with the two half-side
+    //!    [`Box<[u8]>`] projections through the fused sum's two-arm
+    //!    partition.
+    //! 7. [`impl Into<Box<[u8]>>`] composability at a generic-typed
+    //!    callsite — the load-bearing pin the sibling [`From<Kind>`] for
+    //!    [`Vec<u8>`] and [`From<Kind>`] for [`Cow<'static, [u8]>`]
+    //!    impls cannot satisfy: Rust does NOT chain [`Into`] impls, so
+    //!    `T: Into<Box<[u8]>>` is NOT satisfied by `T: Into<Vec<u8>>`
+    //!    alone, `T: Into<&'static [u8]>` alone, or
+    //!    `T: Into<Cow<'static, [u8]>>` alone.
+    //! 8. Upgrade-to-owned pin — [`<[u8]>::into_vec`](slice) on the
+    //!    projected [`Box<[u8]>`] yields the same bytes as the sibling
+    //!    [`From<Kind>`] for [`Vec<u8>`] impl (both allocation shapes
+    //!    reach the same owned byte identifier).
+    //! 9. **Size-shape pin** — the projected [`Box<[u8]>`] has length
+    //!    exactly `name.len()` (no capacity slack from a growth-doubling
+    //!    allocation). Catches silent regression to a
+    //!    [`Vec::into_boxed_slice`] path through a growable-`Vec<u8>`
+    //!    intermediate.
+    //! 10. Round-trip identity through [`TryFrom<&[u8]>`] on
+    //!     `box_bytes.as_ref()` and through [`TryFrom<Vec<u8>>`] on
+    //!     `box_bytes.into_vec()`.
+    //! 11. Cross-carrier agreement — `<Box<[u8]>>::from(k).as_ref() ==
+    //!     <Box<str>>::from(k).as_bytes()`. Pins that the byte-side and
+    //!     string-side compact-owned carriers project the SAME byte
+    //!     range.
+    //! 12. Generic composability at a [`Vec<Box<[u8]>>`]-collecting seam
+    //!     — the shape any downstream table-builder bounded on
+    //!     [`Into<Box<[u8]>>`] reaches through.
+
+    use super::*;
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity with name().as_bytes() ----------
+
+    #[test]
+    fn into_box_bytes_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name().as_bytes(),
+                "impossibility {k:?}: From<Kind> for Box<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name().as_bytes(),
+                "consistency {k:?}: From<Kind> for Box<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name().as_bytes(),
+                "fused {k:?}: From<Kind> for Box<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<[u8]> ----------
+
+    #[test]
+    fn into_box_bytes_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "impossibility {k:?}: From<Kind> for Box<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "consistency {k:?}: From<Kind> for Box<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let borrowed: &[u8] = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "fused {k:?}: From<Kind> for Box<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (3) Pointwise identity with From<Kind> for Vec<u8> ----------
+
+    #[test]
+    fn into_box_bytes_matches_into_vec_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_slice(),
+                "impossibility {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_into_vec_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_slice(),
+                "consistency {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_into_vec_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_slice(),
+                "fused {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    // ---------- (4) Pointwise identity with From<Kind> for Cow<'static, [u8]> ----------
+
+    #[test]
+    fn into_box_bytes_matches_into_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "impossibility {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_into_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "consistency {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_into_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "fused {k:?}: From<Kind> for Box<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    // ---------- (5) Owned/reference-taking From agreement ----------
+
+    #[test]
+    fn into_box_bytes_owned_and_ref_agree_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Box<[u8]> = k.into();
+            let by_ref: Box<[u8]> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "impossibility {k:?}: From<Kind> for Box<[u8]> and From<&Kind> for Box<[u8]> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_owned_and_ref_agree_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Box<[u8]> = k.into();
+            let by_ref: Box<[u8]> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "consistency {k:?}: From<Kind> for Box<[u8]> and From<&Kind> for Box<[u8]> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_owned_and_ref_agree_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Box<[u8]> = k.into();
+            let by_ref: Box<[u8]> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "fused {k:?}: From<Kind> for Box<[u8]> and From<&Kind> for Box<[u8]> must agree",
+            );
+        }
+    }
+
+    // ---------- (6) Fused-arm lockstep with half-side projections ----------
+
+    #[test]
+    fn into_box_bytes_fused_matches_routed_half_sides() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: Box<[u8]> = k.into();
+            let routed: Box<[u8]> = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused From<Kind> for Box<[u8]> must equal routed half-side From<Kind> for Box<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (7) impl Into<Box<[u8]>> composability at a generic callsite ----------
+
+    fn take<B: Into<Box<[u8]>>>(b: B) -> Box<[u8]> {
+        b.into()
+    }
+
+    #[test]
+    fn into_box_bytes_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "impossibility {k:?}: generic Into<Box<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "consistency {k:?}: generic Into<Box<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "fused {k:?}: generic Into<Box<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    // ---------- (8) Upgrade-to-owned pin — Box<[u8]>::into_vec yields
+    // the same bytes as the sibling From<Kind> for Vec<u8> impl ----------
+
+    #[test]
+    fn into_box_bytes_upgrades_to_vec_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let via_box: Vec<u8> = boxed.into_vec();
+            let via_from: Vec<u8> = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "impossibility {k:?}: Box<[u8]>::into_vec must equal From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_upgrades_to_vec_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let via_box: Vec<u8> = boxed.into_vec();
+            let via_from: Vec<u8> = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "consistency {k:?}: Box<[u8]>::into_vec must equal From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_upgrades_to_vec_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            let via_box: Vec<u8> = boxed.into_vec();
+            let via_from: Vec<u8> = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "fused {k:?}: Box<[u8]>::into_vec must equal From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    // ---------- (9) Size-shape pin — the projected Box<[u8]> has length
+    // exactly name.len(), the tight-allocation invariant the compact
+    // byte-side owned carrier exists to provide ----------
+
+    #[test]
+    fn into_box_bytes_has_tight_length_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "impossibility {k:?}: Box<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_has_tight_length_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "consistency {k:?}: Box<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_has_tight_length_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "fused {k:?}: Box<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    // ---------- (10) Round-trip through TryFrom<&[u8]> on box.as_ref() and TryFrom<Vec<u8>> on box.into_vec() ----------
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "impossibility {k:?}: TryFrom<&[u8]> on Box<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "consistency {k:?}: TryFrom<&[u8]> on Box<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "fused {k:?}: TryFrom<&[u8]> on Box<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_vec_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(boxed.into_vec()),
+                Ok(k),
+                "impossibility {k:?}: TryFrom<Vec<u8>> on Box<[u8]>.into_vec() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_vec_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(boxed.into_vec()),
+                Ok(k),
+                "consistency {k:?}: TryFrom<Vec<u8>> on Box<[u8]>.into_vec() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_round_trips_through_try_from_vec_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(boxed.into_vec()),
+                Ok(k),
+                "fused {k:?}: TryFrom<Vec<u8>> on Box<[u8]>.into_vec() must round-trip",
+            );
+        }
+    }
+
+    // ---------- (11) Cross-carrier agreement — byte-side Box matches string-side Box.as_bytes() ----------
+
+    #[test]
+    fn into_box_bytes_matches_box_str_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let box_bytes: Box<[u8]> = k.into();
+            let box_str: Box<str> = k.into();
+            assert_eq!(
+                box_bytes.as_ref(),
+                box_str.as_bytes(),
+                "impossibility {k:?}: Box<[u8]> must equal Box<str>.as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_box_str_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let box_bytes: Box<[u8]> = k.into();
+            let box_str: Box<str> = k.into();
+            assert_eq!(
+                box_bytes.as_ref(),
+                box_str.as_bytes(),
+                "consistency {k:?}: Box<[u8]> must equal Box<str>.as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_matches_box_str_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let box_bytes: Box<[u8]> = k.into();
+            let box_str: Box<str> = k.into();
+            assert_eq!(
+                box_bytes.as_ref(),
+                box_str.as_bytes(),
+                "fused {k:?}: Box<[u8]> must equal Box<str>.as_bytes()",
+            );
+        }
+    }
+
+    // ---------- (12) Generic composability at a Vec<Box<[u8]>>-collecting
+    // seam — the shape any downstream table-builder bounded on
+    // Into<Box<[u8]>> reaches through ----------
+
+    #[test]
+    fn into_box_bytes_collects_into_vec_impossibility() {
+        let collected: Vec<Box<[u8]>> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreImpossibilityKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(SameStoreImpossibilityKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_collects_into_vec_consistency() {
+        let collected: Vec<Box<[u8]>> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreConsistencyKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(SameStoreConsistencyKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn into_box_bytes_collects_into_vec_fused() {
+        let collected: Vec<Box<[u8]>> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), ProofRelationKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(ProofRelationKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name().as_bytes());
         }
     }
 }
