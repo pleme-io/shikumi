@@ -3048,6 +3048,66 @@ impl From<&SameStoreImpossibilityKind> for std::borrow::Cow<'static, str> {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`Box<str>`] impl — the
+/// **compact-owned string projection sibling** of the three forward-side
+/// siblings already at this altitude ([`From<Kind>`] for [`&'static str`],
+/// [`From<Kind>`] for [`String`], [`From<Kind>`] for [`Cow<'static, str>`]).
+/// Closes the fourth leg of the string-side owned-carrier receiver-family
+/// with the smallest heap-owning shape in std: a [`Box<str>`] occupies TWO
+/// words on 64-bit (data pointer + length) versus the [`String`]
+/// projection's THREE (data pointer + length + capacity), so downstream
+/// slots that store many owned identifier strings (a `Vec<Box<str>>` label
+/// table, a `HashMap<K, Box<str>>` per-corner tag registry, a
+/// `[Box<str>; N]` closed-set constant array, a struct field carrying a
+/// compact classification tag) pay one word less per entry than the
+/// sibling [`String`] projection with the same bytes stored.
+///
+/// **Why lift a [`Box<str>`] receiver alongside [`String`] and
+/// [`Cow<'static, str>`].** Every downstream slot bounded on
+/// `T: Into<Box<str>>` (a `Vec::<Box<str>>::push` slot, a struct field of
+/// type [`Box<str>`], a `.map(Box::<str>::from).collect::<Vec<Box<str>>>()`
+/// combinator over a variant iterator, a `HashMap<Box<str>, V>` builder,
+/// any generic `fn take<B: Into<Box<str>>>(b: B)` receiver) previously
+/// stranded a [`Kind`] value at the type-checker: Rust does NOT chain
+/// [`Into`] impls, so a `T: Into<Box<str>>` bound is NOT satisfied by
+/// `T: Into<&'static str>` alone, by `T: Into<String>` alone, or by
+/// `T: Into<Cow<'static, str>>` alone. The [`Box<str>`] projection has no
+/// capacity slack (the underlying allocation is exactly `name.len()` bytes,
+/// not one of the [`Vec`]-style growth-doubling capacities), so downstream
+/// slots that build long-lived tables of owned identifier strings save one
+/// word per entry versus a `Vec<String>` of the same identifiers.
+///
+/// Delegates to [`Self::name`] followed by [`Box::<str>::from`], which
+/// allocates a tight [`Box<str>`] sized exactly to the identifier's length
+/// — the closed set of stable snake-case identifiers surfaces through this
+/// impl in lockstep with every other [`Self::name`]-projected receiver.
+/// Adding a hypothetical third impossibility corner updates the ONE `match`
+/// body in [`Self::name`] and the new identifier surfaces through this
+/// impl and every sibling projection in lockstep.
+impl From<SameStoreImpossibilityKind> for Box<str> {
+    fn from(kind: SameStoreImpossibilityKind) -> Box<str> {
+        Box::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`Box<str>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above,
+/// delegating through the same [`Self::name`] source of truth. Enables
+/// `.into()` on a borrowed kind (a `&kind` iterator over `&[Kind]` in a
+/// `.map(Box::<str>::from).collect::<Vec<Box<str>>>()` combinator, a
+/// codegen visitor over per-corner registration sites where the kind
+/// arrives by reference) without a per-callsite dereference. Both
+/// directions of the standard [`Into<Box<str>>`] projection now compose
+/// out of the same [`Self::name`] receiver by construction, matching the
+/// (owned, reference-taking) pair already welded on the sibling
+/// [`From<Kind>`] for [`String`] and [`From<Kind>`] for
+/// [`Cow<'static, str>`] impls.
+impl From<&SameStoreImpossibilityKind> for Box<str> {
+    fn from(kind: &SameStoreImpossibilityKind) -> Box<str> {
+        Box::<str>::from(kind.name())
+    }
+}
+
 /// The [`PartialEq<str>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **comparison-side dual** of the [`AsRef<str>`] projection above,
 /// welding the stable snake-case [`Self::name`] identifier into the
@@ -4482,6 +4542,33 @@ impl From<&SameStoreConsistencyKind> for std::borrow::Cow<'static, str> {
     }
 }
 
+/// The [`From<SameStoreConsistencyKind>`] for [`Box<str>`] impl — the
+/// consistent-half sibling of the impossibility-half [`From<Kind>`] for
+/// [`Box<str>`] impl. See that impl for the full rationale; the
+/// compact-owned-string projection here welds the three-variant consistent
+/// half onto the same two-word-per-entry heap-owning shape in lockstep with
+/// the two-variant impossibility half above, so a downstream consumer
+/// building a `Vec<Box<str>>` label table or a `HashMap<Box<str>, V>`
+/// per-corner registry over consistent kinds reaches the same allocation
+/// shape as over impossibility kinds.
+impl From<SameStoreConsistencyKind> for Box<str> {
+    fn from(kind: SameStoreConsistencyKind) -> Box<str> {
+        Box::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`Box<str>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the consistent half, delegating through the same [`Self::name`] source
+/// of truth. Both directions of the standard [`Into<Box<str>>`] projection
+/// now compose out of the same [`Self::name`] receiver by construction on
+/// the consistent half.
+impl From<&SameStoreConsistencyKind> for Box<str> {
+    fn from(kind: &SameStoreConsistencyKind) -> Box<str> {
+        Box::<str>::from(kind.name())
+    }
+}
+
 /// The [`PartialEq<str>`] impl on [`SameStoreConsistencyKind`] — the
 /// consistent-half sibling of the impossibility-half [`PartialEq<str>`]
 /// impl. See that impl for the full rationale; the four-cell quadruple
@@ -5643,6 +5730,35 @@ impl From<ProofRelationKind> for std::borrow::Cow<'static, str> {
 impl From<&ProofRelationKind> for std::borrow::Cow<'static, str> {
     fn from(kind: &ProofRelationKind) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(kind.name())
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`Box<str>`] impl on the **fused
+/// sum** — the compact-owned-string projection sibling of the two half-side
+/// [`Box<str>`] impls above, closing the third leg of the (impossibility,
+/// consistency, fused) altitude-triple at the compact-owned-string
+/// receiver. The fused body delegates through [`ProofRelationKind::name`],
+/// which routes through the two half-side [`Self::name`] receivers — so the
+/// fused [`Box<str>`] projection agrees with the routed half-side
+/// [`Box<str>`] projection through the two-arm partition of the fused sum
+/// on every fused kind, matching the same-shape pattern already welded on
+/// [`From<Kind>`] for [`String`] and [`From<Kind>`] for
+/// [`Cow<'static, str>`] at the fused altitude.
+impl From<ProofRelationKind> for Box<str> {
+    fn from(kind: ProofRelationKind) -> Box<str> {
+        Box::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`Box<str>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the fused sum, delegating through the same [`Self::name`] source of
+/// truth. Both directions of the standard [`Into<Box<str>>`] projection now
+/// compose out of the same [`Self::name`] receiver by construction on the
+/// fused sum, matching the pair already welded on both half-side enums.
+impl From<&ProofRelationKind> for Box<str> {
+    fn from(kind: &ProofRelationKind) -> Box<str> {
+        Box::<str>::from(kind.name())
     }
 }
 
@@ -35271,6 +35387,569 @@ mod partial_eq_cow_bytes_tests {
             assert!(cmp_kind_cow_bytes(&k, &cow_b));
             assert!(cmp_kind_cow_bytes(&k, &cow_o));
             assert!(!cmp_kind_cow_bytes(&k, &miss));
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_box_str_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`Box<str>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **compact-owned string projection**
+    //! lifting the three kind enums into the standard [`Into<Box<str>>`]
+    //! receiver-family every downstream slot bounded on
+    //! `T: Into<Box<str>>` already reaches through.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of the
+    //! three enums).** The prior [`From<Kind>`] for [`String`] pass
+    //! (`b9cd995`) closed the owned-only heap projection with a
+    //! three-word carrier (data pointer + length + capacity). The prior
+    //! [`From<Kind>`] for [`Cow<'static, str>`] pass (`781feb1`) closed
+    //! the borrowed-or-owned dual. Neither reaches a [`Box<str>`]-bounded
+    //! slot: Rust does NOT chain [`Into`] impls, so a `T: Into<Box<str>>`
+    //! bound is NOT satisfied by `T: Into<String>` alone,
+    //! `T: Into<&'static str>` alone, or `T: Into<Cow<'static, str>>`
+    //! alone — every downstream slot bounded on `T: Into<Box<str>>` (a
+    //! `Vec::<Box<str>>::push` slot, a struct field of type [`Box<str>`],
+    //! a `.map(Box::<str>::from).collect::<Vec<Box<str>>>()` combinator, a
+    //! `HashMap<Box<str>, V>` builder, any generic
+    //! `fn take<B: Into<Box<str>>>(b: B)` receiver) previously stranded a
+    //! [`Kind`] value at the type-checker with no [`Into<Box<str>>`] path.
+    //!
+    //! **Compact-owned carrier — one word less per entry than
+    //! [`String`].** The [`Box<str>`] projection has no capacity slack:
+    //! the underlying allocation is exactly `name.len()` bytes and the
+    //! carrier occupies TWO words (data pointer + length) on 64-bit
+    //! versus the [`String`] projection's THREE (data pointer + length +
+    //! capacity). Downstream slots that build long-lived tables of owned
+    //! identifier strings (a `Vec<Box<str>>` label table, a
+    //! `HashMap<K, Box<str>>` per-corner tag registry, a
+    //! `[Box<str>; N]` closed-set constant array, a struct field
+    //! carrying a compact classification tag) save one word per entry
+    //! versus a `Vec<String>` of the same identifiers. The tests below
+    //! pin this size-shape structurally (test 9) so a future silent
+    //! regression to a larger owned carrier fails at `cargo test` rather
+    //! than at runtime through per-entry memory pressure.
+    //!
+    //! **Pointwise identity with [`Self::name`] and with every prior
+    //! forward-side receiver.** For every value `k` at every altitude,
+    //! the projected [`Box<str>`] carries the same bytes as `k.name()`,
+    //! `k.as_ref() as &str`, `<&'static str>::from(k)`,
+    //! `<String>::from(k)`, `<Cow<'static, str>>::from(k).as_ref()`, and
+    //! `k.to_string()`. The standard [`Into<Box<str>>`] trait projects
+    //! the SAME identifier every prior forward-side receiver projects,
+    //! so a downstream consumer routing on any of the seven reaches the
+    //! same bytes.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so the fused [`Box<str>`]
+    //! projection agrees with the routed half-side [`Box<str>`]
+    //! projection through the two-arm partition of the fused sum on
+    //! every fused kind.
+    //!
+    //! The tests below pin the structural invariants that keep the six
+    //! impls in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`] on every variant of
+    //!    every kind enum — `<Box<str>>::from(k).as_ref() == k.name()`.
+    //! 2. Pointwise identity with the sibling [`AsRef<str>`] impl on
+    //!    every variant of every kind enum.
+    //! 3. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`String`] impl.
+    //! 4. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Cow<'static, str>`] impl.
+    //! 5. Owned/reference-taking [`From`] impl agreement.
+    //! 6. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`Box<str>`] projection agrees with the two half-side
+    //!    [`Box<str>`] projections through the fused sum's two-arm
+    //!    partition.
+    //! 7. [`impl Into<Box<str>>`] composability at a generic-typed
+    //!    callsite — the load-bearing pin the sibling [`From<Kind>`] for
+    //!    [`String`] and [`From<Kind>`] for [`Cow<'static, str>`] impls
+    //!    cannot satisfy: Rust does NOT chain [`Into`] impls, so
+    //!    `T: Into<Box<str>>` is NOT satisfied by `T: Into<String>`
+    //!    alone, `T: Into<&'static str>` alone, or
+    //!    `T: Into<Cow<'static, str>>` alone.
+    //! 8. Upgrade-to-owned pin — `Box::<str>::into_string` on the
+    //!    projected value yields the same bytes as the sibling
+    //!    [`From<Kind>`] for [`String`] impl (both allocation shapes
+    //!    reach the same owned identifier bytes).
+    //! 9. **Size-shape pin** — the projected [`Box<str>`] has length
+    //!    exactly `name.len()` (no capacity slack from a growth-doubling
+    //!    allocation). Catches silent regression to a
+    //!    [`String::into_boxed_str`] path that would otherwise shrink
+    //!    silently but nonetheless allocate through the growable-`String`
+    //!    intermediate. (Also indirectly asserts the two-word carrier
+    //!    shape — with no separate capacity field, [`Box<str>`] cannot
+    //!    silently regress to a three-word [`String`]-shaped layout
+    //!    without a type change caught by the [`Box<str>`] receiver
+    //!    itself.)
+    //! 10. Round-trip identity through both [`FromStr`] and
+    //!     [`TryFrom<&str>`] on `box_str.as_ref()`.
+    //! 11. Generic composability at an `impl Into<Box<str>>`-bounded
+    //!     HRTB seam — the shape any `Vec<Box<str>>::extend` /
+    //!     `.collect::<Vec<Box<str>>>()`-style downstream slot bounded
+    //!     on the standard trait reaches through.
+
+    use super::*;
+    use std::borrow::Cow;
+
+    // ---------- (1) Pointwise identity with name() ----------
+
+    #[test]
+    fn into_box_str_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name(),
+                "impossibility {k:?}: From<Kind> for Box<str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name(),
+                "consistency {k:?}: From<Kind> for Box<str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                k.name(),
+                "fused {k:?}: From<Kind> for Box<str> must equal name()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<str> ----------
+
+    #[test]
+    fn into_box_str_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let borrowed: &str = <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "impossibility {k:?}: From<Kind> for Box<str> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let borrowed: &str = <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "consistency {k:?}: From<Kind> for Box<str> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let borrowed: &str = <ProofRelationKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(
+                boxed.as_ref(),
+                borrowed,
+                "fused {k:?}: From<Kind> for Box<str> must agree with AsRef<str>",
+            );
+        }
+    }
+
+    // ---------- (3) Pointwise identity with From<Kind> for String ----------
+
+    #[test]
+    fn into_box_str_matches_into_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_str(),
+                "impossibility {k:?}: From<Kind> for Box<str> must agree with From<Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_into_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_str(),
+                "consistency {k:?}: From<Kind> for Box<str> must agree with From<Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_into_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                owned.as_str(),
+                "fused {k:?}: From<Kind> for Box<str> must agree with From<Kind> for String",
+            );
+        }
+    }
+
+    // ---------- (4) Pointwise identity with From<Kind> for Cow<'static, str> ----------
+
+    #[test]
+    fn into_box_str_matches_into_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "impossibility {k:?}: From<Kind> for Box<str> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_into_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "consistency {k:?}: From<Kind> for Box<str> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_matches_into_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let cow: Cow<'static, str> = k.into();
+            assert_eq!(
+                boxed.as_ref(),
+                cow.as_ref(),
+                "fused {k:?}: From<Kind> for Box<str> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    // ---------- (5) Owned/reference-taking From agreement ----------
+
+    #[test]
+    fn into_box_str_owned_and_ref_agree_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Box<str> = k.into();
+            let by_ref: Box<str> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "impossibility {k:?}: From<Kind> for Box<str> and From<&Kind> for Box<str> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_owned_and_ref_agree_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Box<str> = k.into();
+            let by_ref: Box<str> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "consistency {k:?}: From<Kind> for Box<str> and From<&Kind> for Box<str> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_owned_and_ref_agree_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Box<str> = k.into();
+            let by_ref: Box<str> = (&k).into();
+            assert_eq!(
+                owned, by_ref,
+                "fused {k:?}: From<Kind> for Box<str> and From<&Kind> for Box<str> must agree",
+            );
+        }
+    }
+
+    // ---------- (6) Fused-arm lockstep with half-side projections ----------
+
+    #[test]
+    fn into_box_str_fused_matches_routed_half_sides() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: Box<str> = k.into();
+            let routed: Box<str> = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused From<Kind> for Box<str> must equal routed half-side From<Kind> for Box<str>",
+            );
+        }
+    }
+
+    // ---------- (7) impl Into<Box<str>> composability at a generic callsite ----------
+
+    fn take<B: Into<Box<str>>>(b: B) -> Box<str> {
+        b.into()
+    }
+
+    #[test]
+    fn into_box_str_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name(),
+                "impossibility {k:?}: generic Into<Box<str>> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name(),
+                "consistency {k:?}: generic Into<Box<str>> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name(),
+                "fused {k:?}: generic Into<Box<str>> must equal name()",
+            );
+        }
+    }
+
+    // ---------- (8) Upgrade-to-owned pin — Box::<str>::into_string yields
+    // the same bytes as the sibling From<Kind> for String impl ----------
+
+    #[test]
+    fn into_box_str_upgrades_to_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let via_box: String = boxed.into_string();
+            let via_from: String = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "impossibility {k:?}: Box::into_string must equal From<Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_upgrades_to_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let via_box: String = boxed.into_string();
+            let via_from: String = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "consistency {k:?}: Box::into_string must equal From<Kind> for String",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_upgrades_to_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            let via_box: String = boxed.into_string();
+            let via_from: String = k.into();
+            assert_eq!(
+                via_box, via_from,
+                "fused {k:?}: Box::into_string must equal From<Kind> for String",
+            );
+        }
+    }
+
+    // ---------- (9) Size-shape pin — the projected Box<str> has length
+    // exactly name.len(), the tight-allocation invariant the compact
+    // owned carrier exists to provide ----------
+
+    #[test]
+    fn into_box_str_has_tight_length_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "impossibility {k:?}: Box<str> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_has_tight_length_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "consistency {k:?}: Box<str> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_has_tight_length_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.len(),
+                k.name().len(),
+                "fused {k:?}: Box<str> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    // ---------- (10) Round-trip through FromStr and TryFrom<&str> on box.as_ref() ----------
+
+    #[test]
+    fn into_box_str_round_trips_through_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref().parse::<SameStoreImpossibilityKind>(),
+                Ok(k),
+                "impossibility {k:?}: FromStr on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_round_trips_through_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref().parse::<SameStoreConsistencyKind>(),
+                Ok(k),
+                "consistency {k:?}: FromStr on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_round_trips_through_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                boxed.as_ref().parse::<ProofRelationKind>(),
+                Ok(k),
+                "fused {k:?}: FromStr on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_round_trips_through_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "impossibility {k:?}: TryFrom<&str> on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_round_trips_through_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "consistency {k:?}: TryFrom<&str> on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_box_str_round_trips_through_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let boxed: Box<str> = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(boxed.as_ref()),
+                Ok(k),
+                "fused {k:?}: TryFrom<&str> on Box<str>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    // ---------- (11) Generic composability at a Vec<Box<str>>-collecting
+    // seam — the shape any downstream table-builder bounded on
+    // Into<Box<str>> reaches through ----------
+
+    #[test]
+    fn into_box_str_collects_into_vec_impossibility() {
+        let collected: Vec<Box<str>> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<str>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreImpossibilityKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(SameStoreImpossibilityKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name());
+        }
+    }
+
+    #[test]
+    fn into_box_str_collects_into_vec_consistency() {
+        let collected: Vec<Box<str>> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<str>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreConsistencyKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(SameStoreConsistencyKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name());
+        }
+    }
+
+    #[test]
+    fn into_box_str_collects_into_vec_fused() {
+        let collected: Vec<Box<str>> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Box::<str>::from)
+            .collect();
+        assert_eq!(collected.len(), ProofRelationKind::VARIANTS.len());
+        for (b, &k) in collected.iter().zip(ProofRelationKind::VARIANTS) {
+            assert_eq!(b.as_ref(), k.name());
         }
     }
 }
