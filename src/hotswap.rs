@@ -4444,6 +4444,85 @@ impl From<&SameStoreImpossibilityKind> for std::sync::Arc<str> {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`std::sync::Arc<[u8]>`]
+/// impl — the **byte-side shared-refcounted carrier projection**, the
+/// byte-side dual of the string-side [`From<Kind>`] for
+/// [`std::sync::Arc<str>`] impl directly above and the shared-refcounted
+/// sibling of the byte-side [`From<Kind>`] for [`Box<[u8]>`] impl already
+/// at this altitude. Delegates to [`Self::name`] followed by
+/// [`str::as_bytes`] then [`std::sync::Arc::<[u8]>::from`], which
+/// allocates a tight [`Arc<[u8]>`] sized exactly to the identifier's
+/// length plus the atomic reference-count header.
+///
+/// **Why lift an [`Arc<[u8]>`] receiver alongside [`Vec<u8>`],
+/// [`Cow<'static, [u8]>`], and [`Box<[u8]>`].** Rust does NOT chain
+/// [`Into`] impls — a `T: Into<Arc<[u8]>>` bound is NOT satisfied by
+/// `T: Into<Vec<u8>>` alone, `T: Into<&'static [u8]>` alone,
+/// `T: Into<Cow<'static, [u8]>>` alone, or `T: Into<Box<[u8]>>` alone.
+/// Every downstream slot bounded on `T: Into<Arc<[u8]>>` (a
+/// `Vec::<Arc<[u8]>>::push` slot, a struct field of type [`Arc<[u8]>`]
+/// carrying a shared-refcounted byte-encoded classification tag, a
+/// `.map(Arc::<[u8]>::from).collect::<Vec<Arc<[u8]>>>()` combinator over
+/// a variant iterator, a `HashMap<Arc<[u8]>, V>` per-corner tag registry
+/// snapshotted for cheap-cloned read-only observation, a
+/// `dashmap::DashMap<Arc<[u8]>, V>` shared-key byte intern-table, any
+/// generic `fn take<A: Into<Arc<[u8]>>>(a: A)` receiver, any
+/// shikumi-native [`crate::ConfigStore`]-loaded config carrying a
+/// byte-encoded identifier as an [`Arc<[u8]>`] field held under
+/// [`arc_swap::ArcSwap<T>`]-adjacent snapshotting) previously stranded a
+/// [`Kind`] value at the type-checker with no [`Into<Arc<[u8]>>`] path.
+///
+/// **Shared-refcounted byte carrier — cheap-clone across many owners.**
+/// The [`Arc<[u8]>`] projection has no capacity slack (the underlying
+/// allocation is exactly `name.len()` bytes plus the atomic
+/// reference-count header) and the carrier itself occupies TWO words
+/// (data pointer + length) on 64-bit — the same footprint as
+/// [`Box<[u8]>`] but with a decisive property [`Box<[u8]>`] lacks:
+/// [`std::sync::Arc::<[u8]>::clone`] is a single atomic increment rather
+/// than a fresh heap allocation, so a downstream fan-out that hands the
+/// SAME byte-encoded identifier out to MANY owners
+/// ([`arc_swap::ArcSwap<T>`]-adjacent read-snapshots on shikumi's own
+/// [`crate::ConfigStore`], per-worker cache clones of a shared byte-tag
+/// registry, a `dashmap::DashMap<Arc<[u8]>, V>` intern-table) pays ONE
+/// atomic increment per additional owner rather than a per-owner
+/// [`Vec<u8>`]-sized or [`Box<[u8]>`]-sized fresh heap allocation.
+///
+/// **Architectural alignment with shikumi's ArcSwap-based store.**
+/// shikumi IS Pillar 2 in the fleet, and its [`crate::ConfigStore`] is
+/// built on [`arc_swap::ArcSwap<T>`] — every hot-reloaded config value
+/// already lives under an [`std::sync::Arc`]. A downstream config that
+/// carries a byte-encoded classification identifier as an [`Arc<[u8]>`]
+/// field (the ecosystem-natural shape for a shared-owned byte slice
+/// under [`arc_swap::ArcSwap`], with the same shared-refcount semantics
+/// the [`Arc<str>`] sibling already lifted for the string-side) now
+/// reaches the projection through the standard trait alone, without a
+/// per-callsite `Arc::<[u8]>::from(kind.name().as_bytes())` intermediate
+/// that fragments the [`Self::name`] source of truth.
+impl From<SameStoreImpossibilityKind> for std::sync::Arc<[u8]> {
+    fn from(kind: SameStoreImpossibilityKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`std::sync::Arc<[u8]>`]
+/// impl — the reference-taking sibling of the owned [`From`] impl
+/// directly above, delegating through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Enables
+/// `.into()` on a borrowed kind (a `&kind` iterator over `&[Kind]` in a
+/// `.map(Arc::<[u8]>::from).collect::<Vec<Arc<[u8]>>>()` combinator, a
+/// codegen visitor over per-corner registration sites where the kind
+/// arrives by reference and is serialized as shared-refcounted bytes)
+/// without a per-callsite dereference. Both directions of the standard
+/// [`Into<Arc<[u8]>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction, matching the (owned,
+/// reference-taking) pair already welded on every sibling byte-side
+/// [`From<Kind>`] impl at this altitude.
+impl From<&SameStoreImpossibilityKind> for std::sync::Arc<[u8]> {
+    fn from(kind: &SameStoreImpossibilityKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -5623,6 +5702,36 @@ impl From<SameStoreConsistencyKind> for std::sync::Arc<str> {
 impl From<&SameStoreConsistencyKind> for std::sync::Arc<str> {
     fn from(kind: &SameStoreConsistencyKind) -> std::sync::Arc<str> {
         std::sync::Arc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`std::sync::Arc<[u8]>`]
+/// impl — the consistent-half sibling of the impossibility-half
+/// [`From<Kind>`] for [`Arc<[u8]>`] impl. See that impl for the full
+/// rationale; the shared-refcounted byte-carrier projection here welds
+/// the three-variant consistent half onto the same two-word-per-owner
+/// shared-refcounted-byte shape in lockstep with the two-variant
+/// impossibility half above, so a downstream consumer building a
+/// `Vec<Arc<[u8]>>` byte-key label registry or a `HashMap<Arc<[u8]>, V>`
+/// per-corner byte-tag registry over consistent kinds reaches the same
+/// shared-ownership shape as over impossibility kinds — one atomic
+/// increment per additional owner rather than a per-owner fresh
+/// [`Vec<u8>`]-sized heap allocation.
+impl From<SameStoreConsistencyKind> for std::sync::Arc<[u8]> {
+    fn from(kind: SameStoreConsistencyKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`std::sync::Arc<[u8]>`]
+/// impl — the reference-taking sibling of the owned [`From`] impl
+/// directly above on the consistent half, delegating through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Both directions
+/// of the standard [`Into<Arc<[u8]>>`] projection now compose out of the
+/// same [`Self::name`] receiver by construction on the consistent half.
+impl From<&SameStoreConsistencyKind> for std::sync::Arc<[u8]> {
+    fn from(kind: &SameStoreConsistencyKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
     }
 }
 
@@ -7187,6 +7296,38 @@ impl From<ProofRelationKind> for std::sync::Arc<str> {
 impl From<&ProofRelationKind> for std::sync::Arc<str> {
     fn from(kind: &ProofRelationKind) -> std::sync::Arc<str> {
         std::sync::Arc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`std::sync::Arc<[u8]>`] impl on
+/// the **fused sum** — the byte-side shared-refcounted-carrier projection
+/// sibling of the string-side [`From<Kind>`] for [`Arc<str>`] fused impl
+/// above and the byte-side dual closing the third leg of the
+/// (impossibility, consistency, fused) altitude-triple at the
+/// shared-refcounted-byte receiver. The fused body delegates through
+/// [`ProofRelationKind::name`], which routes through the two half-side
+/// [`Self::name`] receivers — so the fused [`Arc<[u8]>`] projection agrees
+/// with the routed half-side [`Arc<[u8]>`] projection through the two-arm
+/// partition of the fused sum on every fused kind, matching the same-shape
+/// pattern already welded on [`From<Kind>`] for [`Vec<u8>`],
+/// [`From<Kind>`] for [`Cow<'static, [u8]>`], and [`From<Kind>`] for
+/// [`Box<[u8]>`] at the fused altitude.
+impl From<ProofRelationKind> for std::sync::Arc<[u8]> {
+    fn from(kind: ProofRelationKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`std::sync::Arc<[u8]>`] impl —
+/// the reference-taking sibling of the owned [`From`] impl directly above
+/// on the fused sum, delegating through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth. Both directions
+/// of the standard [`Into<Arc<[u8]>>`] projection now compose out of the
+/// same [`Self::name`] receiver by construction on the fused sum, matching
+/// the pair already welded on both half-side enums.
+impl From<&ProofRelationKind> for std::sync::Arc<[u8]> {
+    fn from(kind: &ProofRelationKind) -> std::sync::Arc<[u8]> {
+        std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
     }
 }
 
@@ -40523,6 +40664,702 @@ mod into_arc_str_tests {
         for &k in ProofRelationKind::VARIANTS {
             let a: Arc<str> = k.into();
             let b: Arc<str> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(
+                !Arc::ptr_eq(&a, &b),
+                "fused {k:?}: independent .into() calls must NOT silently share an interned allocation",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_arc_bytes_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`std::sync::Arc<[u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side shared-refcounted carrier
+    //! projection** lifting the three kind enums into the standard
+    //! [`Into<Arc<[u8]>>`] receiver-family every downstream slot bounded on
+    //! `T: Into<Arc<[u8]>>` already reaches through, closing the byte-side
+    //! dual of the string-side [`Arc<str>`] cell already at this altitude.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of the
+    //! three enums).** The prior [`From<Kind>`] for [`Vec<u8>`] pass closed
+    //! the owned-only heap byte projection with a three-word carrier (data
+    //! pointer + length + capacity). The prior [`From<Kind>`] for
+    //! [`Cow<'static, [u8]>`] pass closed the borrowed-or-owned byte dual.
+    //! The prior [`From<Kind>`] for [`Box<[u8]>`] pass closed the
+    //! compact-owned byte dual. NONE reaches an [`Arc<[u8]>`]-bounded
+    //! slot: Rust does NOT chain [`Into`] impls, so a
+    //! `T: Into<Arc<[u8]>>` bound is NOT satisfied by
+    //! `T: Into<Vec<u8>>` alone, `T: Into<&'static [u8]>` alone,
+    //! `T: Into<Cow<'static, [u8]>>` alone, or `T: Into<Box<[u8]>>` alone
+    //! — every downstream slot bounded on `T: Into<Arc<[u8]>>` (a
+    //! `Vec::<Arc<[u8]>>::push` slot, a struct field of type
+    //! [`Arc<[u8]>`] carrying a shared-refcounted byte-encoded
+    //! classification tag, a
+    //! `.map(Arc::<[u8]>::from).collect::<Vec<Arc<[u8]>>>()` combinator, a
+    //! [`HashMap<Arc<[u8]>, V>`](std::collections::HashMap) builder, any
+    //! generic `fn take<A: Into<Arc<[u8]>>>(a: A)` receiver, any
+    //! shikumi-native [`crate::ConfigStore`]-loaded config carrying a
+    //! byte-encoded identifier as an [`Arc<[u8]>`] field) previously
+    //! stranded a [`Kind`] value at the type-checker with no
+    //! [`Into<Arc<[u8]>>`] path.
+    //!
+    //! **Shared-refcounted byte carrier — cheap-clone across many
+    //! owners.** The [`Arc<[u8]>`] projection has no capacity slack (the
+    //! underlying allocation is exactly `name.len()` bytes plus the atomic
+    //! reference-count header) and the carrier itself occupies TWO words
+    //! (data pointer + length) on 64-bit — the same footprint as
+    //! [`Box<[u8]>`] but with a decisive property [`Box<[u8]>`] lacks:
+    //! [`std::sync::Arc::<[u8]>::clone`] is a single atomic increment
+    //! rather than a fresh heap allocation. A downstream fan-out that
+    //! hands the same byte-encoded identifier to N owners
+    //! ([`arc_swap::ArcSwap<T>`]-adjacent read-snapshots on shikumi's own
+    //! [`crate::ConfigStore`], per-worker cache clones of a shared
+    //! byte-tag registry, a `dashmap::DashMap<Arc<[u8]>, V>` shared-key
+    //! byte intern-table) pays ONE atomic increment per additional owner
+    //! rather than a per-owner [`Vec<u8>`]-sized or [`Box<[u8]>`]-sized
+    //! fresh heap allocation. The tests below pin the size-shape
+    //! pointwise (test 9) so a future silent regression to a larger owned
+    //! byte carrier fails at `cargo test` rather than at runtime through
+    //! per-fan-out memory pressure.
+    //!
+    //! **Pointwise identity with [`Self::name`]-then-[`str::as_bytes`] and
+    //! with every prior forward-side byte-side receiver.** For every value
+    //! `k` at every altitude, the projected [`Arc<[u8]>`] carries the same
+    //! bytes as `k.name().as_bytes()`, `<K as AsRef<[u8]>>::as_ref(&k)`,
+    //! `<&'static [u8]>::from(k)`, `<Vec<u8>>::from(k)`,
+    //! `<Cow<'static, [u8]>>::from(k).as_ref()`, and
+    //! `<Box<[u8]>>::from(k).as_ref()`. The standard [`Into<Arc<[u8]>>`]
+    //! trait projects the SAME identifier every prior byte-side
+    //! forward-side receiver projects, so a downstream consumer routing
+    //! on any of the seven reaches the same bytes. The byte-side and
+    //! string-side [`Arc`] projections agree on the byte range too —
+    //! `<Arc<[u8]>>::from(k).as_ref() == <Arc<str>>::from(k).as_bytes()`.
+    //!
+    //! **Fused-arm lockstep with the two half-side impls.** The fused
+    //! [`ProofRelationKind`] impl delegates through
+    //! [`ProofRelationKind::name`], which delegates through the two
+    //! half-side [`Self::name`] receivers — so the fused [`Arc<[u8]>`]
+    //! projection agrees with the routed half-side [`Arc<[u8]>`]
+    //! projection through the two-arm partition of the fused sum on every
+    //! fused kind.
+    //!
+    //! The tests below pin the structural invariants that keep the six
+    //! impls in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`]-then-[`str::as_bytes`] on
+    //!    every variant of every kind enum —
+    //!    `<Arc<[u8]>>::from(k).as_ref() == k.name().as_bytes()`.
+    //! 2. Pointwise identity with the sibling [`AsRef<[u8]>`] impl on
+    //!    every variant of every kind enum.
+    //! 3. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Vec<u8>`] impl.
+    //! 4. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Cow<'static, [u8]>`] impl.
+    //! 5. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`Box<[u8]>`] impl.
+    //! 6. Owned/reference-taking [`From`] impl agreement.
+    //! 7. Fused-arm lockstep — for every fused kind, the fused
+    //!    [`Arc<[u8]>`] projection agrees with the two half-side
+    //!    [`Arc<[u8]>`] projections through the fused sum's two-arm
+    //!    partition.
+    //! 8. [`impl Into<Arc<[u8]>>`] composability at a generic-typed
+    //!    callsite — the load-bearing pin the sibling [`From<Kind>`] for
+    //!    [`Vec<u8>`], [`From<Kind>`] for [`Cow<'static, [u8]>`], and
+    //!    [`From<Kind>`] for [`Box<[u8]>`] impls cannot satisfy: Rust
+    //!    does NOT chain [`Into`] impls.
+    //! 9. **Size-shape pin** — the projected [`Arc<[u8]>`] has length
+    //!    exactly `name.len()` (no capacity slack from a growth-doubling
+    //!    allocation). Catches silent regression to an
+    //!    [`Arc::<[u8]>::from(Vec<u8>)`]-through-growable-`Vec<u8>`-intermediate
+    //!    path.
+    //! 10. Round-trip identity through [`TryFrom<&[u8]>`] on
+    //!     `arc_bytes.as_ref()`.
+    //! 11. **Cross-carrier byte-side/string-side agreement** —
+    //!     `<Arc<[u8]>>::from(k).as_ref() == <Arc<str>>::from(k).as_bytes()`.
+    //!     Pins that the byte-side and string-side shared-refcounted
+    //!     carriers project the SAME byte range.
+    //! 12. Generic composability at a [`Vec<Arc<[u8]>>`]-collecting seam
+    //!     — the shape any downstream table-builder bounded on
+    //!     [`Into<Arc<[u8]>>`] reaches through.
+    //! 13. **Cheap-clone pin — the load-bearing property that
+    //!     distinguishes the [`Arc<[u8]>`] carrier from the sibling
+    //!     [`Box<[u8]>`] carrier.** `Arc::<[u8]>::from(k).clone()` yields
+    //!     two owners whose data pointers are identical
+    //!     ([`std::sync::Arc::ptr_eq`] holds) — no fresh heap allocation,
+    //!     no byte copy. Catches silent regression to a
+    //!     `.to_vec().into()`-style clone path that would forfeit the
+    //!     shared-ownership shape the [`Arc<[u8]>`] carrier exists to
+    //!     provide.
+    //! 14. **Non-aliasing pin** — independent `.into()` calls yield
+    //!     distinct allocations ([`std::sync::Arc::ptr_eq`] is FALSE); the
+    //!     projection itself never silently interns.
+
+    use super::*;
+    use std::borrow::Cow;
+    use std::sync::Arc;
+
+    // ---------- (1) Pointwise identity with name().as_bytes() ----------
+
+    #[test]
+    fn into_arc_bytes_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                k.name().as_bytes(),
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                k.name().as_bytes(),
+                "consistency {k:?}: From<Kind> for Arc<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                k.name().as_bytes(),
+                "fused {k:?}: From<Kind> for Arc<[u8]> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<[u8]> ----------
+
+    #[test]
+    fn into_arc_bytes_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                a.as_ref(),
+                borrowed,
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let borrowed: &[u8] = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                a.as_ref(),
+                borrowed,
+                "consistency {k:?}: From<Kind> for Arc<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let borrowed: &[u8] = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                a.as_ref(),
+                borrowed,
+                "fused {k:?}: From<Kind> for Arc<[u8]> must agree with AsRef<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (3) Pointwise identity with From<Kind> for Vec<u8> ----------
+
+    #[test]
+    fn into_arc_bytes_matches_into_vec_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                owned.as_slice(),
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_vec_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                owned.as_slice(),
+                "consistency {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_vec_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let owned: Vec<u8> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                owned.as_slice(),
+                "fused {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Vec<u8>",
+            );
+        }
+    }
+
+    // ---------- (4) Pointwise identity with From<Kind> for Cow<'static, [u8]> ----------
+
+    #[test]
+    fn into_arc_bytes_matches_into_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                cow.as_ref(),
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                cow.as_ref(),
+                "consistency {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                cow.as_ref(),
+                "fused {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Cow",
+            );
+        }
+    }
+
+    // ---------- (5) Pointwise identity with From<Kind> for Box<[u8]> ----------
+
+    #[test]
+    fn into_arc_bytes_matches_into_box_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                boxed.as_ref(),
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Box<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_box_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                boxed.as_ref(),
+                "consistency {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Box<[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_into_box_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let boxed: Box<[u8]> = k.into();
+            assert_eq!(
+                a.as_ref(),
+                boxed.as_ref(),
+                "fused {k:?}: From<Kind> for Arc<[u8]> must agree with From<Kind> for Box<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (6) Owned/reference-taking From agreement ----------
+
+    #[test]
+    fn into_arc_bytes_owned_and_ref_agree_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Arc<[u8]> = k.into();
+            let by_ref: Arc<[u8]> = (&k).into();
+            assert_eq!(
+                owned.as_ref(),
+                by_ref.as_ref(),
+                "impossibility {k:?}: From<Kind> for Arc<[u8]> and From<&Kind> for Arc<[u8]> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_owned_and_ref_agree_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Arc<[u8]> = k.into();
+            let by_ref: Arc<[u8]> = (&k).into();
+            assert_eq!(
+                owned.as_ref(),
+                by_ref.as_ref(),
+                "consistency {k:?}: From<Kind> for Arc<[u8]> and From<&Kind> for Arc<[u8]> must agree",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_owned_and_ref_agree_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Arc<[u8]> = k.into();
+            let by_ref: Arc<[u8]> = (&k).into();
+            assert_eq!(
+                owned.as_ref(),
+                by_ref.as_ref(),
+                "fused {k:?}: From<Kind> for Arc<[u8]> and From<&Kind> for Arc<[u8]> must agree",
+            );
+        }
+    }
+
+    // ---------- (7) Fused-arm lockstep with half-side projections ----------
+
+    #[test]
+    fn into_arc_bytes_fused_matches_routed_half_sides() {
+        for &k in ProofRelationKind::VARIANTS {
+            let fused: Arc<[u8]> = k.into();
+            let routed: Arc<[u8]> = match k {
+                ProofRelationKind::Consistent(c) => c.into(),
+                ProofRelationKind::Impossible(i) => i.into(),
+            };
+            assert_eq!(
+                fused.as_ref(),
+                routed.as_ref(),
+                "fused {k:?}: fused From<Kind> for Arc<[u8]> must equal routed half-side From<Kind> for Arc<[u8]>",
+            );
+        }
+    }
+
+    // ---------- (8) impl Into<Arc<[u8]>> composability at a generic callsite ----------
+
+    fn take<A: Into<Arc<[u8]>>>(a: A) -> Arc<[u8]> {
+        a.into()
+    }
+
+    #[test]
+    fn into_arc_bytes_composes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "impossibility {k:?}: generic Into<Arc<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_composes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "consistency {k:?}: generic Into<Arc<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_composes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let composed = take(k);
+            assert_eq!(
+                composed.as_ref(),
+                k.name().as_bytes(),
+                "fused {k:?}: generic Into<Arc<[u8]>> must equal name().as_bytes()",
+            );
+        }
+    }
+
+    // ---------- (9) Size-shape pin — the projected Arc<[u8]> has length
+    // exactly name.len(), the tight-allocation invariant the
+    // shared-refcounted byte carrier exists to provide ----------
+
+    #[test]
+    fn into_arc_bytes_has_tight_length_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.len(),
+                k.name().len(),
+                "impossibility {k:?}: Arc<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_has_tight_length_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.len(),
+                k.name().len(),
+                "consistency {k:?}: Arc<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_has_tight_length_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                a.len(),
+                k.name().len(),
+                "fused {k:?}: Arc<[u8]> allocation must be tight (no capacity slack)",
+            );
+        }
+    }
+
+    // ---------- (10) Round-trip through TryFrom<&[u8]> on arc.as_ref() ----------
+
+    #[test]
+    fn into_arc_bytes_round_trips_through_try_from_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a.as_ref()),
+                Ok(k),
+                "impossibility {k:?}: TryFrom<&[u8]> on Arc<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_round_trips_through_try_from_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a.as_ref()),
+                Ok(k),
+                "consistency {k:?}: TryFrom<&[u8]> on Arc<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_round_trips_through_try_from_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(a.as_ref()),
+                Ok(k),
+                "fused {k:?}: TryFrom<&[u8]> on Arc<[u8]>.as_ref() must round-trip",
+            );
+        }
+    }
+
+    // ---------- (11) Cross-carrier byte-side/string-side agreement —
+    // Arc<[u8]>.as_ref() == Arc<str>.as_bytes() ----------
+
+    #[test]
+    fn into_arc_bytes_matches_arc_str_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let bytes: Arc<[u8]> = k.into();
+            let string: Arc<str> = k.into();
+            assert_eq!(
+                bytes.as_ref(),
+                string.as_bytes(),
+                "impossibility {k:?}: Arc<[u8]> and Arc<str> must project the same byte range",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_arc_str_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let bytes: Arc<[u8]> = k.into();
+            let string: Arc<str> = k.into();
+            assert_eq!(
+                bytes.as_ref(),
+                string.as_bytes(),
+                "consistency {k:?}: Arc<[u8]> and Arc<str> must project the same byte range",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_matches_arc_str_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let bytes: Arc<[u8]> = k.into();
+            let string: Arc<str> = k.into();
+            assert_eq!(
+                bytes.as_ref(),
+                string.as_bytes(),
+                "fused {k:?}: Arc<[u8]> and Arc<str> must project the same byte range",
+            );
+        }
+    }
+
+    // ---------- (12) Generic composability at a Vec<Arc<[u8]>>-collecting
+    // seam — the shape any downstream table-builder bounded on
+    // Into<Arc<[u8]>> reaches through ----------
+
+    #[test]
+    fn into_arc_bytes_collects_into_vec_impossibility() {
+        let collected: Vec<Arc<[u8]>> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Arc::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreImpossibilityKind::VARIANTS.len());
+        for (a, &k) in collected.iter().zip(SameStoreImpossibilityKind::VARIANTS) {
+            assert_eq!(a.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_collects_into_vec_consistency() {
+        let collected: Vec<Arc<[u8]>> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Arc::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), SameStoreConsistencyKind::VARIANTS.len());
+        for (a, &k) in collected.iter().zip(SameStoreConsistencyKind::VARIANTS) {
+            assert_eq!(a.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_collects_into_vec_fused() {
+        let collected: Vec<Arc<[u8]>> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .map(Arc::<[u8]>::from)
+            .collect();
+        assert_eq!(collected.len(), ProofRelationKind::VARIANTS.len());
+        for (a, &k) in collected.iter().zip(ProofRelationKind::VARIANTS) {
+            assert_eq!(a.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    // ---------- (13) Cheap-clone pin — the load-bearing property that
+    // distinguishes the Arc<[u8]> carrier from the sibling Box<[u8]> carrier.
+    // Arc::<[u8]>::from(k).clone() yields two owners whose data pointers are
+    // identical (Arc::ptr_eq holds) — no fresh heap allocation, no byte copy.
+    // A regression to a .to_vec().into()-style clone path would forfeit
+    // the shared-ownership shape the Arc<[u8]> carrier exists to provide. ----
+
+    #[test]
+    fn into_arc_bytes_clone_is_cheap_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b = Arc::clone(&a);
+            assert!(
+                Arc::ptr_eq(&a, &b),
+                "impossibility {k:?}: Arc::clone must share the same allocation (ptr_eq)",
+            );
+            assert_eq!(
+                a.as_ref(),
+                b.as_ref(),
+                "impossibility {k:?}: cloned Arc<[u8]> must carry the same bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_clone_is_cheap_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b = Arc::clone(&a);
+            assert!(
+                Arc::ptr_eq(&a, &b),
+                "consistency {k:?}: Arc::clone must share the same allocation (ptr_eq)",
+            );
+            assert_eq!(
+                a.as_ref(),
+                b.as_ref(),
+                "consistency {k:?}: cloned Arc<[u8]> must carry the same bytes",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_clone_is_cheap_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b = Arc::clone(&a);
+            assert!(
+                Arc::ptr_eq(&a, &b),
+                "fused {k:?}: Arc::clone must share the same allocation (ptr_eq)",
+            );
+            assert_eq!(
+                a.as_ref(),
+                b.as_ref(),
+                "fused {k:?}: cloned Arc<[u8]> must carry the same bytes",
+            );
+        }
+    }
+
+    // ---------- (14) Non-aliasing pin — independent .into() calls yield
+    // distinct allocations (ptr_eq FALSE); the projection itself never
+    // silently interns. ----------
+
+    #[test]
+    fn into_arc_bytes_independent_projections_do_not_ptr_alias_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b: Arc<[u8]> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(
+                !Arc::ptr_eq(&a, &b),
+                "impossibility {k:?}: independent .into() calls must NOT silently share an interned allocation",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_independent_projections_do_not_ptr_alias_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b: Arc<[u8]> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(
+                !Arc::ptr_eq(&a, &b),
+                "consistency {k:?}: independent .into() calls must NOT silently share an interned allocation",
+            );
+        }
+    }
+
+    #[test]
+    fn into_arc_bytes_independent_projections_do_not_ptr_alias_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = k.into();
+            let b: Arc<[u8]> = k.into();
             assert_eq!(a.as_ref(), b.as_ref());
             assert!(
                 !Arc::ptr_eq(&a, &b),
