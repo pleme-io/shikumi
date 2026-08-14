@@ -3279,6 +3279,90 @@ impl AsRef<[u8]> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<&[u8]>`] impl on [`SameStoreImpossibilityKind`] — the
+/// **byte-side parse-side dual** of the [`AsRef<[u8]>`] projection impl
+/// directly above and of the borrowed [`TryFrom<&str>`] impl already at
+/// this altitude, closing the byte-side (projection ⇋ parse) round-trip
+/// on the impossibility half in exactly the shape the string-side
+/// [`AsRef<str>`] ⇋ [`std::str::FromStr`] ⇋ [`TryFrom<&str>`] round-trip
+/// already carries.
+///
+/// **Why lift a byte-input parse-side receiver.** Every downstream API
+/// yielding an identifier as a `&[u8]` — an [`http::HeaderName::as_ref`]
+/// byte range routed off a wire feed, a
+/// [`bstr::BStr`](https://docs.rs/bstr) slice of a zero-copy log-parser
+/// buffer, a `&[u8]` slice off a `bytes::Bytes::chunk` frame, a
+/// [`hex::decode`](https://docs.rs/hex)-then-classify path, an
+/// [`std::io::Read`]-buffered receiver holding the identifier as bytes
+/// on the borrow-shaped seam, any generic
+/// `fn parse<K: TryFrom<&[u8]>>` — previously stranded the caller at
+/// either a per-callsite `std::str::from_utf8(bytes).and_then(|s|
+/// s.parse::<K>())` postfix (a coordinated silent rewrite of the
+/// callsite, not a lift into the type-checker) or a
+/// `String::from_utf8(bytes.to_vec()).and_then(|s|
+/// <K>::try_from(s))` pass (paying two heap allocations to answer a
+/// borrowed-bytes-parse question on the success arm). Rust does NOT
+/// chain [`TryFrom`] impls — a `T: TryFrom<&[u8]>` bound is NOT
+/// satisfied by `T: TryFrom<&str>` alone, because the receiver types are
+/// distinct — so every such slot previously stranded a [`Kind`] value at
+/// the type-checker with no [`TryFrom<&[u8]>`] path.
+///
+/// **Two failure modes, one error type.** The receiver dispatches on
+/// [`std::str::from_utf8`]: on `Ok(s)` it delegates to
+/// [`FromStr`](std::str::FromStr::from_str), inheriting every parse
+/// invariant the sibling parse-side receivers already carry (the same
+/// accepted-set on [`Self::NAMES`], the same
+/// [`ParseKindError::expected`] slice, the same case-sensitive
+/// rejection); on `Err(_)` it constructs a [`ParseKindError`] whose
+/// [`ParseKindError::input`] is
+/// [`String::from_utf8_lossy`]-rendered from the malformed bytes (so
+/// the error is `'static`, can flow through `?`, and reads legibly in
+/// a log line even for byte inputs that contain arbitrary non-UTF-8
+/// scalars) and whose [`ParseKindError::expected`] equals
+/// [`Self::NAMES`] — the SAME closed set every other parse-side
+/// receiver on this enum surfaces. Both failure modes surface through
+/// the SAME [`ParseKindError`] type the sibling
+/// [`FromStr`](std::str::FromStr) / [`TryFrom<&str>`] /
+/// [`TryFrom<String>`] / [`TryFrom<Cow<'_, str>>`] impls already
+/// carry, so a caller routing `Result::Err` on the parse-side reaches
+/// the same-named receivers on [`ParseKindError::input`] /
+/// [`ParseKindError::expected`] regardless of which of the five
+/// parse-side receivers dispatched.
+///
+/// **Byte-side (projection ⇋ parse) round-trip closes.** For every
+/// variant `k`, `<Self as TryFrom<&[u8]>>::try_from(<Self as
+/// AsRef<[u8]>>::as_ref(&k)) == Ok(k)` — the byte-side parse-side
+/// receiver inverts the byte-side projection-side receiver pointwise,
+/// matching the same round-trip identity the string-side
+/// ([`AsRef<str>`], [`FromStr`](std::str::FromStr),
+/// [`TryFrom<&str>`]) already carries. The
+/// `try_from_bytes_tests` module below pins this round-trip
+/// structurally.
+///
+/// **Match-body lockstep with the sibling parse-side impls — enforced
+/// by delegation, not open-coding.** The body dispatches on
+/// [`std::str::from_utf8`] to reach the sibling
+/// [`FromStr`](std::str::FromStr::from_str) receiver on the success
+/// arm; it never open-codes the two accepted identifier strings.
+/// Adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in the sibling [`FromStr`](std::str::FromStr) impl
+/// (the source of truth) and this impl surfaces the new identifier
+/// through the delegating arm in lockstep with the rest of the
+/// parse-side of the standard-trait grid.
+impl TryFrom<&[u8]> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => <Self as std::str::FromStr>::from_str(s),
+            Err(_) => Err(ParseKindError {
+                input: String::from_utf8_lossy(bytes).into_owned(),
+                expected: Self::NAMES,
+            }),
+        }
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3943,6 +4027,31 @@ impl PartialEq<SameStoreConsistencyKind> for std::borrow::Cow<'_, str> {
 impl AsRef<[u8]> for SameStoreConsistencyKind {
     fn as_ref(&self) -> &[u8] {
         self.name().as_bytes()
+    }
+}
+
+/// The [`TryFrom<&[u8]>`] impl on [`SameStoreConsistencyKind`] — the
+/// **byte-side parse-side dual** on the consistent half, mirroring the
+/// impossibility-side [`TryFrom<&[u8]>`] impl already at this altitude.
+/// Same shape, same [`ParseKindError`] type, same
+/// [`String::from_utf8_lossy`] fallback on the invalid-UTF-8 arm, same
+/// delegation to [`FromStr`](std::str::FromStr::from_str) on the valid
+/// arm — every downstream slot bounded on `T: TryFrom<&[u8]>` at the
+/// consistent altitude (wire-feed classifiers, byte-oriented log
+/// parsers, generic `impl TryFrom<&[u8]>` bounds) now composes out of
+/// the standard trait alone on the consistent half — matching the
+/// byte-side parse-side cell just welded on the impossibility half.
+impl TryFrom<&[u8]> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => <Self as std::str::FromStr>::from_str(s),
+            Err(_) => Err(ParseKindError {
+                input: String::from_utf8_lossy(bytes).into_owned(),
+                expected: Self::NAMES,
+            }),
+        }
     }
 }
 
@@ -4832,6 +4941,40 @@ impl PartialEq<ProofRelationKind> for std::borrow::Cow<'_, str> {
 impl AsRef<[u8]> for ProofRelationKind {
     fn as_ref(&self) -> &[u8] {
         self.name().as_bytes()
+    }
+}
+
+/// The [`TryFrom<&[u8]>`] impl on [`ProofRelationKind`] — the
+/// **byte-side parse-side dual** on the fused sum, mirroring the two
+/// half-side [`TryFrom<&[u8]>`] impls already at their altitudes and
+/// welded into the same two-arm partition of the accepted-set the
+/// fused sum's sibling [`FromStr`](std::str::FromStr) impl already
+/// carries.
+///
+/// **Fused-arm lockstep with the two half-side impls — by delegation.**
+/// The body dispatches on [`std::str::from_utf8`] to reach the fused
+/// sum's own [`FromStr`](std::str::FromStr::from_str) receiver on the
+/// success arm, whose two-arm partition routes a consistent identifier
+/// through [`ProofRelationKind::Consistent`] and an impossibility
+/// identifier through [`ProofRelationKind::Impossible`] — so the fused
+/// [`TryFrom<&[u8]>`] projection agrees with the routed half-side
+/// [`TryFrom<&[u8]>`] projection through the two-arm partition of the
+/// fused sum on every accepted byte-encoded identifier. On the
+/// invalid-UTF-8 arm the same [`String::from_utf8_lossy`] fallback
+/// applies, whose [`ParseKindError::expected`] equals the fused
+/// [`Self::NAMES`] — the SAME closed set the sibling parse-side
+/// receivers already surface.
+impl TryFrom<&[u8]> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => <Self as std::str::FromStr>::from_str(s),
+            Err(_) => Err(ParseKindError {
+                input: String::from_utf8_lossy(bytes).into_owned(),
+                expected: Self::NAMES,
+            }),
+        }
     }
 }
 
@@ -29736,6 +29879,361 @@ mod as_ref_bytes_tests {
                 sink,
                 k.name().as_bytes(),
                 "fused {k:?}: Write::write_all through AsRef<[u8]> must reach name().as_bytes()",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_bytes_tests {
+    //! [`TryFrom<&[u8]>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **byte-side parse-side dual** of the [`AsRef<[u8]>`] projection
+    //! impls lifted by [`super::as_ref_bytes_tests`], closing the
+    //! byte-side (projection ⇋ parse) round-trip on the three kind
+    //! enums in exactly the shape the string-side ([`AsRef<str>`] ⇋
+    //! [`std::str::FromStr`] ⇋ [`TryFrom<&str>`]) round-trip already
+    //! carries.
+    //!
+    //! **What the tests below pin.** (1) Ok pointwise identity with
+    //! [`FromStr`](std::str::FromStr) on `k.name().as_bytes()` for every
+    //! variant of every kind enum — the byte-input parse-side receiver
+    //! projects the same [`Result::Ok`] value the string-input
+    //! parse-side receiver projects on the byte view of the same
+    //! identifier; (2) round-trip identity through [`AsRef<[u8]>`] —
+    //! for every variant `k`, feeding the byte projection back through
+    //! `<K as TryFrom<&[u8]>>::try_from(...)` returns `Ok(k)`, welding
+    //! the byte-side projection-side receiver to the byte-side
+    //! parse-side receiver at the byte level; (3) Ok pointwise identity
+    //! with the sibling [`TryFrom<&str>`] — for every accepted
+    //! identifier `s`, `<K>::try_from(s.as_bytes()) == <K>::try_from(s)`;
+    //! (4) Err on invalid UTF-8 — [`ParseKindError::input`] equals the
+    //! [`String::from_utf8_lossy`] rendering of the malformed bytes,
+    //! and [`ParseKindError::expected`] equals [`Self::NAMES`] (the
+    //! SAME closed set every other parse-side receiver on the enum
+    //! surfaces); (5) Err on UTF-8-valid unknown identifiers — pointwise
+    //! identity with the sibling [`TryFrom<&str>`] error, including the
+    //! empty-input case, a cross-half hypothetical (an identifier valid
+    //! on ONE half-side enum must fail on the OTHER), and a
+    //! byte-flipped case-drift; (6) fused-arm lockstep — for every
+    //! consistent name the fused byte-input parse agrees with
+    //! [`SameStoreConsistencyKind::try_from`] mapped through
+    //! [`ProofRelationKind::Consistent`], and for every impossibility
+    //! name it agrees with [`SameStoreImpossibilityKind::try_from`]
+    //! mapped through [`ProofRelationKind::Impossible`]; (7) generic
+    //! composability at an `impl TryFrom<&[u8], Error = ParseKindError>`
+    //! seam — a `fn parse_kind_bytes<K>(...)` bounded ONLY on the
+    //! standard trait projects the same value the direct
+    //! [`Self::try_from`] projects.
+    //!
+    //! Genuinely new — before this pass the three kind enums could not
+    //! flow through any downstream API bounded on `T: TryFrom<&[u8]>`
+    //! without a per-callsite `std::str::from_utf8(bytes).and_then(...)`
+    //! postfix or a `String::from_utf8(bytes.to_vec()).and_then(...)`
+    //! double-allocation pass at the seam. The three impls close the
+    //! [`TryFrom<&[u8]>`] cell of the standard-trait grid, folding the
+    //! byte-side parse-side receiver into the same lockstep the byte-side
+    //! [`AsRef<[u8]>`] projection cell already welded on every enum.
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+
+    // ---------- (1) Ok pointwise identity with FromStr on name bytes ----------
+
+    #[test]
+    fn ok_matches_from_str_on_name_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let bytes = k.name().as_bytes();
+            assert_eq!(
+                <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(bytes),
+                Ok(k),
+                "impossibility {k:?}: try_from(name().as_bytes()) must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn ok_matches_from_str_on_name_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let bytes = k.name().as_bytes();
+            assert_eq!(
+                <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(bytes),
+                Ok(k),
+                "consistency {k:?}: try_from(name().as_bytes()) must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn ok_matches_from_str_on_name_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let bytes = k.name().as_bytes();
+            assert_eq!(
+                <ProofRelationKind as TryFrom<&[u8]>>::try_from(bytes),
+                Ok(k),
+                "fused {k:?}: try_from(name().as_bytes()) must round-trip",
+            );
+        }
+    }
+
+    // ---------- (2) Round-trip identity through AsRef<[u8]> ----------
+    //
+    // The load-bearing byte-side (projection ⇋ parse) round-trip: feed
+    // the sibling AsRef<[u8]> projection into this TryFrom<&[u8]> and
+    // recover the original variant. Mirrors the string-side
+    // (AsRef<str> / FromStr) round-trip the sibling as_ref_str_tests
+    // and try_from_str_tests already pin.
+
+    #[test]
+    fn as_ref_bytes_round_trips_through_try_from_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: &[u8] = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(b),
+                Ok(k),
+                "impossibility {k:?}: as_ref::<[u8]>() -> try_from::<&[u8]>() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_bytes_round_trips_through_try_from_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: &[u8] = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(b),
+                Ok(k),
+                "consistency {k:?}: as_ref::<[u8]>() -> try_from::<&[u8]>() must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn as_ref_bytes_round_trips_through_try_from_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: &[u8] = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k);
+            assert_eq!(
+                <ProofRelationKind as TryFrom<&[u8]>>::try_from(b),
+                Ok(k),
+                "fused {k:?}: as_ref::<[u8]>() -> try_from::<&[u8]>() must round-trip",
+            );
+        }
+    }
+
+    // ---------- (3) Ok pointwise identity with TryFrom<&str> ----------
+
+    #[test]
+    fn ok_matches_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let s: &str = k.name();
+            assert_eq!(
+                <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <SameStoreImpossibilityKind as TryFrom<&str>>::try_from(s),
+                "impossibility {k:?}: byte-input parse must equal str-input parse on the same identifier",
+            );
+        }
+    }
+
+    #[test]
+    fn ok_matches_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let s: &str = k.name();
+            assert_eq!(
+                <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <SameStoreConsistencyKind as TryFrom<&str>>::try_from(s),
+                "consistency {k:?}: byte-input parse must equal str-input parse on the same identifier",
+            );
+        }
+    }
+
+    #[test]
+    fn ok_matches_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let s: &str = k.name();
+            assert_eq!(
+                <ProofRelationKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <ProofRelationKind as TryFrom<&str>>::try_from(s),
+                "fused {k:?}: byte-input parse must equal str-input parse on the same identifier",
+            );
+        }
+    }
+
+    // ---------- (4) Err on invalid UTF-8 — lossy input + NAMES expected ----------
+
+    // A stand-alone 0x80 continuation byte is invalid UTF-8 (no lead
+    // byte). Its String::from_utf8_lossy rendering is the single
+    // REPLACEMENT CHARACTER U+FFFD.
+    const INVALID_UTF8: &[u8] = &[0x80];
+    const LOSSY_RENDERING: &str = "\u{FFFD}";
+
+    #[test]
+    fn err_on_invalid_utf8_impossibility() {
+        let err = <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(INVALID_UTF8)
+            .expect_err("stand-alone continuation byte is invalid UTF-8");
+        assert_eq!(
+            err.input(),
+            LOSSY_RENDERING,
+            "input must be from_utf8_lossy rendering"
+        );
+        assert_eq!(
+            err.expected(),
+            SameStoreImpossibilityKind::NAMES,
+            "expected must equal NAMES"
+        );
+    }
+
+    #[test]
+    fn err_on_invalid_utf8_consistency() {
+        let err = <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(INVALID_UTF8)
+            .expect_err("stand-alone continuation byte is invalid UTF-8");
+        assert_eq!(
+            err.input(),
+            LOSSY_RENDERING,
+            "input must be from_utf8_lossy rendering"
+        );
+        assert_eq!(
+            err.expected(),
+            SameStoreConsistencyKind::NAMES,
+            "expected must equal NAMES"
+        );
+    }
+
+    #[test]
+    fn err_on_invalid_utf8_fused() {
+        let err = <ProofRelationKind as TryFrom<&[u8]>>::try_from(INVALID_UTF8)
+            .expect_err("stand-alone continuation byte is invalid UTF-8");
+        assert_eq!(
+            err.input(),
+            LOSSY_RENDERING,
+            "input must be from_utf8_lossy rendering"
+        );
+        assert_eq!(
+            err.expected(),
+            ProofRelationKind::NAMES,
+            "expected must equal NAMES"
+        );
+    }
+
+    // ---------- (5) Err pointwise identity with TryFrom<&str> on unknown UTF-8 input ----------
+
+    #[test]
+    fn err_matches_try_from_str_on_unknown_utf8_impossibility() {
+        for s in [
+            "",
+            "Regressed",
+            "REGRESSED",
+            "stationary",
+            "unknown",
+            "cross-store",
+        ] {
+            assert_eq!(
+                <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <SameStoreImpossibilityKind as TryFrom<&str>>::try_from(s),
+                "impossibility unknown {s:?}: byte-input parse must equal str-input parse pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn err_matches_try_from_str_on_unknown_utf8_consistency() {
+        for s in [
+            "",
+            "Stationary",
+            "STATIONARY",
+            "regressed",
+            "unknown",
+            "identity-republish",
+        ] {
+            assert_eq!(
+                <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <SameStoreConsistencyKind as TryFrom<&str>>::try_from(s),
+                "consistency unknown {s:?}: byte-input parse must equal str-input parse pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn err_matches_try_from_str_on_unknown_utf8_fused() {
+        for s in [
+            "",
+            "Stationary",
+            "STATIONARY",
+            "unknown",
+            "cross-store",
+            "identity_",
+        ] {
+            assert_eq!(
+                <ProofRelationKind as TryFrom<&[u8]>>::try_from(s.as_bytes()),
+                <ProofRelationKind as TryFrom<&str>>::try_from(s),
+                "fused unknown {s:?}: byte-input parse must equal str-input parse pointwise",
+            );
+        }
+    }
+
+    // ---------- (6) Fused-arm lockstep with the two half-side impls ----------
+
+    #[test]
+    fn fused_bytes_agree_with_routed_half_side_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name_bytes = k.name().as_bytes();
+            let fused = <ProofRelationKind as TryFrom<&[u8]>>::try_from(name_bytes)
+                .expect("fused byte-parse must accept its own name");
+            let routed = match fused {
+                ProofRelationKind::Consistent(_) => ProofRelationKind::Consistent(
+                    <SameStoreConsistencyKind as TryFrom<&[u8]>>::try_from(name_bytes)
+                        .expect("consistent identifier must parse on consistent half"),
+                ),
+                ProofRelationKind::Impossible(_) => ProofRelationKind::Impossible(
+                    <SameStoreImpossibilityKind as TryFrom<&[u8]>>::try_from(name_bytes)
+                        .expect("impossibility identifier must parse on impossibility half"),
+                ),
+            };
+            assert_eq!(
+                fused, routed,
+                "fused {k:?}: fused byte-parse must agree with routed half-side byte-parse",
+            );
+        }
+    }
+
+    // ---------- (7) Generic composability at an impl TryFrom<&[u8]> seam ----------
+
+    fn parse_kind_bytes<K>(bytes: &[u8]) -> Result<K, ParseKindError>
+    where
+        for<'a> K: TryFrom<&'a [u8], Error = ParseKindError>,
+    {
+        K::try_from(bytes)
+    }
+
+    #[test]
+    fn generic_composability_impossibility_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                parse_kind_bytes::<SameStoreImpossibilityKind>(k.name().as_bytes()),
+                Ok(k),
+                "impossibility {k:?}: generic TryFrom<&[u8]>-bounded seam must reach the same variant",
+            );
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                parse_kind_bytes::<SameStoreConsistencyKind>(k.name().as_bytes()),
+                Ok(k),
+                "consistency {k:?}: generic TryFrom<&[u8]>-bounded seam must reach the same variant",
+            );
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                parse_kind_bytes::<ProofRelationKind>(k.name().as_bytes()),
+                Ok(k),
+                "fused {k:?}: generic TryFrom<&[u8]>-bounded seam must reach the same variant",
             );
         }
     }
