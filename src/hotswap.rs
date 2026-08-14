@@ -3048,6 +3048,88 @@ impl From<&SameStoreImpossibilityKind> for std::borrow::Cow<'static, str> {
     }
 }
 
+/// The [`PartialEq<str>`] impl on [`SameStoreImpossibilityKind`] — the
+/// **comparison-side dual** of the [`AsRef<str>`] projection above,
+/// welding the stable snake-case [`Self::name`] identifier into the
+/// standard-trait `==` seam so a downstream caller reaches
+/// `kind == *"regressed"` (and, via the sibling [`PartialEq<&str>`]
+/// impl directly below, the more ergonomic `kind == "regressed"`)
+/// without a per-callsite `kind.name() == "regressed"` postfix.
+///
+/// **Why lift a comparison-side receiver over `str`.** The
+/// [`PartialEq`] derive on the enum welds SELF-compare only. Every
+/// downstream slot that wants to compare a [`Kind`] to a string
+/// (a `.iter().find(|k| **k == "regressed")` combinator on a slice, a
+/// `matches!(k, k if k == "cross_store")` predicate on a hot path, a
+/// tokio-metrics label check `labels.get(k.name())` inverted to
+/// `k == label_str`, any generic slot bounded on `T: PartialEq<str>`
+/// such as a config-key comparison seam expecting a
+/// [`PartialEq<str>`]-bounded key type, an [`http::HeaderName`]-shaped
+/// receiver-family expected by callers used to the ecosystem-standard
+/// (`PartialEq<str>`, `PartialEq<&str>`, `PartialEq<Self> for str`,
+/// `PartialEq<Self> for &str`) quadruple) previously stranded the
+/// classification at the type-checker: [`PartialEq`] is NOT
+/// auto-derived across types, so a self-compare-only receiver leaves
+/// a string-compare slot unreachable. Delegates to [`Self::name`] —
+/// one line — so the projection stays [`&'static str`]-tight (no heap
+/// allocation, no [`format!`] pass) and lockstep-identical with the
+/// sibling [`AsRef<str>`] / [`std::fmt::Display`] / [`From<Kind>`] for
+/// [`&'static str`] impls by construction. Sibling of
+/// [`http::HeaderName`]'s [`PartialEq<str>`] and of
+/// [`std::path::Path`]'s [`PartialEq<str>`] in the ecosystem, both of
+/// which carry the same four-cell quadruple this impl + its three
+/// siblings directly below weld onto the three kind enums.
+impl PartialEq<str> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &str) -> bool {
+        self.name() == other
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for [`str`]
+/// impl — the reverse-direction sibling of the [`PartialEq<str>`] impl
+/// directly above, welding the symmetric `"regressed" == kind` seam
+/// through the same [`Self::name`] source of truth. Both directions of
+/// the standard-trait cross-type comparison now compose out of the
+/// same allocation-free receiver by construction; adding a
+/// hypothetical third impossibility corner updates the ONE `match`
+/// body in [`Self::name`], and the new identifier surfaces through
+/// BOTH [`PartialEq`] impls (and every sibling projection through
+/// [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for str {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self == other.name()
+    }
+}
+
+/// The [`PartialEq<&str>`] impl on [`SameStoreImpossibilityKind`] — the
+/// ergonomic sibling of the [`PartialEq<str>`] impl above, enabling the
+/// direct-literal comparison `kind == "regressed"` (whose RHS is a
+/// `&'static str`, not a `str`) without a per-callsite dereference.
+/// [`PartialEq<str>`] alone requires `kind == *"regressed"` because
+/// Rust does NOT auto-deref the RHS of `==` to satisfy the
+/// [`PartialEq<T>`] bound — the receiver type is `&str` at that
+/// callsite, not `str`. Delegates through the same [`Self::name`]
+/// source of truth as the sibling impl, staying in lockstep with
+/// every [`Self::name`]-projected receiver.
+impl PartialEq<&str> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.name() == *other
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`&str`] impl — closing the ergonomic reverse-direction cell so
+/// `"regressed" == kind` also composes without a dereference. Both
+/// directions of both string-shape ([`str`], [`&str`])
+/// cross-type-comparisons now compose out of the same allocation-free
+/// [`Self::name`] receiver, matching the four-cell quadruple carried
+/// by [`http::HeaderName`] and [`std::path::Path`] in the ecosystem.
+impl PartialEq<SameStoreImpossibilityKind> for &str {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        *self == other.name()
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -3595,6 +3677,52 @@ impl From<SameStoreConsistencyKind> for std::borrow::Cow<'static, str> {
 impl From<&SameStoreConsistencyKind> for std::borrow::Cow<'static, str> {
     fn from(kind: &SameStoreConsistencyKind) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(kind.name())
+    }
+}
+
+/// The [`PartialEq<str>`] impl on [`SameStoreConsistencyKind`] — the
+/// consistent-half sibling of the impossibility-half [`PartialEq<str>`]
+/// impl. See that impl for the full rationale; the four-cell quadruple
+/// here (`PartialEq<str>`, `PartialEq<&str>`, `PartialEq<Self> for
+/// str`, `PartialEq<Self> for &str`) welds the cross-type comparison
+/// receiver-family onto the three-variant consistent half in lockstep
+/// with the two-variant impossibility half above, so a downstream
+/// consumer bounded on `T: PartialEq<str>` (or holding either kind
+/// as `T`) reaches the same string-compare seam at both altitudes.
+impl PartialEq<str> for SameStoreConsistencyKind {
+    fn eq(&self, other: &str) -> bool {
+        self.name() == other
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for [`str`]
+/// impl — the reverse-direction sibling of the [`PartialEq<str>`]
+/// impl directly above, mirroring the impossibility-half receiver
+/// through the same [`Self::name`] source of truth.
+impl PartialEq<SameStoreConsistencyKind> for str {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self == other.name()
+    }
+}
+
+/// The [`PartialEq<&str>`] impl on [`SameStoreConsistencyKind`] — the
+/// ergonomic sibling of the [`PartialEq<str>`] impl above, enabling
+/// `kind == "stationary"` (whose RHS is `&'static str`, not `str`)
+/// without a per-callsite dereference. Mirror of the impossibility-half
+/// receiver at this altitude.
+impl PartialEq<&str> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.name() == *other
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`&str`] impl — closing the ergonomic reverse-direction cell so
+/// `"stationary" == kind` composes without a dereference. Mirror of
+/// the impossibility-half receiver at this altitude.
+impl PartialEq<SameStoreConsistencyKind> for &str {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        *self == other.name()
     }
 }
 
@@ -4349,6 +4477,53 @@ impl From<ProofRelationKind> for std::borrow::Cow<'static, str> {
 impl From<&ProofRelationKind> for std::borrow::Cow<'static, str> {
     fn from(kind: &ProofRelationKind) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(kind.name())
+    }
+}
+
+/// The [`PartialEq<str>`] impl on the fused [`ProofRelationKind`] — the
+/// third-altitude sibling of the two half-side [`PartialEq<str>`] impls
+/// above, closing the (impossibility, consistency, fused) × (str,
+/// &str, str-reverse, &str-reverse) grid at the fused-sum altitude.
+/// The fused body dispatches on the variant to reach [`Self::name`],
+/// whose match body enumerates all five identifiers — so a hypothetical
+/// sixth corner in either half-side surfaces through the ONE fused
+/// [`Self::name`] `match` body and every [`PartialEq`]-bounded slot in
+/// lockstep with the enum itself. See the impossibility-half impl for
+/// the full lift rationale.
+impl PartialEq<str> for ProofRelationKind {
+    fn eq(&self, other: &str) -> bool {
+        self.name() == other
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`str`] impl —
+/// the reverse-direction sibling of the [`PartialEq<str>`] impl
+/// directly above at the fused altitude.
+impl PartialEq<ProofRelationKind> for str {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self == other.name()
+    }
+}
+
+/// The [`PartialEq<&str>`] impl on the fused [`ProofRelationKind`] —
+/// the ergonomic sibling of the [`PartialEq<str>`] impl above at the
+/// fused altitude, enabling `kind == "stationary"` and
+/// `kind == "regressed"` alike (both accepted-set halves reach the
+/// single fused [`Self::name`] body without a per-callsite match on
+/// the fused variant).
+impl PartialEq<&str> for ProofRelationKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.name() == *other
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`&str`] impl
+/// — closing the ergonomic reverse-direction cell so
+/// `"progression" == kind` composes without a dereference at the fused
+/// altitude.
+impl PartialEq<ProofRelationKind> for &str {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        *self == other.name()
     }
 }
 
@@ -27692,6 +27867,365 @@ mod try_from_cow_str_tests {
                 parse_kind_from_cow::<ProofRelationKind>(Cow::<str>::Owned(k.name().to_owned())),
                 Ok(k),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_str_tests {
+    //! [`PartialEq<str>`], [`PartialEq<&str>`], [`PartialEq<Kind> for
+    //! str`], and [`PartialEq<Kind> for &str`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **comparison-side dual** of the
+    //! [`AsRef<str>`] projection triple at each altitude, closing the
+    //! four-cell cross-type-comparison quadruple on the three kind
+    //! enums in lockstep with the four-cell projection triple already
+    //! welded on the forward side by [`AsRef<str>`], [`From<Kind>`] for
+    //! [`&'static str`], [`From<Kind>`] for [`String`], and
+    //! [`From<Kind>`] for [`Cow<'static, str>`].
+    //!
+    //! **Why lift a cross-type comparison receiver-family alongside
+    //! the projection triple.** The [`PartialEq`] derive on each enum
+    //! welds SELF-compare only. Every downstream slot that wants to
+    //! compare a [`Kind`] to a string (a `.iter().find(|k| **k ==
+    //! "regressed")` combinator on a slice, a
+    //! `matches!(k, k if k == "cross_store")` predicate on a hot
+    //! path, any generic slot bounded on `T: PartialEq<str>`, an
+    //! [`http::HeaderName`]-shaped receiver-family expected by callers
+    //! used to the ecosystem-standard cross-type comparison quadruple)
+    //! previously stranded the classification at the type-checker:
+    //! [`PartialEq`] is NOT auto-derived across types, so a
+    //! self-compare-only receiver leaves the string-compare slot
+    //! unreachable. Sibling of [`http::HeaderName`]'s and
+    //! [`std::path::Path`]'s [`PartialEq<str>`] quadruples in the
+    //! ecosystem.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on all
+    //! four cells (`k == *k.name()`, `k == k.name()`, `*k.name() == k`,
+    //! `k.name() == k`) for every variant of every kind enum; (2)
+    //! sibling agreement with [`AsRef<str>`] — for every variant and
+    //! every input string, both directions of both cells agree with
+    //! `k.as_ref() == s`; (3) inequality on unknown strings; (4)
+    //! cross-variant inequality — for every pair `(a, b)` of distinct
+    //! variants, `a != b.name()`; (5) fused-arm lockstep on
+    //! [`ProofRelationKind`] — a fused kind constructed from either
+    //! half-side variant equals BOTH the half-side name AND its own
+    //! projected name through both directions; (6) generic
+    //! composability at an `impl PartialEq<str>` seam — a
+    //! `fn cmp<K: PartialEq<str>>(k: &K, s: &str) -> bool` bounded
+    //! ONLY on the standard trait projects the same value the direct
+    //! `k == *s` projects at each altitude.
+    //!
+    //! **Why five separate tests per altitude instead of one
+    //! parameterized fixture:** the four `PartialEq` cells are distinct
+    //! trait impls (not aliases). A regression in any single body
+    //! (say, the `PartialEq<&str> for Kind` impl accidentally
+    //! comparing `self.name() == other` where `other: &&str`, producing
+    //! a type error the compiler catches — but ALSO catch a subtler
+    //! regression where a hand-rolled body swaps `self.name()` for a
+    //! `format!("{self:?}")` and passes self-compare but breaks the
+    //! [`Self::name`]-lockstep contract) must surface at the
+    //! per-impl seam so the failure names the cell.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity — all four cells, per variant ----------
+
+    #[test]
+    fn impossibility_identity_all_four_cells() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name: &'static str = k.name();
+            // Kind == str (via deref of &str RHS)
+            assert!(k == *name, "kind == *name for {name}");
+            // Kind == &str (ergonomic direct-literal shape)
+            assert!(k == name, "kind == name for {name}");
+            // str == Kind
+            assert!(*name == k, "*name == kind for {name}");
+            // &str == Kind
+            assert!(name == k, "name == kind for {name}");
+        }
+    }
+
+    #[test]
+    fn consistency_identity_all_four_cells() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name: &'static str = k.name();
+            assert!(k == *name, "kind == *name for {name}");
+            assert!(k == name, "kind == name for {name}");
+            assert!(*name == k, "*name == kind for {name}");
+            assert!(name == k, "name == kind for {name}");
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_all_four_cells() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name: &'static str = k.name();
+            assert!(k == *name, "kind == *name for {name}");
+            assert!(k == name, "kind == name for {name}");
+            assert!(*name == k, "*name == kind for {name}");
+            assert!(name == k, "name == kind for {name}");
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<str> ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_str_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(
+                    k == probe,
+                    via_as_ref,
+                    "k == probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    k == *probe,
+                    via_as_ref,
+                    "k == *probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    probe == k,
+                    via_as_ref,
+                    "probe == k drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    *probe == k,
+                    via_as_ref,
+                    "*probe == k drift for probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_str_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(
+                    k == probe,
+                    via_as_ref,
+                    "k == probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    k == *probe,
+                    via_as_ref,
+                    "k == *probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    probe == k,
+                    via_as_ref,
+                    "probe == k drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    *probe == k,
+                    via_as_ref,
+                    "*probe == k drift for probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_str_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = k.as_ref() == probe;
+                assert_eq!(
+                    k == probe,
+                    via_as_ref,
+                    "k == probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    k == *probe,
+                    via_as_ref,
+                    "k == *probe drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    probe == k,
+                    via_as_ref,
+                    "probe == k drift for probe={probe:?}"
+                );
+                assert_eq!(
+                    *probe == k,
+                    via_as_ref,
+                    "*probe == k drift for probe={probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown strings ----------
+
+    #[test]
+    fn impossibility_ne_unknown_strings() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in ["", "unknown", "Regressed", " regressed", "regressed\t"] {
+                assert!(k != probe, "unexpected match: {k:?} == {probe:?}");
+                assert!(probe != k, "unexpected match: {probe:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_strings() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                "",
+                "unknown",
+                "Stationary",
+                "identity-republish",
+                "progression\n",
+            ] {
+                assert!(k != probe, "unexpected match: {k:?} == {probe:?}");
+                assert!(probe != k, "unexpected match: {probe:?} == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_strings() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in ["", "unknown", "Consistent", "Impossible", "consistent\n"] {
+                assert!(k != probe, "unexpected match: {k:?} == {probe:?}");
+                assert!(probe != k, "unexpected match: {probe:?} == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_names() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a != b {
+                    assert!(a != b.name(), "{a:?} incorrectly equals {:?}", b.name());
+                    assert!(b.name() != a, "{:?} incorrectly equals {a:?}", b.name());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_names() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a != b {
+                    assert!(a != b.name(), "{a:?} incorrectly equals {:?}", b.name());
+                    assert!(b.name() != a, "{:?} incorrectly equals {a:?}", b.name());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_names() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b in ProofRelationKind::VARIANTS {
+                if a != b {
+                    assert!(a != b.name(), "{a:?} incorrectly equals {:?}", b.name());
+                    assert!(b.name() != a, "{:?} incorrectly equals {a:?}", b.name());
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_names_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let name = half.name();
+            // Fused body sees the SAME name the half-side does; lift through both directions.
+            assert!(fused == name, "fused == name for {name}");
+            assert!(name == fused, "name == fused for {name}");
+            assert_eq!(
+                fused == name,
+                half == name,
+                "cross-altitude drift for {name}"
+            );
+            // And the fused kind's own name matches the half-side name at this altitude.
+            assert_eq!(fused.name(), name, "fused.name() != half.name() for {name}");
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_names_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let name = half.name();
+            assert!(fused == name, "fused == name for {name}");
+            assert!(name == fused, "name == fused for {name}");
+            assert_eq!(
+                fused == name,
+                half == name,
+                "cross-altitude drift for {name}"
+            );
+            assert_eq!(fused.name(), name, "fused.name() != half.name() for {name}");
+        }
+    }
+
+    // ---------- (6) Generic composability at a PartialEq<str>-bounded seam ----------
+
+    fn cmp_kind_str<K: PartialEq<str>>(k: &K, s: &str) -> bool {
+        *k == *s
+    }
+
+    fn cmp_kind_amp_str<K>(k: &K, s: &str) -> bool
+    where
+        for<'a> K: PartialEq<&'a str>,
+    {
+        *k == s
+    }
+
+    #[test]
+    fn generic_composability_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert!(cmp_kind_str(&k, k.name()));
+            assert!(cmp_kind_amp_str(&k, k.name()));
+            assert!(!cmp_kind_str(&k, "unknown"));
+            assert!(!cmp_kind_amp_str(&k, "unknown"));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert!(cmp_kind_str(&k, k.name()));
+            assert!(cmp_kind_amp_str(&k, k.name()));
+            assert!(!cmp_kind_str(&k, "unknown"));
+            assert!(!cmp_kind_amp_str(&k, "unknown"));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            assert!(cmp_kind_str(&k, k.name()));
+            assert!(cmp_kind_amp_str(&k, k.name()));
+            assert!(!cmp_kind_str(&k, "unknown"));
+            assert!(!cmp_kind_amp_str(&k, "unknown"));
         }
     }
 }
