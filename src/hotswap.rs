@@ -3681,6 +3681,63 @@ impl PartialEq<SameStoreImpossibilityKind> for Box<str> {
     }
 }
 
+/// The [`PartialEq<&Box<str>>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **reference-to-compact-owned-carrier compare-side sibling** of the
+/// by-value [`PartialEq<Box<str>>`] impl directly above, enabling the
+/// natural iterator shape `slice_of_box.iter().any(|b: &Box<str>| kind
+/// == b)` (whose closure argument is a `&Box<str>`, not a `Box<str>`)
+/// without a per-callsite `**b` dereference.
+///
+/// Before this cell, `kind == &box_str` failed to type-check against the
+/// sibling receivers alone: Rust does NOT auto-deref the RHS of `==` to
+/// satisfy a [`PartialEq<T>`] bound, and Rust's standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &Box<str>`, NOT
+/// the `Kind == &Box<str>` direction a natural iterator combinator
+/// produces. Every downstream slot with a compact-owned view produced by
+/// borrow-yielding traversal — a `Vec<Box<str>>::iter()` inside a
+/// `serde` visitor that materializes the identifier as a [`Box<str>`], a
+/// `HashMap<K, Box<str>>::values` iterator, a `bumpalo::collections::
+/// String::into_boxed_str` conversion feed threaded into an iterator
+/// adapter, any generic slot bounded on `T: PartialEq<&Box<str>>` — was
+/// previously stranded at either a per-callsite `**b` deref (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or an `.as_ref()` postfix that fragments the
+/// receiver-family surface. This impl closes the reference-to-Box-str
+/// cell by delegation to the sibling [`PartialEq<Box<str>>`] impl through
+/// a single pointer deref — one line, zero allocations — so the caller
+/// reaches the SAME classification through the standard trait alone.
+/// Mirrors the reference-to-owned-heap-string cell already closed for
+/// [`&String`](std::string::String) at cell 49 (`aac24a6`), the
+/// reference-to-owned-byte-vector cell closed for [`&Vec<u8>`](std::vec::Vec)
+/// at cell 51 (`b48279d`), and the reference-to-borrowed-or-owned-carrier
+/// cell closed for [`&Cow<'_, str>`](std::borrow::Cow) at cell 53
+/// (`13882be`), extending the reference-to-carrier compare-side grid to
+/// the compact-owned string carrier. The accepted-set flows through the
+/// sibling delegation; adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`] and this impl surfaces
+/// the new identifier through the delegating chain in lockstep with the
+/// rest of the string-side comparison grid.
+impl PartialEq<&Box<str>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&Box<str>) -> bool {
+        <Self as PartialEq<Box<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`&Box<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&Box<str>>`] impl directly above, welding the symmetric
+/// `&compact_owned_from_serde == kind` seam through the same
+/// [`Self::name`] source of truth via delegation to the sibling
+/// [`PartialEq<SameStoreImpossibilityKind>`] for [`Box<str>`] impl. Both
+/// directions of the reference-to-compact-owned cross-type comparison
+/// now compose out of the same allocation-free receiver by construction.
+impl PartialEq<SameStoreImpossibilityKind> for &Box<str> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <Box<str> as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::sync::Arc<str>>`] impl on
 /// [`SameStoreImpossibilityKind`] — the **shared-refcounted-carrier
 /// sibling** of the [`PartialEq<str>`], [`PartialEq<&str>`],
@@ -6846,6 +6903,30 @@ impl PartialEq<SameStoreConsistencyKind> for Box<str> {
     }
 }
 
+/// The [`PartialEq<&Box<str>>`] impl on [`SameStoreConsistencyKind`] —
+/// the mirror on the consistent half of the classification lattice of
+/// the [`PartialEq<&Box<str>>`] impl on [`SameStoreImpossibilityKind`],
+/// closing the reference-to-compact-owned-carrier cell on the compare
+/// side of the consistent-half kind through delegation to the sibling
+/// [`PartialEq<Box<str>>`] impl. See the impossibility-half impl for
+/// the full lift rationale.
+impl PartialEq<&Box<str>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&Box<str>) -> bool {
+        <Self as PartialEq<Box<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`&Box<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&Box<str>>`] impl directly above, mirroring the
+/// impossibility-half receiver through delegation to the sibling
+/// [`PartialEq<SameStoreConsistencyKind>`] for [`Box<str>`] impl.
+impl PartialEq<SameStoreConsistencyKind> for &Box<str> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <Box<str> as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::sync::Arc<str>>`] impl on
 /// [`SameStoreConsistencyKind`] — the mirror on the consistent half of
 /// the classification lattice of the [`PartialEq<std::sync::Arc<str>>`]
@@ -8947,6 +9028,41 @@ impl PartialEq<Box<str>> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for Box<str> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name()
+    }
+}
+
+/// The [`PartialEq<&Box<str>>`] impl on [`ProofRelationKind`] — the
+/// fused-arm sibling of the two half-side [`PartialEq<&Box<str>>`] impls
+/// on [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`],
+/// closing the reference-to-compact-owned-carrier cell on the compare
+/// side of the fused sum through delegation to the sibling
+/// [`PartialEq<Box<str>>`] impl at the fused altitude, which in turn
+/// delegates through the fused [`Self::name`] (which in turn delegates
+/// through the two half-side [`Self::name`] receivers). The fused
+/// [`PartialEq<&Box<str>>`] impl and the two half-side
+/// [`PartialEq<&Box<str>>`] impls stay lockstep-identical under every
+/// future variant addition to either half-side enum by construction:
+/// adding a hypothetical variant to either half-side enum updates the
+/// corresponding half-side [`Self::name`] match body and the new
+/// identifier surfaces through the fused [`Self::name`] pass-through,
+/// the ONE fused [`Self::name`] `match` body, and BOTH
+/// [`PartialEq<&Box<str>>`] impls (and every prior [`Self::name`]-
+/// projected receiver) in lockstep with the enum itself. See the
+/// impossibility-half impl for the full lift rationale.
+impl PartialEq<&Box<str>> for ProofRelationKind {
+    fn eq(&self, other: &&Box<str>) -> bool {
+        <Self as PartialEq<Box<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`&Box<str>`]
+/// impl — the reverse-direction sibling of the [`PartialEq<&Box<str>>`]
+/// impl directly above at the fused altitude, welding the symmetric
+/// `&compact_owned == kind` seam through delegation to the sibling
+/// [`PartialEq<ProofRelationKind>`] for [`Box<str>`] impl.
+impl PartialEq<ProofRelationKind> for &Box<str> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <Box<str> as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -53987,5 +54103,317 @@ mod try_from_ref_cow_str_tests {
         assert_eq!(addr_before, addr_after);
         assert_eq!(owned.as_ref(), "unknown_probe");
         assert_eq!(err.input, "unknown_probe");
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_box_str_tests {
+    //! [`PartialEq<&Box<str>>`] and [`PartialEq<Kind> for &Box<str>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **reference-to-compact-owned-carrier
+    //! sibling** of the by-value [`PartialEq<Box<str>>`] pair lifted by
+    //! [`super::partial_eq_box_str_tests`], closing the ergonomic gap
+    //! Rust's `==` trait dispatch leaves between a `Box<str>` value and
+    //! a `&Box<str>` reference on the compare-side of the three kind
+    //! enums. Mirrors [`super::partial_eq_ref_string_tests`] on the
+    //! compact-owned string carrier.
+    //!
+    //! Rust does NOT auto-deref the RHS of `==` to satisfy a
+    //! [`PartialEq<T>`] bound, and the standard blanket
+    //! `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &Box<str>`, NOT the `Kind == &Box<str>` direction a
+    //! natural iterator combinator produces
+    //! (`vec_of_box.iter().any(|b: &Box<str>| kind == b)`, whose closure
+    //! argument is `&Box<str>`, not `Box<str>`). This module pins that
+    //! both directions of the reference-to-compact-owned pair compose at
+    //! the type-checker for every variant of every kind enum,
+    //! allocation-free.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Pointwise identity on both cells (`kind == &box_str`,
+    //!    `&box_str == kind`) for every variant of every kind enum.
+    //! 2. Sibling agreement with the by-value [`PartialEq<Box<str>>`]
+    //!    pair — for every variant and every probe string, both
+    //!    directions of the reference-to-box pair agree with the
+    //!    by-value pair.
+    //! 3. Inequality on unknown compact-owned strings.
+    //! 4. Cross-variant inequality — for every pair `(a, b)` of distinct
+    //!    variants, `a != &b.name().to_owned().into_boxed_str()`.
+    //! 5. Fused-arm lockstep — a fused kind constructed from either
+    //!    half-side variant equals the reference-to-box half-side name
+    //!    through both directions.
+    //! 6. Iterator-shape composability — `slice.iter().any(|b| kind == b)`
+    //!    on a `[Box<str>]` compiles and returns the correct answer, the
+    //!    load-bearing seam this cell exists to close.
+    //! 7. Generic composability at a `for<'a> PartialEq<&'a Box<str>>`-
+    //!    bounded seam neither the sibling [`PartialEq<Box<str>>`] nor
+    //!    the borrowed [`PartialEq<&str>`] receiver alone can satisfy.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    fn boxed(s: &str) -> Box<str> {
+        s.to_owned().into_boxed_str()
+    }
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_ref_box() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            let by_ref: &Box<str> = &b;
+            assert!(k == by_ref, "kind == &box for {}", k.name());
+            assert!(by_ref == k, "&box == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_box() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            let by_ref: &Box<str> = &b;
+            assert!(k == by_ref, "kind == &box for {}", k.name());
+            assert!(by_ref == k, "&box == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_box() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            let by_ref: &Box<str> = &b;
+            assert!(k == by_ref, "kind == &box for {}", k.name());
+            assert!(by_ref == k, "&box == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with the by-value pair ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let b: Box<str> = boxed(probe);
+                let by_ref: &Box<str> = &b;
+                let by_val_forward = k == b;
+                let by_val_reciprocal = b == k;
+                assert_eq!(
+                    k == by_ref,
+                    by_val_forward,
+                    "kind == &box vs kind == box for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+                assert_eq!(
+                    by_ref == k,
+                    by_val_reciprocal,
+                    "&box == kind vs box == kind for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let b: Box<str> = boxed(probe);
+                let by_ref: &Box<str> = &b;
+                assert_eq!(k == by_ref, k == b);
+                assert_eq!(by_ref == k, b == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_by_value_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let b: Box<str> = boxed(probe);
+                let by_ref: &Box<str> = &b;
+                assert_eq!(k == by_ref, k == b);
+                assert_eq!(by_ref == k, b == k);
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown box ----------
+
+    #[test]
+    fn impossibility_unknown_ref_box_inequality() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(&format!("{}-x", k.name()));
+            let by_ref: &Box<str> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn consistency_unknown_ref_box_inequality() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(&format!("{}-x", k.name()));
+            let by_ref: &Box<str> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_unknown_ref_box_inequality() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(&format!("{}-x", k.name()));
+            let by_ref: &Box<str> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_cross_variant_ref_box_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_box: Box<str> = boxed(b.name());
+                let by_ref: &Box<str> = &b_box;
+                assert!(a != by_ref, "{} != &{}", a.name(), b.name());
+                assert!(by_ref != a, "&{} != {}", b.name(), a.name());
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_box_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_box: Box<str> = boxed(b.name());
+                let by_ref: &Box<str> = &b_box;
+                assert!(a != by_ref);
+                assert!(by_ref != a);
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_box() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let b: Box<str> = boxed(imp.name());
+            let by_ref: &Box<str> = &b;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let b: Box<str> = boxed(c.name());
+            let by_ref: &Box<str> = &b;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+    }
+
+    // ---------- (6) Iterator-shape composability — the load-bearing seam ----------
+    //
+    // Before this cell, `slice.iter().any(|b: &Box<str>| kind == b)` did
+    // not type-check — the compiler suggested a per-callsite `**b` deref.
+    // With this cell, the natural iterator combinator composes out of
+    // the standard trait alone. These tests fail-to-compile before the
+    // cell and pass after.
+
+    #[test]
+    fn iter_any_over_slice_of_box_impossibility() {
+        let hay: Vec<Box<str>> = vec![boxed("cross_store"), boxed("regressed"), boxed("unknown")];
+        let k = SameStoreImpossibilityKind::Regressed;
+        assert!(hay.iter().any(|b: &Box<str>| k == b));
+        assert!(hay.iter().any(|b: &Box<str>| b == k));
+        assert_eq!(hay.iter().position(|b: &Box<str>| k == b), Some(1));
+    }
+
+    #[test]
+    fn iter_any_over_slice_of_box_consistency() {
+        let hay: Vec<Box<str>> = vec![boxed("stationary"), boxed("progression")];
+        let k = SameStoreConsistencyKind::Progression;
+        assert!(hay.iter().any(|b: &Box<str>| k == b));
+        assert!(hay.iter().any(|b: &Box<str>| b == k));
+        assert_eq!(hay.iter().position(|b: &Box<str>| k == b), Some(1));
+    }
+
+    #[test]
+    fn iter_find_ref_of_ref_over_slice_of_box() {
+        // `Iterator::find` hands the closure `&Self::Item`, i.e.
+        // `&&Box<str>` for `hay.iter()`. `*b: &Box<str>` uses the new
+        // impl directly.
+        let hay: Vec<Box<str>> = vec![boxed("regressed"), boxed("cross_store")];
+        let k = SameStoreImpossibilityKind::CrossStore;
+        let found: Option<&Box<str>> = hay.iter().find(|b| k == **b);
+        assert_eq!(found.map(|b| b.as_ref()), Some("cross_store"));
+    }
+
+    // ---------- (7) Generic composability at a for<'a> PartialEq<&'a Box<str>> seam ----------
+
+    fn cmp_kind_ref_box<K>(k: &K, b: &Box<str>) -> bool
+    where
+        for<'a> K: PartialEq<&'a Box<str>>,
+    {
+        *k == b
+    }
+
+    #[test]
+    fn generic_ref_box_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert!(cmp_kind_ref_box(&k, &b));
+            let miss: Box<str> = boxed("unknown");
+            assert!(!cmp_kind_ref_box(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_box_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert!(cmp_kind_ref_box(&k, &b));
+            let miss: Box<str> = boxed("unknown");
+            assert!(!cmp_kind_ref_box(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_box_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert!(cmp_kind_ref_box(&k, &b));
+            let miss: Box<str> = boxed("unknown");
+            assert!(!cmp_kind_ref_box(&k, &miss));
+        }
     }
 }
