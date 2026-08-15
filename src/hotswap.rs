@@ -3331,6 +3331,79 @@ impl TryFrom<Box<str>> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<&Box<str>>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **reference-to-compact-owned-carrier parse-side sibling** of the
+/// by-value [`TryFrom<Box<str>>`] impl directly above and the parse-side
+/// dual of the [`PartialEq<&Box<str>>`] impl further below (cell 55,
+/// `0582b5f`), enabling the natural iterator combinator shape
+/// `slice_of_box.iter().map(|b: &Box<str>| Self::try_from(b))` (whose
+/// closure argument is a `&Box<str>`, not a `Box<str>` and not a `&str`)
+/// without a per-callsite `.as_ref()` postfix or `**b` dereference.
+///
+/// **Why lift a reference-to-Box parse-side receiver alongside the
+/// by-value and borrowed ones.** Rust does NOT chain [`TryFrom`] impls
+/// through deref coercion at the trait-bound level — a
+/// `T: TryFrom<&Box<str>>` bound is NOT satisfied by
+/// `T: TryFrom<&str>` alone (which would require an implicit
+/// `&Box<str>` → `&str` coercion at trait dispatch, a shape Rust never
+/// synthesizes) NOR by `T: TryFrom<Box<str>>` alone (which requires an
+/// owning transfer the `&Box<str>` receiver does not hold). Every
+/// downstream slot with a compact-owned view produced by borrow-yielding
+/// traversal — a `Vec<Box<str>>::iter().map(K::try_from).collect::<
+/// Result<Vec<_>, _>>()` scan, a `HashMap<K, Box<str>>::values`
+/// iterator threaded into a parser combinator, a `serde` visitor that
+/// materializes the identifier as a [`Box<str>`] and hands the per-item
+/// parser `&Box<str>`, any generic slot bounded on
+/// `T: TryFrom<&Box<str>>` — previously stranded the caller at either a
+/// per-callsite `.as_ref()` postfix (a coordinated silent rewrite of
+/// the callsite, not a lift into the type-checker) or a `.clone()`
+/// allocation to obtain an owned [`Box<str>`] to feed the by-value
+/// receiver. This impl closes the reference-to-Box-str parse cell by
+/// delegation to the sibling [`TryFrom<&str>`] receiver through a
+/// single [`Box::as_ref`] view — one line, zero allocations on the
+/// success path — so the caller reaches the SAME classification through
+/// the standard trait alone. Mirrors the reference-to-owned-heap-string
+/// cell already closed for [`&String`](std::string::String) at cell 50
+/// (`db24397`), the reference-to-owned-byte-vector cell closed for
+/// [`&Vec<u8>`](std::vec::Vec) at cell 52 (`de8da23`), and the
+/// reference-to-borrowed-or-owned-carrier cell closed for
+/// [`&Cow<'_, str>`](std::borrow::Cow) at cell 54 (`ba28596`),
+/// extending the reference-to-carrier parse-side grid to the
+/// compact-owned string carrier and completing the parse-side dual of
+/// the compare-side cell 55 (`0582b5f`, [`PartialEq<&Box<str>>`]).
+///
+/// **Dispatch preserves the sibling receivers' allocation properties
+/// by construction.** On success this impl is allocation-free (the
+/// sibling [`TryFrom<&str>`] fast path returns the parsed variant with
+/// no heap traffic). On the error path this impl matches the sibling
+/// [`TryFrom<&str>`] receiver — 1 allocation via `s.to_owned()` inside
+/// the sibling [`FromStr`](std::str::FromStr) to preserve the malformed
+/// input verbatim in [`ParseKindError::input`]. It does NOT match the
+/// by-value [`TryFrom<Box<str>>`] impl's 0-allocation error path (which
+/// reuses the [`Box<str>`]'s heap allocation verbatim through
+/// [`String::from<Box<str>>`]) — the caller here holds only a borrow of
+/// a [`Box<str>`], not the owning transfer, so preserving the malformed
+/// input requires the clone. A caller who can afford an owning transfer
+/// should reach for the by-value receiver instead (see the sibling
+/// [`TryFrom<Box<str>>`] impl's error-path allocation-savings rationale).
+///
+/// **Match-body lockstep with the sibling [`TryFrom<&str>`] impl —
+/// enforced by delegation, not open-coding.** The body reaches the
+/// accepted-set ONLY through the sibling [`TryFrom<&str>`] receiver; it
+/// never open-codes the two accepted identifier strings. Adding a
+/// hypothetical third impossibility corner updates the ONE `match`
+/// body in the sibling [`FromStr`](std::str::FromStr) impl (the source
+/// of truth); this impl surfaces the new identifier through the
+/// delegating chain in lockstep with the rest of the parse-side of the
+/// standard-trait grid.
+impl TryFrom<&Box<str>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &Box<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
+    }
+}
+
 /// The [`PartialEq<str>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **comparison-side dual** of the [`AsRef<str>`] projection above,
 /// welding the stable snake-case [`Self::name`] identifier into the
@@ -6731,6 +6804,23 @@ impl TryFrom<Box<str>> for SameStoreConsistencyKind {
     }
 }
 
+/// The [`TryFrom<&Box<str>>`] impl on [`SameStoreConsistencyKind`] — the
+/// consistent-half sibling of the impossibility-half
+/// [`TryFrom<&Box<str>>`] impl (cell 56). See that impl for the full
+/// rationale; the parse-side delegation here welds the
+/// reference-to-compact-owned-carrier parse cell onto the three-variant
+/// consistent half in exact lockstep with the two-variant impossibility
+/// half above, so a downstream consumer bounded on
+/// `T: TryFrom<&Box<str>>` reaches the same allocation-free
+/// borrow-preserving parser at both altitudes.
+impl TryFrom<&Box<str>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &Box<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
+    }
+}
+
 /// The [`PartialEq<str>`] impl on [`SameStoreConsistencyKind`] — the
 /// consistent-half sibling of the impossibility-half [`PartialEq<str>`]
 /// impl. See that impl for the full rationale; the four-cell quadruple
@@ -8815,6 +8905,27 @@ impl TryFrom<Box<str>> for ProofRelationKind {
             input,
             expected: Self::NAMES,
         })
+    }
+}
+
+/// The [`TryFrom<&Box<str>>`] impl on the fused [`ProofRelationKind`] —
+/// the third-altitude sibling of the two half-side
+/// [`TryFrom<&Box<str>>`] impls (cell 56), closing the fused-sum
+/// parse-side altitude of the reference-to-compact-owned-carrier grid.
+/// The body reaches the accepted-set ONLY through the sibling
+/// [`TryFrom<&str>`] receiver on the fused enum, which itself dispatches
+/// to the two half-side [`FromStr`](std::str::FromStr) impls — so a
+/// hypothetical sixth corner in either half-side surfaces through the
+/// ONE fused [`Self::name`] `match` body and this impl in lockstep with
+/// the enum itself. Allocation-free on success; the error path matches
+/// the sibling fused [`TryFrom<&str>`] receiver, which materializes a
+/// single [`String`] via the half-side [`FromStr::from_str`] chain to
+/// preserve the malformed input verbatim in [`ParseKindError::input`].
+impl TryFrom<&Box<str>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &Box<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
     }
 }
 
@@ -54415,5 +54526,457 @@ mod partial_eq_ref_box_str_tests {
             let miss: Box<str> = boxed("unknown");
             assert!(!cmp_kind_ref_box(&k, &miss));
         }
+    }
+}
+
+#[cfg(test)]
+mod try_from_ref_box_str_tests {
+    //! [`TryFrom<&Box<str>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **reference-to-compact-owned-carrier parse-side sibling** of the
+    //! by-value [`TryFrom<Box<str>>`] pair lifted by
+    //! [`super::try_from_box_str_tests`] and the parse-side dual of the
+    //! [`PartialEq<&Box<str>>`] pair pinned by
+    //! [`super::partial_eq_ref_box_str_tests`], closing the ergonomic
+    //! gap Rust's `TryFrom` trait dispatch leaves between a `Box<str>`
+    //! value and a `&Box<str>` reference on the parse-side of the three
+    //! kind enums. Mirrors [`super::try_from_ref_string_tests`] and
+    //! [`super::try_from_ref_cow_str_tests`] on the compact-owned string
+    //! carrier.
+    //!
+    //! Rust does NOT chain [`TryFrom`] impls through deref coercion at
+    //! the trait-bound level — a `T: TryFrom<&Box<str>>` bound is NOT
+    //! satisfied by `T: TryFrom<&str>` alone or by
+    //! `T: TryFrom<Box<str>>` alone, because the receiver types are
+    //! distinct. This module pins that the reference-to-Box parse-side
+    //! receiver composes at the type-checker for every variant of every
+    //! kind enum, allocation-free on the success path.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Ok pointwise identity with the sibling [`TryFrom<&str>`]
+    //!    receiver on every variant name of every kind enum.
+    //! 2. Ok pointwise identity with the sibling [`TryFrom<Box<str>>`]
+    //!    receiver on every variant name (via a clone that the by-value
+    //!    receiver consumes).
+    //! 3. Round-trip through [`From<Kind>`] for [`Box<str>`] — for every
+    //!    variant `k`, `<K>::try_from(&<Box<str>>::from(k)) == Ok(k)`.
+    //! 4. Round-trip through [`std::fmt::Display`] — for every variant
+    //!    `k`, `<K>::try_from(&k.to_string().into_boxed_str()) == Ok(k)`.
+    //! 5. Err pointwise identity with [`TryFrom<&str>`] on unknown input
+    //!    — empty string, `PascalCase` re-spelling, all-caps re-spelling,
+    //!    cross-half hypotheticals.
+    //! 6. Err-body fidelity — [`ParseKindError::input`] preserves the
+    //!    malformed input verbatim (via the sibling [`TryFrom<&str>`]'s
+    //!    `s.to_owned()` clone), [`ParseKindError::expected`] equals the
+    //!    sibling [`Self::NAMES`] constant.
+    //! 7. Fused-arm lockstep — for every consistent name the fused
+    //!    [`TryFrom<&Box<str>>`] agrees with the sibling
+    //!    `SameStoreConsistencyKind::try_from(&box_str)` mapped through
+    //!    [`ProofRelationKind::Consistent`]; for every impossibility
+    //!    name it agrees with
+    //!    `SameStoreImpossibilityKind::try_from(&box_str)` mapped through
+    //!    [`ProofRelationKind::Impossible`].
+    //! 8. **THE LOAD-BEARING SEAM** — the natural iterator combinator
+    //!    shape `slice.iter().map(K::try_from).collect::<Result<Vec<_>,
+    //!    _>>()` on a `[Box<str>]` compiles and returns the correct
+    //!    answer. Before this cell, this line failed to type-check — the
+    //!    compiler could not satisfy the closure's
+    //!    `&Box<str> -> Result<K, _>` signature against any sibling
+    //!    receiver. This is the ergonomic pattern this cell exists to
+    //!    close.
+    //! 9. Generic composability at a `for<'a> TryFrom<&'a Box<str>>`-
+    //!    bounded seam neither the sibling [`TryFrom<Box<str>>`] nor the
+    //!    borrowed [`TryFrom<&str>`] receiver alone can satisfy — a
+    //!    bound only a caller with this cell's impl can satisfy.
+    //! 10. **Caller keeps ownership** — for every variant, after the
+    //!     borrowed parse the caller's original [`Box<str>`] is still
+    //!     readable at its original address (the impl does NOT consume
+    //!     the input, unlike the sibling by-value [`TryFrom<Box<str>>`]).
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+
+    fn boxed(s: &str) -> Box<str> {
+        s.to_owned().into_boxed_str()
+    }
+
+    // ---------- (1) Ok pointwise identity with TryFrom<&str> ----------
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&b),
+                SameStoreImpossibilityKind::try_from(k.name()),
+                "impossibility {k:?}: TryFrom<&Box<str>> must agree with \
+                 TryFrom<&str> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&b),
+                SameStoreConsistencyKind::try_from(k.name()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(&b),
+                ProofRelationKind::try_from(k.name()),
+            );
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with TryFrom<Box<str>> ----------
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_box_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&b),
+                SameStoreImpossibilityKind::try_from(b.clone()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_box_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&b),
+                SameStoreConsistencyKind::try_from(b.clone()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_box_matches_try_from_box_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(&b),
+                ProofRelationKind::try_from(b.clone()),
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through From<Kind> for Box<str> ----------
+
+    #[test]
+    fn round_trip_through_from_box_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = k.into();
+            assert_eq!(SameStoreImpossibilityKind::try_from(&b), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_box_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = k.into();
+            assert_eq!(SameStoreConsistencyKind::try_from(&b), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_box_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = k.into();
+            assert_eq!(ProofRelationKind::try_from(&b), Ok(k));
+        }
+    }
+
+    // ---------- (4) Round-trip through Display ----------
+
+    #[test]
+    fn round_trip_through_display_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = k.to_string().into_boxed_str();
+            assert_eq!(SameStoreImpossibilityKind::try_from(&b), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_display_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = k.to_string().into_boxed_str();
+            assert_eq!(SameStoreConsistencyKind::try_from(&b), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_display_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = k.to_string().into_boxed_str();
+            assert_eq!(ProofRelationKind::try_from(&b), Ok(k));
+        }
+    }
+
+    // ---------- (5) Err pointwise identity with TryFrom<&str> ----------
+
+    fn unknown_probe_strings() -> &'static [&'static str] {
+        &[
+            "",
+            "REGRESSED",
+            "PascalCase",
+            "identity-republish",
+            "unknown",
+            " regressed",
+            "regressed ",
+            "regressed\n",
+        ]
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_impossibility() {
+        for &probe in unknown_probe_strings() {
+            let b: Box<str> = boxed(probe);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&b),
+                SameStoreImpossibilityKind::try_from(probe),
+                "impossibility Err arm on {probe:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_consistency() {
+        for &probe in unknown_probe_strings() {
+            let b: Box<str> = boxed(probe);
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&b),
+                SameStoreConsistencyKind::try_from(probe),
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_fused() {
+        for &probe in unknown_probe_strings() {
+            let b: Box<str> = boxed(probe);
+            assert_eq!(
+                ProofRelationKind::try_from(&b),
+                ProofRelationKind::try_from(probe),
+            );
+        }
+    }
+
+    // ---------- (5b) Cross-half hypotheticals ----------
+
+    #[test]
+    fn cross_half_impossibility_rejects_consistency_names_via_ref_box() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(c.name());
+            assert!(SameStoreImpossibilityKind::try_from(&b).is_err());
+        }
+    }
+
+    #[test]
+    fn cross_half_consistency_rejects_impossibility_names_via_ref_box() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(i.name());
+            assert!(SameStoreConsistencyKind::try_from(&b).is_err());
+        }
+    }
+
+    // ---------- (6) Err-body fidelity ----------
+
+    #[test]
+    fn err_body_input_preserved_verbatim_impossibility() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let b: Box<str> = boxed(probe);
+        let err = SameStoreImpossibilityKind::try_from(&b).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_consistency() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let b: Box<str> = boxed(probe);
+        let err = SameStoreConsistencyKind::try_from(&b).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, SameStoreConsistencyKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_fused() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let b: Box<str> = boxed(probe);
+        let err = ProofRelationKind::try_from(&b).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, ProofRelationKind::NAMES);
+    }
+
+    // ---------- (7) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_box_impossibility() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(i.name());
+            let fused = ProofRelationKind::try_from(&b);
+            let expected =
+                SameStoreImpossibilityKind::try_from(&b).map(ProofRelationKind::Impossible);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_box_consistency() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(c.name());
+            let fused = ProofRelationKind::try_from(&b);
+            let expected =
+                SameStoreConsistencyKind::try_from(&b).map(ProofRelationKind::Consistent);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    // ---------- (8) THE LOAD-BEARING SEAM ----------
+    //
+    // Before this cell, `slice.iter().map(K::try_from).collect::<...>()`
+    // over `[Box<str>]` did not type-check — the compiler suggested a
+    // per-callsite `.as_ref()` postfix inside the closure. With this
+    // cell, the natural iterator combinator composes out of the standard
+    // trait alone.
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_box_impossibility() {
+        let hay: Vec<Box<str>> = vec![boxed("regressed"), boxed("cross_store")];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreImpossibilityKind::Regressed,
+                SameStoreImpossibilityKind::CrossStore,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_box_consistency() {
+        let hay: Vec<Box<str>> = vec![
+            boxed("stationary"),
+            boxed("identity_republish"),
+            boxed("progression"),
+        ];
+        let parsed: Result<Vec<SameStoreConsistencyKind>, ParseKindError> =
+            hay.iter().map(SameStoreConsistencyKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreConsistencyKind::Stationary,
+                SameStoreConsistencyKind::IdentityRepublish,
+                SameStoreConsistencyKind::Progression,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_box_fused() {
+        let hay: Vec<Box<str>> = vec![
+            boxed("regressed"),
+            boxed("stationary"),
+            boxed("cross_store"),
+            boxed("progression"),
+        ];
+        let parsed: Result<Vec<ProofRelationKind>, ParseKindError> =
+            hay.iter().map(ProofRelationKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_short_circuits_on_first_bad_input() {
+        let hay: Vec<Box<str>> = vec![boxed("regressed"), boxed("unknown"), boxed("cross_store")];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        let err = parsed.unwrap_err();
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (9) Generic composability at for<'a> TryFrom<&'a Box<str>> ----------
+
+    fn parse_kind_ref_box<K>(b: &Box<str>) -> Result<K, ParseKindError>
+    where
+        for<'a> K: TryFrom<&'a Box<str>, Error = ParseKindError>,
+    {
+        K::try_from(b)
+    }
+
+    #[test]
+    fn generic_ref_box_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(parse_kind_ref_box::<SameStoreImpossibilityKind>(&b), Ok(k));
+        }
+        let miss: Box<str> = boxed("unknown");
+        assert!(parse_kind_ref_box::<SameStoreImpossibilityKind>(&miss).is_err());
+    }
+
+    #[test]
+    fn generic_ref_box_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(parse_kind_ref_box::<SameStoreConsistencyKind>(&b), Ok(k));
+        }
+    }
+
+    #[test]
+    fn generic_ref_box_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            assert_eq!(parse_kind_ref_box::<ProofRelationKind>(&b), Ok(k));
+        }
+    }
+
+    // ---------- (10) Caller keeps ownership ----------
+
+    #[test]
+    fn caller_retains_ownership_on_ok() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<str> = boxed(k.name());
+            let addr_before = b.as_ptr();
+            let _ = SameStoreImpossibilityKind::try_from(&b).unwrap();
+            let addr_after = b.as_ptr();
+            assert_eq!(addr_before, addr_after);
+            assert_eq!(b.as_ref(), k.name());
+        }
+    }
+
+    #[test]
+    fn caller_retains_ownership_on_err() {
+        let b: Box<str> = boxed("unknown_probe");
+        let addr_before = b.as_ptr();
+        let err = SameStoreImpossibilityKind::try_from(&b).unwrap_err();
+        let addr_after = b.as_ptr();
+        assert_eq!(addr_before, addr_after);
+        assert_eq!(b.as_ref(), "unknown_probe");
+        assert_eq!(err.input, "unknown_probe");
     }
 }
