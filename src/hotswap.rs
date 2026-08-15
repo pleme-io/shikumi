@@ -4463,6 +4463,110 @@ impl PartialEq<SameStoreImpossibilityKind> for Box<[u8]> {
     }
 }
 
+/// The [`PartialEq<std::sync::Arc<[u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-side
+/// shared-refcounted-carrier sibling** of the string-side
+/// [`PartialEq<std::sync::Arc<str>>`] impl already at this altitude, and
+/// the shared-refcounted-carrier extension of the byte-side
+/// [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] + [`PartialEq<Vec<u8>>`] +
+/// [`PartialEq<Cow<'_, [u8]>>`] + [`PartialEq<Box<[u8]>>`] impls above,
+/// closing the sixth leg of the (borrowed `[u8]`, borrowed `&[u8]`,
+/// owned [`Vec<u8>`], borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`],
+/// compact-owned [`Box<[u8]>`], shared-refcounted [`std::sync::Arc<[u8]>`])
+/// receiver-set on the byte-side COMPARISON side with the SAME shape the
+/// byte-side PARSE side already carries through [`TryFrom<&[u8]>`] +
+/// [`TryFrom<Vec<u8>>`] + [`TryFrom<Cow<'_, [u8]>>`] +
+/// [`TryFrom<Box<[u8]>>`] + [`TryFrom<std::sync::Arc<[u8]>>`] (cell 37)
+/// and the byte-side FORWARD side already carries through
+/// [`AsRef<[u8]>`] + [`From<Kind>`] for [`&'static [u8]`] +
+/// [`From<Kind>`] for [`Vec<u8>`] + [`From<Kind>`] for
+/// [`Cow<'static, [u8]>`] + [`From<Kind>`] for [`Box<[u8]>`] +
+/// [`From<Kind>`] for [`std::sync::Arc<[u8]>`] (cell 35).
+///
+/// **Why lift a comparison-side receiver over a SHARED-REFCOUNTED byte
+/// carrier.** A caller holding the identifier as an
+/// [`std::sync::Arc<[u8]>`] on a shared-refcounted byte registry — a
+/// `HashMap<std::sync::Arc<[u8]>, V>::keys()` iterator, an
+/// [`arc_swap::ArcSwap<std::sync::Arc<[u8]>>`] cheap snapshot on shikumi's
+/// own [`crate::ConfigStore`] materialized for per-tick shared-byte
+/// registry reads, an intern-table hit surfacing the identifier as an
+/// [`std::sync::Arc<[u8]>`], a
+/// `dashmap::DashMap<std::sync::Arc<[u8]>, V>` shared-key intern-table, a
+/// `serde_bytes` visitor that materializes the identifier as an
+/// [`std::sync::Arc<[u8]>`] under a `#[serde(with = "serde_bytes")]`
+/// attribute, a `zerocopy`-neighbouring shared-byte registry whose keys
+/// arrive as [`std::sync::Arc<[u8]>`], any downstream slot bounded on
+/// `T: PartialEq<std::sync::Arc<[u8]>>` — previously stranded at either a
+/// per-callsite `&**arc_bytes` deref (a coordinated silent rewrite of
+/// the callsite, not a lift into the type-checker) or a
+/// [`std::str::from_utf8`] parse detour (paying UTF-8 validation to
+/// answer a byte-compare question), because Rust does NOT chain
+/// [`PartialEq`] impls (`T: PartialEq<std::sync::Arc<[u8]>>` is NOT
+/// satisfied by `T: PartialEq<&[u8]>` alone, `T: PartialEq<Vec<u8>>`
+/// alone, `T: PartialEq<Cow<'_, [u8]>>` alone, or `T: PartialEq<Box<[u8]>>`
+/// alone, because the right-hand receiver types are distinct).
+///
+/// **Architectural alignment with shikumi's ArcSwap-based store.**
+/// shikumi IS Pillar 2 in the fleet, and its [`crate::ConfigStore`] is
+/// built on [`arc_swap::ArcSwap<T>`] — every hot-reloaded config value
+/// already lives under an [`std::sync::Arc`]. A downstream config that
+/// carries a candidate classification identifier as an
+/// [`std::sync::Arc<[u8]>`] field (the ecosystem-natural shape for a
+/// shared-owned byte slice under [`arc_swap::ArcSwap`] on a wire-facing
+/// classifier, matching the shared-refcount semantics the sibling
+/// [`From<Kind>`] for [`std::sync::Arc<[u8]>`] (cell 35) and
+/// [`TryFrom<std::sync::Arc<[u8]>>`] (cell 37) already lifted for the
+/// forward and parse sides) now reaches the comparison-side projection
+/// through the standard trait alone, without any per-callsite
+/// `&**arc_bytes` deref that fragments the receiver-family surface.
+///
+/// **Cheap-clone-friendly, allocation-free.** [`std::sync::Arc<[u8]>`]
+/// is a `{ ptr }` one-word shared-refcounted heap allocation whose
+/// [`AsRef<[u8]>`] projection resolves through std's
+/// `impl<T: ?Sized> AsRef<T> for Arc<T>` blanket to the two-word
+/// fat-pointer view over the shared data without incrementing the atomic
+/// reference count or copying the heap bytes. Every downstream slot that
+/// carries the identifier as an [`std::sync::Arc<[u8]>`] (rather than a
+/// [`Vec<u8>`] or [`Box<[u8]>`]) does so precisely to pay ZERO
+/// per-comparison allocation and ZERO per-clone allocation on a
+/// long-lived shared byte table — this impl composes the comparison
+/// receiver over the shared-refcounted byte carrier through the standard
+/// trait, so the caller reaches the same `k == arc_bytes` seam the
+/// sibling [`PartialEq<Vec<u8>>`] / [`PartialEq<Box<[u8]>>`] impls
+/// already provide without the extra `Vec::from(&*arc_bytes)` round-trip
+/// that would forfeit the shared-refcount the caller went to trouble to
+/// obtain.
+///
+/// Delegates through the same [`Self::name`]-then-[`str::as_bytes`]
+/// source of truth every prior byte-shape receiver already uses, so the
+/// closed-variant set (adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`]) surfaces through this
+/// impl in lockstep.
+///
+/// [`ConfigStore`]: crate::ConfigStore
+impl PartialEq<std::sync::Arc<[u8]>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &std::sync::Arc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`std::sync::Arc<[u8]>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<std::sync::Arc<[u8]>>`] impl directly above, welding the
+/// symmetric `shared_refcounted_bytes_from_wire == kind` seam through the
+/// same [`Self::name`]-then-[`str::as_bytes`] source of truth. Both
+/// directions of the byte-side shared-refcounted cross-type comparison
+/// now compose out of the same allocation-free receiver by construction;
+/// adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in [`Self::name`], and the new identifier surfaces
+/// through BOTH [`PartialEq<std::sync::Arc<[u8]>>`] impls (and every
+/// sibling projection through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for std::sync::Arc<[u8]> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
 /// The [`From<SameStoreImpossibilityKind>`] for [`std::sync::Arc<str>`] impl
 /// — the **shared-refcounted string projection sibling** of the four
 /// forward-side siblings already at this altitude ([`From<Kind>`] for
@@ -6011,6 +6115,34 @@ impl PartialEq<Box<[u8]>> for SameStoreConsistencyKind {
 /// this altitude. Mirror of the impossibility-half receiver at this
 /// altitude.
 impl PartialEq<SameStoreConsistencyKind> for Box<[u8]> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<std::sync::Arc<[u8]>>`] impl on
+/// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
+/// impossibility-half [`PartialEq<Arc<[u8]>>`] impl. See that impl for
+/// the full rationale; the byte-side shared-refcounted comparison here
+/// welds the three-variant consistent half onto the same one-word
+/// shared-owned byte-carrier shape in lockstep with the two-variant
+/// impossibility half, so a downstream consumer running a
+/// `HashMap<Arc<[u8]>, V>::keys()` predicate loop (or an
+/// [`arc_swap::ArcSwap<Arc<[u8]>>`] cheap-snapshot per-tick reclassifier)
+/// over consistent kinds reaches the same shared-ownership shape as over
+/// impossibility kinds — allocation-free by construction.
+impl PartialEq<std::sync::Arc<[u8]>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &std::sync::Arc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`std::sync::Arc<[u8]>`] impl — closing the byte-side
+/// shared-refcounted reverse-direction cell on the consistent half so
+/// `shared_refcounted_bytes == kind` composes at this altitude. Mirror
+/// of the impossibility-half receiver at this altitude.
+impl PartialEq<SameStoreConsistencyKind> for std::sync::Arc<[u8]> {
     fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
         self.as_ref() == other.name().as_bytes()
     }
@@ -7731,6 +7863,43 @@ impl PartialEq<Box<[u8]>> for ProofRelationKind {
 /// the fused altitude so `compact_owned_bytes == kind` composes at this
 /// altitude. Mirror of the two half-side receivers at this altitude.
 impl PartialEq<ProofRelationKind> for Box<[u8]> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<std::sync::Arc<[u8]>>`] impl on [`ProofRelationKind`]
+/// — the **fused-sum sibling** of the two half-side byte-side
+/// [`PartialEq<std::sync::Arc<[u8]>>`] impls on
+/// [`SameStoreImpossibilityKind`] and [`SameStoreConsistencyKind`] and
+/// the byte-side dual of the fused string-side
+/// [`PartialEq<std::sync::Arc<str>>`] impl already at this altitude.
+/// Closes the sixth leg of the byte-side comparison receiver-set
+/// (borrowed `[u8]`, borrowed `&[u8]`, owned [`Vec<u8>`],
+/// borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`], compact-owned
+/// [`Box<[u8]>`], shared-refcounted [`std::sync::Arc<[u8]>`]) at the
+/// fused altitude. The fused body delegates through
+/// [`ProofRelationKind::name`], which routes through the two half-side
+/// [`Self::name`] receivers — so the fused
+/// [`Arc<[u8]>`]-comparison agrees with the routed half-side
+/// [`Arc<[u8]>`]-comparison through the two-arm partition of the fused
+/// sum on every fused kind, matching the same-shape pattern already
+/// welded on [`PartialEq<Vec<u8>>`], [`PartialEq<Cow<'_, [u8]>>`], and
+/// [`PartialEq<Box<[u8]>>`] at the fused altitude and on
+/// [`PartialEq<std::sync::Arc<str>>`] at the string-side fused altitude
+/// (cell 38).
+impl PartialEq<std::sync::Arc<[u8]>> for ProofRelationKind {
+    fn eq(&self, other: &std::sync::Arc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for
+/// [`std::sync::Arc<[u8]>`] impl — closing the byte-side
+/// shared-refcounted reverse-direction cell at the fused altitude so
+/// `shared_refcounted_bytes == kind` composes at this altitude. Mirror
+/// of the two half-side receivers at this altitude.
+impl PartialEq<ProofRelationKind> for std::sync::Arc<[u8]> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name().as_bytes()
     }
@@ -44179,6 +44348,611 @@ mod partial_eq_arc_str_tests {
                 "strong_count must be 2 (a + sibling) after comparison for {}",
                 k.name(),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_arc_bytes_tests {
+    //! [`PartialEq<std::sync::Arc<[u8]>>`] and
+    //! [`PartialEq<Kind> for std::sync::Arc<[u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side shared-refcounted-carrier
+    //! sibling** of the string-side [`PartialEq<std::sync::Arc<str>>`]
+    //! pair lifted by [`super::partial_eq_arc_str_tests`] (cell 38), and
+    //! the shared-refcounted-carrier extension of the byte-side
+    //! [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] + [`PartialEq<Vec<u8>>`]
+    //! + [`PartialEq<Cow<'_, [u8]>>`] + [`PartialEq<Box<[u8]>>`] pairs
+    //! lifted by [`super::partial_eq_bytes_tests`],
+    //! [`super::partial_eq_owned_bytes_tests`],
+    //! [`super::partial_eq_cow_bytes_tests`], and
+    //! [`super::partial_eq_box_bytes_tests`] (cell 33), closing the
+    //! sixth leg of the (borrowed `[u8]`, borrowed `&[u8]`, owned
+    //! [`Vec<u8>`], borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`],
+    //! compact-owned [`Box<[u8]>`], shared-refcounted
+    //! [`std::sync::Arc<[u8]>`]) receiver-set on the byte-side comparison
+    //! of the three kind enums with the SAME shape the byte-side parse
+    //! side already carries through [`TryFrom<&[u8]>`] +
+    //! [`TryFrom<Vec<u8>>`] + [`TryFrom<Cow<'_, [u8]>>`] +
+    //! [`TryFrom<Box<[u8]>>`] + [`TryFrom<std::sync::Arc<[u8]>>`] (cell
+    //! 37) and the byte-side forward side already carries through
+    //! [`AsRef<[u8]>`] + [`From<Kind>`] for [`&'static [u8]`] +
+    //! [`From<Kind>`] for [`Vec<u8>`] + [`From<Kind>`] for
+    //! [`Cow<'static, [u8]>`] + [`From<Kind>`] for [`Box<[u8]>`] +
+    //! [`From<Kind>`] for [`std::sync::Arc<[u8]>`] (cell 35).
+    //!
+    //! **Why lift the shared-refcounted cross-type comparison alongside
+    //! the borrowed, owned, borrowed-or-owned, and compact-owned pairs on
+    //! the byte side.** A caller holding the identifier as a one-word
+    //! [`std::sync::Arc<[u8]>`] on a shared-refcounted byte registry — a
+    //! `HashMap<std::sync::Arc<[u8]>, V>::keys()` iterator, an
+    //! [`arc_swap::ArcSwap<std::sync::Arc<[u8]>>`] cheap snapshot on
+    //! shikumi's own [`crate::ConfigStore`] materialized for per-tick
+    //! shared-byte-registry reads, an intern-table hit surfacing the
+    //! identifier as an [`std::sync::Arc<[u8]>`], a
+    //! `dashmap::DashMap<std::sync::Arc<[u8]>, V>` shared-key
+    //! intern-table, a `serde_bytes` visitor that materializes the
+    //! identifier as an [`std::sync::Arc<[u8]>`] under a
+    //! `#[serde(with = "serde_bytes")]` attribute, a
+    //! `zerocopy`-neighbouring shared-byte registry — previously stranded
+    //! the caller at either a per-callsite `&**arc_bytes` deref (a
+    //! coordinated silent rewrite of the callsite, not a lift into the
+    //! type-checker) or a [`std::str::from_utf8`] parse detour (paying
+    //! UTF-8 validation to answer a byte-compare question). This module
+    //! pins that `k == arc_bytes` and `arc_bytes == k` both compose at
+    //! the type-checker for every variant of every kind enum,
+    //! allocation-free and clone-shared.
+    //!
+    //! **Cheap-clone survival.** Because [`std::sync::Arc<[u8]>`] is a
+    //! shared-refcounted carrier, cloning an [`std::sync::Arc<[u8]>`]
+    //! bumps the atomic reference count without copying the heap bytes;
+    //! test 9 pins that a comparison consuming one
+    //! [`std::sync::Arc::clone`] handle does not disturb any other live
+    //! handle to the same allocation — the two live handles remain
+    //! pointer-equal (`std::sync::Arc::ptr_eq`) across every comparison,
+    //! and the atomic strong-count reads exactly `2`.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both
+    //! cells (`k == arc_bytes`, `arc_bytes == k`) for
+    //! `arc_bytes = std::sync::Arc::<[u8]>::from(k.name().as_bytes())`
+    //! on every variant of every kind enum; (2) sibling agreement with
+    //! [`AsRef<[u8]>`] — for every variant and every input byte-slice,
+    //! both directions of the shared-refcounted byte-pair agree with
+    //! `<K as AsRef<[u8]>>::as_ref(&k) == probe`; (3) inequality on
+    //! unknown [`std::sync::Arc<[u8]>`] inputs; (4) cross-variant
+    //! inequality — for every pair `(a, b)` of distinct variants,
+    //! `a != std::sync::Arc::<[u8]>::from(b.name().as_bytes())` in both
+    //! directions; (5) fused-arm lockstep on [`ProofRelationKind`] — a
+    //! fused kind constructed from either half-side variant equals the
+    //! shared-refcounted half-side name-bytes through both directions;
+    //! (6) round-trip through the sibling [`From<Kind>`] for
+    //! [`std::sync::Arc<[u8]>`] projection (cell 35) — for every variant
+    //! `k`, `k == <std::sync::Arc<[u8]>>::from(k)` in both directions,
+    //! pinning the two [`std::sync::Arc<[u8]>`] receivers' pointwise
+    //! agreement; (7) sibling agreement with the compact-owned
+    //! [`PartialEq<Box<[u8]>>`] pair (cell 33) AND cross-check with
+    //! [`PartialEq<Cow<'_, [u8]>>`] — for every variant and every probe,
+    //! both directions of the shared-refcounted byte-pair agree with the
+    //! compact-owned pair and the borrowed-or-owned pair, pinning the
+    //! three heap-carrying byte-receivers stay lockstep-identical;
+    //! (8) generic composability at a `fn cmp<K:
+    //! PartialEq<std::sync::Arc<[u8]>>>(k: &K, a:
+    //! &std::sync::Arc<[u8]>) -> bool` seam bounded ONLY on the standard
+    //! trait; (9) cheap-clone survival — a comparison consuming one
+    //! [`std::sync::Arc::clone`] handle does not disturb a sibling live
+    //! handle to the same allocation; (10) string-side lockstep — for
+    //! every variant, the shared-refcounted byte-side comparison agrees
+    //! with the shared-refcounted string-side comparison lifted by cell
+    //! 38 on both directions.
+    //!
+    //! [`ConfigStore`]: crate::ConfigStore
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::borrow::Cow;
+    use std::sync::Arc;
+
+    fn arc_bytes(bytes: &[u8]) -> Arc<[u8]> {
+        Arc::<[u8]>::from(bytes)
+    }
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_arc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_arc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_arc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            &[0xffu8, 0xfe, 0xfd],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_bytes_on_every_arc_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<[u8]> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_bytes_on_every_arc_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<[u8]> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_bytes_on_every_arc_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<[u8]> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown Arc<[u8]> inputs ----------
+
+    #[test]
+    fn impossibility_ne_unknown_arc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Regressed",
+                b" regressed",
+                b"regressed\t",
+                &[0xffu8, 0x00, 0x01],
+            ] {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<[u8]>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_arc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Stationary",
+                b"identity-republish",
+                b"progression\n",
+            ] {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<[u8]>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_arc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Consistent",
+                b"Impossible",
+                b"consistent\n",
+            ] {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<[u8]>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_arc_bytes() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b_kind in SameStoreImpossibilityKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<[u8]> = arc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_arc_bytes() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b_kind in SameStoreConsistencyKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<[u8]> = arc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_arc_bytes() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b_kind in ProofRelationKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<[u8]> = arc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_arc_bytes_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let a: Arc<[u8]> = arc_bytes(half.name().as_bytes());
+            assert!(fused == a, "fused == Arc<[u8]> for {:?}", half.name());
+            assert!(a == fused, "Arc<[u8]> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == a,
+                half == a,
+                "cross-altitude drift on Arc<[u8]> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_arc_bytes_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let a: Arc<[u8]> = arc_bytes(half.name().as_bytes());
+            assert!(fused == a, "fused == Arc<[u8]> for {:?}", half.name());
+            assert!(a == fused, "Arc<[u8]> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == a,
+                half == a,
+                "cross-altitude drift on Arc<[u8]> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    // ---------- (6) Round-trip through the sibling From<Kind> for Arc<[u8]> (cell 35) ----------
+
+    #[test]
+    fn round_trip_through_from_kind_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<[u8]>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<[u8]>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<[u8]>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    // ---------- (7) Sibling agreement with PartialEq<Box<[u8]>> (cell 33) and PartialEq<Cow<'_, [u8]>> ----------
+
+    #[test]
+    fn agrees_with_partial_eq_box_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                let b: Box<[u8]> = Vec::<u8>::from(probe).into_boxed_slice();
+                let c: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == b, "Arc<[u8]>/Box<[u8]> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<[u8]>/Box<[u8]> drift on {probe:?}"
+                );
+                assert_eq!(k == a, k == c, "Arc<[u8]>/Cow<[u8]> drift on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn agrees_with_partial_eq_box_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                let b: Box<[u8]> = Vec::<u8>::from(probe).into_boxed_slice();
+                let c: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == b, "Arc<[u8]>/Box<[u8]> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<[u8]>/Box<[u8]> drift on {probe:?}"
+                );
+                assert_eq!(k == a, k == c, "Arc<[u8]>/Cow<[u8]> drift on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn agrees_with_partial_eq_box_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a: Arc<[u8]> = arc_bytes(probe);
+                let b: Box<[u8]> = Vec::<u8>::from(probe).into_boxed_slice();
+                let c: Cow<'_, [u8]> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == b, "Arc<[u8]>/Box<[u8]> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<[u8]>/Box<[u8]> drift on {probe:?}"
+                );
+                assert_eq!(k == a, k == c, "Arc<[u8]>/Cow<[u8]> drift on {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (8) Generic composability at a PartialEq<Arc<[u8]>>-bounded seam ----------
+
+    // `&Arc<[u8]>` is the whole point: the helper is bounded on
+    // `PartialEq<Arc<[u8]>>` to pin that the trait resolves at that exact
+    // receiver-shape. `&[u8]` would prove nothing.
+    fn cmp_kind_arc_bytes<K: PartialEq<Arc<[u8]>>>(k: &K, a: &Arc<[u8]>) -> bool {
+        *k == *a
+    }
+
+    #[test]
+    fn generic_composability_impossibility_arc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_arc_bytes(&k, &a));
+            assert!(!cmp_kind_arc_bytes(&k, &arc_bytes(b"unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_arc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_arc_bytes(&k, &a));
+            assert!(!cmp_kind_arc_bytes(&k, &arc_bytes(b"unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_arc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_arc_bytes(&k, &a));
+            assert!(!cmp_kind_arc_bytes(&k, &arc_bytes(b"unknown")));
+        }
+    }
+
+    // ---------- (9) Cheap-clone survival ----------
+    //
+    // Distinguishes an Arc<[u8]>-receiver comparison from an owned
+    // (Vec<u8> / Box<[u8]>) one: consuming one Arc<[u8]> handle in a
+    // comparison must not disturb a sibling live handle to the same
+    // allocation. Pin via Arc::ptr_eq across the comparison.
+
+    #[test]
+    fn cheap_clone_survival_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            let sibling: Arc<[u8]> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<[u8]> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            let sibling: Arc<[u8]> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<[u8]> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<[u8]> = arc_bytes(k.name().as_bytes());
+            let sibling: Arc<[u8]> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<[u8]> for {}", k.name());
+            assert!(a == k, "Arc<[u8]> == kind for {}", k.name());
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<[u8]> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    // ---------- (10) String-side lockstep with PartialEq<Arc<str>> (cell 38) ----------
+
+    #[test]
+    fn arc_bytes_agrees_with_arc_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a_bytes: Arc<[u8]> = arc_bytes(probe);
+                // Only build the sibling Arc<str> probe when the bytes
+                // parse as UTF-8 — Arc<str> construction from non-UTF-8
+                // bytes is UB territory, so guard on `from_utf8` and skip
+                // any non-UTF-8 probe.
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let a_str: Arc<str> = Arc::<str>::from(as_str);
+                    assert_eq!(
+                        k == a_bytes,
+                        k == a_str,
+                        "Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        a_bytes == k,
+                        a_str == k,
+                        "reciprocal Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn arc_bytes_agrees_with_arc_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a_bytes: Arc<[u8]> = arc_bytes(probe);
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let a_str: Arc<str> = Arc::<str>::from(as_str);
+                    assert_eq!(
+                        k == a_bytes,
+                        k == a_str,
+                        "Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        a_bytes == k,
+                        a_str == k,
+                        "reciprocal Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn arc_bytes_agrees_with_arc_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let a_bytes: Arc<[u8]> = arc_bytes(probe);
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let a_str: Arc<str> = Arc::<str>::from(as_str);
+                    assert_eq!(
+                        k == a_bytes,
+                        k == a_str,
+                        "Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        a_bytes == k,
+                        a_str == k,
+                        "reciprocal Arc<[u8]>/Arc<str> drift on {probe:?}"
+                    );
+                }
+            }
         }
     }
 }
