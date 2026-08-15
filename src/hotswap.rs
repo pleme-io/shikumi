@@ -3961,6 +3961,50 @@ impl TryFrom<&[u8]> for SameStoreImpossibilityKind {
     }
 }
 
+/// The const-generic [`TryFrom<&[u8; N]>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-string-literal parse-side
+/// sibling** of the borrowed byte-slice [`TryFrom<&[u8]>`] impl directly
+/// above, closing the ergonomic gap Rust's trait dispatch leaves open
+/// between a byte-string literal (`b"regressed"`, type `&[u8; 9]`) and a
+/// borrowed byte-slice (`b"regressed".as_slice()`, type `&[u8]`).
+/// Rust's trait resolver does NOT unsize-coerce `&[u8; N]` to `&[u8]`
+/// for [`TryFrom`] dispatch — a `Self::try_from(b"regressed")` call
+/// therefore fails to type-check against the [`TryFrom<&[u8]>`] impl
+/// alone, and every caller reaching for the byte-string-literal shape
+/// (a static wire-tag round-trip, a `match` arm keyed on a
+/// [`static &[u8; N]`] constant, a codegen-emitted per-corner
+/// registration table) must reach for a per-callsite `.as_slice()`
+/// suffix that fragments the receiver-family surface. This impl closes
+/// the byte-string-literal cell of the parse-side grid on the
+/// impossibility half by delegation — one call through the sibling
+/// [`TryFrom<&[u8]>`] impl above — so the caller reaches the SAME
+/// accepted-set the sibling receivers already provide without the
+/// per-callsite convention drift.
+///
+/// **Delegates to the sibling [`TryFrom<&[u8]>`] impl.** The body is
+/// `<Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())` — one line,
+/// zero allocations on both arms (the borrowed byte-array reference
+/// already carries its length; `[u8; N]::as_slice` is a `#[inline]`
+/// reborrow of the same byte range). The `[u8; N]` static length is
+/// therefore erased at the parse boundary, and the accepted-set is
+/// pinned by the sibling delegation — never open-coded here.
+///
+/// **Adding a hypothetical corner surfaces here in lockstep.** Because
+/// this impl delegates through the sibling [`TryFrom<&[u8]>`] impl,
+/// which in turn delegates through [`std::str::from_utf8`] and
+/// [`FromStr`](std::str::FromStr::from_str) to the ONE `match` body in
+/// [`Self::name`], a hypothetical third impossibility corner surfaces
+/// through this impl (as the byte-string-literal parse cell) and every
+/// prior parse-side / forward-side / compare-side receiver in lockstep
+/// with the enum itself.
+impl<const N: usize> TryFrom<&[u8; N]> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
+    }
+}
+
 /// The [`From<SameStoreImpossibilityKind>`] for [`Vec<u8>`] impl — the
 /// **byte-side heap-owning projection sibling** of the borrowed
 /// [`AsRef<[u8]>`] impl and the owned-static [`From<Kind>`] for
@@ -6358,6 +6402,28 @@ impl TryFrom<&[u8]> for SameStoreConsistencyKind {
     }
 }
 
+/// The const-generic [`TryFrom<&[u8; N]>`] impl on
+/// [`SameStoreConsistencyKind`] — the **byte-string-literal parse-side
+/// sibling** on the consistent half, mirroring the impossibility-side
+/// [`TryFrom<&[u8; N]>`] impl already at its altitude and delegating
+/// through the sibling [`TryFrom<&[u8]>`] impl directly above.
+/// Rust's trait resolver does NOT unsize-coerce `&[u8; N]` to `&[u8]`
+/// for [`TryFrom`] dispatch, so `Self::try_from(b"stationary")` fails
+/// to type-check against the sibling [`TryFrom<&[u8]>`] impl alone; this
+/// impl closes the byte-string-literal cell on the consistent half in
+/// the shape the impossibility half already carries. Body is one line:
+/// `<Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())` — the sibling
+/// delegation pins the accepted-set, and adding a hypothetical fourth
+/// consistent corner surfaces here in lockstep with every other
+/// consistent-side receiver.
+impl<const N: usize> TryFrom<&[u8; N]> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
+    }
+}
+
 /// The [`From<SameStoreConsistencyKind>`] for [`Vec<u8>`] impl — the
 /// **byte-side heap-owning projection sibling** on the consistent half,
 /// mirroring the impossibility-side [`From<Kind>`] for [`Vec<u8>`] impl
@@ -8214,6 +8280,30 @@ impl TryFrom<&[u8]> for ProofRelationKind {
                 expected: Self::NAMES,
             }),
         }
+    }
+}
+
+/// The const-generic [`TryFrom<&[u8; N]>`] impl on [`ProofRelationKind`] —
+/// the **byte-string-literal parse-side sibling** on the fused sum,
+/// mirroring the two half-side [`TryFrom<&[u8; N]>`] impls already at
+/// their altitudes and delegating through the sibling
+/// [`TryFrom<&[u8]>`] impl directly above. Rust's trait resolver does
+/// NOT unsize-coerce `&[u8; N]` to `&[u8]` for [`TryFrom`] dispatch, so
+/// `Self::try_from(b"progression")` fails to type-check against the
+/// sibling [`TryFrom<&[u8]>`] impl alone; this impl closes the fused-sum
+/// byte-string-literal cell by delegation — the ONE-line
+/// `<Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())` body reaches
+/// the fused two-arm partition through the sibling receiver whose
+/// [`FromStr`](std::str::FromStr::from_str) impl in turn dispatches
+/// across both half-side accepted-sets. Adding a hypothetical
+/// impossibility or consistent corner surfaces through this impl in
+/// lockstep with the enum and every prior parse-side / forward-side /
+/// compare-side receiver on the fused sum.
+impl<const N: usize> TryFrom<&[u8; N]> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: &[u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
     }
 }
 
@@ -49280,5 +49370,289 @@ mod partial_eq_rc_bytes_tests {
                 k.name(),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod try_from_byte_array_tests {
+    //! [`TryFrom<&[u8; N]>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **byte-string-literal parse-side cell** that closes the ergonomic
+    //! gap Rust's trait dispatch leaves open between a byte-string literal
+    //! (`b"regressed"`, type `&[u8; 9]`) and a borrowed byte-slice
+    //! (`b"regressed".as_slice()`, type `&[u8]`).
+    //!
+    //! Rust's trait resolver does NOT unsize-coerce `&[u8; N]` to `&[u8]`
+    //! for [`TryFrom`] dispatch — so before this cell,
+    //! `Kind::try_from(b"regressed")` failed to type-check against the
+    //! sibling [`TryFrom<&[u8]>`] impl alone, forcing every caller reaching
+    //! for a byte-string literal (a `match` on a `static &[u8; N]`
+    //! constant, a codegen wire-tag round-trip, a per-corner registration
+    //! table) to add a per-callsite `.as_slice()` postfix. This cell
+    //! closes that gap by const-generic delegation to the sibling
+    //! [`TryFrom<&[u8]>`] impl — the accepted-set is pinned by the sibling
+    //! delegation, never open-coded.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Every accepted variant of every kind enum round-trips through
+    //!    the byte-string literal parse: `Kind::try_from(k.name().as_bytes())`
+    //!    returns `Ok(k)` for every `k` in `Kind::VARIANTS`.
+    //! 2. An unknown byte-string literal produces the same
+    //!    [`ParseKindError`] the sibling [`TryFrom<&[u8]>`] impl would
+    //!    produce — the accepted-set is pinned by the delegation, not
+    //!    re-listed here.
+    //! 3. Sibling agreement with [`TryFrom<&[u8]>`] on a fifteen-slice
+    //!    probe grid: for every probe, the two parse-side receivers land
+    //!    on the same result (`Ok` matches `Ok`, `Err::expected` matches).
+    //! 4. Generic composability at a per-length monomorphic seam
+    //!    `fn parse_kind_n<K, const N: usize>(bytes: &[u8; N])
+    //!    -> Result<K, ParseKindError> where K: TryFrom<&[u8; N], Error =
+    //!    ParseKindError>` that the sibling [`TryFrom<&[u8]>`] receiver
+    //!    alone CANNOT satisfy (Rust does not chain [`TryFrom`] impls
+    //!    through unsize-coercion) — the load-bearing pin.
+    //! 5. Byte-string-literal ergonomics: the natural call site
+    //!    `Kind::try_from(b"regressed")` compiles without any postfix.
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"unknown",
+            b"REGRESSED",
+            b" regressed ",
+            b"cross-store",
+            b"regressed\n",
+            b"stationary\0",
+            &[0xff, 0xfe, 0xfd],
+            b"identity_republish_x",
+            b"prog",
+        ]
+    }
+
+    // ---------- (1) Round-trip on every accepted variant ----------
+
+    #[test]
+    fn round_trip_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "regressed" => SameStoreImpossibilityKind::try_from(b"regressed"),
+                "cross_store" => SameStoreImpossibilityKind::try_from(b"cross_store"),
+                other => panic!("unexpected impossibility variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "byte-literal round-trip for {name}");
+        }
+    }
+
+    #[test]
+    fn round_trip_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "stationary" => SameStoreConsistencyKind::try_from(b"stationary"),
+                "identity_republish" => SameStoreConsistencyKind::try_from(b"identity_republish"),
+                "progression" => SameStoreConsistencyKind::try_from(b"progression"),
+                other => panic!("unexpected consistency variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "byte-literal round-trip for {name}");
+        }
+    }
+
+    #[test]
+    fn round_trip_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "regressed" => ProofRelationKind::try_from(b"regressed"),
+                "cross_store" => ProofRelationKind::try_from(b"cross_store"),
+                "stationary" => ProofRelationKind::try_from(b"stationary"),
+                "identity_republish" => ProofRelationKind::try_from(b"identity_republish"),
+                "progression" => ProofRelationKind::try_from(b"progression"),
+                other => panic!("unexpected fused variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "byte-literal round-trip for {name}");
+        }
+    }
+
+    // ---------- (2) Unknown-input error surface ----------
+
+    #[test]
+    fn unknown_byte_literal_errors_impossibility() {
+        let err = SameStoreImpossibilityKind::try_from(b"unknown").unwrap_err();
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    #[test]
+    fn unknown_byte_literal_errors_consistency() {
+        let err = SameStoreConsistencyKind::try_from(b"unknown").unwrap_err();
+        assert_eq!(err.expected, SameStoreConsistencyKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    #[test]
+    fn unknown_byte_literal_errors_fused() {
+        let err = ProofRelationKind::try_from(b"unknown").unwrap_err();
+        assert_eq!(err.expected, ProofRelationKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (3) Sibling agreement with TryFrom<&[u8]> ----------
+    //
+    // For every probe, the byte-string-literal parse-side and the
+    // borrowed byte-slice parse-side land on the same result — the
+    // accepted-set is pinned by the sibling delegation, not open-coded
+    // here.
+
+    #[test]
+    fn sibling_agreement_impossibility() {
+        for &probe in probe_bytes() {
+            let a = SameStoreImpossibilityKind::try_from(probe);
+            let v = probe.to_vec();
+            let b = SameStoreImpossibilityKind::try_from(v.as_slice());
+            assert_eq!(
+                a.as_ref().map(|k| k.name()),
+                b.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<&[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&a, &b) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    #[test]
+    fn sibling_agreement_consistency() {
+        for &probe in probe_bytes() {
+            let a = SameStoreConsistencyKind::try_from(probe);
+            let v = probe.to_vec();
+            let b = SameStoreConsistencyKind::try_from(v.as_slice());
+            assert_eq!(
+                a.as_ref().map(|k| k.name()),
+                b.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<&[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&a, &b) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    #[test]
+    fn sibling_agreement_fused() {
+        for &probe in probe_bytes() {
+            let a = ProofRelationKind::try_from(probe);
+            let v = probe.to_vec();
+            let b = ProofRelationKind::try_from(v.as_slice());
+            assert_eq!(
+                a.as_ref().map(|k| k.name()),
+                b.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<&[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&a, &b) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    // ---------- (4) THE LOAD-BEARING SEAM ----------
+    //
+    // A `TryFrom<&[u8; N]>`-bounded seam that the sibling
+    // `TryFrom<&[u8]>` impl ALONE cannot satisfy. Rust does not chain
+    // `TryFrom` impls through unsize-coercion, so a caller carrying a
+    // byte-string literal through a bound would previously have to
+    // insert a per-callsite `.as_slice()` postfix — this seam pins that
+    // the new impl closes exactly that gap.
+
+    fn parse_kind_n<K, const N: usize>(bytes: &[u8; N]) -> Result<K, ParseKindError>
+    where
+        K: for<'a> TryFrom<&'a [u8; N], Error = ParseKindError>,
+    {
+        K::try_from(bytes)
+    }
+
+    #[test]
+    fn load_bearing_seam_impossibility() {
+        let k: SameStoreImpossibilityKind = parse_kind_n(b"regressed").unwrap();
+        assert_eq!(k, SameStoreImpossibilityKind::Regressed);
+        let k: SameStoreImpossibilityKind = parse_kind_n(b"cross_store").unwrap();
+        assert_eq!(k, SameStoreImpossibilityKind::CrossStore);
+    }
+
+    #[test]
+    fn load_bearing_seam_consistency() {
+        let k: SameStoreConsistencyKind = parse_kind_n(b"stationary").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::Stationary);
+        let k: SameStoreConsistencyKind = parse_kind_n(b"identity_republish").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::IdentityRepublish);
+        let k: SameStoreConsistencyKind = parse_kind_n(b"progression").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::Progression);
+    }
+
+    #[test]
+    fn load_bearing_seam_fused() {
+        let k: ProofRelationKind = parse_kind_n(b"regressed").unwrap();
+        assert_eq!(
+            k,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+        let k: ProofRelationKind = parse_kind_n(b"stationary").unwrap();
+        assert_eq!(
+            k,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+    }
+
+    // ---------- (5) Byte-string-literal ergonomics ----------
+    //
+    // The natural call sites `Kind::try_from(b"...")` compile without
+    // any `.as_slice()` postfix — this test's mere compilation is the
+    // primary pin; the assertions are secondary confirmation.
+
+    #[test]
+    fn natural_call_sites_compile() {
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(b"regressed"),
+            Ok(SameStoreImpossibilityKind::Regressed),
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(b"cross_store"),
+            Ok(SameStoreImpossibilityKind::CrossStore),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(b"stationary"),
+            Ok(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(b"identity_republish"),
+            Ok(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(b"progression"),
+            Ok(SameStoreConsistencyKind::Progression),
+        );
+        assert_eq!(
+            ProofRelationKind::try_from(b"regressed"),
+            Ok(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::Regressed,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::try_from(b"stationary"),
+            Ok(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Stationary,
+            )),
+        );
     }
 }
