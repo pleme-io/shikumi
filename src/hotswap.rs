@@ -4649,6 +4649,84 @@ impl From<&SameStoreImpossibilityKind> for std::sync::Arc<str> {
     }
 }
 
+/// The [`From<SameStoreImpossibilityKind>`] for [`std::rc::Rc<str>`] impl
+/// — the **single-threaded shared-refcounted string projection sibling**
+/// of the five forward-side siblings already at this altitude
+/// ([`From<Kind>`] for [`&'static str`], [`From<Kind>`] for [`String`],
+/// [`From<Kind>`] for [`std::borrow::Cow<'static, str>`], [`From<Kind>`]
+/// for [`Box<str>`], [`From<Kind>`] for [`std::sync::Arc<str>`]). Closes
+/// the sixth leg of the string-side owned-carrier receiver-family with
+/// the ecosystem-standard NON-atomically reference-counted shared-owned
+/// shape — a two-word carrier (data pointer + length) whose underlying
+/// allocation is tight to `name.len()` plus a reference-count header,
+/// and whose [`std::rc::Rc::clone`] is a single **non-atomic** increment
+/// rather than a fresh heap allocation. The single-threaded dual of the
+/// sibling [`Arc<str>`] projection: same two-word carrier, same
+/// tight-to-`name.len()` allocation, same cheap-clone semantics — but
+/// the non-atomic reference-count that unlocks the ArcSwap fan-out story
+/// on the [`Arc`] side is here traded for a per-clone cycle saved on
+/// single-threaded consumers (per-tick controllers, WASM main-loop
+/// callbacks, single-threaded `pretty_assertions`-style ad-hoc test
+/// harnesses).
+///
+/// **Why lift an [`Rc<str>`] receiver alongside [`Arc<str>`],
+/// [`String`], [`Cow<'static, str>`], and [`Box<str>`].** Every
+/// downstream slot bounded on `T: Into<Rc<str>>` (a
+/// `Vec::<Rc<str>>::push` slot, a struct field of type [`Rc<str>`], a
+/// `.map(Rc::<str>::from).collect::<Vec<Rc<str>>>()` combinator over a
+/// variant iterator, a `HashMap<Rc<str>, V>` builder on a
+/// single-threaded UI-event-loop indexed lookup table, any generic
+/// `fn take<A: Into<Rc<str>>>(a: A)` receiver, any single-threaded
+/// [`crate::ConfigStore`]-adjacent per-tick controller carrying a
+/// classification identifier as an [`Rc<str>`] field) previously
+/// stranded a [`Kind`] value at the type-checker: Rust does NOT chain
+/// [`Into`] impls, so a `T: Into<Rc<str>>` bound is NOT satisfied by
+/// `T: Into<Arc<str>>` alone (the atomic-refcount and non-atomic-refcount
+/// carriers are DISTINCT types even though the layout is identical),
+/// `T: Into<String>` alone, `T: Into<&'static str>` alone,
+/// `T: Into<Cow<'static, str>>` alone, or `T: Into<Box<str>>` alone.
+///
+/// **Rc versus Arc — same footprint, distinct type, distinct
+/// refcount.** [`Rc<str>`] and [`Arc<str>`] share the same two-word
+/// carrier footprint (data pointer + length) and both carry a tight
+/// allocation sized exactly to `name.len()` plus a reference-count
+/// header, but the [`Rc`] header is a plain `usize` while the [`Arc`]
+/// header is an [`std::sync::atomic::AtomicUsize`]. On single-threaded
+/// consumers the non-atomic increment is a small but real per-clone
+/// saving; on multi-threaded consumers the [`Arc`] projection is the
+/// correct choice (the sibling [`From<Kind>`] for [`Arc<str>`] impl
+/// above lifts it). Both projections agree bytewise through the same
+/// [`Self::name`] source of truth — the closed set of stable snake-case
+/// identifiers surfaces through EITHER carrier in exact lockstep.
+///
+/// Delegates to [`Self::name`] followed by [`std::rc::Rc::<str>::from`],
+/// which allocates a tight [`Rc<str>`] sized exactly to the identifier's
+/// length. Adding a hypothetical third impossibility corner updates the
+/// ONE `match` body in [`Self::name`] and the new identifier surfaces
+/// through this impl and every sibling projection in lockstep.
+impl From<SameStoreImpossibilityKind> for std::rc::Rc<str> {
+    fn from(kind: SameStoreImpossibilityKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&SameStoreImpossibilityKind>`] for [`std::rc::Rc<str>`]
+/// impl — the reference-taking sibling of the owned [`From`] impl
+/// directly above, delegating through the same [`Self::name`] source
+/// of truth. Enables `.into()` on a borrowed kind (a `&kind` iterator
+/// over `&[Kind]` in a `.map(Rc::<str>::from).collect::<Vec<Rc<str>>>()`
+/// combinator, a codegen visitor over per-corner registration sites
+/// where the kind arrives by reference) without a per-callsite
+/// dereference. Both directions of the standard [`Into<Rc<str>>`]
+/// projection now compose out of the same [`Self::name`] receiver by
+/// construction, matching the (owned, reference-taking) pair already
+/// welded on the sibling five forward-side [`From<Kind>`] impls.
+impl From<&SameStoreImpossibilityKind> for std::rc::Rc<str> {
+    fn from(kind: &SameStoreImpossibilityKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
+    }
+}
+
 /// The [`From<SameStoreImpossibilityKind>`] for [`std::sync::Arc<[u8]>`]
 /// impl — the **byte-side shared-refcounted carrier projection**, the
 /// byte-side dual of the string-side [`From<Kind>`] for
@@ -6174,6 +6252,36 @@ impl From<SameStoreConsistencyKind> for std::sync::Arc<str> {
 impl From<&SameStoreConsistencyKind> for std::sync::Arc<str> {
     fn from(kind: &SameStoreConsistencyKind) -> std::sync::Arc<str> {
         std::sync::Arc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<SameStoreConsistencyKind>`] for [`std::rc::Rc<str>`] impl
+/// — the consistent-half sibling of the impossibility-half
+/// [`From<Kind>`] for [`Rc<str>`] impl. See that impl for the full
+/// rationale; the single-threaded shared-refcounted string projection
+/// here welds the three-variant consistent half onto the same two-word
+/// non-atomic-shared-refcounted shape in lockstep with the two-variant
+/// impossibility half above, so a downstream single-threaded consumer
+/// building a `Vec<Rc<str>>` label registry or a `HashMap<Rc<str>, V>`
+/// per-corner registry over consistent kinds reaches the same
+/// shared-ownership shape as over impossibility kinds — one non-atomic
+/// increment per additional owner rather than a per-owner fresh heap
+/// allocation.
+impl From<SameStoreConsistencyKind> for std::rc::Rc<str> {
+    fn from(kind: SameStoreConsistencyKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&SameStoreConsistencyKind>`] for [`std::rc::Rc<str>`] impl
+/// — the reference-taking sibling of the owned [`From`] impl directly
+/// above on the consistent half, delegating through the same
+/// [`Self::name`] source of truth. Both directions of the standard
+/// [`Into<Rc<str>>`] projection now compose out of the same
+/// [`Self::name`] receiver by construction on the consistent half.
+impl From<&SameStoreConsistencyKind> for std::rc::Rc<str> {
+    fn from(kind: &SameStoreConsistencyKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
     }
 }
 
@@ -7932,6 +8040,39 @@ impl From<ProofRelationKind> for std::sync::Arc<str> {
 impl From<&ProofRelationKind> for std::sync::Arc<str> {
     fn from(kind: &ProofRelationKind) -> std::sync::Arc<str> {
         std::sync::Arc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<ProofRelationKind>`] for [`std::rc::Rc<str>`] impl on the
+/// **fused sum** — the single-threaded shared-refcounted-string
+/// projection sibling of the two half-side [`Rc<str>`] impls above,
+/// closing the third leg of the (impossibility, consistency, fused)
+/// altitude-triple at the single-threaded shared-refcounted-string
+/// receiver. The fused body delegates through
+/// [`ProofRelationKind::name`], which routes through the two half-side
+/// [`Self::name`] receivers — so the fused [`Rc<str>`] projection agrees
+/// with the routed half-side [`Rc<str>`] projection through the two-arm
+/// partition of the fused sum on every fused kind, matching the
+/// same-shape pattern already welded on [`From<Kind>`] for [`String`],
+/// [`From<Kind>`] for [`Cow<'static, str>`], [`From<Kind>`] for
+/// [`Box<str>`], and [`From<Kind>`] for [`Arc<str>`] at the fused
+/// altitude.
+impl From<ProofRelationKind> for std::rc::Rc<str> {
+    fn from(kind: ProofRelationKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
+    }
+}
+
+/// The [`From<&ProofRelationKind>`] for [`std::rc::Rc<str>`] impl — the
+/// reference-taking sibling of the owned [`From`] impl directly above on
+/// the fused sum, delegating through the same [`Self::name`] source of
+/// truth. Both directions of the standard [`Into<Rc<str>>`] projection
+/// now compose out of the same [`Self::name`] receiver by construction
+/// on the fused sum, matching the pair already welded on both half-side
+/// enums.
+impl From<&ProofRelationKind> for std::rc::Rc<str> {
+    fn from(kind: &ProofRelationKind) -> std::rc::Rc<str> {
+        std::rc::Rc::<str>::from(kind.name())
     }
 }
 
@@ -44953,6 +45094,458 @@ mod partial_eq_arc_bytes_tests {
                     );
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_rc_str_tests {
+    //! [`From<Kind>`] and [`From<&Kind>`] for [`std::rc::Rc<str>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **single-threaded shared-refcounted
+    //! string projection** lifting the three kind enums into the standard
+    //! [`Into<Rc<str>>`] receiver-family every downstream slot bounded on
+    //! `T: Into<Rc<str>>` already reaches through.
+    //!
+    //! **Why lift the six impls (owned + reference-taking on each of the
+    //! three enums).** The prior [`From<Kind>`] for [`Arc<str>`] pass
+    //! (cell 34, `52c44f1`) closed the atomically-refcounted
+    //! shared-owned string projection with a two-word carrier (data
+    //! pointer + length) plus an atomic reference-count header on the
+    //! tight allocation. This cell closes the **non-atomic** dual: the
+    //! same two-word carrier footprint, the same tight allocation, but a
+    //! plain `usize` reference-count instead of an
+    //! [`std::sync::atomic::AtomicUsize`]. Rust does NOT chain [`Into`]
+    //! impls, so a `T: Into<Rc<str>>` bound is NOT satisfied by
+    //! `T: Into<Arc<str>>` alone (the atomic-refcount and
+    //! non-atomic-refcount carriers are DISTINCT types even though the
+    //! layout is identical), nor by `T: Into<String>`, `T: Into<Box<str>>`,
+    //! `T: Into<Cow<'static, str>>`, or `T: Into<&'static str>` alone.
+    //! Every downstream slot bounded on `T: Into<Rc<str>>` (a
+    //! `Vec::<Rc<str>>::push` slot, a `HashMap<Rc<str>, V>` builder on a
+    //! single-threaded UI-event-loop indexed lookup table, a
+    //! single-threaded per-tick controller carrying an identifier as an
+    //! [`Rc<str>`] field, any generic `fn take<A: Into<Rc<str>>>(a: A)`
+    //! receiver) previously stranded a [`Kind`] value at the type-checker.
+    //!
+    //! **Rc versus Arc — same footprint, distinct type, distinct
+    //! refcount.** [`Rc<str>`] and [`Arc<str>`] share the same two-word
+    //! carrier footprint and both carry a tight allocation sized exactly
+    //! to `name.len()` plus a reference-count header, but the [`Rc`]
+    //! header is a plain `usize` while the [`Arc`] header is an
+    //! [`std::sync::atomic::AtomicUsize`]. On single-threaded consumers
+    //! the non-atomic increment is a small but real per-clone saving; on
+    //! multi-threaded consumers the [`Arc`] projection is the correct
+    //! choice (the sibling [`From<Kind>`] for [`Arc<str>`] impl lifts it,
+    //! and test 4 pins bytewise agreement between the two carriers).
+    //!
+    //! The tests below pin the structural invariants that keep the six
+    //! impls in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. Pointwise identity with [`Self::name`] on every variant of every
+    //!    kind enum.
+    //! 2. Pointwise identity with the sibling [`AsRef<str>`] impl.
+    //! 3. Pointwise identity with the sibling [`From<Kind>`] for
+    //!    [`String`] impl.
+    //! 4. **Sibling lockstep with [`From<Kind>`] for [`Arc<str>`]** — the
+    //!    load-bearing agreement pin: both shared-refcounted carriers
+    //!    (atomic and non-atomic) project the SAME identifier bytes
+    //!    through the same [`Self::name`] source of truth.
+    //! 5. Owned/reference-taking [`From`] impl agreement.
+    //! 6. Fused-arm lockstep — the fused [`Rc<str>`] projection agrees
+    //!    with the two half-side [`Rc<str>`] projections through the
+    //!    fused sum's two-arm partition.
+    //! 7. [`impl Into<Rc<str>>`] composability at a generic-typed
+    //!    callsite — the shape Rust's own [`Into<Rc<str>>`]-bounded slots
+    //!    reach through.
+    //! 8. **Size-shape pin** — the projected [`Rc<str>`] has length
+    //!    exactly `name.len()` (no capacity slack from a growth-doubling
+    //!    allocation), matching the sibling [`Arc<str>`] tight-allocation
+    //!    shape.
+    //! 9. **Cheap-clone pin — the load-bearing property that
+    //!    distinguishes the [`Rc<str>`] carrier from the sibling
+    //!    [`Box<str>`] carrier.** `Rc::<str>::from(k).clone()` yields two
+    //!    owners whose data pointers are identical
+    //!    ([`std::rc::Rc::ptr_eq`] holds) — no fresh heap allocation, no
+    //!    byte copy. Catches silent regression to a
+    //!    `.to_string().into()`-style clone path that would forfeit the
+    //!    shared-ownership shape [`Rc<str>`] exists to provide.
+    //! 10. Round-trip identity through [`std::str::FromStr`] on
+    //!     `rc_str.as_ref()`.
+    //! 11. Non-interning pin — independent `.into()` calls yield
+    //!     non-pointer-equal allocations (the projection itself never
+    //!     silently interns).
+
+    use super::*;
+    use std::rc::Rc;
+
+    // ---------- (1) Pointwise identity with name() ----------
+
+    #[test]
+    fn into_rc_str_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(
+                r.as_ref(),
+                k.name(),
+                "impossibility {k:?}: From<Kind> for Rc<str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(
+                r.as_ref(),
+                k.name(),
+                "consistency {k:?}: From<Kind> for Rc<str> must equal name()",
+            );
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(
+                r.as_ref(),
+                k.name(),
+                "fused {k:?}: From<Kind> for Rc<str> must equal name()",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise identity with AsRef<str> ----------
+
+    #[test]
+    fn into_rc_str_matches_as_ref_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let borrowed: &str = <SameStoreImpossibilityKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(r.as_ref(), borrowed);
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_as_ref_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let borrowed: &str = <SameStoreConsistencyKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(r.as_ref(), borrowed);
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_as_ref_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let borrowed: &str = <ProofRelationKind as AsRef<str>>::as_ref(&k);
+            assert_eq!(r.as_ref(), borrowed);
+        }
+    }
+
+    // ---------- (3) Pointwise identity with From<Kind> for String ----------
+
+    #[test]
+    fn into_rc_str_matches_into_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(r.as_ref(), owned.as_str());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_into_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(r.as_ref(), owned.as_str());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_into_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let owned: String = k.into();
+            assert_eq!(r.as_ref(), owned.as_str());
+        }
+    }
+
+    // ---------- (4) Sibling lockstep with From<Kind> for Arc<str> ----------
+    // The load-bearing agreement pin: both shared-refcounted carriers
+    // (atomic and non-atomic) project the SAME identifier bytes through
+    // the same Self::name source of truth. A downstream consumer
+    // indifferent to whether the shared-refcounted carrier is Rc<str> or
+    // Arc<str> (a per-tick controller that surfaces both shapes at
+    // different boundary layers) reaches the same accepted-set through
+    // either carrier.
+
+    #[test]
+    fn into_rc_str_matches_into_arc_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let a: std::sync::Arc<str> = k.into();
+            assert_eq!(
+                r.as_ref(),
+                a.as_ref(),
+                "impossibility {k:?}: Rc<str> and Arc<str> projections must agree bytewise",
+            );
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_into_arc_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let a: std::sync::Arc<str> = k.into();
+            assert_eq!(r.as_ref(), a.as_ref());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_matches_into_arc_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let a: std::sync::Arc<str> = k.into();
+            assert_eq!(r.as_ref(), a.as_ref());
+        }
+    }
+
+    // ---------- (5) Owned/reference-taking From agreement ----------
+
+    #[test]
+    fn into_rc_str_owned_and_reference_agree_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Rc<str> = k.into();
+            let by_ref: Rc<str> = (&k).into();
+            assert_eq!(owned.as_ref(), by_ref.as_ref());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_owned_and_reference_agree_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Rc<str> = k.into();
+            let by_ref: Rc<str> = (&k).into();
+            assert_eq!(owned.as_ref(), by_ref.as_ref());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_owned_and_reference_agree_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: Rc<str> = k.into();
+            let by_ref: Rc<str> = (&k).into();
+            assert_eq!(owned.as_ref(), by_ref.as_ref());
+        }
+    }
+
+    // ---------- (6) Fused-arm lockstep ----------
+
+    #[test]
+    fn into_rc_str_fused_agrees_with_half_side_partition() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused: ProofRelationKind = imp.into();
+            let fused_rc: Rc<str> = fused.into();
+            let half_rc: Rc<str> = imp.into();
+            assert_eq!(
+                fused_rc.as_ref(),
+                half_rc.as_ref(),
+                "fused Rc<str> from impossibility {imp:?} must equal the half-side Rc<str>",
+            );
+        }
+        for &cons in SameStoreConsistencyKind::VARIANTS {
+            let fused: ProofRelationKind = cons.into();
+            let fused_rc: Rc<str> = fused.into();
+            let half_rc: Rc<str> = cons.into();
+            assert_eq!(
+                fused_rc.as_ref(),
+                half_rc.as_ref(),
+                "fused Rc<str> from consistency {cons:?} must equal the half-side Rc<str>",
+            );
+        }
+    }
+
+    // ---------- (7) Generic composability at an Into<Rc<str>> seam ----------
+    // The load-bearing pin the sibling From<Kind> for String, Cow, Box, and
+    // Arc<str> impls CANNOT satisfy — Rust does not chain Into impls.
+
+    fn collect_rc<A: Into<Rc<str>>, I: IntoIterator<Item = A>>(iter: I) -> Vec<Rc<str>> {
+        iter.into_iter().map(Into::into).collect()
+    }
+
+    #[test]
+    fn into_rc_str_composes_at_generic_seam_impossibility() {
+        let variants: Vec<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::VARIANTS.to_vec();
+        let rcs: Vec<Rc<str>> = collect_rc(variants.iter().copied());
+        assert_eq!(rcs.len(), variants.len());
+        for (rc, v) in rcs.iter().zip(variants.iter()) {
+            assert_eq!(rc.as_ref(), v.name());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_composes_at_generic_seam_consistency() {
+        let variants: Vec<SameStoreConsistencyKind> = SameStoreConsistencyKind::VARIANTS.to_vec();
+        let rcs: Vec<Rc<str>> = collect_rc(variants.iter().copied());
+        assert_eq!(rcs.len(), variants.len());
+        for (rc, v) in rcs.iter().zip(variants.iter()) {
+            assert_eq!(rc.as_ref(), v.name());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_composes_at_generic_seam_fused() {
+        let variants: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS.to_vec();
+        let rcs: Vec<Rc<str>> = collect_rc(variants.iter().copied());
+        assert_eq!(rcs.len(), variants.len());
+        for (rc, v) in rcs.iter().zip(variants.iter()) {
+            assert_eq!(rc.as_ref(), v.name());
+        }
+    }
+
+    // ---------- (8) Size-shape pin ----------
+    // Length is exactly name.len() — no capacity slack. Catches silent
+    // regression to an Rc::<str>::from(String)-through-growable-String
+    // intermediate path.
+
+    #[test]
+    fn into_rc_str_len_matches_name_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(r.len(), k.name().len());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_len_matches_name_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(r.len(), k.name().len());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_len_matches_name_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(r.len(), k.name().len());
+        }
+    }
+
+    // ---------- (9) Cheap-clone pin ----------
+    // The load-bearing property distinguishing Rc<str> from Box<str>:
+    // Rc::clone is a single non-atomic increment, not a fresh heap
+    // allocation. Rc::ptr_eq must hold across the clone, and the
+    // strong-count must read exactly 2.
+
+    #[test]
+    fn into_rc_str_clone_shares_allocation_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b = Rc::clone(&a);
+            assert!(
+                Rc::ptr_eq(&a, &b),
+                "impossibility {k:?}: Rc::clone must share the allocation",
+            );
+            assert_eq!(Rc::strong_count(&a), 2);
+            assert_eq!(a.as_ref(), b.as_ref());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_clone_shares_allocation_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b = Rc::clone(&a);
+            assert!(Rc::ptr_eq(&a, &b));
+            assert_eq!(Rc::strong_count(&a), 2);
+            assert_eq!(a.as_ref(), b.as_ref());
+        }
+    }
+
+    #[test]
+    fn into_rc_str_clone_shares_allocation_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b = Rc::clone(&a);
+            assert!(Rc::ptr_eq(&a, &b));
+            assert_eq!(Rc::strong_count(&a), 2);
+            assert_eq!(a.as_ref(), b.as_ref());
+        }
+    }
+
+    // ---------- (10) Round-trip through FromStr ----------
+
+    #[test]
+    fn into_rc_str_round_trip_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let parsed: SameStoreImpossibilityKind = r.as_ref().parse().unwrap();
+            assert_eq!(parsed, k);
+        }
+    }
+
+    #[test]
+    fn into_rc_str_round_trip_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let parsed: SameStoreConsistencyKind = r.as_ref().parse().unwrap();
+            assert_eq!(parsed, k);
+        }
+    }
+
+    #[test]
+    fn into_rc_str_round_trip_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            let parsed: ProofRelationKind = r.as_ref().parse().unwrap();
+            assert_eq!(parsed, k);
+        }
+    }
+
+    // ---------- (11) Non-interning pin ----------
+    // Independent .into() calls must NOT silently share an interned
+    // allocation — Rc::ptr_eq is FALSE across independent projections.
+    // Catches a hypothetical future regression to an interning path
+    // (e.g. thread_local! LazyLock) that would silently share ownership
+    // across call sites and break the cheap-clone accounting invariant.
+
+    #[test]
+    fn into_rc_str_independent_projections_do_not_ptr_alias_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b: Rc<str> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(
+                !Rc::ptr_eq(&a, &b),
+                "impossibility {k:?}: independent .into() calls must NOT silently share an interned allocation",
+            );
+        }
+    }
+
+    #[test]
+    fn into_rc_str_independent_projections_do_not_ptr_alias_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b: Rc<str> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(!Rc::ptr_eq(&a, &b));
+        }
+    }
+
+    #[test]
+    fn into_rc_str_independent_projections_do_not_ptr_alias_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Rc<str> = k.into();
+            let b: Rc<str> = k.into();
+            assert_eq!(a.as_ref(), b.as_ref());
+            assert!(!Rc::ptr_eq(&a, &b));
         }
     }
 }
