@@ -3436,6 +3436,107 @@ impl PartialEq<SameStoreImpossibilityKind> for Box<str> {
     }
 }
 
+/// The [`PartialEq<std::sync::Arc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **shared-refcounted-carrier
+/// sibling** of the [`PartialEq<str>`], [`PartialEq<&str>`],
+/// [`PartialEq<String>`], [`PartialEq<Cow<'_, str>>`], and
+/// [`PartialEq<Box<str>>`] impls above, closing the sixth leg of the
+/// (borrowed `str`, borrowed `&str`, owned [`String`], borrowed-or-owned
+/// [`std::borrow::Cow<'_, str>`], compact-owned [`Box<str>`],
+/// shared-refcounted [`std::sync::Arc<str>`]) receiver-set on the
+/// COMPARISON side with the SAME shape [`TryFrom<&str>`],
+/// [`TryFrom<String>`], [`TryFrom<Cow<'_, str>>`], [`TryFrom<Box<str>>`],
+/// and [`TryFrom<std::sync::Arc<str>>`] (cell 36) carry on the PARSE side
+/// and [`AsRef<str>`], [`From<Kind>`] for [`&'static str`], [`From<Kind>`]
+/// for [`String`], [`From<Kind>`] for [`Cow<'static, str>`], [`From<Kind>`]
+/// for [`Box<str>`], and [`From<Kind>`] for [`std::sync::Arc<str>`] (cell
+/// 34) carry on the FORWARD side.
+///
+/// **Why lift a comparison-side receiver over a SHARED-REFCOUNTED
+/// carrier.** A caller holding the identifier as an
+/// [`std::sync::Arc<str>`] on a shared-refcounted registry — a
+/// `HashMap<std::sync::Arc<str>, V>::keys()` iterator, an
+/// [`arc_swap::ArcSwap<std::sync::Arc<str>>`] cheap snapshot on
+/// shikumi's own [`crate::ConfigStore`], an intern-table hit surfacing
+/// the identifier as an [`std::sync::Arc<str>`], a
+/// `dashmap::DashMap<std::sync::Arc<str>, V>` shared-key intern-table, a
+/// `serde` visitor that materializes the identifier as an
+/// [`std::sync::Arc<str>`] under `#[serde(rename_all = "snake_case")]`,
+/// any codegen visitor whose key slot is an [`std::sync::Arc<str>`], any
+/// downstream slot bounded on `T: PartialEq<std::sync::Arc<str>>` —
+/// previously stranded at either a per-callsite `&**arc_str` deref (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or a [`std::str::FromStr::from_str`] parse detour
+/// (paying the full [`FromStr`](std::str::FromStr) fold to answer a
+/// comparison question), because Rust does NOT chain [`PartialEq`] impls
+/// (`T: PartialEq<std::sync::Arc<str>>` is NOT satisfied by
+/// `T: PartialEq<&str>` alone, `T: PartialEq<String>` alone,
+/// `T: PartialEq<Cow<'_, str>>` alone, or `T: PartialEq<Box<str>>` alone,
+/// because the right-hand receiver types are distinct).
+///
+/// **Architectural alignment with shikumi's ArcSwap-based store.**
+/// shikumi IS Pillar 2 in the fleet, and its [`crate::ConfigStore`] is
+/// built on [`arc_swap::ArcSwap<T>`] — every hot-reloaded config value
+/// already lives under an [`std::sync::Arc`]. A downstream config that
+/// carries a candidate classification identifier as an
+/// [`std::sync::Arc<str>`] field (the ecosystem-natural shape for a
+/// shared-owned string under [`arc_swap::ArcSwap`], matching the
+/// shared-refcount semantics the sibling [`From<Kind>`] for
+/// [`std::sync::Arc<str>`] (cell 34) and [`TryFrom<std::sync::Arc<str>>`]
+/// (cell 36) already lifted for the forward and parse sides) now reaches
+/// the comparison-side projection through the standard trait alone,
+/// without any per-callsite `&**arc_str` deref that fragments the
+/// receiver-family surface.
+///
+/// **Cheap-clone-friendly, allocation-free.** [`std::sync::Arc<str>`] is
+/// a `{ ptr }` one-word shared-refcounted heap allocation whose
+/// [`AsRef<str>`] projection resolves through std's
+/// `impl<T: ?Sized> AsRef<T> for Arc<T>` blanket to the two-word
+/// fat-pointer view over the shared data without incrementing the atomic
+/// reference count or copying the heap bytes. Every downstream slot that
+/// carries the identifier as an [`std::sync::Arc<str>`] (rather than a
+/// [`String`] or [`Box<str>`]) does so precisely to pay ZERO
+/// per-comparison allocation and ZERO per-clone allocation on a
+/// long-lived shared table — this impl composes the comparison receiver
+/// over the shared-refcounted carrier through the standard trait, so the
+/// caller reaches the same `k == arc_str` seam the sibling
+/// [`PartialEq<String>`] / [`PartialEq<Box<str>>`] impls already provide
+/// without the extra `String::from(&*arc_str)` round-trip that would
+/// forfeit the shared-refcount the caller went to trouble to obtain.
+///
+/// Delegates through the same [`Self::name`] source of truth every
+/// prior string-shape receiver already uses, so the closed-variant set
+/// (adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in [`Self::name`]) surfaces through this impl in
+/// lockstep. Sibling of [`http::HeaderName`]'s cross-type comparison
+/// impls in the ecosystem — both stable identifier types that carry a
+/// shared-refcounted carrier close the comparison-side cell as the
+/// natural sibling of the parse-side cell.
+///
+/// [`ConfigStore`]: crate::ConfigStore
+impl PartialEq<std::sync::Arc<str>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &std::sync::Arc<str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`std::sync::Arc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<std::sync::Arc<str>>`] impl directly above, welding the
+/// symmetric `shared_refcounted_from_serde == kind` seam through the
+/// same [`Self::name`] source of truth. Both directions of the
+/// shared-refcounted cross-type comparison now compose out of the same
+/// allocation-free receiver by construction; adding a hypothetical
+/// third impossibility corner updates the ONE `match` body in
+/// [`Self::name`], and the new identifier surfaces through BOTH
+/// [`PartialEq<std::sync::Arc<str>>`] impls (and every sibling
+/// projection through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for std::sync::Arc<str> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_ref() == other.name()
+    }
+}
+
 /// The [`AsRef<[u8]>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **byte-side projection sibling** of the borrowed [`AsRef<str>`] impl on
 /// the impossibility half, delegating through the same [`Self::name`]
@@ -5477,6 +5578,35 @@ impl PartialEq<SameStoreConsistencyKind> for Box<str> {
     }
 }
 
+/// The [`PartialEq<std::sync::Arc<str>>`] impl on
+/// [`SameStoreConsistencyKind`] — the mirror on the consistent half of
+/// the classification lattice of the [`PartialEq<std::sync::Arc<str>>`]
+/// impl on [`SameStoreImpossibilityKind`], and the
+/// **shared-refcounted-carrier sibling** of the [`PartialEq<str>`],
+/// [`PartialEq<&str>`], [`PartialEq<String>`], [`PartialEq<Cow<'_, str>>`],
+/// and [`PartialEq<Box<str>>`] impls above at the consistent altitude,
+/// closing the sixth leg of the (borrowed `str`, borrowed `&str`, owned
+/// [`String`], borrowed-or-owned [`std::borrow::Cow<'_, str>`],
+/// compact-owned [`Box<str>`], shared-refcounted
+/// [`std::sync::Arc<str>`]) receiver-set on the comparison side of the
+/// consistent-half kind. See the impossibility-half impl for the full
+/// lift rationale.
+impl PartialEq<std::sync::Arc<str>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &std::sync::Arc<str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`std::sync::Arc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<std::sync::Arc<str>>`] impl directly above, mirroring the
+/// symmetric `shared_refcounted == kind` seam on the consistent half.
+impl PartialEq<SameStoreConsistencyKind> for std::sync::Arc<str> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_ref() == other.name()
+    }
+}
+
 /// The [`AsRef<[u8]>`] impl on [`SameStoreConsistencyKind`] — the mirror
 /// on the consistent half of the classification lattice of the
 /// [`AsRef<[u8]>`] impl on [`SameStoreImpossibilityKind`], and the
@@ -7028,6 +7158,48 @@ impl PartialEq<Box<str>> for ProofRelationKind {
 /// now compose out of the same allocation-free receiver by construction
 /// at the fused altitude.
 impl PartialEq<ProofRelationKind> for Box<str> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_ref() == other.name()
+    }
+}
+
+/// The [`PartialEq<std::sync::Arc<str>>`] impl on [`ProofRelationKind`]
+/// — the fused-arm sibling of the two half-side
+/// [`PartialEq<std::sync::Arc<str>>`] impls on
+/// [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`], and
+/// the **shared-refcounted-carrier sibling** of the [`PartialEq<str>`],
+/// [`PartialEq<&str>`], [`PartialEq<String>`], [`PartialEq<Cow<'_, str>>`],
+/// and [`PartialEq<Box<str>>`] impls above at the fused altitude,
+/// closing the sixth leg of the (borrowed `str`, borrowed `&str`, owned
+/// [`String`], borrowed-or-owned [`std::borrow::Cow<'_, str>`],
+/// compact-owned [`Box<str>`], shared-refcounted
+/// [`std::sync::Arc<str>`]) receiver-set on the comparison side of the
+/// fused sum. Delegates through the fused [`Self::name`] (which in turn
+/// delegates through the two half-side [`Self::name`] receivers), so the
+/// fused [`PartialEq<std::sync::Arc<str>>`] impl and the two half-side
+/// [`PartialEq<std::sync::Arc<str>>`] impls stay lockstep-identical
+/// under every future variant addition to either half-side enum by
+/// construction: adding a hypothetical variant to either half-side enum
+/// updates the corresponding half-side [`Self::name`] match body and
+/// the new identifier surfaces through the fused [`Self::name`]
+/// pass-through, the ONE fused [`Self::name`] `match` body, and BOTH
+/// [`PartialEq<std::sync::Arc<str>>`] impls (and every prior
+/// [`Self::name`]-projected receiver) in lockstep with the enum itself.
+/// See the impossibility-half impl for the full lift rationale.
+impl PartialEq<std::sync::Arc<str>> for ProofRelationKind {
+    fn eq(&self, other: &std::sync::Arc<str>) -> bool {
+        self.name() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for
+/// [`std::sync::Arc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<std::sync::Arc<str>>`] impl directly above at the fused
+/// altitude, welding the symmetric `shared_refcounted == kind` seam
+/// through the same [`Self::name`] source of truth. Both directions of
+/// the shared-refcounted cross-type comparison now compose out of the
+/// same allocation-free receiver by construction at the fused altitude.
+impl PartialEq<ProofRelationKind> for std::sync::Arc<str> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name()
     }
@@ -43495,6 +43667,518 @@ mod try_from_arc_bytes_tests {
         for &k in ProofRelationKind::VARIANTS {
             let a: Arc<[u8]> = Arc::<[u8]>::from(k.name().as_bytes());
             assert_eq!(parse_kind::<ProofRelationKind>(a), Ok(k));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_arc_str_tests {
+    //! [`PartialEq<std::sync::Arc<str>>`] and
+    //! [`PartialEq<Kind> for std::sync::Arc<str>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **shared-refcounted-carrier sibling**
+    //! of the [`PartialEq<str>`] / [`PartialEq<&str>`] quadruple lifted
+    //! by [`super::partial_eq_str_tests`], the [`PartialEq<String>`]
+    //! pair lifted by [`super::partial_eq_string_tests`], the
+    //! [`PartialEq<Cow<'_, str>>`] pair lifted by
+    //! [`super::partial_eq_cow_tests`], and the
+    //! [`PartialEq<Box<str>>`] pair lifted by
+    //! [`super::partial_eq_box_str_tests`] (cell 32), closing the
+    //! sixth leg of the (borrowed `str`, borrowed `&str`, owned
+    //! [`String`], borrowed-or-owned [`std::borrow::Cow<'_, str>`],
+    //! compact-owned [`Box<str>`], shared-refcounted
+    //! [`std::sync::Arc<str>`]) receiver-set on the comparison side of
+    //! the three kind enums with the SAME shape the parse side already
+    //! carries through [`TryFrom<&str>`] + [`TryFrom<String>`] +
+    //! [`TryFrom<Cow<'_, str>>`] + [`TryFrom<Box<str>>`] +
+    //! [`TryFrom<std::sync::Arc<str>>`] (cell 36) and the forward side
+    //! already carries through [`AsRef<str>`] + [`From<Kind>`] for
+    //! [`&'static str`] + [`From<Kind>`] for [`String`] +
+    //! [`From<Kind>`] for [`Cow<'static, str>`] + [`From<Kind>`] for
+    //! [`Box<str>`] + [`From<Kind>`] for [`std::sync::Arc<str>`] (cell
+    //! 34).
+    //!
+    //! **Why lift the shared-refcounted cross-type comparison alongside
+    //! the borrowed, owned, borrowed-or-owned, and compact-owned pairs.**
+    //! A caller holding the identifier as a one-word
+    //! [`std::sync::Arc<str>`] on a shared-refcounted registry — a
+    //! `HashMap<std::sync::Arc<str>, V>::keys()` iterator, an
+    //! [`arc_swap::ArcSwap<std::sync::Arc<str>>`] cheap snapshot on
+    //! shikumi's own [`crate::ConfigStore`] materialized for per-tick
+    //! tag reclassification, an intern-table hit surfacing the
+    //! identifier as an [`std::sync::Arc<str>`], a
+    //! `dashmap::DashMap<std::sync::Arc<str>, V>` shared-key
+    //! intern-table, a `serde` visitor that materializes the identifier
+    //! as an [`std::sync::Arc<str>`] under
+    //! `#[serde(rename_all = "snake_case")]` — previously stranded the
+    //! caller at either a per-callsite `&**arc_str` deref (a coordinated
+    //! silent rewrite of the callsite, not a lift into the type-checker)
+    //! or a [`std::str::FromStr::from_str`] parse detour (paying the
+    //! full [`FromStr`](std::str::FromStr) fold to answer a comparison
+    //! question). This module pins that `k == arc_str` and
+    //! `arc_str == k` both compose at the type-checker for every variant
+    //! of every kind enum, allocation-free and clone-shared.
+    //!
+    //! **Cheap-clone survival.** Because [`std::sync::Arc<str>`] is a
+    //! shared-refcounted carrier, cloning an [`std::sync::Arc<str>`]
+    //! bumps the atomic reference count without copying the heap bytes;
+    //! test 9 pins that a comparison consuming one
+    //! [`std::sync::Arc::clone`] handle does not disturb any other live
+    //! handle to the same allocation — the two live handles remain
+    //! pointer-equal (`std::sync::Arc::ptr_eq`) across every comparison.
+    //!
+    //! **What the tests below pin.** (1) pointwise identity on both
+    //! cells (`k == arc_str`, `arc_str == k`) for
+    //! `arc_str = std::sync::Arc::<str>::from(k.name())` on every
+    //! variant of every kind enum; (2) sibling agreement with
+    //! [`AsRef<str>`] — for every variant and every input string, both
+    //! directions of the shared-refcounted pair agree with
+    //! `k.as_ref() == s`; (3) inequality on unknown
+    //! [`std::sync::Arc<str>`] inputs; (4) cross-variant inequality —
+    //! for every pair `(a, b)` of distinct variants,
+    //! `a != std::sync::Arc::<str>::from(b.name())` in both directions;
+    //! (5) fused-arm lockstep on [`ProofRelationKind`] — a fused kind
+    //! constructed from either half-side variant equals the
+    //! shared-refcounted half-side name through both directions;
+    //! (6) round-trip through the sibling [`From<Kind>`] for
+    //! [`std::sync::Arc<str>`] projection (cell 34) — for every variant
+    //! `k`, `k == <std::sync::Arc<str>>::from(k)` in both directions,
+    //! pinning the two [`std::sync::Arc<str>`] receivers' pointwise
+    //! agreement; (7) sibling agreement with the compact-owned
+    //! [`PartialEq<Box<str>>`] pair (cell 32) — for every variant and
+    //! every probe, both directions of the shared-refcounted pair agree
+    //! with the compact-owned pair, pinning the two heap-owning
+    //! receivers stay lockstep-identical; (8) generic composability at
+    //! a `fn cmp<K: PartialEq<std::sync::Arc<str>>>(k: &K, a: &std::sync::Arc<str>) -> bool`
+    //! seam bounded ONLY on the standard trait; (9) cheap-clone
+    //! survival — a comparison consuming one
+    //! [`std::sync::Arc::clone`] handle does not disturb a sibling live
+    //! handle to the same allocation.
+    //!
+    //! [`ConfigStore`]: crate::ConfigStore
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::borrow::Cow;
+    use std::sync::Arc;
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_arc_str() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_arc_str() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_arc_str() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<str> ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_str_on_every_arc_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = AsRef::<str>::as_ref(&k) == probe;
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<str> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<str> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_str_on_every_arc_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = AsRef::<str>::as_ref(&k) == probe;
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<str> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<str> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_str_on_every_arc_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let via_as_ref = AsRef::<str>::as_ref(&k) == probe;
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert_eq!(k == a, via_as_ref, "k == Arc<str> drift for {probe:?}");
+                assert_eq!(a == k, via_as_ref, "Arc<str> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown Arc<str> inputs ----------
+
+    #[test]
+    fn impossibility_ne_unknown_arc_str() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in ["", "unknown", "Regressed", " regressed", "regressed\t"] {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<str>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<str>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_arc_str() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                "",
+                "unknown",
+                "Stationary",
+                "identity-republish",
+                "progression\n",
+            ] {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<str>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<str>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_arc_str() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in ["", "unknown", "Consistent", "Impossible", "consistent\n"] {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                assert!(k != a, "unexpected match: {k:?} == Arc::<str>({probe:?})");
+                assert!(a != k, "unexpected match: Arc::<str>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_arc_names() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b_kind in SameStoreImpossibilityKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<str> = Arc::<str>::from(b_kind.name());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<str>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<str>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_arc_names() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b_kind in SameStoreConsistencyKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<str> = Arc::<str>::from(b_kind.name());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<str>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<str>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_arc_names() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b_kind in ProofRelationKind::VARIANTS {
+                if a != b_kind {
+                    let arc: Arc<str> = Arc::<str>::from(b_kind.name());
+                    assert!(
+                        a != arc,
+                        "{a:?} incorrectly equals Arc::<str>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        arc != a,
+                        "Arc::<str>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_arc_names_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let a: Arc<str> = Arc::<str>::from(half.name());
+            assert!(fused == a, "fused == Arc<str> for {:?}", half.name());
+            assert!(a == fused, "Arc<str> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == a,
+                half == a,
+                "cross-altitude drift on Arc<str> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_arc_names_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let a: Arc<str> = Arc::<str>::from(half.name());
+            assert!(fused == a, "fused == Arc<str> for {:?}", half.name());
+            assert!(a == fused, "Arc<str> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == a,
+                half == a,
+                "cross-altitude drift on Arc<str> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    // ---------- (6) Round-trip through the sibling From<Kind> for Arc<str> (cell 34) ----------
+
+    #[test]
+    fn round_trip_through_from_kind_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<str>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<str>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<str>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<str>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k);
+            assert!(k == a, "round-trip drift: {k:?} != Arc::<str>::from(k)");
+            assert!(a == k, "round-trip drift: Arc::<str>::from(k) != {k:?}");
+        }
+    }
+
+    // ---------- (7) Sibling agreement with PartialEq<Box<str>> (cell 32) ----------
+
+    #[test]
+    fn agrees_with_partial_eq_box_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                let b: Box<str> = Box::<str>::from(probe);
+                assert_eq!(k == a, k == b, "Arc<str>/Box<str> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<str>/Box<str> drift on {probe:?}"
+                );
+                // Also cross-check with Cow<str> for full quintuple agreement.
+                let c: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == c, "Arc<str>/Cow drift on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn agrees_with_partial_eq_box_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                let b: Box<str> = Box::<str>::from(probe);
+                assert_eq!(k == a, k == b, "Arc<str>/Box<str> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<str>/Box<str> drift on {probe:?}"
+                );
+                let c: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == c, "Arc<str>/Cow drift on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn agrees_with_partial_eq_box_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let a: Arc<str> = Arc::<str>::from(probe);
+                let b: Box<str> = Box::<str>::from(probe);
+                assert_eq!(k == a, k == b, "Arc<str>/Box<str> drift on {probe:?}");
+                assert_eq!(
+                    a == k,
+                    b == k,
+                    "reciprocal Arc<str>/Box<str> drift on {probe:?}"
+                );
+                let c: Cow<'_, str> = Cow::Borrowed(probe);
+                assert_eq!(k == a, k == c, "Arc<str>/Cow drift on {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (8) Generic composability at a PartialEq<Arc<str>>-bounded seam ----------
+
+    // `&Arc<str>` is the whole point: the helper is bounded on
+    // `PartialEq<Arc<str>>` to pin that the trait resolves at that exact
+    // receiver-shape. `&str` would prove nothing.
+    fn cmp_kind_arc<K: PartialEq<Arc<str>>>(k: &K, a: &Arc<str>) -> bool {
+        *k == *a
+    }
+
+    #[test]
+    fn generic_composability_impossibility_arc() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(cmp_kind_arc(&k, &a));
+            assert!(!cmp_kind_arc(&k, &Arc::<str>::from("unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_arc() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(cmp_kind_arc(&k, &a));
+            assert!(!cmp_kind_arc(&k, &Arc::<str>::from("unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_arc() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert!(cmp_kind_arc(&k, &a));
+            assert!(!cmp_kind_arc(&k, &Arc::<str>::from("unknown")));
+        }
+    }
+
+    // ---------- (9) Cheap-clone survival ----------
+    //
+    // Distinguishes an Arc<str>-receiver comparison from an owned
+    // (String / Box<str>) one: consuming one Arc<str> handle in a
+    // comparison must not disturb a sibling live handle to the same
+    // allocation. Pin via Arc::ptr_eq across the comparison.
+
+    #[test]
+    fn cheap_clone_survival_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let sibling: Arc<str> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+            // The clone must remain pointer-equal to the original after
+            // both comparison directions have run — the eq body reads
+            // through `AsRef::<str>::as_ref` without touching the atomic
+            // refcount or the underlying data.
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<str> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            // Reference count is exactly the two live handles.
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let sibling: Arc<str> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<str> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let sibling: Arc<str> = Arc::clone(&a);
+            assert!(k == a, "kind == Arc<str> for {}", k.name());
+            assert!(a == k, "Arc<str> == kind for {}", k.name());
+            assert!(
+                Arc::ptr_eq(&a, &sibling),
+                "Arc<str> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Arc::strong_count(&a),
+                2,
+                "strong_count must be 2 (a + sibling) after comparison for {}",
+                k.name(),
+            );
         }
     }
 }
