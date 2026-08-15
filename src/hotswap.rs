@@ -4005,6 +4005,54 @@ impl<const N: usize> TryFrom<&[u8; N]> for SameStoreImpossibilityKind {
     }
 }
 
+/// The const-generic [`TryFrom<[u8; N]>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **by-value const-length
+/// byte-array parse-side dual** of the by-reference
+/// [`TryFrom<&[u8; N]>`] impl directly above (cell 46 in this file's
+/// trait grid) and of the by-value compare-side [`PartialEq<[u8; N]>`]
+/// impl below (cell 47).
+///
+/// Rust's trait resolver does NOT unsize-coerce a `[u8; N]` value to
+/// `[u8]` for [`TryFrom`] dispatch — a `T: TryFrom<[u8; N]>` bound is
+/// NOT satisfied by `T: TryFrom<&[u8]>` alone (the receiver differs by
+/// both borrow AND unsize), and is NOT satisfied by
+/// `T: TryFrom<&[u8; N]>` alone either (the receiver differs by borrow).
+/// So a caller holding a per-length byte-array **by value** (a
+/// [`std::io::Read::read_exact`] pass filling a `[u8; N]` receive buffer
+/// moved into the parser by value, a
+/// [`zerocopy::FromBytes::read_from`]-neighbouring seam yielding a
+/// `[u8; N]` payload by value, a codegen-emitted `static [u8; N]`
+/// registration table iterated with [`<[T; N]>::into_iter`], a
+/// wire-frame router consuming a per-corner tag as `[u8; N]` by value)
+/// that previously wanted to write `Kind::try_from(buf)` for a
+/// `[u8; N]`-typed `buf` was stranded at a per-callsite `buf.as_slice()`
+/// postfix, or at a `&buf` re-borrow to satisfy the by-reference cell
+/// 46, or at an intermediate `Vec<u8>` allocation to satisfy the
+/// by-value cell already at [`TryFrom<Vec<u8>>`]. This impl closes the
+/// by-value const-length cell of the byte-side parse grid on the
+/// impossibility half by const-generic delegation to the sibling
+/// [`TryFrom<&[u8]>`] impl above through [`<[u8; N]>::as_slice`] — one
+/// line, zero allocations — so the caller reaches the SAME
+/// classification through the standard trait alone.
+///
+/// **Match-body lockstep with the sibling parse-side impls — enforced
+/// by delegation, not open-coding.** The body dispatches through the
+/// sibling [`TryFrom<&[u8]>`] receiver, which in turn dispatches through
+/// [`std::str::from_utf8`] and [`FromStr`](std::str::FromStr::from_str)
+/// to the ONE `match` body in [`Self::name`] — the SAME source of truth
+/// every prior byte-side parse-side receiver already reads. Adding a
+/// hypothetical third impossibility corner surfaces through this cell
+/// (as the by-value byte-string-literal parse cell) in lockstep with
+/// cells 25 / 26 / 46 / 47 (the entire byte-side parse + compare grid
+/// on the impossibility half).
+impl<const N: usize> TryFrom<[u8; N]> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: [u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
+    }
+}
+
 /// The [`From<SameStoreImpossibilityKind>`] for [`Vec<u8>`] impl — the
 /// **byte-side heap-owning projection sibling** of the borrowed
 /// [`AsRef<[u8]>`] impl and the owned-static [`From<Kind>`] for
@@ -6513,6 +6561,31 @@ impl<const N: usize> TryFrom<&[u8; N]> for SameStoreConsistencyKind {
     }
 }
 
+/// The const-generic [`TryFrom<[u8; N]>`] impl on
+/// [`SameStoreConsistencyKind`] — the **by-value const-length byte-array
+/// parse-side sibling** on the consistent half, mirroring the
+/// impossibility-side by-value cell 48 impl already at its altitude and
+/// closing the by-value const-length parse cell of the byte-side parse
+/// grid on the consistent half in exactly the shape the impossibility
+/// half already carries. Same one-line const-generic delegation through
+/// [`<[u8; N]>::as_slice`] into the sibling [`TryFrom<&[u8]>`] impl
+/// above — the accepted-set is pinned by the sibling delegation, never
+/// re-listed here. Every downstream slot bounded on `T: TryFrom<[u8; N]>`
+/// at the consistent altitude (a `read_exact` receive buffer moved
+/// by-value from a wire framer that emits per-corner tags, a
+/// `zerocopy`-neighbouring seam yielding a `[u8; N]` payload by value, a
+/// codegen-emitted `static [u8; N]` registration table iterated with
+/// [`<[T; N]>::into_iter`]) now composes out of the standard trait alone
+/// on the consistent half — with the SAME `Self::name`-lockstep the
+/// by-reference cell 46 sibling carries.
+impl<const N: usize> TryFrom<[u8; N]> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: [u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
+    }
+}
+
 /// The [`From<SameStoreConsistencyKind>`] for [`Vec<u8>`] impl — the
 /// **byte-side heap-owning projection sibling** on the consistent half,
 /// mirroring the impossibility-side [`From<Kind>`] for [`Vec<u8>`] impl
@@ -8452,6 +8525,32 @@ impl<const N: usize> TryFrom<&[u8; N]> for ProofRelationKind {
     type Error = ParseKindError;
 
     fn try_from(bytes: &[u8; N]) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
+    }
+}
+
+/// The const-generic [`TryFrom<[u8; N]>`] impl on [`ProofRelationKind`]
+/// — the **by-value const-length byte-array parse-side sibling** on the
+/// fused sum, mirroring the two half-side by-value cell 48 impls already
+/// at their altitudes and welded into the same two-arm partition the
+/// fused sum's sibling parse-side receivers already carry.
+///
+/// **Fused-arm lockstep with the two half-side impls — by delegation.**
+/// The body reaches the sibling [`TryFrom<&[u8]>`] receiver, whose body
+/// dispatches through [`std::str::from_utf8`] then
+/// [`FromStr`](std::str::FromStr::from_str) to the ONE `match` body in
+/// [`Self::name`], whose two-arm partition routes a consistent
+/// identifier through [`ProofRelationKind::Consistent`] and an
+/// impossibility identifier through [`ProofRelationKind::Impossible`] —
+/// so the fused by-value const-generic parse-side agrees with the routed
+/// half-side by-value const-generic parse-side on every accepted variant
+/// through the two-arm partition of the fused sum, matching the
+/// fused-arm lockstep every prior standard-trait parse-side receiver on
+/// the fused sum already carries.
+impl<const N: usize> TryFrom<[u8; N]> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(bytes: [u8; N]) -> Result<Self, Self::Error> {
         <Self as TryFrom<&[u8]>>::try_from(bytes.as_slice())
     }
 }
@@ -50256,6 +50355,542 @@ mod partial_eq_byte_array_tests {
                     let parsed = SameStoreImpossibilityKind::try_from(b"cross_store").unwrap();
                     assert_eq!(parsed, k);
                     assert!(parsed == b"cross_store");
+                }
+                other => panic!("unexpected impossibility variant name: {other:?}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_owned_byte_array_tests {
+    //! [`TryFrom<[u8; N]>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **by-value const-length byte-array parse-side cell** that closes
+    //! the ergonomic gap Rust's trait dispatch leaves open between a
+    //! `[u8; N]` value (a `read_exact` buffer, a `zerocopy` payload
+    //! by-value, a `[u8; N]` iterated out of a codegen-emitted
+    //! `static [u8; N]` table) and the by-reference cell 46
+    //! [`TryFrom<&[u8; N]>`] impl.
+    //!
+    //! Rust's trait resolver does NOT synthesize a `TryFrom<[u8; N]>`
+    //! impl from `TryFrom<&[u8; N]>` (the receiver differs by borrow),
+    //! and does NOT unsize-coerce a `[u8; N]` value to `[u8]` for
+    //! [`TryFrom`] dispatch either (the receiver differs by both borrow
+    //! AND unsize). So before this cell, `Kind::try_from(buf)` for a
+    //! `[u8; N]`-typed `buf` failed to type-check, forcing every caller
+    //! reaching for a by-value byte-array (a `read_exact` receive
+    //! buffer, a `zerocopy` `[u8; N]` payload moved by value, a
+    //! codegen-emitted registration table) to add a per-callsite
+    //! `.as_slice()` postfix, a `&buf` re-borrow, or an intermediate
+    //! `Vec<u8>` allocation. This cell closes that gap by const-generic
+    //! delegation to the sibling [`TryFrom<&[u8]>`] impl — the
+    //! accepted-set is pinned by the sibling delegation, never
+    //! open-coded.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Every accepted variant of every kind enum round-trips through
+    //!    the by-value byte-array parse:
+    //!    `Kind::try_from(*k.name().as_bytes().try_into::<[u8; N]>()?)`
+    //!    returns `Ok(k)` for every `k` in `Kind::VARIANTS`.
+    //! 2. An unknown by-value byte-array produces the same
+    //!    [`ParseKindError`] the sibling [`TryFrom<&[u8]>`] and
+    //!    by-reference cell 46 [`TryFrom<&[u8; N]>`] impls would produce
+    //!    — the accepted-set is pinned by the sibling delegation, never
+    //!    re-listed here.
+    //! 3. **Triple agreement** with [`TryFrom<&[u8]>`] AND cell 46
+    //!    [`TryFrom<&[u8; N]>`] on a fifteen-slice probe grid: for every
+    //!    probe, all three parse-side receivers land on the same result
+    //!    (`Ok` matches `Ok`, `Err::expected` matches, `Err::input`
+    //!    matches). Drift between any pair is caught.
+    //! 4. Generic composability at a per-length by-value monomorphic
+    //!    seam `fn parse_kind_owned<K, const N: usize>(bytes: [u8; N])
+    //!    -> Result<K, ParseKindError> where K: TryFrom<[u8; N],
+    //!    Error = ParseKindError>` that neither the sibling
+    //!    [`TryFrom<&[u8]>`] nor the by-reference cell 46
+    //!    [`TryFrom<&[u8; N]>`] receiver alone can satisfy — the
+    //!    load-bearing pin.
+    //! 5. Ergonomic seams the impl closes:
+    //!    (a) The `*b"..."` shape — `Kind::try_from(*b"regressed")` —
+    //!        compiles without any postfix, both directions.
+    //!    (b) A `[u8; N]` receive buffer moved by value —
+    //!        `let buf: [u8; 9] = *b"regressed"; Kind::try_from(buf)` —
+    //!        the shape a `Read::read_exact` pass produces, compiles
+    //!        without an `.as_slice()` postfix.
+    //! 6. Fused-arm lockstep — for every accepted variant of both
+    //!    half-side enums, the fused [`ProofRelationKind`] parses a
+    //!    by-value byte-array iff the routed half-side parses it, both
+    //!    landing on the same variant.
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"unknown",
+            b"REGRESSED",
+            b" regressed ",
+            b"cross-store",
+            b"regressed\n",
+            b"stationary\0",
+            &[0xff, 0xfe, 0xfd],
+            b"identity_republish_x",
+            b"prog",
+        ]
+    }
+
+    // ---------- (1) Round-trip on every accepted variant ----------
+
+    #[test]
+    fn round_trip_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "regressed" => SameStoreImpossibilityKind::try_from(*b"regressed"),
+                "cross_store" => SameStoreImpossibilityKind::try_from(*b"cross_store"),
+                other => panic!("unexpected impossibility variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "by-value byte-array round-trip for {name}");
+        }
+    }
+
+    #[test]
+    fn round_trip_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "stationary" => SameStoreConsistencyKind::try_from(*b"stationary"),
+                "identity_republish" => SameStoreConsistencyKind::try_from(*b"identity_republish"),
+                "progression" => SameStoreConsistencyKind::try_from(*b"progression"),
+                other => panic!("unexpected consistency variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "by-value byte-array round-trip for {name}");
+        }
+    }
+
+    #[test]
+    fn round_trip_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name = k.name();
+            let parsed = match name {
+                "regressed" => ProofRelationKind::try_from(*b"regressed"),
+                "cross_store" => ProofRelationKind::try_from(*b"cross_store"),
+                "stationary" => ProofRelationKind::try_from(*b"stationary"),
+                "identity_republish" => ProofRelationKind::try_from(*b"identity_republish"),
+                "progression" => ProofRelationKind::try_from(*b"progression"),
+                other => panic!("unexpected fused variant name: {other:?}"),
+            };
+            assert_eq!(parsed, Ok(k), "by-value byte-array round-trip for {name}");
+        }
+    }
+
+    // ---------- (2) Unknown-input error surface ----------
+
+    #[test]
+    fn unknown_byte_array_errors_impossibility() {
+        let err = SameStoreImpossibilityKind::try_from(*b"unknown").unwrap_err();
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    #[test]
+    fn unknown_byte_array_errors_consistency() {
+        let err = SameStoreConsistencyKind::try_from(*b"unknown").unwrap_err();
+        assert_eq!(err.expected, SameStoreConsistencyKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    #[test]
+    fn unknown_byte_array_errors_fused() {
+        let err = ProofRelationKind::try_from(*b"unknown").unwrap_err();
+        assert_eq!(err.expected, ProofRelationKind::NAMES);
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (3) Triple agreement with TryFrom<&[u8]> and TryFrom<&[u8; N]> ----------
+    //
+    // For every probe, the by-value byte-array parse-side, the by-reference
+    // byte-array parse-side (cell 46), and the borrowed byte-slice parse-side
+    // land on the same result — the accepted-set is pinned by the sibling
+    // delegation, not open-coded here. Drift between any pair is caught.
+
+    // Length-dispatchers exercise BOTH sibling cells (by-ref cell 46 and
+    // by-value cell 48) at each probe length in `probe_bytes()`. The two
+    // internal macros compress the per-length monomorphic dispatch into
+    // one arm per length per flavor — patterns appearing ≥2 times become
+    // helpers (CLAUDE.md prime directive: duplication is a bug).
+
+    macro_rules! dispatch_by_ref {
+        ($ty:ty, $probe:expr $(, $n:literal)+ $(,)?) => {
+            match $probe.len() {
+                $(
+                    $n => Some(<$ty>::try_from(<&[u8; $n]>::try_from($probe).unwrap())),
+                )+
+                _ => None,
+            }
+        };
+    }
+
+    macro_rules! dispatch_by_val {
+        ($ty:ty, $probe:expr $(, $n:literal)+ $(,)?) => {
+            match $probe.len() {
+                $(
+                    $n => Some(<$ty>::try_from(<[u8; $n]>::try_from($probe).unwrap())),
+                )+
+                _ => None,
+            }
+        };
+    }
+
+    // The lengths span exactly the set of `probe_bytes()` lengths:
+    // 0, 3, 4, 7, 9, 10, 11, 18, 20.
+
+    fn try_by_ref_arr_impossibility(
+        probe: &[u8],
+    ) -> Option<Result<SameStoreImpossibilityKind, ParseKindError>> {
+        dispatch_by_ref!(
+            SameStoreImpossibilityKind,
+            probe,
+            0,
+            3,
+            4,
+            7,
+            9,
+            10,
+            11,
+            18,
+            20
+        )
+    }
+
+    fn try_by_val_arr_impossibility(
+        probe: &[u8],
+    ) -> Option<Result<SameStoreImpossibilityKind, ParseKindError>> {
+        dispatch_by_val!(
+            SameStoreImpossibilityKind,
+            probe,
+            0,
+            3,
+            4,
+            7,
+            9,
+            10,
+            11,
+            18,
+            20
+        )
+    }
+
+    fn try_by_ref_arr_consistency(
+        probe: &[u8],
+    ) -> Option<Result<SameStoreConsistencyKind, ParseKindError>> {
+        dispatch_by_ref!(
+            SameStoreConsistencyKind,
+            probe,
+            0,
+            3,
+            4,
+            7,
+            9,
+            10,
+            11,
+            18,
+            20
+        )
+    }
+
+    fn try_by_val_arr_consistency(
+        probe: &[u8],
+    ) -> Option<Result<SameStoreConsistencyKind, ParseKindError>> {
+        dispatch_by_val!(
+            SameStoreConsistencyKind,
+            probe,
+            0,
+            3,
+            4,
+            7,
+            9,
+            10,
+            11,
+            18,
+            20
+        )
+    }
+
+    fn try_by_ref_arr_fused(probe: &[u8]) -> Option<Result<ProofRelationKind, ParseKindError>> {
+        dispatch_by_ref!(ProofRelationKind, probe, 0, 3, 4, 7, 9, 10, 11, 18, 20)
+    }
+
+    fn try_by_val_arr_fused(probe: &[u8]) -> Option<Result<ProofRelationKind, ParseKindError>> {
+        dispatch_by_val!(ProofRelationKind, probe, 0, 3, 4, 7, 9, 10, 11, 18, 20)
+    }
+
+    #[test]
+    fn triple_agreement_impossibility() {
+        for &probe in probe_bytes() {
+            let slice = SameStoreImpossibilityKind::try_from(probe);
+            let by_ref = try_by_ref_arr_impossibility(probe);
+            let by_val = try_by_val_arr_impossibility(probe);
+            // Every probe length in probe_bytes() has a monomorphic dispatcher
+            // above; probe_bytes covers exactly the lengths tested here.
+            let by_ref = by_ref.expect("probe length has by-ref dispatcher");
+            let by_val = by_val.expect("probe length has by-val dispatcher");
+            assert_eq!(
+                slice.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            assert_eq!(
+                by_ref.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8;N]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&slice, &by_val) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    #[test]
+    fn triple_agreement_consistency() {
+        for &probe in probe_bytes() {
+            let slice = SameStoreConsistencyKind::try_from(probe);
+            let by_ref = try_by_ref_arr_consistency(probe).expect("dispatcher");
+            let by_val = try_by_val_arr_consistency(probe).expect("dispatcher");
+            assert_eq!(
+                slice.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            assert_eq!(
+                by_ref.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8;N]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&slice, &by_val) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    #[test]
+    fn triple_agreement_fused() {
+        for &probe in probe_bytes() {
+            let slice = ProofRelationKind::try_from(probe);
+            let by_ref = try_by_ref_arr_fused(probe).expect("dispatcher");
+            let by_val = try_by_val_arr_fused(probe).expect("dispatcher");
+            assert_eq!(
+                slice.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            assert_eq!(
+                by_ref.as_ref().map(|k| k.name()),
+                by_val.as_ref().map(|k| k.name()),
+                "TryFrom<&[u8;N]> vs TryFrom<[u8;N]> drift on {probe:?}"
+            );
+            if let (Err(ea), Err(eb)) = (&slice, &by_val) {
+                assert_eq!(ea.expected, eb.expected);
+                assert_eq!(ea.input, eb.input);
+            }
+        }
+    }
+
+    // ---------- (4) THE LOAD-BEARING SEAM ----------
+    //
+    // A `TryFrom<[u8; N]>`-bounded seam that NEITHER the sibling
+    // `TryFrom<&[u8]>` NOR the by-reference cell 46 `TryFrom<&[u8; N]>`
+    // impl alone can satisfy. Rust does not chain `TryFrom` impls
+    // through borrow-coercion or unsize-coercion, so a caller carrying a
+    // `[u8; N]` value through a bound would previously have to insert a
+    // per-callsite `.as_slice()` postfix, `&buf` re-borrow, or `Vec<u8>`
+    // detour — this seam pins that the new impl closes exactly that gap.
+
+    fn parse_kind_owned<K, const N: usize>(bytes: [u8; N]) -> Result<K, ParseKindError>
+    where
+        K: TryFrom<[u8; N], Error = ParseKindError>,
+    {
+        K::try_from(bytes)
+    }
+
+    #[test]
+    fn load_bearing_seam_impossibility() {
+        let k: SameStoreImpossibilityKind = parse_kind_owned(*b"regressed").unwrap();
+        assert_eq!(k, SameStoreImpossibilityKind::Regressed);
+        let k: SameStoreImpossibilityKind = parse_kind_owned(*b"cross_store").unwrap();
+        assert_eq!(k, SameStoreImpossibilityKind::CrossStore);
+    }
+
+    #[test]
+    fn load_bearing_seam_consistency() {
+        let k: SameStoreConsistencyKind = parse_kind_owned(*b"stationary").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::Stationary);
+        let k: SameStoreConsistencyKind = parse_kind_owned(*b"identity_republish").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::IdentityRepublish);
+        let k: SameStoreConsistencyKind = parse_kind_owned(*b"progression").unwrap();
+        assert_eq!(k, SameStoreConsistencyKind::Progression);
+    }
+
+    #[test]
+    fn load_bearing_seam_fused() {
+        let k: ProofRelationKind = parse_kind_owned(*b"regressed").unwrap();
+        assert_eq!(
+            k,
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+        );
+        let k: ProofRelationKind = parse_kind_owned(*b"stationary").unwrap();
+        assert_eq!(
+            k,
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+        );
+    }
+
+    // ---------- (5) Ergonomic seams: `*b"..."` and receive-buffer shapes ----------
+    //
+    // The natural call sites — `Kind::try_from(*b"...")` for a
+    // dereferenced byte-string literal AND a stack-local `[u8; N]`
+    // moved by value — compile without any postfix. This test's mere
+    // compilation is the primary pin; the assertions are secondary
+    // confirmation of the accepted-set the sibling delegation carries.
+
+    #[test]
+    fn dereferenced_literal_shape_compiles() {
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(*b"regressed"),
+            Ok(SameStoreImpossibilityKind::Regressed),
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(*b"cross_store"),
+            Ok(SameStoreImpossibilityKind::CrossStore),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(*b"stationary"),
+            Ok(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(*b"progression"),
+            Ok(SameStoreConsistencyKind::Progression),
+        );
+        assert_eq!(
+            ProofRelationKind::try_from(*b"regressed"),
+            Ok(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::Regressed,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::try_from(*b"stationary"),
+            Ok(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Stationary,
+            )),
+        );
+    }
+
+    #[test]
+    fn receive_buffer_shape_compiles() {
+        // The shape a `Read::read_exact` pass produces — a stack-local
+        // `[u8; N]` moved by value into the parser. Compiles without any
+        // `.as_slice()` postfix or `&buf` re-borrow.
+        let buf: [u8; 9] = *b"regressed";
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(buf),
+            Ok(SameStoreImpossibilityKind::Regressed),
+        );
+        let buf: [u8; 11] = *b"cross_store";
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(buf),
+            Ok(SameStoreImpossibilityKind::CrossStore),
+        );
+        let buf: [u8; 10] = *b"stationary";
+        assert_eq!(
+            SameStoreConsistencyKind::try_from(buf),
+            Ok(SameStoreConsistencyKind::Stationary),
+        );
+        let buf: [u8; 18] = *b"identity_republish";
+        assert_eq!(
+            ProofRelationKind::try_from(buf),
+            Ok(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::IdentityRepublish,
+            )),
+        );
+    }
+
+    // ---------- (6) Fused-arm lockstep with the routed half-side ----------
+
+    #[test]
+    fn fused_arm_lockstep_impossibility_half() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let half = match k.name() {
+                "regressed" => SameStoreImpossibilityKind::try_from(*b"regressed"),
+                "cross_store" => SameStoreImpossibilityKind::try_from(*b"cross_store"),
+                other => panic!("unexpected impossibility variant: {other:?}"),
+            };
+            let fused = match k.name() {
+                "regressed" => ProofRelationKind::try_from(*b"regressed"),
+                "cross_store" => ProofRelationKind::try_from(*b"cross_store"),
+                other => panic!("unexpected impossibility variant: {other:?}"),
+            };
+            assert_eq!(half, Ok(k));
+            assert_eq!(fused, Ok(ProofRelationKind::Impossible(k)));
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_consistency_half() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let half = match k.name() {
+                "stationary" => SameStoreConsistencyKind::try_from(*b"stationary"),
+                "identity_republish" => SameStoreConsistencyKind::try_from(*b"identity_republish"),
+                "progression" => SameStoreConsistencyKind::try_from(*b"progression"),
+                other => panic!("unexpected consistency variant: {other:?}"),
+            };
+            let fused = match k.name() {
+                "stationary" => ProofRelationKind::try_from(*b"stationary"),
+                "identity_republish" => ProofRelationKind::try_from(*b"identity_republish"),
+                "progression" => ProofRelationKind::try_from(*b"progression"),
+                other => panic!("unexpected consistency variant: {other:?}"),
+            };
+            assert_eq!(half, Ok(k));
+            assert_eq!(fused, Ok(ProofRelationKind::Consistent(k)));
+        }
+    }
+
+    // ---------- (7) Round-trip through the compare-side cell 47 sibling ----------
+    //
+    // Every accepted variant round-trips through both cell 46
+    // (`TryFrom<&[u8; N]>`), this cell 48 (`TryFrom<[u8; N]>`), AND
+    // cell 47 (`PartialEq<[u8; N]>`) in lockstep — pinning that the
+    // by-reference parse-side, the by-value parse-side, and the
+    // by-value compare-side agree on the accepted-set. All three
+    // receiver-family surfaces derive from the SAME `Self::name` truth.
+
+    #[test]
+    fn cross_cell_round_trip_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            match k.name() {
+                "regressed" => {
+                    let arr: [u8; 9] = *b"regressed";
+                    let parsed_by_val = SameStoreImpossibilityKind::try_from(arr).unwrap();
+                    let parsed_by_ref = SameStoreImpossibilityKind::try_from(&arr).unwrap();
+                    assert_eq!(parsed_by_val, k);
+                    assert_eq!(parsed_by_ref, k);
+                    assert!(parsed_by_val == arr, "cell 47 compare-side lockstep");
+                }
+                "cross_store" => {
+                    let arr: [u8; 11] = *b"cross_store";
+                    let parsed_by_val = SameStoreImpossibilityKind::try_from(arr).unwrap();
+                    let parsed_by_ref = SameStoreImpossibilityKind::try_from(&arr).unwrap();
+                    assert_eq!(parsed_by_val, k);
+                    assert_eq!(parsed_by_ref, k);
+                    assert!(parsed_by_val == arr, "cell 47 compare-side lockstep");
                 }
                 other => panic!("unexpected impossibility variant name: {other:?}"),
             }
