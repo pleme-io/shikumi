@@ -3634,6 +3634,111 @@ impl PartialEq<SameStoreImpossibilityKind> for std::rc::Rc<str> {
     }
 }
 
+/// The [`PartialEq<std::rc::Rc<[u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-side non-atomically-shared-
+/// refcounted-carrier sibling** of the string-side
+/// [`PartialEq<std::rc::Rc<str>>`] impl (cell 44, `87c59f6`) directly
+/// above, and the non-atomically-refcounted-carrier extension of the
+/// byte-side [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] +
+/// [`PartialEq<Vec<u8>>`] + [`PartialEq<Cow<'_, [u8]>>`] +
+/// [`PartialEq<Box<[u8]>>`] + [`PartialEq<std::sync::Arc<[u8]>>`]
+/// (cell 39, `7d3d62c`) impls at the impossibility altitude, closing the
+/// seventh leg of the (borrowed `[u8]`, borrowed `&[u8]`, owned
+/// [`Vec<u8>`], borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`],
+/// compact-owned [`Box<[u8]>`], atomically-shared-refcounted
+/// [`std::sync::Arc<[u8]>`], non-atomically-shared-refcounted
+/// [`std::rc::Rc<[u8]>`]) receiver-set on the byte-side COMPARISON side
+/// of the impossibility half with the SAME shape
+/// [`TryFrom<std::rc::Rc<[u8]>>`] (cell 43, `6a60f0f`) already carries on
+/// the PARSE side and [`From<Kind>`] for [`std::rc::Rc<[u8]>`] (cell 41,
+/// `55f8ed8`) already carries on the FORWARD side.
+///
+/// **Rc versus Arc on the byte-side comparison — same footprint, distinct
+/// type, distinct refcount.** [`std::rc::Rc<[u8]>`] and
+/// [`std::sync::Arc<[u8]>`] share the same one-word carrier footprint (a
+/// single `ptr`) and both project through [`AsRef<[u8]>`] via std's
+/// blanket `impl<T: ?Sized> AsRef<T> for Rc<T>` / `for Arc<T>` to the
+/// same two-word fat-pointer view over the shared bytes without touching
+/// the reference-count header, but the [`Rc`] header is a plain `usize`
+/// while the [`Arc`] header is an [`std::sync::atomic::AtomicUsize`].
+/// Because both directions of this impl pass through
+/// [`AsRef::<[u8]>::as_ref`] rather than a [`std::rc::Rc::clone`] or an
+/// [`std::rc::Rc::strong_count`] read, the per-comparison cost is EXACTLY
+/// one pointer-deref and one `<[u8]>::eq` byte-compare — the non-atomic
+/// refcount is never inspected, so the comparison-side receiver stays
+/// lockstep-identical with the atomically-refcounted sibling above at
+/// every seam, with the small but real drop-path saving carried on the
+/// input handle when it is consumed at the enclosing scope.
+///
+/// **Why lift a comparison-side receiver over a NON-ATOMICALLY-REFCOUNTED
+/// BYTE carrier.** A caller holding the identifier as a
+/// [`std::rc::Rc<[u8]>`] on a single-threaded consumer — a
+/// `HashMap<std::rc::Rc<[u8]>, V>::keys()` iterator on a single-threaded
+/// worker, a per-tick UI intern-table of candidate byte-keys, a WASM
+/// main-loop byte-key dispatcher, a [`serde_bytes`]-neighbouring visitor
+/// that materializes the identifier as an [`std::rc::Rc<[u8]>`] under a
+/// `#[serde(with = "serde_bytes")]` attribute on a single-threaded
+/// deserialization pipeline, any downstream slot bounded on
+/// `T: PartialEq<std::rc::Rc<[u8]>>` — previously stranded at either a
+/// per-callsite `&**rc_bytes` deref (a coordinated silent rewrite of
+/// the callsite, not a lift into the type-checker) or a
+/// [`std::str::from_utf8`] parse detour (paying UTF-8 validation to
+/// answer a byte-compare question), because Rust does NOT chain
+/// [`PartialEq`] impls (`T: PartialEq<std::rc::Rc<[u8]>>` is NOT
+/// satisfied by `T: PartialEq<std::sync::Arc<[u8]>>` alone, nor by
+/// `T: PartialEq<&[u8]>` / `T: PartialEq<Vec<u8>>` /
+/// `T: PartialEq<Cow<'_, [u8]>>` / `T: PartialEq<Box<[u8]>>` alone —
+/// the right-hand receiver types are distinct even though their
+/// [`AsRef<[u8]>`] projections read the same bytes).
+///
+/// **Cheap-clone-friendly, allocation-free.** [`std::rc::Rc<[u8]>`] is a
+/// `{ ptr }` one-word non-atomically-shared-refcounted heap allocation
+/// whose [`AsRef<[u8]>`] projection resolves to the two-word fat-pointer
+/// view over the shared bytes without incrementing the reference count or
+/// copying the heap bytes. Every downstream slot that carries the
+/// identifier as an [`std::rc::Rc<[u8]>`] (rather than a [`Vec<u8>`] or
+/// [`Box<[u8]>`]) does so precisely to pay ZERO per-comparison allocation
+/// and ZERO per-clone allocation on a long-lived shared byte-table — this
+/// impl composes the comparison receiver over the non-atomically-
+/// refcounted byte carrier through the standard trait, so the caller
+/// reaches the same `k == rc_bytes` seam the sibling
+/// [`PartialEq<std::sync::Arc<[u8]>>`] impl already provides without the
+/// extra `std::sync::Arc::<[u8]>::from(&**rc_bytes)` round-trip that
+/// would forfeit the non-atomic drop-path saving the caller went to
+/// trouble to obtain.
+///
+/// Delegates through the same [`Self::name`]-then-[`str::as_bytes`]
+/// source of truth every prior byte-shape receiver already uses, so the
+/// closed-variant set (adding a hypothetical third impossibility corner
+/// updates the ONE `match` body in [`Self::name`]) surfaces through this
+/// impl in lockstep with the [`std::sync::Arc<[u8]>`] sibling
+/// (cell 39) and the string-side [`std::rc::Rc<str>`] sibling
+/// (cell 44) directly above.
+///
+/// [`ConfigStore`]: crate::ConfigStore
+impl PartialEq<std::rc::Rc<[u8]>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &std::rc::Rc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`std::rc::Rc<[u8]>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<std::rc::Rc<[u8]>>`] impl directly above, welding the
+/// symmetric `non_atomically_shared_refcounted_bytes == kind` seam through
+/// the same [`Self::name`]-then-[`str::as_bytes`] source of truth. Both
+/// directions of the byte-side non-atomically-refcounted cross-type
+/// comparison now compose out of the same allocation-free receiver by
+/// construction; adding a hypothetical third impossibility corner updates
+/// the ONE `match` body in [`Self::name`], and the new identifier surfaces
+/// through BOTH [`PartialEq<std::rc::Rc<[u8]>>`] impls (and every sibling
+/// projection through [`Self::name`]) in lockstep.
+impl PartialEq<SameStoreImpossibilityKind> for std::rc::Rc<[u8]> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
 /// The [`AsRef<[u8]>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **byte-side projection sibling** of the borrowed [`AsRef<str>`] impl on
 /// the impossibility half, delegating through the same [`Self::name`]
@@ -6145,6 +6250,38 @@ impl PartialEq<SameStoreConsistencyKind> for std::rc::Rc<str> {
     }
 }
 
+/// The [`PartialEq<std::rc::Rc<[u8]>>`] impl on
+/// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
+/// impossibility-half [`PartialEq<std::rc::Rc<[u8]>>`] impl (cell 45),
+/// and the **byte-side non-atomically-shared-refcounted-carrier sibling**
+/// of the string-side [`PartialEq<std::rc::Rc<str>>`] impl (cell 44)
+/// directly above and of the byte-side atomically-refcounted
+/// [`PartialEq<std::sync::Arc<[u8]>>`] impl (cell 39). See the
+/// impossibility-half impl for the full lift rationale; the byte-side
+/// non-atomically-refcounted comparison here welds the three-variant
+/// consistent half onto the same one-word non-atomically-shared-owned
+/// byte-carrier shape in lockstep with the two-variant impossibility half,
+/// so a downstream single-threaded consumer running a
+/// `HashMap<std::rc::Rc<[u8]>, V>::keys()` predicate loop over consistent
+/// kinds reaches the same non-atomically-shared-ownership shape as over
+/// impossibility kinds — allocation-free by construction.
+impl PartialEq<std::rc::Rc<[u8]>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &std::rc::Rc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`std::rc::Rc<[u8]>`] impl — closing the byte-side non-atomically-
+/// refcounted reverse-direction cell on the consistent half so
+/// `non_atomically_shared_refcounted_bytes == kind` composes at this
+/// altitude. Mirror of the impossibility-half receiver at this altitude.
+impl PartialEq<SameStoreConsistencyKind> for std::rc::Rc<[u8]> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
+    }
+}
+
 /// The [`AsRef<[u8]>`] impl on [`SameStoreConsistencyKind`] — the mirror
 /// on the consistent half of the classification lattice of the
 /// [`AsRef<[u8]>`] impl on [`SameStoreImpossibilityKind`], and the
@@ -7944,6 +8081,46 @@ impl PartialEq<std::rc::Rc<str>> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for std::rc::Rc<str> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name()
+    }
+}
+
+/// The [`PartialEq<std::rc::Rc<[u8]>>`] impl on [`ProofRelationKind`] —
+/// the **fused-sum sibling** of the two half-side byte-side
+/// [`PartialEq<std::rc::Rc<[u8]>>`] impls on
+/// [`SameStoreImpossibilityKind`] and [`SameStoreConsistencyKind`]
+/// (cell 45), and the byte-side dual of the fused string-side
+/// [`PartialEq<std::rc::Rc<str>>`] impl (cell 44) directly above and of
+/// the fused byte-side atomically-refcounted
+/// [`PartialEq<std::sync::Arc<[u8]>>`] impl (cell 39). Closes the
+/// seventh leg of the byte-side comparison receiver-set (borrowed `[u8]`,
+/// borrowed `&[u8]`, owned [`Vec<u8>`], borrowed-or-owned
+/// [`std::borrow::Cow<'_, [u8]>`], compact-owned [`Box<[u8]>`],
+/// atomically-shared-refcounted [`std::sync::Arc<[u8]>`], non-atomically-
+/// shared-refcounted [`std::rc::Rc<[u8]>`]) at the fused altitude. The
+/// fused body delegates through [`ProofRelationKind::name`], which routes
+/// through the two half-side [`Self::name`] receivers — so the fused
+/// [`std::rc::Rc<[u8]>`]-comparison agrees with the routed half-side
+/// [`std::rc::Rc<[u8]>`]-comparison through the two-arm partition of the
+/// fused sum on every fused kind, matching the same-shape pattern already
+/// welded on [`PartialEq<Vec<u8>>`], [`PartialEq<Cow<'_, [u8]>>`],
+/// [`PartialEq<Box<[u8]>>`], and [`PartialEq<std::sync::Arc<[u8]>>`]
+/// (cell 39) at the fused altitude and on
+/// [`PartialEq<std::rc::Rc<str>>`] at the string-side fused altitude
+/// (cell 44).
+impl PartialEq<std::rc::Rc<[u8]>> for ProofRelationKind {
+    fn eq(&self, other: &std::rc::Rc<[u8]>) -> bool {
+        self.name().as_bytes() == other.as_ref()
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for
+/// [`std::rc::Rc<[u8]>`] impl — closing the byte-side non-atomically-
+/// refcounted reverse-direction cell at the fused altitude so
+/// `non_atomically_shared_refcounted_bytes == kind` composes at this
+/// altitude. Mirror of the two half-side receivers at this altitude.
+impl PartialEq<ProofRelationKind> for std::rc::Rc<[u8]> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        self.as_ref() == other.name().as_bytes()
     }
 }
 
@@ -48447,6 +48624,653 @@ mod partial_eq_rc_str_tests {
             assert!(
                 Rc::ptr_eq(&r, &sibling),
                 "Rc<str> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Rc::strong_count(&r),
+                2,
+                "strong_count must be 2 (r + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_rc_bytes_tests {
+    //! [`PartialEq<std::rc::Rc<[u8]>>`] and
+    //! [`PartialEq<Kind> for std::rc::Rc<[u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side non-atomically-shared-
+    //! refcounted-carrier sibling** of the string-side
+    //! [`PartialEq<std::rc::Rc<str>>`] pair lifted by
+    //! [`super::partial_eq_rc_str_tests`] (cell 44) and the non-atomically-
+    //! refcounted extension of the byte-side atomically-refcounted
+    //! [`PartialEq<std::sync::Arc<[u8]>>`] pair lifted by
+    //! [`super::partial_eq_arc_bytes_tests`] (cell 39), closing the
+    //! seventh leg of the (borrowed `[u8]`, borrowed `&[u8]`, owned
+    //! [`Vec<u8>`], borrowed-or-owned [`std::borrow::Cow<'_, [u8]>`],
+    //! compact-owned [`Box<[u8]>`], atomically-shared-refcounted
+    //! [`std::sync::Arc<[u8]>`], non-atomically-shared-refcounted
+    //! [`std::rc::Rc<[u8]>`]) receiver-set on the byte-side comparison
+    //! side of the three kind enums with the SAME shape the byte-side
+    //! parse side already carries through [`TryFrom<std::rc::Rc<[u8]>>`]
+    //! (cell 43, `6a60f0f`) and the byte-side forward side already
+    //! carries through [`From<Kind>`] for [`std::rc::Rc<[u8]>`] (cell 41,
+    //! `55f8ed8`).
+    //!
+    //! **What the tests below pin.**
+    //! 1. Pointwise identity on both cells (`k == rc_bytes`,
+    //!    `rc_bytes == k`) for
+    //!    `rc_bytes = std::rc::Rc::<[u8]>::from(k.name().as_bytes())` on
+    //!    every variant of every kind enum.
+    //! 2. Sibling agreement with [`AsRef<[u8]>`] — for every variant and
+    //!    every input byte-slice, both directions of the non-atomically-
+    //!    refcounted byte-pair agree with
+    //!    `<K as AsRef<[u8]>>::as_ref(&k) == probe`.
+    //! 3. Inequality on unknown [`std::rc::Rc<[u8]>`] inputs (including a
+    //!    non-UTF-8 probe).
+    //! 4. Cross-variant inequality — for every pair `(a, b)` of distinct
+    //!    variants,
+    //!    `a != std::rc::Rc::<[u8]>::from(b.name().as_bytes())` in both
+    //!    directions.
+    //! 5. Fused-arm lockstep on [`ProofRelationKind`] — a fused kind
+    //!    constructed from either half-side variant equals the non-
+    //!    atomically-refcounted half-side name-bytes through both
+    //!    directions.
+    //! 6. Round-trip through the sibling [`From<Kind>`] for
+    //!    [`std::rc::Rc<[u8]>`] projection (cell 41) — for every variant
+    //!    `k`, `k == <std::rc::Rc<[u8]>>::from(k)` in both directions,
+    //!    pinning the two [`std::rc::Rc<[u8]>`] receivers' pointwise
+    //!    agreement.
+    //! 7. **THE LOAD-BEARING SIBLING PIN** — sibling lockstep with the
+    //!    atomically-refcounted [`PartialEq<std::sync::Arc<[u8]>>`]
+    //!    (cell 39): both shared-refcounted byte-side comparison-side
+    //!    receivers (atomic and non-atomic) resolve the SAME
+    //!    `k == carrier` / `carrier == k` cell for every variant and every
+    //!    probe, so the two refcount modes stay lockstep-identical.
+    //! 8. Sibling agreement with the atomically-refcounted parse-side
+    //!    [`TryFrom<std::sync::Arc<[u8]>>`] (cell 37) — a `k == rc_bytes`
+    //!    seam agrees with what a `<K as TryFrom<Arc<[u8]>>>::try_from`
+    //!    would resolve for every variant name.
+    //! 9. String-side lockstep with [`PartialEq<std::rc::Rc<str>>`]
+    //!    (cell 44) — for every variant and every UTF-8 probe, the byte-
+    //!    side non-atomically-refcounted comparison agrees with the
+    //!    string-side non-atomically-refcounted comparison on both
+    //!    directions, pinning the byte-side and string-side non-atomically-
+    //!    refcounted receivers stay in lockstep across the two carrier
+    //!    shapes.
+    //! 10. Generic composability at a bare
+    //!     `PartialEq<std::rc::Rc<[u8]>>`-bounded seam — the load-bearing
+    //!     pin the sibling [`PartialEq<std::sync::Arc<[u8]>>`],
+    //!     [`PartialEq<Box<[u8]>>`], [`PartialEq<Vec<u8>>`], and
+    //!     [`PartialEq<Cow<'_, [u8]>>`] impls CANNOT satisfy (Rust does
+    //!     not chain [`PartialEq`] impls).
+    //! 11. **CHEAP-CLONE-SHARED-SURVIVAL PIN** — two cheap-cloned
+    //!     [`std::rc::Rc<[u8]>`] handles to the same allocation
+    //!     ([`std::rc::Rc::ptr_eq`] holds) survive both comparison
+    //!     directions unmodified — pointer equality holds, strong count is
+    //!     exactly two, and the read-side never touches the non-atomic
+    //!     refcount.
+    //!
+    //! [`ConfigStore`]: crate::ConfigStore
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::rc::Rc;
+
+    fn rc_bytes(bytes: &[u8]) -> Rc<[u8]> {
+        Rc::<[u8]>::from(bytes)
+    }
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_rc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_rc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_rc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with AsRef<[u8]> ----------
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            &[0xffu8, 0xfe, 0xfd],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_as_ref_bytes_on_every_rc_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <SameStoreImpossibilityKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert_eq!(k == r, via_as_ref, "k == Rc<[u8]> drift for {probe:?}");
+                assert_eq!(r == k, via_as_ref, "Rc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_as_ref_bytes_on_every_rc_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <SameStoreConsistencyKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert_eq!(k == r, via_as_ref, "k == Rc<[u8]> drift for {probe:?}");
+                assert_eq!(r == k, via_as_ref, "Rc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_as_ref_bytes_on_every_rc_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let via_as_ref = <ProofRelationKind as AsRef<[u8]>>::as_ref(&k) == probe;
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert_eq!(k == r, via_as_ref, "k == Rc<[u8]> drift for {probe:?}");
+                assert_eq!(r == k, via_as_ref, "Rc<[u8]> == k drift for {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown Rc<[u8]> inputs ----------
+
+    #[test]
+    fn impossibility_ne_unknown_rc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Regressed",
+                b" regressed",
+                b"regressed\t",
+                &[0xffu8, 0x00, 0x01],
+            ] {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert!(k != r, "unexpected match: {k:?} == Rc::<[u8]>({probe:?})");
+                assert!(r != k, "unexpected match: Rc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_unknown_rc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Stationary",
+                b"identity-republish",
+                b"progression\n",
+            ] {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert!(k != r, "unexpected match: {k:?} == Rc::<[u8]>({probe:?})");
+                assert!(r != k, "unexpected match: Rc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_unknown_rc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in [
+                b"" as &[u8],
+                b"unknown",
+                b"Consistent",
+                b"Impossible",
+                b"consistent\n",
+            ] {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                assert!(k != r, "unexpected match: {k:?} == Rc::<[u8]>({probe:?})");
+                assert!(r != k, "unexpected match: Rc::<[u8]>({probe:?}) == {k:?}");
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_ne_other_variant_rc_bytes() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b_kind in SameStoreImpossibilityKind::VARIANTS {
+                if a != b_kind {
+                    let r: Rc<[u8]> = rc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != r,
+                        "{a:?} incorrectly equals Rc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        r != a,
+                        "Rc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_ne_other_variant_rc_bytes() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b_kind in SameStoreConsistencyKind::VARIANTS {
+                if a != b_kind {
+                    let r: Rc<[u8]> = rc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != r,
+                        "{a:?} incorrectly equals Rc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        r != a,
+                        "Rc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_ne_other_variant_rc_bytes() {
+        for &a in ProofRelationKind::VARIANTS {
+            for &b_kind in ProofRelationKind::VARIANTS {
+                if a != b_kind {
+                    let r: Rc<[u8]> = rc_bytes(b_kind.name().as_bytes());
+                    assert!(
+                        a != r,
+                        "{a:?} incorrectly equals Rc::<[u8]>({:?})",
+                        b_kind.name()
+                    );
+                    assert!(
+                        r != a,
+                        "Rc::<[u8]>({:?}) incorrectly equals {a:?}",
+                        b_kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep on ProofRelationKind ----------
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_rc_bytes_on_impossibility_arm() {
+        for &half in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(half);
+            let r: Rc<[u8]> = rc_bytes(half.name().as_bytes());
+            assert!(fused == r, "fused == Rc<[u8]> for {:?}", half.name());
+            assert!(r == fused, "Rc<[u8]> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == r,
+                half == r,
+                "cross-altitude drift on Rc<[u8]> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    #[test]
+    fn fused_kind_agrees_with_half_side_rc_bytes_on_consistency_arm() {
+        for &half in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(half);
+            let r: Rc<[u8]> = rc_bytes(half.name().as_bytes());
+            assert!(fused == r, "fused == Rc<[u8]> for {:?}", half.name());
+            assert!(r == fused, "Rc<[u8]> == fused for {:?}", half.name());
+            assert_eq!(
+                fused == r,
+                half == r,
+                "cross-altitude drift on Rc<[u8]> for {:?}",
+                half.name()
+            );
+        }
+    }
+
+    // ---------- (6) Round-trip through From<Kind> for Rc<[u8]> (cell 41) ----------
+
+    #[test]
+    fn round_trip_through_from_kind_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = Rc::<[u8]>::from(k);
+            assert!(k == r, "round-trip drift: {k:?} != Rc::<[u8]>::from(k)");
+            assert!(r == k, "round-trip drift: Rc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = Rc::<[u8]>::from(k);
+            assert!(k == r, "round-trip drift: {k:?} != Rc::<[u8]>::from(k)");
+            assert!(r == k, "round-trip drift: Rc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_kind_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = Rc::<[u8]>::from(k);
+            assert!(k == r, "round-trip drift: {k:?} != Rc::<[u8]>::from(k)");
+            assert!(r == k, "round-trip drift: Rc::<[u8]>::from(k) != {k:?}");
+        }
+    }
+
+    // ---------- (7) THE LOAD-BEARING SIBLING PIN — lockstep with cell 39 ----------
+    // Both shared-refcounted byte-side comparison-side receivers (atomic
+    // and non-atomic) resolve the SAME `k == carrier` / `carrier == k`
+    // cell for every variant and every probe, so the two refcount modes
+    // stay lockstep-identical.
+
+    #[test]
+    fn rc_bytes_matches_arc_bytes_on_every_probe_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                assert_eq!(
+                    k == r,
+                    k == a,
+                    "impossibility {k:?}: Rc<[u8]>/Arc<[u8]> \
+                     comparison drift on {probe:?}"
+                );
+                assert_eq!(
+                    r == k,
+                    a == k,
+                    "impossibility {k:?}: reciprocal Rc<[u8]>/Arc<[u8]> \
+                     comparison drift on {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rc_bytes_matches_arc_bytes_on_every_probe_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                assert_eq!(k == r, k == a, "Rc<[u8]>/Arc<[u8]> drift on {probe:?}");
+                assert_eq!(
+                    r == k,
+                    a == k,
+                    "reciprocal Rc<[u8]>/Arc<[u8]> drift on {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rc_bytes_matches_arc_bytes_on_every_probe_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                assert_eq!(k == r, k == a, "Rc<[u8]>/Arc<[u8]> drift on {probe:?}");
+                assert_eq!(
+                    r == k,
+                    a == k,
+                    "reciprocal Rc<[u8]>/Arc<[u8]> drift on {probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------- (8) Sibling agreement with TryFrom<Arc<[u8]>> (cell 37) ----------
+    // A `k == rc_bytes` seam agrees with what a
+    // `<K as TryFrom<Arc<[u8]>>>::try_from` would resolve for every
+    // variant name — pins that the comparison receiver and the parse
+    // receiver land on the same accepted-set.
+
+    #[test]
+    fn eq_rc_bytes_agrees_with_try_from_arc_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                let parsed = SameStoreImpossibilityKind::try_from(a);
+                let should_match = matches!(parsed, Ok(p) if p == k);
+                assert_eq!(k == r, should_match, "impossibility {k:?} on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn eq_rc_bytes_agrees_with_try_from_arc_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                let parsed = SameStoreConsistencyKind::try_from(a);
+                let should_match = matches!(parsed, Ok(p) if p == k);
+                assert_eq!(k == r, should_match, "consistency {k:?} on {probe:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn eq_rc_bytes_agrees_with_try_from_arc_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r: Rc<[u8]> = rc_bytes(probe);
+                let a: std::sync::Arc<[u8]> = std::sync::Arc::<[u8]>::from(probe);
+                let parsed = ProofRelationKind::try_from(a);
+                let should_match = matches!(parsed, Ok(p) if p == k);
+                assert_eq!(k == r, should_match, "fused {k:?} on {probe:?}");
+            }
+        }
+    }
+
+    // ---------- (9) String-side lockstep with PartialEq<Rc<str>> (cell 44) ----------
+    // For every variant and every UTF-8 probe, the byte-side non-
+    // atomically-refcounted comparison agrees with the string-side non-
+    // atomically-refcounted comparison — a downstream single-threaded
+    // consumer indifferent to whether the non-atomically-refcounted
+    // carrier is Rc<str> or Rc<[u8]> reaches the same accepted-set
+    // through either carrier.
+
+    #[test]
+    fn rc_bytes_agrees_with_rc_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r_bytes: Rc<[u8]> = rc_bytes(probe);
+                // Only build the sibling Rc<str> probe when the bytes
+                // parse as UTF-8; Rc<str> construction from arbitrary bytes
+                // has no infallible path, so skip non-UTF-8 probes.
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let r_str: Rc<str> = Rc::<str>::from(as_str);
+                    assert_eq!(
+                        k == r_bytes,
+                        k == r_str,
+                        "Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        r_bytes == k,
+                        r_str == k,
+                        "reciprocal Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rc_bytes_agrees_with_rc_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r_bytes: Rc<[u8]> = rc_bytes(probe);
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let r_str: Rc<str> = Rc::<str>::from(as_str);
+                    assert_eq!(
+                        k == r_bytes,
+                        k == r_str,
+                        "Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        r_bytes == k,
+                        r_str == k,
+                        "reciprocal Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rc_bytes_agrees_with_rc_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_bytes() {
+                let r_bytes: Rc<[u8]> = rc_bytes(probe);
+                if let Ok(as_str) = std::str::from_utf8(probe) {
+                    let r_str: Rc<str> = Rc::<str>::from(as_str);
+                    assert_eq!(
+                        k == r_bytes,
+                        k == r_str,
+                        "Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                    assert_eq!(
+                        r_bytes == k,
+                        r_str == k,
+                        "reciprocal Rc<[u8]>/Rc<str> drift on {probe:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    // ---------- (10) Generic composability at a bare
+    // PartialEq<Rc<[u8]>>-bounded seam ----------
+
+    fn cmp_kind_rc_bytes<K: PartialEq<Rc<[u8]>>>(k: &K, r: &Rc<[u8]>) -> bool {
+        *k == *r
+    }
+
+    #[test]
+    fn generic_composability_impossibility_rc_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_rc_bytes(&k, &r));
+            assert!(!cmp_kind_rc_bytes(&k, &rc_bytes(b"unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency_rc_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_rc_bytes(&k, &r));
+            assert!(!cmp_kind_rc_bytes(&k, &rc_bytes(b"unknown")));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused_rc_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert!(cmp_kind_rc_bytes(&k, &r));
+            assert!(!cmp_kind_rc_bytes(&k, &rc_bytes(b"unknown")));
+        }
+    }
+
+    // ---------- (11) CHEAP-CLONE-SHARED-SURVIVAL PIN ----------
+    //
+    // Two cheap-cloned Rc<[u8]> handles to the same allocation
+    // (Rc::ptr_eq holds) survive both comparison directions unmodified —
+    // pointer equality holds, strong count is exactly two, and the
+    // read-side never touches the non-atomic refcount.
+
+    #[test]
+    fn cheap_clone_survival_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let sibling: Rc<[u8]> = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &sibling));
+            assert_eq!(Rc::strong_count(&r), 2);
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+            assert!(
+                Rc::ptr_eq(&r, &sibling),
+                "Rc<[u8]> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Rc::strong_count(&r),
+                2,
+                "strong_count must be 2 (r + sibling) after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(sibling.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let sibling: Rc<[u8]> = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &sibling));
+            assert_eq!(Rc::strong_count(&r), 2);
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+            assert!(
+                Rc::ptr_eq(&r, &sibling),
+                "Rc<[u8]> clone must remain pointer-equal after comparison for {}",
+                k.name(),
+            );
+            assert_eq!(
+                Rc::strong_count(&r),
+                2,
+                "strong_count must be 2 (r + sibling) after comparison for {}",
+                k.name(),
+            );
+        }
+    }
+
+    #[test]
+    fn cheap_clone_survival_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let sibling: Rc<[u8]> = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &sibling));
+            assert_eq!(Rc::strong_count(&r), 2);
+            assert!(k == r, "kind == Rc<[u8]> for {}", k.name());
+            assert!(r == k, "Rc<[u8]> == kind for {}", k.name());
+            assert!(
+                Rc::ptr_eq(&r, &sibling),
+                "Rc<[u8]> clone must remain pointer-equal after comparison for {}",
                 k.name(),
             );
             assert_eq!(
