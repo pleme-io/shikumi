@@ -4523,6 +4523,99 @@ impl From<&SameStoreImpossibilityKind> for std::sync::Arc<[u8]> {
     }
 }
 
+/// The [`TryFrom<std::sync::Arc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **shared-refcounted parse-side
+/// sibling** of the borrowed [`TryFrom<&str>`], owned [`TryFrom<String>`],
+/// borrowed-or-owned [`TryFrom<Cow<'_, str>>`], and compact-owned
+/// [`TryFrom<Box<str>>`] impls already at this altitude, closing the fifth
+/// leg of the (borrowed, owned, borrowed-or-owned, compact-owned,
+/// shared-refcounted) receiver-set on the PARSE side in exact lockstep
+/// with the (borrowed, owned, borrowed-or-owned, compact-owned,
+/// shared-refcounted) set already welded on the FORWARD side by
+/// [`AsRef<str>`], [`From<Kind>`] for [`&'static str`], [`From<Kind>`] for
+/// [`String`], [`From<Kind>`] for [`Cow<'static, str>`], [`From<Kind>`]
+/// for [`Box<str>`], and [`From<Kind>`] for [`std::sync::Arc<str>`] (cell
+/// 34, directly above).
+///
+/// **Why lift a shared-refcounted parse-side receiver alongside the four
+/// single-shape ones.** Rust does NOT chain [`TryFrom`] impls — a
+/// `T: TryFrom<std::sync::Arc<str>>` bound is NOT satisfied by
+/// `T: TryFrom<&str>` alone, by `T: TryFrom<String>` alone, by
+/// `T: TryFrom<Cow<'_, str>>` alone, or by `T: TryFrom<Box<str>>` alone,
+/// because the receiver types are distinct. Every downstream slot bounded
+/// on `T: TryFrom<std::sync::Arc<str>>` (a caller that already holds the
+/// candidate identifier as a shared-refcounted [`std::sync::Arc<str>`] —
+/// the shape a `HashMap<std::sync::Arc<str>, V>::into_iter()` per-key
+/// parser drains, a `dashmap::DashMap<std::sync::Arc<str>, V>::retain`
+/// closure receives, an [`arc_swap::ArcSwap<std::sync::Arc<str>>`] cheap
+/// snapshot on shikumi's own [`crate::ConfigStore`] materializes for
+/// per-tick reclassification, a `serde_yaml_ng` visitor bound on
+/// `#[serde(try_from = "std::sync::Arc<str>")]`, a codegen visitor whose
+/// parser slot is a `TryFrom<std::sync::Arc<str>>` trait bound, any
+/// generic `fn parse<K: TryFrom<std::sync::Arc<str>>>` accepting a
+/// shared-refcounted identifier string) previously stranded a [`Kind`]
+/// value at the type-checker with no [`TryFrom<std::sync::Arc<str>>`]
+/// path.
+///
+/// **Architectural alignment with shikumi's ArcSwap-based store — the
+/// load-bearing motivation.** shikumi IS Pillar 2 in the fleet, and its
+/// [`crate::ConfigStore`] is built on [`arc_swap::ArcSwap<T>`] — every
+/// hot-reloaded config value already lives under an
+/// [`std::sync::Arc`]. A downstream config that carries a candidate
+/// classification identifier as an [`std::sync::Arc<str>`] field (the
+/// ecosystem-natural shape for a shared-owned string under
+/// [`arc_swap::ArcSwap`], with the same shared-refcount semantics the
+/// [`From<Kind>`] for [`std::sync::Arc<str>`] sibling already lifted for
+/// the forward-side) now reaches the parse-side projection through the
+/// standard trait alone, without a per-callsite
+/// `<K as TryFrom<&str>>::try_from(&*arc_str)` postfix that fragments the
+/// receiver-family surface.
+///
+/// **Error-path allocation cost — one allocation, honestly stated.**
+/// Unlike the sibling [`TryFrom<Box<str>>`] impl (which reuses the
+/// caller's [`Box<str>`] heap allocation verbatim via std's guaranteed
+/// zero-copy [`String::from<Box<str>>`] delegation), the shared-refcounted
+/// [`std::sync::Arc<str>`] carrier is intrinsically SHARED — the caller
+/// may hold multiple cheap-cloned [`std::sync::Arc<str>`] handles to the
+/// same allocation, so consuming the [`std::sync::Arc<str>`] cannot
+/// forfeit the buffer. On the error arm this impl materializes the input
+/// bytes into a fresh [`String`] via [`String::from<&str>`] (one heap
+/// allocation) and drops the [`std::sync::Arc<str>`], decrementing its
+/// atomic reference count. Total heap allocations on the error path:
+/// **1** — same as the sibling [`TryFrom<&str>`] receiver, and one MORE
+/// than the sibling [`TryFrom<String>`], [`TryFrom<Cow<'_, str>>`], and
+/// [`TryFrom<Box<str>>`] receivers on their zero-alloc error arms. This
+/// asymmetry is the intrinsic price of a shared-refcounted carrier and
+/// is documented rather than hidden.
+///
+/// Delegates through NEITHER [`FromStr`](std::str::FromStr::from_str)
+/// NOR [`TryFrom<&str>`] NOR [`TryFrom<String>`] on the fast success path
+/// — a delegating body would add an extra function-call boundary the
+/// open-coded match body avoids. The match body open-codes the same two
+/// accepted identifiers the sibling [`FromStr`](std::str::FromStr) and
+/// four sibling [`TryFrom`] bodies enumerate; the
+/// `try_from_arc_str_tests` module below pins the accepted-set through
+/// the sibling [`Self::VARIANTS`] / [`Self::NAMES`] constants so any
+/// future variant addition surfaces as a `cargo test` failure in
+/// lockstep with the enum itself. Sibling of [`strum::EnumString`] in the
+/// ecosystem (which emits only [`FromStr`] and [`TryFrom<&str>`], never
+/// [`TryFrom<std::sync::Arc<str>>`]); shipped hand-rolled to close the
+/// SHARED-REFCOUNTED-input cell.
+impl TryFrom<std::sync::Arc<str>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::sync::Arc<str>) -> Result<Self, Self::Error> {
+        match &*input {
+            "regressed" => Ok(Self::Regressed),
+            "cross_store" => Ok(Self::CrossStore),
+            _ => Err(ParseKindError {
+                input: String::from(&*input),
+                expected: Self::NAMES,
+            }),
+        }
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -5732,6 +5825,56 @@ impl From<SameStoreConsistencyKind> for std::sync::Arc<[u8]> {
 impl From<&SameStoreConsistencyKind> for std::sync::Arc<[u8]> {
     fn from(kind: &SameStoreConsistencyKind) -> std::sync::Arc<[u8]> {
         std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`TryFrom<std::sync::Arc<str>>`] impl on
+/// [`SameStoreConsistencyKind`] — the mirror on the consistent half of the
+/// classification lattice of the [`TryFrom<std::sync::Arc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`], and the **shared-refcounted parse-side
+/// sibling** of the borrowed [`TryFrom<&str>`], owned [`TryFrom<String>`],
+/// borrowed-or-owned [`TryFrom<Cow<'_, str>>`], and compact-owned
+/// [`TryFrom<Box<str>>`] impls already at this altitude. Projects the
+/// closed set of three stable snake-case identifiers (`"stationary"` /
+/// `"identity_republish"` / `"progression"`) into a [`Self`] value or a
+/// [`ParseKindError`] on unknown input, materializing the caller's input
+/// bytes into a fresh [`String`] on the error arm through
+/// [`String::from<&str>`] (one heap allocation, matching the sibling
+/// [`TryFrom<&str>`] receiver's error-path cost — the shared-refcounted
+/// [`std::sync::Arc<str>`] carrier is intrinsically SHARED, so consuming
+/// it cannot forfeit the buffer the way the owned/compact-owned siblings
+/// do).
+///
+/// See the sibling [`TryFrom<std::sync::Arc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`] above for the full rationale — why
+/// [`TryFrom<std::sync::Arc<str>>`] is a distinct standard-trait cell
+/// from the four sibling parse-side receivers already at this altitude
+/// (Rust does NOT chain [`TryFrom`] impls), the ecosystem slots the
+/// shared-refcounted shape unlocks (a
+/// `HashMap<std::sync::Arc<str>, V>::into_iter()` per-key parser, a
+/// [`arc_swap::ArcSwap<std::sync::Arc<str>>`] cheap snapshot on shikumi's
+/// own [`crate::ConfigStore`], a `dashmap::DashMap<std::sync::Arc<str>,
+/// V>::retain` closure, a `serde_yaml_ng` visitor bound on
+/// `#[serde(try_from = "std::sync::Arc<str>")]`, a codegen visitor with a
+/// `TryFrom<std::sync::Arc<str>>` parser slot, any generic bounded on
+/// `T: TryFrom<std::sync::Arc<str>>`), and the intrinsic one-allocation
+/// error-path cost the shared-refcounted carrier carries relative to the
+/// zero-allocation error-path property the owned/compact-owned siblings
+/// [`TryFrom<String>`], [`TryFrom<Cow<'_, str>>`], and
+/// [`TryFrom<Box<str>>`] provide.
+impl TryFrom<std::sync::Arc<str>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::sync::Arc<str>) -> Result<Self, Self::Error> {
+        match &*input {
+            "stationary" => Ok(Self::Stationary),
+            "identity_republish" => Ok(Self::IdentityRepublish),
+            "progression" => Ok(Self::Progression),
+            _ => Err(ParseKindError {
+                input: String::from(&*input),
+                expected: Self::NAMES,
+            }),
+        }
     }
 }
 
@@ -7328,6 +7471,75 @@ impl From<ProofRelationKind> for std::sync::Arc<[u8]> {
 impl From<&ProofRelationKind> for std::sync::Arc<[u8]> {
     fn from(kind: &ProofRelationKind) -> std::sync::Arc<[u8]> {
         std::sync::Arc::<[u8]>::from(kind.name().as_bytes())
+    }
+}
+
+/// The [`TryFrom<std::sync::Arc<str>>`] impl on the fused
+/// [`ProofRelationKind`] — the **shared-refcounted parse-side sibling** of
+/// the four sibling parse-side receivers at the fused altitude
+/// ([`TryFrom<&str>`], [`TryFrom<String>`], [`TryFrom<Cow<'_, str>>`],
+/// [`TryFrom<Box<str>>`]), and the parse-side dual of cell 34's forward-
+/// side fused [`From<ProofRelationKind>`] for [`std::sync::Arc<str>`]
+/// impl. Delegates through the consistency half's
+/// [`TryFrom<std::sync::Arc<str>>`] on the first attempt then, on the
+/// recovered [`String`] input the first half has already materialized on
+/// its error path, the impossibility half's [`TryFrom<String>`] on the
+/// second attempt — if BOTH halves miss, the twice-recovered [`String`]
+/// threads into the final fused [`ParseKindError`] with [`Self::NAMES`] as
+/// the accepted-set.
+///
+/// **Error-path allocation cost across all five potential misses —
+/// exactly ONE, matching the [`std::sync::Arc<str>`] receiver's intrinsic
+/// price.** The consistency half's [`TryFrom<std::sync::Arc<str>>`]
+/// materializes the input bytes into a fresh [`String`] on its error arm
+/// (one heap allocation). That [`String`] is threaded into the
+/// impossibility half's [`TryFrom<String>`], whose zero-alloc error-path
+/// property moves the [`String`] verbatim into its own
+/// [`ParseKindError::input`] on the second miss. The recovered
+/// [`String`] is moved once more into the final fused
+/// [`ParseKindError::input`] on the fifth miss. Total heap allocations
+/// across ALL FIVE misses: **1** (the first-arm materialization) — the
+/// caller's [`std::sync::Arc<str>`]'s atomic reference count is
+/// decremented exactly once on the first arm's [`String::from<&str>`]
+/// call, and every subsequent step reuses the materialized [`String`]
+/// verbatim through the sibling [`TryFrom<String>`] zero-alloc error-path
+/// property, matching the sibling
+/// [`TryFrom<Box<str>>`]/[`TryFrom<String>`] fused impls' internal
+/// zero-alloc chain from the second arm onward.
+///
+/// **Fused-arm lockstep with the two half-side impls — enforced by
+/// composition, not open-coded.** The fused body reaches the half-side
+/// accepted-sets ONLY through the two half-side [`TryFrom`] impls; it
+/// never open-codes the five identifier strings. So adding a hypothetical
+/// variant to either half-side enum surfaces through the corresponding
+/// half-side [`TryFrom<std::sync::Arc<str>>`] / [`TryFrom<String>`] match
+/// body AND is picked up by the fused body in lockstep — the fused impl
+/// and the two half-side impls stay lockstep-identical under every
+/// future variant addition to either half-side enum by construction,
+/// matching the fused-arm delegation pattern the sibling
+/// [`FromStr`](std::str::FromStr) / [`TryFrom<&str>`] /
+/// [`TryFrom<String>`] / [`TryFrom<Cow<'_, str>>`] / [`TryFrom<Box<str>>`]
+/// impls at the fused-sum altitude already carry.
+///
+/// **Field access.** The recovery of `input` from
+/// [`ParseKindError::input`] uses direct field access, valid because
+/// [`ParseKindError`] and this impl live in the same module.
+impl TryFrom<std::sync::Arc<str>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: std::sync::Arc<str>) -> Result<Self, Self::Error> {
+        let input: String = match SameStoreConsistencyKind::try_from(input) {
+            Ok(k) => return Ok(Self::Consistent(k)),
+            Err(e) => e.input,
+        };
+        let input = match SameStoreImpossibilityKind::try_from(input) {
+            Ok(k) => return Ok(Self::Impossible(k)),
+            Err(e) => e.input,
+        };
+        Err(ParseKindError {
+            input,
+            expected: Self::NAMES,
+        })
     }
 }
 
@@ -41365,6 +41577,821 @@ mod into_arc_bytes_tests {
                 !Arc::ptr_eq(&a, &b),
                 "fused {k:?}: independent .into() calls must NOT silently share an interned allocation",
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_arc_str_tests {
+    //! [`TryFrom<std::sync::Arc<str>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **shared-refcounted parse-side sibling** of the borrowed
+    //! [`TryFrom<&str>`], owned [`TryFrom<String>`], borrowed-or-owned
+    //! [`TryFrom<Cow<'_, str>>`], and compact-owned [`TryFrom<Box<str>>`]
+    //! impls already at each altitude, closing the fifth leg of the
+    //! (borrowed, owned, borrowed-or-owned, compact-owned,
+    //! shared-refcounted) receiver-set on the PARSE side in lockstep with
+    //! the (borrowed, owned, borrowed-or-owned, compact-owned,
+    //! shared-refcounted) set already welded on the FORWARD side by
+    //! [`AsRef<str>`], [`From<Kind>`] for [`&'static str`],
+    //! [`From<Kind>`] for [`String`], [`From<Kind>`] for
+    //! [`Cow<'static, str>`], [`From<Kind>`] for [`Box<str>`], and
+    //! [`From<Kind>`] for [`std::sync::Arc<str>`] (cell 34).
+    //!
+    //! **Why lift a fifth parse-side receiver over a SHARED-REFCOUNTED
+    //! input.** Rust does NOT chain [`TryFrom`] impls — a
+    //! `T: TryFrom<std::sync::Arc<str>>` bound is NOT satisfied by
+    //! `T: TryFrom<&str>` alone, by `T: TryFrom<String>` alone, by
+    //! `T: TryFrom<Cow<'_, str>>` alone, or by `T: TryFrom<Box<str>>`
+    //! alone, because the receiver types are distinct. Every downstream
+    //! slot bounded on `T: TryFrom<std::sync::Arc<str>>` (a
+    //! `HashMap<std::sync::Arc<str>, V>` per-key parser draining
+    //! `.into_iter()`, a `dashmap::DashMap<std::sync::Arc<str>,
+    //! V>::retain` closure, an
+    //! [`arc_swap::ArcSwap<std::sync::Arc<str>>`] cheap snapshot on
+    //! shikumi's own [`crate::ConfigStore`] materialized for per-tick
+    //! reclassification, a `serde_yaml_ng` visitor bound on
+    //! `#[serde(try_from = "std::sync::Arc<str>")]`, a codegen visitor
+    //! whose parser slot is a `TryFrom<std::sync::Arc<str>>` trait bound,
+    //! any generic `fn parse<K: TryFrom<std::sync::Arc<str>>>` accepting a
+    //! shared-refcounted identifier string) previously stranded a
+    //! [`Kind`] value at the type-checker with no
+    //! [`TryFrom<std::sync::Arc<str>>`] path.
+    //!
+    //! **Error-path allocation cost — one allocation, honestly stated.**
+    //! Unlike the sibling [`TryFrom<Box<str>>`] impl (which reuses the
+    //! caller's [`Box<str>`] heap allocation verbatim via std's guaranteed
+    //! zero-copy [`String::from<Box<str>>`] delegation), the
+    //! shared-refcounted [`std::sync::Arc<str>`] carrier is intrinsically
+    //! SHARED — the caller may hold multiple cheap-cloned
+    //! [`std::sync::Arc<str>`] handles to the same allocation, so
+    //! consuming the [`std::sync::Arc<str>`] cannot forfeit the buffer.
+    //! On the error arm the three half-side impls materialize the input
+    //! bytes into a fresh [`String`] via [`String::from<&str>`] (one heap
+    //! allocation) and drop the [`std::sync::Arc<str>`], decrementing its
+    //! atomic reference count. Total heap allocations on the error path:
+    //! **1** — same as the sibling [`TryFrom<&str>`] receiver, and one
+    //! MORE than the sibling [`TryFrom<String>`],
+    //! [`TryFrom<Cow<'_, str>>`], and [`TryFrom<Box<str>>`] receivers on
+    //! their zero-alloc error arms. This asymmetry is the intrinsic price
+    //! of a shared-refcounted carrier and is pinned by test 11 below (the
+    //! cheap-clone-shared-survival pin).
+    //!
+    //! **Fused-arm composition, not open-coded.** The fused
+    //! [`ProofRelationKind`] impl reaches the half-side accepted-sets
+    //! through the sibling consistency-half
+    //! [`TryFrom<std::sync::Arc<str>>`] on the first attempt and through
+    //! the sibling impossibility-half [`TryFrom<String>`] on the
+    //! recovered-input second attempt (the input has already been
+    //! materialized as a [`String`] by the first half's error boundary);
+    //! it never open-codes the five identifier strings. Adding a
+    //! hypothetical variant to either half-side enum surfaces through the
+    //! corresponding half-side match body AND is picked up by the fused
+    //! body in lockstep.
+    //!
+    //! The tests below pin the structural invariants that keep the three
+    //! impls in lockstep with the rest of the classification lattice:
+    //!
+    //! 1. Ok pointwise identity with [`FromStr`](std::str::FromStr) on
+    //!    every variant name of every kind enum.
+    //! 2. Ok pointwise identity with the sibling [`TryFrom<&str>`] on
+    //!    every variant name.
+    //! 3. Ok pointwise identity with the sibling [`TryFrom<String>`] on
+    //!    every variant name.
+    //! 4. Ok pointwise identity with the sibling
+    //!    [`TryFrom<Cow<'_, str>>`] on every variant name.
+    //! 5. Ok pointwise identity with the sibling [`TryFrom<Box<str>>`] on
+    //!    every variant name — the same accepted-set surfaces through the
+    //!    shared-refcounted receiver.
+    //! 6. Round-trip through the sibling [`From<Kind>`] for
+    //!    [`std::sync::Arc<str>`] projection (cell 34) — for every
+    //!    variant `k`, `<K>::try_from(<Arc<str>>::from(k)) == Ok(k)`.
+    //! 7. Ok pointwise identity through the standard [`TryInto::try_into`]
+    //!    combinator on every variant name (owning transfer).
+    //! 8. Err pointwise identity with the four sibling parse-side impls
+    //!    on unknown input — empty, PascalCase, all-caps, whitespace,
+    //!    cross-half hypotheticals (an identifier valid on ONE half-side
+    //!    enum fails on the OTHER half-side enum).
+    //! 9. Err-body fidelity — [`ParseKindError::input`] preserves the
+    //!    malformed input verbatim, [`ParseKindError::expected`] equals
+    //!    the sibling [`Self::NAMES`] constant.
+    //! 10. **Input-consumption pin** — on the error arm the input bytes
+    //!     handed in survive into [`ParseKindError::input`] with the SAME
+    //!     byte content (the byte-level side of the projection's
+    //!     accepted-set-fidelity property).
+    //! 11. **Cheap-clone-shared-survival pin** — the load-bearing property
+    //!     specific to the [`std::sync::Arc<str>`] carrier. A caller
+    //!     holding TWO cheap-cloned [`std::sync::Arc<str>`] handles to the
+    //!     same allocation ([`std::sync::Arc::ptr_eq`] holds before the
+    //!     call) can hand ONE handle to [`try_from`] without disturbing
+    //!     the OTHER: after the call the surviving handle still points to
+    //!     the same allocation with the same bytes. This distinguishes
+    //!     the shared-refcounted parse-side receiver from the compact-
+    //!     owned sibling [`TryFrom<Box<str>>`] (which cannot be
+    //!     constructed on a shared allocation without a byte copy) and
+    //!     from the owned sibling [`TryFrom<String>`] (whose caller
+    //!     cannot hold a second owning handle at all). Pins the
+    //!     shared-refcount discipline the impl exists to compose with.
+    //! 12. **Long-input error preservation pin** — a distinguishing
+    //!     long-and-unique input string flows through unchanged into
+    //!     [`ParseKindError::input`], so a caller who logs the parse
+    //!     error's [`Display`] or reads [`ParseKindError::input`] on a
+    //!     diagnostic seam sees the ENTIRE original input verbatim, not a
+    //!     truncated or transformed reflection.
+    //! 13. Fused-arm lockstep — for every consistent name the fused
+    //!     [`TryFrom<std::sync::Arc<str>>`] agrees with
+    //!     `SameStoreConsistencyKind::try_from(...)` mapped through
+    //!     [`ProofRelationKind::Consistent`]; for every impossibility
+    //!     name it agrees with
+    //!     `SameStoreImpossibilityKind::try_from(...)` mapped through
+    //!     [`ProofRelationKind::Impossible`].
+    //! 14. Generic composability at an
+    //!     `impl TryFrom<std::sync::Arc<str>, Error = ParseKindError>`
+    //!     seam — a `fn parse_kind<K>(...)` bounded ONLY on the standard
+    //!     trait projects the same value the direct [`Self::try_from`]
+    //!     projects.
+    //!
+    //! Genuinely new — before this pass the three kind enums could not
+    //! flow through any downstream API bounded on
+    //! `T: TryFrom<std::sync::Arc<str>>` without a per-callsite manual
+    //! `<K as TryFrom<&str>>::try_from(&*arc_str)` postfix that fragments
+    //! the receiver-family surface, and could not carry a
+    //! `#[serde(try_from = "std::sync::Arc<str>")]` container attribute
+    //! (the ecosystem-shape for a shared-refcounted-carrier deserializer
+    //! materializing the field as an [`std::sync::Arc<str>`] held under
+    //! shikumi's own [`arc_swap::ArcSwap`]-based [`crate::ConfigStore`]).
+    //!
+    //! Prior commits: `2ec42f9` ([`TryFrom<&str>`] — the borrowed
+    //! parse-side sibling every test compares against for pointwise
+    //! identity on the fast success path), `629f2ea` ([`TryFrom<String>`]
+    //! — the owned parse-side sibling), `86011af` ([`TryFrom<Cow<'_, str>>`]
+    //! — the borrowed-or-owned parse-side sibling), `245938f`
+    //! ([`TryFrom<Box<str>>`] — the compact-owned parse-side sibling),
+    //! `52c44f1` ([`From<Kind>`] for [`std::sync::Arc<str>`] — the
+    //! shared-refcounted forward projection round-trip test 6 uses; this
+    //! cell is the parse-side dual on the fifth leg of the string-side
+    //! receiver-set).
+
+    use super::*;
+    use std::sync::Arc;
+
+    // ---------- (1) Ok pointwise identity with FromStr
+
+    #[test]
+    fn try_from_arc_str_matches_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Arc::clone(&a)),
+                <SameStoreImpossibilityKind as std::str::FromStr>::from_str(&a),
+                "impossibility {k:?}: TryFrom<Arc<str>> must agree with \
+                 FromStr on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Arc::clone(&a)),
+                <SameStoreConsistencyKind as std::str::FromStr>::from_str(&a),
+                "consistency {k:?}: TryFrom<Arc<str>> must agree with \
+                 FromStr on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                <ProofRelationKind as std::str::FromStr>::from_str(&a),
+                "fused {k:?}: TryFrom<Arc<str>> must agree with FromStr \
+                 on the fast success path",
+            );
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with TryFrom<&str>
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Arc::clone(&a)),
+                SameStoreImpossibilityKind::try_from(&*a),
+                "impossibility {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<&str> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Arc::clone(&a)),
+                SameStoreConsistencyKind::try_from(&*a),
+                "consistency {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<&str> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                ProofRelationKind::try_from(&*a),
+                "fused {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<&str> on the fast success path",
+            );
+        }
+    }
+
+    // ---------- (3) Ok pointwise identity with TryFrom<String>
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_string_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let s: String = k.name().to_owned();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a),
+                SameStoreImpossibilityKind::try_from(s),
+                "impossibility {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<String> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_string_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let s: String = k.name().to_owned();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a),
+                SameStoreConsistencyKind::try_from(s),
+                "consistency {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<String> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_string_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let s: String = k.name().to_owned();
+            assert_eq!(
+                ProofRelationKind::try_from(a),
+                ProofRelationKind::try_from(s),
+                "fused {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<String> on the fast success path",
+            );
+        }
+    }
+
+    // ---------- (4) Ok pointwise identity with TryFrom<Cow<'_, str>>
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let cow: std::borrow::Cow<'_, str> = std::borrow::Cow::Owned(k.name().to_owned());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a),
+                SameStoreImpossibilityKind::try_from(cow),
+                "impossibility {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<Cow<'_, str>> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let cow: std::borrow::Cow<'_, str> = std::borrow::Cow::Owned(k.name().to_owned());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a),
+                SameStoreConsistencyKind::try_from(cow),
+                "consistency {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<Cow<'_, str>> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let cow: std::borrow::Cow<'_, str> = std::borrow::Cow::Owned(k.name().to_owned());
+            assert_eq!(
+                ProofRelationKind::try_from(a),
+                ProofRelationKind::try_from(cow),
+                "fused {k:?}: TryFrom<Arc<str>> must agree with \
+                 TryFrom<Cow<'_, str>> on the fast success path",
+            );
+        }
+    }
+
+    // ---------- (5) Ok pointwise identity with TryFrom<Box<str>>
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_box_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let b: Box<str> = Box::<str>::from(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a),
+                SameStoreImpossibilityKind::try_from(b),
+                "impossibility {k:?}: shared-refcounted TryFrom<Arc<str>> \
+                 must agree with compact-owned TryFrom<Box<str>> on every \
+                 accepted identifier",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_box_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let b: Box<str> = Box::<str>::from(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a),
+                SameStoreConsistencyKind::try_from(b),
+                "consistency {k:?}: shared-refcounted TryFrom<Arc<str>> \
+                 must agree with compact-owned TryFrom<Box<str>> on every \
+                 accepted identifier",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_matches_try_from_box_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let b: Box<str> = Box::<str>::from(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(a),
+                ProofRelationKind::try_from(b),
+                "fused {k:?}: shared-refcounted TryFrom<Arc<str>> must \
+                 agree with compact-owned TryFrom<Box<str>> on every \
+                 accepted identifier",
+            );
+        }
+    }
+
+    // ---------- (6) Round-trip through From<Kind> for Arc<str>
+
+    #[test]
+    fn try_from_arc_str_round_trips_through_into_arc_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = k.into();
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a),
+                Ok(k),
+                "impossibility {k:?}: TryFrom<Arc<str>>(<Arc<str>>::from(k)) \
+                 must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_round_trips_through_into_arc_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = k.into();
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a),
+                Ok(k),
+                "consistency {k:?}: TryFrom<Arc<str>>(<Arc<str>>::from(k)) \
+                 must round-trip",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_round_trips_through_into_arc_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = k.into();
+            assert_eq!(
+                ProofRelationKind::try_from(a),
+                Ok(k),
+                "fused {k:?}: TryFrom<Arc<str>>(<Arc<str>>::from(k)) must \
+                 round-trip",
+            );
+        }
+    }
+
+    // ---------- (7) Ok pointwise identity through TryInto::try_into
+
+    #[test]
+    fn try_into_arc_str_matches_direct_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let via_try_into: Result<SameStoreImpossibilityKind, ParseKindError> =
+                Arc::clone(&a).try_into();
+            assert_eq!(
+                via_try_into,
+                SameStoreImpossibilityKind::try_from(a),
+                "impossibility {k:?}: TryInto must agree with TryFrom",
+            );
+        }
+    }
+
+    #[test]
+    fn try_into_arc_str_matches_direct_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let via_try_into: Result<SameStoreConsistencyKind, ParseKindError> =
+                Arc::clone(&a).try_into();
+            assert_eq!(
+                via_try_into,
+                SameStoreConsistencyKind::try_from(a),
+                "consistency {k:?}: TryInto must agree with TryFrom",
+            );
+        }
+    }
+
+    #[test]
+    fn try_into_arc_str_matches_direct_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let via_try_into: Result<ProofRelationKind, ParseKindError> = Arc::clone(&a).try_into();
+            assert_eq!(
+                via_try_into,
+                ProofRelationKind::try_from(a),
+                "fused {k:?}: TryInto must agree with TryFrom",
+            );
+        }
+    }
+
+    // ---------- (8) Err pointwise identity with the four sibling parse-side
+    //                impls on unknown input
+
+    fn unknown_inputs() -> &'static [&'static str] {
+        &[
+            "",
+            "Regressed",
+            "REGRESSED",
+            "CrossStore",
+            "Progression",
+            "PROGRESSION",
+            "identity-republish",
+            "  stationary  ",
+            "unknown",
+        ]
+    }
+
+    #[test]
+    fn try_from_arc_str_err_matches_try_from_str_impossibility() {
+        for s in unknown_inputs() {
+            let a: Arc<str> = Arc::<str>::from(*s);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a),
+                SameStoreImpossibilityKind::try_from(*s),
+                "impossibility {s:?}: TryFrom<Arc<str>> Err must agree \
+                 with TryFrom<&str> Err",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_err_matches_try_from_str_consistency() {
+        for s in unknown_inputs() {
+            let a: Arc<str> = Arc::<str>::from(*s);
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a),
+                SameStoreConsistencyKind::try_from(*s),
+                "consistency {s:?}: TryFrom<Arc<str>> Err must agree \
+                 with TryFrom<&str> Err",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_err_matches_try_from_str_fused() {
+        for s in unknown_inputs() {
+            let a: Arc<str> = Arc::<str>::from(*s);
+            assert_eq!(
+                ProofRelationKind::try_from(a),
+                ProofRelationKind::try_from(*s),
+                "fused {s:?}: TryFrom<Arc<str>> Err must agree with \
+                 TryFrom<&str> Err",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_arc_str_err_matches_siblings_all_kinds() {
+        for s in unknown_inputs() {
+            let a: Arc<str> = Arc::<str>::from(*s);
+            let s_owned: String = (*s).to_owned();
+            let s_box: Box<str> = Box::<str>::from(*s);
+            let s_cow: std::borrow::Cow<'_, str> = std::borrow::Cow::Owned((*s).to_owned());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Arc::clone(&a)),
+                SameStoreImpossibilityKind::try_from(s_owned.clone()),
+                "impossibility {s:?}: Err must agree with TryFrom<String>",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Arc::clone(&a)),
+                SameStoreConsistencyKind::try_from(s_owned.clone()),
+                "consistency {s:?}: Err must agree with TryFrom<String>",
+            );
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                ProofRelationKind::try_from(s_owned),
+                "fused {s:?}: Err must agree with TryFrom<String>",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(Arc::clone(&a)),
+                SameStoreImpossibilityKind::try_from(s_box.clone()),
+                "impossibility {s:?}: Err must agree with TryFrom<Box<str>>",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(Arc::clone(&a)),
+                SameStoreConsistencyKind::try_from(s_box),
+                "consistency {s:?}: Err must agree with TryFrom<Box<str>>",
+            );
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                ProofRelationKind::try_from(s_cow),
+                "fused {s:?}: Err must agree with TryFrom<Cow<'_, str>>",
+            );
+        }
+    }
+
+    #[test]
+    fn cross_half_names_fail_on_wrong_half_side() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(c.name());
+            assert!(
+                SameStoreImpossibilityKind::try_from(a).is_err(),
+                "consistent name {c:?} must NOT parse as impossibility",
+            );
+        }
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(i.name());
+            assert!(
+                SameStoreConsistencyKind::try_from(a).is_err(),
+                "impossibility name {i:?} must NOT parse as consistency",
+            );
+        }
+    }
+
+    // ---------- (9) Err-body fidelity
+
+    #[test]
+    fn err_body_preserves_input_and_expected_impossibility() {
+        let bad: Arc<str> = Arc::<str>::from("not_a_kind");
+        let err = SameStoreImpossibilityKind::try_from(bad).unwrap_err();
+        assert_eq!(err.input(), "not_a_kind");
+        assert_eq!(err.expected(), SameStoreImpossibilityKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_preserves_input_and_expected_consistency() {
+        let bad: Arc<str> = Arc::<str>::from("not_a_kind");
+        let err = SameStoreConsistencyKind::try_from(bad).unwrap_err();
+        assert_eq!(err.input(), "not_a_kind");
+        assert_eq!(err.expected(), SameStoreConsistencyKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_preserves_input_and_expected_fused() {
+        let bad: Arc<str> = Arc::<str>::from("not_a_kind");
+        let err = ProofRelationKind::try_from(bad).unwrap_err();
+        assert_eq!(err.input(), "not_a_kind");
+        assert_eq!(err.expected(), ProofRelationKind::NAMES);
+    }
+
+    // ---------- (10) Input-consumption pin — same bytes verbatim
+
+    #[test]
+    fn err_input_bytes_verbatim_impossibility() {
+        let owned: Arc<str> = Arc::<str>::from("arbitrary-string-42");
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = SameStoreImpossibilityKind::try_from(owned).unwrap_err();
+        assert_eq!(
+            err.input().as_bytes(),
+            bytes_before.as_slice(),
+            "impossibility: err.input() must equal the shared input verbatim",
+        );
+    }
+
+    #[test]
+    fn err_input_bytes_verbatim_consistency() {
+        let owned: Arc<str> = Arc::<str>::from("arbitrary-string-42");
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = SameStoreConsistencyKind::try_from(owned).unwrap_err();
+        assert_eq!(
+            err.input().as_bytes(),
+            bytes_before.as_slice(),
+            "consistency: err.input() must equal the shared input verbatim",
+        );
+    }
+
+    #[test]
+    fn err_input_bytes_verbatim_fused() {
+        let owned: Arc<str> = Arc::<str>::from("arbitrary-string-42");
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = ProofRelationKind::try_from(owned).unwrap_err();
+        assert_eq!(
+            err.input().as_bytes(),
+            bytes_before.as_slice(),
+            "fused: err.input() must equal the shared input verbatim",
+        );
+    }
+
+    // ---------- (11) Cheap-clone-shared-survival pin — the load-bearing
+    //                 property specific to the Arc<str> carrier. Handing
+    //                 ONE clone to try_from must NOT disturb OTHER
+    //                 outstanding clones — the surviving handle still
+    //                 points to the same allocation with the same bytes.
+    //                 This is the shared-refcount discipline the impl
+    //                 exists to compose with, and distinguishes it from
+    //                 the sibling TryFrom<Box<str>> (compact-owned, cannot
+    //                 be constructed shared without a byte copy) and
+    //                 TryFrom<String> (owned, cannot hold a second owning
+    //                 handle at all).
+
+    #[test]
+    fn try_from_arc_str_leaves_shared_clones_intact_impossibility() {
+        let shared: Arc<str> = Arc::<str>::from("not_a_kind-shared-42");
+        let survivor: Arc<str> = Arc::clone(&shared);
+        let survivor_ptr = survivor.as_ptr();
+        assert!(
+            Arc::ptr_eq(&shared, &survivor),
+            "impossibility: precondition — two clones must point to the same allocation",
+        );
+        assert_eq!(
+            Arc::strong_count(&shared),
+            2,
+            "impossibility: precondition — strong_count == 2 before try_from"
+        );
+        // Consume one clone
+        let err = SameStoreImpossibilityKind::try_from(shared).unwrap_err();
+        // The surviving clone still points to the same allocation and carries the same bytes
+        assert_eq!(
+            survivor.as_ptr(),
+            survivor_ptr,
+            "impossibility: surviving Arc<str> handle's data pointer must not move",
+        );
+        assert_eq!(
+            &*survivor, "not_a_kind-shared-42",
+            "impossibility: surviving handle must still carry the shared bytes",
+        );
+        assert_eq!(
+            Arc::strong_count(&survivor),
+            1,
+            "impossibility: dropping the consumed clone must have decremented strong_count to 1",
+        );
+        assert_eq!(err.input(), "not_a_kind-shared-42");
+    }
+
+    #[test]
+    fn try_from_arc_str_leaves_shared_clones_intact_consistency() {
+        let shared: Arc<str> = Arc::<str>::from("not_a_kind-shared-42");
+        let survivor: Arc<str> = Arc::clone(&shared);
+        let survivor_ptr = survivor.as_ptr();
+        assert!(Arc::ptr_eq(&shared, &survivor));
+        assert_eq!(Arc::strong_count(&shared), 2);
+        let err = SameStoreConsistencyKind::try_from(shared).unwrap_err();
+        assert_eq!(survivor.as_ptr(), survivor_ptr);
+        assert_eq!(&*survivor, "not_a_kind-shared-42");
+        assert_eq!(Arc::strong_count(&survivor), 1);
+        assert_eq!(err.input(), "not_a_kind-shared-42");
+    }
+
+    #[test]
+    fn try_from_arc_str_leaves_shared_clones_intact_fused() {
+        let shared: Arc<str> = Arc::<str>::from("not_a_kind-shared-42");
+        let survivor: Arc<str> = Arc::clone(&shared);
+        let survivor_ptr = survivor.as_ptr();
+        assert!(Arc::ptr_eq(&shared, &survivor));
+        assert_eq!(Arc::strong_count(&shared), 2);
+        let err = ProofRelationKind::try_from(shared).unwrap_err();
+        assert_eq!(survivor.as_ptr(), survivor_ptr);
+        assert_eq!(&*survivor, "not_a_kind-shared-42");
+        assert_eq!(Arc::strong_count(&survivor), 1);
+        assert_eq!(err.input(), "not_a_kind-shared-42");
+    }
+
+    // ---------- (12) Long-input error preservation
+
+    #[test]
+    fn err_preserves_long_and_mixed_input_impossibility() {
+        let owned: Arc<str> = Arc::<str>::from(
+            "  ThisIsA_LONG_and_Mixed CASE input STRING that no \
+                     kind identifier will EVER match  ",
+        );
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = SameStoreImpossibilityKind::try_from(owned).unwrap_err();
+        assert_eq!(err.input().as_bytes(), bytes_before.as_slice());
+        assert!(err.to_string().contains(err.input()));
+    }
+
+    #[test]
+    fn err_preserves_long_and_mixed_input_consistency() {
+        let owned: Arc<str> = Arc::<str>::from(
+            "  ThisIsA_LONG_and_Mixed CASE input STRING that no \
+                     kind identifier will EVER match  ",
+        );
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = SameStoreConsistencyKind::try_from(owned).unwrap_err();
+        assert_eq!(err.input().as_bytes(), bytes_before.as_slice());
+        assert!(err.to_string().contains(err.input()));
+    }
+
+    #[test]
+    fn err_preserves_long_and_mixed_input_fused() {
+        let owned: Arc<str> = Arc::<str>::from(
+            "  ThisIsA_LONG_and_Mixed CASE input STRING that no \
+                     kind identifier will EVER match  ",
+        );
+        let bytes_before: Vec<u8> = owned.as_bytes().to_vec();
+        let err = ProofRelationKind::try_from(owned).unwrap_err();
+        assert_eq!(err.input().as_bytes(), bytes_before.as_slice());
+        assert!(err.to_string().contains(err.input()));
+    }
+
+    // ---------- (13) Fused-arm lockstep
+
+    #[test]
+    fn fused_agrees_with_routed_consistent_half() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(c.name());
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                Ok(ProofRelationKind::Consistent(c)),
+                "fused TryFrom<Arc<str>> on consistent name {c:?} must \
+                 route through ProofRelationKind::Consistent",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(a).map(ProofRelationKind::Consistent),
+                Ok(ProofRelationKind::Consistent(c)),
+            );
+        }
+    }
+
+    #[test]
+    fn fused_agrees_with_routed_impossibility_half() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(i.name());
+            assert_eq!(
+                ProofRelationKind::try_from(Arc::clone(&a)),
+                Ok(ProofRelationKind::Impossible(i)),
+                "fused TryFrom<Arc<str>> on impossibility name {i:?} must \
+                 route through ProofRelationKind::Impossible",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(a).map(ProofRelationKind::Impossible),
+                Ok(ProofRelationKind::Impossible(i)),
+            );
+        }
+    }
+
+    // ---------- (14) Generic composability at a bare TryFrom<Arc<str>> seam
+
+    fn parse_kind<K>(a: Arc<str>) -> Result<K, ParseKindError>
+    where
+        K: TryFrom<Arc<str>, Error = ParseKindError>,
+    {
+        K::try_from(a)
+    }
+
+    #[test]
+    fn generic_composability_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(parse_kind::<SameStoreImpossibilityKind>(a), Ok(k));
+        }
+    }
+
+    #[test]
+    fn generic_composability_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(parse_kind::<SameStoreConsistencyKind>(a), Ok(k));
+        }
+    }
+
+    #[test]
+    fn generic_composability_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(parse_kind::<ProofRelationKind>(a), Ok(k));
         }
     }
 }
