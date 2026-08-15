@@ -4561,6 +4561,95 @@ impl PartialEq<SameStoreImpossibilityKind> for &[u8] {
     }
 }
 
+/// The const-generic [`PartialEq<[u8; N]>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **const-length byte-array
+/// comparison-side dual** of the const-generic [`TryFrom<&[u8; N]>`]
+/// impl above (cell 46 in this file's trait grid) and the const-length
+/// sibling of the borrowed [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`]
+/// quadruple directly above (cell 25).
+///
+/// Rust's trait resolver does NOT unsize-coerce a `[u8; N]` value to
+/// `[u8]` for [`PartialEq`] dispatch — a `T: PartialEq<[u8; N]>` bound
+/// is NOT satisfied by `T: PartialEq<[u8]>` alone, because the receiver
+/// types are distinct. So a caller holding a per-length byte-array by
+/// value (a `type Tag = [u8; 9]` typed wire-tag field, a
+/// [`std::io::Read::read_exact`] pass filling a `[u8; N]` receive
+/// buffer, a codegen-emitted `static [u8; N]` registration table, a
+/// [`zerocopy`]-neighbouring seam yielding a `[u8; N]` payload) that
+/// previously wanted to write `kind == tag` for a `[u8; N]`-typed `tag`
+/// was stranded at a per-callsite `tag.as_slice()` postfix or a
+/// [`std::str::from_utf8`] parse detour. This impl closes the const-length
+/// cell of the byte-side comparison grid on the impossibility half by
+/// const-generic delegation to the sibling [`PartialEq<[u8]>`] impl above
+/// through [`<[u8; N]>::as_slice`] — one line, zero allocations — so the
+/// caller reaches the SAME classification through the standard trait
+/// alone.
+///
+/// **Match-body lockstep with the sibling comparison-side impls —
+/// enforced by delegation, not open-coding.** The body dispatches through
+/// the sibling [`PartialEq<[u8]>`] receiver, which in turn dispatches
+/// through [`Self::name`] then [`str::as_bytes`] — the ONE source of
+/// truth every prior byte-shape receiver already reads. Adding a
+/// hypothetical third impossibility corner updates the ONE `match` body
+/// in [`Self::name`] and this impl surfaces the new identifier through
+/// the delegating chain in lockstep with the rest of the byte-side
+/// comparison grid.
+impl<const N: usize> PartialEq<[u8; N]> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`[u8; N]`] impl — the reverse-direction sibling of the const-generic
+/// [`PartialEq<[u8; N]>`] impl directly above, welding the symmetric
+/// `*b"regressed" == kind` seam through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth.
+impl<const N: usize> PartialEq<SameStoreImpossibilityKind> for [u8; N] {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <[u8] as PartialEq<SameStoreImpossibilityKind>>::eq(self.as_slice(), other)
+    }
+}
+
+/// The const-generic [`PartialEq<&[u8; N]>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-string-literal
+/// comparison-side dual** of the const-generic [`TryFrom<&[u8; N]>`] impl
+/// above (cell 46), enabling the natural byte-literal comparison
+/// `kind == b"regressed"` (whose RHS is a `&'static [u8; N]`, not `&[u8]`)
+/// without a per-callsite dereference.
+///
+/// Before this cell, `kind == b"regressed"` failed to type-check against
+/// the sibling receivers alone: [`PartialEq<[u8]>`] requires
+/// `kind == *b"regressed"` (Rust does NOT auto-deref the RHS of `==` to
+/// satisfy the [`PartialEq<T>`] bound), and [`PartialEq<&[u8]>`] does
+/// NOT match a `&[u8; N]` RHS (Rust does NOT unsize-coerce `&[u8; N]` to
+/// `&[u8]` for [`PartialEq`] dispatch). This impl closes the
+/// byte-string-literal cell of the comparison-side grid on the
+/// impossibility half by const-generic delegation to the sibling
+/// [`PartialEq<[u8]>`] impl above through [`<[u8; N]>::as_slice`] — one
+/// line — so the natural call site composes out of the standard trait
+/// alone, matching the parse-side cell 46 [`TryFrom<&[u8; N]>`] shape at
+/// the byte-string-literal altitude.
+impl<const N: usize> PartialEq<&[u8; N]> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`&[u8; N]`] impl — the reverse-direction sibling of the const-generic
+/// [`PartialEq<&[u8; N]>`] impl directly above, welding the symmetric
+/// `b"regressed" == kind` seam through the same delegation. Both
+/// directions of both const-length byte-array shapes ([`[u8; N]`],
+/// [`&[u8; N]`]) cross-type comparisons now compose out of the same
+/// allocation-free receiver, matching the shape carried by the borrowed
+/// byte-slice PartialEq quadruple (cell 25) at this altitude.
+impl<const N: usize> PartialEq<SameStoreImpossibilityKind> for &[u8; N] {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <[u8] as PartialEq<SameStoreImpossibilityKind>>::eq(self.as_slice(), other)
+    }
+}
+
 /// The [`PartialEq<Vec<u8>>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **byte-side owned-carrier sibling** of the string-side
 /// [`PartialEq<String>`] impl at this altitude and the owned-carrier
@@ -6676,6 +6765,66 @@ impl PartialEq<SameStoreConsistencyKind> for &[u8] {
     }
 }
 
+/// The const-generic [`PartialEq<[u8; N]>`] impl on
+/// [`SameStoreConsistencyKind`] — the **const-length byte-array
+/// comparison-side dual** of the const-generic [`TryFrom<&[u8; N]>`] cell
+/// (cell 46) at this altitude and the const-length sibling of the borrowed
+/// [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] quadruple directly above.
+/// Rust's trait resolver does NOT unsize-coerce `[u8; N]` to `[u8]` for
+/// [`PartialEq`] dispatch — so a caller holding a `[u8; N]`-by-value
+/// receiver (a wire-tag field, a `read_exact` buffer, a
+/// [`static [u8; N]`] registration table) previously stranded at a
+/// per-callsite `.as_slice()` postfix or a [`std::str::from_utf8`] parse
+/// detour. Delegates through the sibling [`PartialEq<[u8]>`] receiver
+/// above via [`<[u8; N]>::as_slice`] — one line — so the closed-variant
+/// set (adding a hypothetical fourth consistency corner updates the ONE
+/// `match` body in [`Self::name`]) surfaces through this impl in lockstep.
+/// Mirror of the impossibility-half receiver at this altitude.
+impl<const N: usize> PartialEq<[u8; N]> for SameStoreConsistencyKind {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for [`[u8; N]`]
+/// impl — the reverse-direction sibling of the const-generic
+/// [`PartialEq<[u8; N]>`] impl directly above, welding the symmetric
+/// `*b"stationary" == kind` seam through the same delegation. Mirror of
+/// the impossibility-half receiver at this altitude.
+impl<const N: usize> PartialEq<SameStoreConsistencyKind> for [u8; N] {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <[u8] as PartialEq<SameStoreConsistencyKind>>::eq(self.as_slice(), other)
+    }
+}
+
+/// The const-generic [`PartialEq<&[u8; N]>`] impl on
+/// [`SameStoreConsistencyKind`] — the **byte-string-literal comparison-side
+/// dual** of the const-generic [`TryFrom<&[u8; N]>`] cell (cell 46),
+/// enabling the natural `kind == b"stationary"` (RHS is `&'static [u8; N]`,
+/// not `&[u8]`) without a per-callsite dereference. Before this cell, the
+/// natural byte-literal compare failed to type-check against
+/// [`PartialEq<[u8]>`] (requires `*b"..."`) or [`PartialEq<&[u8]>`] alone
+/// (Rust does NOT unsize-coerce `&[u8; N]` to `&[u8]` for [`PartialEq`]
+/// dispatch). Delegates through the sibling [`PartialEq<[u8]>`] receiver
+/// via [`<[u8; N]>::as_slice`] — one line. Mirror of the impossibility-half
+/// receiver at this altitude.
+impl<const N: usize> PartialEq<&[u8; N]> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for [`&[u8; N]`]
+/// impl — the reverse-direction sibling of the const-generic
+/// [`PartialEq<&[u8; N]>`] impl directly above, welding the symmetric
+/// `b"stationary" == kind` seam through the same delegation. Mirror of
+/// the impossibility-half receiver at this altitude.
+impl<const N: usize> PartialEq<SameStoreConsistencyKind> for &[u8; N] {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <[u8] as PartialEq<SameStoreConsistencyKind>>::eq(self.as_slice(), other)
+    }
+}
+
 /// The [`PartialEq<Vec<u8>>`] impl on [`SameStoreConsistencyKind`] — the
 /// **byte-side owned-carrier sibling** of the string-side
 /// [`PartialEq<String>`] impl at this altitude, mirror of the
@@ -8639,6 +8788,70 @@ impl PartialEq<&[u8]> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &[u8] {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         *self == other.name().as_bytes()
+    }
+}
+
+/// The const-generic [`PartialEq<[u8; N]>`] impl on the fused
+/// [`ProofRelationKind`] — the **const-length byte-array comparison-side
+/// dual** of the const-generic [`TryFrom<&[u8; N]>`] cell (cell 46) at
+/// the fused altitude and the const-length sibling of the borrowed
+/// [`PartialEq<[u8]>`] + [`PartialEq<&[u8]>`] quadruple directly above.
+/// Delegates through the sibling [`PartialEq<[u8]>`] receiver via
+/// [`<[u8; N]>::as_slice`] — one line — so the fused byte-side const-length
+/// compare stays lockstep-identical with the routed half-side const-length
+/// byte compare under every future variant addition to either half-side
+/// enum by construction: `fused == byte_array_by_value` iff
+/// `routed_half == byte_array_by_value` through the two-arm partition.
+/// Mirror of the two half-side receivers at this altitude.
+impl<const N: usize> PartialEq<[u8; N]> for ProofRelationKind {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`[u8; N]`] impl —
+/// the reverse-direction sibling of the const-generic
+/// [`PartialEq<[u8; N]>`] impl directly above at the fused altitude,
+/// welding the symmetric `*b"cross_store" == kind` seam through the same
+/// delegation. Mirror of the two half-side receivers at this altitude.
+impl<const N: usize> PartialEq<ProofRelationKind> for [u8; N] {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <[u8] as PartialEq<ProofRelationKind>>::eq(self.as_slice(), other)
+    }
+}
+
+/// The const-generic [`PartialEq<&[u8; N]>`] impl on the fused
+/// [`ProofRelationKind`] — the **byte-string-literal comparison-side dual**
+/// of the const-generic [`TryFrom<&[u8; N]>`] cell (cell 46) at the fused
+/// altitude, enabling the natural `kind == b"cross_store"` (RHS is
+/// `&'static [u8; N]`, not `&[u8]`) without a per-callsite dereference.
+/// Before this cell, the natural byte-literal compare failed to type-check
+/// against [`PartialEq<[u8]>`] (requires `*b"..."`) or [`PartialEq<&[u8]>`]
+/// alone (Rust does NOT unsize-coerce `&[u8; N]` to `&[u8]` for
+/// [`PartialEq`] dispatch). Delegates through the sibling
+/// [`PartialEq<[u8]>`] receiver via [`<[u8; N]>::as_slice`] — one line —
+/// so the fused byte-string-literal compare stays lockstep-identical with
+/// the routed half-side byte compare under every future variant addition
+/// to either half-side enum by construction. Mirror of the two half-side
+/// receivers at this altitude.
+impl<const N: usize> PartialEq<&[u8; N]> for ProofRelationKind {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        <Self as PartialEq<[u8]>>::eq(self, other.as_slice())
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`&[u8; N]`] impl —
+/// the reverse-direction sibling of the const-generic
+/// [`PartialEq<&[u8; N]>`] impl directly above at the fused altitude,
+/// welding the symmetric `b"cross_store" == kind` seam through the same
+/// delegation. Both directions of both const-length byte-array shapes
+/// ([`[u8; N]`], [`&[u8; N]`]) cross-type comparisons now compose out of
+/// the same allocation-free receiver at the fused altitude, matching the
+/// shape carried by the borrowed byte-slice PartialEq quadruple (cell 25)
+/// at this altitude. Mirror of the two half-side receivers.
+impl<const N: usize> PartialEq<ProofRelationKind> for &[u8; N] {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <[u8] as PartialEq<ProofRelationKind>>::eq(self.as_slice(), other)
     }
 }
 
@@ -49654,5 +49867,398 @@ mod try_from_byte_array_tests {
                 SameStoreConsistencyKind::Stationary,
             )),
         );
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_byte_array_tests {
+    //! [`PartialEq<[u8; N]>`] + [`PartialEq<&[u8; N]>`] const-generic
+    //! quadruple on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **byte-string-literal comparison-side cell** that closes the two
+    //! ergonomic gaps Rust's trait dispatch leaves open between a
+    //! byte-string literal (`b"regressed"`, type `&[u8; 9]`) and the
+    //! borrowed byte-slice [`PartialEq`] quadruple (cell 25):
+    //!
+    //! - [`PartialEq<[u8]>`] alone requires `kind == *b"regressed"` (Rust
+    //!   does NOT auto-deref the RHS of `==` to satisfy the
+    //!   [`PartialEq<T>`] bound), and cannot serve `kind == arr` for a
+    //!   `[u8; N]`-by-value `arr` because `[u8; N]` does NOT unsize to
+    //!   `[u8]` for [`PartialEq`] dispatch.
+    //! - [`PartialEq<&[u8]>`] alone cannot serve `kind == b"regressed"`
+    //!   because `&[u8; N]` does NOT unsize to `&[u8]` for [`PartialEq`]
+    //!   dispatch either.
+    //!
+    //! This cell closes both gaps by const-generic delegation to the
+    //! sibling [`PartialEq<[u8]>`] impl through [`<[u8; N]>::as_slice`]
+    //! — the accepted-set is pinned by the sibling delegation, never
+    //! open-coded.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Natural call sites `kind == b"..."` and `b"..." == kind`
+    //!    compile without any postfix, for every accepted variant of
+    //!    every kind enum, in both directions.
+    //! 2. Dereferenced call sites `kind == *b"..."` and `*b"..." == kind`
+    //!    (the [`[u8; N]`]-by-value shape) also compile without any
+    //!    postfix, in both directions.
+    //! 3. Unknown byte-string literals compare unequal — the accepted-set
+    //!    is pinned by the sibling delegation, not re-listed here.
+    //! 4. Wrong-length rejection: `kind == b"regressed_"` (a byte-literal
+    //!    one byte too long) is false, because the sibling
+    //!    [`PartialEq<[u8]>`] receiver dispatches on byte-slice equality
+    //!    which starts with a length check.
+    //! 5. Sibling agreement with [`PartialEq<[u8]>`] and
+    //!    [`PartialEq<&[u8]>`] on a probe grid: for every probe, the four
+    //!    parts of the const-generic quadruple land on the same bool as
+    //!    the borrowed byte-slice quadruple.
+    //! 6. Fused-arm lockstep: the fused [`ProofRelationKind`] compares
+    //!    equal to a byte-string literal iff the routed half-side compares
+    //!    equal to the same literal — the fused const-generic receiver
+    //!    stays lockstep-identical with the routed half-side receiver
+    //!    under the two-arm partition.
+    //! 7. THE LOAD-BEARING SEAMS — two generic seams
+    //!    `fn kind_eq_arr<K, const N: usize>(k: &K, arr: [u8; N]) -> bool
+    //!     where K: PartialEq<[u8; N]>` and
+    //!    `fn kind_eq_ref_arr<K, const N: usize>(k: &K, arr: &[u8; N])
+    //!     -> bool where K: PartialEq<&[u8; N]>`
+    //!    that the sibling [`PartialEq<[u8]>`] / [`PartialEq<&[u8]>`]
+    //!    receivers ALONE cannot satisfy (Rust does not chain
+    //!    [`PartialEq`] impls through unsize-coercion) — the load-bearing
+    //!    pin. If either seam fails to compile, the const-generic cell
+    //!    is not doing its load-bearing job.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Natural byte-literal call sites, both directions ----------
+
+    #[test]
+    fn natural_call_sites_impossibility_both_directions() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        assert!(r == b"regressed");
+        assert!(b"regressed" == &r);
+        let c = SameStoreImpossibilityKind::CrossStore;
+        assert!(c == b"cross_store");
+        assert!(b"cross_store" == &c);
+    }
+
+    #[test]
+    fn natural_call_sites_consistency_both_directions() {
+        let s = SameStoreConsistencyKind::Stationary;
+        assert!(s == b"stationary");
+        assert!(b"stationary" == &s);
+        let i = SameStoreConsistencyKind::IdentityRepublish;
+        assert!(i == b"identity_republish");
+        assert!(b"identity_republish" == &i);
+        let p = SameStoreConsistencyKind::Progression;
+        assert!(p == b"progression");
+        assert!(b"progression" == &p);
+    }
+
+    #[test]
+    fn natural_call_sites_fused_both_directions() {
+        let r = ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed);
+        assert!(r == b"regressed");
+        assert!(b"regressed" == &r);
+        let s = ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary);
+        assert!(s == b"stationary");
+        assert!(b"stationary" == &s);
+    }
+
+    // ---------- (2) Dereferenced byte-literal call sites (the [u8; N] shape) ----------
+
+    #[test]
+    fn deref_call_sites_impossibility_both_directions() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        assert!(r == *b"regressed");
+        assert!(*b"regressed" == r);
+    }
+
+    #[test]
+    fn deref_call_sites_consistency_both_directions() {
+        let p = SameStoreConsistencyKind::Progression;
+        assert!(p == *b"progression");
+        assert!(*b"progression" == p);
+    }
+
+    #[test]
+    fn deref_call_sites_fused_both_directions() {
+        let s = ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary);
+        assert!(s == *b"stationary");
+        assert!(*b"stationary" == s);
+    }
+
+    // ---------- (3) Unknown byte-string literals compare unequal ----------
+
+    #[test]
+    fn unknown_byte_literal_impossibility() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        assert!(r != b"unknown");
+        assert!(b"unknown" != &r);
+        assert!(r != *b"UNKNOWN");
+        assert!(*b"UNKNOWN" != r);
+    }
+
+    #[test]
+    fn unknown_byte_literal_consistency() {
+        let s = SameStoreConsistencyKind::Stationary;
+        assert!(s != b"unknown");
+        assert!(b"unknown" != &s);
+    }
+
+    #[test]
+    fn unknown_byte_literal_fused() {
+        let r = ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed);
+        assert!(r != b"unknown");
+        assert!(b"unknown" != &r);
+    }
+
+    // ---------- (4) Wrong-length rejection ----------
+
+    #[test]
+    fn wrong_length_rejected_impossibility() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        // one byte too long — same nine-byte prefix, sibling PartialEq<[u8]>
+        // dispatches on byte-slice equality which checks length first.
+        assert!(r != b"regressed_");
+        assert!(b"regressed_" != &r);
+        // one byte too short
+        assert!(r != b"regresse");
+        assert!(b"regresse" != &r);
+        // empty
+        assert!(r != b"");
+        assert!(b"" != &r);
+    }
+
+    #[test]
+    fn wrong_length_rejected_consistency() {
+        let s = SameStoreConsistencyKind::Stationary;
+        assert!(s != b"stationary_");
+        assert!(s != b"stationar");
+        assert!(s != b"");
+    }
+
+    #[test]
+    fn wrong_length_rejected_fused() {
+        let s = ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary);
+        assert!(s != b"stationary_");
+        assert!(s != b"");
+    }
+
+    // ---------- (5) Sibling agreement with PartialEq<[u8]> / PartialEq<&[u8]> ----------
+    //
+    // For every accepted variant AND every probe, the const-generic quadruple
+    // lands on the same bool as the borrowed byte-slice quadruple — the
+    // accepted-set is pinned by the sibling delegation, not open-coded here.
+
+    #[test]
+    fn sibling_agreement_impossibility_regressed() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        // The natural byte-literal probe grid: for each probe, four const-generic
+        // calls (kind == arr, kind == &arr, arr == kind, &arr == kind) must all
+        // agree with the sibling borrowed-slice call kind == arr[..].
+        macro_rules! agree {
+            ($lit:literal, $expected:expr) => {{
+                let arr = *$lit;
+                let arr_ref: &[u8; _] = $lit;
+                let slice: &[u8] = &arr[..];
+                assert_eq!(r == arr, $expected, "kind == [u8; N] on {:?}", $lit);
+                assert_eq!(r == arr_ref, $expected, "kind == &[u8; N] on {:?}", $lit);
+                assert_eq!(arr == r, $expected, "[u8; N] == kind on {:?}", $lit);
+                assert_eq!(arr_ref == &r, $expected, "&[u8; N] == kind on {:?}", $lit);
+                // sibling agreement with the borrowed byte-slice quadruple
+                assert_eq!(r == *slice, $expected, "kind == [u8] on {:?}", $lit);
+                assert_eq!(r == slice, $expected, "kind == &[u8] on {:?}", $lit);
+            }};
+        }
+        agree!(b"regressed", true);
+        agree!(b"cross_store", false);
+        agree!(b"unknown", false);
+        agree!(b"REGRESSED", false);
+        agree!(b"regressed_", false);
+        agree!(b"", false);
+    }
+
+    #[test]
+    fn sibling_agreement_consistency_stationary() {
+        let s = SameStoreConsistencyKind::Stationary;
+        macro_rules! agree {
+            ($lit:literal, $expected:expr) => {{
+                let arr = *$lit;
+                let arr_ref: &[u8; _] = $lit;
+                let slice: &[u8] = &arr[..];
+                assert_eq!(s == arr, $expected);
+                assert_eq!(s == arr_ref, $expected);
+                assert_eq!(arr == s, $expected);
+                assert_eq!(arr_ref == &s, $expected);
+                assert_eq!(s == *slice, $expected);
+                assert_eq!(s == slice, $expected);
+            }};
+        }
+        agree!(b"stationary", true);
+        agree!(b"progression", false);
+        agree!(b"identity_republish", false);
+        agree!(b"unknown", false);
+    }
+
+    #[test]
+    fn sibling_agreement_fused_regressed() {
+        let f = ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed);
+        macro_rules! agree {
+            ($lit:literal, $expected:expr) => {{
+                let arr = *$lit;
+                let arr_ref: &[u8; _] = $lit;
+                let slice: &[u8] = &arr[..];
+                assert_eq!(f == arr, $expected);
+                assert_eq!(f == arr_ref, $expected);
+                assert_eq!(arr == f, $expected);
+                assert_eq!(arr_ref == &f, $expected);
+                assert_eq!(f == *slice, $expected);
+                assert_eq!(f == slice, $expected);
+            }};
+        }
+        agree!(b"regressed", true);
+        agree!(b"stationary", false);
+        agree!(b"unknown", false);
+    }
+
+    // ---------- (6) Fused-arm lockstep ----------
+    //
+    // The fused ProofRelationKind compares equal to a byte-string literal iff
+    // the routed half-side compares equal to the same literal — under the
+    // two-arm partition, the fused receiver stays lockstep-identical with the
+    // routed half-side receiver for both const-generic shapes.
+
+    #[test]
+    fn fused_agrees_with_routed_impossibility_half() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let f = ProofRelationKind::Impossible(i);
+            match i.name() {
+                "regressed" => {
+                    assert_eq!(f == b"regressed", i == b"regressed");
+                    assert_eq!(f == *b"regressed", i == *b"regressed");
+                    assert_eq!(b"regressed" == &f, b"regressed" == &i);
+                }
+                "cross_store" => {
+                    assert_eq!(f == b"cross_store", i == b"cross_store");
+                    assert_eq!(f == *b"cross_store", i == *b"cross_store");
+                    assert_eq!(b"cross_store" == &f, b"cross_store" == &i);
+                }
+                other => panic!("unexpected impossibility variant name: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn fused_agrees_with_routed_consistent_half() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let f = ProofRelationKind::Consistent(c);
+            match c.name() {
+                "stationary" => {
+                    assert_eq!(f == b"stationary", c == b"stationary");
+                    assert_eq!(f == *b"stationary", c == *b"stationary");
+                    assert_eq!(b"stationary" == &f, b"stationary" == &c);
+                }
+                "identity_republish" => {
+                    assert_eq!(f == b"identity_republish", c == b"identity_republish",);
+                    assert_eq!(f == *b"identity_republish", c == *b"identity_republish",);
+                }
+                "progression" => {
+                    assert_eq!(f == b"progression", c == b"progression");
+                    assert_eq!(f == *b"progression", c == *b"progression");
+                }
+                other => panic!("unexpected consistency variant name: {other:?}"),
+            }
+        }
+    }
+
+    // ---------- (7) THE LOAD-BEARING SEAMS ----------
+    //
+    // Two `PartialEq<[u8; N]>` / `PartialEq<&[u8; N]>` bounded seams that
+    // the sibling `PartialEq<[u8]>` / `PartialEq<&[u8]>` receivers ALONE
+    // cannot satisfy. Rust does not chain `PartialEq` impls through
+    // unsize-coercion, so a caller carrying a const-length byte-array
+    // (or a reference to one) through a `PartialEq<[u8; N]>` bound would
+    // previously have to insert a per-callsite `.as_slice()` postfix.
+
+    fn kind_eq_arr<K, const N: usize>(k: &K, arr: [u8; N]) -> bool
+    where
+        K: PartialEq<[u8; N]>,
+    {
+        *k == arr
+    }
+
+    fn kind_eq_ref_arr<K, const N: usize>(k: &K, arr: &[u8; N]) -> bool
+    where
+        K: for<'a> PartialEq<&'a [u8; N]>,
+    {
+        *k == arr
+    }
+
+    #[test]
+    fn load_bearing_seam_by_value_impossibility() {
+        let r = SameStoreImpossibilityKind::Regressed;
+        assert!(kind_eq_arr(&r, *b"regressed"));
+        assert!(!kind_eq_arr(&r, *b"cross_store"));
+        assert!(!kind_eq_arr(&r, *b"unknown"));
+    }
+
+    #[test]
+    fn load_bearing_seam_by_value_consistency() {
+        let p = SameStoreConsistencyKind::Progression;
+        assert!(kind_eq_arr(&p, *b"progression"));
+        assert!(!kind_eq_arr(&p, *b"stationary"));
+    }
+
+    #[test]
+    fn load_bearing_seam_by_value_fused() {
+        let f = ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary);
+        assert!(kind_eq_arr(&f, *b"stationary"));
+        assert!(!kind_eq_arr(&f, *b"regressed"));
+    }
+
+    #[test]
+    fn load_bearing_seam_by_ref_impossibility() {
+        let c = SameStoreImpossibilityKind::CrossStore;
+        assert!(kind_eq_ref_arr(&c, b"cross_store"));
+        assert!(!kind_eq_ref_arr(&c, b"regressed"));
+    }
+
+    #[test]
+    fn load_bearing_seam_by_ref_consistency() {
+        let i = SameStoreConsistencyKind::IdentityRepublish;
+        assert!(kind_eq_ref_arr(&i, b"identity_republish"));
+        assert!(!kind_eq_ref_arr(&i, b"stationary"));
+    }
+
+    #[test]
+    fn load_bearing_seam_by_ref_fused() {
+        let f = ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed);
+        assert!(kind_eq_ref_arr(&f, b"regressed"));
+        assert!(!kind_eq_ref_arr(&f, b"stationary"));
+    }
+
+    // ---------- Round-trip through the parse-side cell 46 sibling ----------
+    //
+    // Every accepted variant round-trips through both cells (parse-side
+    // cell 46 `TryFrom<&[u8; N]>` and compare-side cell 47 this module
+    // exercises), and the two receivers agree on the accepted-set.
+
+    #[test]
+    fn round_trip_with_parse_side_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            match k.name() {
+                "regressed" => {
+                    let parsed = SameStoreImpossibilityKind::try_from(b"regressed").unwrap();
+                    assert_eq!(parsed, k);
+                    assert!(parsed == b"regressed");
+                }
+                "cross_store" => {
+                    let parsed = SameStoreImpossibilityKind::try_from(b"cross_store").unwrap();
+                    assert_eq!(parsed, k);
+                    assert!(parsed == b"cross_store");
+                }
+                other => panic!("unexpected impossibility variant name: {other:?}"),
+            }
+        }
     }
 }
