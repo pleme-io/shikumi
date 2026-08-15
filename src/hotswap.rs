@@ -5343,6 +5343,66 @@ impl PartialEq<SameStoreImpossibilityKind> for Box<[u8]> {
     }
 }
 
+/// The [`PartialEq<&Box<[u8]>>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **byte-side reference-to-compact-owned-carrier compare-side
+/// sibling** of the by-value [`PartialEq<Box<[u8]>>`] impl directly above,
+/// and the byte-side dual of the string-side [`PartialEq<&Box<str>>`]
+/// impl (cell 55, `0582b5f`) already welded onto this enum, enabling the
+/// natural iterator shape `slice_of_box_bytes.iter().any(|b: &Box<[u8]>|
+/// kind == b)` (whose closure argument is a `&Box<[u8]>`, not a
+/// `Box<[u8]>`) without a per-callsite `**b` dereference.
+///
+/// Before this cell, `kind == &box_bytes` failed to type-check against
+/// the sibling receivers alone: Rust does NOT auto-deref the RHS of `==`
+/// to satisfy a [`PartialEq<T>`] bound, and Rust's standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &Box<[u8]>`, NOT
+/// the `Kind == &Box<[u8]>` direction a natural iterator combinator
+/// produces. Every downstream slot with a compact-byte view produced by
+/// borrow-yielding traversal — a `Vec<Box<[u8]>>::iter()` inside a
+/// `serde_bytes` visitor that materializes the identifier as a
+/// [`Box<[u8]>`], a `HashMap<K, Box<[u8]>>::values` iterator, a
+/// `Vec<u8>::into_boxed_slice` conversion feed threaded into an iterator
+/// adapter, a `zerocopy`-neighbouring byte-registry whose values arrive
+/// as [`Box<[u8]>`], any generic slot bounded on `T: PartialEq<&Box<[u8]>>`
+/// — was previously stranded at either a per-callsite `**b` deref (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or an `.as_ref()` postfix that fragments the
+/// receiver-family surface. This impl closes the reference-to-compact-
+/// owned-byte cell by delegation to the sibling [`PartialEq<Box<[u8]>>`]
+/// impl through a single pointer deref — one line, zero allocations — so
+/// the caller reaches the SAME classification through the standard trait
+/// alone. Mirrors the byte-side reference-to-owned-byte-vector cell
+/// closed for [`&Vec<u8>`](std::vec::Vec) at cell 51 (`b48279d`) and the
+/// string-side reference-to-compact-owned cell closed for
+/// [`&Box<str>`](std::boxed::Box) at cell 55 (`0582b5f`), extending the
+/// reference-to-carrier compare-side grid to the byte-side compact-owned
+/// carrier. The accepted-set flows through the sibling delegation;
+/// adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in [`Self::name`] and this impl surfaces the new
+/// identifier through the delegating chain in lockstep with the rest of
+/// the byte-side comparison grid.
+impl PartialEq<&Box<[u8]>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&Box<[u8]>) -> bool {
+        <Self as PartialEq<Box<[u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`&Box<[u8]>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&Box<[u8]>>`] impl directly above, welding the symmetric
+/// `&compact_owned_bytes == kind` seam through the same
+/// [`Self::name`]-then-[`str::as_bytes`] source of truth via delegation
+/// to the sibling [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`Box<[u8]>`] impl. Both directions of the reference-to-compact-owned-
+/// byte cross-type comparison now compose out of the same
+/// allocation-free receiver by construction.
+impl PartialEq<SameStoreImpossibilityKind> for &Box<[u8]> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <Box<[u8]> as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::sync::Arc<[u8]>>`] impl on
 /// [`SameStoreImpossibilityKind`] — the **byte-side
 /// shared-refcounted-carrier sibling** of the string-side
@@ -7681,6 +7741,30 @@ impl PartialEq<SameStoreConsistencyKind> for Box<[u8]> {
     }
 }
 
+/// The [`PartialEq<&Box<[u8]>>`] impl on [`SameStoreConsistencyKind`] —
+/// the mirror on the consistent half of the classification lattice of
+/// the [`PartialEq<&Box<[u8]>>`] impl on [`SameStoreImpossibilityKind`],
+/// closing the byte-side reference-to-compact-owned-carrier cell on the
+/// compare side of the consistent-half kind through delegation to the
+/// sibling [`PartialEq<Box<[u8]>>`] impl. See the impossibility-half impl
+/// for the full lift rationale.
+impl PartialEq<&Box<[u8]>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&Box<[u8]>) -> bool {
+        <Self as PartialEq<Box<[u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`&Box<[u8]>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&Box<[u8]>>`] impl directly above, mirroring the
+/// impossibility-half receiver through delegation to the sibling
+/// [`PartialEq<SameStoreConsistencyKind>`] for [`Box<[u8]>`] impl.
+impl PartialEq<SameStoreConsistencyKind> for &Box<[u8]> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <Box<[u8]> as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::sync::Arc<[u8]>>`] impl on
 /// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
 /// impossibility-half [`PartialEq<Arc<[u8]>>`] impl. See that impl for
@@ -10007,6 +10091,41 @@ impl PartialEq<Box<[u8]>> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for Box<[u8]> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<&Box<[u8]>>`] impl on [`ProofRelationKind`] — the
+/// fused-arm sibling of the two half-side [`PartialEq<&Box<[u8]>>`] impls
+/// on [`SameStoreConsistencyKind`] and [`SameStoreImpossibilityKind`],
+/// closing the byte-side reference-to-compact-owned-carrier cell on the
+/// compare side of the fused sum through delegation to the sibling
+/// [`PartialEq<Box<[u8]>>`] impl at the fused altitude, which in turn
+/// delegates through the fused [`Self::name`] (which in turn delegates
+/// through the two half-side [`Self::name`] receivers). The fused
+/// [`PartialEq<&Box<[u8]>>`] impl and the two half-side
+/// [`PartialEq<&Box<[u8]>>`] impls stay lockstep-identical under every
+/// future variant addition to either half-side enum by construction:
+/// adding a hypothetical variant to either half-side enum updates the
+/// corresponding half-side [`Self::name`] match body and the new
+/// identifier surfaces through the fused [`Self::name`] pass-through,
+/// the ONE fused [`Self::name`] `match` body, and BOTH
+/// [`PartialEq<&Box<[u8]>>`] impls (and every prior [`Self::name`]-
+/// projected receiver) in lockstep with the enum itself. See the
+/// impossibility-half impl for the full lift rationale.
+impl PartialEq<&Box<[u8]>> for ProofRelationKind {
+    fn eq(&self, other: &&Box<[u8]>) -> bool {
+        <Self as PartialEq<Box<[u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for [`&Box<[u8]>`]
+/// impl — the reverse-direction sibling of the [`PartialEq<&Box<[u8]>>`]
+/// impl directly above at the fused altitude, welding the symmetric
+/// `&compact_owned_bytes == kind` seam through delegation to the sibling
+/// [`PartialEq<ProofRelationKind>`] for [`Box<[u8]>`] impl.
+impl PartialEq<ProofRelationKind> for &Box<[u8]> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <Box<[u8]> as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -54978,5 +55097,330 @@ mod try_from_ref_box_str_tests {
         assert_eq!(addr_before, addr_after);
         assert_eq!(b.as_ref(), "unknown_probe");
         assert_eq!(err.input, "unknown_probe");
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_box_bytes_tests {
+    //! [`PartialEq<&Box<[u8]>>`] and [`PartialEq<Kind> for &Box<[u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side reference-to-compact-owned-
+    //! carrier compare-side sibling** of the by-value
+    //! [`PartialEq<Box<[u8]>>`] pair lifted by
+    //! [`super::partial_eq_box_bytes_tests`] (cell 33) and the byte-side
+    //! mirror of the string-side [`PartialEq<&Box<str>>`] pair lifted by
+    //! [`super::partial_eq_ref_box_str_tests`] (cell 55), closing the
+    //! ergonomic gap Rust's `==` trait dispatch leaves between a
+    //! `Box<[u8]>` value and a `&Box<[u8]>` reference on the byte-side
+    //! compare-side of the three kind enums.
+    //!
+    //! Rust does NOT auto-deref the RHS of `==` to satisfy a
+    //! [`PartialEq<T>`] bound, and the standard blanket
+    //! `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &Box<[u8]>`, NOT the `Kind == &Box<[u8]>` direction a
+    //! natural iterator combinator produces
+    //! (`vec_of_box_bytes.iter().any(|b: &Box<[u8]>| kind == b)`, whose
+    //! closure argument is `&Box<[u8]>`, not `Box<[u8]>`). This module
+    //! pins that both directions of the reference-to-compact-owned-byte
+    //! pair compose at the type-checker for every variant of every kind
+    //! enum, allocation-free.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Pointwise identity on both cells (`kind == &box_bytes`,
+    //!    `&box_bytes == kind`) for every variant of every kind enum.
+    //! 2. Sibling agreement with the by-value [`PartialEq<Box<[u8]>>`]
+    //!    pair — for every variant and every probe byte-vector, both
+    //!    directions of the reference-to-box-bytes pair agree with the
+    //!    by-value pair.
+    //! 3. Inequality on unknown compact-owned byte slices.
+    //! 4. Cross-variant inequality — for every pair `(a, b)` of distinct
+    //!    variants, `a != &b.name().as_bytes().to_vec().into_boxed_slice()`.
+    //! 5. Fused-arm lockstep — a fused kind constructed from either
+    //!    half-side variant equals the reference-to-box-bytes half-side
+    //!    name through both directions.
+    //! 6. Iterator-shape composability — `slice.iter().any(|b| kind == b)`
+    //!    on a `[Box<[u8]>]` compiles and returns the correct answer, the
+    //!    load-bearing seam this cell exists to close.
+    //! 7. Generic composability at a `for<'a> PartialEq<&'a Box<[u8]>>`-
+    //!    bounded seam neither the sibling [`PartialEq<Box<[u8]>>`] nor
+    //!    the borrowed [`PartialEq<&[u8]>`] receiver alone can satisfy.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    fn boxed_bytes(s: &[u8]) -> Box<[u8]> {
+        s.to_vec().into_boxed_slice()
+    }
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_ref_box_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k == by_ref, "kind == &box_bytes for {}", k.name());
+            assert!(by_ref == k, "&box_bytes == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_box_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k == by_ref, "kind == &box_bytes for {}", k.name());
+            assert!(by_ref == k, "&box_bytes == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_box_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k == by_ref, "kind == &box_bytes for {}", k.name());
+            assert!(by_ref == k, "&box_bytes == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with the by-value pair ----------
+
+    fn probe_byte_slices() -> Vec<Vec<u8>> {
+        vec![
+            b"regressed".to_vec(),
+            b"cross_store".to_vec(),
+            b"stationary".to_vec(),
+            b"identity_republish".to_vec(),
+            b"progression".to_vec(),
+            b"".to_vec(),
+            b"REGRESSED".to_vec(),
+            b" regressed".to_vec(),
+            b"regressed ".to_vec(),
+            b"unknown".to_vec(),
+            b"regressed\n".to_vec(),
+            b"identity-republish".to_vec(),
+            vec![0xff, 0xfe, 0xfd],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in probe_byte_slices() {
+                let b: Box<[u8]> = boxed_bytes(&probe);
+                let by_ref: &Box<[u8]> = &b;
+                let by_val_forward = k == b;
+                let by_val_reciprocal = b == k;
+                assert_eq!(
+                    k == by_ref,
+                    by_val_forward,
+                    "kind == &box_bytes vs kind == box_bytes for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+                assert_eq!(
+                    by_ref == k,
+                    by_val_reciprocal,
+                    "&box_bytes == kind vs box_bytes == kind for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for probe in probe_byte_slices() {
+                let b: Box<[u8]> = boxed_bytes(&probe);
+                let by_ref: &Box<[u8]> = &b;
+                assert_eq!(k == by_ref, k == b);
+                assert_eq!(by_ref == k, b == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_by_value_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for probe in probe_byte_slices() {
+                let b: Box<[u8]> = boxed_bytes(&probe);
+                let by_ref: &Box<[u8]> = &b;
+                assert_eq!(k == by_ref, k == b);
+                assert_eq!(by_ref == k, b == k);
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown box_bytes ----------
+
+    #[test]
+    fn impossibility_unknown_ref_box_bytes_inequality() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let mut unknown: Vec<u8> = k.name().as_bytes().to_vec();
+            unknown.push(b'x');
+            let b: Box<[u8]> = unknown.into_boxed_slice();
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn consistency_unknown_ref_box_bytes_inequality() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let mut unknown: Vec<u8> = k.name().as_bytes().to_vec();
+            unknown.push(b'x');
+            let b: Box<[u8]> = unknown.into_boxed_slice();
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_unknown_ref_box_bytes_inequality() {
+        for &k in ProofRelationKind::VARIANTS {
+            let mut unknown: Vec<u8> = k.name().as_bytes().to_vec();
+            unknown.push(b'x');
+            let b: Box<[u8]> = unknown.into_boxed_slice();
+            let by_ref: &Box<[u8]> = &b;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_cross_variant_ref_box_bytes_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_box: Box<[u8]> = boxed_bytes(b.name().as_bytes());
+                let by_ref: &Box<[u8]> = &b_box;
+                assert!(a != by_ref, "{} != &{}", a.name(), b.name());
+                assert!(by_ref != a, "&{} != {}", b.name(), a.name());
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_box_bytes_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_box: Box<[u8]> = boxed_bytes(b.name().as_bytes());
+                let by_ref: &Box<[u8]> = &b_box;
+                assert!(a != by_ref);
+                assert!(by_ref != a);
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_box_bytes() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let b: Box<[u8]> = boxed_bytes(imp.name().as_bytes());
+            let by_ref: &Box<[u8]> = &b;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let b: Box<[u8]> = boxed_bytes(c.name().as_bytes());
+            let by_ref: &Box<[u8]> = &b;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+    }
+
+    // ---------- (6) Iterator-shape composability — the load-bearing seam ----------
+    //
+    // Before this cell, `slice.iter().any(|b: &Box<[u8]>| kind == b)` did
+    // not type-check — the compiler suggested a per-callsite `**b` deref.
+    // With this cell, the natural iterator combinator composes out of
+    // the standard trait alone. These tests fail-to-compile before the
+    // cell and pass after.
+
+    #[test]
+    fn iter_any_over_slice_of_box_bytes_impossibility() {
+        let hay: Vec<Box<[u8]>> = vec![
+            boxed_bytes(b"cross_store"),
+            boxed_bytes(b"regressed"),
+            boxed_bytes(b"unknown"),
+        ];
+        let k = SameStoreImpossibilityKind::Regressed;
+        assert!(hay.iter().any(|b: &Box<[u8]>| k == b));
+        assert!(hay.iter().any(|b: &Box<[u8]>| b == k));
+        assert_eq!(hay.iter().position(|b: &Box<[u8]>| k == b), Some(1));
+    }
+
+    #[test]
+    fn iter_any_over_slice_of_box_bytes_consistency() {
+        let hay: Vec<Box<[u8]>> = vec![boxed_bytes(b"stationary"), boxed_bytes(b"progression")];
+        let k = SameStoreConsistencyKind::Progression;
+        assert!(hay.iter().any(|b: &Box<[u8]>| k == b));
+        assert!(hay.iter().any(|b: &Box<[u8]>| b == k));
+        assert_eq!(hay.iter().position(|b: &Box<[u8]>| k == b), Some(1));
+    }
+
+    #[test]
+    fn iter_find_ref_of_ref_over_slice_of_box_bytes() {
+        // `Iterator::find` hands the closure `&Self::Item`, i.e.
+        // `&&Box<[u8]>` for `hay.iter()`. `*b: &Box<[u8]>` uses the new
+        // impl directly.
+        let hay: Vec<Box<[u8]>> = vec![boxed_bytes(b"regressed"), boxed_bytes(b"cross_store")];
+        let k = SameStoreImpossibilityKind::CrossStore;
+        let found: Option<&Box<[u8]>> = hay.iter().find(|b| k == **b);
+        assert_eq!(found.map(|b| b.as_ref()), Some(b"cross_store".as_ref()));
+    }
+
+    // ---------- (7) Generic composability at a for<'a> PartialEq<&'a Box<[u8]>> seam ----------
+
+    fn cmp_kind_ref_box_bytes<K>(k: &K, b: &Box<[u8]>) -> bool
+    where
+        for<'a> K: PartialEq<&'a Box<[u8]>>,
+    {
+        *k == b
+    }
+
+    #[test]
+    fn generic_ref_box_bytes_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            assert!(cmp_kind_ref_box_bytes(&k, &b));
+            let miss: Box<[u8]> = boxed_bytes(b"unknown");
+            assert!(!cmp_kind_ref_box_bytes(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_box_bytes_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            assert!(cmp_kind_ref_box_bytes(&k, &b));
+            let miss: Box<[u8]> = boxed_bytes(b"unknown");
+            assert!(!cmp_kind_ref_box_bytes(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_box_bytes_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let b: Box<[u8]> = boxed_bytes(k.name().as_bytes());
+            assert!(cmp_kind_ref_box_bytes(&k, &b));
+            let miss: Box<[u8]> = boxed_bytes(b"unknown");
+            assert!(!cmp_kind_ref_box_bytes(&k, &miss));
+        }
     }
 }
