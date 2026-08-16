@@ -3634,6 +3634,57 @@ impl PartialEq<SameStoreImpossibilityKind> for &String {
     }
 }
 
+/// The [`PartialEq<&&String>`] impl on [`SameStoreImpossibilityKind`] — the
+/// **double-reference-to-owned-heap-string compare-side dual** of the
+/// string-side [`PartialEq<&&str>`] impl (cell 69) and the smart-pointer-
+/// carrier sibling of the byte-side [`PartialEq<&&[u8]>`] impl (cell 70)
+/// at this altitude, closing the double-reference-to-owned-heap-string
+/// compare cell of the string-side receiver-family grid. Rust does NOT
+/// auto-deref the RHS of `==` to satisfy a [`PartialEq<T>`] bound, and the
+/// standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &&String`, NOT the
+/// `Kind == &&String` direction a natural [`Vec<String>::iter`](Vec) yield
+/// produces — [`Vec<T>::iter`](Vec) yields `&T`, so `Vec<String>::iter()`
+/// yields `&String` and a [`Iterator::find`] on that iterator hands the
+/// predicate a `&&String`, not a `&String`. Every downstream slot with an
+/// owned-string view produced by borrow-yielding traversal over a slice-of-
+/// owned-strings — a `[String].iter().find(|s| kind == s)` predicate on a
+/// slice of [`serde`]-deserialized identifiers, a
+/// [`HashMap<K, String>::values`](std::collections::HashMap) iterator
+/// where the `.find` closure receives `&&String` (from `iter()` yielding
+/// `&String` and `.find` passing `&Self::Item`), a
+/// [`figment::Value::into_string`]-then-`.iter()` scan, any generic slot
+/// bounded on `for<'a, 'b> T: PartialEq<&'a &'b String>` — previously
+/// stranded the caller at either a per-callsite `**s` deref (a coordinated
+/// silent rewrite of the callsite, not a lift into the type-checker) or a
+/// `.copied()`-then-`.as_str()` postfix that fragments the receiver family
+/// surface. This impl closes the double-reference-to-owned-heap-string
+/// compare cell by delegation to the sibling [`PartialEq<&String>`] impl
+/// above through a single deref of the borrowed handle — one line, zero
+/// allocations — so the caller reaches the SAME [`Self::name`]
+/// classification through the standard trait alone.
+impl PartialEq<&&String> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&&String) -> bool {
+        <Self as PartialEq<&String>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for `&&String`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&String>`]
+/// impl directly above, welding the symmetric `&&owned_from_iter == kind`
+/// seam through the sibling [`PartialEq<SameStoreImpossibilityKind> for
+/// &String`] impl above by one deref of the borrowed handle. Lifetime-
+/// parameterised as `impl<'a, 'b>` so the outer and inner borrows compose
+/// independently. Both directions of the double-reference-to-owned-heap-
+/// string cross-type comparison now compose out of the same allocation-free
+/// [`Self::name`] receiver by construction.
+impl<'a, 'b> PartialEq<SameStoreImpossibilityKind> for &'a &'b String {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <&'b String as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<Cow<'_, str>>`] impl on [`SameStoreImpossibilityKind`]
 /// — the **borrowed-or-owned-carrier sibling** of the [`PartialEq<str>`],
 /// [`PartialEq<&str>`], and [`PartialEq<String>`] impls above, closing the
@@ -8017,6 +8068,31 @@ impl PartialEq<SameStoreConsistencyKind> for &String {
     }
 }
 
+/// The [`PartialEq<&&String>`] impl on [`SameStoreConsistencyKind`] — the
+/// consistent-half sibling of the impossibility-half [`PartialEq<&&String>`]
+/// impl above (cell 71, this commit), lifting the double-reference-to-owned-
+/// heap-string compare cell onto the three-variant consistent partition
+/// through delegation to the single-reference [`PartialEq<&String>`] impl at
+/// this altitude. Any consumer bounded on
+/// `for<'a, 'b> T: PartialEq<&'a &'b String>` (or holding either kind as
+/// `T`) reaches the same compare seam at both altitudes.
+impl PartialEq<&&String> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&&String) -> bool {
+        <Self as PartialEq<&String>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for `&&String`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&String>`] impl
+/// directly above, welding the symmetric `&&owned_from_iter == kind` seam
+/// at the consistent altitude. Mirror of the impossibility-half receiver
+/// at this altitude.
+impl<'a, 'b> PartialEq<SameStoreConsistencyKind> for &'a &'b String {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <&'b String as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<Cow<'_, str>>`] impl on [`SameStoreConsistencyKind`] —
 /// the consistent-half sibling of the impossibility-half
 /// [`PartialEq<Cow<'_, str>>`] impl above, lifting the borrowed-or-owned
@@ -10507,6 +10583,36 @@ impl PartialEq<&String> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &String {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         <String as PartialEq<ProofRelationKind>>::eq(*self, other)
+    }
+}
+
+/// The [`PartialEq<&&String>`] impl on the fused [`ProofRelationKind`] —
+/// the third-altitude sibling of the two half-side [`PartialEq<&&String>`]
+/// impls above (cell 71, this commit), closing the (impossibility,
+/// consistency, fused) × (`&&String`) grid at the fused-sum altitude and
+/// lifting `k == &&owned_from_iter` past the type-checker without a
+/// per-callsite `**s` dereference. Delegates through the sibling
+/// [`PartialEq<&String>`] impl at this altitude by one deref of the
+/// borrowed handle, so a hypothetical sixth corner in either half-side
+/// surfaces through the fused [`Self::name`] `match` body and BOTH
+/// [`PartialEq<&&String>`] impls in lockstep with the enum itself. See the
+/// impossibility-half impl for the full lift rationale.
+impl PartialEq<&&String> for ProofRelationKind {
+    fn eq(&self, other: &&&String) -> bool {
+        <Self as PartialEq<&String>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for `&&String` impl —
+/// the reverse-direction sibling of the [`PartialEq<&&String>`] impl
+/// directly above at the fused altitude, welding the symmetric
+/// `&&owned_from_iter == kind` seam through the same delegation source of
+/// truth. Both directions of the double-reference-to-owned-heap-string
+/// cross-type comparison now compose out of the same allocation-free
+/// receiver at the fused-sum altitude by construction.
+impl<'a, 'b> PartialEq<ProofRelationKind> for &'a &'b String {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <&'b String as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -63318,6 +63424,328 @@ mod partial_eq_ref_ref_bytes_tests {
             let bytes: &[u8] = k.name().as_bytes();
             let dbl: &&[u8] = &bytes;
             assert!(cmp_kind_ref_ref_bytes(&k, dbl));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_ref_string_tests {
+    //! [`PartialEq<&&String>`] and [`PartialEq<Kind> for &&String`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **double-reference-to-owned-heap-string
+    //! compare-side sibling** of the single-reference [`PartialEq<&String>`]
+    //! pair lifted by [`super::partial_eq_ref_string_tests`] and the
+    //! smart-pointer-carrier sibling of the string-side
+    //! [`PartialEq<&&str>`] pair (cell 69) lifted by
+    //! [`super::partial_eq_ref_ref_str_tests`]. Rust does NOT auto-deref
+    //! the RHS of `==` to satisfy a [`PartialEq<T>`] bound, and the
+    //! standard blanket
+    //! `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &&String`, NOT the `Kind == &&String` direction a natural
+    //! iterator combinator produces
+    //! (`vec_of_owned.iter().find(|s: &&String| kind == s)`, whose
+    //! closure argument is `&&String` because [`Iterator::find`] hands
+    //! the predicate `&Self::Item` and [`Vec<T>::iter`](Vec) yields `&T`
+    //! with `T = String`). This module pins that both directions of the
+    //! double-reference-to-owned-heap-string pair compose at the
+    //! type-checker for every variant of every kind enum, allocation-free.
+    //!
+    //! Compounding: unlocks `Vec<String>::iter().find(...)` /
+    //! `HashMap<K, String>::values().find(...)` as first-class classifier
+    //! inputs at every altitude, matching the closure the compiler
+    //! actually hands (`&&String`) instead of the by-value receiver
+    //! (`&String`) it does not; seeds the SYMMETRIC double-reference
+    //! cells on the other string-side smart-pointer carriers
+    //! (`&&Box<str>`, `&&Cow<'_, str>`, `&&Arc<str>`, `&&Rc<str>`) —
+    //! each will delegate to its existing single-reference cell the same
+    //! way this cell delegates to [`PartialEq<&String>`].
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity on the &&owned pair ----------
+
+    #[test]
+    fn impossibility_identity_ref_ref_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(k == dbl, "kind == &&owned for {}", k.name());
+            assert!(dbl == k, "&&owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_ref_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_ref_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    // ---------- (2) Sibling agreement with the single-reference &String pair ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_single_ref_owned_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let single: &String = &owned;
+                let dbl: &&String = &single;
+                assert_eq!(
+                    k == dbl,
+                    k == single,
+                    "kind == &&{probe:?} must agree with kind == &{probe:?} for {}",
+                    k.name(),
+                );
+                assert_eq!(dbl == k, single == k);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_single_ref_owned_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let single: &String = &owned;
+                let dbl: &&String = &single;
+                assert_eq!(k == dbl, k == single);
+                assert_eq!(dbl == k, single == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_single_ref_owned_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let single: &String = &owned;
+                let dbl: &&String = &single;
+                assert_eq!(k == dbl, k == single);
+                assert_eq!(dbl == k, single == k);
+            }
+        }
+    }
+
+    // ---------- (3) Cross-string-side agreement — the &&String carrier
+    // and the &&str carrier (cell 69) agree on every valid probe, welding
+    // the two double-reference string-side cells to the same underlying
+    // classifier. ----------
+
+    #[test]
+    fn impossibility_cross_string_side_agreement_ref_ref() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let single_owned: &String = &owned;
+                let dbl_owned: &&String = &single_owned;
+                let single_str: &str = probe;
+                let dbl_str: &&str = &single_str;
+                assert_eq!(
+                    k == dbl_owned,
+                    k == dbl_str,
+                    "&&String and &&str disagree for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+                assert_eq!(dbl_owned == k, dbl_str == k);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_string_side_agreement_ref_ref() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let owned: String = probe.to_owned();
+                let single_owned: &String = &owned;
+                let dbl_owned: &&String = &single_owned;
+                let single_str: &str = probe;
+                let dbl_str: &&str = &single_str;
+                assert_eq!(k == dbl_owned, k == dbl_str);
+                assert_eq!(dbl_owned == k, dbl_str == k);
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_cross_variant_ref_ref_owned_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_owned: String = b.name().to_owned();
+                let single: &String = &b_owned;
+                let dbl: &&String = &single;
+                assert!(a != dbl, "{} != &&{}", a.name(), b.name());
+                assert!(dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_ref_owned_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_owned: String = b.name().to_owned();
+                let single: &String = &b_owned;
+                let dbl: &&String = &single;
+                assert!(a != dbl);
+                assert!(dbl != a);
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_ref_owned() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let owned: String = imp.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(fused == dbl, "fused == &&{}", imp.name());
+            assert!(dbl == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let owned: String = c.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(fused == dbl);
+            assert!(dbl == fused);
+        }
+    }
+
+    // ---------- (6) Iterator-shape composability — the load-bearing seam.
+    // `Vec<String>::iter().find(...)` hands the predicate `&&String`,
+    // NOT `&String`. Before this cell the natural closure body was a
+    // type error; with this cell it composes out of the standard trait
+    // alone. ----------
+
+    #[test]
+    fn iter_find_over_slice_of_owned_impossibility() {
+        let hay: Vec<String> = vec![
+            "cross_store".to_owned(),
+            "regressed".to_owned(),
+            "unknown".to_owned(),
+        ];
+        let k = SameStoreImpossibilityKind::Regressed;
+        let found: Option<&String> = hay.iter().find(|s: &&String| k == s);
+        assert_eq!(found.map(String::as_str), Some("regressed"));
+        let found_reciprocal: Option<&String> = hay.iter().find(|s: &&String| s == &k);
+        assert_eq!(found_reciprocal.map(String::as_str), Some("regressed"));
+    }
+
+    #[test]
+    fn iter_find_over_slice_of_owned_consistency() {
+        let hay: Vec<String> = vec!["stationary".to_owned(), "progression".to_owned()];
+        let k = SameStoreConsistencyKind::Progression;
+        let found: Option<&String> = hay.iter().find(|s: &&String| k == s);
+        assert_eq!(found.map(String::as_str), Some("progression"));
+        let found_reciprocal: Option<&String> = hay.iter().find(|s: &&String| s == &k);
+        assert_eq!(found_reciprocal.map(String::as_str), Some("progression"));
+    }
+
+    #[test]
+    fn hashmap_values_find_projection_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, String> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, k.name().to_owned());
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let hit: Option<&String> = hay.values().find(|s: &&String| k == s);
+            assert!(hit.is_some(), "kind {} should be present", k.name());
+            let hit_reciprocal: Option<&String> = hay.values().find(|s: &&String| s == &k);
+            assert!(hit_reciprocal.is_some());
+        }
+        let miss = String::from("no_such_variant");
+        assert!(hay.values().find(|s: &&String| **s == miss).is_none());
+    }
+
+    // ---------- (7) Generic composability at a
+    // for<'a, 'b> PartialEq<&'a &'b String> seam ----------
+
+    fn cmp_kind_ref_ref_string<K>(k: &K, s: &&String) -> bool
+    where
+        for<'a, 'b> K: PartialEq<&'a &'b String>,
+    {
+        *k == s
+    }
+
+    #[test]
+    fn generic_ref_ref_string_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(cmp_kind_ref_ref_string(&k, dbl));
+            let miss: String = String::from("unknown");
+            let miss_single: &String = &miss;
+            let miss_dbl: &&String = &miss_single;
+            assert!(!cmp_kind_ref_ref_string(&k, miss_dbl));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_string_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(cmp_kind_ref_ref_string(&k, dbl));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_string_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let owned: String = k.name().to_owned();
+            let single: &String = &owned;
+            let dbl: &&String = &single;
+            assert!(cmp_kind_ref_ref_string(&k, dbl));
         }
     }
 }
