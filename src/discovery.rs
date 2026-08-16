@@ -69,6 +69,21 @@ pub enum Format {
     /// Evaluated via `nix eval --file <path> --json` and parsed as JSON.
     /// The file must evaluate to an attrset; its attrs become the config.
     Nix,
+    /// Blue format (`.b` extension).
+    ///
+    /// blue's Ruby/Elixir-flavoured surface parses to the SAME
+    /// `tatara_lisp::Sexp` the [`Self::Lisp`] front-end produces, so both
+    /// share one mapping ([`crate::lisp_provider::sexp_to_value_root`])
+    /// rather than each carrying a copy that could drift.
+    ///
+    /// **Parsed and mapped, never executed.** Only `blue-lang-syntax` is a
+    /// dependency — the runtime, interpreter and package manager stay out
+    /// of shikumi's closure. A config format that can run arbitrary code is
+    /// a much larger security surface, and blue additionally has no
+    /// execution budget today (its `pipeline` runs the tree-walking
+    /// interpreter; `Budget` is VM-only), so a runaway `.b` file would
+    /// wedge its host. Evaluation is a later, separately-gated decision.
+    Blue,
 }
 
 impl Format {
@@ -84,7 +99,7 @@ impl Format {
     /// the variant itself; the compiler enforces nothing here, so the
     /// `format_all_covers_every_variant` test pins the contract by
     /// matching every variant.
-    pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix];
+    pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix, Self::Blue];
 
     /// Returns the file extensions associated with this format.
     #[must_use]
@@ -94,6 +109,7 @@ impl Format {
             Self::Toml => &["toml"],
             Self::Lisp => &["lisp", "lsp", "el"],
             Self::Nix => &["nix"],
+            Self::Blue => &["b"],
         }
     }
 
@@ -120,6 +136,7 @@ impl Format {
             "toml" => Some(Self::Toml),
             "lisp" | "lsp" | "el" => Some(Self::Lisp),
             "nix" => Some(Self::Nix),
+            "b" => Some(Self::Blue),
             _ => None,
         }
     }
@@ -169,6 +186,7 @@ impl Format {
             Self::Toml => "toml",
             Self::Lisp => "lisp",
             Self::Nix => "nix",
+            Self::Blue => "b",
         }
     }
 
@@ -213,6 +231,7 @@ impl Format {
             Self::Toml => "top-level toml document must be a table",
             Self::Lisp => "top-level lisp form must be a kwargs list",
             Self::Nix => "top-level nix expression must evaluate to an attrset",
+            Self::Blue => "top-level blue form must be a kwargs list",
         }
     }
 
@@ -249,7 +268,7 @@ impl Format {
     #[must_use]
     pub fn provenance(self) -> FormatProvenance {
         match self {
-            Self::Lisp | Self::Nix => FormatProvenance::ShikumiBuilt,
+            Self::Lisp | Self::Nix | Self::Blue => FormatProvenance::ShikumiBuilt,
             Self::Yaml | Self::Toml => FormatProvenance::FigmentBuiltin,
         }
     }
@@ -770,7 +789,7 @@ impl FormatProvenance {
     pub const fn formats(self) -> &'static [Format] {
         match self {
             Self::FigmentBuiltin => &[Format::Yaml, Format::Toml],
-            Self::ShikumiBuilt => &[Format::Lisp, Format::Nix],
+            Self::ShikumiBuilt => &[Format::Lisp, Format::Nix, Format::Blue],
         }
     }
 }
@@ -933,6 +952,14 @@ impl FormatCoordinates {
         },
         Self {
             format: Format::Nix,
+            provenance: FormatProvenance::ShikumiBuilt,
+        },
+        Self {
+            format: Format::Blue,
+            provenance: FormatProvenance::FigmentBuiltin,
+        },
+        Self {
+            format: Format::Blue,
             provenance: FormatProvenance::ShikumiBuilt,
         },
     ];
@@ -1429,7 +1456,7 @@ closed_axis_label_string_surface! {
     type = Format,
     parse_error = "unknown config format",
     expecting = "a canonical Format lowercase label \
-                 (`yaml`, `toml`, `lisp`, `nix`; aliases `yml`/`lsp`/`el` accepted)",
+                 (`yaml`, `toml`, `lisp`, `nix`, `b`; aliases `yml`/`lsp`/`el` accepted)",
     parser = Format::from_extension,
 }
 
@@ -1530,13 +1557,35 @@ pub struct ConfigDiscovery {
 impl ConfigDiscovery {
     /// Create a new discovery for the given app name.
     ///
-    /// Default format preference: YAML first, then TOML.
+    /// Default format preference: YAML, then TOML, then the shikumi-built
+    /// formats.
+    ///
+    /// ── ★ THIS DEFAULT USED TO CONTRADICT THE MODULE'S OWN DOC ────────
+    /// It was `[Yaml, Toml]`, so `.lisp`, `.nix` and `.b` files were never
+    /// DISCOVERED by extension — a provider could be pointed at one, but
+    /// nothing found one on its own. The module doc above and the fleet
+    /// doctrine both described the richer set, and both read as merely
+    /// aspirational rather than wrong.
+    ///
+    /// **YAML stays first, deliberately.** Extending the SET is the fix;
+    /// re-ranking it is a different decision. `format_yaml_first_by_default`
+    /// pins that precedence as a contract, and an operator with both a
+    /// `config.yaml` and a `config.b` on disk should not have the file their
+    /// deployment already resolves silently change underneath them because a
+    /// new format landed. A caller who wants blue to win says so with
+    /// `.formats(&[Format::Blue, …])`.
     #[must_use]
     pub fn new(app_name: impl Into<String>) -> Self {
         Self {
             app_name: app_name.into(),
             env_override: None,
-            formats: vec![Format::Yaml, Format::Toml],
+            formats: vec![
+                Format::Yaml,
+                Format::Toml,
+                Format::Lisp,
+                Format::Nix,
+                Format::Blue,
+            ],
             hierarchical: false,
             start_dir: None,
             xdg_config_home: None,
@@ -3664,9 +3713,17 @@ mod tests {
 
     #[test]
     fn configured_extensions_default_yields_yaml_then_toml_in_preference_order() {
+        // YAML first (the pinned precedence), then TOML, then the
+        // shikumi-built formats. The tail exists because the default used to
+        // be `[Yaml, Toml]` alone, which meant `.lisp`, `.nix` and `.b` were
+        // never discovered by extension at all — a provider could be pointed
+        // at one, but nothing found one on its own.
         let d = ConfigDiscovery::new("ext_default");
         let exts: Vec<&'static str> = d.configured_extensions().collect();
-        assert_eq!(exts, vec!["yaml", "yml", "toml"]);
+        assert_eq!(
+            exts,
+            vec!["yaml", "yml", "toml", "lisp", "lsp", "el", "nix", "b"]
+        );
     }
 
     #[test]
@@ -3956,7 +4013,13 @@ mod tests {
     fn format_all_in_declaration_order() {
         assert_eq!(
             Format::ALL,
-            &[Format::Yaml, Format::Toml, Format::Lisp, Format::Nix]
+            &[
+                Format::Yaml,
+                Format::Toml,
+                Format::Lisp,
+                Format::Nix,
+                Format::Blue
+            ]
         );
     }
 
@@ -3966,7 +4029,13 @@ mod tests {
         // The match below is the compiler-enforced contract: adding a
         // variant breaks this test until the new variant is wired into
         // both `Format::ALL` and this exhaustivity check.
-        for f in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+        for f in [
+            Format::Yaml,
+            Format::Toml,
+            Format::Lisp,
+            Format::Nix,
+            Format::Blue,
+        ] {
             assert!(
                 Format::ALL.contains(&f),
                 "Format::ALL must contain every variant; missing {f:?}"
@@ -3974,10 +4043,10 @@ mod tests {
             // Exhaustive match — adding a variant requires updating
             // both `Format::ALL` and this arm list.
             match f {
-                Format::Yaml | Format::Toml | Format::Lisp | Format::Nix => {}
+                Format::Yaml | Format::Toml | Format::Lisp | Format::Nix | Format::Blue => {}
             }
         }
-        assert_eq!(Format::ALL.len(), 4);
+        assert_eq!(Format::ALL.len(), 5);
     }
 
     #[test]
@@ -5377,8 +5446,8 @@ mod tests {
         );
         assert_eq!(
             FormatProvenance::ShikumiBuilt.formats(),
-            &[Format::Lisp, Format::Nix],
-            "ShikumiBuilt fiber must equal [Lisp, Nix] today",
+            &[Format::Lisp, Format::Nix, Format::Blue],
+            "ShikumiBuilt fiber must equal [Lisp, Nix, Blue] today",
         );
     }
 
@@ -5817,12 +5886,12 @@ mod tests {
             "FormatCoordinates::ALL cardinality must equal \
              Format::ALL.len() * FormatProvenance::ALL.len()",
         );
-        // Pin today's concrete cardinality — 4 × 2 = 8 — so a future
+        // Pin today's concrete cardinality — 5 × 2 = 10 — so a future
         // axis growth that updates the product still requires updating
         // this literal explicitly.
         assert_eq!(
             FormatCoordinates::ALL.len(),
-            8,
+            10,
             "FormatCoordinates::ALL cardinality must be 8 today; \
              update both this literal and the cells if axes grow",
         );
@@ -5985,12 +6054,12 @@ mod tests {
     }
 
     #[test]
-    fn format_coordinates_realizable_partitions_into_4_realizable_and_4_unrealizable() {
-        // Pins the 4 + 4 cardinality split:
-        // - 4 realizable cells, one per recognized Format
-        //   (Yaml, Toml, Lisp, Nix), each paired with its declared
+    fn format_coordinates_realizable_partitions_into_5_realizable_and_5_unrealizable() {
+        // Pins the 5 + 5 cardinality split:
+        // - 5 realizable cells, one per recognized Format
+        //   (Yaml, Toml, Lisp, Nix, Blue), each paired with its declared
         //   provenance via Format::provenance.
-        // - 4 unrealizable cells covering every (format, provenance)
+        // - 5 unrealizable cells covering every (format, provenance)
         //   combination where provenance disagrees with the format's
         //   declared provider class.
         // A future Format landing or a future FormatProvenance variant
@@ -6018,11 +6087,11 @@ mod tests {
             FormatCoordinates::ALL.len(),
             "realizable + unrealizable must cover ALL exactly once",
         );
-        // Pin the concrete current values too — the partition is 4 + 4
+        // Pin the concrete current values too — the partition is 5 + 5
         // today; future format additions or provenance additions move
         // both counts in lockstep.
-        assert_eq!(realizable, 4);
-        assert_eq!(unrealizable, 4);
+        assert_eq!(realizable, 5);
+        assert_eq!(unrealizable, 5);
     }
 
     #[test]

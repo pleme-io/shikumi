@@ -294,6 +294,27 @@ impl ProviderChain {
                     .figment
                     .merge(crate::nix_provider::NixProvider::file(path));
             }
+            Some(Format::Blue) => {
+                // Gated INSIDE the arm, exactly as `Lisp` above: a `.b` file
+                // on a build without the feature is a warning and a skipped
+                // layer, not a hard error. Erroring would make an optional
+                // dependency load-bearing for anyone who merely has a `.b`
+                // sitting in a config directory.
+                #[cfg(feature = "blue")]
+                {
+                    self.figment = self
+                        .figment
+                        .merge(crate::blue_provider::BlueProvider::file(path));
+                }
+                #[cfg(not(feature = "blue"))]
+                {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "shikumi built without the `blue` feature; skipping .b config. \
+                         Enable the feature or convert to .yaml/.toml/.lisp/.nix."
+                    );
+                }
+            }
             Some(Format::Toml) | None => {
                 self.figment = self.figment.merge(FigToml::file(path));
             }

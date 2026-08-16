@@ -15113,8 +15113,8 @@ mod tests {
 
     #[test]
     fn format_coordinates_generic_realizable_count_is_four() {
-        assert_eq!(realizable_count::<FormatCoordinates>(), 4);
-        assert_eq!(unrealizable_count::<FormatCoordinates>(), 4);
+        assert_eq!(realizable_count::<FormatCoordinates>(), 5);
+        assert_eq!(unrealizable_count::<FormatCoordinates>(), 5);
         assert_eq!(
             realizable_count::<FormatCoordinates>() + unrealizable_count::<FormatCoordinates>(),
             FormatCoordinates::ALL.len(),
@@ -16008,6 +16008,7 @@ mod tests {
         // `contributor_names_iter_next_back_walks_specific_to_coarse`
         // fixture.
         let mut it: crate::AxisIter<Format> = axis_iter::<Format>();
+        assert_eq!(it.next_back(), Some(Format::Blue));
         assert_eq!(it.next_back(), Some(Format::Nix));
         assert_eq!(it.next_back(), Some(Format::Lisp));
         assert_eq!(it.next_back(), Some(Format::Toml));
@@ -16028,14 +16029,16 @@ mod tests {
         // `provenance_map_entries_len_matches_remaining_pulls` on the
         // same element-preserving projection axis.
         let mut it: crate::AxisIter<Format> = axis_iter::<Format>();
-        assert_eq!(it.len(), 4);
+        assert_eq!(it.len(), 5);
         assert_eq!(it.next(), Some(Format::Yaml));
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.next_back(), Some(Format::Blue));
         assert_eq!(it.len(), 3);
-        assert_eq!(it.next_back(), Some(Format::Nix));
-        assert_eq!(it.len(), 2);
         assert_eq!(it.next(), Some(Format::Toml));
+        assert_eq!(it.len(), 2);
+        assert_eq!(it.next_back(), Some(Format::Nix));
         assert_eq!(it.len(), 1);
-        assert_eq!(it.next_back(), Some(Format::Lisp));
+        assert_eq!(it.next(), Some(Format::Lisp));
         assert_eq!(it.len(), 0);
         assert_eq!(it.next(), None);
         assert_eq!(it.len(), 0);
@@ -16065,8 +16068,8 @@ mod tests {
             "Debug output must name the axis_remaining field: {rendered}",
         );
         assert!(
-            rendered.contains('4'),
-            "Debug output must report the initial cursor length (4): {rendered}",
+            rendered.contains('5'),
+            "Debug output must report the initial cursor length (5): {rendered}",
         );
     }
 
@@ -16356,7 +16359,7 @@ mod tests {
             iter: hist.unobserved(),
         };
         let collected: Vec<Format> = holder.iter.collect();
-        assert_eq!(collected, vec![Format::Toml, Format::Lisp]);
+        assert_eq!(collected, vec![Format::Toml, Format::Lisp, Format::Blue]);
     }
 
     #[test]
@@ -16398,6 +16401,7 @@ mod tests {
         let mut hist: AxisHistogram<Format> = AxisHistogram::empty();
         hist.observe(Format::Toml);
         let mut it: crate::AxisHistogramUnobserved<'_, Format> = hist.unobserved();
+        assert_eq!(it.next_back(), Some(Format::Blue));
         assert_eq!(it.next_back(), Some(Format::Nix));
         assert_eq!(it.next_back(), Some(Format::Lisp));
         assert_eq!(it.next(), Some(Format::Yaml));
@@ -16531,6 +16535,7 @@ mod tests {
         // reverse walk zero-cost — no
         // `.collect().into_iter().rev()` roundtrip.
         let mut it: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
+        assert_eq!(it.next_back(), Some(Format::Blue.format_coordinates()));
         assert_eq!(it.next_back(), Some(Format::Nix.format_coordinates()));
         assert_eq!(it.next_back(), Some(Format::Lisp.format_coordinates()));
         assert_eq!(it.next_back(), Some(Format::Toml.format_coordinates()));
@@ -16553,14 +16558,16 @@ mod tests {
         // `axis_iter_len_matches_remaining_pulls` on the same
         // element-preserving projection axis.
         let mut it: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
-        assert_eq!(it.len(), 4);
+        assert_eq!(it.len(), 5);
         assert_eq!(it.next(), Some(Format::Yaml.format_coordinates()));
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.next_back(), Some(Format::Blue.format_coordinates()));
         assert_eq!(it.len(), 3);
-        assert_eq!(it.next_back(), Some(Format::Nix.format_coordinates()));
-        assert_eq!(it.len(), 2);
         assert_eq!(it.next(), Some(Format::Toml.format_coordinates()));
+        assert_eq!(it.len(), 2);
+        assert_eq!(it.next_back(), Some(Format::Nix.format_coordinates()));
         assert_eq!(it.len(), 1);
-        assert_eq!(it.next_back(), Some(Format::Lisp.format_coordinates()));
+        assert_eq!(it.next(), Some(Format::Lisp.format_coordinates()));
         assert_eq!(it.len(), 0);
         assert_eq!(it.next(), None);
         assert_eq!(it.len(), 0);
@@ -16593,8 +16600,8 @@ mod tests {
             "Debug output must name the image_remaining field: {rendered}",
         );
         assert!(
-            rendered.contains('4'),
-            "Debug output must report the initial cursor length (4): {rendered}",
+            rendered.contains('5'),
+            "Debug output must report the initial cursor length (5): {rendered}",
         );
     }
 
@@ -16687,11 +16694,12 @@ mod tests {
             .copied()
             .filter(|c| ProductCube::is_realizable(*c))
             .collect();
-        assert_eq!(realizable_forward.len(), 4);
+        assert_eq!(realizable_forward.len(), 5);
+        assert_eq!(it.next_back(), Some(realizable_forward[4]));
         assert_eq!(it.next_back(), Some(realizable_forward[3]));
-        assert_eq!(it.next_back(), Some(realizable_forward[2]));
         assert_eq!(it.next(), Some(realizable_forward[0]));
         assert_eq!(it.next(), Some(realizable_forward[1]));
+        assert_eq!(it.next(), Some(realizable_forward[2]));
         assert_eq!(it.next(), None);
         assert_eq!(it.next_back(), None);
     }
@@ -16852,11 +16860,12 @@ mod tests {
             .copied()
             .filter(|c| !ProductCube::is_realizable(*c))
             .collect();
-        assert_eq!(unrealizable_forward.len(), 4);
+        assert_eq!(unrealizable_forward.len(), 5);
+        assert_eq!(it.next_back(), Some(unrealizable_forward[4]));
         assert_eq!(it.next_back(), Some(unrealizable_forward[3]));
-        assert_eq!(it.next_back(), Some(unrealizable_forward[2]));
         assert_eq!(it.next(), Some(unrealizable_forward[0]));
         assert_eq!(it.next(), Some(unrealizable_forward[1]));
+        assert_eq!(it.next(), Some(unrealizable_forward[2]));
         assert_eq!(it.next(), None);
         assert_eq!(it.next_back(), None);
     }
@@ -17012,11 +17021,12 @@ mod tests {
             .copied()
             .filter_map(<FormatCoordinates as PartialInverseCube>::invert)
             .collect();
-        assert_eq!(forward.len(), 4);
+        assert_eq!(forward.len(), 5);
+        assert_eq!(it.next_back(), Some(forward[4]));
         assert_eq!(it.next_back(), Some(forward[3]));
-        assert_eq!(it.next_back(), Some(forward[2]));
         assert_eq!(it.next(), Some(forward[0]));
         assert_eq!(it.next(), Some(forward[1]));
+        assert_eq!(it.next(), Some(forward[2]));
         assert_eq!(it.next(), None);
         assert_eq!(it.next_back(), None);
     }
@@ -17227,7 +17237,7 @@ mod tests {
         // Twenty closed-enum axis primitives. A new variant landing
         // on any of these enums extends the expected count in
         // lockstep.
-        assert_axis_cardinality_matches_trait_all::<Format>(4);
+        assert_axis_cardinality_matches_trait_all::<Format>(5);
         assert_axis_cardinality_matches_trait_all::<FormatProvenance>(2);
         assert_axis_cardinality_matches_trait_all::<ConfigSourceKind>(3);
         assert_axis_cardinality_matches_trait_all::<FigmentSourceKind>(3);
@@ -17245,7 +17255,7 @@ mod tests {
         // Five product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
-        assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(8);
+        assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(10);
         assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
         assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(21);
         assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
@@ -18985,20 +18995,20 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 20-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 20-axis sum: Format=5, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=7, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=8,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7, DiffLineKind=3 → 75.
-        // 5-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
+        // SecretClientKind=7, DiffLineKind=3 → 76.
+        // 5-cube sum: FormatCoordinates=10, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 56. Grand total 75+56 = 131.
+        // AttributionNameKindCoordinates=6 → 58. Grand total 76+58 = 134.
         assert_eq!(
-            total, 131,
+            total, 134,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 131)",
+             (today's axis_cardinality checksum is 134)",
         );
     }
 
@@ -19186,10 +19196,10 @@ mod tests {
         // produces no duplicates. Distinctness is pinned via the same
         // axis_cardinality checksum pattern used for the superset
         // ClosedAxis macro:
-        // PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2
+        // PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2
         // + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2
         // + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3
-        // + AttributionRule=5 + WatchEventClass=3 = 40. A duplicated
+        // + AttributionRule=5 + WatchEventClass=3 = 41. A duplicated
         // arm would double-count one cardinality; a missing arm would
         // under-count.
         fn axis_card<L: ClosedAxisLabel>() -> usize {
@@ -19203,10 +19213,10 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 75,
+            total, 76,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 75: \
-             PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
+             (today's axis_cardinality checksum is 76: \
+             PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
@@ -39029,11 +39039,16 @@ mod tests {
         assert!(!singleton.has_strict_partial_cover());
         assert!(singleton.has_partial_cover());
 
-        let three_cell: AxisHistogram<Format> = [Format::Yaml, Format::Toml, Format::Lisp]
-            .into_iter()
-            .collect();
-        assert!(!three_cell.has_strict_partial_cover());
-        assert!(three_cell.has_partial_cover());
+        // Four observed cells on the cardinality-5 axis: exactly ONE gap,
+        // which is the singular-gap boundary — partial, but not STRICTLY
+        // partial. It was three cells while the axis had four formats; the
+        // boundary moves with the axis, so the fixture does too.
+        let singular_gap: AxisHistogram<Format> =
+            [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix]
+                .into_iter()
+                .collect();
+        assert!(!singular_gap.has_strict_partial_cover());
+        assert!(singular_gap.has_partial_cover());
     }
 
     #[test]

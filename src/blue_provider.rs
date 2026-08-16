@@ -56,9 +56,55 @@
 //! [`crate::lisp_provider`]. Restating it is how two copies of one rule begin
 //! to disagree.
 
-use figment::value::Value;
+use std::path::{Path, PathBuf};
 
+use figment::value::Value;
+use figment::{Metadata, Profile, Provider, error::Error as FigmentError, value::Dict, value::Map};
+
+use crate::discovery::Format;
 use crate::error::ShikumiError;
+
+/// Figment provider that reads a blue (`.b`) config file.
+///
+/// The exact shape of [`crate::lisp_provider::LispProvider`], deliberately:
+/// both halves route through the shared helpers in [`crate::provider`], so a
+/// front-end adds ZERO bespoke metadata or error code and cannot drift the
+/// operator-facing diagnostics away from what [`Format`] declares.
+///
+/// Until this existed, `.b` support was a free function nothing could reach by
+/// extension — the provider was wired to the mapping but not to the format
+/// primitive, so a `.b` file on disk fell through
+/// [`crate::ProviderChain::with_file`]'s conservative arm and was parsed as
+/// TOML.
+#[derive(Debug, Clone)]
+pub struct BlueProvider {
+    path: PathBuf,
+}
+
+impl BlueProvider {
+    /// Read blue config from `path`.
+    #[must_use]
+    pub fn file(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    /// Load and map a blue file, or fail with a `blue:`-prefixed error.
+    pub fn load(path: &Path) -> Result<Value, ShikumiError> {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))?;
+        load_from_str(&src)
+    }
+}
+
+impl Provider for BlueProvider {
+    fn metadata(&self) -> Metadata {
+        crate::provider::provider_metadata_for(Format::Blue, &self.path)
+    }
+
+    fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
+        crate::provider::provider_data_from_shikumi_load(Self::load(&self.path), Format::Blue)
+    }
+}
 
 /// Parse a blue source string into a figment [`Value`].
 ///

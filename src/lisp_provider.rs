@@ -66,21 +66,46 @@ pub fn load_from_str(src: &str) -> Result<Value, ShikumiError> {
 /// `pub(crate)` so [`crate::blue_provider`] reuses it: blue parses to the
 /// same tatara-lisp `Sexp`, so the two front-ends SHARE one mapping instead
 /// of each carrying a copy that could drift.
+/// Drop a leading bare-symbol head, if there is one.
+///
+/// `(defjanela :largura 120)` → `(:largura 120)`; `(:a 1)` and
+/// `(alpha beta)` are returned untouched — the first because its head is a
+/// Keyword, the second because the tail is not a kwargs list and the caller
+/// falls back to the ORIGINAL slice.
+///
+/// ── ★ WHY THIS IS SHARED RATHER THAN INLINE ──────────────────────────
+/// This used to live inline in [`sexp_to_value_root`] only, so the strip was
+/// a strictly ROOT-ONLY affordance. A nested `(defX …)` — the same form one
+/// level down — hit [`sexp_to_value`], failed `is_kwargs_list` (its first
+/// element is a Symbol, not a Keyword), and degraded to an array of strings:
+///
+/// ```text
+/// Array([String("defjanela"), String(":largura"), Num(I64(120)), …])
+/// ```
+///
+/// Note the keywords degrade too, so the whole form flattens. The author
+/// sees no error — just a wrong shape that fails much later at `Deserialize`
+/// time naming a field rather than the form. Fixing it at one site is what
+/// keeps root and nested from having two different mapping rules.
+fn strip_head(items: &[Sexp]) -> &[Sexp] {
+    match items.first() {
+        Some(Sexp::Atom(Atom::Symbol(_))) => &items[1..],
+        _ => items,
+    }
+}
+
 pub(crate) fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
     // Top-level form: (defX :k v :k v …) — strip the head symbol.
     match sexp {
         Sexp::List(items) => {
-            let start = match items.first() {
-                Some(Sexp::Atom(Atom::Symbol(_))) => 1,
-                _ => 0,
-            };
-            let rest = &items[start..];
+            let rest = strip_head(items);
+            let stripped = rest.len() != items.len();
             if is_kwargs_list(rest) {
                 Ok(Value::Dict(
                     figment::value::Tag::Default,
                     kwargs_to_dict(rest)?,
                 ))
-            } else if items.len() == 1 && start == 1 {
+            } else if items.len() == 1 && stripped {
                 // `(defX)` with no fields — empty dict.
                 Ok(Value::Dict(figment::value::Tag::Default, Dict::new()))
             } else {
@@ -101,10 +126,22 @@ fn sexp_to_value(sexp: &Sexp) -> Value {
         Sexp::Atom(Atom::Symbol(s)) => Value::from(s.clone()),
         Sexp::Atom(Atom::Keyword(s)) => Value::from(format!(":{s}")),
         Sexp::List(items) => {
+            // A bare kwargs list `(:a 1 :b 2)` maps directly; a HEADED form
+            // `(defX :a 1)` maps the same way once its head is dropped, so
+            // nested `(defX …)` behaves exactly like a top-level one. The
+            // array fallback deliberately uses the ORIGINAL `items`, never
+            // the stripped tail — otherwise a plain symbol list like
+            // `(alpha beta gamma)` would silently lose `alpha`.
+            let rest = strip_head(items);
             if is_kwargs_list(items) {
                 Value::Dict(
                     figment::value::Tag::Default,
                     kwargs_to_dict(items).unwrap_or_default(),
+                )
+            } else if is_kwargs_list(rest) {
+                Value::Dict(
+                    figment::value::Tag::Default,
+                    kwargs_to_dict(rest).unwrap_or_default(),
                 )
             } else {
                 Value::Array(
@@ -167,6 +204,59 @@ impl Provider for LispProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ A NESTED `(defX …)` MUST MAP LIKE A TOP-LEVEL ONE.
+    ///
+    /// [`sexp_to_value_root`] strips a leading bare-symbol head so
+    /// `(defescriba :tema "nord")` becomes a dict. The recursive
+    /// [`sexp_to_value`] had no such arm, so the SAME form one level down
+    /// fell through `is_kwargs_list` (its first element is a Symbol, not a
+    /// Keyword) and became a `Value::Array` whose first element was the
+    /// literal string `"defjanela"` — the head leaking into the data.
+    ///
+    /// That is broader than collection literals: any nested call form was
+    /// affected, which is most of what a real config nests. A config author
+    /// gets no error, just a wrong shape that fails far away at
+    /// `Deserialize` time naming a field rather than the form.
+    #[test]
+    fn a_nested_def_form_maps_to_a_dict_not_an_array_of_its_head() {
+        let src = r#"
+(defescriba
+  :tema "nord"
+  :janela (defjanela :largura 120 :altura 40))
+"#;
+        let v = load_from_str(src).expect("parses");
+        let Value::Dict(_, d) = v else {
+            panic!("expected top-level dict")
+        };
+
+        let janela = d.get("janela").expect("janela key present");
+        let Value::Dict(_, inner) = janela else {
+            panic!(
+                "nested (defjanela …) must be a Dict, got {janela:?} \
+                 — the head symbol leaked into the value"
+            )
+        };
+        assert_eq!(inner.get("largura").and_then(Value::to_i128), Some(120));
+        assert_eq!(inner.get("altura").and_then(Value::to_i128), Some(40));
+    }
+
+    /// The counter-case that keeps the fix honest: a plain list of bare
+    /// symbols is NOT a headed form, and must survive intact as an array.
+    /// A head-strip that fired here would silently eat the first element.
+    #[test]
+    fn a_plain_symbol_list_is_not_head_stripped() {
+        let src = r#"(defapp :plugins (alpha beta gamma))"#;
+        let v = load_from_str(src).expect("parses");
+        let Value::Dict(_, d) = v else {
+            panic!("expected dict")
+        };
+        let Value::Array(_, items) = d.get("plugins").expect("plugins") else {
+            panic!("expected array")
+        };
+        assert_eq!(items.len(), 3, "no element may be eaten as a head");
+        assert_eq!(items[0].to_actual_str(), Some("alpha"));
+    }
 
     #[test]
     fn parses_defescriba_with_strings_and_numbers() {

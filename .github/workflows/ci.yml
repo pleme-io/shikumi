@@ -99,8 +99,9 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --check
 
-      # --all-features: measured 6,489 lib + 7 integration + 18 doctests
-      #   (12 run, 6 ignored) = 6,508 executed, vs 6,456 at default features.
+      # --all-features: measured 2026-08-16 as 9,977 lib + 7 integration +
+      #   21 doctests (12 run, 9 ignored) = 9,996 executed, vs 7,610 at
+      #   default features. The previous 6,508 figure was ~3,400 stale.
       # --no-fail-fast: report every failing target in one run, not the first.
       - name: cargo test --all-features
         env:

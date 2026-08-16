@@ -31032,6 +31032,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let hist = chain.as_slice().file_format_histogram();
         for format in Format::ALL.iter().copied() {
@@ -31169,6 +31170,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.lisp")),
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let pairs: Vec<(Format, usize)> = chain.as_slice().file_format_histogram().iter().collect();
         let values: Vec<Format> = pairs.iter().map(|(f, _)| *f).collect();
@@ -31258,6 +31260,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let file_kind_count = uniform
             .as_slice()
@@ -31500,6 +31503,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(
             axis_cover
@@ -31883,6 +31887,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(
             axis_cover
@@ -32041,6 +32046,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert_eq!(
             axis_cover.as_slice().present_file_formats_count(),
@@ -32162,12 +32168,18 @@ mod tests {
         let empty: [ConfigSource; 0] = [];
         assert_eq!(
             empty.absent_file_formats(),
-            vec![Format::Yaml, Format::Toml, Format::Lisp, Format::Nix],
+            vec![
+                Format::Yaml,
+                Format::Toml,
+                Format::Lisp,
+                Format::Nix,
+                Format::Blue
+            ],
         );
     }
 
     #[test]
-    fn absent_file_formats_yaml_only_chain_is_toml_lisp_nix() {
+    fn absent_file_formats_yaml_only_chain_is_toml_lisp_nix_blue() {
         // A chain composed only of `.yaml` file layers has exactly
         // { Toml, Lisp, Nix } as its coverage gap — the non-Yaml
         // subset of the axis is entirely absent. Operator-facing pin
@@ -32180,12 +32192,12 @@ mod tests {
         ];
         assert_eq!(
             yaml_only.as_slice().absent_file_formats(),
-            vec![Format::Toml, Format::Lisp, Format::Nix],
+            vec![Format::Toml, Format::Lisp, Format::Nix, Format::Blue],
         );
     }
 
     #[test]
-    fn absent_file_formats_toml_only_chain_is_yaml_lisp_nix() {
+    fn absent_file_formats_toml_only_chain_is_yaml_lisp_nix_blue() {
         // A chain composed only of `.toml` file layers has exactly
         // { Yaml, Lisp, Nix } as its coverage gap. Boundary pin on
         // the "toml-only recipe" — the closed-axis discipline emits
@@ -32197,7 +32209,7 @@ mod tests {
         ];
         assert_eq!(
             toml_only.as_slice().absent_file_formats(),
-            vec![Format::Yaml, Format::Lisp, Format::Nix],
+            vec![Format::Yaml, Format::Lisp, Format::Nix, Format::Blue],
         );
     }
 
@@ -32321,6 +32333,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(
             full_cover
@@ -32704,6 +32717,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(
             full_cover
@@ -32829,6 +32843,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(
             !full_cover
@@ -32910,6 +32925,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert_eq!(full_cover.as_slice().absent_file_formats_count(), 0);
     }
@@ -32922,7 +32938,7 @@ mod tests {
         // `present_file_formats_count_sample_chain_is_one` on the same
         // fixture and altitude.
         let chain = sample_chain();
-        assert_eq!(chain.as_slice().absent_file_formats_count(), 3);
+        assert_eq!(chain.as_slice().absent_file_formats_count(), 4);
     }
 
     #[test]
@@ -32999,6 +33015,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ]
     }
 
@@ -33119,7 +33136,7 @@ mod tests {
         // `Toml`. Witnesses a coverage-gap head one past the axis head
         // — the declaration-order semantics distinctly from any
         // fixture whose gap starts at `Yaml`. Head-projection peer of
-        // `absent_file_formats_yaml_only_chain_is_toml_lisp_nix` on
+        // `absent_file_formats_yaml_only_chain_is_toml_lisp_nix_blue` on
         // the counterpart chain shape.
         use crate::discovery::Format;
         let chain = sample_chain();
@@ -33137,7 +33154,7 @@ mod tests {
         // exercises the "yaml-only recipe" — the common shikumi
         // default — from two directions (multi-yaml and single-yaml).
         // Head-projection peer of
-        // `absent_file_formats_yaml_only_chain_is_toml_lisp_nix` on
+        // `absent_file_formats_yaml_only_chain_is_toml_lisp_nix_blue` on
         // the singleton chain.
         use crate::discovery::Format;
         let chain = vec![ConfigSource::File(PathBuf::from("/a.yaml"))];
@@ -33155,7 +33172,7 @@ mod tests {
         // still yield the axis-head coverage-gap-head (the observed
         // cell was one past the axis head, so the axis head remains
         // absent). Head-projection peer of
-        // `absent_file_formats_toml_only_chain_is_yaml_lisp_nix` on
+        // `absent_file_formats_toml_only_chain_is_yaml_lisp_nix_blue` on
         // the same fixture.
         use crate::discovery::Format;
         let chain = vec![ConfigSource::File(PathBuf::from("/a.toml"))];
@@ -33455,6 +33472,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         assert!(chain.as_slice().file_format_histogram().is_full_cover());
         assert_eq!(
@@ -33839,6 +33857,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.lisp")),
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         let hist = slice.file_format_histogram();
@@ -34249,6 +34268,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.lisp")),
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         let hist = slice.file_format_histogram();
@@ -34654,6 +34674,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.lisp")),
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         let hist = slice.file_format_histogram();
@@ -35038,6 +35059,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.lisp")),
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         let hist = slice.file_format_histogram();
@@ -55332,6 +55354,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -55741,6 +55764,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -56132,6 +56156,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -56564,6 +56589,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -57058,6 +57084,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -57587,6 +57614,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -58114,6 +58142,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -58700,10 +58729,11 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
-        assert_eq!(slice.file_format_peak_multiplicity(), 4);
+        assert_eq!(slice.file_format_peak_multiplicity(), 5);
         assert_eq!(
             slice.file_format_peak_multiplicity(),
             crate::axis_cardinality::<crate::discovery::Format>()
@@ -59149,10 +59179,11 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
-        assert_eq!(slice.file_format_trough_multiplicity(), 4);
+        assert_eq!(slice.file_format_trough_multiplicity(), 5);
         assert_eq!(
             slice.file_format_trough_multiplicity(),
             crate::axis_cardinality::<crate::discovery::Format>()
@@ -59657,12 +59688,13 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
-        assert_eq!(slice.file_format_peak_multiplicity(), 4);
-        assert_eq!(slice.file_format_trough_multiplicity(), 4);
+        assert_eq!(slice.file_format_peak_multiplicity(), 5);
+        assert_eq!(slice.file_format_trough_multiplicity(), 5);
         assert_eq!(slice.file_format_modality_amplitude(), 0);
     }
 
@@ -59753,12 +59785,13 @@ mod tests {
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.lisp")),
             ConfigSource::File(PathBuf::from("/e.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert_eq!(slice.file_format_peak_multiplicity(), 1);
-        assert_eq!(slice.file_format_trough_multiplicity(), 3);
-        assert_eq!(slice.file_format_modality_amplitude(), 2);
+        assert_eq!(slice.file_format_trough_multiplicity(), 4);
+        assert_eq!(slice.file_format_modality_amplitude(), 3);
     }
 
     #[test]
@@ -59780,12 +59813,13 @@ mod tests {
             ConfigSource::File(PathBuf::from("/e.lisp")),
             ConfigSource::File(PathBuf::from("/f.lisp")),
             ConfigSource::File(PathBuf::from("/g.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert_eq!(slice.file_format_peak_multiplicity(), 3);
-        assert_eq!(slice.file_format_trough_multiplicity(), 1);
-        assert_eq!(slice.file_format_modality_amplitude(), 2);
+        assert_eq!(slice.file_format_trough_multiplicity(), 2);
+        assert_eq!(slice.file_format_modality_amplitude(), 1);
     }
 
     #[test]
@@ -60239,13 +60273,14 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
-        assert_eq!(slice.file_format_peak_multiplicity(), 4);
-        assert_eq!(slice.file_format_trough_multiplicity(), 4);
-        assert_eq!(slice.file_format_modality_degree_sum(), 8);
+        assert_eq!(slice.file_format_peak_multiplicity(), 5);
+        assert_eq!(slice.file_format_trough_multiplicity(), 5);
+        assert_eq!(slice.file_format_modality_degree_sum(), 10);
         assert_eq!(
             slice.file_format_modality_degree_sum(),
             2 * slice.present_file_formats_count(),
@@ -60274,12 +60309,13 @@ mod tests {
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.lisp")),
             ConfigSource::File(PathBuf::from("/e.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert_eq!(slice.file_format_peak_multiplicity(), 1);
-        assert_eq!(slice.file_format_trough_multiplicity(), 3);
-        assert_eq!(slice.file_format_modality_degree_sum(), 4);
+        assert_eq!(slice.file_format_trough_multiplicity(), 4);
+        assert_eq!(slice.file_format_modality_degree_sum(), 5);
     }
 
     #[test]
@@ -60302,12 +60338,13 @@ mod tests {
             ConfigSource::File(PathBuf::from("/e.lisp")),
             ConfigSource::File(PathBuf::from("/f.lisp")),
             ConfigSource::File(PathBuf::from("/g.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert_eq!(slice.file_format_peak_multiplicity(), 3);
-        assert_eq!(slice.file_format_trough_multiplicity(), 1);
-        assert_eq!(slice.file_format_modality_degree_sum(), 4);
+        assert_eq!(slice.file_format_trough_multiplicity(), 2);
+        assert_eq!(slice.file_format_modality_degree_sum(), 5);
     }
 
     #[test]
@@ -60823,11 +60860,12 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
-        assert_eq!(slice.file_format_modality_degree(), (4, 4));
+        assert_eq!(slice.file_format_modality_degree(), (5, 5));
     }
 
     #[test]
@@ -60897,10 +60935,11 @@ mod tests {
             ConfigSource::File(PathBuf::from("/c.toml")),
             ConfigSource::File(PathBuf::from("/d.lisp")),
             ConfigSource::File(PathBuf::from("/e.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
-        assert_eq!(slice.file_format_modality_degree(), (1, 3));
+        assert_eq!(slice.file_format_modality_degree(), (1, 4));
     }
 
     #[test]
@@ -60925,10 +60964,11 @@ mod tests {
             ConfigSource::File(PathBuf::from("/e.lisp")),
             ConfigSource::File(PathBuf::from("/f.lisp")),
             ConfigSource::File(PathBuf::from("/g.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
-        assert_eq!(slice.file_format_modality_degree(), (3, 1));
+        assert_eq!(slice.file_format_modality_degree(), (3, 2));
     }
 
     #[test]
@@ -60989,7 +61029,7 @@ mod tests {
         // `tier_modality_degree_components_bounded_by_axis_cardinality_pointwise`
         // on the tier altitude at the same cardinality-`4` axis.
         let cardinality = crate::axis_cardinality::<crate::discovery::Format>();
-        assert_eq!(cardinality, 4);
+        assert_eq!(cardinality, 5);
         for chain in recessive_file_format_fixtures() {
             let slice = chain.as_slice();
             let (peak, trough) = slice.file_format_modality_degree();
@@ -61352,6 +61392,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_balanced());
@@ -61939,6 +61980,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_balanced());
@@ -62323,6 +62365,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let full_cover_slice = full_cover.as_slice();
         assert!(full_cover_slice.file_formats_balanced());
@@ -62587,8 +62630,9 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
-        assert_eq!(chain.as_slice().file_format_peak_observation(), (1, 4));
+        assert_eq!(chain.as_slice().file_format_peak_observation(), (1, 5));
     }
 
     #[test]
@@ -62900,8 +62944,9 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
-        assert_eq!(chain.as_slice().file_format_trough_observation(), (1, 4));
+        assert_eq!(chain.as_slice().file_format_trough_observation(), (1, 5));
     }
 
     #[test]
@@ -63255,6 +63300,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -63644,6 +63690,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_format_histogram().is_full_cover());
@@ -64077,6 +64124,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -64107,6 +64155,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/h.nix")),
             ConfigSource::File(PathBuf::from("/i.nix")),
             ConfigSource::File(PathBuf::from("/j.nix")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -64459,6 +64508,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_any_observed());
@@ -64819,6 +64869,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(!slice.file_formats_singular_support());
@@ -65233,7 +65284,7 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_singular_gap_three_format_partial_cover_is_true() {
+    fn file_formats_singular_gap_four_format_partial_cover_is_true() {
         // Three-format-cover pin: a chain observing Yaml + Toml + Lisp
         // but never Nix (support size 3 out of 4) —
         // `file_formats_singular_gap` reads `true`. The row this
@@ -65249,9 +65300,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert_eq!(slice.absent_file_formats().len(), 1);
         assert!(slice.file_formats_singular_gap());
         assert!(slice.file_formats_any_observed());
@@ -65276,6 +65328,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(!slice.file_formats_singular_gap());
@@ -65680,9 +65733,10 @@ mod tests {
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/zz.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 2);
+        assert_eq!(slice.present_file_formats().len(), 3);
         assert_eq!(slice.absent_file_formats().len(), 2);
         assert!(slice.file_formats_strict_partial_cover());
         assert!(slice.file_formats_any_observed());
@@ -65710,12 +65764,12 @@ mod tests {
         ];
         let slice = chain.as_slice();
         assert_eq!(slice.present_file_formats().len(), 2);
-        assert_eq!(slice.absent_file_formats().len(), 2);
+        assert_eq!(slice.absent_file_formats().len(), 3);
         assert!(slice.file_formats_strict_partial_cover());
     }
 
     #[test]
-    fn file_formats_strict_partial_cover_three_format_partial_cover_is_false() {
+    fn file_formats_strict_partial_cover_four_format_partial_cover_is_false() {
         // Three-format partial-cover pin: a chain observing Yaml + Toml
         // + Lisp but never Nix (support size 3 out of 4, coverage gap
         // `1`) — the "at least two unobserved" half fails uniformly and
@@ -65728,9 +65782,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert_eq!(slice.absent_file_formats().len(), 1);
         assert!(slice.file_formats_singular_gap());
         assert!(!slice.file_formats_strict_partial_cover());
@@ -65752,6 +65807,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -66190,24 +66246,25 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_low_support_three_format_partial_cover_is_false() {
-        // Three-format-cover pin: a chain observing exactly three
-        // file-format cells (`.yaml + .toml + .lisp`) sits at
+    fn file_formats_low_support_four_format_partial_cover_is_false() {
+        // Four-format-cover pin: a chain observing exactly four
+        // file-format cells (`.yaml + .toml + .lisp + .nix`) sits at
         // support cardinality `3` — one cell unobserved on the
-        // cardinality-`4` axis, exactly the singleton-gap boundary.
+        // cardinality-`5` axis, exactly the singleton-gap boundary.
         // Support cardinality `3` violates `<= 1`, so
         // `file_formats_low_support` reads `false`. Direct witness
         // of the disjointness `file_formats_singular_gap ⇒
-        // !file_formats_low_support` on the cardinality-`4` axis
+        // !file_formats_low_support` on the cardinality-`5` axis
         // where the singleton-gap slice sits at support cardinality
         // `axis_cardinality - 1 = 3`.
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert!(slice.file_formats_singular_gap());
         assert!(!slice.file_formats_low_support());
     }
@@ -66227,6 +66284,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -66673,11 +66731,11 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_high_support_three_format_partial_cover_is_true() {
-        // Three-format-cover pin: a chain observing exactly three
-        // file-format cells (`.yaml + .toml + .lisp`) sits at
+    fn file_formats_high_support_four_format_partial_cover_is_true() {
+        // Four-format-cover pin: a chain observing exactly four
+        // file-format cells (`.yaml + .toml + .lisp + .nix`) sits at
         // support cardinality `3` — one cell unobserved on the
-        // cardinality-`4` axis, exactly the singleton-gap boundary.
+        // cardinality-`5` axis, exactly the singleton-gap boundary.
         // `file_formats_singular_gap` fires (one unobserved cell)
         // and `file_formats_high_support` reads `true`. Direct
         // witness of the strict subsumption
@@ -66693,9 +66751,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert!(slice.file_formats_singular_gap());
         assert!(slice.file_formats_high_support());
     }
@@ -66726,6 +66785,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -66959,6 +67019,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let high_slice = high_chain.as_slice();
         assert!(!high_slice.file_formats_low_support());
@@ -67281,11 +67342,11 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_singular_three_format_partial_cover_is_true() {
-        // Three-format-cover pin: a chain observing exactly three
-        // file-format cells (`.yaml + .toml + .lisp`) sits at
-        // support cardinality `3` = `axis_cardinality - 1`, exactly
-        // the singleton-gap boundary on the cardinality-`4` axis —
+    fn file_formats_singular_four_format_partial_cover_is_true() {
+        // Four-format-cover pin: a chain observing exactly four
+        // file-format cells (`.yaml + .toml + .lisp + .nix`) sits at
+        // support cardinality `4` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`5` axis —
         // so `file_formats_singular_gap` fires and the disjunction
         // holds via that disjunct. `file_formats_singular` reads
         // `true`. Direct witness of the subsumption
@@ -67299,9 +67360,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert!(slice.file_formats_singular_gap());
         assert!(slice.file_formats_singular());
     }
@@ -67329,6 +67391,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -67559,12 +67622,17 @@ mod tests {
         assert!(!two_slice.file_formats_singular());
         assert!(two_slice.file_formats_strict_partial_cover());
 
-        let three_chain = vec![
+        // The singular-gap leg: exactly ONE format absent. That is four
+        // observed cells now that the axis carries five formats — it was
+        // three when the axis carried four. The leg is defined by its
+        // DISTANCE from full cover, not by a fixed cell count.
+        let singular_gap_chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
         ];
-        let three_slice = three_chain.as_slice();
+        let three_slice = singular_gap_chain.as_slice();
         assert!(three_slice.file_formats_singular());
         assert!(!three_slice.file_formats_full_cover());
         assert!(!three_slice.file_formats_strict_partial_cover());
@@ -67574,6 +67642,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let uniform_slice = uniform_chain.as_slice();
         assert!(uniform_slice.file_formats_full_cover());
@@ -67890,11 +67959,11 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_boundary_three_format_partial_cover_is_false() {
-        // Three-format-cover pin: a chain observing exactly three
-        // file-format cells (`.yaml + .toml + .lisp`) sits at
-        // support cardinality `3` = `axis_cardinality - 1`, exactly
-        // the singleton-gap boundary on the cardinality-`4` axis —
+    fn file_formats_boundary_four_format_partial_cover_is_false() {
+        // Four-format-cover pin: a chain observing exactly four
+        // file-format cells (`.yaml + .toml + .lisp + .nix`) sits at
+        // support cardinality `4` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`5` axis —
         // the scan sees a nonzero and a zero cell and returns
         // `false`. `file_formats_boundary` reads `false`. Direct
         // witness of the disjointness `file_formats_singular_gap ⇒
@@ -67909,9 +67978,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert!(slice.file_formats_singular_gap());
         assert!(!slice.file_formats_boundary());
     }
@@ -67935,6 +68005,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -68487,11 +68558,11 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_partial_cover_three_format_partial_cover_is_true() {
-        // Three-format-cover pin: a chain observing exactly three
-        // file-format cells (`.yaml + .toml + .lisp`) sits at
-        // support cardinality `3` = `axis_cardinality - 1`, exactly
-        // the singleton-gap boundary on the cardinality-`4` axis —
+    fn file_formats_partial_cover_four_format_partial_cover_is_true() {
+        // Four-format-cover pin: a chain observing exactly four
+        // file-format cells (`.yaml + .toml + .lisp + .nix`) sits at
+        // support cardinality `4` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`5` axis —
         // the scan sees a nonzero and a zero cell and returns
         // `true`. `file_formats_partial_cover` reads `true`. Direct
         // witness of the subsumption `file_formats_singular_gap ⇒
@@ -68506,9 +68577,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert!(slice.file_formats_partial_cover());
         assert!(slice.file_formats_singular_gap());
     }
@@ -68533,6 +68605,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -69087,9 +69160,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 4);
+        assert_eq!(slice.present_file_formats().len(), 5);
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
         assert!(slice.file_formats_modally_tied());
@@ -69551,9 +69625,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 4);
+        assert_eq!(slice.present_file_formats().len(), 5);
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
         assert!(slice.file_formats_antimodally_tied());
@@ -70093,9 +70168,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 4);
+        assert_eq!(slice.present_file_formats().len(), 5);
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
         assert!(!slice.file_formats_strictly_modally_unique());
@@ -70567,9 +70643,10 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 4);
+        assert_eq!(slice.present_file_formats().len(), 5);
         assert!(slice.file_formats_full_cover());
         assert!(slice.file_formats_balanced());
         assert!(!slice.file_formats_strictly_antimodally_unique());
@@ -70995,6 +71072,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -71095,18 +71173,25 @@ mod tests {
     #[test]
     fn file_formats_modality_class_support_four_tied_peak_strict_trough_is_tied_modal_strict_antimodal()
      {
-        // Cardinality-`4` reachability pin: a support-`4` chain with
-        // two `.yaml` + two `.toml` + two `.lisp` + one `.nix` has
-        // `Yaml`, `Toml`, `Lisp` all sharing peak `2` while `Nix`
-        // uniquely holds trough `1` — `modality_degree` reads `(3, 1)`
-        // and the classifier lands on
-        // ModalityClass::TiedModalStrictAntimodal. A support-`4` shape
-        // *uninhabited* on the cardinality-`3` layer-kind sister sub-
-        // axis and the cardinality-`3` diff altitude with only three
-        // observed cells to spread the tied peak across, witness that
-        // the cardinality-`4` file-format sub-axis reaches classifier
-        // corners at support cardinalities the sister sub-axis cannot,
-        // matching the cardinality-`4` tier-altitude peer
+        // Cardinality-`5` reachability pin: a support-`5` chain with
+        // two `.yaml` + two `.toml` + two `.lisp` + two `.b` + one
+        // `.nix` has `Yaml`, `Toml`, `Lisp`, `Blue` all sharing peak
+        // `2` while `Nix` uniquely holds trough `1` —
+        // `modality_degree` reads `(4, 1)` and the classifier lands on
+        // ModalityClass::TiedModalStrictAntimodal.
+        //
+        // ★ TWO `.b` layers, not one, and that is the whole point. A
+        // single blue layer would tie `Blue` with `Nix` at the minimum
+        // and destroy the STRICTLY-antimodal half of the shape — the
+        // assertions below would then be exercising a different
+        // classifier corner while still passing under this name.
+        //
+        // A support-`5` shape *uninhabited* on the cardinality-`3`
+        // layer-kind sister sub-axis and the cardinality-`3` diff
+        // altitude with only three observed cells to spread the tied
+        // peak across, witness that the file-format sub-axis reaches
+        // classifier corners at support cardinalities the sister sub-
+        // axis cannot, matching the tier-altitude peer
         // `tiers_modality_class_support_four_tied_peak_strict_trough_is_tied_modal_strict_antimodal`
         // on the same axis-cardinality.
         let chain = vec![
@@ -71116,7 +71201,9 @@ mod tests {
             ConfigSource::File(PathBuf::from("/d.toml")),
             ConfigSource::File(PathBuf::from("/e.lisp")),
             ConfigSource::File(PathBuf::from("/f.lisp")),
-            ConfigSource::File(PathBuf::from("/g.nix")),
+            ConfigSource::File(PathBuf::from("/g.b")),
+            ConfigSource::File(PathBuf::from("/h.b")),
+            ConfigSource::File(PathBuf::from("/i.nix")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -71530,7 +71617,7 @@ mod tests {
         ];
         let slice = chain.as_slice();
         assert_eq!(slice.present_file_formats().len(), 2);
-        assert_eq!(slice.absent_file_formats().len(), 2);
+        assert_eq!(slice.absent_file_formats().len(), 3);
         assert!(slice.file_formats_strict_partial_cover());
         assert_eq!(
             slice.file_formats_support_cardinality_class(),
@@ -71539,7 +71626,7 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_support_cardinality_class_three_format_partial_cover_is_singular_gap_variant() {
+    fn file_formats_support_cardinality_class_four_format_partial_cover_is_singular_gap_variant() {
         // Three-format partial-cover pin on the cardinality-`4` file-
         // format sub-axis: a chain observing exactly three formats
         // (`Yaml` + `Toml` + `Lisp`) has three observed cells and one
@@ -71549,16 +71636,17 @@ mod tests {
         // Direct witness of the subsumption
         // `file_formats_singular_gap ⇒
         // file_formats_support_cardinality_class == SingularGap` on the
-        // cardinality-`4` axis. Cardinality-`4` peer of
+        // cardinality-`5` axis. Cardinality-`4` peer of
         // `tiers_support_cardinality_class_three_tier_partial_cover_is_singular_gap_variant`
         // on the tier altitude at the same axis-cardinality.
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert_eq!(slice.absent_file_formats().len(), 1);
         assert!(slice.file_formats_singular_gap());
         assert_eq!(
@@ -71585,6 +71673,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -72140,7 +72229,7 @@ mod tests {
         ];
         let slice = chain.as_slice();
         assert_eq!(slice.present_file_formats().len(), 2);
-        assert_eq!(slice.absent_file_formats().len(), 2);
+        assert_eq!(slice.absent_file_formats().len(), 3);
         assert!(slice.file_formats_strict_partial_cover());
         assert_eq!(
             slice.file_formats_support_boundary_distance(),
@@ -72149,7 +72238,7 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_support_boundary_distance_three_format_partial_cover_is_singular_variant() {
+    fn file_formats_support_boundary_distance_four_format_partial_cover_is_singular_variant() {
         // Three-format partial-cover pin on the cardinality-`4` file-
         // format sub-axis: a chain observing exactly three formats
         // (`Yaml` + `Toml` + `Lisp`) has three observed cells and one
@@ -72161,16 +72250,17 @@ mod tests {
         // (the top singular near-boundary bucket). Direct witness of
         // the subsumption `file_formats_singular_gap ⇒
         // file_formats_support_boundary_distance == Singular` on the
-        // cardinality-`4` axis. Cardinality-`4` peer of
+        // cardinality-`5` axis. Cardinality-`4` peer of
         // `tiers_support_boundary_distance_three_tier_partial_cover_is_singular_variant`
         // on the tier altitude at the same axis-cardinality.
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert_eq!(slice.absent_file_formats().len(), 1);
         assert!(slice.file_formats_singular_gap());
         assert_eq!(
@@ -72201,6 +72291,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -72738,7 +72829,7 @@ mod tests {
         ];
         let slice = chain.as_slice();
         assert_eq!(slice.present_file_formats().len(), 2);
-        assert_eq!(slice.absent_file_formats().len(), 2);
+        assert_eq!(slice.absent_file_formats().len(), 3);
         assert!(slice.file_formats_strict_partial_cover());
         assert_eq!(
             slice.file_formats_support_magnitude_direction(),
@@ -72747,7 +72838,7 @@ mod tests {
     }
 
     #[test]
-    fn file_formats_support_magnitude_direction_three_format_partial_cover_is_high_variant() {
+    fn file_formats_support_magnitude_direction_four_format_partial_cover_is_high_variant() {
         // Three-format partial-cover pin on the cardinality-`4` file-
         // format sub-axis: a chain observing exactly three formats
         // (`Yaml` + `Toml` + `Lisp`) has three observed cells and one
@@ -72759,20 +72850,21 @@ mod tests {
         // (the top high-support corner). Direct witness of the
         // subsumption `file_formats_singular_gap ⇒
         // file_formats_support_magnitude_direction == High` on the
-        // cardinality-`4` axis. Cardinality-`4` peer of
+        // cardinality-`5` axis. Cardinality-`4` peer of
         // `tiers_support_magnitude_direction_three_tier_partial_cover_is_high_variant`
         // on the tier altitude at the same axis-cardinality. Transposes
         // the sibling
-        // `file_formats_support_boundary_distance_three_format_partial_cover_is_singular_variant`
+        // `file_formats_support_boundary_distance_four_format_partial_cover_is_singular_variant`
         // outcome (Singular) into High under the orthogonal magnitude-
         // direction quotient of the four non-interior corners.
         let chain = vec![
             ConfigSource::File(PathBuf::from("/a.yaml")),
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/zz.nix")),
         ];
         let slice = chain.as_slice();
-        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.present_file_formats().len(), 4);
         assert_eq!(slice.absent_file_formats().len(), 1);
         assert!(slice.file_formats_singular_gap());
         assert_eq!(
@@ -72808,6 +72900,7 @@ mod tests {
             ConfigSource::File(PathBuf::from("/b.toml")),
             ConfigSource::File(PathBuf::from("/c.lisp")),
             ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/e.b")),
         ];
         let slice = chain.as_slice();
         assert!(slice.file_formats_full_cover());
@@ -93772,7 +93865,10 @@ mod tests {
             .file_format_histogram()
             .unobserved()
             .collect();
-        assert_eq!(gap, HashSet::from([Format::Lisp, Format::Nix]));
+        assert_eq!(
+            gap,
+            HashSet::from([Format::Lisp, Format::Nix, Format::Blue])
+        );
 
         // Env-only chain → file_format support is empty, so
         // unobserved = full axis = {Yaml, Toml, Lisp, Nix}. Peer to

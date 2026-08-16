@@ -94,14 +94,21 @@ The count below is re-derivable; do not hand-edit it. Reproduce with:
 cargo test --lib --all-features -- --list | grep -c ': test$'
 ```
 
-Measured 2026-07-27 on `aarch64-darwin` (`cargo test`, exit 0, zero failures):
+Measured 2026-08-16 on `aarch64-darwin` (`cargo test`, exit 0, zero failures):
 
 | target | `cargo test` (default features) | `cargo test --all-features` |
 |---|---|---|
-| lib unit tests (`src/`) | 6,437 | **6,489** |
+| lib unit tests (`src/`) | 7,603 | **9,977** |
 | `tests/dispatcher_registration.rs` | 7 | 7 |
-| doctests | 16 collected · 12 run · 4 ignored | 18 collected · 12 run · 6 ignored |
-| **executed total** | **6,456** | **6,508** |
+| doctests | — | 21 collected · 12 run · 9 ignored |
+| **executed total** | **7,610** | **9,996** |
+
+> **The 2026-07-27 figures this replaced were stale by ~3,400** — they read
+> 6,437 / 6,489 / 6,508, and the ~500 commits of hotswap conversion cells
+> since had never moved them. That is the direction of drift this file warns
+> about everywhere else: a count that is too LOW reads as merely modest, so
+> nobody re-reads it as wrong. Re-derive rather than trust; the reproducer is
+> right above.
 
 Three things this table exists to stop:
 
