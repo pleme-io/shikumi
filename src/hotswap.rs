@@ -4094,6 +4094,75 @@ impl PartialEq<SameStoreImpossibilityKind> for std::rc::Rc<str> {
     }
 }
 
+/// The [`PartialEq<&std::rc::Rc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **reference-to-non-atomically-shared-
+/// refcounted-carrier compare-side sibling** of the by-value
+/// [`PartialEq<std::rc::Rc<str>>`] impl (cell 44, `87c59f6`) directly above,
+/// and the non-atomically-refcounted dual of the reference-to-atomically-
+/// refcounted [`PartialEq<&std::sync::Arc<str>>`] impl (cell 59, `6127887`).
+/// Enables the natural iterator shape
+/// `slice_of_rc.iter().any(|r: &std::rc::Rc<str>| kind == r)` (whose
+/// closure argument is a `&std::rc::Rc<str>`, not a [`std::rc::Rc<str>`])
+/// without a per-callsite `**r` dereference and without a
+/// [`std::rc::Rc::clone`] refcount bump on the single-threaded consumer.
+///
+/// Before this cell, `kind == &rc_str` failed to type-check against the
+/// sibling receivers alone: Rust does NOT auto-deref the RHS of `==` to
+/// satisfy a [`PartialEq<T>`] bound, and Rust's standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &std::rc::Rc<str>`,
+/// NOT the `Kind == &std::rc::Rc<str>` direction a natural iterator
+/// combinator produces. Every downstream slot with a non-atomically-refcounted
+/// view produced by borrow-yielding traversal — a
+/// `Vec<std::rc::Rc<str>>::iter()` on a single-threaded intern-table
+/// snapshot, a `HashMap<K, std::rc::Rc<str>>::values` iterator, a per-tick
+/// UI event dispatcher threading a candidate identifier reference, a WASM
+/// main-loop callback receiving a single-threaded shared-refcounted
+/// identifier reference and comparing it against a Kind without paying the
+/// atomic-refcount tax on the intermediate clone, any generic slot bounded
+/// on `T: PartialEq<&std::rc::Rc<str>>` — was previously stranded at either
+/// a per-callsite `**r` deref (a coordinated silent rewrite of the callsite,
+/// not a lift into the type-checker), an `.as_ref()` postfix that fragments
+/// the receiver-family surface, or a [`std::rc::Rc::clone`] bump that pays a
+/// non-atomic refcount increment purely to satisfy the by-value receiver.
+/// This impl closes the reference-to-Rc-str cell by delegation to the
+/// sibling [`PartialEq<std::rc::Rc<str>>`] impl through a single pointer
+/// deref — one line, zero allocations, zero refcount touches — so the
+/// caller reaches the SAME classification through the standard trait alone.
+///
+/// **Single-threaded consumer alignment.** Mirrors the reference-to-Arc-str
+/// cell (cell 59) on the non-atomic-refcount half of the shared-refcounted
+/// carrier family: single-threaded consumers embedding shikumi (WASM
+/// main-loop UIs, tobira-style app launchers holding non-atomic Rc-shared
+/// classification identifiers, per-tick single-threaded controllers) reach
+/// the same allocation-free, refcount-untouched compare seam through the
+/// standard trait, without paying the atomic-refcount tax an Arc-based
+/// carrier would impose. The accepted-set flows through the sibling
+/// delegation; adding a hypothetical third impossibility corner updates the
+/// ONE `match` body in [`Self::name`] and this impl surfaces the new
+/// identifier through the delegating chain in lockstep with the rest of the
+/// string-side comparison grid.
+impl PartialEq<&std::rc::Rc<str>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&std::rc::Rc<str>) -> bool {
+        <Self as PartialEq<std::rc::Rc<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// [`&std::rc::Rc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&std::rc::Rc<str>>`] impl directly above, welding the
+/// symmetric `&non_atomically_shared_refcounted == kind` seam through the
+/// same [`Self::name`] source of truth via delegation to the sibling
+/// [`PartialEq<SameStoreImpossibilityKind>`] for [`std::rc::Rc<str>`]
+/// impl. Both directions of the reference-to-non-atomically-refcounted
+/// cross-type comparison now compose out of the same allocation-free,
+/// refcount-untouched receiver by construction.
+impl PartialEq<SameStoreImpossibilityKind> for &std::rc::Rc<str> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <std::rc::Rc<str> as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::rc::Rc<[u8]>>`] impl on
 /// [`SameStoreImpossibilityKind`] — the **byte-side non-atomically-shared-
 /// refcounted-carrier sibling** of the string-side
@@ -7655,6 +7724,33 @@ impl PartialEq<SameStoreConsistencyKind> for std::rc::Rc<str> {
     }
 }
 
+/// The [`PartialEq<&std::rc::Rc<str>>`] impl on
+/// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
+/// impossibility-half [`PartialEq<&std::rc::Rc<str>>`] impl (cell 64), and
+/// the non-atomically-refcounted dual of the reference-to-atomically-
+/// refcounted [`PartialEq<&std::sync::Arc<str>>`] impl (cell 59) on the
+/// consistent half. See the impossibility-half impl above for the full
+/// receiver-family rationale; the delegation-through-a-single-pointer-deref
+/// shape and the zero-refcount, zero-allocation guarantee are lifted here
+/// verbatim onto the consistent half.
+impl PartialEq<&std::rc::Rc<str>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&std::rc::Rc<str>) -> bool {
+        <Self as PartialEq<std::rc::Rc<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// [`&std::rc::Rc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&std::rc::Rc<str>>`] impl directly above on the consistent
+/// half, welding the symmetric `&non_atomically_shared_refcounted == kind`
+/// seam through delegation to the sibling
+/// [`PartialEq<SameStoreConsistencyKind>`] for [`std::rc::Rc<str>`] impl.
+impl PartialEq<SameStoreConsistencyKind> for &std::rc::Rc<str> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <std::rc::Rc<str> as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<std::rc::Rc<[u8]>>`] impl on
 /// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
 /// impossibility-half [`PartialEq<std::rc::Rc<[u8]>>`] impl (cell 45),
@@ -10021,6 +10117,39 @@ impl PartialEq<std::rc::Rc<str>> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for std::rc::Rc<str> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         self.as_ref() == other.name()
+    }
+}
+
+/// The [`PartialEq<&std::rc::Rc<str>>`] impl on [`ProofRelationKind`] —
+/// the **fused-sum sibling** of the two half-side reference-to-non-
+/// atomically-refcounted [`PartialEq<&std::rc::Rc<str>>`] impls on
+/// [`SameStoreImpossibilityKind`] and [`SameStoreConsistencyKind`]
+/// (cell 64), and the non-atomically-refcounted dual of the fused
+/// reference-to-atomically-refcounted [`PartialEq<&std::sync::Arc<str>>`]
+/// impl (cell 59) at the fused altitude. Delegates to the sibling by-value
+/// [`PartialEq<std::rc::Rc<str>>`] impl on [`ProofRelationKind`] (cell 44)
+/// through a single pointer deref — one line, zero allocations, zero
+/// non-atomic refcount touches — so the caller reaches the SAME fused-arm
+/// classification through the standard trait alone on the reference-to-Rc-
+/// str receiver.
+impl PartialEq<&std::rc::Rc<str>> for ProofRelationKind {
+    fn eq(&self, other: &&std::rc::Rc<str>) -> bool {
+        <Self as PartialEq<std::rc::Rc<str>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for
+/// [`&std::rc::Rc<str>`] impl — the reverse-direction sibling of the
+/// [`PartialEq<&std::rc::Rc<str>>`] impl directly above at the fused
+/// altitude, welding the symmetric `&non_atomically_shared_refcounted ==
+/// kind` seam through delegation to the sibling
+/// [`PartialEq<ProofRelationKind>`] for [`std::rc::Rc<str>`] impl. Both
+/// directions of the reference-to-non-atomically-refcounted cross-type
+/// comparison now compose out of the same allocation-free, refcount-
+/// untouched receiver by construction at the fused altitude.
+impl PartialEq<ProofRelationKind> for &std::rc::Rc<str> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <std::rc::Rc<str> as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -59280,6 +59409,491 @@ mod try_from_ref_rc_str_tests {
                 ProofRelationKind::try_from(&r),
                 ProofRelationKind::try_from(&a),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_rc_str_tests {
+    //! [`PartialEq<&std::rc::Rc<str>>`] and
+    //! [`PartialEq<Kind> for &std::rc::Rc<str>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **reference-to-non-atomically-shared-
+    //! refcounted-carrier compare-side sibling** of the by-value
+    //! [`PartialEq<std::rc::Rc<str>>`] trio lifted by
+    //! [`super::partial_eq_rc_str_tests`] (cell 44), and the non-atomically-
+    //! refcounted dual of the reference-to-atomically-refcounted
+    //! [`PartialEq<&std::sync::Arc<str>>`] pair lifted by
+    //! [`super::partial_eq_ref_arc_str_tests`] (cell 59). Closes the
+    //! ergonomic gap Rust's `==` trait dispatch leaves between an
+    //! [`std::rc::Rc<str>`] value and a `&std::rc::Rc<str>` reference on the
+    //! compare-side of the three kind enums.
+    //!
+    //! Rust does NOT auto-deref the RHS of `==` to satisfy a
+    //! [`PartialEq<T>`] bound, and the standard blanket
+    //! `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &std::rc::Rc<str>`, NOT the `Kind == &std::rc::Rc<str>`
+    //! direction a natural iterator combinator produces
+    //! (`vec_of_rc.iter().any(|r: &std::rc::Rc<str>| kind == r)`, whose
+    //! closure argument is `&std::rc::Rc<str>`, not [`std::rc::Rc<str>`]).
+    //! This module pins that both directions of the reference-to-non-
+    //! atomically-refcounted pair compose at the type-checker for every
+    //! variant of every kind enum, allocation-free and with zero refcount
+    //! touches on the shared handle.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Pointwise identity on both cells (`kind == &rc_str`,
+    //!    `&rc_str == kind`) for every variant of every kind enum.
+    //! 2. Sibling agreement with the by-value
+    //!    [`PartialEq<std::rc::Rc<str>>`] pair — for every variant and
+    //!    every probe string, both directions of the reference-to-Rc pair
+    //!    agree with the by-value pair (cell 44).
+    //! 3. Inequality on unknown non-atomically-refcounted strings.
+    //! 4. Cross-variant inequality — for every pair `(a, b)` of distinct
+    //!    variants, `a != &Rc::<str>::from(b.name())`.
+    //! 5. Fused-arm lockstep — a fused kind constructed from either
+    //!    half-side variant equals the reference-to-Rc half-side name
+    //!    through both directions.
+    //! 6. **THE LOAD-BEARING SEAM** —
+    //!    `slice.iter().any(|r: &Rc<str>| kind == r)` on a `[Rc<str>]`
+    //!    compiles and returns the correct answer; `Iterator::position`
+    //!    and `Iterator::find` composability pinned; a
+    //!    `HashMap<K, Rc<str>>::values` iterator surfacing `&Rc<str>`
+    //!    composes through the same shape.
+    //! 7. Generic composability at a `for<'a> PartialEq<&'a Rc<str>>`-
+    //!    bounded seam neither the sibling [`PartialEq<std::rc::Rc<str>>`]
+    //!    nor the borrowed [`PartialEq<&str>`] receiver alone can satisfy.
+    //! 8. **REFCOUNT UNTOUCHED** — for every variant of every kind enum, a
+    //!    fresh [`std::rc::Rc<str>`] cloned into a second handle undergoes
+    //!    the borrowed comparison via the reference receiver, and both
+    //!    [`std::rc::Rc::strong_count`] and [`std::rc::Rc::ptr_eq`] are
+    //!    pointwise-identical before and after — on both directions. The
+    //!    by-value cell consumes an [`std::rc::Rc`] the caller-side must
+    //!    have refcount-cloned; this cell consumes a bare `&Rc`.
+    //! 9. Atomic-carrier lockstep — for every variant, the borrowed
+    //!    comparison via `&Rc<str>` agrees with the borrowed comparison
+    //!    via `&Arc<str>` (cell 59). Same identifier bytes reach the same
+    //!    accepted-set through both shared-refcounted borrowed receivers,
+    //!    so a downstream consumer migrating between single-threaded and
+    //!    multi-threaded shared-refcounted carriers lands on the same
+    //!    classification without a callsite rewrite.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+    use std::rc::Rc;
+
+    fn rc(s: &str) -> Rc<str> {
+        Rc::<str>::from(s)
+    }
+
+    // ---------- (1) Pointwise identity ----------
+
+    #[test]
+    fn impossibility_identity_ref_rc() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let by_ref: &Rc<str> = &r;
+            assert!(k == by_ref, "kind == &rc for {}", k.name());
+            assert!(by_ref == k, "&rc == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_rc() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let by_ref: &Rc<str> = &r;
+            assert!(k == by_ref, "kind == &rc for {}", k.name());
+            assert!(by_ref == k, "&rc == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_rc() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let by_ref: &Rc<str> = &r;
+            assert!(k == by_ref, "kind == &rc for {}", k.name());
+            assert!(by_ref == k, "&rc == kind for {}", k.name());
+        }
+    }
+
+    // ---------- (2) Sibling agreement with the by-value pair ----------
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let r: Rc<str> = rc(probe);
+                let by_ref: &Rc<str> = &r;
+                let by_val_forward = k == r;
+                let by_val_reciprocal = r == k;
+                assert_eq!(
+                    k == by_ref,
+                    by_val_forward,
+                    "kind == &rc vs kind == rc for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+                assert_eq!(
+                    by_ref == k,
+                    by_val_reciprocal,
+                    "&rc == kind vs rc == kind for {} on {:?}",
+                    k.name(),
+                    probe,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_by_value_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let r: Rc<str> = rc(probe);
+                let by_ref: &Rc<str> = &r;
+                assert_eq!(k == by_ref, k == r);
+                assert_eq!(by_ref == k, r == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_by_value_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let r: Rc<str> = rc(probe);
+                let by_ref: &Rc<str> = &r;
+                assert_eq!(k == by_ref, k == r);
+                assert_eq!(by_ref == k, r == k);
+            }
+        }
+    }
+
+    // ---------- (3) Inequality on unknown rc ----------
+
+    #[test]
+    fn impossibility_unknown_ref_rc_inequality() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(&format!("{}-x", k.name()));
+            let by_ref: &Rc<str> = &r;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn consistency_unknown_ref_rc_inequality() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(&format!("{}-x", k.name()));
+            let by_ref: &Rc<str> = &r;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_unknown_ref_rc_inequality() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(&format!("{}-x", k.name()));
+            let by_ref: &Rc<str> = &r;
+            assert!(k != by_ref);
+            assert!(by_ref != k);
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_cross_variant_ref_rc_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_rc: Rc<str> = rc(b.name());
+                let by_ref: &Rc<str> = &b_rc;
+                assert!(a != by_ref, "{} != &{}", a.name(), b.name());
+                assert!(by_ref != a, "&{} != {}", b.name(), a.name());
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_rc_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_rc: Rc<str> = rc(b.name());
+                let by_ref: &Rc<str> = &b_rc;
+                assert!(a != by_ref);
+                assert!(by_ref != a);
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_rc() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let r: Rc<str> = rc(imp.name());
+            let by_ref: &Rc<str> = &r;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let r: Rc<str> = rc(c.name());
+            let by_ref: &Rc<str> = &r;
+            assert!(fused == by_ref);
+            assert!(by_ref == fused);
+        }
+    }
+
+    // ---------- (6) Iterator-shape composability — the load-bearing seam ----------
+    //
+    // Before this cell, `slice.iter().any(|r: &Rc<str>| kind == r)` did
+    // not type-check — the compiler suggested a per-callsite `**r` deref
+    // or a `.clone()` refcount bump. With this cell, the natural iterator
+    // combinator composes out of the standard trait alone.
+
+    #[test]
+    fn iter_any_over_slice_of_rc_impossibility() {
+        let hay: Vec<Rc<str>> = vec![rc("cross_store"), rc("regressed"), rc("unknown")];
+        let k = SameStoreImpossibilityKind::Regressed;
+        assert!(hay.iter().any(|r: &Rc<str>| k == r));
+        assert!(hay.iter().any(|r: &Rc<str>| r == k));
+        assert_eq!(hay.iter().position(|r: &Rc<str>| k == r), Some(1));
+    }
+
+    #[test]
+    fn iter_any_over_slice_of_rc_consistency() {
+        let hay: Vec<Rc<str>> = vec![rc("stationary"), rc("progression")];
+        let k = SameStoreConsistencyKind::Progression;
+        assert!(hay.iter().any(|r: &Rc<str>| k == r));
+        assert!(hay.iter().any(|r: &Rc<str>| r == k));
+        assert_eq!(hay.iter().position(|r: &Rc<str>| k == r), Some(1));
+    }
+
+    #[test]
+    fn iter_find_ref_of_ref_over_slice_of_rc() {
+        // `Iterator::find` hands the closure `&Self::Item`, i.e.
+        // `&&Rc<str>` for `hay.iter()`. `*r: &Rc<str>` uses the new
+        // impl directly.
+        let hay: Vec<Rc<str>> = vec![rc("regressed"), rc("cross_store")];
+        let k = SameStoreImpossibilityKind::CrossStore;
+        let found: Option<&Rc<str>> = hay.iter().find(|r| k == **r);
+        assert_eq!(found.map(|r| r.as_ref()), Some("cross_store"));
+    }
+
+    // ---------- (7) Generic composability at a for<'a> PartialEq<&'a Rc<str>> seam ----------
+
+    fn cmp_kind_ref_rc<K>(k: &K, r: &Rc<str>) -> bool
+    where
+        for<'a> K: PartialEq<&'a Rc<str>>,
+    {
+        *k == r
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert!(cmp_kind_ref_rc(&k, &r));
+            let miss: Rc<str> = rc("unknown");
+            assert!(!cmp_kind_ref_rc(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert!(cmp_kind_ref_rc(&k, &r));
+            let miss: Rc<str> = rc("unknown");
+            assert!(!cmp_kind_ref_rc(&k, &miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert!(cmp_kind_ref_rc(&k, &r));
+            let miss: Rc<str> = rc("unknown");
+            assert!(!cmp_kind_ref_rc(&k, &miss));
+        }
+    }
+
+    // ---------- (8) Refcount untouched across the borrowed comparison ----------
+    //
+    // The borrowed receiver must not disturb the non-atomic strong count of
+    // the shared handle. This is the property that distinguishes the
+    // borrowed receiver from a caller-side `.clone()` detour — the by-value
+    // cell consumes an `Rc` the caller-side must have refcount-cloned;
+    // this cell consumes a bare `&Rc`.
+
+    #[test]
+    fn strong_count_untouched_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let r2 = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &r2));
+            let count_before = Rc::strong_count(&r);
+            let by_ref: &Rc<str> = &r;
+            let _ = k == by_ref;
+            let _ = by_ref == k;
+            let count_after = Rc::strong_count(&r);
+            assert_eq!(count_before, count_after);
+            assert!(Rc::ptr_eq(&r, &r2));
+        }
+    }
+
+    #[test]
+    fn strong_count_untouched_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let r2 = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let by_ref: &Rc<str> = &r;
+            let _ = k == by_ref;
+            let _ = by_ref == k;
+            let count_after = Rc::strong_count(&r);
+            assert_eq!(count_before, count_after);
+            assert!(Rc::ptr_eq(&r, &r2));
+        }
+    }
+
+    #[test]
+    fn strong_count_untouched_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let r2 = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let by_ref: &Rc<str> = &r;
+            let _ = k == by_ref;
+            let _ = by_ref == k;
+            let count_after = Rc::strong_count(&r);
+            assert_eq!(count_before, count_after);
+            assert!(Rc::ptr_eq(&r, &r2));
+        }
+    }
+
+    // ---------- (9) HashMap<K, Rc<str>> reference-yielding projection ----------
+    //
+    // A `HashMap<K, Rc<str>>` whose `.values()` iterator yields `&Rc<str>`
+    // is the natural intern-table shape a single-threaded consumer surfaces
+    // on non-atomically-refcounted string values. The reference-yielding
+    // walk lands at exactly the shape this cell closes.
+
+    #[test]
+    fn hashmap_values_projection_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Rc<str>> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, rc(k.name()));
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert!(hay.values().any(|r: &Rc<str>| k == r));
+            assert!(hay.values().any(|r: &Rc<str>| r == k));
+        }
+        let miss = rc("no_such_variant_probe");
+        assert!(hay.values().all(|r: &Rc<str>| r != &miss.clone()));
+    }
+
+    #[test]
+    fn hashmap_values_projection_consistency() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Rc<str>> = HashMap::new();
+        for (i, &k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, rc(k.name()));
+        }
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert!(hay.values().any(|r: &Rc<str>| k == r));
+            assert!(hay.values().any(|r: &Rc<str>| r == k));
+        }
+    }
+
+    #[test]
+    fn hashmap_values_projection_fused() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Rc<str>> = HashMap::new();
+        for (i, &k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, rc(k.name()));
+        }
+        for &k in ProofRelationKind::VARIANTS {
+            assert!(hay.values().any(|r: &Rc<str>| k == r));
+            assert!(hay.values().any(|r: &Rc<str>| r == k));
+        }
+    }
+
+    // ---------- (10) Atomic-carrier lockstep — Rc<str> vs Arc<str> ----------
+    //
+    // For every variant, the borrowed comparison via `&Rc<str>` agrees
+    // with the borrowed comparison via `&Arc<str>` (cell 59). Same
+    // identifier bytes reach the same accepted-set through both shared-
+    // refcounted borrowed receivers, so a downstream consumer migrating
+    // between single-threaded and multi-threaded shared-refcounted
+    // carriers lands on the same classification without a callsite
+    // rewrite.
+
+    #[test]
+    fn agrees_with_ref_arc_str_impossibility() {
+        use std::sync::Arc;
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let by_r: &Rc<str> = &r;
+            let by_a: &Arc<str> = &a;
+            assert_eq!(k == by_r, k == by_a);
+            assert_eq!(by_r == k, by_a == k);
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_str_consistency() {
+        use std::sync::Arc;
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let by_r: &Rc<str> = &r;
+            let by_a: &Arc<str> = &a;
+            assert_eq!(k == by_r, k == by_a);
+            assert_eq!(by_r == k, by_a == k);
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_str_fused() {
+        use std::sync::Arc;
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            let by_r: &Rc<str> = &r;
+            let by_a: &Arc<str> = &a;
+            assert_eq!(k == by_r, k == by_a);
+            assert_eq!(by_r == k, by_a == k);
         }
     }
 }
