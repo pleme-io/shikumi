@@ -5971,6 +5971,65 @@ impl<'a, 'b> PartialEq<SameStoreImpossibilityKind> for &'a std::borrow::Cow<'b, 
     }
 }
 
+/// The [`PartialEq<&&Cow<'_, [u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-side double-reference-to-
+/// borrowed-or-owned-carrier compare-side dual** of the single-reference
+/// [`PartialEq<&Cow<'_, [u8]>>`] impl directly above (cell 68, `fa001a3`)
+/// and the byte-side dual of the string-side [`PartialEq<&&Cow<'_, str>>`]
+/// impl (cell 73, `758e4ce`) at this altitude, closing the double-
+/// reference-to-borrowed-or-owned-carrier cell of the byte-side receiver-
+/// family grid on the smart-pointer leg. Rust does NOT auto-deref the RHS
+/// of `==` to satisfy a [`PartialEq<T>`] bound, and the standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &&Cow<'_, [u8]>`,
+/// NOT the `Kind == &&Cow<'_, [u8]>` direction a natural
+/// [`Vec<Cow<'_, [u8]>>::iter`](Vec) yield produces — [`Vec<T>::iter`](Vec)
+/// yields `&T`, so `Vec<Cow<'_, [u8]>>::iter()` yields `&Cow<'_, [u8]>` and
+/// a [`Iterator::find`] on that iterator hands the predicate a
+/// `&&Cow<'_, [u8]>`, not a `&Cow<'_, [u8]>`. Every downstream slot with a
+/// borrowed-or-owned byte view produced by borrow-yielding traversal over a
+/// slice-of-Cow-bytes — a `[Cow<'_, [u8]>].iter().find(|c| kind == c)`
+/// predicate on a slice of `serde_bytes`-then-`Cow` results, a
+/// [`HashMap<K, Cow<'_, [u8]>>::values`](std::collections::HashMap)
+/// iterator where the `.find` closure receives `&&Cow<'_, [u8]>` (from
+/// `iter()` yielding `&Cow<'_, [u8]>` and `.find` passing `&Self::Item`), a
+/// [`serde`] visitor's zero-copy `Cow<'_, [u8]>` output routed through a
+/// `.iter()` scan, an interleaved `Cow::Borrowed` static byte-table +
+/// `Cow::Owned` hot-path byte-table joined into a single slice, any
+/// generic slot bounded on `for<'a, 'b, 'c> T: PartialEq<&'a &'b Cow<'c,
+/// [u8]>>` — previously stranded the caller at either a per-callsite
+/// `**c` deref (a coordinated silent rewrite of the callsite, not a lift
+/// into the type-checker) or a `.copied()`-then-`.as_ref()` postfix that
+/// fragments the receiver family surface. This impl closes the double-
+/// reference-to-borrowed-or-owned-byte-carrier compare cell by delegation
+/// to the sibling [`PartialEq<&Cow<'_, [u8]>>`] impl above through a
+/// single deref of the borrowed handle — one line, zero allocations — so
+/// the caller reaches the SAME [`Self::name`]-then-[`str::as_bytes`]
+/// classification through the standard trait alone.
+impl PartialEq<&&std::borrow::Cow<'_, [u8]>> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&&std::borrow::Cow<'_, [u8]>) -> bool {
+        <Self as PartialEq<&std::borrow::Cow<'_, [u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for
+/// `&&Cow<'_, [u8]>` impl — the reverse-direction sibling of the
+/// [`PartialEq<&&Cow<'_, [u8]>>`] impl directly above, welding the
+/// symmetric `&&borrowed_or_owned_bytes_from_config_layer == kind` seam
+/// through the sibling [`PartialEq<SameStoreImpossibilityKind> for
+/// &Cow<'_, [u8]>`] impl above by one deref of the borrowed handle.
+/// Lifetime-parameterised as `impl<'a, 'b, 'c>` so the outer borrow, inner
+/// borrow, and the [`Cow`]'s own carrier lifetime compose independently.
+/// Both directions of the double-reference-to-borrowed-or-owned-byte-
+/// carrier cross-type comparison now compose out of the same
+/// allocation-free [`Self::name`]-then-[`str::as_bytes`] receiver by
+/// construction.
+impl<'a, 'b, 'c> PartialEq<SameStoreImpossibilityKind> for &'a &'b std::borrow::Cow<'c, [u8]> {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <&'b std::borrow::Cow<'c, [u8]> as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<Box<[u8]>>`] impl on [`SameStoreImpossibilityKind`] —
 /// the **byte-side compact-owned-carrier sibling** of the string-side
 /// [`PartialEq<Box<str>>`] impl already at this altitude, and the
@@ -9165,6 +9224,38 @@ impl<'a, 'b> PartialEq<SameStoreConsistencyKind> for &'a std::borrow::Cow<'b, [u
     }
 }
 
+/// The [`PartialEq<&&Cow<'_, [u8]>>`] impl on
+/// [`SameStoreConsistencyKind`] — the consistent-half sibling of the
+/// impossibility-half [`PartialEq<&&Cow<'_, [u8]>>`] impl above (cell 74,
+/// this commit), lifting the double-reference-to-borrowed-or-owned-byte-
+/// carrier cross-type comparison onto the consistent-corner tag.
+/// Delegates through the sibling [`PartialEq<&Cow<'_, [u8]>>`] impl in
+/// one deref of the borrowed handle. See the impossibility-half impl for
+/// the full lift rationale — the same natural iterator shape
+/// `[Cow<'_, [u8]>].iter().find(|c| kind == c)` and
+/// [`HashMap<K, Cow<'_, [u8]>>::values`](std::collections::HashMap)
+/// combinator hand the predicate `&&Cow<'_, [u8]>` at every altitude, so
+/// a generic slot bounded on `for<'a, 'b, 'c> T: PartialEq<&'a &'b Cow<'c,
+/// [u8]>>` (or holding either kind as `T`) reaches the same compare seam
+/// at both altitudes.
+impl PartialEq<&&std::borrow::Cow<'_, [u8]>> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&&std::borrow::Cow<'_, [u8]>) -> bool {
+        <Self as PartialEq<&std::borrow::Cow<'_, [u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for
+/// `&&Cow<'_, [u8]>` impl — the reverse-direction sibling of the
+/// [`PartialEq<&&Cow<'_, [u8]>>`] impl directly above, welding the
+/// symmetric `&&borrowed_or_owned_bytes_from_config_layer == kind` seam
+/// at the consistent altitude. Mirror of the impossibility-half receiver
+/// at this altitude.
+impl<'a, 'b, 'c> PartialEq<SameStoreConsistencyKind> for &'a &'b std::borrow::Cow<'c, [u8]> {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <&'b std::borrow::Cow<'c, [u8]> as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<Box<[u8]>>`] impl on [`SameStoreConsistencyKind`] — the
 /// mirror on the consistent half of the classification lattice of the
 /// [`PartialEq<Box<[u8]>>`] impl on [`SameStoreImpossibilityKind`], and the
@@ -11983,6 +12074,42 @@ impl PartialEq<&std::borrow::Cow<'_, [u8]>> for ProofRelationKind {
 impl<'a, 'b> PartialEq<ProofRelationKind> for &'a std::borrow::Cow<'b, [u8]> {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         <std::borrow::Cow<'b, [u8]> as PartialEq<ProofRelationKind>>::eq(*self, other)
+    }
+}
+
+/// The [`PartialEq<&&Cow<'_, [u8]>>`] impl on the fused
+/// [`ProofRelationKind`] — the third-altitude sibling of the two
+/// half-side [`PartialEq<&&Cow<'_, [u8]>>`] impls above (cell 74, this
+/// commit), closing the (impossibility, consistency, fused) ×
+/// (`&&Cow<'_, [u8]>`) grid at the fused-sum altitude and lifting
+/// `k == &&borrowed_or_owned_bytes_from_config_layer` past the
+/// type-checker without a per-callsite `**c` or `.as_ref()` deref. The
+/// fused body delegates through the sibling [`PartialEq<&Cow<'_, [u8]>>`]
+/// impl in one deref of the borrowed handle, so a hypothetical sixth
+/// corner in either half-side surfaces through the ONE fused
+/// [`Self::name`] `match` body and BOTH [`PartialEq<&&Cow<'_, [u8]>>`]
+/// impls (and every prior byte-side receiver) in lockstep with the enum
+/// itself. See the impossibility-half impl for the full lift rationale.
+impl PartialEq<&&std::borrow::Cow<'_, [u8]>> for ProofRelationKind {
+    fn eq(&self, other: &&&std::borrow::Cow<'_, [u8]>) -> bool {
+        <Self as PartialEq<&std::borrow::Cow<'_, [u8]>>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for
+/// `&&Cow<'_, [u8]>` impl — the reverse-direction sibling of the
+/// [`PartialEq<&&Cow<'_, [u8]>>`] impl directly above at the fused
+/// altitude, welding the symmetric `&&borrowed_or_owned_bytes == kind`
+/// seam through the sibling [`PartialEq<ProofRelationKind> for
+/// &Cow<'_, [u8]>`] impl in one deref of the borrowed handle.
+/// Lifetime-parameterised as `impl<'a, 'b, 'c>` so the outer borrow, inner
+/// borrow, and the [`Cow`]'s own carrier lifetime compose independently.
+/// Both directions of the double-reference-to-borrowed-or-owned-byte-
+/// carrier cross-type comparison now compose out of the same
+/// allocation-free receiver at the fused-sum altitude by construction.
+impl<'a, 'b, 'c> PartialEq<ProofRelationKind> for &'a &'b std::borrow::Cow<'c, [u8]> {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <&'b std::borrow::Cow<'c, [u8]> as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -64715,6 +64842,402 @@ mod partial_eq_ref_ref_cow_str_tests {
             let single: &Cow<'_, str> = &cow;
             let dbl: &&Cow<'_, str> = &single;
             assert!(cmp_kind_ref_ref_cow(&k, dbl));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_ref_cow_bytes_tests {
+    //! [`PartialEq<&&Cow<'_, [u8]>>`] and
+    //! [`PartialEq<Kind> for &&Cow<'_, [u8]>`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side double-reference-to-borrowed-
+    //! or-owned-carrier compare-side dual** of the single-reference
+    //! [`PartialEq<&Cow<'_, [u8]>>`] pair (cell 68) lifted by
+    //! [`super::partial_eq_ref_cow_bytes_tests`] and the byte-side dual of
+    //! the string-side [`PartialEq<&&Cow<'_, str>>`] pair (cell 73) lifted
+    //! by [`super::partial_eq_ref_ref_cow_str_tests`]. Rust does NOT
+    //! auto-deref the RHS of `==` to satisfy a [`PartialEq<T>`] bound, and
+    //! the standard blanket
+    //! `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &&Cow<'_, [u8]>`, NOT the `Kind == &&Cow<'_, [u8]>`
+    //! direction a natural iterator combinator produces
+    //! (`vec_of_cow_bytes.iter().find(|c: &&Cow<'_, [u8]>| kind == c)`,
+    //! whose closure argument is `&&Cow<'_, [u8]>` because
+    //! [`Iterator::find`] hands the predicate `&Self::Item` and
+    //! [`Vec<T>::iter`](Vec) yields `&T` with `T = Cow<'_, [u8]>`). This
+    //! module pins that both directions of the double-reference-to-
+    //! borrowed-or-owned-byte-carrier pair compose at the type-checker for
+    //! every variant of every kind enum, across BOTH [`std::borrow::Cow`]
+    //! arms (`Cow::Borrowed` and `Cow::Owned`), allocation-free.
+    //!
+    //! Compounding: unlocks `Vec<Cow<'_, [u8]>>::iter().find(...)` /
+    //! `HashMap<K, Cow<'_, [u8]>>::values().find(...)` as first-class
+    //! byte-side classifier inputs at every altitude, matching the closure
+    //! the compiler actually hands (`&&Cow<'_, [u8]>`) instead of the
+    //! by-value receiver (`&Cow<'_, [u8]>`) it does not; seeds the
+    //! SYMMETRIC double-reference cells on the remaining byte-side
+    //! smart-pointer carriers (`&&Box<[u8]>`, `&&Arc<[u8]>`, `&&Rc<[u8]>`)
+    //! — each will delegate to its existing single-reference cell the
+    //! same way this cell delegates to [`PartialEq<&Cow<'_, [u8]>>`].
+
+    use std::borrow::Cow;
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    // ---------- (1) Pointwise identity on the &&Cow<'_, [u8]> pair, exercised
+    // across BOTH Cow arms ----------
+
+    #[test]
+    fn impossibility_identity_ref_ref_cow_bytes_borrowed() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl, "kind == &&Cow::Borrowed for {}", k.name());
+            assert!(dbl == k, "&&Cow::Borrowed == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn impossibility_identity_ref_ref_cow_bytes_owned() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl, "kind == &&Cow::Owned for {}", k.name());
+            assert!(dbl == k, "&&Cow::Owned == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_ref_cow_bytes_borrowed() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_ref_cow_bytes_owned() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_ref_cow_bytes_borrowed() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_ref_cow_bytes_owned() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    // ---------- (2) Sibling agreement with the single-reference &Cow<'_, [u8]>
+    // pair (cell 68) — the &&Cow layer never disagrees with the &Cow layer on
+    // any probe, welding both cells to the same underlying Self::name-then-
+    // str::as_bytes classifier. ----------
+
+    fn probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            &[0xffu8, 0xfe, 0xfd],
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_single_ref_cow_bytes_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &p in probe_bytes() {
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(p);
+                let single_b: &Cow<'_, [u8]> = &cow_b;
+                let dbl_b: &&Cow<'_, [u8]> = &single_b;
+                assert_eq!(
+                    k == dbl_b,
+                    k == single_b,
+                    "kind == &&Cow::Borrowed({p:?}) must agree with kind == &Cow::Borrowed({p:?}) for {}",
+                    k.name(),
+                );
+                assert_eq!(dbl_b == k, single_b == k);
+
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(p.to_vec());
+                let single_o: &Cow<'_, [u8]> = &cow_o;
+                let dbl_o: &&Cow<'_, [u8]> = &single_o;
+                assert_eq!(k == dbl_o, k == single_o);
+                assert_eq!(dbl_o == k, single_o == k);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_single_ref_cow_bytes_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &p in probe_bytes() {
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(p);
+                let single_b: &Cow<'_, [u8]> = &cow_b;
+                let dbl_b: &&Cow<'_, [u8]> = &single_b;
+                assert_eq!(k == dbl_b, k == single_b);
+                assert_eq!(dbl_b == k, single_b == k);
+
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(p.to_vec());
+                let single_o: &Cow<'_, [u8]> = &cow_o;
+                let dbl_o: &&Cow<'_, [u8]> = &single_o;
+                assert_eq!(k == dbl_o, k == single_o);
+                assert_eq!(dbl_o == k, single_o == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_single_ref_cow_bytes_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &p in probe_bytes() {
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(p);
+                let single_b: &Cow<'_, [u8]> = &cow_b;
+                let dbl_b: &&Cow<'_, [u8]> = &single_b;
+                assert_eq!(k == dbl_b, k == single_b);
+                assert_eq!(dbl_b == k, single_b == k);
+
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(p.to_vec());
+                let single_o: &Cow<'_, [u8]> = &cow_o;
+                let dbl_o: &&Cow<'_, [u8]> = &single_o;
+                assert_eq!(k == dbl_o, k == single_o);
+                assert_eq!(dbl_o == k, single_o == k);
+            }
+        }
+    }
+
+    // ---------- (3) Cross-string-side agreement — the &&Cow<'_, [u8]>
+    // byte-side carrier and the &&Cow<'_, str> string-side carrier (cell 73)
+    // agree on every valid-UTF-8 probe, across BOTH Cow arms; both descend to
+    // the same Self::name source of truth. ----------
+
+    #[test]
+    fn ref_ref_cow_bytes_agrees_with_ref_ref_cow_str_on_utf8_probes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for p in ["regressed", "cross_store", "unknown", ""] {
+                let cow_str_b: Cow<'_, str> = Cow::Borrowed(p);
+                let single_str_b: &Cow<'_, str> = &cow_str_b;
+                let dbl_str_b: &&Cow<'_, str> = &single_str_b;
+
+                let cow_b: Cow<'_, [u8]> = Cow::Borrowed(p.as_bytes());
+                let single_b: &Cow<'_, [u8]> = &cow_b;
+                let dbl_b: &&Cow<'_, [u8]> = &single_b;
+                assert_eq!(k == dbl_b, k == dbl_str_b);
+                assert_eq!(dbl_b == k, dbl_str_b == k);
+
+                let cow_o: Cow<'_, [u8]> = Cow::Owned(p.as_bytes().to_vec());
+                let single_o: &Cow<'_, [u8]> = &cow_o;
+                let dbl_o: &&Cow<'_, [u8]> = &single_o;
+                assert_eq!(k == dbl_o, k == dbl_str_b);
+                assert_eq!(dbl_o == k, dbl_str_b == k);
+            }
+        }
+    }
+
+    // ---------- (4) Cross-variant inequality ----------
+
+    #[test]
+    fn impossibility_cross_variant_ref_ref_cow_bytes_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let cow: Cow<'_, [u8]> = Cow::Owned(b.name().as_bytes().to_vec());
+                let single: &Cow<'_, [u8]> = &cow;
+                let dbl: &&Cow<'_, [u8]> = &single;
+                assert!(a != dbl, "{} != &&Cow({})", a.name(), b.name());
+                assert!(dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_ref_cow_bytes_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let cow: Cow<'_, [u8]> = Cow::Borrowed(b.name().as_bytes());
+                let single: &Cow<'_, [u8]> = &cow;
+                let dbl: &&Cow<'_, [u8]> = &single;
+                assert!(a != dbl);
+                assert!(dbl != a);
+            }
+        }
+    }
+
+    // ---------- (5) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_ref_cow_bytes() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let cow_b: Cow<'_, [u8]> = Cow::Borrowed(imp.name().as_bytes());
+            let single_b: &Cow<'_, [u8]> = &cow_b;
+            let dbl_b: &&Cow<'_, [u8]> = &single_b;
+            assert!(fused == dbl_b, "fused == &&Cow::Borrowed({})", imp.name());
+            assert!(dbl_b == fused);
+            let cow_o: Cow<'_, [u8]> = Cow::Owned(imp.name().as_bytes().to_vec());
+            let single_o: &Cow<'_, [u8]> = &cow_o;
+            let dbl_o: &&Cow<'_, [u8]> = &single_o;
+            assert!(fused == dbl_o, "fused == &&Cow::Owned({})", imp.name());
+            assert!(dbl_o == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let cow_o: Cow<'_, [u8]> = Cow::Owned(c.name().as_bytes().to_vec());
+            let single_o: &Cow<'_, [u8]> = &cow_o;
+            let dbl_o: &&Cow<'_, [u8]> = &single_o;
+            assert!(fused == dbl_o);
+            assert!(dbl_o == fused);
+        }
+    }
+
+    // ---------- (6) Iterator-shape composability — the load-bearing seam.
+    // `Vec<Cow<'_, [u8]>>::iter().find(...)` hands the predicate
+    // `&&Cow<'_, [u8]>`, NOT `&Cow<'_, [u8]>`. Before this cell the natural
+    // closure body was a type error; with this cell it composes out of the
+    // standard trait alone. ----------
+
+    #[test]
+    fn iter_find_over_slice_of_cow_bytes_impossibility() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Borrowed(b"cross_store".as_slice()),
+            Cow::Owned(b"regressed".to_vec()),
+            Cow::Borrowed(b"unknown".as_slice()),
+        ];
+        let k = SameStoreImpossibilityKind::Regressed;
+        let found: Option<&Cow<'_, [u8]>> = hay.iter().find(|c: &&Cow<'_, [u8]>| k == c);
+        assert_eq!(found.map(|c| c.as_ref()), Some(b"regressed".as_slice()));
+        let found_reciprocal: Option<&Cow<'_, [u8]>> =
+            hay.iter().find(|c: &&Cow<'_, [u8]>| c == &k);
+        assert_eq!(
+            found_reciprocal.map(|c| c.as_ref()),
+            Some(b"regressed".as_slice()),
+        );
+    }
+
+    #[test]
+    fn iter_find_over_slice_of_cow_bytes_consistency() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Borrowed(b"stationary".as_slice()),
+            Cow::Owned(b"progression".to_vec()),
+        ];
+        let k = SameStoreConsistencyKind::Progression;
+        let found: Option<&Cow<'_, [u8]>> = hay.iter().find(|c: &&Cow<'_, [u8]>| k == c);
+        assert_eq!(found.map(|c| c.as_ref()), Some(b"progression".as_slice()));
+        let found_reciprocal: Option<&Cow<'_, [u8]>> =
+            hay.iter().find(|c: &&Cow<'_, [u8]>| c == &k);
+        assert_eq!(
+            found_reciprocal.map(|c| c.as_ref()),
+            Some(b"progression".as_slice()),
+        );
+    }
+
+    #[test]
+    fn hashmap_values_find_projection_cow_bytes_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Cow<'static, [u8]>> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            let cow: Cow<'static, [u8]> = if i.is_multiple_of(2) {
+                Cow::Borrowed(k.name().as_bytes())
+            } else {
+                Cow::Owned(k.name().as_bytes().to_vec())
+            };
+            hay.insert(i as u32, cow);
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let hit: Option<&Cow<'static, [u8]>> =
+                hay.values().find(|c: &&Cow<'static, [u8]>| k == c);
+            assert!(hit.is_some(), "kind {} should be present", k.name());
+            let hit_reciprocal: Option<&Cow<'static, [u8]>> =
+                hay.values().find(|c: &&Cow<'static, [u8]>| c == &k);
+            assert!(hit_reciprocal.is_some());
+        }
+        assert!(
+            hay.values()
+                .find(|c: &&Cow<'static, [u8]>| c.as_ref() == b"no_such_variant".as_slice())
+                .is_none()
+        );
+    }
+
+    // ---------- (7) Generic composability at a
+    // for<'a, 'b, 'c> PartialEq<&'a &'b Cow<'c, [u8]>> seam ----------
+
+    fn cmp_kind_ref_ref_cow_bytes<K>(k: &K, c: &&Cow<'_, [u8]>) -> bool
+    where
+        for<'a, 'b, 'c> K: PartialEq<&'a &'b Cow<'c, [u8]>>,
+    {
+        *k == c
+    }
+
+    #[test]
+    fn generic_ref_ref_cow_bytes_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(cmp_kind_ref_ref_cow_bytes(&k, dbl));
+            let miss: Cow<'_, [u8]> = Cow::Owned(b"unknown".to_vec());
+            let miss_single: &Cow<'_, [u8]> = &miss;
+            let miss_dbl: &&Cow<'_, [u8]> = &miss_single;
+            assert!(!cmp_kind_ref_ref_cow_bytes(&k, miss_dbl));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_cow_bytes_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(cmp_kind_ref_ref_cow_bytes(&k, dbl));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_cow_bytes_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let single: &Cow<'_, [u8]> = &cow;
+            let dbl: &&Cow<'_, [u8]> = &single;
+            assert!(cmp_kind_ref_ref_cow_bytes(&k, dbl));
         }
     }
 }
