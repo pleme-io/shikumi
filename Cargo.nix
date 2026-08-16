@@ -2197,9 +2197,9 @@ rec {
       };
       "blue-lang-syntax" = rec {
         crateName = "blue-lang-syntax";
-        version = "0.0.2";
+        version = "0.0.32";
         edition = "2021";
-        sha256 = "1c5j5lxvcgdxwkpsfshs8nzcld6m2gml643na1sq4wwd7m31hz0f";
+        sha256 = "107qmam6965mnmkr775fvmhxz0asmyd8p3fl3ax6faz92p5grxs8";
         libName = "blue_lang_syntax";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.593";
+        version = "0.1.594";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
