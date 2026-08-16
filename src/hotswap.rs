@@ -6741,6 +6741,97 @@ impl TryFrom<std::rc::Rc<[u8]>> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<&std::rc::Rc<[u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **byte-side reference-to-non-
+/// atomically-shared-refcounted-carrier parse-side dual** of the sibling
+/// by-value [`TryFrom<std::rc::Rc<[u8]>>`] impl directly above (cell 43)
+/// and the **non-atomic refcount sibling** of the atomically-shared-
+/// refcounted [`TryFrom<&std::sync::Arc<[u8]>>`] impl above (cell 61,
+/// `9e8ab46`) and the **byte-side dual** of the string-side reference-to-Rc
+/// parse cell [`TryFrom<&std::rc::Rc<str>>`] (cell 63, `a45bcc0`). Closes
+/// the byte-side reference-to-non-atomically-shared-refcounted parse-side
+/// cell of the byte-side receiver grid. Sibling of the byte-side reference-
+/// to-compact-owned parse cell [`TryFrom<&Box<[u8]>>`] (cell 58, `3e66961`)
+/// and of the byte-side reference-to-owned parse cell [`TryFrom<&Vec<u8>>`]
+/// (cell 52, `de8da23`) on the same borrow-receiving byte-side parse grid.
+///
+/// **Why lift a byte-side reference-to-Rc parse-side receiver alongside the
+/// by-value cell.** Rust does NOT chain [`TryFrom`] impls through deref
+/// coercion at the trait-bound level — a
+/// `T: TryFrom<&std::rc::Rc<[u8]>>` bound is NOT satisfied by
+/// `T: TryFrom<&[u8]>` alone (which would require an implicit
+/// `&Rc<[u8]>` → `&[u8]` coercion at trait dispatch, a shape Rust never
+/// synthesizes) NOR by `T: TryFrom<std::rc::Rc<[u8]>>` alone (which
+/// requires an owning transfer the `&Rc<[u8]>` receiver does not hold) NOR
+/// by `T: TryFrom<&std::sync::Arc<[u8]>>` alone (the atomic-refcount and
+/// non-atomic-refcount byte-carriers are DISTINCT types even though the
+/// layout is identical). Every downstream slot with a byte-encoded non-
+/// atomically-shared-refcounted view produced by borrow-yielding traversal
+/// on a single-threaded consumer — a
+/// [`Vec<std::rc::Rc<[u8]>>::iter`]`().map(K::try_from)` scan over a
+/// single-threaded byte-key intern-table snapshot, a
+/// [`HashMap<K, std::rc::Rc<[u8]>>::values`] iterator threaded into a
+/// per-tick UI parser combinator, a WASM main-loop callback receiving a
+/// single-threaded shared-refcounted byte-identifier reference from an
+/// event dispatcher and parsing it into a [`Kind`] without paying the
+/// atomic-refcount tax on the intermediate clone, any generic
+/// `fn parse<K: for<'a> TryFrom<&'a std::rc::Rc<[u8]>>>` — previously
+/// stranded the caller at either a per-callsite `.as_ref()` postfix (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or a [`std::rc::Rc::clone`] refcount bump to obtain an
+/// owning handle to feed the by-value receiver (paying a non-atomic
+/// increment purely to satisfy the by-value receiver). This impl closes
+/// the byte-side reference-to-Rc parse cell by delegation to the sibling
+/// [`TryFrom<&[u8]>`] receiver through a single [`AsRef::as_ref`] view —
+/// one line, zero allocations on the success path, zero refcount touches
+/// on the shared handle (the impl passes a bare pointer, never touches the
+/// non-atomic strong count) — so the caller reaches the SAME
+/// classification through the standard trait alone.
+///
+/// **Rc versus Arc on the borrowed byte parse side — same footprint,
+/// distinct type, distinct refcount.** [`std::rc::Rc<[u8]>`] and
+/// [`std::sync::Arc<[u8]>`] share the same two-word carrier footprint
+/// (data pointer + length) and both carry a tight allocation sized exactly
+/// to the byte-slice length plus a reference-count header, but the
+/// [`Rc`](std::rc::Rc) header is a plain `usize` while the
+/// [`Arc`](std::sync::Arc) header is an
+/// [`std::sync::atomic::AtomicUsize`]. This borrowed cell touches neither
+/// header on either success or error paths — the `&Rc<[u8]>` is a bare
+/// pointer to the carrier the caller still owns — so the atomic-vs-non-
+/// atomic distinction shows up only through the type, not through any
+/// cycle spent inside this impl. The sibling by-value
+/// [`TryFrom<std::rc::Rc<[u8]>>`] cell (directly above) DOES decrement the
+/// non-atomic refcount on drop; the borrowed cell does not.
+///
+/// **Dispatch preserves the sibling receivers' allocation properties by
+/// construction.** On success this impl is allocation-free (the sibling
+/// [`TryFrom<&[u8]>`] fast path returns the parsed variant with no heap
+/// traffic) and refcount-untouched (the bare `&Rc` is dropped at end of
+/// scope without decrementing the strong count the caller holds). On the
+/// error path this impl matches the sibling [`TryFrom<&[u8]>`] receiver —
+/// 1 allocation via [`String::from_utf8_lossy`]-then-`into_owned` to
+/// preserve the malformed input bytes in [`ParseKindError::input`] (with
+/// `U+FFFD` replacements on invalid-UTF-8 arms). That matches the sibling
+/// by-value [`TryFrom<std::rc::Rc<[u8]>>`] impl's 1-allocation error path
+/// — the intrinsic price of a shared-refcounted byte-carrier the borrowed
+/// cell inherits from its owning sibling.
+///
+/// **Match-body lockstep with the sibling [`TryFrom<&[u8]>`] impl —
+/// enforced by delegation, not open-coding.** The body reaches the
+/// accepted-set ONLY through the sibling [`TryFrom<&[u8]>`] receiver; it
+/// never open-codes the two accepted identifier byte-strings. Adding a
+/// hypothetical third impossibility corner updates the ONE `match` body in
+/// the sibling [`FromStr`](std::str::FromStr) impl (the source of truth);
+/// this impl surfaces the new identifier through the delegating chain in
+/// lockstep with the rest of the byte-side parse grid.
+impl TryFrom<&std::rc::Rc<[u8]>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<[u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
+    }
+}
+
 /// The **consistent-corner tag** of a same-store [`ProofRelation`] — a
 /// tag-only sum-type discriminator over the three variants
 /// [`ProofRelation::same_store_consistent`] fires on. Yielded by
@@ -8802,6 +8893,35 @@ impl TryFrom<std::rc::Rc<[u8]>> for SameStoreConsistencyKind {
                 expected: Self::NAMES,
             }),
         }
+    }
+}
+
+/// The [`TryFrom<&std::rc::Rc<[u8]>>`] impl on [`SameStoreConsistencyKind`]
+/// — the **consistency-half mirror** of the impossibility-half
+/// [`TryFrom<&std::rc::Rc<[u8]>>`] impl above and the **byte-side
+/// reference-to-non-atomically-shared-refcounted-carrier parse-side dual**
+/// of the sibling by-value [`TryFrom<std::rc::Rc<[u8]>>`] impl directly
+/// above at this altitude and the string-side sibling
+/// [`TryFrom<&std::rc::Rc<str>>`] impl (cell 63, `a45bcc0`). See the
+/// impossibility-half sibling for the full rationale — why the
+/// reference-to-Rc byte-side parse cell is a distinct standard-trait cell
+/// (Rust does NOT chain [`TryFrom`] impls: a
+/// `T: TryFrom<&std::rc::Rc<[u8]>>` bound is NOT satisfied by
+/// `T: TryFrom<&[u8]>` alone, by `T: TryFrom<std::rc::Rc<[u8]>>` alone,
+/// or by `T: TryFrom<&std::sync::Arc<[u8]>>` alone), the single-threaded
+/// ecosystem slots the borrowed non-atomically-shared-refcounted byte-
+/// carrier shape unlocks (borrow-yielding intern-table traversal via
+/// [`Vec<std::rc::Rc<[u8]>>::iter`],
+/// [`HashMap<K, std::rc::Rc<[u8]>>::values`], WASM main-loop event-
+/// dispatcher callbacks receiving single-threaded shared-refcounted byte-
+/// identifiers), and the refcount-untouched / allocation-free success-path
+/// property the delegating body inherits from the sibling
+/// [`TryFrom<&[u8]>`] receiver through a single [`AsRef::as_ref`] view.
+impl TryFrom<&std::rc::Rc<[u8]>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<[u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
     }
 }
 
@@ -11527,6 +11647,43 @@ impl TryFrom<std::rc::Rc<[u8]>> for ProofRelationKind {
             input,
             expected: Self::NAMES,
         })
+    }
+}
+
+/// The [`TryFrom<&std::rc::Rc<[u8]>>`] impl on the fused
+/// [`ProofRelationKind`] — the **fused-arm byte-side reference-to-non-
+/// atomically-shared-refcounted-carrier parse-side sibling** of the two
+/// half-side [`TryFrom<&std::rc::Rc<[u8]>>`] impls above and the
+/// **non-atomic refcount sibling** of the atomically-shared-refcounted
+/// fused [`TryFrom<&std::sync::Arc<[u8]>>`] impl above (cell 61,
+/// `9e8ab46`) and the **byte-side dual** of the string-side fused
+/// [`TryFrom<&std::rc::Rc<str>>`] impl (cell 63, `a45bcc0`). Delegates to
+/// the sibling fused [`TryFrom<&[u8]>`] receiver through a single
+/// [`AsRef::as_ref`] view over the non-atomically-shared byte-slice — one
+/// line, zero allocations on the success path, zero refcount touches on
+/// the shared handle (the impl passes a bare pointer, never touches the
+/// non-atomic strong count).
+///
+/// **Fused-arm lockstep — enforced by delegation, not open-coding.** The
+/// body dispatches on the sibling fused [`TryFrom<&[u8]>`] receiver, which
+/// in turn threads the borrowed byte-slice through the sibling
+/// consistency-half [`TryFrom<&[u8]>`] on the success arm and the sibling
+/// impossibility-half [`TryFrom<&[u8]>`] on the recovered second attempt;
+/// it never open-codes the five byte-encoded identifier strings. Adding a
+/// hypothetical variant to either half-side enum surfaces through the
+/// corresponding half-side match body AND is picked up by the fused body
+/// in lockstep — the fused impl and the two half-side impls stay lockstep-
+/// identical under every future variant addition to either half-side enum
+/// by construction, matching the fused-arm delegation pattern the sibling
+/// by-value [`TryFrom<std::rc::Rc<[u8]>>`], atomically-shared-refcounted
+/// [`TryFrom<&std::sync::Arc<[u8]>>`], and string-side non-atomically-
+/// shared-refcounted [`TryFrom<&std::rc::Rc<str>>`] impls at the fused-sum
+/// altitude already carry.
+impl TryFrom<&std::rc::Rc<[u8]>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<[u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
     }
 }
 
@@ -59894,6 +60051,626 @@ mod partial_eq_ref_rc_str_tests {
             let by_a: &Arc<str> = &a;
             assert_eq!(k == by_r, k == by_a);
             assert_eq!(by_r == k, by_a == k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_ref_rc_bytes_tests {
+    //! [`TryFrom<&std::rc::Rc<[u8]>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **byte-side reference-to-non-atomically-shared-refcounted-carrier
+    //! parse-side sibling** of the by-value [`TryFrom<std::rc::Rc<[u8]>>`]
+    //! trio (cell 43) and the **byte-side dual** of the string-side
+    //! reference-to-Rc parse trio pinned by
+    //! [`super::try_from_ref_rc_str_tests`] (cell 63) and the **non-atomic
+    //! refcount sibling** of the atomically-shared-refcounted byte-side
+    //! reference parse trio pinned by
+    //! [`super::try_from_ref_arc_bytes_tests`] (cell 61). Mirrors the
+    //! atomic-refcount byte-carrier ergonomics on the single-threaded
+    //! non-atomic carrier — a WASM main-loop UI or a tobira-style
+    //! per-tick controller reaches the same accepted-set through the
+    //! standard trait without paying the atomic-refcount tax on the
+    //! intermediate handle.
+    //!
+    //! Rust does NOT chain [`TryFrom`] impls through deref coercion at the
+    //! trait-bound level — a `T: TryFrom<&std::rc::Rc<[u8]>>` bound is
+    //! NOT satisfied by `T: TryFrom<&[u8]>` alone, by
+    //! `T: TryFrom<std::rc::Rc<[u8]>>` alone, or by
+    //! `T: TryFrom<&std::sync::Arc<[u8]>>` alone (the atomic-refcount and
+    //! non-atomic-refcount byte-carriers are DISTINCT types even though
+    //! the layout is identical). This module pins that the byte-side
+    //! reference-to-Rc parse-side receiver composes at the type-checker
+    //! for every variant of every kind enum, allocation-free on success
+    //! AND refcount-untouched on the shared handle.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Ok pointwise identity with the sibling [`TryFrom<&[u8]>`]
+    //!    receiver on every variant name of every kind enum.
+    //! 2. Ok pointwise identity with the sibling by-value
+    //!    [`TryFrom<std::rc::Rc<[u8]>>`] receiver on every variant name
+    //!    (via [`std::rc::Rc::clone`] to feed the by-value receiver).
+    //! 3. Round-trip through [`From<Kind>`] for [`std::rc::Rc<[u8]>`]
+    //!    (cell 41) — for every variant `k`,
+    //!    `<K>::try_from(&<Rc<[u8]>>::from(k)) == Ok(k)`.
+    //! 4. Err pointwise identity with [`TryFrom<&[u8]>`] on unknown input
+    //!    (empty, PascalCase, all-caps, whitespace-flanked, cross-half
+    //!    hypotheticals).
+    //! 5. Err-body fidelity — [`ParseKindError::input`] preserves the
+    //!    malformed input verbatim on valid-UTF-8 arms;
+    //!    [`ParseKindError::expected`] equals the sibling [`Self::NAMES`]
+    //!    constant.
+    //! 6. Fused-arm lockstep — for every consistent name the fused
+    //!    [`TryFrom<&Rc<[u8]>>`] agrees with
+    //!    `SameStoreConsistencyKind::try_from(&rc_bytes)` mapped through
+    //!    [`ProofRelationKind::Consistent`]; for every impossibility name
+    //!    it agrees with `SameStoreImpossibilityKind::try_from(&rc_bytes)`
+    //!    mapped through [`ProofRelationKind::Impossible`].
+    //! 7. **THE LOAD-BEARING SEAM** — the natural iterator combinator
+    //!    shape `slice.iter().map(K::try_from).collect::<Result<Vec<_>,
+    //!    _>>()` on a `[Rc<[u8]>]` compiles and returns the correct
+    //!    answer. A [`HashMap<K, Rc<[u8]>>::values`] iterator surfacing
+    //!    `&Rc<[u8]>` composes through the same
+    //!    `.map(K::try_from).collect()` shape. Before this cell, these
+    //!    lines failed to type-check — the compiler could not satisfy the
+    //!    closure's `&Rc<[u8]> -> Result<K, _>` signature against any
+    //!    sibling receiver.
+    //! 8. Generic composability at a `for<'a> TryFrom<&'a Rc<[u8]>>`-
+    //!    bounded seam neither the sibling by-value
+    //!    [`TryFrom<std::rc::Rc<[u8]>>`] nor the borrowed
+    //!    [`TryFrom<&[u8]>`] receiver alone can satisfy.
+    //! 9. **REFCOUNT UNTOUCHED** — for every variant of every kind enum,
+    //!    a fresh [`std::rc::Rc<[u8]>`] cloned into a second handle
+    //!    undergoes the borrowed parse via the reference receiver, and
+    //!    both [`std::rc::Rc::strong_count`] and
+    //!    [`std::rc::Rc::ptr_eq`] are pointwise-identical before and
+    //!    after — on both Ok and Err paths. The by-value cell consumes an
+    //!    [`std::rc::Rc`] that the caller must have refcount-cloned;
+    //!    this cell consumes a bare `&Rc`.
+    //! 10. **Caller keeps ownership** — for every variant, after the
+    //!     borrowed parse the caller's original [`std::rc::Rc<[u8]>`] is
+    //!     still readable at its original address (the impl does NOT
+    //!     consume the input, unlike the sibling by-value
+    //!     [`TryFrom<std::rc::Rc<[u8]>>`]).
+    //! 11. **Invalid-UTF-8 error rendering pin** — an input carrying a
+    //!     stray non-UTF-8 byte surfaces through
+    //!     [`ParseKindError::input`] with a `U+FFFD` replacement at the
+    //!     invalid position, matching the sibling by-value
+    //!     [`TryFrom<std::rc::Rc<[u8]>>`] impl's error-rendering
+    //!     property.
+    //! 12. **Atomic-carrier lockstep** — for every variant, the borrowed
+    //!     parse via `&Rc<[u8]>` agrees with the borrowed parse via
+    //!     `&Arc<[u8]>` (cell 61) on both Ok and Err paths, pinning the
+    //!     two shared-refcounted byte-carriers as lockstep-identical entry
+    //!     points to the same accepted-set (a downstream consumer
+    //!     migrating between single-threaded and multi-threaded shared-
+    //!     refcounted byte-carriers lands on the same classification
+    //!     without a callsite rewrite).
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+    use std::rc::Rc;
+
+    fn rc_bytes(s: &[u8]) -> Rc<[u8]> {
+        Rc::<[u8]>::from(s)
+    }
+
+    // ---------- (1) Ok pointwise identity with TryFrom<&[u8]> ----------
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(k.name().as_bytes()),
+                "impossibility {k:?}: TryFrom<&Rc<[u8]>> must agree with \
+                 TryFrom<&[u8]> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(k.name().as_bytes()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(k.name().as_bytes()),
+            );
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with by-value TryFrom<Rc<[u8]>> ----------
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_rc_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_rc_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_bytes_matches_try_from_rc_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through From<Kind> for Rc<[u8]> ----------
+
+    #[test]
+    fn round_trip_through_from_rc_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = k.into();
+            assert_eq!(SameStoreImpossibilityKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_rc_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = k.into();
+            assert_eq!(SameStoreConsistencyKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_rc_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = k.into();
+            assert_eq!(ProofRelationKind::try_from(&r), Ok(k));
+        }
+    }
+
+    // ---------- (4) Err pointwise identity with TryFrom<&[u8]> ----------
+
+    fn unknown_probe_bytes() -> &'static [&'static [u8]] {
+        &[
+            b"",
+            b"REGRESSED",
+            b"PascalCase",
+            b"identity-republish",
+            b"unknown",
+            b" regressed",
+            b"regressed ",
+            b"regressed\n",
+        ]
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_bytes_impossibility() {
+        for &probe in unknown_probe_bytes() {
+            let r: Rc<[u8]> = rc_bytes(probe);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(probe),
+                "impossibility Err arm on {probe:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_bytes_consistency() {
+        for &probe in unknown_probe_bytes() {
+            let r: Rc<[u8]> = rc_bytes(probe);
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(probe),
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_bytes_fused() {
+        for &probe in unknown_probe_bytes() {
+            let r: Rc<[u8]> = rc_bytes(probe);
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(probe),
+            );
+        }
+    }
+
+    // ---------- (4b) Cross-half hypotheticals ----------
+
+    #[test]
+    fn cross_half_impossibility_rejects_consistency_names_via_ref_rc_bytes() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(c.name().as_bytes());
+            assert!(SameStoreImpossibilityKind::try_from(&r).is_err());
+        }
+    }
+
+    #[test]
+    fn cross_half_consistency_rejects_impossibility_names_via_ref_rc_bytes() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(i.name().as_bytes());
+            assert!(SameStoreConsistencyKind::try_from(&r).is_err());
+        }
+    }
+
+    // ---------- (5) Err-body fidelity ----------
+
+    #[test]
+    fn err_body_input_preserved_verbatim_impossibility() {
+        let probe = b"some_long_and_distinctive_probe_bytes_that_no_variant_names";
+        let r: Rc<[u8]> = rc_bytes(probe);
+        let err = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input.as_bytes(), probe);
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_consistency() {
+        let probe = b"some_long_and_distinctive_probe_bytes_that_no_variant_names";
+        let r: Rc<[u8]> = rc_bytes(probe);
+        let err = SameStoreConsistencyKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input.as_bytes(), probe);
+        assert_eq!(err.expected, SameStoreConsistencyKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_fused() {
+        let probe = b"some_long_and_distinctive_probe_bytes_that_no_variant_names";
+        let r: Rc<[u8]> = rc_bytes(probe);
+        let err = ProofRelationKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input.as_bytes(), probe);
+        assert_eq!(err.expected, ProofRelationKind::NAMES);
+    }
+
+    // ---------- (6) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_rc_bytes_impossibility() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(i.name().as_bytes());
+            let fused = ProofRelationKind::try_from(&r);
+            let expected =
+                SameStoreImpossibilityKind::try_from(&r).map(ProofRelationKind::Impossible);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_rc_bytes_consistency() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(c.name().as_bytes());
+            let fused = ProofRelationKind::try_from(&r);
+            let expected =
+                SameStoreConsistencyKind::try_from(&r).map(ProofRelationKind::Consistent);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    // ---------- (7) THE LOAD-BEARING SEAM ----------
+    //
+    // Before this cell, `slice.iter().map(K::try_from).collect::<...>()` over
+    // `[Rc<[u8]>]` did not type-check — the compiler suggested a per-callsite
+    // `.as_ref()` or a `.clone()` (non-atomic refcount bump) inside the
+    // closure. With this cell, the natural iterator combinator composes out
+    // of the standard trait alone, allocation-free on success and refcount-
+    // untouched on the shared byte-handle.
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_bytes_impossibility() {
+        let hay: Vec<Rc<[u8]>> = vec![rc_bytes(b"regressed"), rc_bytes(b"cross_store")];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreImpossibilityKind::Regressed,
+                SameStoreImpossibilityKind::CrossStore,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_bytes_consistency() {
+        let hay: Vec<Rc<[u8]>> = vec![
+            rc_bytes(b"stationary"),
+            rc_bytes(b"identity_republish"),
+            rc_bytes(b"progression"),
+        ];
+        let parsed: Result<Vec<SameStoreConsistencyKind>, ParseKindError> =
+            hay.iter().map(SameStoreConsistencyKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreConsistencyKind::Stationary,
+                SameStoreConsistencyKind::IdentityRepublish,
+                SameStoreConsistencyKind::Progression,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_bytes_fused() {
+        let hay: Vec<Rc<[u8]>> = vec![
+            rc_bytes(b"regressed"),
+            rc_bytes(b"stationary"),
+            rc_bytes(b"cross_store"),
+            rc_bytes(b"progression"),
+        ];
+        let parsed: Result<Vec<ProofRelationKind>, ParseKindError> =
+            hay.iter().map(ProofRelationKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_short_circuits_on_first_bad_input() {
+        let hay: Vec<Rc<[u8]>> = vec![
+            rc_bytes(b"regressed"),
+            rc_bytes(b"unknown"),
+            rc_bytes(b"cross_store"),
+        ];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        let err = parsed.unwrap_err();
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (7b) HashMap<K, Rc<[u8]>>::values() shape ----------
+    //
+    // The single-threaded byte-key intern-table shape a per-tick UI or a
+    // WASM main-loop consumer surfaces on non-atomically-refcounted byte-
+    // values: values() yields `&Rc<[u8]>`, and `.map(K::try_from)` now
+    // closes without a per-callsite `.as_ref()` postfix or a `.clone()`
+    // non-atomic refcount bump.
+
+    #[test]
+    fn hashmap_values_map_try_from_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Rc<[u8]>> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, rc_bytes(k.name().as_bytes()));
+        }
+        let mut parsed: Vec<SameStoreImpossibilityKind> = hay
+            .values()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        parsed.sort_by_key(|k| k.name());
+        let mut expected: Vec<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::VARIANTS.to_vec();
+        expected.sort_by_key(|k| k.name());
+        assert_eq!(parsed, expected);
+    }
+
+    // ---------- (8) Generic composability at for<'a> TryFrom<&'a Rc<[u8]>> ----------
+
+    fn parse_kind_ref_rc_bytes<K>(r: &Rc<[u8]>) -> Result<K, ParseKindError>
+    where
+        for<'a> K: TryFrom<&'a Rc<[u8]>, Error = ParseKindError>,
+    {
+        K::try_from(r)
+    }
+
+    #[test]
+    fn generic_ref_rc_bytes_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                parse_kind_ref_rc_bytes::<SameStoreImpossibilityKind>(&r),
+                Ok(k),
+            );
+        }
+        let miss: Rc<[u8]> = rc_bytes(b"unknown");
+        assert!(parse_kind_ref_rc_bytes::<SameStoreImpossibilityKind>(&miss).is_err());
+    }
+
+    #[test]
+    fn generic_ref_rc_bytes_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(
+                parse_kind_ref_rc_bytes::<SameStoreConsistencyKind>(&r),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn generic_ref_rc_bytes_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            assert_eq!(parse_kind_ref_rc_bytes::<ProofRelationKind>(&r), Ok(k));
+        }
+    }
+
+    // ---------- (9) REFCOUNT UNTOUCHED ----------
+
+    #[test]
+    fn refcount_untouched_on_ok_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let cloned: Rc<[u8]> = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &cloned));
+            let count_before = Rc::strong_count(&r);
+            let _ = SameStoreImpossibilityKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_ok_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let cloned: Rc<[u8]> = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let _ = SameStoreConsistencyKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_ok_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let cloned: Rc<[u8]> = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let _ = ProofRelationKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_err() {
+        let r: Rc<[u8]> = rc_bytes(b"some_probe_that_no_variant_names");
+        let cloned: Rc<[u8]> = Rc::clone(&r);
+        let count_before = Rc::strong_count(&r);
+        let _ = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        assert_eq!(Rc::strong_count(&r), count_before);
+        assert!(Rc::ptr_eq(&r, &cloned));
+    }
+
+    // ---------- (10) Caller keeps ownership ----------
+
+    #[test]
+    fn caller_retains_ownership_on_ok() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let addr_before = r.as_ptr();
+            let _ = SameStoreImpossibilityKind::try_from(&r).unwrap();
+            let addr_after = r.as_ptr();
+            assert_eq!(addr_before, addr_after);
+            assert_eq!(&*r, k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn caller_retains_ownership_on_err() {
+        let r: Rc<[u8]> = rc_bytes(b"unknown_probe");
+        let addr_before = r.as_ptr();
+        let err = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        let addr_after = r.as_ptr();
+        assert_eq!(addr_before, addr_after);
+        assert_eq!(&*r, b"unknown_probe");
+        assert_eq!(err.input, "unknown_probe");
+    }
+
+    // ---------- (11) Invalid-UTF-8 error rendering pin ----------
+
+    #[test]
+    fn invalid_utf8_error_rendering_impossibility() {
+        // 0xff is not a valid UTF-8 byte; String::from_utf8_lossy renders it
+        // as the U+FFFD REPLACEMENT CHARACTER (three bytes: 0xef 0xbf 0xbd).
+        let probe: &[u8] = &[b'r', b'e', b'g', 0xff, b'r', b'e', b's', b's', b'e', b'd'];
+        let r: Rc<[u8]> = rc_bytes(probe);
+        let err = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input, "reg\u{fffd}ressed");
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+    }
+
+    // ---------- (12) Atomic-carrier lockstep ----------
+
+    #[test]
+    fn agrees_with_ref_arc_bytes_impossibility() {
+        use std::sync::Arc;
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k.name().as_bytes());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(&a),
+            );
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_bytes_consistency() {
+        use std::sync::Arc;
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k.name().as_bytes());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(&a),
+            );
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_bytes_fused() {
+        use std::sync::Arc;
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<[u8]> = rc_bytes(k.name().as_bytes());
+            let a: Arc<[u8]> = Arc::<[u8]>::from(k.name().as_bytes());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(&a),
+            );
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_bytes_on_unknown() {
+        use std::sync::Arc;
+        for &probe in unknown_probe_bytes() {
+            let r: Rc<[u8]> = rc_bytes(probe);
+            let a: Arc<[u8]> = Arc::<[u8]>::from(probe);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(&a),
+                "impossibility Err lockstep on {probe:?}",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(&a),
+                "consistency Err lockstep on {probe:?}",
+            );
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(&a),
+                "fused Err lockstep on {probe:?}",
+            );
         }
     }
 }
