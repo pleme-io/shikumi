@@ -98,10 +98,10 @@ Measured 2026-08-16 on `aarch64-darwin` (`cargo test`, exit 0, zero failures):
 
 | target | `cargo test` (default features) | `cargo test --all-features` |
 |---|---|---|
-| lib unit tests (`src/`) | 7,603 | **9,977** |
+| lib unit tests (`src/`) | 7,603 | **9,993** |
 | `tests/dispatcher_registration.rs` | 7 | 7 |
 | doctests | — | 21 collected · 12 run · 9 ignored |
-| **executed total** | **7,610** | **9,996** |
+| **executed total** | **7,610** | **10,012** |
 
 > **The 2026-07-27 figures this replaced were stale by ~3,400** — they read
 > 6,437 / 6,489 / 6,508, and the ~500 commits of hotswap conversion cells

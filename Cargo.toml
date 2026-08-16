@@ -177,6 +177,10 @@ tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
 # 0.3.3 -> 0.3.21 to MATCH what blue-lang-syntax resolves. The two MUST agree:
+# (verified 2026-08-16 against blue-lang-syntax 0.0.32: both resolve
+# tatara-lisp 0.3.46 in the lock, so the shared AST is genuinely shared. While
+# the blue pin was stuck at 0.0.2 this agreement was holding by coincidence,
+# not by the requirement below.)
 # blue parses to `tatara_lisp::Sexp`, and two semver-compatible-LOOKING
 # versions are DISTINCT TYPES to rustc (E0308), so a shared AST is not shared
 # across a skew. One AST version fleet-wide is the whole point of a shared AST.
@@ -187,7 +191,14 @@ tatara-lisp = { version = "0.3.21", optional = true }
 # config file is PARSED AND MAPPED, NEVER EXECUTED. A config format that can
 # run arbitrary code is a much larger security surface, and that boundary is a
 # decision rather than an accident of what happened to compile.
-blue-lang-syntax = { version = "0.0.2", optional = true }
+# ★ 0.0.2 -> 0.0.32. `^0.0.z` matches ONLY `0.0.z` under cargo semver — 0.0.x
+# releases are mutually incompatible — so this was a HARD pin that could never
+# float, and `cargo update` was structurally unable to move it. It sat 30
+# releases and eleven days behind while the comment above described an
+# invariant ("one AST version fleet-wide") that was holding only by
+# coincidence: shikumi pinned blue's parser from 2026-08-02 while blue itself
+# shipped 0.0.32. A pin that cannot move is not a pin, it is a fork.
+blue-lang-syntax = { version = "0.0.32", optional = true }
 # Feature-gated `hotswap`: the HotSwapClassifier trait + HotSwapClass/
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must

@@ -579,9 +579,9 @@ dependencies = [
 
 [[package]]
 name = "blue-lang-syntax"
-version = "0.0.2"
+version = "0.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e7c18463d8d73827550761043eb13d534cabe451a6aa7efe4bd3db63b2db2b0"
+checksum = "48f7fcca15e92b67ba1ad48d8b9aaf5a81df61ddae9c9367b5b59864aaaaf880"
 dependencies = [
  "tatara-lisp",
 ]
