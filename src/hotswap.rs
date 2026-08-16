@@ -3486,6 +3486,55 @@ impl PartialEq<SameStoreImpossibilityKind> for &str {
     }
 }
 
+/// The [`PartialEq<&&str>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **double-reference-to-string-slice compare-side sibling** of the
+/// single-reference [`PartialEq<&str>`] impl directly above (cell 69,
+/// this commit), enabling the natural iterator shape
+/// `vec_of_str.iter().any(|s: &&str| kind == s)` without a per-callsite
+/// `**s` dereference. Rust does NOT auto-deref the RHS of `==` to satisfy
+/// a [`PartialEq<T>`] bound, and the standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &&str`, NOT the
+/// `Kind == &&str` direction a natural [`Vec<&str>::iter`](Vec) yield
+/// produces — [`Vec<T>::iter`](Vec) yields `&T`, so `Vec<&str>::iter()`
+/// yields `&&str` and the per-item comparator receives a `&&str`, not a
+/// `&str`. Every downstream slot with a borrowed-string view produced by
+/// borrow-yielding traversal over a slice-of-string-slices — a
+/// `[&str].iter().find(|s| kind == s)` predicate, a
+/// [`HashMap<K, &str>::values`](std::collections::HashMap) iterator
+/// yielding `&&str`, a `serde` string-list visitor threading a
+/// `Vec<&str>` scan through a per-item classifier, any generic slot
+/// bounded on `for<'a, 'b> T: PartialEq<&'a &'b str>` — previously
+/// stranded the caller at either a per-callsite `**s` deref (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or a `.copied()` postfix that widens a bare `&&str`
+/// into an owned `&str` copy purely to satisfy the by-value receiver.
+/// This impl closes the double-reference-to-string-slice compare cell by
+/// delegation to the sibling [`PartialEq<&str>`] impl above through a
+/// single deref of the borrowed handle — one line, zero allocations —
+/// so the caller reaches the SAME [`Self::name`] classification through
+/// the standard trait alone.
+impl PartialEq<&&str> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&&str) -> bool {
+        <Self as PartialEq<&str>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for `&&str`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&str>`] impl
+/// directly above, welding the symmetric `&&str_from_iter == kind` seam
+/// through the sibling [`PartialEq<SameStoreImpossibilityKind> for &str`]
+/// impl above by one deref of the borrowed handle. Lifetime-parameterised
+/// as `impl<'a, 'b>` so the outer and inner borrows compose independently.
+/// Both directions of the double-reference-to-string-slice cross-type
+/// comparison now compose out of the same allocation-free
+/// [`Self::name`] receiver by construction.
+impl<'a, 'b> PartialEq<SameStoreImpossibilityKind> for &'a &'b str {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <&'b str as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<String>`] impl on [`SameStoreImpossibilityKind`] —
 /// the **owned-carrier sibling** of the [`PartialEq<str>`] and
 /// [`PartialEq<&str>`] impls above, lifting the cross-type
@@ -7844,6 +7893,31 @@ impl PartialEq<SameStoreConsistencyKind> for &str {
     }
 }
 
+/// The [`PartialEq<&&str>`] impl on [`SameStoreConsistencyKind`] — the
+/// consistent-half sibling of the impossibility-half
+/// [`PartialEq<&&str>`] impl above (cell 69, this commit), lifting the
+/// double-reference-to-string-slice compare cell onto the three-variant
+/// consistent partition through delegation to the single-reference
+/// [`PartialEq<&str>`] impl at this altitude. Any consumer bounded on
+/// `for<'a, 'b> T: PartialEq<&'a &'b str>` (or holding either kind as
+/// `T`) reaches the same compare seam at both altitudes.
+impl PartialEq<&&str> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&&str) -> bool {
+        <Self as PartialEq<&str>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for `&&str`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&str>`] impl
+/// directly above, welding the symmetric `&&str_from_iter == kind` seam
+/// at the consistent altitude. Mirror of the impossibility-half
+/// receiver at this altitude.
+impl<'a, 'b> PartialEq<SameStoreConsistencyKind> for &'a &'b str {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <&'b str as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The [`PartialEq<String>`] impl on [`SameStoreConsistencyKind`] —
 /// the consistent-half sibling of the impossibility-half
 /// [`PartialEq<String>`] impl above, lifting the owned-string
@@ -10267,6 +10341,37 @@ impl PartialEq<&str> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &str {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         *self == other.name()
+    }
+}
+
+/// The [`PartialEq<&&str>`] impl on the fused [`ProofRelationKind`] —
+/// the third-altitude sibling of the two half-side [`PartialEq<&&str>`]
+/// impls above (cell 69, this commit), closing the (impossibility,
+/// consistency, fused) × (`&&str`) grid at the fused-sum altitude and
+/// lifting `k == &&str_from_iter` past the type-checker without a
+/// per-callsite `**s` dereference. Delegates through the sibling
+/// [`PartialEq<&str>`] impl at this altitude by one deref of the
+/// borrowed handle, so a hypothetical sixth corner in either half-side
+/// surfaces through the fused [`Self::name`] `match` body and BOTH
+/// [`PartialEq<&&str>`] impls (and every prior [`Self::name`]-projected
+/// receiver) in lockstep with the enum itself. See the
+/// impossibility-half impl for the full lift rationale.
+impl PartialEq<&&str> for ProofRelationKind {
+    fn eq(&self, other: &&&str) -> bool {
+        <Self as PartialEq<&str>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for `&&str` impl —
+/// the reverse-direction sibling of the [`PartialEq<&&str>`] impl
+/// directly above at the fused altitude, welding the symmetric
+/// `&&str_from_iter == kind` seam through the same delegation source of
+/// truth. Both directions of the double-reference-to-string-slice
+/// cross-type comparison now compose out of the same allocation-free
+/// receiver at the fused-sum altitude by construction.
+impl<'a, 'b> PartialEq<ProofRelationKind> for &'a &'b str {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <&'b str as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -62627,6 +62732,230 @@ mod partial_eq_ref_cow_bytes_tests {
             let b_ref: &Cow<'_, [u8]> = &b;
             assert_eq!(k == s_ref, k == b_ref);
             assert_eq!(s_ref == k, b_ref == k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_ref_str_tests {
+    //! [`PartialEq<&&str>`] and [`PartialEq<Kind> for &&str`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **double-reference-to-string-slice
+    //! compare-side sibling** of the single-reference
+    //! [`PartialEq<&str>`] pair lifted by
+    //! [`super::partial_eq_str_tests`]. Rust does NOT auto-deref the RHS
+    //! of `==` to satisfy a [`PartialEq<T>`] bound, and the standard
+    //! blanket `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &&str`, NOT the `Kind == &&str` direction a natural
+    //! iterator combinator produces
+    //! (`vec_of_str.iter().any(|s: &&str| kind == s)`, whose closure
+    //! argument is `&&str` because [`Vec<T>::iter`](Vec) yields `&T`
+    //! and `T = &str`). This module pins that both directions of the
+    //! double-reference-to-string-slice pair compose at the type-checker
+    //! for every variant of every kind enum, allocation-free.
+    //!
+    //! Compounding: unlocks the `Vec<&str>::iter()` / `HashMap<K, &str>::
+    //! values()` iterator shapes as first-class classifier inputs for
+    //! every future receiver family (any subsequent smart-pointer or
+    //! borrow carrier gaining a compare-side cell will already have its
+    //! `&&Carrier` sibling here by delegation).
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    #[test]
+    fn impossibility_identity_ref_ref_str() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name: &&'static str = &k.name();
+            assert!(k == name, "kind == &&name for {}", k.name());
+            assert!(name == k, "&&name == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_ref_str() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name: &&'static str = &k.name();
+            assert!(k == name);
+            assert!(name == k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_ref_str() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name: &&'static str = &k.name();
+            assert!(k == name);
+            assert!(name == k);
+        }
+    }
+
+    fn probe_strings() -> &'static [&'static str] {
+        &[
+            "regressed",
+            "cross_store",
+            "stationary",
+            "identity_republish",
+            "progression",
+            "",
+            "REGRESSED",
+            " regressed",
+            "regressed ",
+            "unknown",
+            "regressed\n",
+            "identity-republish",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_single_ref_str_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_strings() {
+                let dbl: &&str = &probe;
+                assert_eq!(
+                    k == dbl,
+                    k == probe,
+                    "kind == &&{probe:?} must agree with kind == &{probe:?} for {}",
+                    k.name(),
+                );
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_single_ref_str_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_strings() {
+                let dbl: &&str = &probe;
+                assert_eq!(k == dbl, k == probe);
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_single_ref_str_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_strings() {
+                let dbl: &&str = &probe;
+                assert_eq!(k == dbl, k == probe);
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn impossibility_cross_variant_ref_ref_str_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_dbl: &&str = &b.name();
+                assert!(a != b_dbl, "{} != &&{}", a.name(), b.name());
+                assert!(b_dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_ref_str_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_dbl: &&str = &b.name();
+                assert!(a != b_dbl);
+                assert!(b_dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_ref_str() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let name: &&'static str = &imp.name();
+            assert!(fused == name, "fused == &&{}", imp.name());
+            assert!(name == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let name: &&'static str = &c.name();
+            assert!(fused == name);
+            assert!(name == fused);
+        }
+    }
+
+    // The load-bearing seam: Vec<&str>::iter() yields &&str, and the
+    // per-item comparator receives &&str, not &str. Before this cell the
+    // natural closure body was a type error; with this cell it composes
+    // out of the standard trait alone.
+    #[test]
+    fn iter_any_over_slice_of_str_impossibility() {
+        let hay: Vec<&str> = vec!["cross_store", "regressed", "unknown"];
+        let k = SameStoreImpossibilityKind::Regressed;
+        assert!(hay.iter().any(|s: &&str| k == s));
+        assert!(hay.iter().any(|s: &&str| s == k));
+        assert_eq!(hay.iter().position(|s: &&str| k == s), Some(1));
+    }
+
+    #[test]
+    fn iter_any_over_slice_of_str_consistency() {
+        let hay: Vec<&str> = vec!["stationary", "progression"];
+        let k = SameStoreConsistencyKind::Progression;
+        assert!(hay.iter().any(|s: &&str| k == s));
+        assert!(hay.iter().any(|s: &&str| s == k));
+        assert_eq!(hay.iter().position(|s: &&str| k == s), Some(1));
+    }
+
+    #[test]
+    fn hashmap_values_projection_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, &str> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, k.name());
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert!(hay.values().any(|s: &&str| k == s));
+            assert!(hay.values().any(|s: &&str| s == k));
+        }
+        assert!(hay.values().all(|s: &&str| s != &"no_such_variant"));
+    }
+
+    // Generic composability at a for<'a, 'b> PartialEq<&'a &'b str> seam.
+    fn cmp_kind_ref_ref_str<K>(k: &K, s: &&str) -> bool
+    where
+        for<'a, 'b> K: PartialEq<&'a &'b str>,
+    {
+        *k == s
+    }
+
+    #[test]
+    fn generic_ref_ref_str_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let name: &&str = &k.name();
+            assert!(cmp_kind_ref_ref_str(&k, name));
+            let miss: &&str = &"unknown";
+            assert!(!cmp_kind_ref_ref_str(&k, miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_str_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let name: &&str = &k.name();
+            assert!(cmp_kind_ref_ref_str(&k, name));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_str_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let name: &&str = &k.name();
+            assert!(cmp_kind_ref_ref_str(&k, name));
         }
     }
 }
