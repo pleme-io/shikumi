@@ -5418,6 +5418,54 @@ impl PartialEq<SameStoreImpossibilityKind> for &[u8] {
     }
 }
 
+/// The [`PartialEq<&&[u8]>`] impl on [`SameStoreImpossibilityKind`] — the
+/// **byte-side double-reference compare-side dual** of the string-side
+/// [`PartialEq<&&str>`] impl (cell 69) at this altitude, closing the
+/// double-reference-to-byte-slice compare cell of the byte-side receiver-
+/// family grid. Rust does NOT auto-deref the RHS of `==` to satisfy a
+/// [`PartialEq<T>`] bound, and the standard blanket
+/// `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A: PartialEq<B>`
+/// only covers the both-sides-borrowed shape `&Kind == &&[u8]`, NOT the
+/// `Kind == &&[u8]` direction a natural [`Vec<&[u8]>::iter`](Vec) yield
+/// produces — [`Vec<T>::iter`](Vec) yields `&T`, so `Vec<&[u8]>::iter()`
+/// yields `&&[u8]` and the per-item comparator receives a `&&[u8]`, not a
+/// `&[u8]`. Every downstream slot with a borrowed-bytes view produced by
+/// borrow-yielding traversal over a slice-of-byte-slices — a
+/// `[&[u8]].iter().find(|s| kind == s)` predicate on a slice of
+/// `bytes::Bytes::as_ref` projections, a
+/// [`HashMap<K, &[u8]>::values`](std::collections::HashMap) iterator
+/// yielding `&&[u8]`, a `serde_bytes` byte-list visitor threading a
+/// `Vec<&[u8]>` scan through a per-item classifier, any generic slot
+/// bounded on `for<'a, 'b> T: PartialEq<&'a &'b [u8]>` — previously
+/// stranded the caller at either a per-callsite `**s` deref or a
+/// `.copied()` postfix that widens a bare `&&[u8]` into an owned `&[u8]`
+/// copy purely to satisfy the by-value receiver. This impl closes the
+/// double-reference-to-byte-slice compare cell by delegation to the
+/// sibling [`PartialEq<&[u8]>`] impl above through a single deref of the
+/// borrowed handle — one line, zero allocations — so the caller reaches
+/// the SAME [`Self::name`]-then-[`str::as_bytes`] classification through
+/// the standard trait alone.
+impl PartialEq<&&[u8]> for SameStoreImpossibilityKind {
+    fn eq(&self, other: &&&[u8]) -> bool {
+        <Self as PartialEq<&[u8]>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreImpossibilityKind>`] for `&&[u8]`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&[u8]>`]
+/// impl directly above, welding the symmetric `&&bytes_from_iter == kind`
+/// seam through the sibling [`PartialEq<SameStoreImpossibilityKind> for
+/// &[u8]`] impl above by one deref of the borrowed handle. Lifetime-
+/// parameterised as `impl<'a, 'b>` so the outer and inner borrows compose
+/// independently. Both directions of the double-reference-to-byte-slice
+/// cross-type comparison now compose out of the same allocation-free
+/// [`Self::name`]-then-[`str::as_bytes`] receiver by construction.
+impl<'a, 'b> PartialEq<SameStoreImpossibilityKind> for &'a &'b [u8] {
+    fn eq(&self, other: &SameStoreImpossibilityKind) -> bool {
+        <&'b [u8] as PartialEq<SameStoreImpossibilityKind>>::eq(*self, other)
+    }
+}
+
 /// The const-generic [`PartialEq<[u8; N]>`] impl on
 /// [`SameStoreImpossibilityKind`] — the **const-length byte-array
 /// comparison-side dual** of the const-generic [`TryFrom<&[u8; N]>`]
@@ -8687,6 +8735,31 @@ impl PartialEq<SameStoreConsistencyKind> for &[u8] {
     }
 }
 
+/// The [`PartialEq<&&[u8]>`] impl on [`SameStoreConsistencyKind`] — the
+/// consistent-half sibling of the impossibility-half
+/// [`PartialEq<&&[u8]>`] impl above (cell 70, this commit), lifting the
+/// double-reference-to-byte-slice compare cell onto the three-variant
+/// consistent partition through delegation to the single-reference
+/// [`PartialEq<&[u8]>`] impl at this altitude. Any consumer bounded on
+/// `for<'a, 'b> T: PartialEq<&'a &'b [u8]>` (or holding either kind as
+/// `T`) reaches the same byte-side compare seam at both altitudes.
+impl PartialEq<&&[u8]> for SameStoreConsistencyKind {
+    fn eq(&self, other: &&&[u8]) -> bool {
+        <Self as PartialEq<&[u8]>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<SameStoreConsistencyKind>`] for `&&[u8]`
+/// impl — the reverse-direction sibling of the [`PartialEq<&&[u8]>`]
+/// impl directly above, welding the symmetric `&&bytes_from_iter == kind`
+/// seam at the consistent altitude. Mirror of the impossibility-half
+/// receiver at this altitude.
+impl<'a, 'b> PartialEq<SameStoreConsistencyKind> for &'a &'b [u8] {
+    fn eq(&self, other: &SameStoreConsistencyKind) -> bool {
+        <&'b [u8] as PartialEq<SameStoreConsistencyKind>>::eq(*self, other)
+    }
+}
+
 /// The const-generic [`PartialEq<[u8; N]>`] impl on
 /// [`SameStoreConsistencyKind`] — the **const-length byte-array
 /// comparison-side dual** of the const-generic [`TryFrom<&[u8; N]>`] cell
@@ -11349,6 +11422,37 @@ impl PartialEq<&[u8]> for ProofRelationKind {
 impl PartialEq<ProofRelationKind> for &[u8] {
     fn eq(&self, other: &ProofRelationKind) -> bool {
         *self == other.name().as_bytes()
+    }
+}
+
+/// The [`PartialEq<&&[u8]>`] impl on the fused [`ProofRelationKind`] —
+/// the third-altitude sibling of the two half-side [`PartialEq<&&[u8]>`]
+/// impls above (cell 70, this commit), closing the (impossibility,
+/// consistency, fused) × (`&&[u8]`) grid at the fused-sum altitude and
+/// lifting `k == &&bytes_from_iter` past the type-checker without a
+/// per-callsite `**s` dereference. Delegates through the sibling
+/// [`PartialEq<&[u8]>`] impl at this altitude by one deref of the
+/// borrowed handle, so a hypothetical sixth corner in either half-side
+/// surfaces through the fused [`Self::name`] `match` body and BOTH
+/// [`PartialEq<&&[u8]>`] impls (and every prior byte-side receiver) in
+/// lockstep with the enum itself. See the impossibility-half impl for
+/// the full lift rationale.
+impl PartialEq<&&[u8]> for ProofRelationKind {
+    fn eq(&self, other: &&&[u8]) -> bool {
+        <Self as PartialEq<&[u8]>>::eq(self, *other)
+    }
+}
+
+/// The reciprocal [`PartialEq<ProofRelationKind>`] for `&&[u8]` impl —
+/// the reverse-direction sibling of the [`PartialEq<&&[u8]>`] impl
+/// directly above at the fused altitude, welding the symmetric
+/// `&&bytes_from_iter == kind` seam through the same delegation source of
+/// truth. Both directions of the double-reference-to-byte-slice
+/// cross-type comparison now compose out of the same allocation-free
+/// receiver at the fused-sum altitude by construction.
+impl<'a, 'b> PartialEq<ProofRelationKind> for &'a &'b [u8] {
+    fn eq(&self, other: &ProofRelationKind) -> bool {
+        <&'b [u8] as PartialEq<ProofRelationKind>>::eq(*self, other)
     }
 }
 
@@ -62956,6 +63060,264 @@ mod partial_eq_ref_ref_str_tests {
         for &k in ProofRelationKind::VARIANTS {
             let name: &&str = &k.name();
             assert!(cmp_kind_ref_ref_str(&k, name));
+        }
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_ref_ref_bytes_tests {
+    //! [`PartialEq<&&[u8]>`] and [`PartialEq<Kind> for &&[u8]`] on
+    //! [`SameStoreImpossibilityKind`], [`SameStoreConsistencyKind`], and
+    //! [`ProofRelationKind`] — the **byte-side double-reference
+    //! compare-side dual** of the string-side [`PartialEq<&&str>`] pair
+    //! lifted by [`super::partial_eq_ref_ref_str_tests`], and the
+    //! double-reference sibling of the single-reference
+    //! [`PartialEq<&[u8]>`] pair lifted by
+    //! [`super::partial_eq_bytes_tests`]. Rust does NOT auto-deref the
+    //! RHS of `==` to satisfy a [`PartialEq<T>`] bound, and the standard
+    //! blanket `impl<A: ?Sized, B: ?Sized> PartialEq<&B> for &A where A:
+    //! PartialEq<B>` only covers the both-sides-borrowed shape
+    //! `&Kind == &&[u8]`, NOT the `Kind == &&[u8]` direction a natural
+    //! iterator combinator produces
+    //! (`vec_of_bytes.iter().any(|s: &&[u8]| kind == s)`, whose closure
+    //! argument is `&&[u8]` because [`Vec<T>::iter`](Vec) yields `&T`
+    //! and `T = &[u8]`). This module pins that both directions of the
+    //! double-reference-to-byte-slice pair compose at the type-checker
+    //! for every variant of every kind enum, allocation-free.
+    //!
+    //! Compounding: closes the byte-side receiver-family grid uniformly
+    //! on both single-reference AND double-reference-to-borrow spellings
+    //! for the `&[u8]` axis, so a `Vec<&[u8]>::iter()` /
+    //! `HashMap<K, &[u8]>::values()` per-item yield is a first-class
+    //! classifier input for every kind enum in the hotswap module — the
+    //! natural `bytes::Bytes::as_ref` projection scan shape and the
+    //! `serde_bytes::Deserialize`-side visitor thread now compose out of
+    //! the standard trait alone.
+
+    use super::{ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind};
+
+    #[test]
+    fn impossibility_identity_ref_ref_bytes() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(k == dbl, "kind == &&bytes for {}", k.name());
+            assert!(dbl == k, "&&bytes == kind for {}", k.name());
+        }
+    }
+
+    #[test]
+    fn consistency_identity_ref_ref_bytes() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    #[test]
+    fn proof_relation_identity_ref_ref_bytes() {
+        for &k in ProofRelationKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(k == dbl);
+            assert!(dbl == k);
+        }
+    }
+
+    fn probe_byte_slices() -> &'static [&'static [u8]] {
+        &[
+            b"regressed",
+            b"cross_store",
+            b"stationary",
+            b"identity_republish",
+            b"progression",
+            b"",
+            b"REGRESSED",
+            b" regressed",
+            b"regressed ",
+            b"unknown",
+            b"regressed\n",
+            b"identity-republish",
+            b"\xff\xfe",
+        ]
+    }
+
+    #[test]
+    fn impossibility_agrees_with_single_ref_bytes_on_every_probe() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for &probe in probe_byte_slices() {
+                let dbl: &&[u8] = &probe;
+                assert_eq!(
+                    k == dbl,
+                    k == probe,
+                    "kind == &&{probe:?} must agree with kind == &{probe:?} for {}",
+                    k.name(),
+                );
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_agrees_with_single_ref_bytes_on_every_probe() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            for &probe in probe_byte_slices() {
+                let dbl: &&[u8] = &probe;
+                assert_eq!(k == dbl, k == probe);
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_agrees_with_single_ref_bytes_on_every_probe() {
+        for &k in ProofRelationKind::VARIANTS {
+            for &probe in probe_byte_slices() {
+                let dbl: &&[u8] = &probe;
+                assert_eq!(k == dbl, k == probe);
+                assert_eq!(dbl == k, probe == k);
+            }
+        }
+    }
+
+    #[test]
+    fn ref_ref_bytes_agrees_with_ref_ref_str_on_utf8_probes() {
+        // The byte-side double-reference cell must agree with the
+        // string-side double-reference cell (cell 69) on every valid-UTF-8
+        // probe; both descend to the same Self::name source of truth.
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            for probe in ["regressed", "cross_store", "unknown", ""] {
+                let dbl_str: &&str = &probe;
+                let bytes: &[u8] = probe.as_bytes();
+                let dbl_bytes: &&[u8] = &bytes;
+                assert_eq!(k == dbl_bytes, k == dbl_str);
+                assert_eq!(dbl_bytes == k, dbl_str == k);
+            }
+        }
+    }
+
+    #[test]
+    fn impossibility_cross_variant_ref_ref_bytes_inequality() {
+        for &a in SameStoreImpossibilityKind::VARIANTS {
+            for &b in SameStoreImpossibilityKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_bytes: &[u8] = b.name().as_bytes();
+                let b_dbl: &&[u8] = &b_bytes;
+                assert!(a != b_dbl, "{} != &&{}", a.name(), b.name());
+                assert!(b_dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn consistency_cross_variant_ref_ref_bytes_inequality() {
+        for &a in SameStoreConsistencyKind::VARIANTS {
+            for &b in SameStoreConsistencyKind::VARIANTS {
+                if a == b {
+                    continue;
+                }
+                let b_bytes: &[u8] = b.name().as_bytes();
+                let b_dbl: &&[u8] = &b_bytes;
+                assert!(a != b_dbl);
+                assert!(b_dbl != a);
+            }
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_ref_bytes() {
+        for &imp in SameStoreImpossibilityKind::VARIANTS {
+            let fused = ProofRelationKind::Impossible(imp);
+            let bytes: &[u8] = imp.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(fused == dbl, "fused == &&{}", imp.name());
+            assert!(dbl == fused);
+        }
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let fused = ProofRelationKind::Consistent(c);
+            let bytes: &[u8] = c.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(fused == dbl);
+            assert!(dbl == fused);
+        }
+    }
+
+    // The load-bearing seam: Vec<&[u8]>::iter() yields &&[u8], and the
+    // per-item comparator receives &&[u8], not &[u8]. Before this cell
+    // the natural closure body was a type error; with this cell it
+    // composes out of the standard trait alone.
+    #[test]
+    fn iter_any_over_slice_of_bytes_impossibility() {
+        let hay: Vec<&[u8]> = vec![b"cross_store", b"regressed", b"unknown"];
+        let k = SameStoreImpossibilityKind::Regressed;
+        assert!(hay.iter().any(|s: &&[u8]| k == s));
+        assert!(hay.iter().any(|s: &&[u8]| s == k));
+        assert_eq!(hay.iter().position(|s: &&[u8]| k == s), Some(1));
+    }
+
+    #[test]
+    fn iter_any_over_slice_of_bytes_consistency() {
+        let hay: Vec<&[u8]> = vec![b"stationary", b"progression"];
+        let k = SameStoreConsistencyKind::Progression;
+        assert!(hay.iter().any(|s: &&[u8]| k == s));
+        assert!(hay.iter().any(|s: &&[u8]| s == k));
+        assert_eq!(hay.iter().position(|s: &&[u8]| k == s), Some(1));
+    }
+
+    #[test]
+    fn hashmap_values_projection_bytes_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, &[u8]> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, k.name().as_bytes());
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert!(hay.values().any(|s: &&[u8]| k == s));
+            assert!(hay.values().any(|s: &&[u8]| s == k));
+        }
+        let miss: &[u8] = b"no_such_variant";
+        assert!(hay.values().all(|s: &&[u8]| s != &miss));
+    }
+
+    // Generic composability at a for<'a, 'b> PartialEq<&'a &'b [u8]> seam.
+    fn cmp_kind_ref_ref_bytes<K>(k: &K, s: &&[u8]) -> bool
+    where
+        for<'a, 'b> K: PartialEq<&'a &'b [u8]>,
+    {
+        *k == s
+    }
+
+    #[test]
+    fn generic_ref_ref_bytes_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(cmp_kind_ref_ref_bytes(&k, dbl));
+            let miss_bytes: &[u8] = b"unknown";
+            let miss: &&[u8] = &miss_bytes;
+            assert!(!cmp_kind_ref_ref_bytes(&k, miss));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_bytes_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(cmp_kind_ref_ref_bytes(&k, dbl));
+        }
+    }
+
+    #[test]
+    fn generic_ref_ref_bytes_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let bytes: &[u8] = k.name().as_bytes();
+            let dbl: &&[u8] = &bytes;
+            assert!(cmp_kind_ref_ref_bytes(&k, dbl));
         }
     }
 }
