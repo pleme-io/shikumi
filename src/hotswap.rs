@@ -5048,6 +5048,87 @@ impl TryFrom<std::borrow::Cow<'_, [u8]>> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<&Cow<'_, [u8]>>`] impl on [`SameStoreImpossibilityKind`] —
+/// the **byte-side reference-to-borrowed-or-owned-carrier parse-side
+/// sibling** of the by-value [`TryFrom<Cow<'_, [u8]>>`] impl directly
+/// above and the byte-side mirror of the string-side
+/// [`TryFrom<&Cow<'_, str>>`] impl already at this altitude (cell 54,
+/// `ba28596`), enabling the natural iterator combinator shape
+/// `slice_of_cow_bytes.iter().map(|c: &Cow<'_, [u8]>| Self::try_from(c))`
+/// (whose closure argument is a `&Cow<'_, [u8]>`, not a `Cow<'_, [u8]>`
+/// and not a `&[u8]`) without a per-callsite `.as_ref()` postfix or
+/// `**c` dereference.
+///
+/// **Why lift a reference-to-Cow-bytes parse-side receiver alongside
+/// the by-value and borrowed ones.** Rust does NOT chain [`TryFrom`]
+/// impls through deref coercion at the trait-bound level — a
+/// `T: TryFrom<&Cow<'_, [u8]>>` bound is NOT satisfied by
+/// `T: TryFrom<&[u8]>` alone (which would require an implicit
+/// `&Cow<'_, [u8]>` → `&[u8]` coercion at trait dispatch, a shape Rust
+/// never synthesizes) NOR by `T: TryFrom<Cow<'_, [u8]>>` alone (which
+/// requires an owning transfer the `&Cow<'_, [u8]>` receiver does not
+/// hold). Every downstream slot with a byte-side borrowed-or-owned view
+/// produced by borrow-yielding traversal — a
+/// `Vec<Cow<'_, [u8]>>::iter().map(K::try_from).collect::<Result<Vec<_>,
+/// _>>()` scan, a `HashMap<K, Cow<'_, [u8]>>::values` iterator threaded
+/// into a byte-oriented parser combinator, a byte-frame decoder that
+/// materializes either a zero-copy chunk of an underlying [`bytes::Bytes`]
+/// frame or an owned copy from a scatter-gather buffer as a
+/// [`Cow<'_, [u8]>`] and hands the per-item parser `&Cow<'_, [u8]>`,
+/// a `serde_bytes` visitor that borrows-when-possible-else-owns on the
+/// byte-side and hands the per-item parser `&Cow<'_, [u8]>`, any
+/// generic slot bounded on `T: TryFrom<&Cow<'_, [u8]>>` — previously
+/// stranded the caller at either a per-callsite `.as_ref()` postfix (a
+/// coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or a `.clone()` allocation to obtain an owned
+/// [`Cow<'_, [u8]>`] to feed the by-value receiver. This impl closes
+/// the byte-side reference-to-Cow parse cell by delegation to the
+/// sibling [`TryFrom<&[u8]>`] receiver through a single
+/// [`Cow::as_ref`] view — one line, zero allocations on the success
+/// path — so the caller reaches the SAME classification through the
+/// standard trait alone. Mirrors the string-side reference-to-borrowed-
+/// or-owned-carrier cell closed for [`&Cow<'_, str>`](std::borrow::Cow)
+/// at cell 54 (`ba28596`), the byte-side reference-to-owned-byte-vector
+/// cell closed for [`&Vec<u8>`](std::vec::Vec) at cell 52 (`de8da23`),
+/// and the byte-side reference-to-compact-owned cell closed for
+/// [`&Box<[u8]>`](std::boxed::Box) at cell 58 (`3e66961`), completing
+/// the byte-side reference-to-borrowed-or-owned leg of the reference-
+/// to-byte-carrier parse-side grid.
+///
+/// **Dispatch preserves the sibling receivers' allocation properties by
+/// construction.** On success this impl is allocation-free (the sibling
+/// [`TryFrom<&[u8]>`] fast path returns the parsed variant with no heap
+/// traffic when the bytes are valid UTF-8 and name a variant). On the
+/// parse-error arm this impl matches the sibling [`TryFrom<&[u8]>`]
+/// receiver's error path — 1 allocation via `s.to_owned()` inside the
+/// sibling [`FromStr`](std::str::FromStr) on the valid-UTF-8 arm to
+/// preserve the malformed input verbatim in [`ParseKindError::input`],
+/// or via [`String::from_utf8_lossy`] on the invalid-UTF-8 arm to render
+/// the malformed bytes into a rendered error. It does NOT match the
+/// by-value [`TryFrom<Cow<'_, [u8]>>`] impl's 0-allocation error path
+/// on the [`Cow::Owned`] arm — the caller here holds only a borrow of a
+/// [`Cow<'_, [u8]>`], not the owning transfer, so preserving the
+/// malformed input requires the clone. A caller who can afford an
+/// owning transfer should reach for the by-value receiver instead.
+///
+/// **Match-body lockstep with the sibling [`TryFrom<&[u8]>`] impl —
+/// enforced by delegation, not open-coding.** The body reaches the
+/// accepted-set ONLY through the sibling [`TryFrom<&[u8]>`] receiver;
+/// it never open-codes the two accepted identifier byte-strings.
+/// Adding a hypothetical third impossibility corner updates the ONE
+/// `match` body in the sibling [`FromStr`](std::str::FromStr) impl
+/// (the source of truth reached via the chained delegation the sibling
+/// [`TryFrom<&[u8]>`] already threads); this impl surfaces the new
+/// identifier through the delegating chain in lockstep with the rest
+/// of the byte-side parse grid.
+impl TryFrom<&std::borrow::Cow<'_, [u8]>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::borrow::Cow<'_, [u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
+    }
+}
+
 /// The [`TryFrom<Box<[u8]>>`] impl on [`SameStoreImpossibilityKind`] — the
 /// **byte-side compact-owned parse-side dual** of the string-side
 /// [`TryFrom<Box<str>>`] impl already at this altitude and the byte-side
@@ -8284,6 +8365,40 @@ impl TryFrom<std::borrow::Cow<'_, [u8]>> for SameStoreConsistencyKind {
     }
 }
 
+/// The [`TryFrom<&Cow<'_, [u8]>>`] impl on [`SameStoreConsistencyKind`] —
+/// the consistent-half sibling of the impossibility-half
+/// [`TryFrom<&Cow<'_, [u8]>>`] impl on [`SameStoreImpossibilityKind`]
+/// above, closing the byte-side reference-to-borrowed-or-owned-carrier
+/// parse cell on this half of the sum in lockstep with the
+/// impossibility-half.
+///
+/// See the sibling [`TryFrom<&Cow<'_, [u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] above for the full rationale — why
+/// [`TryFrom<&Cow<'_, [u8]>>`] is a distinct standard-trait cell from
+/// the sibling by-value [`TryFrom<Cow<'_, [u8]>>`] and borrowed
+/// [`TryFrom<&[u8]>`] receivers (Rust does NOT chain [`TryFrom`] impls
+/// through deref coercion at the trait-bound level), the ecosystem
+/// slots the reference-to-borrowed-or-owned byte-side shape unlocks (a
+/// `Vec<Cow<'_, [u8]>>::iter().map(K::try_from).collect::<Result<Vec<_>,
+/// _>>()` scan, a `HashMap<K, Cow<'_, [u8]>>::values` iterator threaded
+/// into a byte-oriented parser combinator, a byte-frame decoder routing
+/// either a zero-copy chunk of an underlying [`bytes::Bytes`] frame or
+/// an owned copy from a scatter-gather buffer, any generic bounded on
+/// `T: TryFrom<&Cow<'_, [u8]>>`), and the by-construction preservation
+/// of the sibling receivers' allocation properties on the success path
+/// (allocation-free) and the error path (matches the sibling
+/// [`TryFrom<&[u8]>`] receiver's clone-into-error shape). The match-
+/// body lockstep with the sibling parse-side impls is pinned by the
+/// `try_from_ref_cow_bytes_tests` module below through the sibling
+/// [`Self::VARIANTS`] / [`Self::NAMES`] constants.
+impl TryFrom<&std::borrow::Cow<'_, [u8]>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::borrow::Cow<'_, [u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
+    }
+}
+
 /// The [`TryFrom<Box<[u8]>>`] impl on [`SameStoreConsistencyKind`] — the
 /// consistent-half sibling of the impossibility-half
 /// [`TryFrom<Box<[u8]>>`] impl above, and the **byte-side compact-owned
@@ -10815,6 +10930,43 @@ impl TryFrom<std::borrow::Cow<'_, [u8]>> for ProofRelationKind {
             input,
             expected: Self::NAMES,
         })
+    }
+}
+
+/// The [`TryFrom<&Cow<'_, [u8]>>`] impl on the fused [`ProofRelationKind`]
+/// — the fused-arm sibling of the two half-side
+/// [`TryFrom<&Cow<'_, [u8]>>`] impls above, and the **byte-side
+/// reference-to-borrowed-or-owned-carrier parse-side dual** of the
+/// string-side [`TryFrom<&Cow<'_, str>>`] impl (cell 54, `ba28596`)
+/// already at the fused-sum altitude. Delegates to the sibling fused
+/// [`TryFrom<&[u8]>`] receiver through a single [`Cow::as_ref`] view —
+/// one line, allocation-free on the success path — so the fused byte-
+/// side reference-to-Cow parse stays lockstep-identical with the fused
+/// byte-side borrowed parse and, through the two-arm partition inside
+/// [`TryFrom<&[u8]>`], with each half-side parse under every future
+/// variant addition to either half-side enum by construction.
+///
+/// See the sibling [`TryFrom<&Cow<'_, [u8]>>`] impl on
+/// [`SameStoreImpossibilityKind`] above for the full rationale on why
+/// [`TryFrom<&Cow<'_, [u8]>>`] is a distinct standard-trait cell from
+/// the three shape-siblings (Rust does NOT chain [`TryFrom`] impls
+/// through deref coercion at the trait-bound level), the ecosystem
+/// slots the reference-to-borrowed-or-owned byte-side shape unlocks
+/// (a `Vec<Cow<'_, [u8]>>::iter().map(K::try_from).collect::<Result<
+/// Vec<_>, _>>()` scan at the fused-sum altitude yielding either
+/// accepted half, a byte-frame decoder whose per-item slot is a
+/// `&Cow<'_, [u8]>` at the fused-sum altitude, any generic bounded on
+/// `T: TryFrom<&Cow<'_, [u8]>>` receiving either accepted half through
+/// the fused sum), and the by-construction preservation of the sibling
+/// fused [`TryFrom<&[u8]>`] receiver's allocation properties on the
+/// success path (allocation-free) and the error path (matches the
+/// sibling's clone-into-error shape, preserving the malformed input
+/// verbatim in [`ParseKindError::input`] at the fused error boundary).
+impl TryFrom<&std::borrow::Cow<'_, [u8]>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::borrow::Cow<'_, [u8]>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&[u8]>>::try_from(input.as_ref())
     }
 }
 
@@ -55594,6 +55746,537 @@ mod try_from_ref_cow_str_tests {
         let addr_after = owned.as_ref().as_ptr();
         assert_eq!(addr_before, addr_after);
         assert_eq!(owned.as_ref(), "unknown_probe");
+        assert_eq!(err.input, "unknown_probe");
+    }
+}
+
+#[cfg(test)]
+mod try_from_ref_cow_bytes_tests {
+    //! [`TryFrom<&Cow<'_, [u8]>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **byte-side reference-to-borrowed-or-owned-carrier parse-side
+    //! sibling** of the by-value [`TryFrom<Cow<'_, [u8]>>`] triple lifted
+    //! by [`super::try_from_cow_bytes_tests`] and the byte-side mirror of
+    //! the string-side [`TryFrom<&Cow<'_, str>>`] triple pinned by
+    //! [`super::try_from_ref_cow_str_tests`] (cell 54, `ba28596`),
+    //! closing the ergonomic gap Rust's [`TryFrom`] trait dispatch leaves
+    //! between a `Cow<'_, [u8]>` value and a `&Cow<'_, [u8]>` reference
+    //! on the byte-side parse-side of the three kind enums.
+    //!
+    //! Rust does NOT chain [`TryFrom`] impls through deref coercion at
+    //! the trait-bound level — a `T: TryFrom<&Cow<'_, [u8]>>` bound is
+    //! NOT satisfied by `T: TryFrom<&[u8]>` alone or by
+    //! `T: TryFrom<Cow<'_, [u8]>>` alone, because the receiver types are
+    //! distinct. This module pins that the byte-side reference-to-Cow
+    //! parse-side receiver composes at the type-checker for every
+    //! variant of every kind enum, allocation-free on the success path,
+    //! on BOTH the `Cow::Borrowed` and `Cow::Owned` spellings.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Ok pointwise identity with the sibling [`TryFrom<&[u8]>`]
+    //!    receiver on every variant name of every kind enum, on BOTH
+    //!    the `Cow::Borrowed` and `Cow::Owned` spellings.
+    //! 2. Ok pointwise identity with the sibling
+    //!    [`TryFrom<Cow<'_, [u8]>>`] receiver on every variant name, on
+    //!    BOTH the borrowed and owned spellings.
+    //! 3. Round-trip through [`From<Kind>`] for [`Cow<'static, [u8]>`] —
+    //!    for every variant `k`, `<K>::try_from(&Cow::from(k)) == Ok(k)`.
+    //! 4. Err pointwise identity with [`TryFrom<&[u8]>`] on unknown
+    //!    input across a byte-probe grid (including invalid-UTF-8
+    //!    bytes), on both Cow spellings, plus cross-half hypotheticals.
+    //! 5. Err-body fidelity — [`ParseKindError::input`] preserves the
+    //!    malformed input verbatim on the valid-UTF-8 arm (via the
+    //!    sibling [`TryFrom<&[u8]>`]'s `s.to_owned()` clone) and via
+    //!    [`String::from_utf8_lossy`] on the invalid-UTF-8 arm;
+    //!    [`ParseKindError::expected`] equals the sibling
+    //!    [`Self::NAMES`] constant.
+    //! 6. Fused-arm lockstep — for every consistent name the fused
+    //!    [`TryFrom<&Cow<'_, [u8]>>`] agrees with the sibling
+    //!    `SameStoreConsistencyKind::try_from(&cow)` mapped through
+    //!    [`ProofRelationKind::Consistent`]; for every impossibility
+    //!    name it agrees with
+    //!    `SameStoreImpossibilityKind::try_from(&cow)` mapped through
+    //!    [`ProofRelationKind::Impossible`].
+    //! 7. **THE LOAD-BEARING SEAM** — the natural iterator combinator
+    //!    shape `slice.iter().map(K::try_from).collect::<Result<Vec<_>,
+    //!    _>>()` on a `[Cow<'_, [u8]>]` compiles and returns the correct
+    //!    answer. Before this cell, this line failed to type-check —
+    //!    the compiler could not satisfy the closure's
+    //!    `&Cow<'_, [u8]> -> Result<K, _>` signature against any sibling
+    //!    receiver. This is the ergonomic pattern this cell exists to
+    //!    close.
+    //! 8. Generic composability at a `for<'a, 'b> TryFrom<&'a
+    //!    Cow<'b, [u8]>>`-bounded seam neither the sibling
+    //!    [`TryFrom<Cow<'_, [u8]>>`] nor the borrowed [`TryFrom<&[u8]>`]
+    //!    receiver alone can satisfy — a bound only a caller with this
+    //!    cell's impl can satisfy.
+    //! 9. **Caller keeps ownership** — for every variant, after the
+    //!    borrowed parse the caller's original [`Cow`] is still readable
+    //!    at its original data pointer (the impl does NOT consume the
+    //!    input, unlike the sibling by-value
+    //!    [`TryFrom<Cow<'_, [u8]>>`]).
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+    use std::borrow::Cow;
+
+    // ---------- (1) Ok pointwise identity with TryFrom<&[u8]> ----------
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_slice_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let via_slice = SameStoreImpossibilityKind::try_from(k.name().as_bytes());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&borrowed),
+                via_slice,
+                "impossibility {k:?}: TryFrom<&Cow::Borrowed> must agree \
+                 with TryFrom<&[u8]>",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&owned),
+                via_slice,
+                "impossibility {k:?}: TryFrom<&Cow::Owned> must agree \
+                 with TryFrom<&[u8]>",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_slice_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let via_slice = SameStoreConsistencyKind::try_from(k.name().as_bytes());
+            assert_eq!(SameStoreConsistencyKind::try_from(&borrowed), via_slice);
+            assert_eq!(SameStoreConsistencyKind::try_from(&owned), via_slice);
+        }
+    }
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_slice_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let via_slice = ProofRelationKind::try_from(k.name().as_bytes());
+            assert_eq!(ProofRelationKind::try_from(&borrowed), via_slice);
+            assert_eq!(ProofRelationKind::try_from(&owned), via_slice);
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with TryFrom<Cow<'_, [u8]>> ----------
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_cow_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&borrowed),
+                SameStoreImpossibilityKind::try_from(borrowed.clone()),
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&owned),
+                SameStoreImpossibilityKind::try_from(owned.clone()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_cow_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&borrowed),
+                SameStoreConsistencyKind::try_from(borrowed.clone()),
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&owned),
+                SameStoreConsistencyKind::try_from(owned.clone()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_cow_bytes_matches_try_from_cow_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert_eq!(
+                ProofRelationKind::try_from(&borrowed),
+                ProofRelationKind::try_from(borrowed.clone()),
+            );
+            assert_eq!(
+                ProofRelationKind::try_from(&owned),
+                ProofRelationKind::try_from(owned.clone()),
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through From<Kind> for Cow<'static, [u8]> ----------
+
+    #[test]
+    fn round_trip_through_from_cow_bytes_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(SameStoreImpossibilityKind::try_from(&cow), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_cow_bytes_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(SameStoreConsistencyKind::try_from(&cow), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_cow_bytes_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let cow: Cow<'static, [u8]> = k.into();
+            assert_eq!(ProofRelationKind::try_from(&cow), Ok(k));
+        }
+    }
+
+    // ---------- (4) Err pointwise identity with TryFrom<&[u8]> ----------
+
+    fn unknown_probe_byte_slices() -> Vec<Vec<u8>> {
+        vec![
+            b"".to_vec(),
+            b"REGRESSED".to_vec(),
+            b"PascalCase".to_vec(),
+            b"identity-republish".to_vec(),
+            b"unknown".to_vec(),
+            b" regressed".to_vec(),
+            b"regressed ".to_vec(),
+            b"regressed\n".to_vec(),
+            vec![0xff, 0xfe, 0xfd],
+        ]
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_slice_impossibility_both_spellings() {
+        for probe in unknown_probe_byte_slices() {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe.as_slice());
+            let owned: Cow<'_, [u8]> = Cow::Owned(probe.clone());
+            let via_slice = SameStoreImpossibilityKind::try_from(probe.as_slice());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&borrowed),
+                via_slice,
+                "impossibility Err arm on borrowed {probe:?}",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&owned),
+                via_slice,
+                "impossibility Err arm on owned {probe:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_slice_consistency_both_spellings() {
+        for probe in unknown_probe_byte_slices() {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe.as_slice());
+            let owned: Cow<'_, [u8]> = Cow::Owned(probe.clone());
+            let via_slice = SameStoreConsistencyKind::try_from(probe.as_slice());
+            assert_eq!(SameStoreConsistencyKind::try_from(&borrowed), via_slice);
+            assert_eq!(SameStoreConsistencyKind::try_from(&owned), via_slice);
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_slice_fused_both_spellings() {
+        for probe in unknown_probe_byte_slices() {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe.as_slice());
+            let owned: Cow<'_, [u8]> = Cow::Owned(probe.clone());
+            let via_slice = ProofRelationKind::try_from(probe.as_slice());
+            assert_eq!(ProofRelationKind::try_from(&borrowed), via_slice);
+            assert_eq!(ProofRelationKind::try_from(&owned), via_slice);
+        }
+    }
+
+    // ---------- (4b) Cross-half hypotheticals ----------
+
+    #[test]
+    fn cross_half_impossibility_rejects_consistency_names_via_ref_cow_bytes() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(c.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(c.name().as_bytes().to_vec());
+            assert!(SameStoreImpossibilityKind::try_from(&borrowed).is_err());
+            assert!(SameStoreImpossibilityKind::try_from(&owned).is_err());
+        }
+    }
+
+    #[test]
+    fn cross_half_consistency_rejects_impossibility_names_via_ref_cow_bytes() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(i.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(i.name().as_bytes().to_vec());
+            assert!(SameStoreConsistencyKind::try_from(&borrowed).is_err());
+            assert!(SameStoreConsistencyKind::try_from(&owned).is_err());
+        }
+    }
+
+    // ---------- (5) Err-body fidelity ----------
+
+    #[test]
+    fn err_body_input_preserved_verbatim_utf8_impossibility() {
+        let probe: &[u8] = b"some_long_and_distinctive_probe_string_that_no_variant_names";
+        let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe);
+        let owned: Cow<'_, [u8]> = Cow::Owned(probe.to_vec());
+        let err_b = SameStoreImpossibilityKind::try_from(&borrowed).unwrap_err();
+        let err_o = SameStoreImpossibilityKind::try_from(&owned).unwrap_err();
+        assert_eq!(err_b.input.as_bytes(), probe);
+        assert_eq!(err_o.input.as_bytes(), probe);
+        assert_eq!(err_b.expected, SameStoreImpossibilityKind::NAMES);
+        assert_eq!(err_o.expected, SameStoreImpossibilityKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_utf8_consistency() {
+        let probe: &[u8] = b"some_long_and_distinctive_probe_string_that_no_variant_names";
+        let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe);
+        let owned: Cow<'_, [u8]> = Cow::Owned(probe.to_vec());
+        let err_b = SameStoreConsistencyKind::try_from(&borrowed).unwrap_err();
+        let err_o = SameStoreConsistencyKind::try_from(&owned).unwrap_err();
+        assert_eq!(err_b.input.as_bytes(), probe);
+        assert_eq!(err_o.input.as_bytes(), probe);
+        assert_eq!(err_b.expected, SameStoreConsistencyKind::NAMES);
+        assert_eq!(err_o.expected, SameStoreConsistencyKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_utf8_fused() {
+        let probe: &[u8] = b"some_long_and_distinctive_probe_string_that_no_variant_names";
+        let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe);
+        let owned: Cow<'_, [u8]> = Cow::Owned(probe.to_vec());
+        let err_b = ProofRelationKind::try_from(&borrowed).unwrap_err();
+        let err_o = ProofRelationKind::try_from(&owned).unwrap_err();
+        assert_eq!(err_b.input.as_bytes(), probe);
+        assert_eq!(err_o.input.as_bytes(), probe);
+        assert_eq!(err_b.expected, ProofRelationKind::NAMES);
+        assert_eq!(err_o.expected, ProofRelationKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_agrees_with_try_from_slice_on_invalid_utf8_impossibility() {
+        let probe: &[u8] = &[0xff, 0xfe, 0xfd];
+        let borrowed: Cow<'_, [u8]> = Cow::Borrowed(probe);
+        let owned: Cow<'_, [u8]> = Cow::Owned(probe.to_vec());
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(&borrowed),
+            SameStoreImpossibilityKind::try_from(probe),
+            "invalid-UTF-8 error path must match the sibling TryFrom<&[u8]>",
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::try_from(&owned),
+            SameStoreImpossibilityKind::try_from(probe),
+        );
+    }
+
+    // ---------- (6) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_cow_bytes_impossibility() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(i.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(i.name().as_bytes().to_vec());
+            let fused_b = ProofRelationKind::try_from(&borrowed);
+            let fused_o = ProofRelationKind::try_from(&owned);
+            let expected_b =
+                SameStoreImpossibilityKind::try_from(&borrowed).map(ProofRelationKind::Impossible);
+            let expected_o =
+                SameStoreImpossibilityKind::try_from(&owned).map(ProofRelationKind::Impossible);
+            assert_eq!(fused_b, expected_b);
+            assert_eq!(fused_o, expected_o);
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_cow_bytes_consistency() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(c.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(c.name().as_bytes().to_vec());
+            let fused_b = ProofRelationKind::try_from(&borrowed);
+            let fused_o = ProofRelationKind::try_from(&owned);
+            let expected_b =
+                SameStoreConsistencyKind::try_from(&borrowed).map(ProofRelationKind::Consistent);
+            let expected_o =
+                SameStoreConsistencyKind::try_from(&owned).map(ProofRelationKind::Consistent);
+            assert_eq!(fused_b, expected_b);
+            assert_eq!(fused_o, expected_o);
+        }
+    }
+
+    // ---------- (7) THE LOAD-BEARING SEAM ----------
+    //
+    // Before this cell, `slice.iter().map(K::try_from).collect::<...>()`
+    // over `[Cow<'_, [u8]>]` did not type-check — the compiler suggested
+    // a per-callsite `.as_ref()` postfix inside the closure. With this
+    // cell, the natural iterator combinator composes out of the standard
+    // trait alone.
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_cow_bytes_impossibility() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Borrowed(b"regressed"),
+            Cow::Owned(b"cross_store".to_vec()),
+        ];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreImpossibilityKind::Regressed,
+                SameStoreImpossibilityKind::CrossStore,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_cow_bytes_consistency() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Owned(b"stationary".to_vec()),
+            Cow::Borrowed(b"identity_republish"),
+            Cow::Owned(b"progression".to_vec()),
+        ];
+        let parsed: Result<Vec<SameStoreConsistencyKind>, ParseKindError> =
+            hay.iter().map(SameStoreConsistencyKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreConsistencyKind::Stationary,
+                SameStoreConsistencyKind::IdentityRepublish,
+                SameStoreConsistencyKind::Progression,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_cow_bytes_fused() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Borrowed(b"regressed"),
+            Cow::Owned(b"stationary".to_vec()),
+            Cow::Borrowed(b"cross_store"),
+            Cow::Owned(b"progression".to_vec()),
+        ];
+        let parsed: Result<Vec<ProofRelationKind>, ParseKindError> =
+            hay.iter().map(ProofRelationKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_short_circuits_on_first_bad_input() {
+        let hay: Vec<Cow<'_, [u8]>> = vec![
+            Cow::Borrowed(b"regressed"),
+            Cow::Owned(b"unknown".to_vec()),
+            Cow::Borrowed(b"cross_store"),
+        ];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        let err = parsed.unwrap_err();
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (8) Generic composability at for<'a, 'b> TryFrom<&'a Cow<'b, [u8]>> ----------
+
+    fn parse_kind_ref_cow_bytes<K>(c: &Cow<'_, [u8]>) -> Result<K, ParseKindError>
+    where
+        for<'a, 'b> K: TryFrom<&'a Cow<'b, [u8]>, Error = ParseKindError>,
+    {
+        K::try_from(c)
+    }
+
+    #[test]
+    fn generic_ref_cow_bytes_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert_eq!(
+                parse_kind_ref_cow_bytes::<SameStoreImpossibilityKind>(&borrowed),
+                Ok(k),
+            );
+            assert_eq!(
+                parse_kind_ref_cow_bytes::<SameStoreImpossibilityKind>(&owned),
+                Ok(k),
+            );
+        }
+        let miss: Cow<'_, [u8]> = Cow::Borrowed(b"unknown");
+        assert!(parse_kind_ref_cow_bytes::<SameStoreImpossibilityKind>(&miss).is_err());
+    }
+
+    #[test]
+    fn generic_ref_cow_bytes_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            assert_eq!(
+                parse_kind_ref_cow_bytes::<SameStoreConsistencyKind>(&owned),
+                Ok(k),
+            );
+        }
+    }
+
+    #[test]
+    fn generic_ref_cow_bytes_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            assert_eq!(
+                parse_kind_ref_cow_bytes::<ProofRelationKind>(&borrowed),
+                Ok(k),
+            );
+        }
+    }
+
+    // ---------- (9) Caller keeps ownership ----------
+
+    #[test]
+    fn caller_retains_ownership_borrowed_arm() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let borrowed: Cow<'_, [u8]> = Cow::Borrowed(k.name().as_bytes());
+            let addr_before = borrowed.as_ref().as_ptr();
+            let _ = SameStoreImpossibilityKind::try_from(&borrowed).unwrap();
+            let addr_after = borrowed.as_ref().as_ptr();
+            assert_eq!(addr_before, addr_after);
+            assert_eq!(borrowed.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn caller_retains_ownership_owned_arm() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let owned: Cow<'_, [u8]> = Cow::Owned(k.name().as_bytes().to_vec());
+            let addr_before = owned.as_ref().as_ptr();
+            let _ = SameStoreImpossibilityKind::try_from(&owned).unwrap();
+            let addr_after = owned.as_ref().as_ptr();
+            assert_eq!(addr_before, addr_after);
+            assert_eq!(owned.as_ref(), k.name().as_bytes());
+        }
+    }
+
+    #[test]
+    fn caller_retains_ownership_on_err() {
+        let owned: Cow<'_, [u8]> = Cow::Owned(b"unknown_probe".to_vec());
+        let addr_before = owned.as_ref().as_ptr();
+        let err = SameStoreImpossibilityKind::try_from(&owned).unwrap_err();
+        let addr_after = owned.as_ref().as_ptr();
+        assert_eq!(addr_before, addr_after);
+        assert_eq!(owned.as_ref(), b"unknown_probe");
         assert_eq!(err.input, "unknown_probe");
     }
 }
