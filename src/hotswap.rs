@@ -6306,6 +6306,96 @@ impl TryFrom<std::rc::Rc<str>> for SameStoreImpossibilityKind {
     }
 }
 
+/// The [`TryFrom<&std::rc::Rc<str>>`] impl on
+/// [`SameStoreImpossibilityKind`] — the **reference-to-non-atomically-
+/// shared-refcounted-carrier parse-side dual** of the sibling by-value
+/// [`TryFrom<std::rc::Rc<str>>`] impl directly above and the **non-atomic
+/// refcount sibling** of the atomically-shared-refcounted
+/// [`TryFrom<&std::sync::Arc<str>>`] impl above (cell 60, `7cf2176`),
+/// closing the reference-to-non-atomically-shared-refcounted parse-side
+/// cell of the string-side receiver-family grid. Sibling of the
+/// reference-to-compact-owned parse cell [`TryFrom<&Box<str>>`] (cell 56,
+/// `cddaad4`) and of the reference-to-borrowed-or-owned parse cell
+/// [`TryFrom<&Cow<'_, str>>`] (cell 54, `ba28596`) on the same
+/// borrow-receiving parse grid.
+///
+/// **Why lift a reference-to-Rc parse-side receiver alongside the
+/// by-value cell.** Rust does NOT chain [`TryFrom`] impls through deref
+/// coercion at the trait-bound level — a
+/// `T: TryFrom<&std::rc::Rc<str>>` bound is NOT satisfied by
+/// `T: TryFrom<&str>` alone (which would require an implicit
+/// `&Rc<str>` → `&str` coercion at trait dispatch, a shape Rust never
+/// synthesizes) NOR by `T: TryFrom<std::rc::Rc<str>>` alone (which
+/// requires an owning transfer the `&Rc<str>` receiver does not hold)
+/// NOR by `T: TryFrom<&std::sync::Arc<str>>` alone (the atomic-refcount
+/// and non-atomic-refcount carriers are DISTINCT types even though the
+/// layout is identical). Every downstream slot with a non-atomically-
+/// shared-refcounted string view produced by borrow-yielding traversal
+/// on a single-threaded consumer — a [`Vec<std::rc::Rc<str>>::iter`]
+/// `().map(K::try_from)` scan over an intern-table snapshot, a
+/// [`HashMap<K, std::rc::Rc<str>>::values`] iterator threaded into a
+/// per-tick UI parser combinator, a WASM main-loop callback receiving a
+/// single-threaded shared-refcounted identifier reference from an
+/// event dispatcher and parsing it into a [`Kind`] without paying the
+/// atomic-refcount tax on the intermediate clone, any generic
+/// `fn parse<K: for<'a> TryFrom<&'a std::rc::Rc<str>>>` — previously
+/// stranded the caller at either a per-callsite `.as_ref()` postfix
+/// (a coordinated silent rewrite of the callsite, not a lift into the
+/// type-checker) or a [`std::rc::Rc::clone`] refcount bump to obtain
+/// an owning handle to feed the by-value receiver (paying a non-atomic
+/// increment purely to satisfy the by-value receiver). This impl
+/// closes the reference-to-Rc-str parse cell by delegation to the
+/// sibling [`TryFrom<&str>`] receiver through a single
+/// [`AsRef::as_ref`] view — one line, zero allocations on the success
+/// path, zero refcount touches on the shared handle (the impl passes a
+/// bare pointer, never touches the strong count) — so the caller
+/// reaches the SAME classification through the standard trait alone.
+///
+/// **Rc versus Arc on the borrowed parse side — same footprint,
+/// distinct type, distinct refcount.** [`std::rc::Rc<str>`] and
+/// [`std::sync::Arc<str>`] share the same two-word carrier footprint
+/// (data pointer + length) and both carry a tight allocation sized
+/// exactly to `name.len()` plus a reference-count header, but the
+/// [`Rc`](std::rc::Rc) header is a plain `usize` while the
+/// [`Arc`](std::sync::Arc) header is an
+/// [`std::sync::atomic::AtomicUsize`]. This borrowed cell touches
+/// neither header on either success or error paths — the `&Rc<str>` is
+/// a bare pointer to the carrier the caller still owns — so the
+/// atomic-vs-non-atomic distinction shows up only through the type,
+/// not through any cycle spent inside this impl. The sibling by-value
+/// [`TryFrom<std::rc::Rc<str>>`] cell (directly above) DOES decrement
+/// the non-atomic refcount on drop; the borrowed cell does not.
+///
+/// **Dispatch preserves the sibling receivers' allocation properties
+/// by construction.** On success this impl is allocation-free (the
+/// sibling [`TryFrom<&str>`] fast path returns the parsed variant with
+/// no heap traffic) and refcount-untouched (the bare `&Rc` is dropped
+/// at end of scope without decrementing the strong count the caller
+/// holds). On the error path this impl matches the sibling
+/// [`TryFrom<&str>`] receiver — 1 allocation via `s.to_owned()` inside
+/// the sibling [`FromStr`](std::str::FromStr) to preserve the malformed
+/// input verbatim in [`ParseKindError::input`]. That matches the sibling
+/// by-value [`TryFrom<std::rc::Rc<str>>`] impl's 1-allocation error
+/// path — the intrinsic price of a shared-refcounted carrier the
+/// borrowed cell inherits from its owning sibling.
+///
+/// **Match-body lockstep with the sibling [`TryFrom<&str>`] impl —
+/// enforced by delegation, not open-coding.** The body reaches the
+/// accepted-set ONLY through the sibling [`TryFrom<&str>`] receiver; it
+/// never open-codes the two accepted identifier strings. Adding a
+/// hypothetical third impossibility corner updates the ONE `match` body
+/// in the sibling [`FromStr`](std::str::FromStr) impl (the source of
+/// truth); this impl surfaces the new identifier through the delegating
+/// chain in lockstep with the rest of the parse-side of the
+/// standard-trait grid.
+impl TryFrom<&std::rc::Rc<str>> for SameStoreImpossibilityKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
+    }
+}
+
 /// The [`TryFrom<std::sync::Arc<[u8]>>`] impl on
 /// [`SameStoreImpossibilityKind`] — the **byte-side shared-refcounted
 /// parse-side dual** of the string-side [`TryFrom<std::sync::Arc<str>>`]
@@ -8498,6 +8588,25 @@ impl TryFrom<std::rc::Rc<str>> for SameStoreConsistencyKind {
                 expected: Self::NAMES,
             }),
         }
+    }
+}
+
+/// The [`TryFrom<&std::rc::Rc<str>>`] impl on
+/// [`SameStoreConsistencyKind`] — the **consistent-half** sibling of the
+/// impossibility-half [`TryFrom<&std::rc::Rc<str>>`] impl. See that
+/// impl for the full rationale; the reference-to-non-atomically-shared-
+/// refcounted parse-side cell here closes the same borrow-preserving,
+/// refcount-untouched parse seam on the three-corner consistent half via
+/// delegation to the sibling [`TryFrom<&str>`] receiver through
+/// [`AsRef::as_ref`], keeping the parse-side receiver-set on both halves
+/// in lockstep with the atomically-shared-refcounted reference-to-Arc
+/// parse-side pair pinned by cell 60
+/// ([`TryFrom<&std::sync::Arc<str>>`]).
+impl TryFrom<&std::rc::Rc<str>> for SameStoreConsistencyKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
     }
 }
 
@@ -11078,6 +11187,35 @@ impl TryFrom<std::rc::Rc<str>> for ProofRelationKind {
             input,
             expected: Self::NAMES,
         })
+    }
+}
+
+/// The [`TryFrom<&std::rc::Rc<str>>`] impl on the fused
+/// [`ProofRelationKind`] — the **fused-arm reference-to-non-atomically-
+/// shared-refcounted parse-side sibling** of the two half-side
+/// [`TryFrom<&std::rc::Rc<str>>`] impls above, welding the union of
+/// the two half-side parsers' accepted-sets into a single fused-sum
+/// receiver whose body composes them through the sibling fused
+/// [`TryFrom<&str>`] receiver via [`AsRef::as_ref`] — the SAME
+/// delegating shape the two half-side reference-to-Rc parse cells
+/// carry, lifted onto the fused-sum altitude in lockstep with the
+/// fused reference-to-Arc [`TryFrom<&std::sync::Arc<str>>`] receiver
+/// (cell 60, `7cf2176`) on the atomically-shared-refcounted carrier
+/// and with the fused compare-side [`PartialEq<std::rc::Rc<str>>`]
+/// already present on the ProofRelationKind non-atomic carrier.
+///
+/// **Fused-arm lockstep — enforced by delegation, not open-coding.** The
+/// body dispatches on the sibling fused [`TryFrom<&str>`] receiver,
+/// which itself composes on the two half-side [`FromStr`] chains through
+/// the recovered [`String`] input on the error path. Adding a
+/// hypothetical variant to either half-side enum surfaces through the
+/// corresponding half-side match body AND is picked up by this fused
+/// body in lockstep with the rest of the fused-sum parse-side surface.
+impl TryFrom<&std::rc::Rc<str>> for ProofRelationKind {
+    type Error = ParseKindError;
+
+    fn try_from(input: &std::rc::Rc<str>) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(input.as_ref())
     }
 }
 
@@ -58565,6 +58703,583 @@ mod partial_eq_ref_arc_bytes_tests {
             let b_ref: &Arc<[u8]> = &b;
             assert_eq!(k == s_ref, k == b_ref);
             assert_eq!(s_ref == k, b_ref == k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod try_from_ref_rc_str_tests {
+    //! [`TryFrom<&std::rc::Rc<str>>`] on [`SameStoreImpossibilityKind`],
+    //! [`SameStoreConsistencyKind`], and [`ProofRelationKind`] — the
+    //! **reference-to-non-atomically-shared-refcounted-carrier parse-side
+    //! sibling** of the by-value [`TryFrom<std::rc::Rc<str>>`] trio and
+    //! the non-atomic-refcount sibling of the reference-to-Arc parse-side
+    //! pair pinned by [`super::try_from_ref_arc_str_tests`] (cell 60).
+    //!
+    //! Rust does NOT chain [`TryFrom`] impls through deref coercion at the
+    //! trait-bound level — a `T: TryFrom<&std::rc::Rc<str>>` bound is
+    //! NOT satisfied by `T: TryFrom<&str>` alone, by
+    //! `T: TryFrom<std::rc::Rc<str>>` alone, or by
+    //! `T: TryFrom<&std::sync::Arc<str>>` alone (the atomic-refcount and
+    //! non-atomic-refcount carriers are DISTINCT types). This module pins
+    //! that the reference-to-Rc parse-side receiver composes at the
+    //! type-checker for every variant of every kind enum, allocation-free
+    //! on success AND refcount-untouched on the shared handle.
+    //!
+    //! **What the tests below pin.**
+    //! 1. Ok pointwise identity with the sibling [`TryFrom<&str>`]
+    //!    receiver on every variant name of every kind enum.
+    //! 2. Ok pointwise identity with the sibling
+    //!    [`TryFrom<std::rc::Rc<str>>`] receiver on every variant name
+    //!    (via [`std::rc::Rc::clone`] to feed the by-value receiver).
+    //! 3. Round-trip through [`From<Kind>`] for [`std::rc::Rc<str>`] —
+    //!    for every variant `k`,
+    //!    `<K>::try_from(&<Rc<str>>::from(k)) == Ok(k)`.
+    //! 4. Round-trip through [`std::fmt::Display`] — for every variant
+    //!    `k`, `<K>::try_from(&<Rc<str>>::from(k.to_string()))
+    //!    == Ok(k)`.
+    //! 5. Err pointwise identity with [`TryFrom<&str>`] on unknown input
+    //!    (empty, PascalCase, all-caps, whitespace-flanked, cross-half
+    //!    hypotheticals).
+    //! 6. Err-body fidelity — [`ParseKindError::input`] preserves the
+    //!    malformed input verbatim, [`ParseKindError::expected`] equals
+    //!    the sibling [`Self::NAMES`] constant.
+    //! 7. Fused-arm lockstep — for every consistent name the fused
+    //!    [`TryFrom<&Rc<str>>`] agrees with
+    //!    `SameStoreConsistencyKind::try_from(&rc_str)` mapped through
+    //!    [`ProofRelationKind::Consistent`]; for every impossibility name
+    //!    it agrees with `SameStoreImpossibilityKind::try_from(&rc_str)`
+    //!    mapped through [`ProofRelationKind::Impossible`].
+    //! 8. **THE LOAD-BEARING SEAM** — the natural iterator combinator
+    //!    shape `slice.iter().map(K::try_from).collect::<Result<Vec<_>,
+    //!    _>>()` on a `[Rc<str>]` compiles and returns the correct
+    //!    answer. A [`HashMap<K, Rc<str>>::values`] iterator surfacing
+    //!    `&Rc<str>` composes through the same
+    //!    `.map(K::try_from).collect()` shape.
+    //! 9. Generic composability at a `for<'a> TryFrom<&'a Rc<str>>`-
+    //!    bounded seam neither the sibling
+    //!    [`TryFrom<std::rc::Rc<str>>`] nor the borrowed
+    //!    [`TryFrom<&str>`] receiver alone can satisfy.
+    //! 10. **REFCOUNT UNTOUCHED** — for every variant of every kind enum,
+    //!     a fresh [`std::rc::Rc<str>`] cloned into a second handle
+    //!     undergoes the borrowed parse via the reference receiver, and
+    //!     both [`std::rc::Rc::strong_count`] and
+    //!     [`std::rc::Rc::ptr_eq`] are pointwise-identical before and
+    //!     after. The by-value cell consumes an [`std::rc::Rc`] that the
+    //!     caller must have refcount-cloned; this cell consumes a bare
+    //!     `&Rc`.
+    //! 11. **Caller keeps ownership** — for every variant, after the
+    //!     borrowed parse the caller's original [`std::rc::Rc<str>`] is
+    //!     still readable at its original address (the impl does NOT
+    //!     consume the input, unlike the sibling by-value
+    //!     [`TryFrom<std::rc::Rc<str>>`]).
+    //! 12. **Atomic-carrier lockstep** — for every variant, the borrowed
+    //!     parse via [`&std::rc::Rc<str>`] agrees with the borrowed parse
+    //!     via [`&std::sync::Arc<str>`] (cell 60). Same identifier bytes
+    //!     reach the same accepted-set through both shared-refcounted
+    //!     borrowed receivers, so a downstream consumer that migrates
+    //!     between single-threaded and multi-threaded shared-refcounted
+    //!     carriers lands on the same classification without a callsite
+    //!     rewrite.
+
+    use super::{
+        ParseKindError, ProofRelationKind, SameStoreConsistencyKind, SameStoreImpossibilityKind,
+    };
+    use std::rc::Rc;
+
+    fn rc(s: &str) -> Rc<str> {
+        Rc::<str>::from(s)
+    }
+
+    // ---------- (1) Ok pointwise identity with TryFrom<&str> ----------
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_str_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(k.name()),
+                "impossibility {k:?}: TryFrom<&Rc<str>> must agree with \
+                 TryFrom<&str> on the fast success path",
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_str_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(k.name()),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_str_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(k.name()),
+            );
+        }
+    }
+
+    // ---------- (2) Ok pointwise identity with TryFrom<Rc<str>> ----------
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_rc_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_rc_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    #[test]
+    fn try_from_ref_rc_matches_try_from_rc_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(Rc::clone(&r)),
+            );
+        }
+    }
+
+    // ---------- (3) Round-trip through From<Kind> for Rc<str> ----------
+
+    #[test]
+    fn round_trip_through_from_rc_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(SameStoreImpossibilityKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_rc_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(SameStoreConsistencyKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_from_rc_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = k.into();
+            assert_eq!(ProofRelationKind::try_from(&r), Ok(k));
+        }
+    }
+
+    // ---------- (4) Round-trip through Display ----------
+
+    #[test]
+    fn round_trip_through_display_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = Rc::<str>::from(k.to_string());
+            assert_eq!(SameStoreImpossibilityKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_display_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = Rc::<str>::from(k.to_string());
+            assert_eq!(SameStoreConsistencyKind::try_from(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn round_trip_through_display_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = Rc::<str>::from(k.to_string());
+            assert_eq!(ProofRelationKind::try_from(&r), Ok(k));
+        }
+    }
+
+    // ---------- (5) Err pointwise identity with TryFrom<&str> ----------
+
+    fn unknown_probe_strings() -> &'static [&'static str] {
+        &[
+            "",
+            "REGRESSED",
+            "PascalCase",
+            "identity-republish",
+            "unknown",
+            " regressed",
+            "regressed ",
+            "regressed\n",
+        ]
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_impossibility() {
+        for &probe in unknown_probe_strings() {
+            let r: Rc<str> = rc(probe);
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(probe),
+                "impossibility Err arm on {probe:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_consistency() {
+        for &probe in unknown_probe_strings() {
+            let r: Rc<str> = rc(probe);
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(probe),
+            );
+        }
+    }
+
+    #[test]
+    fn err_agrees_with_try_from_str_fused() {
+        for &probe in unknown_probe_strings() {
+            let r: Rc<str> = rc(probe);
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(probe),
+            );
+        }
+    }
+
+    // ---------- (5b) Cross-half hypotheticals ----------
+
+    #[test]
+    fn cross_half_impossibility_rejects_consistency_names_via_ref_rc() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(c.name());
+            assert!(SameStoreImpossibilityKind::try_from(&r).is_err());
+        }
+    }
+
+    #[test]
+    fn cross_half_consistency_rejects_impossibility_names_via_ref_rc() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(i.name());
+            assert!(SameStoreConsistencyKind::try_from(&r).is_err());
+        }
+    }
+
+    // ---------- (6) Err-body fidelity ----------
+
+    #[test]
+    fn err_body_input_preserved_verbatim_impossibility() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let r: Rc<str> = rc(probe);
+        let err = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, SameStoreImpossibilityKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_consistency() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let r: Rc<str> = rc(probe);
+        let err = SameStoreConsistencyKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, SameStoreConsistencyKind::NAMES);
+    }
+
+    #[test]
+    fn err_body_input_preserved_verbatim_fused() {
+        let probe = "some_long_and_distinctive_probe_string_that_no_variant_names";
+        let r: Rc<str> = rc(probe);
+        let err = ProofRelationKind::try_from(&r).unwrap_err();
+        assert_eq!(err.input, probe);
+        assert_eq!(err.expected, ProofRelationKind::NAMES);
+    }
+
+    // ---------- (7) Fused-arm lockstep ----------
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_rc_impossibility() {
+        for &i in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(i.name());
+            let fused = ProofRelationKind::try_from(&r);
+            let expected =
+                SameStoreImpossibilityKind::try_from(&r).map(ProofRelationKind::Impossible);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    #[test]
+    fn fused_arm_lockstep_via_ref_rc_consistency() {
+        for &c in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(c.name());
+            let fused = ProofRelationKind::try_from(&r);
+            let expected =
+                SameStoreConsistencyKind::try_from(&r).map(ProofRelationKind::Consistent);
+            assert_eq!(fused, expected);
+        }
+    }
+
+    // ---------- (8) THE LOAD-BEARING SEAM ----------
+    //
+    // Before this cell, `slice.iter().map(K::try_from).collect::<...>()`
+    // over `[Rc<str>]` did not type-check — the compiler suggested a
+    // per-callsite `.as_ref()` or a `.clone()` (non-atomic refcount
+    // bump) inside the closure. With this cell, the natural iterator
+    // combinator composes out of the standard trait alone,
+    // allocation-free on success and refcount-untouched on the shared
+    // handle.
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_impossibility() {
+        let hay: Vec<Rc<str>> = vec![rc("regressed"), rc("cross_store")];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreImpossibilityKind::Regressed,
+                SameStoreImpossibilityKind::CrossStore,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_consistency() {
+        let hay: Vec<Rc<str>> = vec![
+            rc("stationary"),
+            rc("identity_republish"),
+            rc("progression"),
+        ];
+        let parsed: Result<Vec<SameStoreConsistencyKind>, ParseKindError> =
+            hay.iter().map(SameStoreConsistencyKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                SameStoreConsistencyKind::Stationary,
+                SameStoreConsistencyKind::IdentityRepublish,
+                SameStoreConsistencyKind::Progression,
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_over_slice_of_rc_fused() {
+        let hay: Vec<Rc<str>> = vec![
+            rc("regressed"),
+            rc("stationary"),
+            rc("cross_store"),
+            rc("progression"),
+        ];
+        let parsed: Result<Vec<ProofRelationKind>, ParseKindError> =
+            hay.iter().map(ProofRelationKind::try_from).collect();
+        assert_eq!(
+            parsed.unwrap(),
+            vec![
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ],
+        );
+    }
+
+    #[test]
+    fn iter_map_try_from_short_circuits_on_first_bad_input() {
+        let hay: Vec<Rc<str>> = vec![rc("regressed"), rc("unknown"), rc("cross_store")];
+        let parsed: Result<Vec<SameStoreImpossibilityKind>, ParseKindError> = hay
+            .iter()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect();
+        let err = parsed.unwrap_err();
+        assert_eq!(err.input, "unknown");
+    }
+
+    // ---------- (8b) HashMap<K, Rc<str>>::values() shape ----------
+
+    #[test]
+    fn hashmap_values_map_try_from_impossibility() {
+        use std::collections::HashMap;
+        let mut hay: HashMap<u32, Rc<str>> = HashMap::new();
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            hay.insert(i as u32, rc(k.name()));
+        }
+        let mut parsed: Vec<SameStoreImpossibilityKind> = hay
+            .values()
+            .map(SameStoreImpossibilityKind::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        parsed.sort_by_key(|k| k.name());
+        let mut expected: Vec<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::VARIANTS.to_vec();
+        expected.sort_by_key(|k| k.name());
+        assert_eq!(parsed, expected);
+    }
+
+    // ---------- (9) Generic composability at for<'a> TryFrom<&'a Rc<str>> ----------
+
+    fn parse_kind_ref_rc<K>(r: &Rc<str>) -> Result<K, ParseKindError>
+    where
+        for<'a> K: TryFrom<&'a Rc<str>, Error = ParseKindError>,
+    {
+        K::try_from(r)
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(parse_kind_ref_rc::<SameStoreImpossibilityKind>(&r), Ok(k));
+        }
+        let miss: Rc<str> = rc("unknown");
+        assert!(parse_kind_ref_rc::<SameStoreImpossibilityKind>(&miss).is_err());
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(parse_kind_ref_rc::<SameStoreConsistencyKind>(&r), Ok(k));
+        }
+    }
+
+    #[test]
+    fn generic_ref_rc_seam_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            assert_eq!(parse_kind_ref_rc::<ProofRelationKind>(&r), Ok(k));
+        }
+    }
+
+    // ---------- (10) REFCOUNT UNTOUCHED ----------
+
+    #[test]
+    fn refcount_untouched_on_ok_impossibility() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let cloned: Rc<str> = Rc::clone(&r);
+            assert!(Rc::ptr_eq(&r, &cloned));
+            let count_before = Rc::strong_count(&r);
+            let _ = SameStoreImpossibilityKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_ok_consistency() {
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let cloned: Rc<str> = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let _ = SameStoreConsistencyKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_ok_fused() {
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let cloned: Rc<str> = Rc::clone(&r);
+            let count_before = Rc::strong_count(&r);
+            let _ = ProofRelationKind::try_from(&r).unwrap();
+            assert_eq!(Rc::strong_count(&r), count_before);
+            assert!(Rc::ptr_eq(&r, &cloned));
+        }
+    }
+
+    #[test]
+    fn refcount_untouched_on_err() {
+        let r: Rc<str> = rc("some_probe_that_no_variant_names");
+        let cloned: Rc<str> = Rc::clone(&r);
+        let count_before = Rc::strong_count(&r);
+        let _ = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        assert_eq!(Rc::strong_count(&r), count_before);
+        assert!(Rc::ptr_eq(&r, &cloned));
+    }
+
+    // ---------- (11) Caller keeps ownership ----------
+
+    #[test]
+    fn caller_retains_ownership_on_ok() {
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let addr_before = r.as_ptr();
+            let _ = SameStoreImpossibilityKind::try_from(&r).unwrap();
+            let addr_after = r.as_ptr();
+            assert_eq!(addr_before, addr_after);
+            assert_eq!(&*r, k.name());
+        }
+    }
+
+    #[test]
+    fn caller_retains_ownership_on_err() {
+        let r: Rc<str> = rc("unknown_probe");
+        let addr_before = r.as_ptr();
+        let err = SameStoreImpossibilityKind::try_from(&r).unwrap_err();
+        let addr_after = r.as_ptr();
+        assert_eq!(addr_before, addr_after);
+        assert_eq!(&*r, "unknown_probe");
+        assert_eq!(err.input, "unknown_probe");
+    }
+
+    // ---------- (12) Atomic-carrier lockstep with cell 60 (&Arc<str>) ----------
+
+    #[test]
+    fn agrees_with_ref_arc_str_impossibility() {
+        use std::sync::Arc;
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreImpossibilityKind::try_from(&r),
+                SameStoreImpossibilityKind::try_from(&a),
+            );
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_str_consistency() {
+        use std::sync::Arc;
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                SameStoreConsistencyKind::try_from(&r),
+                SameStoreConsistencyKind::try_from(&a),
+            );
+        }
+    }
+
+    #[test]
+    fn agrees_with_ref_arc_str_fused() {
+        use std::sync::Arc;
+        for &k in ProofRelationKind::VARIANTS {
+            let r: Rc<str> = rc(k.name());
+            let a: Arc<str> = Arc::<str>::from(k.name());
+            assert_eq!(
+                ProofRelationKind::try_from(&r),
+                ProofRelationKind::try_from(&a),
+            );
         }
     }
 }
