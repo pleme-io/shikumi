@@ -164,6 +164,79 @@ impl ReloadObservatory {
         tracing::error!("failed to reload config: {err}");
     }
 
+    /// Record a reload failure into the observatory slots AND return the
+    /// same error as `Err(err)`, in one composed step. The generic
+    /// [`Ok`] type `T` is inferred from the surrounding
+    /// [`Result`][std::result::Result] context — `()` at every current
+    /// call site, but the type stays open so a future consumer whose
+    /// success branch produces a value can compose through the same
+    /// helper.
+    ///
+    /// One source of truth for the "record failure into the observatory,
+    /// then propagate the same error to the caller" two-step every
+    /// caller-owns-logging reload path in [`crate::ConfigStore`]
+    /// previously open-coded at its own body. Three callers today —
+    /// [`crate::ConfigStore::reload`] (the manual sibling of the
+    /// [`crate::ConfigStore::load_and_watch`] watcher-driven auto-reload)
+    /// and, under the `hotswap` feature,
+    /// [`crate::ConfigStore::reload_hotswap`] (the manual sibling of the
+    /// [`crate::ConfigStore::load_and_watch_hotswap`] watcher-driven
+    /// auto-reload) plus
+    /// [`crate::ConfigStore::apply_hotswap_candidate`] (the shared
+    /// validate-and-conditionally-swap step both hotswap paths funnel
+    /// through) — each wrote the identical `observatory.record_failure(&err);`
+    /// followed by an `Err(err)` return, differing only in whether the
+    /// arm sat inline as the tail expression (as in
+    /// [`crate::ConfigStore::reload`]) or fired an early `return` (as
+    /// in the two hotswap paths). Three places any future refinement of
+    /// the caller-owns-logging failure diagnostic — a `tracing::warn`
+    /// on a well-known [`ShikumiError::Extract`]
+    /// [`crate::ConfigSource`]-chain shape, a per-error-kind counter
+    /// feeding a manual-reload-failure histogram, richer failure-side
+    /// telemetry that the log-emitting watcher path is deliberately
+    /// spared, an operator-facing structured field naming which of the
+    /// two manual reload legs (plain vs. hotswap) produced the failure
+    /// — would have to be applied in lockstep. That is exactly the
+    /// drift-class this crate spends load-bearing lifts to close, on
+    /// the caller-owns-logging side of the same
+    /// `(record, replay, watch)` triple the peer
+    /// [`Self::record_failure_and_log`] closes on the
+    /// watcher-owns-logging side.
+    ///
+    /// The [`Self::record_failure_and_log`] peer stays where it is —
+    /// no return-value propagation, an operator-facing
+    /// [`tracing::error`] emit on top of the atomic-slot mutation — so
+    /// the two watcher-driven reload closures that route through it
+    /// still get the operator-facing log they contract to emit. The
+    /// two named surfaces partition the reload-failure recording
+    /// space by which side owns logging: the watcher side owns
+    /// logging (and returns nothing to a caller); the caller side
+    /// receives the returned `Err` and owns logging itself.
+    ///
+    /// # Slot-mutation equivalence
+    ///
+    /// The atomic-slot side-effects are exactly those of
+    /// [`Self::record_failure`] on the same input — same
+    /// `last_failure_at` stamp, same `failure_count` bump, same
+    /// `last_reload_error` publish, in the same load-bearing step
+    /// order. Pinned by
+    /// [`tests::record_failure_and_return_err_matches_record_failure_slot_mutations`].
+    ///
+    /// # Return-value fidelity
+    ///
+    /// The returned [`Err`] carries the same [`ShikumiError`] the caller
+    /// handed in — byte-for-byte on the [`std::fmt::Display`] surface —
+    /// so a caller matching on the returned error's kind or rendering
+    /// its message sees exactly what they passed. Pinned by
+    /// [`tests::record_failure_and_return_err_returns_original_error_verbatim`].
+    pub(crate) fn record_failure_and_return_err<T>(
+        &self,
+        err: ShikumiError,
+    ) -> Result<T, ShikumiError> {
+        self.record_failure(&err);
+        Err(err)
+    }
+
     /// Monotonic count of successful reloads. See
     /// [`crate::ConfigStore::generation`].
     pub(crate) fn generation(&self) -> u64 {
@@ -587,5 +660,95 @@ mod tests {
         assert_eq!(obs.failure_count(), 1);
         let captured = obs.last_reload_error().expect("captured from thread");
         assert!(captured.message.contains("from-thread"));
+    }
+
+    #[test]
+    fn record_failure_and_return_err_matches_record_failure_slot_mutations() {
+        // The Err-returning variant delegates its atomic-slot mutation to
+        // the pure `record_failure` primitive; pin that both surfaces
+        // produce identical atomic-slot state on the same input error. A
+        // future refactor that drifts the composition away from calling
+        // `record_failure` — a divergent stamp order, a divergent
+        // failure-message shape, a divergent generation touch — breaks
+        // this test at the ONE shared substrate site the three
+        // caller-owns-logging reload paths (`reload`, `reload_hotswap`,
+        // `apply_hotswap_candidate`) now reach through. Idiom-peer of
+        // `record_failure_and_log_matches_record_failure_slot_mutations`,
+        // which pins the same slot-mutation equivalence on the
+        // watcher-owns-logging side of the same drift-class partition.
+        let err_base = ShikumiError::Parse("oops".to_owned());
+        let err_returning = ShikumiError::Parse("oops".to_owned());
+
+        let base = ReloadObservatory::new();
+        base.record_failure(&err_base);
+
+        let returning = ReloadObservatory::new();
+        let _propagated: Result<(), ShikumiError> =
+            returning.record_failure_and_return_err(err_returning);
+
+        assert_eq!(base.generation(), returning.generation());
+        assert_eq!(base.failure_count(), returning.failure_count());
+        let base_err = base.last_reload_error().expect("base populated");
+        let ret_err = returning.last_reload_error().expect("returning populated");
+        assert_eq!(base_err.message, ret_err.message);
+        assert_eq!(base_err.sources, ret_err.sources);
+        assert!(base.last_failure_at().is_some());
+        assert!(returning.last_failure_at().is_some());
+    }
+
+    #[test]
+    fn record_failure_and_return_err_returns_original_error_verbatim() {
+        // Return-value fidelity: the returned `Err` renders identically
+        // to the input error the caller handed in. A caller matching on
+        // the returned error's kind or rendering its message sees
+        // exactly what they passed, so a future refactor that wrapped or
+        // re-classified the error on the way out (e.g. re-boxed it into
+        // a distinct `ShikumiError` variant) breaks this test at the ONE
+        // shared substrate site before the three
+        // caller-owns-logging reload paths silently inherit the
+        // regression.
+        let obs = ReloadObservatory::new();
+        let original = ShikumiError::Parse("verbatim-payload".to_owned());
+        let original_rendered = original.to_string();
+
+        let returned: Result<(), ShikumiError> = obs.record_failure_and_return_err(original);
+        let err = returned.expect_err("record_failure_and_return_err must return Err");
+        assert_eq!(err.to_string(), original_rendered);
+    }
+
+    #[test]
+    fn record_failure_and_return_err_bumps_failure_count_monotonically() {
+        // Cumulative-failure-count contract on the Err-returning variant:
+        // three back-to-back calls advance `failure_count` from 0 → 1 →
+        // 2 → 3, matching the manual-reload path. A future refactor that
+        // swallowed the counter bump on the propagation path (e.g.
+        // conditionally skipping `record_failure` on a re-classified
+        // error) breaks this test before the three
+        // caller-owns-logging reload paths inherit the regression.
+        let obs = ReloadObservatory::new();
+        for i in 1..=3 {
+            let _: Result<(), ShikumiError> =
+                obs.record_failure_and_return_err(ShikumiError::Parse(format!("bad-{i}")));
+            assert_eq!(obs.failure_count(), i);
+        }
+    }
+
+    #[test]
+    fn record_failure_and_return_err_does_not_touch_value_or_generation() {
+        // Fail-safe guarantee mirrored on the Err-returning variant: the
+        // value slot and the success-generation counter are preserved
+        // byte-for-byte on the caller-owns-logging failure arm. A future
+        // refactor that accidentally routed the Err-returning variant
+        // through `record_success` (e.g. via a mis-typed helper name)
+        // breaks this test rather than silently installing whatever was
+        // sitting in the failing candidate. Idiom-peer of
+        // `record_failure_and_log_does_not_touch_value_or_generation`
+        // on the log-emitting variant.
+        let obs = ReloadObservatory::new();
+        let inner = ArcSwap::from_pointee(99u32);
+        let _: Result<(), ShikumiError> =
+            obs.record_failure_and_return_err(ShikumiError::Parse("x".to_owned()));
+        assert_eq!(**inner.load(), 99);
+        assert_eq!(obs.generation(), 0);
     }
 }

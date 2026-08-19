@@ -201,10 +201,7 @@ where
                 self.observatory.record_success(&self.inner, new);
                 Ok(())
             }
-            Err(err) => {
-                self.observatory.record_failure(&err);
-                Err(err)
-            }
+            Err(err) => self.observatory.record_failure_and_return_err(err),
         }
     }
 
@@ -734,10 +731,7 @@ where
     pub fn reload_hotswap(&self) -> Result<(), ShikumiError> {
         let (candidate, _) = match Self::load_from_sources(&self.sources) {
             Ok(v) => v,
-            Err(err) => {
-                self.observatory.record_failure(&err);
-                return Err(err);
-            }
+            Err(err) => return self.observatory.record_failure_and_return_err(err),
         };
         Self::apply_hotswap_candidate(
             candidate,
@@ -768,10 +762,7 @@ where
     ) -> Result<(), ShikumiError> {
         let validated = match crate::hotswap::ValidatedTieredConfig::validate(candidate) {
             Ok(v) => v.into_inner(),
-            Err(err) => {
-                observatory.record_failure(&err);
-                return Err(err);
-            }
+            Err(err) => return observatory.record_failure_and_return_err(err),
         };
 
         let current = inner.load();
