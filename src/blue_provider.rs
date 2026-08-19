@@ -56,37 +56,35 @@
 //! [`crate::lisp_provider`]. Restating it is how two copies of one rule begin
 //! to disagree.
 
-use std::path::PathBuf;
-
 use figment::value::Value;
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
-use crate::provider::text_source_provider_impl;
+use crate::provider::{text_source_provider_impl, text_source_provider_struct};
 
-/// Figment provider that reads a blue (`.b`) config file.
-///
-/// The exact shape of [`crate::lisp_provider::LispProvider`], deliberately:
-/// both halves route through the shared helpers in [`crate::provider`], so a
-/// front-end adds ZERO bespoke metadata or error code and cannot drift the
-/// operator-facing diagnostics away from what [`Format`] declares.
-///
-/// Until this existed, `.b` support was a free function nothing could reach by
-/// extension — the provider was wired to the mapping but not to the format
-/// primitive, so a `.b` file on disk fell through
-/// [`crate::ProviderChain::with_file`]'s conservative arm and was parsed as
-/// TOML.
-#[derive(Debug, Clone)]
-pub struct BlueProvider {
-    path: PathBuf,
-}
-
-impl BlueProvider {
-    /// Read blue config from `path`.
-    #[must_use]
-    pub fn file(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
+text_source_provider_struct! {
+    /// Figment provider that reads a blue (`.b`) config file.
+    ///
+    /// The exact shape of [`crate::lisp_provider::LispProvider`], deliberately:
+    /// both halves route through the shared helpers in [`crate::provider`], so a
+    /// front-end adds ZERO bespoke metadata or error code and cannot drift the
+    /// operator-facing diagnostics away from what [`Format`] declares.
+    ///
+    /// Until this existed, `.b` support was a free function nothing could reach by
+    /// extension — the provider was wired to the mapping but not to the format
+    /// primitive, so a `.b` file on disk fell through
+    /// [`crate::ProviderChain::with_file`]'s conservative arm and was parsed as
+    /// TOML.
+    ///
+    /// The whole struct declaration + `file(path)` ctor is emitted by
+    /// the shared [`text_source_provider_struct!`](crate::provider::text_source_provider_struct)
+    /// substrate macro — the pre-lift `#[derive(Debug, Clone)] pub
+    /// struct BlueProvider { path: PathBuf }` + `pub fn file(path:
+    /// impl Into<PathBuf>) -> Self { … }` pair the peer
+    /// [`crate::lisp_provider::LispProvider`] also carried collapses
+    /// to ONE macro call, so a future refinement of the carrier shape
+    /// lands at one site and cannot drift the two apart.
+    BlueProvider
 }
 
 // Emits BOTH the `impl Provider for BlueProvider` block AND the

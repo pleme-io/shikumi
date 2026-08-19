@@ -482,6 +482,116 @@ macro_rules! text_source_provider_impl {
 }
 pub(crate) use text_source_provider_impl;
 
+/// Emit the shared struct + `file(path)` ctor a text-source
+/// shikumi-built provider carries at its head — the last two-line
+/// pattern still open-coded at each caller after
+/// [`text_source_provider_impl!`] closed the `impl Provider` body and
+/// the [`Self::load`](crate::lisp_provider::LispProvider::load)
+/// static-load one-shot legs.
+///
+/// Every text-source shikumi-built provider in-tree carries the SAME
+/// `#[derive(Debug, Clone)] pub struct $Ty { path: PathBuf }` +
+/// `pub fn file(path: impl Into<PathBuf>) -> Self { Self { path:
+/// path.into() } }` pair — until this macro,
+/// [`crate::lisp_provider::LispProvider`] (`lisp` feature) and
+/// [`crate::blue_provider::BlueProvider`] (`blue` feature) each carried
+/// a byte-identical copy of that ~15-line block. Two places any future
+/// refinement of the carrier shape (a canonicalized-path cache in a
+/// `OnceLock<PathBuf>`, a `figment::Metadata::source`-populated
+/// [`figment::Source`] stashed at construction, an `Arc<Path>` interned
+/// path for zero-alloc metadata cloning) would have to be applied in
+/// lockstep — exactly the drift class this crate spends load-bearing
+/// lifts to close. Idiom-peer of [`text_source_provider_impl!`], which
+/// closed the `impl Provider` body + static-load one-shot legs at ONE
+/// substrate site; this macro closes the last per-caller boilerplate on
+/// the same surface. A future text-source shikumi-built provider — a
+/// Ruby-syntax `.rb` front-end whose surface lowers to a
+/// [`tatara_lisp::Sexp`], a HOCON reader, a JSON5 or KDL provider —
+/// authors ZERO struct-level boilerplate beyond its module-level
+/// `load_from_str` free function, its call to this macro, and its call
+/// to [`text_source_provider_impl!`].
+///
+/// [`crate::nix_provider::NixProvider`] deliberately does NOT ride this
+/// macro: it carries a second `nix_binary: String` field beside `path`
+/// (overridable through the `with_binary` builder for hermetic tests),
+/// so its ctor is legitimately per-provider. This is the same asymmetry
+/// [`text_source_provider_impl!`] declares: text-source callers ride
+/// the fused impl-block macro; the non-text-source `NixProvider` rides
+/// the more general [`path_provider_impl!`] macro. The two-macro
+/// partition is deliberate — every text-source rider inherits BOTH
+/// halves of the shared surface, and the non-text-source rider inherits
+/// only the halves it can share by construction.
+///
+/// The struct field `path: PathBuf` is left private-in-module; both
+/// substrate helpers this crate ships that need to borrow it
+/// ([`text_source_provider_impl!`]'s emitted `impl Provider::metadata`
+/// / `impl Provider::data` bodies) expand in the same module as the
+/// struct, so same-module visibility already reaches them without
+/// widening the field's exposure.
+///
+/// # Contract
+///
+/// - The emitted struct derives `Debug + Clone`, the two bounds every
+///   text-source provider in-tree carried pre-lift.
+/// - The emitted ctor is `pub`, `#[must_use]`, and takes
+///   `impl Into<PathBuf>`, matching the pre-lift convention that a
+///   caller may pass either a `&Path` (via `Path::to_path_buf`) or an
+///   owned [`PathBuf`].
+/// - Any struct-level doc / cfg / derive attributes the caller places in
+///   front of the macro (typically ONE `///` block) are forwarded
+///   verbatim onto the emitted struct via `$(#[$attr])*`, so a caller
+///   whose provider needs a bespoke `#[non_exhaustive]` or
+///   `#[cfg(...)]` on the struct itself can still declare it at the
+///   invocation site.
+///
+/// The macro is `pub(crate)` — the emitted struct is `pub`, but the
+/// macro itself is only reachable from within this crate, matching
+/// [`text_source_provider_impl!`]'s own visibility.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::provider::{text_source_provider_impl, text_source_provider_struct};
+///
+/// text_source_provider_struct! {
+///     /// Figment provider that reads a `.myfmt` config file.
+///     MyProvider
+/// }
+///
+/// fn load_from_str(src: &str) -> Result<Value, ShikumiError> { /* … */ }
+///
+/// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
+/// ```
+macro_rules! text_source_provider_struct {
+    (
+        $(#[$attr:meta])*
+        $ty:ident $(,)?
+    ) => {
+        $(#[$attr])*
+        #[derive(Debug, Clone)]
+        pub struct $ty {
+            path: ::std::path::PathBuf,
+        }
+
+        impl $ty {
+            /// Construct the provider from `path`. The file is not
+            /// touched until either the [`::figment::Provider::data`]
+            /// impl this struct rides through
+            /// [`text_source_provider_impl!`](crate::provider::text_source_provider_impl)
+            /// is called (via `Figment::merge`), or the ergonomic
+            /// `Self::load(&Path)` static one-shot the same peer macro
+            /// emits runs directly. The ctor performs one
+            /// [`::std::path::PathBuf`] allocation via `Into` and
+            /// nothing else.
+            #[must_use]
+            pub fn file(path: impl ::core::convert::Into<::std::path::PathBuf>) -> Self {
+                Self { path: path.into() }
+            }
+        }
+    };
+}
+pub(crate) use text_source_provider_struct;
+
 /// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —
 /// the [`figment::Provider`] impl block a shikumi-built provider carries
 /// when it produces a [`Result<Value, ShikumiError>`] from a `&self`
@@ -951,6 +1061,154 @@ mod tests {
     struct TestConfig {
         name: Option<String>,
         count: Option<u32>,
+    }
+
+    // ---- text_source_provider_struct! (struct + `file(path)` ctor) ----
+    //
+    // The shared struct declaration + `file(path)` ctor every text-source
+    // shikumi-built provider carries. Before this lift both
+    // `LispProvider` (`lisp` feature) and `BlueProvider` (`blue` feature)
+    // open-coded byte-identical `#[derive(Debug, Clone)] pub struct X
+    // { path: PathBuf }` + `pub fn file(path: impl Into<PathBuf>) -> Self
+    // { Self { path: path.into() } }` bodies. These tests pin the
+    // fusion at ONE substrate site so a caller sensing shape changes
+    // still trips them.
+
+    /// The emitted struct MUST derive both `Debug` and `Clone`. Both are
+    /// load-bearing: `Debug` is what an operator sees on a figment
+    /// extract-error path (via `#[derive(Debug)]` on `figment::Error`'s
+    /// `Metadata` tree); `Clone` is what every builder-style consumer
+    /// (`Figment::merge`, per-tick reload) relies on to fan the
+    /// provider into multiple chains without moving the caller's
+    /// handle. A future drift of the macro that drops either bound
+    /// fires this compile-time trait pin.
+    ///
+    /// Written as a monomorphizing free function on `T: Debug + Clone`,
+    /// invoked with the macro-emitted type. If either bound goes away
+    /// the invocation fails to typecheck, so this is a compile-time
+    /// obligation, not a runtime assertion.
+    #[cfg(feature = "lisp")]
+    #[test]
+    fn text_source_provider_struct_lisp_derives_debug_and_clone() {
+        fn assert_debug_and_clone<T: ::std::fmt::Debug + ::std::clone::Clone>() {}
+        assert_debug_and_clone::<crate::lisp_provider::LispProvider>();
+    }
+
+    /// Blue-side peer of the derive-pin above — pinned in the SAME
+    /// substrate-site module (not blue's own tests) so a future
+    /// hand-edit that reintroduces a bespoke `pub struct BlueProvider
+    /// { … }` without `#[derive(Debug, Clone)]` fires from this file,
+    /// alongside the lisp-side derive-pin.
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_struct_blue_derives_debug_and_clone() {
+        fn assert_debug_and_clone<T: ::std::fmt::Debug + ::std::clone::Clone>() {}
+        assert_debug_and_clone::<crate::blue_provider::BlueProvider>();
+    }
+
+    /// The emitted `file(path)` ctor MUST accept both `&Path` and owned
+    /// `PathBuf` (per the `impl Into<PathBuf>` bound) AND MUST store
+    /// the path such that `Provider::metadata()` renders it verbatim
+    /// through `Format::metadata_name`. The metadata round-trip is
+    /// the observable proof that the `path` field the emitted ctor
+    /// wrote is the same one the emitted `impl Provider::metadata`
+    /// body reads.
+    ///
+    /// Written as a live drift-closure against
+    /// `LispProvider::file(&Path)` and `LispProvider::file(PathBuf)`:
+    /// a future macro-body edit that stops storing the caller's path
+    /// (a canonicalization pass silently normalising away symlinks, a
+    /// [`OnceLock`] wrapper hiding the raw string) fires this test
+    /// with the concrete-vs-expected mismatch, not a downstream
+    /// resolver failure.
+    #[cfg(feature = "lisp")]
+    #[test]
+    fn text_source_provider_struct_lisp_ctor_accepts_ref_and_owned_and_stores_path() {
+        use ::figment::Provider;
+        let path = ::std::path::PathBuf::from("/tmp/some/lisp-ctor.lisp");
+
+        let from_ref = crate::lisp_provider::LispProvider::file(&path);
+        let md_ref = from_ref.metadata();
+        assert_eq!(
+            md_ref.name.as_ref(),
+            Format::Lisp.metadata_name(&path),
+            "ctor from &Path must store the path so Provider::metadata renders it",
+        );
+
+        let from_owned = crate::lisp_provider::LispProvider::file(path.clone());
+        let md_owned = from_owned.metadata();
+        assert_eq!(
+            md_owned.name.as_ref(),
+            Format::Lisp.metadata_name(&path),
+            "ctor from PathBuf must store the same path as the &Path form",
+        );
+    }
+
+    /// Blue-side peer of the ctor-round-trip pin above. Blue rides the
+    /// SAME `text_source_provider_struct!` macro emission, so the
+    /// pre-lift byte-identical shape is asserted here (not at blue's
+    /// own tests) — a future hand-edit that reintroduces a bespoke
+    /// `impl BlueProvider { pub fn file(path) -> Self { … } }`
+    /// dropping the `impl Into<PathBuf>` bound, or the `#[must_use]`
+    /// attribute, or the store-then-emit shape, fires from this file
+    /// alongside the lisp-side counterpart.
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_struct_blue_ctor_accepts_ref_and_owned_and_stores_path() {
+        use ::figment::Provider;
+        let path = ::std::path::PathBuf::from("/tmp/some/blue-ctor.b");
+
+        let from_ref = crate::blue_provider::BlueProvider::file(&path);
+        let md_ref = from_ref.metadata();
+        assert_eq!(
+            md_ref.name.as_ref(),
+            Format::Blue.metadata_name(&path),
+            "ctor from &Path must store the path so Provider::metadata renders it",
+        );
+
+        let from_owned = crate::blue_provider::BlueProvider::file(path.clone());
+        let md_owned = from_owned.metadata();
+        assert_eq!(
+            md_owned.name.as_ref(),
+            Format::Blue.metadata_name(&path),
+            "ctor from PathBuf must store the same path as the &Path form",
+        );
+    }
+
+    /// The emitted `Clone` impl MUST preserve the stored path — a
+    /// derived `Clone` on a `PathBuf` field trivially satisfies this,
+    /// but a future refinement of the carrier shape (a
+    /// non-`Clone`-transparent wrapper around `PathBuf`, a
+    /// hand-written `Clone` impl for structural sharing) could
+    /// silently drift the invariant. Pinned pointwise against both
+    /// text-source callers here (not at each caller's own tests) so
+    /// the substrate site owns the equivalence.
+    #[cfg(feature = "lisp")]
+    #[test]
+    fn text_source_provider_struct_lisp_clone_preserves_metadata_path() {
+        use ::figment::Provider;
+        let path = ::std::path::PathBuf::from("/tmp/some/lisp-clone.lisp");
+        let original = crate::lisp_provider::LispProvider::file(&path);
+        let cloned = original.clone();
+        assert_eq!(
+            original.metadata().name,
+            cloned.metadata().name,
+            "Clone must preserve the stored path verbatim",
+        );
+    }
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_struct_blue_clone_preserves_metadata_path() {
+        use ::figment::Provider;
+        let path = ::std::path::PathBuf::from("/tmp/some/blue-clone.b");
+        let original = crate::blue_provider::BlueProvider::file(&path);
+        let cloned = original.clone();
+        assert_eq!(
+            original.metadata().name,
+            cloned.metadata().name,
+            "Clone must preserve the stored path verbatim",
+        );
     }
 
     #[test]

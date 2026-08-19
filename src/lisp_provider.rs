@@ -23,28 +23,25 @@
 //! If the head is a symbol like `defescriba`, that symbol is stripped and
 //! the remaining kwargs become the dict (matches TataraDomain convention).
 
-use std::path::PathBuf;
-
 use figment::value::{Dict, Value};
 use tatara_lisp::{Atom, Sexp};
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
-use crate::provider::text_source_provider_impl;
+use crate::provider::{text_source_provider_impl, text_source_provider_struct};
 
-/// Figment provider that reads a tatara-lisp config file.
-#[derive(Debug, Clone)]
-pub struct LispProvider {
-    path: PathBuf,
-}
-
-impl LispProvider {
-    /// Create a provider from a path. The file is not read until
-    /// [`figment::Provider::data`] is called.
-    #[must_use]
-    pub fn file(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
+text_source_provider_struct! {
+    /// Figment provider that reads a tatara-lisp config file.
+    ///
+    /// The whole struct declaration + `file(path)` ctor is emitted by
+    /// the shared [`text_source_provider_struct!`](crate::provider::text_source_provider_struct)
+    /// substrate macro — the pre-lift `#[derive(Debug, Clone)] pub
+    /// struct LispProvider { path: PathBuf }` + `pub fn file(path:
+    /// impl Into<PathBuf>) -> Self { … }` pair the peer
+    /// [`crate::blue_provider::BlueProvider`] also carried collapses
+    /// to ONE macro call, so a future refinement of the carrier shape
+    /// lands at one site and cannot drift the two apart.
+    LispProvider
 }
 
 /// Parse a tatara-lisp source string into a figment [`Value`].
