@@ -995,6 +995,78 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
     chain
 }
 
+/// Merge a `figment::providers::Env`-prefixed layer into `chain`: the
+/// two-step "extend `chain.figment` with `Env::prefixed(prefix).split("__")`
+/// and append [`ConfigSource::Env(prefix.to_owned())`](ConfigSource::Env)
+/// to `chain.sources`" that [`ProviderChain::with_env`] previously
+/// open-coded at its own site.
+///
+/// The Env-tier idiom-peer of [`merge_serialized_defaults_layer`] on the
+/// Defaults-tier side. Together they close BOTH sides of the
+/// "merge one figment provider + push its typed [`ConfigSource`]
+/// provenance" two-step every non-file `ProviderChain` builder performs,
+/// so a future refinement of the merge + record convention (a
+/// `figment::Metadata::source` annotation on the emitted provider, a
+/// shared per-tier telemetry counter, an idempotence guard preventing a
+/// double-record on the same key) lands at ONE site per tier instead of
+/// once per builder.
+///
+/// Today [`ProviderChain::with_env`] is the sole caller. A future
+/// Env-tier peer — a `with_env_bare()` builder emitting figment's
+/// [`Env::raw`](figment::providers::Env::raw)-shaped layer for the
+/// [`EnvMetadataTagKind::Bare`](crate::source::EnvMetadataTagKind::Bare)
+/// tag this same file already recognizes, a `with_env_delim(prefix, delim)`
+/// builder taking a caller-chosen nested-key separator for consumers
+/// whose env keys use `_` or `.` rather than the fleet-standard `__`,
+/// a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// broadcast Env-tier peer that re-reads env on push —
+/// authors ZERO merge-side boilerplate by routing its body through this
+/// helper (or its own peer helper that swaps the provider constructor
+/// or the separator argument) and inherits the record shape by
+/// construction. The `.split("__")` nested-key separator is pinned to
+/// THIS helper today; a future separator-parameterized peer would live
+/// beside it.
+///
+/// # Contract
+///
+/// - `prefix` is the env-var prefix figment stamps onto the emitted
+///   provider (e.g. `"MYAPP_"`); it is passed verbatim to
+///   [`Env::prefixed`](figment::providers::Env::prefixed) and cloned
+///   into the [`ConfigSource::Env`](ConfigSource::Env) record via
+///   [`str::to_owned`]. The helper does not canonicalize the case;
+///   figment uppercases the prefix at metadata-emission time, and the
+///   chain-side [`ConfigSourceChain::find_env_by_prefix`](crate::source::ConfigSourceChain::find_env_by_prefix)
+///   query compares case-insensitively, so mixed-case prefixes round-
+///   trip through the recorded chain without a helper-side rewrite.
+/// - The nested-key separator is `"__"` — the fleet-standard shikumi
+///   convention every `PREFIX_OPTIONS__PADDING=10`-shaped call site
+///   assumes. Pinned to THIS site rather than the caller so a future
+///   fleet-wide separator change (e.g. switching to `.` to match Vault
+///   secret paths) lands at one line.
+/// - The recorded [`ConfigSource`] is
+///   [`ConfigSource::Env(prefix.to_owned())`](ConfigSource::Env), so
+///   [`ProviderChain::with_source`] can invert the record back into
+///   [`Self::with_env`] on reload without a per-caller round-trip.
+///
+/// The return shape and by-value ownership convention match the peer
+/// [`merge_serialized_defaults_layer`] helper and the `with_*` builder
+/// methods on [`ProviderChain`]: `chain` is taken by value and returned
+/// by value, preserving the fluent-chain composition every caller relies
+/// on.
+///
+/// # Zero-cost by construction
+///
+/// The helper is a plain function performing exactly the same two
+/// statements the pre-lift open-coded body performed — one figment
+/// `merge` and one `Vec::push` — so the substrate lift adds zero
+/// per-call overhead the compiler cannot inline away.
+#[must_use]
+pub(crate) fn merge_env_prefix_layer(mut chain: ProviderChain, prefix: &str) -> ProviderChain {
+    chain.figment = chain.figment.merge(Env::prefixed(prefix).split("__"));
+    chain.sources.push(ConfigSource::Env(prefix.to_owned()));
+    chain
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -1409,11 +1481,21 @@ impl ProviderChain {
     /// Merge environment variables with the given prefix.
     ///
     /// Nested keys use `__` as separator (e.g. `MYAPP_OPTIONS__PADDING=10`).
+    ///
+    /// The body is a single call through [`merge_env_prefix_layer`] — the
+    /// shared "figment `Env::prefixed(_).split("__")` merge +
+    /// `ConfigSource::Env(prefix.to_owned())` provenance push" substrate
+    /// the Env-tier idiom-peer of [`merge_serialized_defaults_layer`]
+    /// declares. A future Env-tier peer builder ([`Self::with_source`]'s
+    /// `Env` arm today; a `with_env_bare()` / `with_env_delim(prefix,
+    /// delim)` /
+    /// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// broadcast Env-tier peer tomorrow) inherits
+    /// the merge + record convention by routing its own body through the
+    /// same helper.
     #[must_use]
-    pub fn with_env(mut self, prefix: &str) -> Self {
-        self.figment = self.figment.merge(Env::prefixed(prefix).split("__"));
-        self.sources.push(ConfigSource::Env(prefix.to_owned()));
-        self
+    pub fn with_env(self, prefix: &str) -> Self {
+        merge_env_prefix_layer(self, prefix)
     }
 
     /// Merge a config file, auto-detecting format by extension.
@@ -2993,6 +3075,118 @@ mod tests {
             extended.sources(),
             &[ConfigSource::Env(prefix.to_owned()), ConfigSource::Defaults,],
             "helper must append its Defaults entry after the caller's prior entries \
+             — a reset or prepend would break the fluent-chain composition contract"
+        );
+    }
+
+    // ---- merge_env_prefix_layer (Env-tier peer of merge_serialized_defaults_layer) ----
+    //
+    // The Env-tier peer of merge_serialized_defaults_layer, lifted alongside
+    // it so BOTH sides of the "merge one figment provider + push its typed
+    // ConfigSource provenance" two-step live at ONE substrate site each. The
+    // sole caller today is `ProviderChain::with_env`; a future Env-tier peer
+    // builder (`with_env_bare()` for figment's raw-env shape, a
+    // `with_env_delim(prefix, delim)` for consumers whose env keys use a
+    // non-`__` separator, a ConfigPlane broadcast Env-tier peer that re-reads
+    // env on push) routes its body through this helper and inherits the
+    // record shape by construction — the same pattern the peer
+    // Defaults-class helper closes on the Defaults-tier side.
+    //
+    // These pins keep the two halves at ONE substrate site: the variant push
+    // (with the prefix cloned into the record) AND the figment merge (with
+    // the `__` nested-key separator pinned here rather than at the caller).
+
+    /// The helper MUST record exactly ONE `ConfigSource::Env(prefix.into())`
+    /// entry per call — the load-bearing Env-tier provenance every Env
+    /// caller pushes, with the caller-supplied prefix cloned verbatim into
+    /// the record (per `str::to_owned`). A future regression that pushed
+    /// the wrong variant, or a mis-cased prefix, or dropped the push,
+    /// would silently change the recorded chain shape callers reconstruct
+    /// through [`ProviderChain::with_source`] on reload.
+    #[test]
+    fn merge_env_prefix_layer_pushes_config_source_env_with_prefix() {
+        let prefix = "SHIKUMI_MEPL_PUSH_";
+        let chain = merge_env_prefix_layer(ProviderChain::new(), prefix);
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::Env(prefix.to_owned())],
+            "helper must record exactly one ConfigSource::Env(prefix) per call \
+             with the caller-supplied prefix cloned verbatim into the record"
+        );
+    }
+
+    /// The merged env-prefixed layer MUST be observable through the
+    /// extracted [`TestConfig`] — a caller that hands the helper a
+    /// prefix expects figment's `Env::prefixed(_).split("__")` provider
+    /// to reach the extract. A future regression that dropped the merge
+    /// half (recorded the source push but did not merge) would silently
+    /// lose every env value the operator supplied under the prefix.
+    #[test]
+    fn merge_env_prefix_layer_merges_the_env_prefixed_layer() {
+        let prefix = "SHIKUMI_MEPL_MERGE_";
+        unsafe { std::env::set_var("SHIKUMI_MEPL_MERGE_NAME", "from_env_merge") };
+        unsafe { std::env::set_var("SHIKUMI_MEPL_MERGE_COUNT", "88") };
+
+        let chain = merge_env_prefix_layer(ProviderChain::new(), prefix);
+        let extracted: TestConfig = chain.extract().unwrap();
+
+        unsafe { std::env::remove_var("SHIKUMI_MEPL_MERGE_NAME") };
+        unsafe { std::env::remove_var("SHIKUMI_MEPL_MERGE_COUNT") };
+
+        assert_eq!(extracted.name.as_deref(), Some("from_env_merge"));
+        assert_eq!(extracted.count, Some(88));
+    }
+
+    /// Drift-closure against the LIVE [`ProviderChain::with_env`] caller:
+    /// building a chain via `with_env(prefix)` records the same sources AND
+    /// extracts the same [`TestConfig`] as building it via
+    /// `merge_env_prefix_layer(chain, prefix)` directly. A future hand-edit
+    /// that reintroduces an open-coded `Env::prefixed(_).split("__")`
+    /// merge + `sources.push(Env(prefix.to_owned()))` body at
+    /// [`ProviderChain::with_env`] fires this test with the observable-
+    /// behavior mismatch, not a downstream extract failure.
+    #[test]
+    fn with_env_routes_through_merge_env_prefix_layer() {
+        let prefix = "SHIKUMI_MEPL_ROUTE_";
+        unsafe { std::env::set_var("SHIKUMI_MEPL_ROUTE_NAME", "from_env_route") };
+
+        let via_builder = ProviderChain::new().with_env(prefix);
+        let via_helper = merge_env_prefix_layer(ProviderChain::new(), prefix);
+
+        assert_eq!(
+            via_builder.sources(),
+            via_helper.sources(),
+            "with_env must record the same ConfigSource chain as the substrate helper"
+        );
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_helper.extract().unwrap();
+
+        unsafe { std::env::remove_var("SHIKUMI_MEPL_ROUTE_NAME") };
+
+        assert_eq!(
+            a, b,
+            "with_env must extract the same TestConfig as the substrate helper"
+        );
+    }
+
+    /// The helper MUST preserve the caller-supplied chain's prior
+    /// [`ConfigSource`] entries — a caller mid-fluent-chain
+    /// (`.with_env(prefix)` following `.with_defaults(&d)`) expects the
+    /// helper to APPEND its Env entry, not to reset the chain. The
+    /// append-discipline pin idiom-peer of the peer
+    /// [`merge_serialized_defaults_layer_appends_to_existing_sources`]
+    /// test, so both Defaults-tier and Env-tier substrate helpers share
+    /// the same fluent-chain composition contract.
+    #[test]
+    fn merge_env_prefix_layer_appends_to_existing_sources() {
+        let prefix = "SHIKUMI_MEPL_APPEND_";
+        let chain = ProviderChain::new().with_defaults(&TestConfig::default());
+        let extended = merge_env_prefix_layer(chain, prefix);
+        assert_eq!(
+            extended.sources(),
+            &[ConfigSource::Defaults, ConfigSource::Env(prefix.to_owned())],
+            "helper must append its Env entry after the caller's prior entries \
              — a reset or prepend would break the fluent-chain composition contract"
         );
     }
