@@ -168,6 +168,103 @@ pub(crate) fn provider_metadata_for(format: Format, path: &Path) -> Metadata {
     Metadata::named(format.metadata_name(path))
 }
 
+/// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
+///
+/// The one-shot JSON → figment projection every shikumi-built provider
+/// whose upstream renderer produces JSON routes through. Today
+/// [`crate::nix_provider::NixProvider::load`] is the only consumer — it
+/// shells out to `nix eval --json` and hands the parsed
+/// [`serde_json::Value`] here. Sits beside the [`provider_data_from_value`]
+/// / [`provider_data_from_shikumi_load`] / [`provider_metadata_for`]
+/// substrate helpers for the exact same reason those exist: any future
+/// shikumi-built provider whose upstream speaks JSON — a
+/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// central-authority broadcast layer, an HTTP `/config` endpoint, a
+/// Kubernetes `ConfigMap` reader whose values arrive as JSON strings, a
+/// Vault secret store — routes its `load()` body through this single site
+/// instead of open-coding the mapping a second time. A future sharpening
+/// (source spans threaded via [`figment::value::Tag`], structured
+/// provenance for the number arm, a compact-string path for repeated
+/// keys) then lands at one site instead of once per provider.
+///
+/// # Number arm precision
+///
+/// A [`serde_json::Number`] can outlive an [`i64`]: JSON permits any
+/// integer up to 20-plus digits, and `serde_json` will happily materialise
+/// `18_446_744_073_709_551_615` as its internal `u64` inhabitant. The
+/// helper preserves that precision by trying [`serde_json::Number::as_i64`]
+/// first (which covers negatives and the whole `i64` range), then
+/// [`serde_json::Number::as_u64`] (which covers `i64::MAX + 1 ..= u64::MAX`
+/// — a range the [`i64`]-only path fell through to lossy [`f64`] on),
+/// then [`serde_json::Number::as_f64`] as the true float arm. The `f64`
+/// arm is total on `serde_json::Number` per its docs (a JSON number is
+/// always representable as an `f64`, with possible loss for integers
+/// outside `[-2^53, 2^53]`), so no third fallback is reachable — an
+/// unreachable arm here would silently swallow a future format-level bug
+/// under a default value. The pre-lift version of this helper carried
+/// exactly that trap: a `Value::from(0i64)` catch-all sat behind an
+/// `as_i64` → `as_f64` cascade, so any `u64` above `i64::MAX` lost
+/// precision to the `f64` arm instead of surfacing on the natively-typed
+/// path figment already supports (`Value::from(u64)` exists — see
+/// [`figment::value::Num::U64`]).
+///
+/// # Value-variant mapping
+///
+/// - `Null` → `Value::Empty(Tag::Default, Empty::None)` — figment has no
+///   dedicated JSON-null inhabitant; `Empty::None` is the canonical
+///   `Option::None` counterpart the deserializer already expects.
+/// - `Bool` → `Value::Bool`.
+/// - `Number` → `Value::Num`, per the precision cascade above.
+/// - `String` → `Value::String`.
+/// - `Array` → `Value::Array`, recursively via this same helper.
+/// - `Object` → `Value::Dict`, recursively via this same helper.
+///
+/// The recursion is a homomorphism on the JSON tree: every scalar leaf
+/// maps pointwise to its figment counterpart with no reordering,
+/// dropping, or synthesis of intermediate structure. The
+/// `json_value_to_figment_is_pointwise_homomorphic_on_nested_shapes` test
+/// pins that pointwise contract; the number-arm precision tests pin the
+/// u64/i64/float boundaries.
+pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
+    match v {
+        serde_json::Value::Null => {
+            Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
+        }
+        serde_json::Value::Bool(b) => Value::from(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::from(i)
+            } else if let Some(u) = n.as_u64() {
+                // Preserves precision for JSON integers in
+                // (i64::MAX, u64::MAX] — the pre-lift `as_i64() -> as_f64()`
+                // cascade lost these to lossy floats.
+                Value::from(u)
+            } else if let Some(f) = n.as_f64() {
+                Value::from(f)
+            } else {
+                // Unreachable per `serde_json::Number::as_f64`'s docs: a
+                // JSON number is always representable as an `f64`. Emit
+                // `Empty::None` rather than a silent `0` so a future
+                // format-level bug would surface as a missing key rather
+                // than a wrong-but-plausible value.
+                Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
+            }
+        }
+        serde_json::Value::String(s) => Value::from(s.clone()),
+        serde_json::Value::Array(items) => Value::Array(
+            figment::value::Tag::Default,
+            items.iter().map(json_value_to_figment).collect(),
+        ),
+        serde_json::Value::Object(map) => {
+            let mut dict = Dict::new();
+            for (k, v) in map {
+                dict.insert(k.clone(), json_value_to_figment(v));
+            }
+            Value::Dict(figment::value::Tag::Default, dict)
+        }
+    }
+}
+
 /// Builder for a figment provider chain.
 ///
 /// Layers are merged in order — later layers override earlier ones.
@@ -1434,5 +1531,298 @@ mod tests {
                 "{format:?}: parse_metadata_tag must recover the constructor path",
             );
         }
+    }
+
+    // ---- json_value_to_figment (serde_json::Value -> figment::Value) ----
+    //
+    // The JSON → figment homomorphism NixProvider's `load()` body routes
+    // through — and the substrate a future JSON-transport provider
+    // (ConfigPlane broadcast, HTTP config endpoint, Kubernetes ConfigMap
+    // JSON-valued key) inherits. These tests pin two invariants at the
+    // fusion site:
+    //
+    //   1. The number arm preserves precision across the whole JSON
+    //      integer range, including the (i64::MAX, u64::MAX] slice that
+    //      the pre-lift version lost to lossy `f64` — a real behavior
+    //      sharpening, not just a refactor.
+    //   2. The compound-arm recursion is a pointwise homomorphism: the
+    //      figment tree agrees with the JSON tree shape-for-shape, so a
+    //      caller reasoning about JSON structure keeps that reasoning at
+    //      the figment layer.
+
+    #[test]
+    fn json_value_to_figment_maps_null_to_empty_none() {
+        // `Empty::None` is figment's canonical `Option::None` counterpart;
+        // there is no dedicated JSON-null inhabitant, so the mapping must
+        // land here for a downstream deserializer that models nullable
+        // fields as `Option<T>` to see the absence.
+        let out = json_value_to_figment(&serde_json::Value::Null);
+        assert!(
+            matches!(out, Value::Empty(_, figment::value::Empty::None)),
+            "Null must map to Value::Empty(_, Empty::None), got {out:?}",
+        );
+    }
+
+    #[test]
+    fn json_value_to_figment_bool_round_trips_both_polarities() {
+        // Both polarities land in `Value::Bool` verbatim — pins that the
+        // helper does not swap sign or emit a numeric coercion.
+        for b in [true, false] {
+            let out = json_value_to_figment(&serde_json::Value::Bool(b));
+            let Value::Bool(_, got) = out else {
+                panic!("Bool({b}) must map to Value::Bool, got {out:?}");
+            };
+            assert_eq!(got, b, "Bool polarity must survive");
+        }
+    }
+
+    #[test]
+    fn json_value_to_figment_string_round_trips_verbatim() {
+        // The string arm clones the underlying `String`; the mapped
+        // Value must Display exactly the same bytes.
+        for probe in ["", "ascii", "unicode-仕組み", "with\nnewline"] {
+            let out = json_value_to_figment(&serde_json::Value::String(probe.to_owned()));
+            let Value::String(_, got) = out else {
+                panic!("String({probe:?}) must map to Value::String, got {out:?}");
+            };
+            assert_eq!(got, probe, "String bytes must survive");
+        }
+    }
+
+    #[test]
+    fn json_value_to_figment_preserves_negative_i64() {
+        // Pins the negative-integer branch: `as_i64()` covers the whole
+        // signed range including `i64::MIN`. Regression guard against a
+        // future refactor that reorders the number arm and lands
+        // `as_u64()` first (which would return `None` for negatives and
+        // silently fall through to lossy `f64`).
+        for probe in [-1i64, -42, i64::MIN, i64::MIN + 1] {
+            let json = serde_json::Value::Number(serde_json::Number::from(probe));
+            let out = json_value_to_figment(&json);
+            let Value::Num(_, got) = out else {
+                panic!("Number({probe}) must map to Value::Num, got {out:?}");
+            };
+            let via_i128 = got.to_i128().unwrap_or_else(|| {
+                panic!("Num({probe}) must round-trip through to_i128, got {got:?}")
+            });
+            assert_eq!(via_i128, i128::from(probe), "signed integer must survive");
+        }
+    }
+
+    #[test]
+    fn json_value_to_figment_preserves_u64_above_i64_max() {
+        // The load-bearing sharpening: JSON integers in
+        // (i64::MAX, u64::MAX] must land in `Value::Num(_, Num::U64(_))`
+        // (or a numerically-equivalent unsigned width) — the pre-lift
+        // cascade tried `as_i64()` then jumped straight to `as_f64()`,
+        // silently losing precision for any value above 2^53 and
+        // rounding away exact bits above 2^63 entirely. `u64::MAX` is
+        // the sharpest probe: an `f64` round-trip loses ~10 low bits.
+        //
+        // Pin both `i64::MAX + 1` (the boundary the pre-lift version
+        // began losing) and `u64::MAX` (the loudest failure case).
+        let probes: [u64; 3] = [(i64::MAX as u64) + 1, (i64::MAX as u64) + 42, u64::MAX];
+        for probe in probes {
+            let json = serde_json::Value::Number(serde_json::Number::from(probe));
+            let out = json_value_to_figment(&json);
+            let Value::Num(_, got) = out else {
+                panic!("Number({probe}) must map to Value::Num, got {out:?}");
+            };
+            // `Num::to_u128` returns `Some` **only for the unsigned Num
+            // variants** (per figment's own docs: `Num::U8..=U128`, `USize`
+            // — a signed or float variant returns `None`). This is
+            // therefore the sharpest available structural probe that the
+            // JSON `u64` landed in a genuinely unsigned Num rather than
+            // being funneled through the lossy `f64` arm the pre-lift
+            // cascade fell to.
+            let via_u128 = got.to_u128().unwrap_or_else(|| {
+                panic!(
+                    "Num({probe}) must land in an unsigned Num variant \
+                     (to_u128 must be Some), got {got:?} — regression: \
+                     pre-lift `as_i64() -> as_f64()` cascade lost u64 \
+                     values above i64::MAX to lossy f64",
+                )
+            });
+            assert_eq!(
+                via_u128,
+                u128::from(probe),
+                "u64 above i64::MAX must survive without precision loss",
+            );
+        }
+    }
+
+    #[test]
+    fn json_value_to_figment_preserves_f64_when_json_is_float() {
+        // The float arm is the true last-resort: it must fire only when
+        // the JSON number is a genuine float (has a fractional part or
+        // is a scientific-notation literal), and it must preserve the
+        // exact f64 bits.
+        for probe in [0.0f64, -2.5, 1e20, f64::MIN_POSITIVE, f64::EPSILON] {
+            let json = serde_json::Value::Number(
+                serde_json::Number::from_f64(probe)
+                    .unwrap_or_else(|| panic!("probe {probe} must round-trip through serde_json")),
+            );
+            let out = json_value_to_figment(&json);
+            let Value::Num(_, got) = out else {
+                panic!("Number({probe}) must map to Value::Num, got {out:?}");
+            };
+            let as_f64 = got
+                .to_f64()
+                .unwrap_or_else(|| panic!("Num({probe}) must be a float variant, got {got:?}"));
+            assert!(
+                (as_f64 - probe).abs() <= f64::EPSILON.max(probe.abs() * f64::EPSILON),
+                "float must survive f64 arm: sent {probe}, got {as_f64}",
+            );
+        }
+    }
+
+    #[test]
+    fn json_value_to_figment_object_dispatches_to_dict() {
+        // The object arm must produce a `Value::Dict` whose keys are the
+        // JSON keys verbatim (no case-folding, no reordering into an
+        // implicit iteration order) — the same expectation the shared
+        // `provider_data_from_value` helper further downstream imposes.
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"alpha":1,"beta":true,"gamma":null,"delta":"d"}"#).unwrap();
+        let out = json_value_to_figment(&json);
+        let Value::Dict(_, d) = out else {
+            panic!("Object must map to Value::Dict, got {out:?}");
+        };
+        for k in ["alpha", "beta", "gamma", "delta"] {
+            assert!(d.contains_key(k), "key `{k}` must survive verbatim");
+        }
+        assert!(matches!(d.get("alpha"), Some(Value::Num(_, _))));
+        assert!(matches!(d.get("beta"), Some(Value::Bool(_, true))));
+        assert!(matches!(
+            d.get("gamma"),
+            Some(Value::Empty(_, figment::value::Empty::None)),
+        ));
+        assert!(matches!(d.get("delta"), Some(Value::String(_, _))));
+    }
+
+    #[test]
+    fn json_value_to_figment_array_dispatches_to_array_pointwise() {
+        // The array arm must map pointwise: `arr[i]` at the JSON layer
+        // becomes the mapped-value at the same index in the figment
+        // `Value::Array`. Empty array must survive as an empty
+        // `Value::Array`, not degrade to `Value::Empty`.
+        let empty = json_value_to_figment(&serde_json::Value::Array(vec![]));
+        let Value::Array(_, items) = empty else {
+            panic!("empty Array must map to Value::Array, got {empty:?}");
+        };
+        assert!(items.is_empty(), "empty array must survive as empty Array");
+
+        let mixed: serde_json::Value =
+            serde_json::from_str(r#"[1,"two",true,null,[3,4]]"#).unwrap();
+        let out = json_value_to_figment(&mixed);
+        let Value::Array(_, items) = out else {
+            panic!("mixed Array must map to Value::Array, got {out:?}");
+        };
+        assert_eq!(items.len(), 5, "arity must survive");
+        assert!(matches!(items[0], Value::Num(_, _)));
+        assert!(matches!(items[1], Value::String(_, _)));
+        assert!(matches!(items[2], Value::Bool(_, true)));
+        assert!(matches!(
+            items[3],
+            Value::Empty(_, figment::value::Empty::None)
+        ));
+        assert!(matches!(items[4], Value::Array(_, _)));
+    }
+
+    #[test]
+    fn json_value_to_figment_is_pointwise_homomorphic_on_nested_shapes() {
+        // The recursion must be a homomorphism: for a deeply-nested
+        // JSON tree the mapped figment tree agrees leaf-by-leaf. Pins
+        // that the helper does not flatten, reorder, drop, or synthesize
+        // structure — a `dict[a][b][c] = 42` in JSON reaches the
+        // deserializer as the exact same key-path with the same integer
+        // value. This is the load-bearing property NixProvider's tests
+        // implicitly relied on but did not name.
+        let json: serde_json::Value = serde_json::from_str(
+            r#"{
+              "outer": {
+                "middle": {
+                  "inner": {
+                    "n_i64": -7,
+                    "n_u64_over_i64_max": 18446744073709551610,
+                    "n_float": 3.5,
+                    "list": [1, 2, [3, 4]],
+                    "empty_list": [],
+                    "empty_obj": {},
+                    "null_leaf": null
+                  }
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let out = json_value_to_figment(&json);
+        let Value::Dict(_, top) = out else {
+            panic!("top must be Dict");
+        };
+        let Value::Dict(_, mid) = top.get("outer").expect("outer").clone() else {
+            panic!("outer must be Dict");
+        };
+        let Value::Dict(_, inner_wrap) = mid.get("middle").expect("middle").clone() else {
+            panic!("middle must be Dict");
+        };
+        let Value::Dict(_, inner) = inner_wrap.get("inner").expect("inner").clone() else {
+            panic!("inner must be Dict");
+        };
+
+        // Negative integer preserved as signed.
+        let Value::Num(_, signed_leaf) = inner.get("n_i64").expect("n_i64").clone() else {
+            panic!("n_i64 must be Num");
+        };
+        assert_eq!(signed_leaf.to_i128(), Some(-7));
+
+        // u64 above i64::MAX preserved losslessly.
+        let Value::Num(_, unsigned_leaf) = inner
+            .get("n_u64_over_i64_max")
+            .expect("n_u64_over_i64_max")
+            .clone()
+        else {
+            panic!("n_u64_over_i64_max must be Num");
+        };
+        // `to_u128` returns `Some` only for the unsigned Num variants,
+        // so this asserts BOTH the value survived losslessly AND the
+        // number arm reached the u64 leg of the cascade (not the lossy
+        // f64 arm the pre-lift cascade fell to for u64 > i64::MAX).
+        assert_eq!(
+            unsigned_leaf.to_u128(),
+            Some(18_446_744_073_709_551_610u128),
+        );
+
+        // Float survives the f64 arm.
+        let Value::Num(_, n_float) = inner.get("n_float").expect("n_float").clone() else {
+            panic!("n_float must be Num");
+        };
+        assert!(matches!(n_float, figment::value::Num::F64(_)));
+
+        // Nested list preserves inner arity.
+        let Value::Array(_, list) = inner.get("list").expect("list").clone() else {
+            panic!("list must be Array");
+        };
+        assert_eq!(list.len(), 3);
+        let Value::Array(_, inner_pair) = list[2].clone() else {
+            panic!("list[2] must be nested Array");
+        };
+        assert_eq!(inner_pair.len(), 2);
+
+        // Empty compound values survive as their compound counterparts.
+        assert!(matches!(
+            inner.get("empty_list"),
+            Some(Value::Array(_, v)) if v.is_empty(),
+        ));
+        assert!(matches!(
+            inner.get("empty_obj"),
+            Some(Value::Dict(_, d)) if d.is_empty(),
+        ));
+
+        // Null leaf lands in `Empty::None`.
+        assert!(matches!(
+            inner.get("null_leaf"),
+            Some(Value::Empty(_, figment::value::Empty::None)),
+        ));
     }
 }

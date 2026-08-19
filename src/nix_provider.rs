@@ -16,6 +16,7 @@ use figment::{Error as FigmentError, Metadata, Profile, Provider};
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
+use crate::provider::json_value_to_figment;
 
 /// Figment provider that evaluates a Nix config file via `nix eval`.
 #[derive(Debug, Clone)]
@@ -74,42 +75,12 @@ impl NixProvider {
 
         let json: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| ShikumiError::Parse(format!("parsing nix JSON output: {e}")))?;
-        Ok(json_to_figment_value(&json))
+        Ok(json_value_to_figment(&json))
     }
 
     /// One-shot: eval + extract into a typed value, no figment layering.
     pub fn load_path(path: &Path) -> Result<Value, ShikumiError> {
         Self::file(path.to_path_buf()).load()
-    }
-}
-
-fn json_to_figment_value(v: &serde_json::Value) -> Value {
-    match v {
-        serde_json::Value::Null => {
-            Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
-        }
-        serde_json::Value::Bool(b) => Value::from(*b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Value::from(i)
-            } else if let Some(f) = n.as_f64() {
-                Value::from(f)
-            } else {
-                Value::from(0i64)
-            }
-        }
-        serde_json::Value::String(s) => Value::from(s.clone()),
-        serde_json::Value::Array(items) => Value::Array(
-            figment::value::Tag::Default,
-            items.iter().map(json_to_figment_value).collect(),
-        ),
-        serde_json::Value::Object(map) => {
-            let mut dict = Dict::new();
-            for (k, v) in map {
-                dict.insert(k.clone(), json_to_figment_value(v));
-            }
-            Value::Dict(figment::value::Tag::Default, dict)
-        }
     }
 }
 
@@ -129,11 +100,17 @@ mod tests {
 
     #[test]
     fn json_to_figment_maps_types() {
+        // Pins that NixProvider's `load()` body routes JSON through the
+        // shared substrate helper `crate::provider::json_value_to_figment`
+        // — the every-variant mapping regression this crate previously
+        // pinned pointwise against the private in-module version, kept
+        // in place after the lift so a future NixProvider consumer
+        // sensing shape changes still trips this test.
         let j: serde_json::Value = serde_json::from_str(
             r#"{"name":"demo","count":42,"enabled":true,"tags":["a","b"],"nested":{"k":"v"}}"#,
         )
         .unwrap();
-        let v = json_to_figment_value(&j);
+        let v = json_value_to_figment(&j);
         let Value::Dict(_, d) = v else {
             panic!("expected dict")
         };
