@@ -801,6 +801,117 @@ macro_rules! path_provider_impl {
 }
 pub(crate) use path_provider_impl;
 
+/// Wrap `dict` in the [`Value::Dict`] variant tagged with the canonical
+/// [`figment::value::Tag::Default`] every shikumi-built provider that
+/// constructs a fresh figment [`Value`] uses.
+///
+/// One source of truth for the "default-tagged fresh [`Value::Dict`]"
+/// choice every shikumi-built provider makes when it hands figment a
+/// map it built itself. Before this lift both
+/// [`json_value_to_figment`] (the JSON-object arm) and the
+/// [`crate::lisp_provider::sexp_to_value_root`] / peer
+/// `sexp_to_value` sites (the kwargs-list arms) open-coded
+/// `Value::Dict(figment::value::Tag::Default, <dict>)` directly at
+/// each of five in-crate constructor sites — each site an
+/// independent decision to reach for the `Tag::Default` inhabitant,
+/// and therefore an independent place any future refinement of the
+/// tag (source-span provenance threaded through
+/// [`figment::value::Tag`], a per-provider synthetic identifier for
+/// downstream error messages, a construction-side attribution site)
+/// would have to be applied in lockstep.
+///
+/// Idiom-peer of [`figment_default_array`] (the [`Value::Array`]
+/// sibling for a freshly-built [`Vec<Value>`]) and
+/// [`figment_default_empty_none`] (the sole-inhabitant sibling for
+/// the JSON-null / `Sexp::Nil` case). All three close the same
+/// drift-class the peer provider-surface substrate helpers close on
+/// their own legs ([`provider_data_from_value`] on the projection
+/// leg, [`provider_metadata_for`] on the metadata leg,
+/// [`read_source_or_parse_err`] on the read leg, [`load_text_source`]
+/// / [`text_source_provider_data`] on the read+map / read+map+project
+/// legs): factor the "shikumi's own choice" out of every caller and
+/// name it once, so a future sharpening lands at one site rather
+/// than fanning out across every constructor.
+///
+/// Zero-cost by construction: the emitted body is the two-argument
+/// tuple constructor for [`Value::Dict`], marked `#[inline]` so the
+/// call collapses at the caller. The alternative of routing through
+/// [`figment`]'s own `impl From<Map<K, V>> for Value` copies every
+/// key ([`AsRef::as_ref`] `->` [`String::to_string`]) and re-`Into`s
+/// every value — an O(n) allocation walk we deliberately do not pay
+/// on a caller that already owns the exact [`Dict`] figment stores.
+///
+/// A future shikumi-built provider whose upstream produces a fresh
+/// figment [`Dict`] — an HTTP `/config` endpoint whose body is a
+/// JSON object, a Kubernetes `ConfigMap` reader whose keys are the
+/// data-key names, a ConfigPlane broadcast layer whose payload is a
+/// per-tick config snapshot — hands the built [`Dict`] to this
+/// helper and inherits the tag choice by construction.
+#[inline]
+#[must_use]
+pub(crate) fn figment_default_dict(dict: Dict) -> Value {
+    Value::Dict(figment::value::Tag::Default, dict)
+}
+
+/// Wrap `items` in the [`Value::Array`] variant tagged with the
+/// canonical [`figment::value::Tag::Default`] — the [`Value::Array`]
+/// sibling of [`figment_default_dict`], closing the SAME drift-class
+/// on the array-variant leg.
+///
+/// Idiom-peer of [`figment_default_dict`] and
+/// [`figment_default_empty_none`]. Before this lift both
+/// [`json_value_to_figment`] (the JSON-array arm) and the
+/// [`crate::lisp_provider`] `sexp_to_value` non-kwargs list arm
+/// open-coded `Value::Array(figment::value::Tag::Default, <items>)`
+/// directly. Each site is one place any future refinement of the
+/// tag choice (source-span provenance, per-element attribution) would
+/// have to be applied in lockstep.
+///
+/// Zero-cost by construction: the emitted body is the two-argument
+/// tuple constructor for [`Value::Array`], marked `#[inline]` so the
+/// call collapses at the caller. Prefers this ownership shape over
+/// [`figment`]'s own `impl From<Vec<T: Into<Value>>> for Value`,
+/// which re-`.into()`s every element in an [`Iterator::map`]-`collect`
+/// round-trip that the type-checker cannot always erase for a caller
+/// that already owns the exact [`Vec<Value>`] figment stores.
+#[inline]
+#[must_use]
+pub(crate) fn figment_default_array(items: Vec<Value>) -> Value {
+    Value::Array(figment::value::Tag::Default, items)
+}
+
+/// The canonical [`figment::value::Empty::None`] [`Value`] tagged with
+/// [`figment::value::Tag::Default`] — the sole-inhabitant sibling of
+/// [`figment_default_dict`] / [`figment_default_array`], closing the
+/// SAME drift-class on the `Empty::None` leg every shikumi-built
+/// provider produces when its upstream renderer emits a JSON `null`,
+/// a [`tatara_lisp::Sexp::Nil`], or an unreachable-arm fallback that
+/// figment's own serde deserializer will treat as [`Option::None`].
+///
+/// Idiom-peer of [`figment_default_dict`] and [`figment_default_array`].
+/// Before this lift [`json_value_to_figment`] (the JSON-null arm AND
+/// the unreachable [`serde_json::Number`]-cascade fallback arm) and
+/// the [`crate::lisp_provider`] `sexp_to_value` [`tatara_lisp::Sexp::Nil`]
+/// arm each open-coded
+/// `Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)`
+/// directly. Three sites; one shared decision. A future refinement of
+/// the empty inhabitant (a switch to [`figment::value::Empty::Unit`]
+/// for a caller whose upstream distinguishes JSON `null` from an
+/// omitted key, richer per-callsite provenance on the tag) then lands
+/// at one site rather than three.
+///
+/// Zero-cost by construction: `#[inline]`, the emitted body is the
+/// two-argument constructor for [`Value::Empty`]. Not routed through
+/// [`figment`]'s own `impl From<Empty> for Value` because that impl's
+/// signature accepts any `Into<Empty>`, so a call site that reaches
+/// for a bare `Value::from(Empty::None)` still has to name
+/// `Empty::None` — this helper names it once.
+#[inline]
+#[must_use]
+pub(crate) fn figment_default_empty_none() -> Value {
+    Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -860,9 +971,7 @@ pub(crate) use path_provider_impl;
 /// u64/i64/float boundaries.
 pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
     match v {
-        serde_json::Value::Null => {
-            Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
-        }
+        serde_json::Value::Null => figment_default_empty_none(),
         serde_json::Value::Bool(b) => Value::from(*b),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -880,20 +989,19 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
                 // `Empty::None` rather than a silent `0` so a future
                 // format-level bug would surface as a missing key rather
                 // than a wrong-but-plausible value.
-                Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
+                figment_default_empty_none()
             }
         }
         serde_json::Value::String(s) => Value::from(s.clone()),
-        serde_json::Value::Array(items) => Value::Array(
-            figment::value::Tag::Default,
-            items.iter().map(json_value_to_figment).collect(),
-        ),
+        serde_json::Value::Array(items) => {
+            figment_default_array(items.iter().map(json_value_to_figment).collect())
+        }
         serde_json::Value::Object(map) => {
             let mut dict = Dict::new();
             for (k, v) in map {
                 dict.insert(k.clone(), json_value_to_figment(v));
             }
-            Value::Dict(figment::value::Tag::Default, dict)
+            figment_default_dict(dict)
         }
     }
 }
@@ -1376,6 +1484,133 @@ mod tests {
     struct TestConfig {
         name: Option<String>,
         count: Option<u32>,
+    }
+
+    // ---- figment_default_{dict,array,empty_none} ----
+    //
+    // The three "default-tagged fresh figment Value" constructor helpers
+    // every shikumi-built provider that hands figment a Value it
+    // constructed itself routes through. Before the lift both
+    // `json_value_to_figment` (the JSON-object/array/null arms) and the
+    // `lisp_provider::sexp_to_value_root` / `sexp_to_value` sites (the
+    // kwargs-list / Nil / non-kwargs-list arms) open-coded the same
+    // two-argument tuple constructor with `figment::value::Tag::Default`
+    // named at each callsite — the drift-class these helpers close.
+    // These pins keep the helpers' shape (variant + tag + payload) at
+    // ONE substrate site: a future drift that changed the tag or
+    // swapped the variant would fire here before it could reach a
+    // provider caller.
+
+    /// The [`Value::Dict`] variant is tagged with
+    /// [`figment::value::Tag::Default`] and carries the caller-supplied
+    /// [`Dict`] verbatim — no key or value is re-`.into()`'d,
+    /// re-allocated, or reordered. The two-arm assertion pins both
+    /// halves of the drift-class: the variant chosen AND the tag
+    /// chosen.
+    #[test]
+    fn figment_default_dict_wraps_the_caller_dict_verbatim_with_the_default_tag() {
+        let mut d = Dict::new();
+        d.insert("k".to_string(), Value::from("v"));
+        d.insert("n".to_string(), Value::from(42i64));
+        let owned = d.clone();
+        let v = figment_default_dict(d);
+        let Value::Dict(tag, out) = v else {
+            panic!("figment_default_dict must construct a Value::Dict");
+        };
+        assert_eq!(
+            tag,
+            figment::value::Tag::Default,
+            "the tag must be Tag::Default; a drift here means the helper started \
+             synthesizing a bespoke tag and the drift-class it closes reopened"
+        );
+        assert_eq!(
+            out, owned,
+            "the emitted dict must equal the caller-supplied dict byte-for-byte"
+        );
+    }
+
+    /// The empty-dict case (used by `sexp_to_value_root` on `(defX)` with
+    /// no fields) MUST still route through the same helper — no
+    /// specialized `Value::Dict(_, Dict::new())` sidepath. This pins
+    /// the callsite convention: every construction goes through the
+    /// helper, even for the empty-payload case.
+    #[test]
+    fn figment_default_dict_on_an_empty_dict_yields_a_default_tagged_empty_value_dict() {
+        let v = figment_default_dict(Dict::new());
+        let Value::Dict(tag, out) = v else {
+            panic!("figment_default_dict must construct a Value::Dict even for an empty payload");
+        };
+        assert_eq!(tag, figment::value::Tag::Default);
+        assert!(
+            out.is_empty(),
+            "the emitted dict must be empty when the input is empty"
+        );
+    }
+
+    /// The [`Value::Array`] variant is tagged with
+    /// [`figment::value::Tag::Default`] and carries the caller-supplied
+    /// [`Vec<Value>`] verbatim — no element is re-`.into()`'d,
+    /// re-allocated, or reordered. Same two-arm shape as the
+    /// dict-side pin.
+    #[test]
+    fn figment_default_array_wraps_the_caller_vec_verbatim_with_the_default_tag() {
+        let items: Vec<Value> = vec![Value::from(1i64), Value::from("two"), Value::from(3.5f64)];
+        let owned = items.clone();
+        let v = figment_default_array(items);
+        let Value::Array(tag, out) = v else {
+            panic!("figment_default_array must construct a Value::Array");
+        };
+        assert_eq!(
+            tag,
+            figment::value::Tag::Default,
+            "the tag must be Tag::Default; a drift here means the helper started \
+             synthesizing a bespoke tag and the drift-class it closes reopened"
+        );
+        assert_eq!(
+            out, owned,
+            "the emitted array must equal the caller-supplied vec element-for-element"
+        );
+    }
+
+    /// The [`Value::Empty`] variant is tagged with
+    /// [`figment::value::Tag::Default`] and carries
+    /// [`figment::value::Empty::None`] — the canonical
+    /// [`Option::None`] counterpart figment's own deserializer
+    /// expects. Three arms pinned in one assertion: variant, tag,
+    /// and empty-inhabitant.
+    #[test]
+    fn figment_default_empty_none_is_default_tagged_value_empty_of_empty_none() {
+        let v = figment_default_empty_none();
+        let Value::Empty(tag, empty) = v else {
+            panic!("figment_default_empty_none must construct a Value::Empty");
+        };
+        assert_eq!(tag, figment::value::Tag::Default);
+        assert!(
+            matches!(empty, figment::value::Empty::None),
+            "the empty inhabitant must be Empty::None so figment's deserializer treats \
+             the projection as Option::None; a drift to Empty::Unit here would silently \
+             change the JSON-null / Sexp::Nil semantics every text-source and \
+             JSON-source shikumi-built provider rides"
+        );
+    }
+
+    /// The two `figment_default_empty_none()` sites inside
+    /// [`json_value_to_figment`] — the JSON-null arm and the
+    /// unreachable [`serde_json::Number`]-cascade fallback arm — must
+    /// each emit the exact byte-identical [`Value`] the helper does,
+    /// not an ad-hoc copy of the same two-argument constructor. If a
+    /// future refactor of `json_value_to_figment` reintroduces the
+    /// open-coded form, this cross-callsite pin fires.
+    #[test]
+    fn json_value_to_figment_null_arm_routes_through_figment_default_empty_none() {
+        let via_helper = figment_default_empty_none();
+        let via_json = json_value_to_figment(&serde_json::Value::Null);
+        assert_eq!(
+            via_json, via_helper,
+            "json_value_to_figment(Null) must route through figment_default_empty_none() \
+             — drift means the JSON-null arm reintroduced an open-coded \
+             Value::Empty(Tag::Default, Empty::None)"
+        );
     }
 
     // ---- text_source_provider_struct! (struct + `file(path)` ctor) ----

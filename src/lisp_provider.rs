@@ -193,13 +193,10 @@ pub(crate) fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
             let rest = strip_head(items);
             let stripped = rest.len() != items.len();
             if is_kwargs_list(rest) {
-                Ok(Value::Dict(
-                    figment::value::Tag::Default,
-                    kwargs_to_dict(rest)?,
-                ))
+                Ok(crate::provider::figment_default_dict(kwargs_to_dict(rest)?))
             } else if items.len() == 1 && stripped {
                 // `(defX)` with no fields — empty dict.
-                Ok(Value::Dict(figment::value::Tag::Default, Dict::new()))
+                Ok(crate::provider::figment_default_dict(Dict::new()))
             } else {
                 Ok(sexp_to_value(sexp))
             }
@@ -210,7 +207,7 @@ pub(crate) fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
 
 fn sexp_to_value(sexp: &Sexp) -> Value {
     match sexp {
-        Sexp::Nil => Value::Empty(figment::value::Tag::Default, figment::value::Empty::None),
+        Sexp::Nil => crate::provider::figment_default_empty_none(),
         Sexp::Atom(Atom::Str(s)) => Value::from(s.clone()),
         Sexp::Atom(Atom::Int(n)) => Value::from(*n),
         Sexp::Atom(Atom::Float(f)) => Value::from(*f),
@@ -226,20 +223,11 @@ fn sexp_to_value(sexp: &Sexp) -> Value {
             // `(alpha beta gamma)` would silently lose `alpha`.
             let rest = strip_head(items);
             if is_kwargs_list(items) {
-                Value::Dict(
-                    figment::value::Tag::Default,
-                    kwargs_to_dict(items).unwrap_or_default(),
-                )
+                crate::provider::figment_default_dict(kwargs_to_dict(items).unwrap_or_default())
             } else if is_kwargs_list(rest) {
-                Value::Dict(
-                    figment::value::Tag::Default,
-                    kwargs_to_dict(rest).unwrap_or_default(),
-                )
+                crate::provider::figment_default_dict(kwargs_to_dict(rest).unwrap_or_default())
             } else {
-                Value::Array(
-                    figment::value::Tag::Default,
-                    items.iter().map(sexp_to_value).collect(),
-                )
+                crate::provider::figment_default_array(items.iter().map(sexp_to_value).collect())
             }
         }
         Sexp::Quote(inner)
