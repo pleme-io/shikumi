@@ -378,7 +378,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "h2 0.3.27",
- "h2 0.4.15",
+ "h2 0.4.16",
  "http 0.2.12",
  "http 1.5.0",
  "http-body 0.4.6",
@@ -1121,9 +1121,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1272,7 +1272,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
- "h2 0.4.15",
+ "h2 0.4.16",
  "http 1.5.0",
  "http-body 1.1.0",
  "httparse",
@@ -2019,15 +2019,15 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "pleme-hotswap"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1a80df694e4a0883668fac2d15333f8ec758c5c22c5d4cd7fc36a5985a995a2"
+checksum = "dea781c9d85dde5f82a6598a93bbe65d4d2cafb9f699617054d97db73680f649"
 
 [[package]]
 name = "pleme-hotswap-derive"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e17e44038e5067a8d7b80b54867b742906ee7a8af75734c39dc6d9c45395bdd"
+checksum = "a7628b62465358fffe59cbe5a558f6c89a9292e191770578737f6d11ecb43d9c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2108,9 +2108,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.16"
+version = "0.11.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560"
+checksum = "04759210543be93709136e28212294a659ef5001836ff4eab4d663e4529bba83"
 dependencies = [
  "bytes",
  "getrandom 0.4.3",
@@ -2590,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.594"
+version = "0.1.595"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2729,18 +2729,18 @@ dependencies = [
 
 [[package]]
 name = "tatara-closed-set"
-version = "0.3.46"
+version = "0.3.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f294dffcc676d6209a6079b9183e12d9695c0bd48674b54800fadd65158dcae"
+checksum = "cdbc3e57c159c396aec523ded68022af0cda7db5555c3a0d756f6a4a0df8042a"
 dependencies = [
  "tatara-closed-set-derive",
 ]
 
 [[package]]
 name = "tatara-closed-set-derive"
-version = "0.3.46"
+version = "0.3.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebbc9f4b09b845eead083f20bf75a443247c7356dc744a127694941f67d9aaad"
+checksum = "92a6af70401cefaec3104bc41e97bef9078a673bf6d85d020e374c905e5052fa"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2749,9 +2749,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.3.46"
+version = "0.3.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e504c563628f8506a6fcba3158f7f0c3201e06a3308daeb7ccd4bcc6e5107f97"
+checksum = "78bc6ab626b4fea102768a09b0f4e4982c3c8ab88b8a0ee1f621e08f73805463"
 dependencies = [
  "blake3",
  "serde",
@@ -2763,9 +2763,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.3.46"
+version = "0.3.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc63d734aa3f023531870876dc324d6c43ff6ffbe894c09183e8630462f98773"
+checksum = "e83a01357cfeb3944eae956a4fc97dbbb9a024794b8125112d75aaba76f00190"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3569,9 +3569,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec-derive"
-version = "0.11.4"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47402523226a02bfe5230160dc3ccc089aa6f6f19e7fcbb4e6f824bbb1b4aa62"
+checksum = "9f212a141d820099d57ffafb9569be9617a6f27d3dc881fbee8fb56642f917a9"
 dependencies = [
  "proc-macro2",
  "quote",
