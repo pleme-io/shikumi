@@ -1439,7 +1439,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.16";
+            packageId = "h2 0.4.17";
             usesDefaultFeatures = false;
           }
           {
@@ -3807,11 +3807,11 @@ rec {
         features = {
         };
       };
-      "h2 0.4.16" = rec {
+      "h2 0.4.17" = rec {
         crateName = "h2";
-        version = "0.4.16";
+        version = "0.4.17";
         edition = "2021";
-        sha256 = "09syqqhvh36b3rwyn8vjhiz597hfki1hcz3hwagb3cs1ifapmwx9";
+        sha256 = "0jblh2mscahvbz42d1sp5702ib444rcxswm5a3n2g64yydspx1wz";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Sean McArthur <sean@seanmonstar.com>"
@@ -4268,7 +4268,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.16";
+            packageId = "h2 0.4.17";
             optional = true;
           }
           {
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.611";
+        version = "0.1.612";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
