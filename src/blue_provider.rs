@@ -111,7 +111,7 @@ impl Provider for BlueProvider {
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        crate::provider::provider_data_from_shikumi_load(Self::load(&self.path), Format::Blue)
+        crate::provider::text_source_provider_data(&self.path, Format::Blue, load_from_str)
     }
 }
 

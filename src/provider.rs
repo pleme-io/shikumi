@@ -267,6 +267,79 @@ pub(crate) fn load_text_source(
     map(&src)
 }
 
+/// End-to-end fusion of the read-then-map-then-project cascade every
+/// text-source shikumi-built provider's [`figment::Provider::data`] body
+/// performs: route `path` through [`load_text_source`] with the
+/// caller-supplied `map` closure to produce a [`Value`], then project
+/// the resulting [`ShikumiError`]-bearing [`Result`] through
+/// [`provider_data_from_shikumi_load`] with the caller-supplied
+/// [`Format`] for the format-typed dict-required wording.
+///
+/// Idiom-peer of the other text-source-provider substrate helpers:
+/// [`read_source_or_parse_err`] closed the read leg (`8119f42`);
+/// [`load_text_source`] closed the fused `read + map` leg (`5d07b1a`);
+/// [`provider_data_from_shikumi_load`] closed the `data()`-body
+/// error+dict projection; this helper closes the whole
+/// `data()`-body-of-a-text-source-provider fusion. Both text-source
+/// callers today — [`crate::blue_provider::BlueProvider`] and
+/// [`crate::lisp_provider::LispProvider`] — previously wrote the
+/// three-step composition
+///
+/// ```text
+/// crate::provider::provider_data_from_shikumi_load(Self::load(&self.path), Format::X)
+/// ```
+///
+/// which itself resolved to
+///
+/// ```text
+/// provider_data_from_shikumi_load(load_text_source(&self.path, load_from_str), Format::X)
+/// ```
+///
+/// at the tail of their `Provider::data` body — two places a future
+/// refinement of the text-source-provider `data()` protocol (e.g.
+/// threading a per-file provenance span from the read step through the
+/// map step into the projected [`FigmentError`], gating on source size
+/// before the map runs, structured miette annotations on either leg)
+/// would have to be applied in lockstep, which is exactly the
+/// drift-class this crate spends load-bearing lifts to close.
+///
+/// A future text-source shikumi-built provider — a Ruby-syntax `.rb`
+/// front-end, a HOCON reader, a JSON5 or KDL provider — implements its
+/// [`figment::Provider::data`] body as a single call through this
+/// helper (`text_source_provider_data(&self.path, Format::X,
+/// load_from_str)`), inheriting the read+map+project protocol by
+/// construction. The provider's public `load(&Path) -> Result<Value,
+/// ShikumiError>` static method — the ergonomic one-shot every
+/// text-source provider exposes for tests and direct callers — is
+/// unaffected and continues to route through [`load_text_source`]
+/// directly.
+///
+/// The `map` argument is a bare `fn` pointer for the same reason
+/// [`load_text_source`]'s is: the caller is always the provider's own
+/// module-level `load_from_str` free function, and pinning the ABI at
+/// the fusion site keeps the read+map+project cascade a direct call
+/// rather than a per-callsite specialization.
+///
+/// # Errors
+///
+/// Returns [`FigmentError`] on read-step failure (string-projected from
+/// the [`ShikumiError::Parse`] [`read_source_or_parse_err`] emits),
+/// map-step failure (string-projected from whatever [`ShikumiError`]
+/// the caller-supplied `map` produces), or dict-required failure
+/// (format-typed wording via [`provider_data_from_value`]).
+// Same rationale as `provider_data_from_value` for the `result_large_err`
+// silence: figment picks its error size; boxing would fork the helper's
+// `Err` from the trait method's `Err` and force every call site to unbox
+// at the trait boundary.
+#[allow(clippy::result_large_err)]
+pub(crate) fn text_source_provider_data(
+    path: &Path,
+    format: Format,
+    map: fn(&str) -> Result<Value, ShikumiError>,
+) -> Result<Map<Profile, Dict>, FigmentError> {
+    provider_data_from_shikumi_load(load_text_source(path, map), format)
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -2226,6 +2299,196 @@ mod tests {
             Some(0),
             "mapper must see the source's true length (0), not a short-circuited None",
         );
+    }
+
+    // ---- text_source_provider_data (fused read + map + project cascade) ----
+    //
+    // The `data()` half of the text-source shikumi-built provider surface.
+    // Before this lift `BlueProvider::data` and `LispProvider::data` each
+    // open-coded the identical `provider_data_from_shikumi_load(
+    // load_text_source(&self.path, load_from_str), Format::X)` composition
+    // at the tail of their `Provider::data` body — two places a future
+    // refinement of the read+map+project protocol would have to be applied
+    // in lockstep. The helper closes that drift class; these tests pin the
+    // closure at the fusion site so a caller sensing shape changes still
+    // trips them.
+
+    #[test]
+    // The open-coded arms these tests re-run are exactly the arms we
+    // lifted away, and reconstructing them is what pins the fusion helper
+    // to pointwise-equal semantics; silence the closure-Err-size pedantic
+    // hit at the fused call site under the same rationale as the
+    // production helper's `#[allow]` above, and confined to test scope.
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_reads_then_maps_then_projects() {
+        // Happy path: the fused helper reads the file, hands the source
+        // string to the mapper, projects the mapper's Dict output through
+        // `provider_data_from_shikumi_load`, and returns the
+        // `{ Profile::Default => dict }` shape figment's `Provider::data`
+        // requires — with the mapper's dict preserved verbatim under
+        // `Profile::Default`.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "unused-by-mapper").unwrap();
+
+        fn map_to_dict(_: &str) -> Result<Value, ShikumiError> {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from("v"));
+            Ok(Value::Dict(figment::value::Tag::Default, d))
+        }
+
+        let map = text_source_provider_data(&path, Format::Lisp, map_to_dict)
+            .expect("read + map + project must succeed");
+        assert_eq!(map.len(), 1, "exactly one profile entry");
+        let dict = map
+            .get(&Profile::Default)
+            .expect("Profile::Default present");
+        assert_eq!(dict.get("k"), Some(&Value::from("v")));
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_read_error_is_string_projected_via_display() {
+        // Read-step failure leg: the read error surfaces through the
+        // shared `ShikumiError` → `FigmentError` string projection every
+        // consumer of a shikumi Provider observes today. Pins that the
+        // fused helper does NOT swallow, prefix, or wrap the read-side
+        // wording on its way through the projection.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nope").join("still-nope.txt");
+
+        fn map_unreachable(_: &str) -> Result<Value, ShikumiError> {
+            unreachable!("read step guaranteed to fail on this path")
+        }
+
+        let fig_err = text_source_provider_data(&path, Format::Lisp, map_unreachable)
+            .expect_err("missing file must not read → mapper unreachable");
+        let expected = read_source_or_parse_err(&path)
+            .expect_err("read-step helper must fail on the same missing path")
+            .to_string();
+        assert_eq!(
+            fig_err.to_string(),
+            expected,
+            "fused helper must forward the read-step wording verbatim through the projection",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_map_error_is_string_projected_verbatim() {
+        // Map-step failure leg: whatever ShikumiError the mapper produces
+        // must reach the projected FigmentError verbatim. The fusion
+        // does not prefix, wrap, or synthesize a message on top of it —
+        // pins the map-side transparency through the projection.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "unused").unwrap();
+
+        fn map_always_errors(_: &str) -> Result<Value, ShikumiError> {
+            Err(ShikumiError::Parse("mapper-side wording".into()))
+        }
+
+        let fig_err = text_source_provider_data(&path, Format::Lisp, map_always_errors)
+            .expect_err("mapper failure must project through the fused helper");
+        let expected = ShikumiError::Parse("mapper-side wording".into()).to_string();
+        assert_eq!(
+            fig_err.to_string(),
+            expected,
+            "mapper's wording must reach the caller as the projected FigmentError verbatim",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_non_dict_value_uses_format_dict_required_wording() {
+        // Structural-shape leg: on a mapper that returns a non-Dict
+        // Value, the projected FigmentError message must start with
+        // `Format::X.dict_required_message()` and carry the `; got …`
+        // concrete-Value tail — the exact contract
+        // `provider_data_from_value` already declares and the fused
+        // helper routes through. Pins that the format-typed wording
+        // reaches the operator identically on every format the two
+        // text-source providers cover today, plus the sibling formats.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "unused").unwrap();
+
+        fn map_to_array(_: &str) -> Result<Value, ShikumiError> {
+            Ok(Value::Array(
+                figment::value::Tag::Default,
+                vec![Value::from(1i64)],
+            ))
+        }
+
+        for format in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+            let fig_err = text_source_provider_data(&path, format, map_to_array)
+                .expect_err("non-Dict mapper output must error via the fused helper");
+            let msg = fig_err.to_string();
+            let prefix = format.dict_required_message();
+            assert!(
+                msg.starts_with(prefix),
+                "{format:?}: fused-helper message must start with `{prefix}`, got `{msg}`",
+            );
+            assert!(
+                msg.contains("; got "),
+                "{format:?}: fused-helper message must append `; got <Value>` tail, got `{msg}`",
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_read_error_short_circuits_the_mapper() {
+        // Structural: on a read-step failure the mapper must NOT run —
+        // otherwise a future map-side helper that opens a peer file or
+        // logs on entry could execute on a doomed path. The mapper
+        // panics so any reachability fires as a test failure with a
+        // named message, not a silent no-op.
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist.txt");
+
+        fn map_panicking(_: &str) -> Result<Value, ShikumiError> {
+            panic!(
+                "mapper reached on a read-failed path — short-circuit invariant broken through \
+                 the fused helper"
+            )
+        }
+
+        let _ = text_source_provider_data(&missing, Format::Lisp, map_panicking)
+            .expect_err("missing file must short-circuit before the mapper");
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_data_matches_pre_lift_open_coded_composition_verbatim() {
+        // The strongest drift-closure: reproduce the pre-lift open-coded
+        // three-step composition here — `provider_data_from_shikumi_load(
+        // load_text_source(&path, map), format)` — and require the fused
+        // helper produce a byte-equal FigmentError string on the same
+        // missing path, for every format the two text-source providers
+        // cover. If the two ever disagree, the drift is between the
+        // fusion site and its extraction — which is exactly what this
+        // lift exists to prevent.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.cfg");
+
+        fn map_unreachable(_: &str) -> Result<Value, ShikumiError> {
+            unreachable!("read step guaranteed to fail on this path")
+        }
+
+        for format in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+            let fused_err = text_source_provider_data(&path, format, map_unreachable)
+                .expect_err("fused helper must fail on missing path");
+            let open_coded_err =
+                provider_data_from_shikumi_load(load_text_source(&path, map_unreachable), format)
+                    .expect_err("open-coded composition must fail on missing path");
+            assert_eq!(
+                fused_err.to_string(),
+                open_coded_err.to_string(),
+                "{format:?}: fused helper must produce the same wording as the pre-lift open-coded \
+                 composition",
+            );
+        }
     }
 
     // ---- Cross-caller drift-closure ----
