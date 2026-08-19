@@ -17,7 +17,7 @@ use crate::observatory::ReloadObservatory;
 use crate::provider::ProviderChain;
 use crate::reload::ReloadFailure;
 use crate::source::ConfigSource;
-use crate::watcher::{ConfigWatcher, WatchEventClass, symlink_target};
+use crate::watcher::{ConfigWatcher, should_reload_on_event};
 
 /// A concurrent, hot-reloadable config store.
 ///
@@ -149,20 +149,8 @@ where
         let prefix_owned = env_prefix.to_owned();
 
         let watcher = ConfigWatcher::watch(path, move |event| {
-            match WatchEventClass::classify(&event.kind) {
-                WatchEventClass::Reload => {}
-                WatchEventClass::Removed => {
-                    info!("config file removed, continuing to watch for replacement...");
-                    return;
-                }
-                WatchEventClass::Ignored => return,
-            }
-
-            // Check if symlink target changed (nix rebuild)
-            for path in &event.paths {
-                if symlink_target(path).is_some() {
-                    info!("symlink target changed for {}", path.display());
-                }
+            if !should_reload_on_event(&event) {
+                return;
             }
 
             info!("reloading configuration from {}", path_owned.display());
@@ -654,19 +642,8 @@ where
         let prefix_owned = env_prefix.to_owned();
 
         let watcher = ConfigWatcher::watch(path, move |event| {
-            match WatchEventClass::classify(&event.kind) {
-                WatchEventClass::Reload => {}
-                WatchEventClass::Removed => {
-                    info!("config file removed, continuing to watch for replacement...");
-                    return;
-                }
-                WatchEventClass::Ignored => return,
-            }
-
-            for path in &event.paths {
-                if symlink_target(path).is_some() {
-                    info!("symlink target changed for {}", path.display());
-                }
+            if !should_reload_on_event(&event) {
+                return;
             }
 
             info!(

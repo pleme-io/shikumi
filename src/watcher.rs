@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::cube::{ClosedAxis, ClosedAxisLabel};
 use crate::error::ShikumiError;
@@ -154,6 +154,79 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Preamble every watcher-driven [`crate::ConfigStore`] reload closure runs
+/// on each raw [`notify::Event`]: classify the event through
+/// [`WatchEventClass::classify`], log-and-skip the transient removed-file
+/// state, log every symlink-target change carried on the event, and return
+/// `true` iff the caller should proceed with the reload (⇔ the event kind
+/// landed on [`WatchEventClass::Reload`]).
+///
+/// One source of truth for the "classify + log-preamble" two-step every
+/// watcher-driven [`crate::ConfigStore`] constructor previously open-coded
+/// at its own closure body. Two callers today —
+/// [`crate::ConfigStore::load_and_watch`] and
+/// [`crate::ConfigStore::load_and_watch_hotswap`] (feature `hotswap`) — each
+/// wrote the identical 11-line preamble (5-line [`WatchEventClass::classify`]
+/// match + 5-line [`symlink_target`]-check loop) before dispatching to their
+/// own reload leg. Two places any future refinement of the classify-side
+/// diagnostic (a structured tracing span carrying the raw event kind, a
+/// per-class counter feeding a reload-relevance histogram, a
+/// debounce-window guard on the [`WatchEventClass::Reload`] arm, richer
+/// symlink-target metadata beyond the `"symlink target changed"` line,
+/// operator-facing structured provenance identifying which of `event.paths`
+/// resolved through a symlink) would have to be applied in lockstep —
+/// exactly the drift-class this crate spends load-bearing lifts to close.
+///
+/// A future watcher-driven [`crate::ConfigStore`] constructor — a
+/// broadcast-subscription reload variant, a per-tenant reload variant, the
+/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// push-side reload variant — routes its own closure through this helper
+/// and inherits the preamble by construction; the reload-leg body stays a
+/// per-constructor decision, but the classify + symlink log-preamble lives
+/// at ONE site.
+///
+/// # Return-value pointwise equivalence
+///
+/// The returned [`bool`] is pointwise equal to
+/// `WatchEventClass::classify(&event.kind).should_reload()` — the two
+/// canonical predicates on the event's reload-relevance axis, pinned by
+/// [`tests::should_reload_on_event_agrees_with_classify_should_reload`].
+/// The helper is not just a shorthand for that composition: it also
+/// side-effects the [`tracing::info`] emit path with the two operator-
+/// facing log lines every watcher-driven [`crate::ConfigStore`] closure
+/// contract requires (`"config file removed, continuing to watch for
+/// replacement..."` on the [`WatchEventClass::Removed`] arm, and
+/// `"symlink target changed for {path}"` on every symlink-resolving path
+/// on the [`WatchEventClass::Reload`] arm). Callers that need only the
+/// scalar predicate without the side-effects reach for the pure
+/// [`WatchEventClass::classify`] / [`WatchEventClass::should_reload`]
+/// composition instead.
+///
+/// # Zero-cost by construction
+///
+/// The helper is a plain function performing exactly the same
+/// [`WatchEventClass::classify`] match, the same two [`tracing::info`]
+/// emits, and the same `event.paths` walk the pre-lift open-coded bodies
+/// performed — so the substrate lift adds zero per-call overhead the
+/// compiler cannot inline away.
+pub(crate) fn should_reload_on_event(event: &notify::Event) -> bool {
+    match WatchEventClass::classify(&event.kind) {
+        WatchEventClass::Reload => {}
+        WatchEventClass::Removed => {
+            info!("config file removed, continuing to watch for replacement...");
+            return false;
+        }
+        WatchEventClass::Ignored => return false,
+    }
+
+    for path in &event.paths {
+        if symlink_target(path).is_some() {
+            info!("symlink target changed for {}", path.display());
+        }
+    }
+    true
+}
+
 /// A symlink-aware config file watcher.
 ///
 /// - **Symlinks** (nix-managed): Uses `PollWatcher` with `follow_symlinks(true)`
@@ -247,6 +320,158 @@ mod tests {
     use notify::event::{
         AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
     };
+
+    // ── should_reload_on_event ───────────────────────────────────────
+    //
+    // The `notify::Event` preamble every watcher-driven `ConfigStore`
+    // reload closure previously open-coded. Pinned as the pointwise
+    // equivalent of `WatchEventClass::classify(&event.kind).should_reload()`
+    // on the return value across the reload / removed / ignored partition,
+    // with the path-list side-channel (the symlink log emit) verified
+    // structurally on the boolean return regardless of whether the paths
+    // actually resolve as symlinks in this sandbox.
+
+    #[test]
+    fn should_reload_on_event_returns_true_only_on_reload_class_events() {
+        // Every Reload-class kind produces `true`; every Removed- and
+        // Ignored-class kind produces `false`. Pins the boolean return
+        // shape on the closed partition of `WatchEventClass`, so a future
+        // classifier drift cannot slip a false-negative onto the reload
+        // trigger path.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert!(
+                should_reload_on_event(&event),
+                "Reload-class kind {kind:?} must return true",
+            );
+        }
+        for kind in [
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert!(
+                !should_reload_on_event(&event),
+                "non-Reload-class kind {kind:?} must return false",
+            );
+        }
+    }
+
+    #[test]
+    fn should_reload_on_event_agrees_with_classify_should_reload() {
+        // Return-value pointwise equivalence with the pure
+        // `WatchEventClass::classify(&event.kind).should_reload()`
+        // composition, over every kind the classifier partitions on. A
+        // future refactor that drifts the helper away from that
+        // composition (e.g. widens the trigger set past
+        // `WatchEventClass::Reload`, narrows it below Reload) breaks this
+        // test before reaching either watcher-driven `ConfigStore` call
+        // site. Idiom-peer of the closed-partition round-trip tests the
+        // same file already pins on `WatchEventClass::classify` /
+        // `should_reload`.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Create(CreateKind::Other),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Modify(ModifyKind::Other),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Remove(RemoveKind::Other),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind.clone());
+            let via_helper = should_reload_on_event(&event);
+            let via_classify = WatchEventClass::classify(&kind).should_reload();
+            assert_eq!(
+                via_helper, via_classify,
+                "should_reload_on_event must agree with \
+                 classify(&event.kind).should_reload() on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn should_reload_on_event_ignores_event_paths_on_removed_and_ignored_kinds() {
+        // Paths carried on a Removed- or Ignored-class event are
+        // deliberately not walked — the classify arm returns `false`
+        // BEFORE the symlink-log loop runs, so an event with
+        // `paths = [some/symlink]` on a non-Reload kind does not emit
+        // a spurious symlink-target log line and the helper still
+        // returns `false`. Pins the arm-order the pre-lift open-coded
+        // bodies carried, which two future callers now inherit at one
+        // site.
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("target.yaml");
+        fs::write(&target, "key: value").unwrap();
+        let link = dir.path().join("link.yaml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        // The link resolves — a `symlink_target(&link)` call on it
+        // returns `Some(_)`, so on a Reload-class event the helper
+        // WOULD walk it. Removed/Ignored arms exit before that loop.
+        assert!(symlink_target(&link).is_some(), "test setup: link resolves");
+
+        for kind in [
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+        ] {
+            let event = notify::Event::new(kind.clone()).add_path(link.clone());
+            assert!(
+                !should_reload_on_event(&event),
+                "non-Reload kind {kind:?} with a resolving symlink path must \
+                 still return false — the classify arm short-circuits before \
+                 the symlink-log loop",
+            );
+        }
+    }
+
+    #[test]
+    fn should_reload_on_event_returns_true_on_reload_kind_regardless_of_paths() {
+        // The symlink-log loop is a side-effect on the Reload arm; the
+        // boolean return is the classify-side decision and does not depend
+        // on which of `event.paths` (if any) resolve as symlinks. Pins the
+        // return-value invariance across zero, one, and multiple carried
+        // paths on the same Reload-class kind.
+        let dir = TempDir::new().unwrap();
+        let regular = dir.path().join("regular.yaml");
+        fs::write(&regular, "key: value").unwrap();
+        let target = dir.path().join("target.yaml");
+        fs::write(&target, "key: value").unwrap();
+        let link = dir.path().join("link.yaml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let kind = EventKind::Modify(ModifyKind::Data(DataChange::Content));
+        // Zero paths.
+        let event_bare = notify::Event::new(kind.clone());
+        assert!(should_reload_on_event(&event_bare));
+        // One regular-file path.
+        let event_regular = notify::Event::new(kind.clone()).add_path(regular.clone());
+        assert!(should_reload_on_event(&event_regular));
+        // One symlink path.
+        let event_link = notify::Event::new(kind.clone()).add_path(link.clone());
+        assert!(should_reload_on_event(&event_link));
+        // Mixed regular + symlink paths.
+        let event_mixed = notify::Event::new(kind).add_path(regular).add_path(link);
+        assert!(should_reload_on_event(&event_mixed));
+    }
 
     #[test]
     fn classify_create_is_reload() {
