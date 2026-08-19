@@ -1439,7 +1439,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.15";
+            packageId = "h2 0.4.16";
             usesDefaultFeatures = false;
           }
           {
@@ -3807,11 +3807,11 @@ rec {
         features = {
         };
       };
-      "h2 0.4.15" = rec {
+      "h2 0.4.16" = rec {
         crateName = "h2";
-        version = "0.4.15";
+        version = "0.4.16";
         edition = "2021";
-        sha256 = "0mgilh1g8gydcchqi6acs5l6j0gwg5jwpa64sj4b3ncb9v497c3c";
+        sha256 = "09syqqhvh36b3rwyn8vjhiz597hfki1hcz3hwagb3cs1ifapmwx9";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Sean McArthur <sean@seanmonstar.com>"
@@ -4268,7 +4268,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.15";
+            packageId = "h2 0.4.16";
             optional = true;
           }
           {
@@ -7440,9 +7440,9 @@ rec {
       };
       "pleme-hotswap" = rec {
         crateName = "pleme-hotswap";
-        version = "0.1.1";
+        version = "0.1.3";
         edition = "2024";
-        sha256 = "18lmm62mjsn3gz6x9i92bj67bv7q6d9x3hpsd0v8i874jkv0va71";
+        sha256 = "0jgnh0vbfzfraiq636gnp6pjqkaxwsxr72jrls15zpjxv34q39yy";
         libName = "pleme_hotswap";
         authors = [
           "pleme-io"
@@ -7451,9 +7451,9 @@ rec {
       };
       "pleme-hotswap-derive" = rec {
         crateName = "pleme-hotswap-derive";
-        version = "0.1.1";
+        version = "0.1.3";
         edition = "2024";
-        sha256 = "1pav752rqvfw75676xdgm3knx422nxklidc0gf6pl1p5710f85sf";
+        sha256 = "171xnkn12vbzfdw0axwiw69956n8yrcabrfbb7zgyn2k8ri8nqm7";
         procMacro = true;
         libName = "pleme_hotswap_derive";
         authors = [
@@ -7715,9 +7715,9 @@ rec {
       };
       "quinn-proto" = rec {
         crateName = "quinn-proto";
-        version = "0.11.16";
+        version = "0.11.17";
         edition = "2021";
-        sha256 = "0q75f2wkhc7iw8n0q63jb3zm7206b7774l44r1ixzfb2a80zqjrg";
+        sha256 = "10xskd9f8qynnkmg8vw3058fynd6jhi22a3f2c4kgs9vah894x84";
         libName = "quinn_proto";
         dependencies = [
           {
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.595";
+        version = "0.1.596";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9931,9 +9931,9 @@ rec {
       };
       "tatara-closed-set" = rec {
         crateName = "tatara-closed-set";
-        version = "0.3.46";
+        version = "0.3.52";
         edition = "2021";
-        sha256 = "1bnwb18xdb8gh1a4nrs8pp09b5idw61r36q7lq4n4vb7rkzlsaaz";
+        sha256 = "0ah4z06llskgfl6klp2mnmyxl35g4a0ddpi3qnp9dhsrq5bkxg6d";
         libName = "tatara_closed_set";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9948,9 +9948,9 @@ rec {
       };
       "tatara-closed-set-derive" = rec {
         crateName = "tatara-closed-set-derive";
-        version = "0.3.46";
+        version = "0.3.52";
         edition = "2021";
-        sha256 = "1bdav5kiz54lfq94lx6warrpq923lisvy81z12nywidq155rzg7b";
+        sha256 = "1yjja1g90k1p1q15vn7n7dkql1zrpsbixi2b231sxvqw81qaz9lj";
         procMacro = true;
         libName = "tatara_closed_set_derive";
         authors = [
@@ -9975,9 +9975,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.46";
+        version = "0.3.52";
         edition = "2021";
-        sha256 = "15vz23jwdg6lrjvsx39hlc31w863y3vmhcdszjk0d1cgc9iwa175";
+        sha256 = "0qslh1rqzq11yvhhx2lbp253qb4qwksb02cafq1a3zml4sv6mg3q";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -10015,9 +10015,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.46";
+        version = "0.3.52";
         edition = "2021";
-        sha256 = "0ww7z5i08qz8hf8w1578zdpzyhvc9lrdqxh8hwqka0izm8sdfqzw";
+        sha256 = "1401y1vbmakm5l8jb0abg4ja1fdvgp4lyslmmr799czyghsh2fp8";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
@@ -13498,9 +13498,9 @@ rec {
       };
       "zerovec-derive" = rec {
         crateName = "zerovec-derive";
-        version = "0.11.4";
+        version = "0.11.5";
         edition = "2021";
-        sha256 = "0qmanjqvn97qwsscnzwyy7vad6h8rhydqq014gjvy0ka48ijah27";
+        sha256 = "1a8pz516ddcgxvxq3j1xgprac5wnprlrbyzsgzarj0423la2l8cz";
         procMacro = true;
         libName = "zerovec_derive";
         authors = [
