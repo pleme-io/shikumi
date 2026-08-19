@@ -11,12 +11,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use figment::value::{Dict, Map, Value};
-use figment::{Error as FigmentError, Metadata, Profile, Provider};
+use figment::value::Value;
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
-use crate::provider::json_value_to_figment;
+use crate::provider::{json_value_to_figment, path_provider_impl};
 
 /// Figment provider that evaluates a Nix config file via `nix eval`.
 #[derive(Debug, Clone)]
@@ -84,15 +83,18 @@ impl NixProvider {
     }
 }
 
-impl Provider for NixProvider {
-    fn metadata(&self) -> Metadata {
-        crate::provider::provider_metadata_for(Format::Nix, &self.path)
-    }
-
-    fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        crate::provider::provider_data_from_shikumi_load(self.load(), Format::Nix)
-    }
-}
+// The whole `impl Provider` body — `metadata` + `data`, four lines each
+// — is emitted by the `path_provider_impl!` substrate macro from
+// `(Ty, Format, |this| load_expr)`. `NixProvider::load` shells out to
+// `nix eval --json` (through `std::process::Command`), so it is NOT a
+// text-source provider and cannot ride the text-source sibling
+// `text_source_provider_impl!` — but both macros are idiom-peers on
+// the metadata half, and both route their data half through
+// `provider_data_from_shikumi_load`, so this caller and every future
+// non-text-source shikumi-built provider inherit the same substrate
+// contract by construction. See `crate::provider::path_provider_impl`
+// for the full lift rationale.
+path_provider_impl!(NixProvider, Format::Nix, |this| this.load());
 
 #[cfg(test)]
 mod tests {

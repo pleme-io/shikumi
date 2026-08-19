@@ -437,6 +437,112 @@ macro_rules! text_source_provider_impl {
 }
 pub(crate) use text_source_provider_impl;
 
+/// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —
+/// the [`figment::Provider`] impl block a shikumi-built provider carries
+/// when it produces a [`Result<Value, ShikumiError>`] from a `&self`
+/// receiver, routed through the substrate helpers
+/// [`provider_metadata_for`] and [`provider_data_from_shikumi_load`].
+///
+/// The general peer of [`text_source_provider_impl`]: where the
+/// text-source macro fixes the load leg as `load_text_source(&self.path,
+/// mapper)` — a signature that only fits providers whose upstream is a
+/// text file the caller-supplied mapper parses — this macro takes an
+/// arbitrary caller-supplied `|this| $load` block, so any provider whose
+/// `load` produces a [`Result<Value, ShikumiError>`] from `&self` rides
+/// the substrate. Today [`crate::nix_provider::NixProvider`] is the
+/// caller: its upstream is `nix eval --json`, so the load leg goes
+/// through [`std::process::Command`] rather than a text mapper, and it
+/// carried the last remaining open-coded four-line `impl Provider` block
+/// on the shikumi-built provider surface after the four prior lifts
+/// ([`read_source_or_parse_err`] `8119f42`, [`load_text_source`]
+/// `5d07b1a`, [`text_source_provider_data`] `e535174`,
+/// [`text_source_provider_impl`] `1988106`) collapsed the per-method
+/// bodies for the text-source callers. With this macro, that block is a
+/// single call site whose data and metadata halves BOTH route through
+/// the same substrate helpers the text-source macro does — so a future
+/// refinement of either half (an added [`figment::Provider::profile`]
+/// override, a [`figment::Metadata::source`]-populated metadata builder,
+/// structured miette annotations on the data path, richer per-file
+/// diagnostic context threaded through both surfaces) lands at ONE site
+/// and every macro-emitted `Provider` impl inherits it by construction —
+/// text-source and command-source callers alike.
+///
+/// A future shikumi-built provider whose load side is NOT a text-source
+/// mapper — a Kubernetes `ConfigMap` reader whose upstream is a
+/// [`kube`](https://docs.rs/kube) API call, a Vault secret store whose
+/// upstream is an HTTP GET, an HTTP `/config` endpoint that produces a
+/// figment [`Value`] directly, a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// central-authority broadcast layer whose upstream is a subscription
+/// stream — implements its whole [`figment::Provider`] surface as ONE
+/// macro invocation:
+///
+/// ```ignore
+/// path_provider_impl!(MyProvider, Format::MyFormat, |this| this.load());
+/// ```
+///
+/// inheriting the metadata + data protocol by construction. The
+/// provider's own [`Result<Value, ShikumiError>`]-bearing load method is
+/// unaffected — the macro's `|this| $load` arm binds `this` to `&$ty`
+/// inside the emitted `data()` body and calls whatever expression the
+/// caller supplied on it, so a method-taking `&self`, a free function
+/// taking `&$ty`, a caller-side fusion of both, or any other expression
+/// producing a `Result<Value, ShikumiError>` all fit.
+///
+/// # Contract
+///
+/// - `$ty` must be a struct type with a `path` field of a type that
+///   [`std::borrow::Borrow`]s [`Path`] (typically `PathBuf`) — the
+///   [`figment::Provider::metadata`] body borrows `&self.path`, matching
+///   the convention every shikumi-built provider in-tree already
+///   follows. This is the SAME `path`-field contract
+///   [`text_source_provider_impl`] declares; the two macros are
+///   idiom-peers on the metadata half.
+/// - `$format` is any [`Format`]-typed expression (`const` or value).
+/// - The `|$this| $load` arm binds `$this` to `&$ty` inside `$load`,
+///   which must be an expression producing a
+///   `Result<Value, ShikumiError>`. The bound identifier `$this` is
+///   a `let` binding at the head of the emitted `data()` body — not a
+///   real closure — so borrows of `$this.<field>` inside `$load` reach
+///   the same lifetime the `data(&self)` receiver already grants.
+///
+/// The macro is `pub(crate)` because both substrate helpers it routes
+/// through are `pub(crate)`; a `#[macro_export]` variant would emit
+/// paths unreachable from outside the crate.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::provider::path_provider_impl;
+///
+/// pub struct MyProvider { path: PathBuf }
+/// impl MyProvider {
+///     pub fn file(p: impl Into<PathBuf>) -> Self { Self { path: p.into() } }
+///     pub fn load(&self) -> Result<Value, ShikumiError> { /* … */ }
+/// }
+///
+/// path_provider_impl!(MyProvider, Format::MyFormat, |this| this.load());
+/// ```
+macro_rules! path_provider_impl {
+    ($ty:ty, $format:expr, |$this:ident| $load:expr $(,)?) => {
+        impl ::figment::Provider for $ty {
+            fn metadata(&self) -> ::figment::Metadata {
+                $crate::provider::provider_metadata_for($format, &self.path)
+            }
+
+            fn data(
+                &self,
+            ) -> ::core::result::Result<
+                ::figment::value::Map<::figment::Profile, ::figment::value::Dict>,
+                ::figment::Error,
+            > {
+                let $this: &$ty = self;
+                $crate::provider::provider_data_from_shikumi_load($load, $format)
+            }
+        }
+    };
+}
+pub(crate) use path_provider_impl;
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -2812,5 +2918,258 @@ mod tests {
                  caller and no longer routes through `text_source_provider_impl!`",
             );
         }
+    }
+
+    // ---- path_provider_impl! (general impl Provider block emitter) ----
+    //
+    // The general peer of `text_source_provider_impl!`: emits the whole
+    // `impl Provider for $Ty` block from `(Ty, Format, |this| load_expr)`,
+    // where `load_expr` produces a `Result<Value, ShikumiError>` from a
+    // `&$Ty` bound as `this`. Fits any provider whose load side is NOT a
+    // text-source mapper — today `NixProvider` is the caller, and its
+    // whole `impl Provider` block reduces to one macro invocation.
+    //
+    // The pins below prove the macro's contract on a synthetic caller
+    // (so the invariants are checked independently of the production
+    // `NixProvider` caller that inherits from it) plus one drift-closure
+    // against the real `NixProvider` caller, matching the pattern the
+    // `text_source_provider_impl!` pins above already follow.
+
+    /// Synthetic non-text-source provider used only to exercise the
+    /// emitted impl. Carries a `path: PathBuf` field (the convention
+    /// every shikumi-built provider follows and the macro's contract
+    /// requires) plus a boxed load closure so each test can drive the
+    /// load side without any filesystem or subprocess dependency.
+    struct PathMacroProbeProvider {
+        path: std::path::PathBuf,
+        loader: fn(&PathMacroProbeProvider) -> Result<Value, ShikumiError>,
+    }
+
+    fn path_macro_probe_load(this: &PathMacroProbeProvider) -> Result<Value, ShikumiError> {
+        (this.loader)(this)
+    }
+
+    path_provider_impl!(PathMacroProbeProvider, Format::Nix, |this| {
+        path_macro_probe_load(this)
+    });
+
+    fn path_macro_probe_ok_dict(_this: &PathMacroProbeProvider) -> Result<Value, ShikumiError> {
+        let mut d = Dict::new();
+        d.insert("k".to_owned(), Value::from("v"));
+        Ok(Value::Dict(figment::value::Tag::Default, d))
+    }
+
+    fn path_macro_probe_ok_array(_this: &PathMacroProbeProvider) -> Result<Value, ShikumiError> {
+        Ok(Value::Array(
+            figment::value::Tag::Default,
+            vec![Value::from("only-element")],
+        ))
+    }
+
+    fn path_macro_probe_err(_this: &PathMacroProbeProvider) -> Result<Value, ShikumiError> {
+        Err(ShikumiError::Parse(
+            "path_provider_impl! test: forced load-step failure".to_owned(),
+        ))
+    }
+
+    #[test]
+    fn path_provider_impl_emits_metadata_that_matches_the_substrate_helper() {
+        // The macro's `metadata()` body must route through
+        // `provider_metadata_for(format, &self.path)` verbatim — the same
+        // bytes the substrate helper produces from the same `(format, path)`
+        // pair, so the metadata-name round-trip through
+        // `Format::strip_metadata_name` / `Format::parse_metadata_tag` is
+        // preserved by construction.
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/path-macro-probe.cfg");
+        let provider = PathMacroProbeProvider {
+            path: path.clone(),
+            loader: path_macro_probe_ok_dict,
+        };
+        let via_macro = provider.metadata();
+        let via_helper = provider_metadata_for(Format::Nix, &path);
+        assert_eq!(
+            via_macro.name.as_ref(),
+            via_helper.name.as_ref(),
+            "path_provider_impl! metadata name must equal substrate-helper metadata name",
+        );
+        let (recovered_format, rest) = Format::strip_metadata_name(&via_macro.name)
+            .expect("macro-emitted metadata name must round-trip");
+        assert_eq!(recovered_format, Format::Nix);
+        assert_eq!(rest, path.display().to_string());
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn path_provider_impl_emits_data_that_matches_the_substrate_helper() {
+        // Happy path: the macro's `data()` body must route through
+        // `provider_data_from_shikumi_load(load_expr, format)` verbatim —
+        // the same `Map<Profile, Dict>` the substrate helper produces
+        // from the same `(load_result, format)` pair.
+        use figment::Provider;
+
+        let provider = PathMacroProbeProvider {
+            path: std::path::PathBuf::from("/tmp/path-macro-probe.cfg"),
+            loader: path_macro_probe_ok_dict,
+        };
+        let via_macro = provider.data().expect("macro-emitted data() must succeed");
+        let via_helper =
+            provider_data_from_shikumi_load(path_macro_probe_ok_dict(&provider), Format::Nix)
+                .expect("substrate-helper data() must succeed");
+        assert_eq!(
+            via_macro, via_helper,
+            "path_provider_impl! data() must equal substrate-helper data() on the happy path",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn path_provider_impl_emits_data_error_matching_the_substrate_helper() {
+        // Load-step failure leg: the macro must forward whatever the
+        // substrate helper emits on a `ShikumiError` load result,
+        // byte-for-byte, so a future refinement of the error path lands
+        // at one substrate site and every macro-emitted `Provider::data`
+        // inherits it by construction.
+        use figment::Provider;
+
+        let provider = PathMacroProbeProvider {
+            path: std::path::PathBuf::from("/tmp/path-macro-probe.cfg"),
+            loader: path_macro_probe_err,
+        };
+        let via_macro = provider
+            .data()
+            .expect_err("macro-emitted data() must fail on a load-step error");
+        let via_helper =
+            provider_data_from_shikumi_load(path_macro_probe_err(&provider), Format::Nix)
+                .expect_err("substrate-helper data() must fail on the same load-step error");
+        assert_eq!(
+            via_macro.to_string(),
+            via_helper.to_string(),
+            "path_provider_impl! data() error must equal substrate-helper error verbatim",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn path_provider_impl_data_non_dict_value_uses_format_dict_required_wording() {
+        // Non-Dict load result leg: the macro must forward whatever the
+        // substrate helper's `provider_data_from_value` arm emits, so the
+        // format-typed dict-required wording reaches the operator through
+        // this macro identically to how it reaches them through the
+        // text-source macro or a direct substrate-helper call.
+        use figment::Provider;
+
+        let provider = PathMacroProbeProvider {
+            path: std::path::PathBuf::from("/tmp/path-macro-probe.cfg"),
+            loader: path_macro_probe_ok_array,
+        };
+        let via_macro = provider
+            .data()
+            .expect_err("macro-emitted data() must fail on a non-Dict load result");
+        let via_helper =
+            provider_data_from_shikumi_load(path_macro_probe_ok_array(&provider), Format::Nix)
+                .expect_err("substrate-helper data() must fail on the same non-Dict result");
+        assert_eq!(
+            via_macro.to_string(),
+            via_helper.to_string(),
+            "path_provider_impl! data() non-Dict error must equal substrate-helper wording",
+        );
+        assert!(
+            via_macro
+                .to_string()
+                .starts_with(Format::Nix.dict_required_message()),
+            "non-Dict error must start with `Format::Nix.dict_required_message()`",
+        );
+    }
+
+    #[test]
+    fn path_provider_impl_metadata_agrees_across_all_shikumi_built_formats() {
+        // Every shikumi-built `Format` variant must route through the
+        // macro to the same metadata name the substrate helper produces.
+        // The macro is parameterized on `$format:expr`, so no format is
+        // baked in — this pin proves the parameter reaches the emitted
+        // body unchanged. A per-format macro invocation would be circular
+        // (the macro under test would participate in its own oracle), so
+        // the invariant is asserted through the substrate helper the
+        // real callers ride: if the macro's `metadata()` body were ever
+        // hand-inlined to a different `Format` than its parameter, the
+        // byte-for-byte cross-format pin below on the substrate helper
+        // would catch the drift on the real caller (`NixProvider`).
+        //
+        // Restricted to `FormatProvenance::ShikumiBuilt` formats — see
+        // the sibling `text_source_provider_impl_metadata_agrees_across_
+        // all_shikumi_built_formats` pin for the rationale.
+        for format in crate::discovery::FormatProvenance::ShikumiBuilt.formats() {
+            let path = std::path::PathBuf::from("/tmp/path-macro-format-scan.cfg");
+            let helper_name = provider_metadata_for(*format, &path).name;
+            let (recovered_format, rest) = Format::strip_metadata_name(&helper_name)
+                .expect("substrate helper's metadata name must round-trip");
+            assert_eq!(recovered_format, *format);
+            assert_eq!(rest, path.display().to_string());
+        }
+    }
+
+    #[test]
+    fn path_provider_impl_matches_nix_provider_on_metadata() {
+        // The macro's real load-bearing test is the production
+        // `NixProvider` caller it emits code for. Metadata leg: the
+        // macro-emitted `metadata()` on `NixProvider` must equal
+        // `provider_metadata_for(Format::Nix, &path)` verbatim — the
+        // drift-closure that would fire if a hand edit re-introduced the
+        // open-coded impl block at the caller and quietly changed the
+        // metadata-name shape away from what `Format::metadata_name`
+        // declares.
+        use crate::nix_provider::NixProvider;
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/path-macro-nix-caller.nix");
+        let provider = NixProvider::file(&path);
+        let via_caller = provider.metadata();
+        let via_helper = provider_metadata_for(Format::Nix, &path);
+        assert_eq!(
+            via_caller.name.as_ref(),
+            via_helper.name.as_ref(),
+            "NixProvider metadata name must equal substrate-helper metadata name — drift here \
+             means the impl block was hand-inlined at the caller and no longer routes through \
+             `path_provider_impl!`",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn path_provider_impl_matches_nix_provider_on_data_error() {
+        // The macro's real load-bearing test is the production
+        // `NixProvider` caller it emits code for. Data leg: the
+        // macro-emitted `data()` on `NixProvider` must forward whatever
+        // `provider_data_from_shikumi_load(NixProvider::load(...), Format::Nix)`
+        // emits, byte-for-byte, so a future refinement of the
+        // load→project cascade lands at the substrate site and the
+        // caller inherits it by construction.
+        //
+        // Uses a nonexistent binary so `NixProvider::load` produces a
+        // deterministic `ShikumiError::Parse` without a real `nix`
+        // process on `$PATH` — the same load path the sibling
+        // `nix_provider::tests::missing_nix_binary_errors_gracefully`
+        // pin already exercises directly.
+        use crate::nix_provider::NixProvider;
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("does-not-exist.nix");
+        let provider =
+            NixProvider::file(&path).with_binary("/nonexistent/nix-binary-that-does-not-exist");
+        let via_caller = provider
+            .data()
+            .expect_err("NixProvider::data() must fail on a nonexistent nix binary");
+        let via_helper = provider_data_from_shikumi_load(provider.load(), Format::Nix)
+            .expect_err("substrate-helper data() must fail on the same load error");
+        assert_eq!(
+            via_caller.to_string(),
+            via_helper.to_string(),
+            "NixProvider data() error must equal substrate-helper's on the same load failure \
+             — drift here means the impl block was hand-inlined at the caller and no longer \
+             routes through `path_provider_impl!`",
+        );
     }
 }
