@@ -89,9 +89,15 @@ impl BlueProvider {
     }
 
     /// Load and map a blue file, or fail with a `blue:`-prefixed error.
+    ///
+    /// The file-read step routes through the shared
+    /// [`crate::provider::read_source_or_parse_err`] substrate helper, so
+    /// the `"reading {path}: {e}"` I/O error wording is defined once
+    /// beside the other shikumi-built-provider primitives and cannot
+    /// drift out of lockstep with the peer text-source provider
+    /// [`crate::lisp_provider::LispProvider::load`].
     pub fn load(path: &Path) -> Result<Value, ShikumiError> {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))?;
+        let src = crate::provider::read_source_or_parse_err(path)?;
         load_from_str(&src)
     }
 }

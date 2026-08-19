@@ -168,6 +168,43 @@ pub(crate) fn provider_metadata_for(format: Format, path: &Path) -> Metadata {
     Metadata::named(format.metadata_name(path))
 }
 
+/// Read a text config source file into a [`String`], projecting an I/O
+/// error onto the [`ShikumiError::Parse`] shape every text-source
+/// shikumi-built provider produces on a `read_to_string` failure.
+///
+/// One source of truth for the file-read step shared by every text-source
+/// shikumi-built provider. [`crate::lisp_provider::LispProvider::load`]
+/// (feature = "lisp") and [`crate::blue_provider::BlueProvider::load`]
+/// (feature = "blue") each previously open-coded the identical two-step
+/// `fs::read_to_string(path).map_err(|e| ShikumiError::Parse(format!(
+/// "reading {}: {e}", path.display())))?` at the head of their `load`
+/// body — two places a future refinement of the read-side diagnostic
+/// (path canonicalization, [`io::ErrorKind`](std::io::ErrorKind) triage
+/// naming `NotFound`/`PermissionDenied` explicitly, structured provenance
+/// on the path) would have to be applied in lockstep, which is exactly
+/// the drift-class this crate spends load-bearing lifts to close.
+///
+/// A future text-source shikumi-built provider — a Ruby-syntax `.rb`
+/// front-end, a HOCON reader, a JSON5 or KDL provider — implements its
+/// own `load()` by routing through this helper, inheriting the
+/// path-bearing I/O error contract by construction. Idiom-peer of
+/// [`provider_data_from_shikumi_load`] / [`provider_metadata_for`] /
+/// [`json_value_to_figment`]: those close the `data()` / `metadata()` /
+/// value-mapping legs of the shikumi-built provider surface; this closes
+/// the source-reading leg.
+///
+/// # Errors
+///
+/// Returns [`ShikumiError::Parse`] with the operator-facing message
+/// `"reading {path}: {io_error}"` if [`std::fs::read_to_string`] fails —
+/// the exact wording every text-source shikumi-built provider previously
+/// produced from the open-coded step, kept verbatim so the operator-
+/// visible diagnostic does not change across this lift.
+pub(crate) fn read_source_or_parse_err(path: &Path) -> Result<String, ShikumiError> {
+    std::fs::read_to_string(path)
+        .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -1824,5 +1861,177 @@ mod tests {
             inner.get("null_leaf"),
             Some(Value::Empty(_, figment::value::Empty::None)),
         ));
+    }
+
+    // ---- read_source_or_parse_err (text-source file read → String) ----
+    //
+    // The `read_to_string` half of the text-source shikumi-built provider
+    // surface. Before this lift `LispProvider::load` and
+    // `BlueProvider::load` each open-coded the identical
+    // `fs::read_to_string(path).map_err(|e| ShikumiError::Parse(format!(
+    // "reading {}: {e}", path.display())))?` step at the head of their
+    // body — two places a future refinement of the read-side diagnostic
+    // would have to be applied in lockstep. The helper closes that drift
+    // class; these tests pin the closure at the fusion site so a caller
+    // sensing shape changes still trips them.
+
+    #[test]
+    fn read_source_or_parse_err_round_trips_valid_ascii() {
+        // Happy path: contents come back byte-for-byte, no error path
+        // reached. Uses the same tempfile substrate the peer provider
+        // tests already use so the fixture surface is uniform.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("hello.txt");
+        fs::write(&path, "hello world\n").unwrap();
+        let src = read_source_or_parse_err(&path).expect("valid ascii must round-trip");
+        assert_eq!(src, "hello world\n");
+    }
+
+    #[test]
+    fn read_source_or_parse_err_round_trips_utf8_multibyte_content() {
+        // A config source can legitimately contain multi-byte UTF-8
+        // (Japanese identifiers in shikumi's own dogfood configs, e.g.
+        // `仕組み`; kebab-quoted strings; emoji in comments). The helper
+        // must preserve those bytes verbatim so downstream parsers see
+        // the same source the file holds — anything less would silently
+        // corrupt the input under a wrapper whose job is I/O only.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("multibyte.txt");
+        let content = "shikumi: 仕組み — 🎯 «configuration» é û ñ\n";
+        fs::write(&path, content).unwrap();
+        let src = read_source_or_parse_err(&path).expect("valid utf-8 must round-trip");
+        assert_eq!(src, content);
+    }
+
+    #[test]
+    fn read_source_or_parse_err_returns_empty_string_for_empty_file() {
+        // An empty file is a valid text source (a downstream parser will
+        // reject it with its own front-end-named message — see
+        // `blue_provider::tests::an_empty_source_is_a_typed_error_not_a_panic`);
+        // the read-side helper must not conflate empty-file-on-disk with
+        // an I/O error and must return an empty `String`, not `Err`.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("empty.txt");
+        fs::write(&path, b"").unwrap();
+        let src = read_source_or_parse_err(&path).expect("empty file must not error");
+        assert!(
+            src.is_empty(),
+            "empty file must round-trip to empty String; got {src:?}"
+        );
+    }
+
+    #[test]
+    fn read_source_or_parse_err_errors_as_parse_variant_on_missing_file() {
+        // Missing file must surface as `ShikumiError::Parse`, not as any
+        // other variant — that's the shape the two callers' `load()`
+        // bodies previously produced and downstream `data()` impls
+        // project through `provider_data_from_shikumi_load`. A future
+        // helper edit that widened this to `ShikumiError::Io` would flip
+        // the projected `FigmentError` prose across every text-source
+        // provider at once; the assertion pins the variant.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("does-not-exist.txt");
+        let err = read_source_or_parse_err(&path).expect_err("missing file must not read");
+        assert!(
+            matches!(err, ShikumiError::Parse(_)),
+            "missing-file error must be Parse variant; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn read_source_or_parse_err_names_the_path_in_the_missing_file_error() {
+        // The operator-facing diagnostic must contain BOTH the
+        // `"reading "` read-side tag AND the path's `Display` form —
+        // the two load-bearing halves of the pre-lift wording. Together
+        // they let an operator running several shikumi providers tell
+        // (a) which side the failure came from (`reading` vs a parse-
+        // side `blue:` / `lisp:` prefix) and (b) which file was
+        // involved, without opening the source. Testing both halves
+        // side-by-side pins that neither can silently vanish under a
+        // future edit. The `contains` (rather than `starts_with`) check
+        // on the read-side tag is deliberate: the outer
+        // `ShikumiError::Parse` `Display` impl prepends its own
+        // `"config parse error: "` framing (see `error.rs`), and that
+        // framing is the shape every `ShikumiError::Parse` consumer
+        // has always seen — the invariant is that `"reading {path}: "`
+        // appears verbatim inside the projected message, not that it
+        // begins the whole string.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("nope").join("also-nope.txt");
+        let err = read_source_or_parse_err(&path).expect_err("missing file must not read");
+        let msg = err.to_string();
+        let read_side_tag = format!("reading {}: ", path.display());
+        assert!(
+            msg.contains(&read_side_tag),
+            "error must contain the read-side `{read_side_tag}` tag verbatim; got `{msg}`",
+        );
+    }
+
+    #[test]
+    fn read_source_or_parse_err_missing_file_message_matches_pre_lift_composition_verbatim() {
+        // The strongest drift-closure: reproduce the pre-lift open-coded
+        // composition here, compare its error string to the helper's on
+        // the same missing path, and require byte equality. If the two
+        // ever disagree the drift is between the fusion site and its
+        // extraction, which is exactly what this lift exists to prevent.
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("still-missing.txt");
+        let helper_err =
+            read_source_or_parse_err(&path).expect_err("missing file must not read (helper leg)");
+        let open_coded_err: ShikumiError = std::fs::read_to_string(&path)
+            .map(|_| ())
+            .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))
+            .expect_err("missing file must not read (open-coded leg)");
+        assert_eq!(
+            helper_err.to_string(),
+            open_coded_err.to_string(),
+            "helper must produce the same operator-facing wording as the pre-lift composition",
+        );
+    }
+
+    // ---- Cross-caller drift-closure ----
+    //
+    // These pins are the whole point of lifting a duplicated shape into
+    // shared substrate: prove BOTH text-source providers now produce
+    // *identical* I/O-error wording on the same missing path. A future
+    // divergence between the two provider `load` bodies — a hand edit
+    // that reintroduces the open-coded step at one site — would flip
+    // one caller's message and the assertion would fire. Gated on the
+    // `blue` feature so both `BlueProvider` and its implied `lisp`-
+    // feature peer `LispProvider` are in scope at once.
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn blue_and_lisp_providers_produce_identical_missing_file_wording() {
+        use crate::blue_provider::BlueProvider;
+        use crate::lisp_provider::LispProvider;
+
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("missing.cfg");
+
+        let blue_err =
+            BlueProvider::load(&path).expect_err("BlueProvider::load must fail on missing path");
+        let lisp_err =
+            LispProvider::load(&path).expect_err("LispProvider::load must fail on missing path");
+
+        assert_eq!(
+            blue_err.to_string(),
+            lisp_err.to_string(),
+            "BlueProvider and LispProvider must share the shared read-side wording",
+        );
+
+        let expected = read_source_or_parse_err(&path)
+            .expect_err("helper must fail on the same missing path")
+            .to_string();
+        assert_eq!(
+            blue_err.to_string(),
+            expected,
+            "the shared wording must be the helper's wording verbatim (Blue leg)",
+        );
+        assert_eq!(
+            lisp_err.to_string(),
+            expected,
+            "the shared wording must be the helper's wording verbatim (Lisp leg)",
+        );
     }
 }
