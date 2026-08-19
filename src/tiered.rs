@@ -658,7 +658,7 @@ impl Provenance {
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self {
             tier: ConfigTierKind::Custom,
-            source: ConfigSource::File(path.into()),
+            source: ConfigSource::for_file(path),
         }
     }
 
@@ -668,7 +668,7 @@ impl Provenance {
     pub fn env(prefix: impl Into<String>) -> Self {
         Self {
             tier: ConfigTierKind::Custom,
-            source: ConfigSource::Env(prefix.into()),
+            source: ConfigSource::for_env(prefix),
         }
     }
 

@@ -103,6 +103,45 @@ impl ConfigSource {
         }
     }
 
+    /// Construct a [`Self::File`] source from any path-like value.
+    ///
+    /// One source of truth for the `(path → ConfigSource::File(<PathBuf>))`
+    /// construction every File-tier record site previously open-coded.
+    /// Three production sites converge here — the merge-and-record
+    /// substrate [`crate::provider::merge_file_layer`], the
+    /// missing-feature warning arm of
+    /// [`crate::provider::merge_or_warn_missing_feature!`]'s disabled
+    /// branch, and the operator-file provenance factory
+    /// [`crate::Provenance::file`] — so a future refinement of how a
+    /// File-source is materialised from a path (canonicalize, symlink-
+    /// resolve, annotate mtime) lands at ONE named site instead of once
+    /// per record caller.
+    ///
+    /// Accepts `impl Into<PathBuf>` — the same input surface
+    /// [`Provenance::file`](crate::Provenance::file) already exposes —
+    /// so callers whose path is a [`&Path`](std::path::Path),
+    /// [`&PathBuf`], or an owned [`PathBuf`] all route through this
+    /// helper without a caller-side `to_path_buf()` call. The peer
+    /// [`Self::for_env`] closes the same drift-class on the Env side.
+    #[must_use]
+    pub fn for_file(path: impl Into<PathBuf>) -> Self {
+        Self::File(path.into())
+    }
+
+    /// Construct a [`Self::Env`] source from any string-like prefix.
+    ///
+    /// The Env-tier peer of [`Self::for_file`]. Two production sites
+    /// converge here — the merge-and-record substrate
+    /// [`crate::provider::merge_env_prefix_layer`] and the operator-env
+    /// provenance factory [`crate::Provenance::env`] — so a future
+    /// refinement of how an Env-source is materialised from a prefix
+    /// (case-canonicalize, split-suffix normalize) lands at ONE named
+    /// site.
+    #[must_use]
+    pub fn for_env(prefix: impl Into<String>) -> Self {
+        Self::Env(prefix.into())
+    }
+
     /// The [`crate::discovery::Format`] declared by this source's file
     /// extension, if this is a [`Self::File`] with a recognized extension.
     ///
@@ -28659,6 +28698,63 @@ mod tests {
     #[test]
     fn defaults_display() {
         assert_eq!(ConfigSource::Defaults.to_string(), "defaults");
+    }
+
+    #[test]
+    fn for_file_wraps_path_into_file_variant() {
+        // The shared `(path → ConfigSource::File(<PathBuf>))` constructor
+        // must produce the same value as the open-coded variant construction
+        // every File-tier record site previously wrote — under every
+        // `Into<PathBuf>`-accepting input shape (`&Path`, `&PathBuf`,
+        // owned `PathBuf`). A future regression at this ONE shared site
+        // fires from this pin rather than at each formerly-open-coded caller.
+        let want = ConfigSource::File(PathBuf::from("/etc/app/app.yaml"));
+        assert_eq!(
+            ConfigSource::for_file(Path::new("/etc/app/app.yaml")),
+            want,
+            "for_file must accept &Path and produce the File variant",
+        );
+        let owned = PathBuf::from("/etc/app/app.yaml");
+        assert_eq!(
+            ConfigSource::for_file(&owned),
+            want,
+            "for_file must accept &PathBuf and produce the File variant",
+        );
+        assert_eq!(
+            ConfigSource::for_file(owned),
+            want,
+            "for_file must accept owned PathBuf and produce the File variant",
+        );
+    }
+
+    #[test]
+    fn for_env_wraps_prefix_into_env_variant() {
+        // The Env-tier peer of `for_file_wraps_path_into_file_variant`:
+        // the shared `(prefix → ConfigSource::Env(<String>))` constructor
+        // must accept every `Into<String>`-shaped input the two production
+        // callers (`merge_env_prefix_layer` on `&str`, `Provenance::env`
+        // on `impl Into<String>`) can hand it, and produce the same value
+        // as the open-coded variant construction.
+        let want = ConfigSource::Env("MYAPP_".to_owned());
+        assert_eq!(
+            ConfigSource::for_env("MYAPP_"),
+            want,
+            "for_env must accept &str and produce the Env variant",
+        );
+        assert_eq!(
+            ConfigSource::for_env(String::from("MYAPP_")),
+            want,
+            "for_env must accept owned String and produce the Env variant",
+        );
+        // Empty-prefix inhabitant round-trips the same way — the
+        // env-prefix-kind projection (Bare vs Prefixed) depends on this
+        // constructor preserving the caller-supplied prefix verbatim.
+        assert_eq!(
+            ConfigSource::for_env(""),
+            ConfigSource::Env(String::new()),
+            "for_env must preserve an empty prefix so env_prefix_kind still \
+             discriminates Bare from Prefixed on the constructed value",
+        );
     }
 
     #[test]

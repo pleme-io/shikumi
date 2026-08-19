@@ -1130,7 +1130,7 @@ pub(crate) fn merge_env_prefix_layer(chain: ProviderChain, prefix: &str) -> Prov
     merge_provider_and_record(
         chain,
         Env::prefixed(prefix).split("__"),
-        ConfigSource::Env(prefix.to_owned()),
+        ConfigSource::for_env(prefix),
     )
 }
 
@@ -1225,7 +1225,7 @@ pub(crate) fn merge_file_layer<P>(chain: ProviderChain, path: &Path, provider: P
 where
     P: figment::Provider + 'static,
 {
-    merge_provider_and_record(chain, provider, ConfigSource::File(path.to_path_buf()))
+    merge_provider_and_record(chain, provider, ConfigSource::for_file(path))
 }
 
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
@@ -1567,7 +1567,7 @@ macro_rules! merge_or_warn_missing_feature {
             // is a single-file edit on `merge_file_layer` and this line.
             $chain
                 .sources
-                .push($crate::source::ConfigSource::File($path.to_path_buf()));
+                .push($crate::source::ConfigSource::for_file($path));
         }
     }};
 }
