@@ -912,6 +912,89 @@ pub(crate) fn figment_default_empty_none() -> Value {
     Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
 }
 
+/// Merge a serde-serializable Defaults-tier layer into `chain`: the
+/// two-step "extend `chain.figment` with `Serialized::defaults(defaults)`
+/// and append [`ConfigSource::Defaults`] to `chain.sources`" that every
+/// Defaults-class [`ProviderChain`] builder previously open-coded at its
+/// own site.
+///
+/// One source of truth for the "figment `Serialized::defaults` merge +
+/// `ConfigSource::Defaults` provenance push" two-step both
+/// [`ProviderChain::with_defaults`] (the developer-defaults builder) and
+/// [`ProviderChain::with_discovered`] (the discovered-tier builder,
+/// recorded as Defaults-class per that doc) previously open-coded. Two
+/// callers wrote the same three-line body — `self.figment =
+/// self.figment.merge(Serialized::defaults(<layer>))`, `self.sources.push(
+/// ConfigSource::Defaults)`, `self` — with the only difference being
+/// whether the caller passed a `&T: Serialize` reference or a
+/// `Dict`-typed owned map (which itself is `Serialize`, so the merge
+/// half of the body is byte-for-byte identical). Two places any future
+/// refinement of the Defaults-tier merge protocol (an idempotence guard
+/// preventing a double-Defaults merge, a `figment::Metadata::source`
+/// annotation on the Serialized provider, a shared per-tier telemetry
+/// counter, a canonicalizing wrap around the caller-supplied value) would
+/// have to be applied in lockstep — exactly the drift-class the peer
+/// substrate helpers on the same file
+/// ([`provider_metadata_for`], [`provider_data_from_shikumi_load`],
+/// [`text_source_provider_data`], [`figment_default_dict`],
+/// [`json_value_to_figment`]) close on the provider-surface side.
+///
+/// A future Defaults-class [`ProviderChain`] builder — a
+/// `with_prescribed_default(&T)` tier-aligned peer for the sealed
+/// `bare → discovered → prescribed_default → file → env → runtime`
+/// fold [`crate::tiered::resolve_progressive`] declares (per the
+/// destination roadmap in `CLAUDE.md`), a
+/// `with_bare_default(&T)` counterpart naming the `bare()` tier —
+/// authors ZERO merge-side boilerplate: it routes its body through this
+/// helper (or its own peer helper that pushes the tier-specific
+/// [`ConfigSource`] variant) and inherits both the `Serialized::defaults`
+/// merge and the provenance-push convention by construction. The
+/// `ConfigSource::Defaults` push half is what pins THIS helper to the
+/// Defaults-class today; a future dedicated `Discovered` provenance
+/// variant (per [`ProviderChain::with_discovered`]'s own doc) would
+/// stop routing that caller through this helper and instead route it
+/// through its own tier-specific peer — the drift-closure is inside
+/// the two `ProviderChain` builders that name the shared helper, not
+/// inside the helper itself.
+///
+/// # Contract
+///
+/// - `defaults` is any `T: Serialize` value the caller wants to merge as
+///   the Defaults-class layer. The helper does not inspect, canonicalize,
+///   or clone `defaults`; it hands it directly to
+///   [`Serialized::defaults`], preserving figment's own borrow-vs-own
+///   contract on the [`figment::providers::Serialized`] side.
+/// - The recorded [`ConfigSource`] is [`ConfigSource::Defaults`],
+///   verbatim — the Defaults-class provenance-tier every current caller
+///   records. A future caller whose provenance is NOT the Defaults tier
+///   (a hypothetical `Discovered` variant, a `Prescribed` variant, or a
+///   `Bare` variant) must not route through this helper — it must add its
+///   own peer helper that pushes its tier-specific variant, so the
+///   variant push stays a structural decision instead of a runtime
+///   parameter that could be miscalled.
+///
+/// The return shape and by-value ownership convention match the
+/// `with_*` builder methods on [`ProviderChain`]: `chain` is taken by
+/// value and returned by value, preserving the fluent-chain
+/// `.with_defaults(&d).with_env("APP_")` composition every caller
+/// relies on.
+///
+/// # Zero-cost by construction
+///
+/// The helper is a plain function performing exactly the same two
+/// statements the pre-lift open-coded bodies performed — one figment
+/// `merge` and one `Vec::push` — so the substrate lift adds zero
+/// per-call overhead the compiler cannot inline away.
+#[must_use]
+pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
+    mut chain: ProviderChain,
+    defaults: &T,
+) -> ProviderChain {
+    chain.figment = chain.figment.merge(Serialized::defaults(defaults));
+    chain.sources.push(ConfigSource::Defaults);
+    chain
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -1256,11 +1339,16 @@ impl ProviderChain {
     }
 
     /// Merge serde-serializable defaults as the base layer.
+    ///
+    /// The body is a single call through
+    /// [`merge_serialized_defaults_layer`] — the shared "figment
+    /// `Serialized::defaults` merge + `ConfigSource::Defaults` provenance
+    /// push" substrate the peer [`Self::with_discovered`] tier-builder also
+    /// routes through, so the two callers cannot drift on either half of
+    /// the Defaults-class merge protocol.
     #[must_use]
-    pub fn with_defaults<T: Serialize>(mut self, defaults: &T) -> Self {
-        self.figment = self.figment.merge(Serialized::defaults(defaults));
-        self.sources.push(ConfigSource::Defaults);
-        self
+    pub fn with_defaults<T: Serialize>(self, defaults: &T) -> Self {
+        merge_serialized_defaults_layer(self, defaults)
     }
 
     /// Merge an environment-**discovered** partial config as the discovered
@@ -1298,11 +1386,16 @@ impl ProviderChain {
     /// construction (compute the dict, merge it each build); a reload-stable
     /// `ConfigStore` integration must first land the `Discovered` provenance
     /// variant so the layer survives replay.
+    ///
+    /// The body is a single call through
+    /// [`merge_serialized_defaults_layer`] — the shared "figment
+    /// `Serialized::defaults` merge + `ConfigSource::Defaults` provenance
+    /// push" substrate the peer [`Self::with_defaults`] developer-defaults
+    /// builder also routes through, so the two callers cannot drift on
+    /// either half of the Defaults-class merge protocol.
     #[must_use]
-    pub fn with_discovered(mut self, dict: Dict) -> Self {
-        self.figment = self.figment.merge(Serialized::defaults(&dict));
-        self.sources.push(ConfigSource::Defaults);
-        self
+    pub fn with_discovered(self, dict: Dict) -> Self {
+        merge_serialized_defaults_layer(self, &dict)
     }
 
     /// Compose a stack of [`crate::discovered::DiscoveryLayer`]s and merge the
@@ -2731,6 +2824,177 @@ mod tests {
         assert_eq!(rebuilt_value, original_value);
         assert_eq!(rebuilt_value.name.as_deref(), Some("low"));
         assert_eq!(rebuilt_value.count, Some(2));
+    }
+
+    // ---- merge_serialized_defaults_layer (Defaults-tier merge substrate) ----
+    //
+    // The two-step "extend the figment with `Serialized::defaults(<layer>)`
+    // + push `ConfigSource::Defaults` onto the recorded chain" body every
+    // Defaults-class `ProviderChain` builder previously open-coded at its
+    // own site. Before this lift both `ProviderChain::with_defaults` (the
+    // developer-defaults builder) and `ProviderChain::with_discovered`
+    // (the discovered-tier builder, recorded as Defaults-class per that
+    // doc) wrote the same three-line body inline — two places any future
+    // refinement of the Defaults-tier merge protocol would have to be
+    // applied in lockstep. These tests pin the fusion at ONE substrate
+    // site so a future hand-edit that reintroduces an open-coded body at
+    // either caller fires from this file.
+    //
+    // The peer of the other same-file "shared decision" substrate
+    // helpers (`provider_metadata_for`, `provider_data_from_shikumi_load`,
+    // `text_source_provider_data`, `figment_default_dict`,
+    // `json_value_to_figment`): each closed one leg of the provider or
+    // provider-surface drift class at one site; this closes the leg on
+    // the chain-builder-side Defaults-tier merge.
+
+    /// The helper MUST record exactly ONE `ConfigSource::Defaults` entry
+    /// per call — the load-bearing provenance every Defaults-class
+    /// caller pushes. A future regression that pushed the wrong variant,
+    /// or dropped the push, or duplicated it, would silently change the
+    /// recorded chain shape callers reconstruct through
+    /// [`ProviderChain::with_source`] on reload.
+    #[test]
+    fn merge_serialized_defaults_layer_pushes_config_source_defaults() {
+        let defaults = TestConfig::default();
+        let chain = merge_serialized_defaults_layer(ProviderChain::new(), &defaults);
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::Defaults],
+            "helper must record exactly one ConfigSource::Defaults per call"
+        );
+    }
+
+    /// The merged layer MUST be observable through the extracted
+    /// [`TestConfig`] — a caller that hands the helper a serializable
+    /// value expects that value's fields to appear in the extract, per
+    /// figment's `Serialized::defaults` semantics. A future regression
+    /// that dropped the merge half (recorded the source push but did
+    /// not merge) would silently lose every default the caller supplied.
+    #[test]
+    fn merge_serialized_defaults_layer_merges_the_serializable_layer() {
+        let defaults = TestConfig {
+            name: Some("layered".into()),
+            count: Some(11),
+        };
+        let chain = merge_serialized_defaults_layer(ProviderChain::new(), &defaults);
+        let extracted: TestConfig = chain.extract().unwrap();
+        assert_eq!(extracted.name.as_deref(), Some("layered"));
+        assert_eq!(extracted.count, Some(11));
+    }
+
+    /// Drift-closure against the LIVE [`ProviderChain::with_defaults`]
+    /// caller: building a chain via `with_defaults(&d)` records the same
+    /// sources AND extracts the same [`TestConfig`] as building it via
+    /// `merge_serialized_defaults_layer(chain, &d)` directly. A future
+    /// hand-edit that reintroduces an open-coded `Serialized::defaults`
+    /// merge + `sources.push(Defaults)` body at
+    /// [`ProviderChain::with_defaults`] fires this test with the
+    /// observable-behavior mismatch, not a downstream extract failure.
+    #[test]
+    fn with_defaults_routes_through_merge_serialized_defaults_layer() {
+        let defaults = TestConfig {
+            name: Some("developer".into()),
+            count: Some(3),
+        };
+
+        let via_builder = ProviderChain::new().with_defaults(&defaults);
+        let via_helper = merge_serialized_defaults_layer(ProviderChain::new(), &defaults);
+
+        assert_eq!(
+            via_builder.sources(),
+            via_helper.sources(),
+            "with_defaults must record the same ConfigSource chain as the substrate helper"
+        );
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_helper.extract().unwrap();
+        assert_eq!(
+            a, b,
+            "with_defaults must extract the same TestConfig as the substrate helper"
+        );
+    }
+
+    /// Peer drift-closure against the LIVE
+    /// [`ProviderChain::with_discovered`] caller: building a chain via
+    /// `with_discovered(dict)` records the same sources AND extracts the
+    /// same [`TestConfig`] as building it via
+    /// `merge_serialized_defaults_layer(chain, &dict)` directly. Pinned
+    /// alongside the peer `with_defaults` drift-closure so the substrate
+    /// site owns BOTH callers' routing pins — a future hand-edit that
+    /// reintroduces an open-coded body at EITHER caller fires from this
+    /// file, not from that caller's own test module.
+    #[test]
+    fn with_discovered_routes_through_merge_serialized_defaults_layer() {
+        let mut dict = Dict::new();
+        dict.insert("name".to_owned(), Value::from("discovered"));
+        dict.insert("count".to_owned(), Value::from(19i64));
+
+        let via_builder = ProviderChain::new().with_discovered(dict.clone());
+        let via_helper = merge_serialized_defaults_layer(ProviderChain::new(), &dict);
+
+        assert_eq!(
+            via_builder.sources(),
+            via_helper.sources(),
+            "with_discovered must record the same ConfigSource chain as the substrate helper"
+        );
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_helper.extract().unwrap();
+        assert_eq!(
+            a, b,
+            "with_discovered must extract the same TestConfig as the substrate helper"
+        );
+    }
+
+    /// Cross-caller drift-closure: `with_defaults(&d)` and
+    /// `with_discovered(dict)` — the two Defaults-class builders on
+    /// [`ProviderChain`] — MUST record byte-identical
+    /// `[ConfigSource::Defaults]` sources when handed shape-equivalent
+    /// inputs. A future hand-edit that changed the pushed variant at
+    /// either caller (a hypothetical eager switch to a not-yet-added
+    /// `Discovered` variant at the `with_discovered` site alone) fires
+    /// this cross-caller pin. The observable contract the current
+    /// helper name declares — both callers push `Defaults` — is thus
+    /// pinned end-to-end, not just at the helper site.
+    #[test]
+    fn with_defaults_and_with_discovered_record_identical_defaults_class_sources() {
+        let defaults = TestConfig::default();
+        let dict = Dict::new();
+
+        let via_defaults = ProviderChain::new().with_defaults(&defaults);
+        let via_discovered = ProviderChain::new().with_discovered(dict);
+
+        assert_eq!(
+            via_defaults.sources(),
+            via_discovered.sources(),
+            "with_defaults and with_discovered must record the same Defaults-class provenance"
+        );
+        assert_eq!(
+            via_defaults.sources(),
+            &[ConfigSource::Defaults],
+            "both callers must record exactly one ConfigSource::Defaults entry"
+        );
+    }
+
+    /// The helper MUST preserve the caller-supplied chain's prior
+    /// [`ConfigSource`] entries — a caller mid-fluent-chain
+    /// (`.with_defaults(&d)` following `.with_env("APP_")`) expects the
+    /// helper to APPEND its Defaults entry, not to reset the chain. A
+    /// future regression that overwrote `chain.sources` (a `let sources
+    /// = vec![...]` shadowing typo, an accidental
+    /// `std::mem::take(&mut chain.sources)` before push) would fire this
+    /// pin.
+    #[test]
+    fn merge_serialized_defaults_layer_appends_to_existing_sources() {
+        let prefix = "SHIKUMI_MSDL_APPEND_";
+        let chain = ProviderChain::new().with_env(prefix);
+        let extended = merge_serialized_defaults_layer(chain, &TestConfig::default());
+        assert_eq!(
+            extended.sources(),
+            &[ConfigSource::Env(prefix.to_owned()), ConfigSource::Defaults,],
+            "helper must append its Defaults entry after the caller's prior entries \
+             — a reset or prepend would break the fluent-chain composition contract"
+        );
     }
 
     // ---- provider_data_from_value (shikumi-built-provider Value -> Map projection) ----
