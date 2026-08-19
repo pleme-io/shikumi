@@ -59,10 +59,10 @@
 use std::path::{Path, PathBuf};
 
 use figment::value::Value;
-use figment::{Metadata, Profile, Provider, error::Error as FigmentError, value::Dict, value::Map};
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
+use crate::provider::text_source_provider_impl;
 
 /// Figment provider that reads a blue (`.b`) config file.
 ///
@@ -105,15 +105,12 @@ impl BlueProvider {
     }
 }
 
-impl Provider for BlueProvider {
-    fn metadata(&self) -> Metadata {
-        crate::provider::provider_metadata_for(Format::Blue, &self.path)
-    }
-
-    fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        crate::provider::text_source_provider_data(&self.path, Format::Blue, load_from_str)
-    }
-}
+// The whole `impl Provider` body — `metadata` + `data`, four lines each
+// — is emitted by the `text_source_provider_impl!` substrate macro from
+// (Ty, Format, mapper). See `crate::provider::text_source_provider_impl`
+// for the full lift rationale; the peer `LispProvider` rides the same
+// macro, and the two cannot drift on the impl-block shape.
+text_source_provider_impl!(BlueProvider, Format::Blue, load_from_str);
 
 /// Parse a blue source string into a figment [`Value`].
 ///

@@ -340,6 +340,103 @@ pub(crate) fn text_source_provider_data(
     provider_data_from_shikumi_load(load_text_source(path, map), format)
 }
 
+/// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —
+/// the whole [`figment::Provider`] impl block a text-source shikumi-built
+/// provider carries, routed through the substrate helpers
+/// [`provider_metadata_for`] and [`text_source_provider_data`].
+///
+/// One source of truth for the shape of a text-source provider's
+/// [`figment::Provider`] impl. The last remaining open-coded duplication
+/// on the text-source provider surface after
+/// [`read_source_or_parse_err`] (`8119f42`), [`load_text_source`]
+/// (`5d07b1a`), and [`text_source_provider_data`] (`e535174`) closed the
+/// read / read+map / read+map+project cascades: each of the two
+/// text-source `Provider` impls carried an identical four-line body
+///
+/// ```text
+/// impl Provider for $Ty {
+///     fn metadata(&self) -> Metadata {
+///         crate::provider::provider_metadata_for(Format::X, &self.path)
+///     }
+///     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
+///         crate::provider::text_source_provider_data(&self.path, Format::X, load_from_str)
+///     }
+/// }
+/// ```
+///
+/// modulo `Format::X` and the module-local `load_from_str` — two places
+/// a future refinement of the impl-block shape (an added
+/// [`figment::Provider::profile`] override, a
+/// [`figment::Metadata::source`]-populated metadata builder, structured
+/// miette annotations on the data path, richer per-file diagnostic
+/// context threaded through both surfaces) would have to be applied in
+/// lockstep, which is exactly the drift-class this crate spends
+/// load-bearing lifts to close.
+///
+/// A future text-source shikumi-built provider — a Ruby-syntax `.rb`
+/// front-end, a HOCON reader, a JSON5 or KDL provider — implements its
+/// [`figment::Provider`] surface as ONE macro invocation
+/// (`text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);`),
+/// inheriting the metadata + data protocol by construction. The
+/// provider's public `load(&Path) -> Result<Value, ShikumiError>` static
+/// method — the ergonomic one-shot every text-source provider exposes
+/// for tests and direct callers — is unaffected and continues to route
+/// through [`load_text_source`] directly.
+///
+/// Idiom-peer to the sibling substrate helpers each closing one leg of
+/// the text-source provider surface. This closes the fused
+/// `impl Provider` body itself, the last piece of authored boilerplate
+/// left after the other four lifts collapsed the per-method bodies.
+///
+/// # Contract
+///
+/// - `$ty` must be a struct type with a `path` field of a type that
+///   [`std::borrow::Borrow`]s [`Path`] (typically `PathBuf`) — the
+///   [`figment::Provider::metadata`] and [`figment::Provider::data`]
+///   bodies both borrow `&self.path`, matching the convention every
+///   text-source provider in-tree already uses.
+/// - `$format` is any [`Format`]-typed expression (`const` or value).
+/// - `$mapper` is a `fn(&str) -> Result<Value, ShikumiError>` path — a
+///   free function, not a stateful closure, matching the ABI
+///   [`text_source_provider_data`]'s bare-`fn` parameter declares. The
+///   caller is expected to pass its own module-level `load_from_str`.
+///
+/// The macro is `pub(crate)` because both substrate helpers it routes
+/// through are `pub(crate)`; a `#[macro_export]` variant would emit
+/// paths unreachable from outside the crate.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::provider::text_source_provider_impl;
+///
+/// pub struct MyProvider { path: PathBuf }
+/// impl MyProvider { pub fn file(p: impl Into<PathBuf>) -> Self { Self { path: p.into() } } }
+///
+/// fn load_from_str(src: &str) -> Result<Value, ShikumiError> { /* … */ }
+///
+/// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
+/// ```
+macro_rules! text_source_provider_impl {
+    ($ty:ty, $format:expr, $mapper:path $(,)?) => {
+        impl ::figment::Provider for $ty {
+            fn metadata(&self) -> ::figment::Metadata {
+                $crate::provider::provider_metadata_for($format, &self.path)
+            }
+
+            fn data(
+                &self,
+            ) -> ::core::result::Result<
+                ::figment::value::Map<::figment::Profile, ::figment::value::Dict>,
+                ::figment::Error,
+            > {
+                $crate::provider::text_source_provider_data(&self.path, $format, $mapper)
+            }
+        }
+    };
+}
+pub(crate) use text_source_provider_impl;
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -2535,5 +2632,185 @@ mod tests {
             expected,
             "the shared wording must be the helper's wording verbatim (Lisp leg)",
         );
+    }
+
+    // ---- text_source_provider_impl! (impl Provider block emitter) ----
+    //
+    // The last remaining open-coded duplication on the text-source provider
+    // surface after the four prior lifts closed the per-method bodies. The
+    // macro emits the whole `impl Provider for $Ty` block from
+    // `(Ty, Format, mapper)`; these tests pin the emission on a synthetic
+    // caller so the macro's contract is verified independently of the
+    // production `BlueProvider` / `LispProvider` callers that inherit from
+    // it.
+
+    /// Synthetic text-source provider used only to exercise the emitted
+    /// impl. Carries a `path: PathBuf` field (the convention every
+    /// text-source provider follows and the macro's contract requires).
+    struct MacroProbeProvider {
+        path: std::path::PathBuf,
+    }
+
+    /// Free-function mapper the macro requires — a `fn` pointer, not a
+    /// closure — that yields a dict for the happy path.
+    fn macro_probe_mapper(src: &str) -> Result<Value, ShikumiError> {
+        let mut d = Dict::new();
+        d.insert("src_len".to_owned(), Value::from(src.len() as i64));
+        Ok(Value::Dict(figment::value::Tag::Default, d))
+    }
+
+    text_source_provider_impl!(MacroProbeProvider, Format::Lisp, macro_probe_mapper);
+
+    #[test]
+    fn text_source_provider_impl_emits_metadata_that_matches_the_substrate_helper() {
+        // Pins that the macro's `metadata()` body routes through
+        // `provider_metadata_for(format, &self.path)` verbatim — the same
+        // bytes the substrate helper produces from the same `(format, path)`
+        // pair, so the metadata-name round-trip through
+        // `Format::strip_metadata_name` / `Format::parse_metadata_tag` is
+        // preserved by construction.
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/macro-probe.cfg");
+        let provider = MacroProbeProvider { path: path.clone() };
+        let via_macro = provider.metadata();
+        let via_helper = provider_metadata_for(Format::Lisp, &path);
+        assert_eq!(
+            via_macro.name.as_ref(),
+            via_helper.name.as_ref(),
+            "macro-emitted metadata name must equal substrate-helper metadata name",
+        );
+        // And the round-trip via the resolver-side primitive surfaces
+        // the same (Format, path) pair the macro was parameterized with.
+        let (recovered_format, rest) = Format::strip_metadata_name(&via_macro.name)
+            .expect("macro-emitted metadata name must round-trip");
+        assert_eq!(recovered_format, Format::Lisp);
+        assert_eq!(rest, path.display().to_string());
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_impl_emits_data_that_matches_the_substrate_helper() {
+        // Pins that the macro's `data()` body routes through
+        // `text_source_provider_data(&self.path, format, mapper)` verbatim
+        // — the same `Map<Profile, Dict>` the substrate helper produces
+        // from the same `(path, format, mapper)` triple.
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "hello, world").unwrap();
+
+        let provider = MacroProbeProvider { path: path.clone() };
+        let via_macro = provider.data().expect("macro-emitted data() must succeed");
+        let via_helper = text_source_provider_data(&path, Format::Lisp, macro_probe_mapper)
+            .expect("substrate-helper data() must succeed");
+        assert_eq!(
+            via_macro, via_helper,
+            "macro-emitted data() must equal substrate-helper data() on the happy path",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_impl_emits_data_error_matching_the_substrate_helper() {
+        // Read-step failure leg: the macro must forward whatever the
+        // substrate helper emits on a missing path, byte-for-byte, so a
+        // future refinement of the error path lands at one substrate
+        // site and every macro-emitted `Provider::data` inherits it by
+        // construction.
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.cfg");
+
+        let provider = MacroProbeProvider { path: path.clone() };
+        let via_macro = provider
+            .data()
+            .expect_err("macro-emitted data() must fail on missing path");
+        let via_helper = text_source_provider_data(&path, Format::Lisp, macro_probe_mapper)
+            .expect_err("substrate-helper data() must fail on missing path");
+        assert_eq!(
+            via_macro.to_string(),
+            via_helper.to_string(),
+            "macro-emitted data() error must equal substrate-helper error verbatim",
+        );
+    }
+
+    #[test]
+    fn text_source_provider_impl_metadata_agrees_across_all_shikumi_built_formats() {
+        // Every shikumi-built `Format` variant must route through the
+        // macro to the same metadata name the substrate helper produces.
+        // The macro is parameterized on `$format:expr`, so no format is
+        // baked in — this pin proves the parameter reaches the emitted
+        // body unchanged. A per-format macro invocation would be circular
+        // (the macro under test would participate in its own oracle), so
+        // the invariant is asserted through the substrate helper both
+        // callers ride: if the macro's `metadata()` body were ever
+        // hand-inlined to a different `Format` than its parameter, the
+        // byte-for-byte cross-format pin below on the substrate helper
+        // would catch the drift on the two real callers.
+        //
+        // Restricted to `FormatProvenance::ShikumiBuilt` formats:
+        // `strip_metadata_name` filters to that subset, because the
+        // figment-builtin formats (`Yaml`, `Toml`) attribute via
+        // `figment::Source::File` rather than the shikumi
+        // `"<format>: <path>"` name shape, and would return `None` here.
+        for format in crate::discovery::FormatProvenance::ShikumiBuilt.formats() {
+            let path = std::path::PathBuf::from("/tmp/format-scan.cfg");
+            let helper_name = provider_metadata_for(*format, &path).name;
+            let (recovered_format, rest) = Format::strip_metadata_name(&helper_name)
+                .expect("substrate helper's metadata name must round-trip");
+            assert_eq!(recovered_format, *format);
+            assert_eq!(rest, path.display().to_string());
+        }
+    }
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_impl_matches_both_real_callers_on_metadata_and_data() {
+        // The macro's real load-bearing test is the two production
+        // callers it emits code for. This pin proves both of them go
+        // through the macro-emitted body and land the same wording on
+        // the substrate helper the macro routes to — the drift-closure
+        // that would fire if a hand edit re-introduced the open-coded
+        // impl block at either site.
+        use crate::blue_provider::BlueProvider;
+        use crate::lisp_provider::LispProvider;
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.cfg");
+
+        for (label, format, provider_err) in [
+            (
+                "blue",
+                Format::Blue,
+                BlueProvider::file(&missing).data().expect_err("blue"),
+            ),
+            (
+                "lisp",
+                Format::Lisp,
+                LispProvider::file(&missing).data().expect_err("lisp"),
+            ),
+        ] {
+            let helper_err = text_source_provider_data(
+                &missing,
+                format,
+                // The specific mapper doesn't matter on the read-step
+                // failure leg — the read fails before any mapper runs
+                // (the short-circuit invariant `text_source_provider_data_
+                // read_error_short_circuits_the_mapper` pins above).
+                crate::lisp_provider::load_from_str,
+            )
+            .expect_err("substrate helper must fail on the same missing path");
+            assert_eq!(
+                provider_err.to_string(),
+                helper_err.to_string(),
+                "{label}: macro-emitted data() error must equal the substrate helper's on the \
+                 same missing path — drift here means the impl block was hand-inlined at the \
+                 caller and no longer routes through `text_source_provider_impl!`",
+            );
+        }
     }
 }

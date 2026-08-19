@@ -25,12 +25,12 @@
 
 use std::path::{Path, PathBuf};
 
-use figment::value::{Dict, Map, Value};
-use figment::{Error as FigmentError, Metadata, Profile, Provider};
+use figment::value::{Dict, Value};
 use tatara_lisp::{Atom, Sexp};
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
+use crate::provider::text_source_provider_impl;
 
 /// Figment provider that reads a tatara-lisp config file.
 #[derive(Debug, Clone)]
@@ -200,15 +200,12 @@ fn kebab_to_snake(s: &str) -> String {
     s.replace('-', "_")
 }
 
-impl Provider for LispProvider {
-    fn metadata(&self) -> Metadata {
-        crate::provider::provider_metadata_for(Format::Lisp, &self.path)
-    }
-
-    fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-        crate::provider::text_source_provider_data(&self.path, Format::Lisp, load_from_str)
-    }
-}
+// The whole `impl Provider` body — `metadata` + `data`, four lines each
+// — is emitted by the `text_source_provider_impl!` substrate macro from
+// (Ty, Format, mapper). See `crate::provider::text_source_provider_impl`
+// for the full lift rationale; the peer `BlueProvider` rides the same
+// macro, and the two cannot drift on the impl-block shape.
+text_source_provider_impl!(LispProvider, Format::Lisp, load_from_str);
 
 #[cfg(test)]
 mod tests {
