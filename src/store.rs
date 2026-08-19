@@ -160,8 +160,7 @@ where
                     observatory_clone.record_success(&inner_clone, new_config);
                 }
                 Err(err) => {
-                    observatory_clone.record_failure(&err);
-                    error!("failed to reload config: {err}");
+                    observatory_clone.record_failure_and_log(&err);
                 }
             }
         })?;
@@ -663,8 +662,7 @@ where
                     }
                 }
                 Err(err) => {
-                    observatory_clone.record_failure(&err);
-                    error!("failed to reload config: {err}");
+                    observatory_clone.record_failure_and_log(&err);
                 }
             }
         })?;

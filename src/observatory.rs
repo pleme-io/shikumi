@@ -124,6 +124,46 @@ impl ReloadObservatory {
             .store(Some(Arc::new(ReloadFailure::from_error(err))));
     }
 
+    /// Record a reload failure AND emit the operator-facing
+    /// [`tracing::error`] log line `"failed to reload config: {err}"`.
+    ///
+    /// One source of truth for the failure arm of the two watcher-driven
+    /// [`crate::ConfigStore`] reload closures —
+    /// [`crate::ConfigStore::load_and_watch`] and
+    /// [`crate::ConfigStore::load_and_watch_hotswap`] — each of which
+    /// previously open-coded the same two-step at its own closure body:
+    /// a [`Self::record_failure`] on the observatory followed by a
+    /// [`tracing::error`] emit with the identical `"failed to reload
+    /// config: {err}"` message. Two places any future refinement of the
+    /// watcher-side failure diagnostic — a structured `tracing::error!`
+    /// with a typed field carrying the failing [`crate::ConfigSource`]
+    /// chain, a per-error-kind counter, an operator-facing hint on
+    /// well-known parse-error shapes — would have to be applied in
+    /// lockstep. Idiom-peer of [`crate::watcher::should_reload_on_event`]
+    /// on the classify + symlink log-preamble side of the same watcher
+    /// closure.
+    ///
+    /// The manual [`crate::ConfigStore::reload`] /
+    /// [`crate::ConfigStore::reload_hotswap`] siblings deliberately do
+    /// not go through here: they return `Err(err)` to the caller, who
+    /// owns the logging decision (a caller may already log its own
+    /// context, may re-classify the error, or may swallow it — the
+    /// primitive [`Self::record_failure`] performs the atomic-slot
+    /// mutation without prescribing a log form).
+    ///
+    /// # Slot-mutation equivalence
+    ///
+    /// The atomic-slot side-effects are exactly those of
+    /// [`Self::record_failure`] on the same input — same
+    /// `last_failure_at` stamp, same `failure_count` bump, same
+    /// `last_reload_error` publish, in the same load-bearing step
+    /// order. Pinned by
+    /// [`tests::record_failure_and_log_matches_record_failure_slot_mutations`].
+    pub(crate) fn record_failure_and_log(&self, err: &ShikumiError) {
+        self.record_failure(err);
+        tracing::error!("failed to reload config: {err}");
+    }
+
     /// Monotonic count of successful reloads. See
     /// [`crate::ConfigStore::generation`].
     pub(crate) fn generation(&self) -> u64 {
@@ -311,6 +351,72 @@ mod tests {
             t0, t1,
             "failed record must preserve publish-at byte-for-byte"
         );
+    }
+
+    #[test]
+    fn record_failure_and_log_matches_record_failure_slot_mutations() {
+        // The log-emitting variant delegates its atomic-slot mutation to
+        // the pure `record_failure` primitive; pin that both surfaces
+        // produce identical atomic-slot state on the same input error. A
+        // future refactor that drifts the composition away from calling
+        // `record_failure` — a divergent stamp order, a divergent
+        // failure-message shape, a divergent generation touch — breaks
+        // this test at the ONE shared substrate site the two
+        // watcher-driven `ConfigStore` reload closures now reach through.
+        // Idiom-peer of
+        // `should_reload_on_event_agrees_with_classify_should_reload`
+        // in `watcher.rs`, which pins the return-value equivalence of
+        // `should_reload_on_event` against the pure composition on the
+        // classify + log-preamble side of the same watcher closure.
+        let err = ShikumiError::Parse("oops".to_owned());
+
+        let base = ReloadObservatory::new();
+        base.record_failure(&err);
+
+        let logging = ReloadObservatory::new();
+        logging.record_failure_and_log(&err);
+
+        assert_eq!(base.generation(), logging.generation());
+        assert_eq!(base.failure_count(), logging.failure_count());
+        let base_err = base.last_reload_error().expect("base populated");
+        let log_err = logging.last_reload_error().expect("log populated");
+        assert_eq!(base_err.message, log_err.message);
+        assert_eq!(base_err.sources, log_err.sources);
+        assert!(base.last_failure_at().is_some());
+        assert!(logging.last_failure_at().is_some());
+    }
+
+    #[test]
+    fn record_failure_and_log_bumps_failure_count_monotonically() {
+        // The log-emitting variant threads through the same monotonic
+        // failure-count increment `record_failure` performs — a caller
+        // that hits the watcher-closure failure arm N times has its
+        // `failure_count` advance by N, matching the manual-reload path.
+        // Pinned so a future refactor that swallows the counter bump
+        // (e.g. rate-limiting the log AND accidentally the record) breaks
+        // this test before the two watcher-driven closures inherit the
+        // regression.
+        let obs = ReloadObservatory::new();
+        for i in 1..=3 {
+            obs.record_failure_and_log(&ShikumiError::Parse(format!("bad-{i}")));
+            assert_eq!(obs.failure_count(), i);
+        }
+    }
+
+    #[test]
+    fn record_failure_and_log_does_not_touch_value_or_generation() {
+        // Same fail-safe guarantee `record_failure` upholds: the value
+        // slot and the success-generation counter are preserved
+        // byte-for-byte on the watcher-closure failure arm. A future
+        // refactor that accidentally routed the log-emitting variant
+        // through `record_success` (e.g. via a mis-typed helper name)
+        // breaks this test rather than silently installing whatever was
+        // sitting in the failing candidate.
+        let obs = ReloadObservatory::new();
+        let inner = ArcSwap::from_pointee(99u32);
+        obs.record_failure_and_log(&ShikumiError::Parse("x".to_owned()));
+        assert_eq!(**inner.load(), 99);
+        assert_eq!(obs.generation(), 0);
     }
 
     #[test]
