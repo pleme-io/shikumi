@@ -48,15 +48,18 @@ impl LispProvider {
 
     /// Read + parse + convert in one shot — useful for tests.
     ///
-    /// The file-read step routes through the shared
-    /// [`crate::provider::read_source_or_parse_err`] substrate helper, so
-    /// the `"reading {path}: {e}"` I/O error wording is defined once
-    /// beside the other shikumi-built-provider primitives and cannot
-    /// drift out of lockstep with the peer text-source provider
-    /// [`crate::blue_provider::BlueProvider::load`].
+    /// Both legs — the file-read step and the fused read+map cascade —
+    /// route through the shared [`crate::provider::load_text_source`]
+    /// substrate helper, which in turn calls
+    /// [`crate::provider::read_source_or_parse_err`] for the read step
+    /// (so the `"reading {path}: {e}"` I/O error wording is defined once)
+    /// and delegates to the mapper for the parse step. The whole `load`
+    /// body is a single call, and cannot drift out of lockstep with the
+    /// peer text-source provider
+    /// [`crate::blue_provider::BlueProvider::load`], which routes through
+    /// the same helper.
     pub fn load(path: &Path) -> Result<Value, ShikumiError> {
-        let src = crate::provider::read_source_or_parse_err(path)?;
-        load_from_str(&src)
+        crate::provider::load_text_source(path, load_from_str)
     }
 }
 

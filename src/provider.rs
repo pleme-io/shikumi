@@ -205,6 +205,68 @@ pub(crate) fn read_source_or_parse_err(path: &Path) -> Result<String, ShikumiErr
         .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))
 }
 
+/// End-to-end fusion of the read-then-map cascade every text-source
+/// shikumi-built provider's `load(path)` body performs: read the file into a
+/// [`String`] via [`read_source_or_parse_err`], then hand the source to the
+/// caller-supplied `map` closure to produce a [`Value`].
+///
+/// One source of truth for the two-step read+map shape shared by every
+/// text-source shikumi-built provider. Idiom-peer of
+/// [`read_source_or_parse_err`] (the read leg, lifted 2026-08-15 in
+/// commit `8119f42`), [`json_value_to_figment`] (the JSON-to-figment leg,
+/// lifted 2026-08-15 in commit `c793596`), and
+/// [`provider_data_from_shikumi_load`] / [`provider_metadata_for`] (the
+/// `data()`/`metadata()` legs): those close each of the other legs of
+/// the shikumi-built provider surface; this closes the fused
+/// `read + map` leg the [`crate::lisp_provider::LispProvider::load`]
+/// (feature = "lisp") and [`crate::blue_provider::BlueProvider::load`]
+/// (feature = "blue") impls each previously open-coded as
+///
+/// ```text
+/// let src = crate::provider::read_source_or_parse_err(path)?;
+/// load_from_str(&src)
+/// ```
+///
+/// at the head of their `load` body — two places a future refinement of
+/// the read+map protocol (path canonicalization emitted alongside the
+/// source, a BOM-strip pass before the map runs, a
+/// [`std::fs::metadata`]-guarded pre-check for a size limit, structured
+/// provenance threaded from the read step into the map step) would have
+/// to be applied in lockstep, which is exactly the drift-class this
+/// crate spends load-bearing lifts to close.
+///
+/// A future text-source shikumi-built provider — a Ruby-syntax `.rb`
+/// front-end, a HOCON reader, a JSON5 or KDL provider — implements its
+/// `load(path)` as a single call through this helper (`load_text_source(
+/// path, load_from_str)`), inheriting the read+map protocol by
+/// construction. Sharpening the protocol (adding source-tracking spans,
+/// threading a per-file diagnostic context, gating the size of the read
+/// source) then lands at one site instead of once per provider.
+///
+/// The `map` argument is intentionally a bare `fn` pointer rather than an
+/// `FnOnce` closure trait: the caller is always the provider's own
+/// module-level `load_from_str` free function (never a stateful closure
+/// capturing per-provider fields), so the concrete `fn(&str) -> …` type
+/// preserves the direct-call ABI at the fusion site while ruling out an
+/// accidental capture that would otherwise slip in and force a
+/// per-callsite specialization on the type-checker.
+///
+/// # Errors
+///
+/// Returns [`ShikumiError::Parse`] on the read-step failure, verbatim
+/// through [`read_source_or_parse_err`] — the `"reading {path}: {e}"`
+/// operator-facing message is not rewritten in the fusion. Returns
+/// whatever [`ShikumiError`] the caller-supplied `map` produces on a
+/// map-step failure; the fusion does not alter, prefix, or synthesize
+/// that error path.
+pub(crate) fn load_text_source(
+    path: &Path,
+    map: fn(&str) -> Result<Value, ShikumiError>,
+) -> Result<Value, ShikumiError> {
+    let src = read_source_or_parse_err(path)?;
+    map(&src)
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -1986,6 +2048,183 @@ mod tests {
             helper_err.to_string(),
             open_coded_err.to_string(),
             "helper must produce the same operator-facing wording as the pre-lift composition",
+        );
+    }
+
+    // ---- load_text_source (fused read + map cascade) ----
+
+    #[test]
+    fn load_text_source_reads_then_maps_the_source() {
+        // Happy path: the helper reads the file, hands the source string
+        // to the mapper, and returns whatever Value the mapper produced.
+        // Pins the two-step order (read first, map second) at the fusion
+        // site, with the source string reaching the mapper verbatim.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "hello world").unwrap();
+
+        fn map_identity(src: &str) -> Result<Value, ShikumiError> {
+            Ok(Value::from(src.to_owned()))
+        }
+
+        let v = load_text_source(&path, map_identity).expect("read + map must succeed");
+        let Value::String(_, s) = v else {
+            panic!("expected String, got {v:?}")
+        };
+        assert_eq!(s, "hello world", "mapper must see the source verbatim");
+    }
+
+    #[test]
+    fn load_text_source_read_error_is_helper_wording_verbatim() {
+        // Missing-path leg: the helper must NOT swallow, prefix, or
+        // rewrite the read-side ShikumiError::Parse the read-step
+        // helper emits — pins the routing at the fusion site.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nope").join("still-nope.txt");
+
+        fn map_never_called(_: &str) -> Result<Value, ShikumiError> {
+            panic!("mapper must not run when the read step fails")
+        }
+        let fused_err = load_text_source(&path, map_never_called)
+            .expect_err("missing file must not read → mapper unreachable");
+
+        let read_side_err = read_source_or_parse_err(&path)
+            .expect_err("read-step helper must fail on the same missing path");
+        assert_eq!(
+            fused_err.to_string(),
+            read_side_err.to_string(),
+            "fused helper must forward the read-step wording verbatim",
+        );
+    }
+
+    #[test]
+    fn load_text_source_map_error_is_forwarded_unchanged() {
+        // Map-step failure: the helper must not prefix, wrap, or
+        // synthesize the mapper's error — the fusion is transparent on
+        // the map leg. Pins the map-side routing at the fusion site.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "unused").unwrap();
+
+        fn map_always_errors(_: &str) -> Result<Value, ShikumiError> {
+            Err(ShikumiError::Parse("mapper-side wording".into()))
+        }
+        let fused_err = load_text_source(&path, map_always_errors)
+            .expect_err("mapper failure must surface as the fused error");
+
+        let ShikumiError::Parse(msg) = &fused_err else {
+            panic!("expected Parse, got {fused_err:?}")
+        };
+        assert_eq!(
+            msg, "mapper-side wording",
+            "mapper's wording must reach the caller unchanged",
+        );
+    }
+
+    #[test]
+    fn load_text_source_read_error_short_circuits_the_mapper() {
+        // Structural: on a read-step failure the mapper must NOT run —
+        // otherwise a future map-side helper that opens a peer file or
+        // logs on entry could execute on a doomed path. The mapper
+        // panics so any reachability fires as a test failure with a
+        // named message, not a silent no-op.
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist.txt");
+
+        fn map_panicking(_: &str) -> Result<Value, ShikumiError> {
+            panic!("mapper reached on a read-failed path — short-circuit invariant broken")
+        }
+
+        let _ = load_text_source(&missing, map_panicking)
+            .expect_err("missing file must short-circuit before the mapper");
+    }
+
+    #[test]
+    fn load_text_source_matches_pre_lift_open_coded_composition_verbatim() {
+        // The strongest drift-closure: reproduce the pre-lift open-coded
+        // composition here (the exact two-line body BlueProvider::load
+        // and LispProvider::load previously carried) and require the
+        // fused helper produce a byte-equal error string on the same
+        // missing path. If the two ever disagree, the drift is between
+        // the fusion site and its extraction — which is exactly what
+        // this lift exists to prevent.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.cfg");
+
+        fn map_unreachable(_: &str) -> Result<Value, ShikumiError> {
+            unreachable!("read step guaranteed to fail on this path")
+        }
+
+        let fused_err = load_text_source(&path, map_unreachable)
+            .expect_err("fused helper must fail on missing path");
+        let open_coded_err = {
+            match read_source_or_parse_err(&path) {
+                Ok(src) => {
+                    map_unreachable(&src).expect_err("open-coded leg must fail on missing path")
+                }
+                Err(e) => e,
+            }
+        };
+        assert_eq!(
+            fused_err.to_string(),
+            open_coded_err.to_string(),
+            "fused helper must produce the same wording as the pre-lift open-coded composition",
+        );
+    }
+
+    #[test]
+    fn load_text_source_hands_multibyte_source_to_the_mapper_intact() {
+        // Unicode-preservation invariant: the read step already
+        // preserves multi-byte content (pinned separately for
+        // read_source_or_parse_err); the fusion must not silently
+        // truncate, re-encode, or normalize on its way to the mapper.
+        // Pins that the source string reaching the mapper is
+        // byte-identical to what was written.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("multibyte.txt");
+        let payload = "仕組み ✓ hot-reload 🔧";
+        fs::write(&path, payload).unwrap();
+
+        fn map_identity(src: &str) -> Result<Value, ShikumiError> {
+            Ok(Value::from(src.to_owned()))
+        }
+
+        let v = load_text_source(&path, map_identity).expect("multi-byte read + map must succeed");
+        let Value::String(_, s) = v else {
+            panic!("expected String, got {v:?}")
+        };
+        assert_eq!(
+            s, payload,
+            "multi-byte source must reach the mapper byte-identical",
+        );
+    }
+
+    #[test]
+    fn load_text_source_hands_empty_source_to_the_mapper() {
+        // Empty-file corner: the read step returns `Ok(String::new())`
+        // for a zero-byte file (pinned separately for
+        // read_source_or_parse_err — the downstream parser owns the
+        // empty-source diagnostic). Pins that the fusion forwards the
+        // empty string to the mapper rather than short-circuiting on
+        // its own, so the parse-side "empty config" diagnostic each
+        // provider defines (blue: "empty config — expected one
+        // top-level form"; lisp: "empty config — expected one
+        // top-level (defX …) form") remains reachable through the
+        // fusion.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("empty.txt");
+        fs::write(&path, "").unwrap();
+
+        fn map_captures_len(src: &str) -> Result<Value, ShikumiError> {
+            Ok(Value::from(i64::try_from(src.len()).unwrap()))
+        }
+
+        let v = load_text_source(&path, map_captures_len)
+            .expect("empty file must reach the mapper as an empty string");
+        assert_eq!(
+            v.to_i128(),
+            Some(0),
+            "mapper must see the source's true length (0), not a short-circuited None",
         );
     }
 
