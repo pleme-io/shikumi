@@ -795,6 +795,75 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
     }
 }
 
+/// Full body of the missing-feature warning every feature-gated arm of
+/// [`ProviderChain::with_file`]'s `#[cfg(not(feature = "…"))]` branch
+/// emits — the whole `"shikumi built without the `<feature>` feature;
+/// skipping .<ext> config. Enable the feature or convert to
+/// <alternatives>."` sentence assembled from the substrate helpers, with
+/// `<feature>` taken verbatim from the caller-supplied `feature` label,
+/// `<ext>` derived from [`Format::as_str`] on `format` (dot-prefixed),
+/// and `<alternatives>` derived through [`missing_feature_alternatives`].
+///
+/// One source of truth for the missing-feature warning shape. Before this
+/// lift each of the two feature-gated arms of [`ProviderChain::with_file`]
+/// carried an open-coded 6-line block that hard-coded three pieces
+/// separately — the feature name literal (`"lisp"` / `"blue"`), the
+/// skipped-extension literal (`.lisp` / `.b`), and a call to
+/// [`missing_feature_alternatives`] — with the whole `"shikumi built
+/// without the …"` sentence re-typed at each site. Three hard-coded
+/// pieces × two arms × the future third caller a `.rb` / HOCON / JSON5
+/// / KDL front-end lands as (per the doc-lift roadmap on the peer
+/// substrate helpers) equals nine places any refinement of the
+/// operator-facing sentence (adding an `--enable-lisp` hint, a link to
+/// the migration doc, an explicit `.<ext>` extension list per format, a
+/// richer skipped-count structured field) would have to be applied in
+/// lockstep. That is exactly the drift-class this crate spends
+/// load-bearing lifts to close — the [`Lisp`](Format::Lisp) arm's
+/// pre-lift `.yaml/.toml/.nix` alternatives-list was staled by exactly
+/// the same drift-mechanism on the [`Blue`](Format::Blue) variant lift
+/// [`missing_feature_alternatives`] already closed.
+///
+/// A future feature-gated shikumi-built provider — a Ruby-syntax `.rb`
+/// front-end whose parser dependency is optional, a HOCON reader riding
+/// an optional-feature crate — declares its whole missing-feature
+/// warning as ONE macro call
+/// (`merge_or_warn_missing_feature!(chain = self, path = path,
+/// feature = "ruby", format = Format::Ruby, provider =
+/// crate::ruby_provider::RubyProvider)`), inheriting the sentence
+/// derivation by construction; the feature label, skipped-extension,
+/// and alternatives-list all derive at this single site, with zero
+/// re-typed prose at the caller.
+///
+/// The output is a [`String`] rather than an `&'static str` because both
+/// the alternatives phrase and the format-name are runtime-assembled
+/// from [`Format::ALL`] / [`Format::as_str`]; the missing-feature
+/// warning path is not a hot loop, so the one small allocation on the
+/// diagnostic edge is invisible to the caller. Idiom-peer of
+/// [`missing_feature_alternatives`] (which produces the sub-phrase
+/// this helper embeds).
+///
+/// The helper is `cfg`-gated to exactly the builds that have at least
+/// one caller — the two `merge_or_warn_missing_feature!` invocations
+/// that reach it live inside `#[cfg(not(feature = "…"))]` branches, so
+/// when BOTH `lisp` and `blue` are enabled the fn has no live consumer
+/// and the gate keeps `warn(dead_code)` honest. `#[cfg(test)]` is
+/// bundled in so the pin-tests below (which reference the helper
+/// unconditionally) still compile. Adding a third gated caller
+/// (e.g. `ruby`) requires extending both this gate and
+/// [`missing_feature_alternatives`]'s peer gate with `not(feature =
+/// "ruby")` — the same lockstep obligation the peer helper already
+/// declares.
+#[cfg(any(test, not(feature = "lisp"), not(feature = "blue")))]
+#[must_use]
+pub(crate) fn missing_feature_warning_body(feature: &str, format: Format) -> String {
+    let ext = format.as_str();
+    let alternatives = missing_feature_alternatives(format);
+    format!(
+        "shikumi built without the `{feature}` feature; skipping .{ext} config. \
+         Enable the feature or convert to {alternatives}."
+    )
+}
+
 /// The "alternative extensions" phrase for a missing-feature warning
 /// about `missing` — every OTHER format's primary extension
 /// (from [`Format::extensions`]'s first entry, canonicalized through
@@ -854,6 +923,103 @@ pub(crate) fn missing_feature_alternatives(missing: Format) -> String {
         parts.push(format!(".{}", f.as_str()));
     }
     parts.join("/")
+}
+
+/// Fold the two-branch `Some(Format::X) => { #[cfg(feature = "…")] merge; \
+/// #[cfg(not(feature = "…"))] warn }` shape every feature-gated arm of
+/// [`ProviderChain::with_file`] carries into ONE macro invocation.
+///
+/// One source of truth for the feature-gated file-merge shape.
+/// Idiom-peer of the other in-crate substrate macros
+/// ([`text_source_provider_impl!`], [`text_source_provider_struct!`],
+/// [`path_provider_impl!`]) — each closed one leg of the shikumi-built
+/// provider surface at ONE site; this macro closes the last leg the
+/// feature-gated formats carry inside [`ProviderChain::with_file`]'s
+/// `match` — the branch that decides at *cfg* time whether the
+/// provider's ctor is compiled in or an operator-facing missing-feature
+/// warning is emitted instead.
+///
+/// Before this lift the two arms in-tree ([`Format::Lisp`],
+/// [`Format::Blue`]) each carried an open-coded 14-line block of the
+/// SAME two-branch shape, with the feature name hard-coded in three
+/// places (the `#[cfg]` attribute, the `#[cfg(not)]` attribute, and the
+/// warning body's `"`…`"`) and the skipped-extension hard-coded in
+/// the warning body — six places any future refinement of either half
+/// (a `--enable-<feature>` hint, a richer structured field, a
+/// canonicalized-path pre-check on the enabled branch, a `tracing::debug`
+/// on the skipped one) would have to be applied in lockstep. That is
+/// exactly the drift-class this crate spends load-bearing lifts to close
+/// — and it is the same drift that already staled the [`Lisp`](Format::Lisp)
+/// arm's alternatives list on the [`Blue`](Format::Blue) variant lift
+/// [`missing_feature_alternatives`] closed. A future feature-gated
+/// shikumi-built provider — a Ruby-syntax `.rb` front-end whose parser
+/// dependency is optional, a HOCON reader riding an optional-feature
+/// crate — lands as ONE macro invocation on the same shape, inheriting
+/// both the merge branch and the missing-feature warning body by
+/// construction; zero authored boilerplate on either half beyond the
+/// [`Format`] variant declaration + this line inside `with_file`.
+///
+/// # Contract
+///
+/// - `$chain` binds the [`ProviderChain`]-typed `&mut Self` receiver
+///   (spelled `self` at the two in-tree callers); the enabled branch
+///   assigns `$chain.figment = $chain.figment.merge(…)` in place.
+/// - `$path` is any `&`[`Path`]-typed expression the enabled branch
+///   passes into `<$prov>::file(…)` and the disabled branch passes into
+///   the structured `path = %$path.display()` [`tracing::warn!`] field.
+/// - `$feat` is the [`str`] literal naming the feature — a `:literal`
+///   because the enabled and disabled `#[cfg(feature = $feat)]` /
+///   `#[cfg(not(feature = $feat))]` attributes both require a literal
+///   token; it also flows into the warning body as the operator-facing
+///   feature label through [`missing_feature_warning_body`].
+/// - `$format` is any [`Format`]-typed expression (`const` or value);
+///   the disabled branch passes it to [`missing_feature_warning_body`]
+///   for both the skipped-extension (derived via [`Format::as_str`]) and
+///   the alternatives list (derived via [`missing_feature_alternatives`]).
+/// - `$prov` is any type expression naming the provider constructor
+///   (typically `crate::lisp_provider::LispProvider`), whose
+///   `file(&Path) -> Self` ctor the enabled branch calls.
+///
+/// The macro is `pub(crate)` because the substrate helpers it routes
+/// through ([`missing_feature_warning_body`]) are `pub(crate)`; a
+/// `#[macro_export]` variant would emit paths unreachable from outside
+/// the crate.
+///
+/// # Example
+///
+/// ```ignore
+/// match Format::from_path(path) {
+///     Some(Format::Lisp) => merge_or_warn_missing_feature!(
+///         chain = self,
+///         path = path,
+///         feature = "lisp",
+///         format = Format::Lisp,
+///         provider = crate::lisp_provider::LispProvider,
+///     ),
+///     // …
+/// }
+/// ```
+macro_rules! merge_or_warn_missing_feature {
+    (
+        chain = $chain:expr,
+        path = $path:expr,
+        feature = $feat:literal,
+        format = $format:expr,
+        provider = $prov:ty $(,)?
+    ) => {{
+        #[cfg(feature = $feat)]
+        {
+            $chain.figment = $chain.figment.merge(<$prov>::file($path));
+        }
+        #[cfg(not(feature = $feat))]
+        {
+            ::tracing::warn!(
+                path = %$path.display(),
+                "{}",
+                $crate::provider::missing_feature_warning_body($feat, $format),
+            );
+        }
+    }};
 }
 
 /// Builder for a figment provider chain.
@@ -961,50 +1127,33 @@ impl ProviderChain {
             Some(Format::Yaml) => {
                 self.figment = self.figment.merge(FigYaml::file(path));
             }
-            Some(Format::Lisp) => {
-                #[cfg(feature = "lisp")]
-                {
-                    self.figment = self
-                        .figment
-                        .merge(crate::lisp_provider::LispProvider::file(path));
-                }
-                #[cfg(not(feature = "lisp"))]
-                {
-                    let alternatives = missing_feature_alternatives(Format::Lisp);
-                    tracing::warn!(
-                        path = %path.display(),
-                        "shikumi built without the `lisp` feature; skipping .lisp config. \
-                         Enable the feature or convert to {alternatives}."
-                    );
-                }
-            }
+            Some(Format::Lisp) => merge_or_warn_missing_feature!(
+                chain = self,
+                path = path,
+                feature = "lisp",
+                format = Format::Lisp,
+                provider = crate::lisp_provider::LispProvider,
+            ),
             Some(Format::Nix) => {
                 self.figment = self
                     .figment
                     .merge(crate::nix_provider::NixProvider::file(path));
             }
-            Some(Format::Blue) => {
-                // Gated INSIDE the arm, exactly as `Lisp` above: a `.b` file
-                // on a build without the feature is a warning and a skipped
-                // layer, not a hard error. Erroring would make an optional
-                // dependency load-bearing for anyone who merely has a `.b`
-                // sitting in a config directory.
-                #[cfg(feature = "blue")]
-                {
-                    self.figment = self
-                        .figment
-                        .merge(crate::blue_provider::BlueProvider::file(path));
-                }
-                #[cfg(not(feature = "blue"))]
-                {
-                    let alternatives = missing_feature_alternatives(Format::Blue);
-                    tracing::warn!(
-                        path = %path.display(),
-                        "shikumi built without the `blue` feature; skipping .b config. \
-                         Enable the feature or convert to {alternatives}."
-                    );
-                }
-            }
+            // Gated INSIDE the arm, exactly as `Lisp` above: a `.b` file on a
+            // build without the feature is a warning and a skipped layer, not
+            // a hard error. Erroring would make an optional dependency
+            // load-bearing for anyone who merely has a `.b` sitting in a
+            // config directory. Both halves — the enabled `.merge(...)` and
+            // the disabled operator-facing warning body — are emitted by the
+            // shared `merge_or_warn_missing_feature!` substrate macro, so
+            // the [`Lisp`] and [`Blue`] arms cannot drift on either half.
+            Some(Format::Blue) => merge_or_warn_missing_feature!(
+                chain = self,
+                path = path,
+                feature = "blue",
+                format = Format::Blue,
+                provider = crate::blue_provider::BlueProvider,
+            ),
             Some(Format::Toml) | None => {
                 self.figment = self.figment.merge(FigToml::file(path));
             }
@@ -1437,6 +1586,138 @@ mod tests {
         assert_eq!(
             missing_feature_alternatives(Format::Blue),
             ".yaml/.toml/.lisp/.nix",
+        );
+    }
+
+    // ---- missing_feature_warning_body (full missing-feature warning sentence) ----
+    //
+    // The whole `"shikumi built without the `<feature>` feature; skipping
+    // .<ext> config. Enable the feature or convert to <alternatives>."`
+    // sentence every feature-gated arm of `ProviderChain::with_file`
+    // emits from its `#[cfg(not(feature = "…"))]` branch. Before this
+    // lift each of the two in-tree arms hard-coded the whole sentence
+    // (feature literal + skipped-ext literal + explicit call to
+    // `missing_feature_alternatives`), so a third gated caller — a
+    // `.rb` / HOCON / JSON5 / KDL front-end per the doc roadmap — would
+    // have re-typed the same shape a third time. These tests pin the
+    // derivation at ONE substrate site so a future refinement of the
+    // operator-facing sentence lands once instead of once per caller.
+
+    /// The body MUST embed the caller-supplied `feature` label verbatim
+    /// inside a `` `…` `` pair — the operator-facing name of the missing
+    /// build feature. A future regression that misprints the label
+    /// (drops the backticks, prints the format's name instead of the
+    /// feature's name, quietly translates the label) fires this pin.
+    /// Pinned for the two feature names both in-tree arms use plus a
+    /// third label a future gated caller might use (`ruby`), so the
+    /// invariant is checked across the exact class of literals the
+    /// macro accepts.
+    #[test]
+    fn missing_feature_warning_body_embeds_feature_label_verbatim() {
+        for &feature in &["lisp", "blue", "ruby"] {
+            let body = missing_feature_warning_body(feature, Format::Yaml);
+            let quoted = format!("`{feature}`");
+            assert!(
+                body.contains(&quoted),
+                "body must embed feature label `{feature}` inside backticks; got `{body}`",
+            );
+        }
+    }
+
+    /// The body's skipped-extension MUST derive from [`Format::as_str`]
+    /// as `.<as_str>`, matching the pre-lift `.lisp` / `.b` literals
+    /// exactly. A future implementation that switches to the
+    /// [`Format::extensions`]`[1]` alias (`.yml`, `.lsp`, `.el`), or
+    /// fabricates a per-format nickname, or drops the leading dot,
+    /// fires this drift-closure. Pins the (helper × `Format::as_str`)
+    /// invariant at the substrate site.
+    #[test]
+    fn missing_feature_warning_body_derives_skipped_ext_from_format_as_str() {
+        for &format in Format::ALL {
+            let body = missing_feature_warning_body("lisp", format);
+            let expected = format!("skipping .{ext} config", ext = format.as_str());
+            assert!(
+                body.contains(&expected),
+                "body for {format:?} must contain `{expected}`; got `{body}`",
+            );
+        }
+    }
+
+    /// The body's alternatives phrase MUST equal
+    /// [`missing_feature_alternatives`]`(format)` verbatim — the peer
+    /// substrate helper is the single source of truth for the
+    /// alternatives list, and a future regression that hard-coded the
+    /// list a second time in this helper would silently stale on the
+    /// next [`Format`] variant. Pins the (helper × peer helper)
+    /// composition at the substrate site so both halves cannot drift.
+    #[test]
+    fn missing_feature_warning_body_embeds_missing_feature_alternatives_verbatim() {
+        for &format in Format::ALL {
+            let body = missing_feature_warning_body("lisp", format);
+            let alt = missing_feature_alternatives(format);
+            let expected_tail = format!("convert to {alt}.");
+            assert!(
+                body.contains(&expected_tail),
+                "body for {format:?} must contain `{expected_tail}`; got `{body}`",
+            );
+        }
+    }
+
+    /// A hard-coded reproduction of what each of the five `Format`
+    /// variants MUST render to today, byte-for-byte, for the two
+    /// feature labels both in-tree arms use. Complements the
+    /// per-invariant structural pins above: those enforce the
+    /// derivation-rule invariants (feature verbatim, skipped-ext via
+    /// `Format::as_str`, alternatives via `missing_feature_alternatives`);
+    /// this table pins the exact rendered strings so a future refactor
+    /// whose per-invariant behavior still passes but whose rendered
+    /// output has drifted (an added trailing space, a swapped phrase, a
+    /// dropped period) fires here. New `Format` variants require
+    /// updating this table alongside `Format::ALL`, the same lockstep-
+    /// with-`ALL` obligation `format_all_covers_every_variant` enforces
+    /// on the primitive itself and
+    /// `missing_feature_alternatives_renders_verbatim_for_every_variant`
+    /// enforces on the peer sub-phrase helper.
+    #[test]
+    fn missing_feature_warning_body_renders_verbatim_for_every_variant() {
+        // The `lisp` feature label, one row per `Format` variant.
+        assert_eq!(
+            missing_feature_warning_body("lisp", Format::Yaml),
+            "shikumi built without the `lisp` feature; skipping .yaml config. \
+             Enable the feature or convert to .toml/.lisp/.nix/.b.",
+        );
+        assert_eq!(
+            missing_feature_warning_body("lisp", Format::Toml),
+            "shikumi built without the `lisp` feature; skipping .toml config. \
+             Enable the feature or convert to .yaml/.lisp/.nix/.b.",
+        );
+        assert_eq!(
+            missing_feature_warning_body("lisp", Format::Lisp),
+            "shikumi built without the `lisp` feature; skipping .lisp config. \
+             Enable the feature or convert to .yaml/.toml/.nix/.b.",
+        );
+        assert_eq!(
+            missing_feature_warning_body("lisp", Format::Nix),
+            "shikumi built without the `lisp` feature; skipping .nix config. \
+             Enable the feature or convert to .yaml/.toml/.lisp/.b.",
+        );
+        assert_eq!(
+            missing_feature_warning_body("lisp", Format::Blue),
+            "shikumi built without the `lisp` feature; skipping .b config. \
+             Enable the feature or convert to .yaml/.toml/.lisp/.nix.",
+        );
+        // The `blue` feature label, same variants — pins the two
+        // in-tree caller-relevant `(feature, format)` pairs verbatim.
+        // `("lisp", Format::Lisp)` above and `("blue", Format::Blue)`
+        // below are the ONLY two combinations `ProviderChain::with_file`
+        // ever reaches today; the others exist so a third gated caller
+        // (a `ruby`/`hocon`/`json5`/`kdl` front-end) inherits a body
+        // shape whose derivation is pinned across every `Format`
+        // variant it could land under.
+        assert_eq!(
+            missing_feature_warning_body("blue", Format::Blue),
+            "shikumi built without the `blue` feature; skipping .b config. \
+             Enable the feature or convert to .yaml/.toml/.lisp/.nix.",
         );
     }
 
