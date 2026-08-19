@@ -106,13 +106,18 @@ text_source_provider_impl!(BlueProvider, Format::Blue, load_from_str);
 ///
 /// Errors carry a `blue:` prefix, so an operator running both `.b` and `.lisp`
 /// can tell which front-end complained even though both reach one mapping.
+///
+/// The body is a single call through
+/// [`crate::lisp_provider::sexp_source_to_value_root`], the shared
+/// Sexp-source substrate fusion the peer [`crate::lisp_provider`] front-end
+/// also routes through — the two callers cannot drift on the parse-error
+/// projection, the first-form pick, or the root mapping.
 pub fn load_from_str(src: &str) -> Result<Value, ShikumiError> {
-    let forms = blue_lang_syntax::parse_program(src)
-        .map_err(|e| ShikumiError::Parse(format!("blue: {e}")))?;
-    let first = forms.first().ok_or_else(|| {
-        ShikumiError::Parse("blue: empty config — expected one top-level form".into())
-    })?;
-    crate::lisp_provider::sexp_to_value_root(first)
+    crate::lisp_provider::sexp_source_to_value_root(
+        blue_lang_syntax::parse_program(src),
+        "blue",
+        "blue: empty config — expected one top-level form",
+    )
 }
 
 #[cfg(test)]

@@ -48,12 +48,17 @@ impl LispProvider {
 }
 
 /// Parse a tatara-lisp source string into a figment [`Value`].
+///
+/// The body is a single call through [`sexp_source_to_value_root`], the
+/// shared Sexp-source substrate fusion the peer [`crate::blue_provider`]
+/// front-end also routes through — the two callers cannot drift on the
+/// parse-error projection, the first-form pick, or the root mapping.
 pub fn load_from_str(src: &str) -> Result<Value, ShikumiError> {
-    let forms = tatara_lisp::read(src).map_err(|e| ShikumiError::Parse(format!("lisp: {e}")))?;
-    let first = forms.first().ok_or_else(|| {
-        ShikumiError::Parse("empty config — expected one top-level (defX …) form".into())
-    })?;
-    sexp_to_value_root(first)
+    sexp_source_to_value_root(
+        tatara_lisp::read(src),
+        "lisp",
+        "empty config — expected one top-level (defX …) form",
+    )
 }
 
 /// `pub(crate)` so [`crate::blue_provider`] reuses it: blue parses to the
@@ -85,6 +90,87 @@ fn strip_head(items: &[Sexp]) -> &[Sexp] {
         Some(Sexp::Atom(Atom::Symbol(_))) => &items[1..],
         _ => items,
     }
+}
+
+/// End-to-end fusion of the "parse to `Vec<Sexp>` → take first form →
+/// route through [`sexp_to_value_root`]" cascade every Sexp-source
+/// shikumi-built provider carries at the tail of its `load_from_str`.
+///
+/// One source of truth for the three-step Sexp-source pattern shared by
+/// every text-source provider whose front-end lowers to a
+/// [`tatara_lisp::Sexp`]. Before this lift both
+/// [`LispProvider::load_from_str`] and
+/// [`crate::blue_provider::load_from_str`] open-coded the same three
+/// lines — parse via their own front-end, project the parse error onto
+/// [`ShikumiError::Parse`] with a front-end-named prefix, take the first
+/// form or emit a per-front-end empty-config wording, and hand the first
+/// [`Sexp`] to the SAME [`sexp_to_value_root`]. Two places any future
+/// refinement of that cascade (a span-carrying `ParsedProgram` return
+/// threading source locations into the mapper, a fail-fast on
+/// `forms.len() > 1` so a stray second top-level form surfaces rather
+/// than being silently dropped, a structured miette annotation on the
+/// front-end wording) would have to be applied in lockstep — exactly
+/// the drift class the peer text-source substrate helpers
+/// ([`crate::provider::read_source_or_parse_err`],
+/// [`crate::provider::load_text_source`],
+/// [`crate::provider::text_source_provider_data`], and the
+/// `text_source_provider_impl!` / `path_provider_impl!` macros)
+/// exist to close on the other legs of the provider surface.
+///
+/// This helper closes it at ONE Sexp-source substrate site. A future
+/// Sexp-lowering shikumi-built provider — a Ruby-syntax `.rb` front-end
+/// whose surface lowers to the same [`Sexp`], a Clojure-flavored EDN
+/// reader, an org-mode config lifter — implements its `load_from_str`
+/// as ONE call through this helper, inheriting the three-step protocol
+/// by construction. Sharpening the protocol then lands at one site
+/// instead of once per front-end. Idiom-peer of
+/// [`crate::provider::load_text_source`], which closed the analogous
+/// read+map cascade on the file side of the same providers.
+///
+/// # Contract
+///
+/// - `parse_result` is the raw [`Result`] the caller's front-end parser
+///   returned. `E: Display` covers both concrete parse-error types
+///   in-tree today ([`tatara_lisp::LispError`] via
+///   [`tatara_lisp::read`]'s `Result<Vec<Sexp>>` alias, and
+///   `blue_lang_syntax::ParseError` via
+///   [`blue_lang_syntax::parse_program`]) as well as any future
+///   Sexp-lowering front-end whose error type carries the same trait —
+///   the fusion prints the parse error through its [`Display`] impl on
+///   the failure leg.
+/// - `parse_error_prefix` is prepended verbatim to the parse-error
+///   [`Display`], colon-space-separated (`"{prefix}: {e}"`), so the
+///   pre-lift caller wordings (`"lisp: {e}"`, `"blue: {e}"`) reach the
+///   operator unchanged. Passing `""` would emit `": {e}"`; the caller
+///   is expected to pass its own front-end name.
+/// - `empty_config_msg` is the exact [`ShikumiError::Parse`] payload the
+///   fusion emits when the parsed `Vec<Sexp>` is empty. The per-front-end
+///   wordings are load-bearing (blue's tests pin the `"blue:"` front-end
+///   name; the empty-config test comment in `src/provider.rs` names both
+///   wordings), so the fusion carries them verbatim rather than
+///   synthesizing a single shared string.
+///
+/// # Errors
+///
+/// - [`ShikumiError::Parse`] with wording `"{parse_error_prefix}: {e}"`
+///   if `parse_result` was [`Err`], where `{e}` is the parse error's
+///   [`Display`].
+/// - [`ShikumiError::Parse`] with wording `empty_config_msg` verbatim if
+///   the parsed program has no top-level forms.
+/// - Whatever [`ShikumiError`] [`sexp_to_value_root`] produces on a
+///   first-form mapping failure; the fusion does not alter, prefix, or
+///   synthesize on that leg.
+pub(crate) fn sexp_source_to_value_root<E: std::fmt::Display>(
+    parse_result: Result<Vec<Sexp>, E>,
+    parse_error_prefix: &'static str,
+    empty_config_msg: &'static str,
+) -> Result<Value, ShikumiError> {
+    let forms =
+        parse_result.map_err(|e| ShikumiError::Parse(format!("{parse_error_prefix}: {e}")))?;
+    let first = forms
+        .first()
+        .ok_or_else(|| ShikumiError::Parse(empty_config_msg.into()))?;
+    sexp_to_value_root(first)
 }
 
 pub(crate) fn sexp_to_value_root(sexp: &Sexp) -> Result<Value, ShikumiError> {
@@ -416,6 +502,190 @@ mod tests {
             Format::strip_metadata_name(&md.name).expect("LispProvider name must round-trip");
         assert_eq!(recovered_format, Format::Lisp);
         assert_eq!(rest, path.display().to_string());
+    }
+
+    // ---- sexp_source_to_value_root (parse → first → sexp_to_value_root) ----
+    //
+    // The three-step Sexp-source fusion shared by `LispProvider::load_from_str`
+    // and `BlueProvider::load_from_str`. Before this lift each caller
+    // open-coded the same body — parse via its front-end, project the parse
+    // error onto `ShikumiError::Parse` with a per-front-end prefix, take the
+    // first form or emit a per-front-end empty-config wording, and hand it
+    // to `sexp_to_value_root`. These tests pin the fusion at ONE substrate
+    // site so a caller sensing shape changes still trips them.
+
+    /// Front-end-labeled parse errors: whatever the caller-supplied parse
+    /// error's `Display` renders, the fusion prepends `"{prefix}: "` to it
+    /// verbatim.
+    #[test]
+    fn sexp_source_to_value_root_projects_parse_error_with_prefix() {
+        #[derive(Debug)]
+        struct FakeParseError(&'static str);
+        impl std::fmt::Display for FakeParseError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+
+        let parsed: Result<Vec<Sexp>, FakeParseError> = Err(FakeParseError("expected `)`"));
+        let err = super::sexp_source_to_value_root(parsed, "frontend", "unused")
+            .expect_err("parse error must propagate");
+        let ShikumiError::Parse(msg) = &err else {
+            panic!("expected Parse, got {err:?}")
+        };
+        assert_eq!(
+            msg, "frontend: expected `)`",
+            "wording is `{{prefix}}: {{parse_error_display}}` verbatim",
+        );
+    }
+
+    /// Empty programs: the caller-supplied `empty_config_msg` is the
+    /// verbatim `ShikumiError::Parse` payload.
+    #[test]
+    fn sexp_source_to_value_root_projects_empty_program_verbatim() {
+        let parsed: Result<Vec<Sexp>, std::convert::Infallible> = Ok(Vec::new());
+        let err = super::sexp_source_to_value_root(parsed, "unused", "the-empty-config-wording")
+            .expect_err("empty program must not map");
+        let ShikumiError::Parse(msg) = &err else {
+            panic!("expected Parse, got {err:?}")
+        };
+        assert_eq!(
+            msg, "the-empty-config-wording",
+            "empty_config_msg must reach the caller verbatim",
+        );
+    }
+
+    /// Happy path: a single top-level `(defX :k v)` form routes through
+    /// `sexp_to_value_root` and produces the same Dict every direct caller
+    /// of `sexp_to_value_root` would.
+    #[test]
+    fn sexp_source_to_value_root_routes_first_form_through_sexp_to_value_root() {
+        let forms = tatara_lisp::read(r#"(defapp :name "x" :count 7)"#)
+            .expect("precondition: parses to one form");
+        let via_fusion =
+            super::sexp_source_to_value_root::<std::convert::Infallible>(Ok(forms.clone()), "", "")
+                .expect("first form maps");
+        let via_direct = super::sexp_to_value_root(&forms[0]).expect("direct call maps");
+        assert_eq!(
+            via_fusion, via_direct,
+            "fusion must produce the same Value as a direct sexp_to_value_root call \
+             on the first form",
+        );
+    }
+
+    /// Multi-form programs: only the FIRST form is mapped. The pre-lift
+    /// callers relied on this behavior too — the fusion preserves it, so a
+    /// program with a stray trailing form does not surface as a hard error
+    /// through this leg.
+    #[test]
+    fn sexp_source_to_value_root_maps_only_the_first_form() {
+        let forms = tatara_lisp::read(r#"(defapp :name "first") (defapp :name "second")"#)
+            .expect("precondition: parses to two forms");
+        assert_eq!(forms.len(), 2, "precondition: two top-level forms");
+        let v = super::sexp_source_to_value_root::<std::convert::Infallible>(Ok(forms), "", "")
+            .expect("first form maps");
+        let Value::Dict(_, d) = v else {
+            panic!("expected dict, got {v:?}")
+        };
+        assert_eq!(
+            d.get("name").and_then(Value::to_actual_str),
+            Some("first"),
+            "only the first form's kwargs contribute to the root dict",
+        );
+    }
+
+    /// Drift-closure against the LIVE `LispProvider::load_from_str` caller:
+    /// its parse-error wording is byte-equal to what the fusion emits with
+    /// the pre-lift `("lisp", "empty config — expected one top-level (defX
+    /// …) form")` arguments. Reintroducing an open-coded parse-error
+    /// projection at `LispProvider::load_from_str` fires this test.
+    #[test]
+    fn lisp_load_from_str_parse_error_matches_the_fusion_verbatim() {
+        // `(unclosed` — front-end can't finish, guaranteed parse error.
+        let src = "(unclosed";
+        let live = load_from_str(src).expect_err("precondition: parse must fail");
+        let fused = super::sexp_source_to_value_root(
+            tatara_lisp::read(src),
+            "lisp",
+            "empty config — expected one top-level (defX …) form",
+        )
+        .expect_err("fusion must fail identically");
+        assert_eq!(
+            live.to_string(),
+            fused.to_string(),
+            "LispProvider::load_from_str must route through sexp_source_to_value_root \
+             with the load-bearing (\"lisp\", lisp-empty-wording) arguments",
+        );
+    }
+
+    /// Empty-program drift-closure against the LIVE
+    /// `LispProvider::load_from_str` caller: the empty wording routes
+    /// through the fusion with the same `empty_config_msg` argument the
+    /// pre-lift open-coded body used. A future refactor that changes the
+    /// empty wording at either site fires this test.
+    #[test]
+    fn lisp_load_from_str_empty_error_matches_the_fusion_verbatim() {
+        let live = load_from_str("").expect_err("precondition: empty must fail");
+        let fused = super::sexp_source_to_value_root(
+            tatara_lisp::read(""),
+            "lisp",
+            "empty config — expected one top-level (defX …) form",
+        )
+        .expect_err("fusion must fail identically");
+        assert_eq!(
+            live.to_string(),
+            fused.to_string(),
+            "LispProvider::load_from_str's empty wording must be the fusion's \
+             empty_config_msg verbatim",
+        );
+    }
+
+    /// Cross-caller drift-closure: the blue peer front-end must route
+    /// through the SAME fusion with its own `("blue", blue-empty-wording)`
+    /// arguments — pinned here (not at blue's own test module) so the
+    /// substrate site sees both callers pinned together and a future
+    /// hand-edit that reintroduces an open-coded body at EITHER caller
+    /// fires from this file.
+    #[cfg(feature = "blue")]
+    #[test]
+    fn blue_load_from_str_parse_error_matches_the_fusion_verbatim() {
+        let src = "(defconfig :name"; // unbalanced, guaranteed parse error
+        let live = crate::blue_provider::load_from_str(src)
+            .expect_err("precondition: blue parse must fail");
+        let fused = super::sexp_source_to_value_root(
+            blue_lang_syntax::parse_program(src),
+            "blue",
+            "blue: empty config — expected one top-level form",
+        )
+        .expect_err("fusion must fail identically");
+        assert_eq!(
+            live.to_string(),
+            fused.to_string(),
+            "BlueProvider::load_from_str must route through sexp_source_to_value_root \
+             with the load-bearing (\"blue\", blue-empty-wording) arguments",
+        );
+    }
+
+    /// Empty-program drift-closure against the LIVE
+    /// `blue_provider::load_from_str` caller: pinned alongside the lisp
+    /// peer so the substrate site owns BOTH callers' empty wordings.
+    #[cfg(feature = "blue")]
+    #[test]
+    fn blue_load_from_str_empty_error_matches_the_fusion_verbatim() {
+        let live = crate::blue_provider::load_from_str("")
+            .expect_err("precondition: blue empty must fail");
+        let fused = super::sexp_source_to_value_root(
+            blue_lang_syntax::parse_program(""),
+            "blue",
+            "blue: empty config — expected one top-level form",
+        )
+        .expect_err("fusion must fail identically");
+        assert_eq!(
+            live.to_string(),
+            fused.to_string(),
+            "BlueProvider::load_from_str's empty wording must be the fusion's \
+             empty_config_msg verbatim",
+        );
     }
 
     /// Helper trait for test assertions — figment's Value API is verbose.
