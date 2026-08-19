@@ -912,6 +912,69 @@ pub(crate) fn figment_default_empty_none() -> Value {
     Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
 }
 
+/// Merge one figment `provider` into `chain.figment` and append `source`
+/// to `chain.sources`: the raw "extend `chain.figment` with one figment
+/// provider + record its typed [`ConfigSource`] provenance" two-step
+/// every tier-merge substrate helper in this module —
+/// [`merge_serialized_defaults_layer`] (Defaults-tier),
+/// [`merge_env_prefix_layer`] (Env-tier), and [`merge_file_layer`]
+/// (File-tier) — previously open-coded at its own body.
+///
+/// The shared inner substrate of the three tier helpers: each of the
+/// three now routes its body through this single function, so a future
+/// refinement of the merge + record convention that applies
+/// tier-agnostically (a `figment::Metadata::source` annotation on the
+/// emitted provider that flows through every tier, a shared per-layer
+/// telemetry counter, an idempotence guard on the [`Vec::push`], a
+/// tracing-span wrap around both halves) lands at ONE substrate site
+/// instead of once per tier. The tier helpers keep their tier-specific
+/// signatures ([`Serialize`]-bounded, prefix-typed, path-typed) because
+/// the tier-specific provider-construction shape is a structural
+/// distinction each tier declares in its own name; only the shared
+/// inner two-step lifts here.
+///
+/// # Contract
+///
+/// - `provider` is any [`figment::Provider`] value the caller built for
+///   its tier; the helper hands it to [`Figment::merge`] verbatim,
+///   preserving figment's own semantics on the provider side. No
+///   `'static` bound is imposed at this substrate — figment's own
+///   [`Figment::merge`] does not require one, and each tier helper
+///   imposes whatever bound its own [`figment::providers`] constructor
+///   demands ([`merge_file_layer`] tightens to `+ 'static` because the
+///   crate-native file providers pass through `dyn`-erased hand-offs
+///   elsewhere; the Defaults- and Env-tier constructors are borrow-
+///   parameterised over their `T: Serialize` / `&str` inputs).
+/// - `source` is any [`ConfigSource`] value the caller built for its
+///   tier; the helper pushes it to `chain.sources` verbatim, preserving
+///   the typed provenance chain [`ProviderChain::with_source`] later
+///   inverts. The variant choice stays a per-caller structural
+///   decision instead of a runtime parameter that could be miscalled —
+///   the tier-specific push half is what pins each tier helper to its
+///   tier at the outer name.
+///
+/// The return shape and by-value ownership convention match the peer
+/// tier helpers and the `with_*` builder methods on [`ProviderChain`]:
+/// `chain` is taken by value and returned by value, preserving the
+/// fluent-chain composition every caller relies on.
+///
+/// # Zero-cost by construction
+///
+/// The helper is a plain function performing exactly the same two
+/// statements the pre-lift open-coded bodies performed — one figment
+/// [`Figment::merge`] and one [`Vec::push`] — so the substrate lift adds
+/// zero per-call overhead the compiler cannot inline away.
+#[must_use]
+pub(crate) fn merge_provider_and_record<P: figment::Provider>(
+    mut chain: ProviderChain,
+    provider: P,
+    source: ConfigSource,
+) -> ProviderChain {
+    chain.figment = chain.figment.merge(provider);
+    chain.sources.push(source);
+    chain
+}
+
 /// Merge a serde-serializable Defaults-tier layer into `chain`: the
 /// two-step "extend `chain.figment` with `Serialized::defaults(defaults)`
 /// and append [`ConfigSource::Defaults`] to `chain.sources`" that every
@@ -987,12 +1050,14 @@ pub(crate) fn figment_default_empty_none() -> Value {
 /// per-call overhead the compiler cannot inline away.
 #[must_use]
 pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
-    mut chain: ProviderChain,
+    chain: ProviderChain,
     defaults: &T,
 ) -> ProviderChain {
-    chain.figment = chain.figment.merge(Serialized::defaults(defaults));
-    chain.sources.push(ConfigSource::Defaults);
-    chain
+    merge_provider_and_record(
+        chain,
+        Serialized::defaults(defaults),
+        ConfigSource::Defaults,
+    )
 }
 
 /// Merge a `figment::providers::Env`-prefixed layer into `chain`: the
@@ -1061,10 +1126,12 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
 /// `merge` and one `Vec::push` — so the substrate lift adds zero
 /// per-call overhead the compiler cannot inline away.
 #[must_use]
-pub(crate) fn merge_env_prefix_layer(mut chain: ProviderChain, prefix: &str) -> ProviderChain {
-    chain.figment = chain.figment.merge(Env::prefixed(prefix).split("__"));
-    chain.sources.push(ConfigSource::Env(prefix.to_owned()));
-    chain
+pub(crate) fn merge_env_prefix_layer(chain: ProviderChain, prefix: &str) -> ProviderChain {
+    merge_provider_and_record(
+        chain,
+        Env::prefixed(prefix).split("__"),
+        ConfigSource::Env(prefix.to_owned()),
+    )
 }
 
 /// Merge a file-tier figment provider layer into `chain`: the two-step
@@ -1154,17 +1221,11 @@ pub(crate) fn merge_env_prefix_layer(mut chain: ProviderChain, prefix: &str) -> 
 /// `merge` and one `Vec::push` — so the substrate lift adds zero
 /// per-call overhead the compiler cannot inline away.
 #[must_use]
-pub(crate) fn merge_file_layer<P>(
-    mut chain: ProviderChain,
-    path: &Path,
-    provider: P,
-) -> ProviderChain
+pub(crate) fn merge_file_layer<P>(chain: ProviderChain, path: &Path, provider: P) -> ProviderChain
 where
     P: figment::Provider + 'static,
 {
-    chain.figment = chain.figment.merge(provider);
-    chain.sources.push(ConfigSource::File(path.to_path_buf()));
-    chain
+    merge_provider_and_record(chain, provider, ConfigSource::File(path.to_path_buf()))
 }
 
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
@@ -3522,6 +3583,122 @@ mod tests {
             ],
             "helper must append its File entry after the caller's prior entries \
              — a reset or prepend would break the fluent-chain composition contract"
+        );
+    }
+
+    // ---- merge_provider_and_record (the shared inner substrate of the three tier helpers) ----
+    //
+    // The last-mile substrate every `merge_*_layer` tier helper routes its
+    // body through. Pinned here — at the shared inner site — so a future
+    // refinement of the tier-agnostic two-step (an idempotence guard, a
+    // metadata annotation flowing through every tier, a shared per-layer
+    // telemetry counter) drift-fires from ONE test module instead of once
+    // per tier. Together with the per-tier drift-closures already in tree
+    // (`with_defaults_routes_through_merge_serialized_defaults_layer`,
+    // `with_env_routes_through_merge_env_prefix_layer`,
+    // `with_file_yaml_routes_through_merge_file_layer`) these tests close
+    // both sides of the substrate stack: the tier helpers route through
+    // this inner substrate; the `with_*` builders route through the tier
+    // helpers.
+
+    /// The shared substrate MUST perform the two-step (merge one figment
+    /// provider + push one typed [`ConfigSource`]) verbatim — no
+    /// caller-supplied re-ordering, no drop, no duplication. Handed a
+    /// [`Serialized::defaults`] provider and a [`ConfigSource::Defaults`]
+    /// entry, the helper must merge the layer AND record its provenance
+    /// as one indivisible step; a future regression that dropped either
+    /// half at this shared site would silently break EVERY tier helper
+    /// that routes through it.
+    #[test]
+    fn merge_provider_and_record_merges_and_records_in_one_step() {
+        let defaults = TestConfig {
+            name: Some("shared-substrate".into()),
+            count: Some(7),
+        };
+        let chain = merge_provider_and_record(
+            ProviderChain::new(),
+            Serialized::defaults(&defaults),
+            ConfigSource::Defaults,
+        );
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::Defaults],
+            "shared substrate must record exactly one caller-supplied ConfigSource per call"
+        );
+        let extracted: TestConfig = chain.extract().unwrap();
+        assert_eq!(
+            extracted.name.as_deref(),
+            Some("shared-substrate"),
+            "shared substrate must merge the caller-supplied provider so its values reach the extract"
+        );
+        assert_eq!(
+            extracted.count,
+            Some(7),
+            "shared substrate must merge the caller-supplied provider so its values reach the extract"
+        );
+    }
+
+    /// The shared substrate is provider-and-source-agnostic — handed the
+    /// Env-tier ingredients ([`Env::prefixed`]-shaped provider,
+    /// [`ConfigSource::Env`]-typed entry), it MUST perform the same
+    /// two-step it performs for Defaults-tier ingredients. A future
+    /// regression that specialised the substrate to a single tier's
+    /// provider/source shape would fire this test; the pin protects the
+    /// tier-agnostic contract the three tier helpers rely on.
+    #[test]
+    fn merge_provider_and_record_is_tier_agnostic_across_env_shape() {
+        let prefix = "SHIKUMI_MPAR_AGNOSTIC_";
+        unsafe { std::env::set_var("SHIKUMI_MPAR_AGNOSTIC_NAME", "from_env_agnostic") };
+
+        let chain = merge_provider_and_record(
+            ProviderChain::new(),
+            Env::prefixed(prefix).split("__"),
+            ConfigSource::Env(prefix.to_owned()),
+        );
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::Env(prefix.to_owned())],
+            "shared substrate must record the caller-supplied Env-tier ConfigSource verbatim"
+        );
+        let extracted: TestConfig = chain.extract().unwrap();
+
+        unsafe { std::env::remove_var("SHIKUMI_MPAR_AGNOSTIC_NAME") };
+
+        assert_eq!(
+            extracted.name.as_deref(),
+            Some("from_env_agnostic"),
+            "shared substrate must merge the caller-supplied Env-tier provider so its values \
+             reach the extract"
+        );
+    }
+
+    /// The shared substrate MUST preserve the caller-supplied chain's
+    /// prior [`ConfigSource`] entries — a caller mid-fluent-chain expects
+    /// the substrate to APPEND, not to reset. The append-discipline pin
+    /// at the shared inner site closes the drift-class the three tier
+    /// helpers each pin at their own site
+    /// ([`merge_serialized_defaults_layer_appends_to_existing_sources`],
+    /// [`merge_env_prefix_layer_appends_to_existing_sources`],
+    /// [`merge_file_layer_appends_to_existing_sources`]) — the shared
+    /// substrate is the load-bearing site the three tier append pins
+    /// jointly guard, so pinning append here means a future regression
+    /// at the ONE substrate site fires from this ONE test instead of
+    /// three.
+    #[test]
+    fn merge_provider_and_record_appends_to_existing_sources() {
+        let prefix = "SHIKUMI_MPAR_APPEND_";
+        let chain = ProviderChain::new().with_env(prefix);
+        let extended = merge_provider_and_record(
+            chain,
+            Serialized::defaults(&TestConfig::default()),
+            ConfigSource::Defaults,
+        );
+        assert_eq!(
+            extended.sources(),
+            &[ConfigSource::Env(prefix.to_owned()), ConfigSource::Defaults],
+            "shared substrate must append its entry after the caller's prior entries \
+             — a reset or prepend would break the fluent-chain composition contract \
+             at the load-bearing shared site the three tier helpers all route through"
         );
     }
 
