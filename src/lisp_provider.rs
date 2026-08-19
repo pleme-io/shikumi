@@ -28,20 +28,36 @@ use tatara_lisp::{Atom, Sexp};
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
-use crate::provider::{text_source_provider_impl, text_source_provider_struct};
+use crate::provider::text_source_provider;
 
-text_source_provider_struct! {
+// Emits BOTH the `#[derive(Debug, Clone)] pub struct LispProvider {
+// path: PathBuf }` + `pub fn file(path)` ctor half AND the whole
+// `impl Provider for LispProvider` block + the ergonomic `pub fn
+// load(&Path)` static one-shot half through ONE call to the fused
+// `text_source_provider!` substrate macro. Before this fusion this
+// module (and its peer `crate::blue_provider`) carried TWO distinct
+// macro calls — `text_source_provider_struct!` for the struct/ctor and
+// `text_source_provider_impl!` for the impl block — with `LispProvider`
+// and the `use` line duplicated across the two invocations. The peer
+// `BlueProvider` rides the same fused macro; the two cannot drift on
+// the carrier shape, the impl-block shape, or the static-load body.
+// See `crate::provider::text_source_provider` for the full lift
+// rationale.
+text_source_provider! {
     /// Figment provider that reads a tatara-lisp config file.
     ///
-    /// The whole struct declaration + `file(path)` ctor is emitted by
-    /// the shared [`text_source_provider_struct!`](crate::provider::text_source_provider_struct)
-    /// substrate macro — the pre-lift `#[derive(Debug, Clone)] pub
-    /// struct LispProvider { path: PathBuf }` + `pub fn file(path:
-    /// impl Into<PathBuf>) -> Self { … }` pair the peer
-    /// [`crate::blue_provider::BlueProvider`] also carried collapses
-    /// to ONE macro call, so a future refinement of the carrier shape
-    /// lands at one site and cannot drift the two apart.
-    LispProvider
+    /// The whole surface — struct declaration + `file(path)` ctor + the
+    /// [`figment::Provider`] impl block + the ergonomic `load(&Path)`
+    /// static one-shot — is emitted by the fused
+    /// [`text_source_provider!`](crate::provider::text_source_provider)
+    /// substrate macro. The peer
+    /// [`crate::blue_provider::BlueProvider`] rides the same fused
+    /// macro, so a future refinement of the carrier shape OR the impl
+    /// block OR the static load body lands at one site and cannot drift
+    /// the two apart.
+    LispProvider,
+    format = Format::Lisp,
+    mapper = load_from_str,
 }
 
 /// Parse a tatara-lisp source string into a figment [`Value`].
@@ -267,18 +283,16 @@ fn kebab_to_snake(s: &str) -> String {
     s.replace('-', "_")
 }
 
-// Emits BOTH the `impl Provider for LispProvider` block AND the
-// ergonomic `impl LispProvider { pub fn load(&Path) -> ... }` static
-// one-shot every text-source provider exposes for tests and direct
-// callers — both routed through the shared `crate::provider` substrate
-// helpers (`provider_metadata_for` + `text_source_provider_data` +
-// `load_text_source`), so a future refinement of either surface lands
-// once and this caller inherits it by construction. The peer
-// `BlueProvider` rides the same macro; the two cannot drift on the
-// impl-block shape or the static-load body. See
-// `crate::provider::text_source_provider_impl` for the full lift
-// rationale.
-text_source_provider_impl!(LispProvider, Format::Lisp, load_from_str);
+// The `impl Provider for LispProvider` block AND the ergonomic
+// `impl LispProvider { pub fn load(&Path) -> ... }` static one-shot are
+// now emitted by the fused `text_source_provider!` macro invocation at
+// the head of this module, together with the struct declaration and
+// its `file(path)` ctor. Prior to the fusion this file carried a
+// SECOND macro call at this site — `text_source_provider_impl!(
+// LispProvider, Format::Lisp, load_from_str);` — that duplicated the
+// type name and the `(Format, mapper)` pair the head-of-module
+// `text_source_provider_struct!` already declared. See
+// `crate::provider::text_source_provider` for the full lift rationale.
 
 #[cfg(test)]
 mod tests {

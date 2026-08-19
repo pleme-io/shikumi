@@ -60,9 +60,22 @@ use figment::value::Value;
 
 use crate::discovery::Format;
 use crate::error::ShikumiError;
-use crate::provider::{text_source_provider_impl, text_source_provider_struct};
+use crate::provider::text_source_provider;
 
-text_source_provider_struct! {
+// Emits BOTH the `#[derive(Debug, Clone)] pub struct BlueProvider {
+// path: PathBuf }` + `pub fn file(path)` ctor half AND the whole
+// `impl Provider for BlueProvider` block + the ergonomic `pub fn
+// load(&Path)` static one-shot half through ONE call to the fused
+// `text_source_provider!` substrate macro. Before this fusion this
+// module (and its peer `crate::lisp_provider`) carried TWO distinct
+// macro calls — `text_source_provider_struct!` for the struct/ctor and
+// `text_source_provider_impl!` for the impl block — with `BlueProvider`
+// and the `use` line duplicated across the two invocations. The peer
+// `LispProvider` rides the same fused macro; the two cannot drift on
+// the carrier shape, the impl-block shape, or the static-load body.
+// See `crate::provider::text_source_provider` for the full lift
+// rationale.
+text_source_provider! {
     /// Figment provider that reads a blue (`.b`) config file.
     ///
     /// The exact shape of [`crate::lisp_provider::LispProvider`], deliberately:
@@ -76,29 +89,19 @@ text_source_provider_struct! {
     /// [`crate::ProviderChain::with_file`]'s conservative arm and was parsed as
     /// TOML.
     ///
-    /// The whole struct declaration + `file(path)` ctor is emitted by
-    /// the shared [`text_source_provider_struct!`](crate::provider::text_source_provider_struct)
-    /// substrate macro — the pre-lift `#[derive(Debug, Clone)] pub
-    /// struct BlueProvider { path: PathBuf }` + `pub fn file(path:
-    /// impl Into<PathBuf>) -> Self { … }` pair the peer
-    /// [`crate::lisp_provider::LispProvider`] also carried collapses
-    /// to ONE macro call, so a future refinement of the carrier shape
-    /// lands at one site and cannot drift the two apart.
-    BlueProvider
+    /// The whole surface — struct declaration + `file(path)` ctor + the
+    /// [`figment::Provider`] impl block + the ergonomic `load(&Path)`
+    /// static one-shot — is emitted by the fused
+    /// [`text_source_provider!`](crate::provider::text_source_provider)
+    /// substrate macro. The peer
+    /// [`crate::lisp_provider::LispProvider`] rides the same fused
+    /// macro, so a future refinement of the carrier shape OR the impl
+    /// block OR the static load body lands at one site and cannot drift
+    /// the two apart.
+    BlueProvider,
+    format = Format::Blue,
+    mapper = load_from_str,
 }
-
-// Emits BOTH the `impl Provider for BlueProvider` block AND the
-// ergonomic `impl BlueProvider { pub fn load(&Path) -> ... }` static
-// one-shot every text-source provider exposes for tests and direct
-// callers — both routed through the shared `crate::provider` substrate
-// helpers (`provider_metadata_for` + `text_source_provider_data` +
-// `load_text_source`), so a future refinement of either surface lands
-// once and this caller inherits it by construction. The peer
-// `LispProvider` rides the same macro; the two cannot drift on the
-// impl-block shape or the static-load body. See
-// `crate::provider::text_source_provider_impl` for the full lift
-// rationale.
-text_source_provider_impl!(BlueProvider, Format::Blue, load_from_str);
 
 /// Parse a blue source string into a figment [`Value`].
 ///

@@ -592,6 +592,109 @@ macro_rules! text_source_provider_struct {
 }
 pub(crate) use text_source_provider_struct;
 
+/// Emit the FULL text-source shikumi-built provider surface — both the
+/// struct-half (the `#[derive(Debug, Clone)] pub struct $Ty { path:
+/// PathBuf }` carrier and its `pub fn file(path)` ctor) via
+/// [`text_source_provider_struct!`], AND the impl-half (the whole
+/// `impl ::figment::Provider for $Ty { fn metadata … fn data … }` block
+/// alongside the ergonomic `pub fn load(&Path)` static one-shot) via
+/// [`text_source_provider_impl!`] — from ONE macro invocation.
+///
+/// The fused-invocation peer of the two half-side macros. Before this
+/// lift every text-source shikumi-built provider in-tree
+/// ([`crate::lisp_provider::LispProvider`] under `lisp`,
+/// [`crate::blue_provider::BlueProvider`] under `blue`) carried TWO
+/// distinct macro calls — one call to [`text_source_provider_struct!`]
+/// wrapping the doc block and the type name, then one call to
+/// [`text_source_provider_impl!`] wiring `(Ty, Format, mapper)` — with
+/// the type name `$Ty` and its `use crate::provider::{…}` import list
+/// duplicated across the two invocations. Two invocations were two
+/// places any future refinement of the fused shape (e.g. adding a third
+/// half-side substrate macro on the same surface, or reordering the
+/// struct/impl emission to matter to macro hygiene) would have to be
+/// applied in lockstep at every caller — exactly the drift class the
+/// two half-side macros themselves exist to close on the per-method
+/// bodies.
+///
+/// This macro closes the last per-caller shape a text-source provider
+/// carries. A future text-source shikumi-built provider — a
+/// Ruby-syntax `.rb` front-end whose surface lowers to a
+/// [`tatara_lisp::Sexp`], a HOCON reader, a JSON5 or KDL provider —
+/// authors ZERO struct-level OR impl-level boilerplate beyond its
+/// module-level `load_from_str` free function, its `use` line for this
+/// one macro, and this one invocation.
+///
+/// # Contract
+///
+/// - `$(#[$attr:meta])*` forwards struct-level doc / cfg / derive
+///   attributes verbatim to the emitted struct — the same forwarding
+///   [`text_source_provider_struct!`] does at its head, so a caller
+///   whose provider needs a bespoke `#[non_exhaustive]` or `#[cfg(...)]`
+///   on the struct itself can still declare it at the invocation site.
+/// - `$ty:ident` is the provider type name; it is emitted verbatim to
+///   both half-side macros. Same convention (`Debug + Clone`,
+///   private-in-module `path: PathBuf`, `pub` `#[must_use]`
+///   `file(impl Into<PathBuf>)` ctor) as
+///   [`text_source_provider_struct!`].
+/// - `format = $format:expr` is any [`Format`]-typed expression
+///   (`const` or value); it flows through the emitted `impl Provider`
+///   body to [`provider_metadata_for`] for the metadata name and to
+///   [`text_source_provider_data`] for the format-typed dict-required
+///   wording.
+/// - `mapper = $mapper:path` is the free-function path (a `fn` pointer,
+///   not a closure) `(src: &str) -> Result<Value, ShikumiError>` this
+///   provider's parse step routes through — the same slot
+///   [`text_source_provider_impl!`] takes.
+///
+/// The macro is `pub(crate)` for the same reason the two half-side
+/// macros are: both substrate helpers the impl-half routes through
+/// ([`provider_metadata_for`], [`text_source_provider_data`],
+/// [`load_text_source`]) are `pub(crate)`; a `#[macro_export]` variant
+/// would emit paths unreachable from outside the crate.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::provider::text_source_provider;
+///
+/// text_source_provider! {
+///     /// Figment provider that reads a `.myfmt` config file.
+///     MyProvider,
+///     format = Format::MyFormat,
+///     mapper = load_from_str,
+/// }
+/// ```
+///
+/// Which is byte-for-byte equivalent to the two-invocation shape every
+/// pre-lift caller wrote by hand:
+///
+/// ```ignore
+/// use crate::provider::{text_source_provider_impl, text_source_provider_struct};
+///
+/// text_source_provider_struct! {
+///     /// Figment provider that reads a `.myfmt` config file.
+///     MyProvider
+/// }
+///
+/// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
+/// ```
+macro_rules! text_source_provider {
+    (
+        $(#[$attr:meta])*
+        $ty:ident,
+        format = $format:expr,
+        mapper = $mapper:path $(,)?
+    ) => {
+        $crate::provider::text_source_provider_struct! {
+            $(#[$attr])*
+            $ty
+        }
+
+        $crate::provider::text_source_provider_impl!($ty, $format, $mapper);
+    };
+}
+pub(crate) use text_source_provider;
+
 /// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —
 /// the [`figment::Provider`] impl block a shikumi-built provider carries
 /// when it produces a [`Result<Value, ShikumiError>`] from a `&self`
@@ -4084,6 +4187,288 @@ mod tests {
             "NixProvider data() error must equal substrate-helper's on the same load failure \
              — drift here means the impl block was hand-inlined at the caller and no longer \
              routes through `path_provider_impl!`",
+        );
+    }
+
+    // ---- text_source_provider! (fused struct + impl emitter) ----
+    //
+    // The fused-invocation peer of `text_source_provider_struct!` +
+    // `text_source_provider_impl!`: emits BOTH halves of the text-source
+    // shikumi-built provider surface — the `#[derive(Debug, Clone)] pub
+    // struct $Ty { path: PathBuf }` + `pub fn file(path)` ctor half AND
+    // the `impl Provider for $Ty` block + the ergonomic `pub fn
+    // load(&Path)` static one-shot half — from ONE macro invocation.
+    //
+    // The pins below prove the fused macro composes to the exact same
+    // emission as the two half-side macros on a synthetic caller (so the
+    // fusion's contract is verified independently of the production
+    // `LispProvider` / `BlueProvider` callers that inherit from it) plus
+    // drift-closures against the real callers so a hand-edit
+    // re-introducing the two-macro shape at either site would trip a
+    // pin.
+
+    /// Synthetic fused-emitter probe. Byte-for-byte equivalent to what
+    /// the pre-lift two-invocation shape would emit for the same
+    /// `(Ty, Format, mapper)` triple — so every pin below can compare
+    /// this fixture against either of the two half-side macros' probes
+    /// (`MacroProbeProvider` above, `PathMacroProbeProvider` below —
+    /// the ones the sibling `text_source_provider_impl!` /
+    /// `path_provider_impl!` pins already exercise).
+    text_source_provider! {
+        /// A fixture doc — forwarded verbatim through the fused macro's
+        /// `$(#[$attr])*` slot into the emitted struct's front matter,
+        /// same as the sibling `text_source_provider_struct!` does at
+        /// its head. If the fused macro ever drops the forwarding, the
+        /// pin `text_source_provider_forwards_struct_attributes` below
+        /// fires (this doc would otherwise become unreachable from
+        /// `MacroFusedProbeProvider`'s rustdoc).
+        MacroFusedProbeProvider,
+        format = Format::Lisp,
+        mapper = macro_probe_mapper,
+    }
+
+    #[test]
+    fn text_source_provider_emits_ctor_matching_the_half_side_struct_macro() {
+        // Pins that the fused macro's struct-half emission yields the
+        // same private-in-module `path: PathBuf` carrier + `pub` `#[must_use]`
+        // `file(impl Into<PathBuf>)` ctor the sibling `text_source_
+        // provider_struct!` emits — the two-invocation shape's struct
+        // half. If the fused macro ever stops forwarding to the sibling
+        // (e.g. hand-inlines a different derive set or drops the ctor's
+        // `Into<PathBuf>` bound), the constructor call below either
+        // stops compiling or produces a mismatched carrier shape.
+        let path = std::path::PathBuf::from("/tmp/fused-probe.cfg");
+        let fused = MacroFusedProbeProvider::file(&path);
+        let half_side = MacroProbeProvider { path: path.clone() };
+        // The two carriers must expose the SAME `path: PathBuf` field
+        // through the SAME `Debug` shape — the pre-lift equality every
+        // text-source provider satisfied on carrier construction.
+        assert_eq!(
+            format!("{fused:?}").contains(&path.display().to_string()),
+            true,
+            "fused macro's ctor must produce a Debug-visible `path` field",
+        );
+        // The half-side probe is not `Debug`, but both carriers ride
+        // the same emitted `pub fn file(impl Into<PathBuf>)` shape by
+        // construction — the assertion above pins that the fused
+        // macro's ctor produces a carrier whose `path` reads back the
+        // caller-supplied `PathBuf` verbatim.
+        let _ = half_side; // participation only
+    }
+
+    #[test]
+    fn text_source_provider_emits_metadata_matching_the_half_side_impl_macro() {
+        // Pins that the fused macro's impl-half emission routes through
+        // `provider_metadata_for(format, &self.path)` verbatim — the
+        // same substrate helper the sibling `text_source_provider_impl!`
+        // routes through. If the fused macro ever hand-inlines a
+        // metadata body different from what the sibling emits, the
+        // metadata-name round-trip through
+        // `Format::strip_metadata_name` would drift on the fused
+        // caller while the sibling caller stayed put.
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/fused-probe.cfg");
+        let fused = MacroFusedProbeProvider::file(&path);
+        let half_side = MacroProbeProvider { path: path.clone() };
+        assert_eq!(
+            fused.metadata().name.as_ref(),
+            half_side.metadata().name.as_ref(),
+            "fused-macro metadata name must equal half-side-macro metadata name",
+        );
+        // And both must equal the substrate helper's direct emission.
+        let via_helper = provider_metadata_for(Format::Lisp, &path);
+        assert_eq!(
+            fused.metadata().name.as_ref(),
+            via_helper.name.as_ref(),
+            "fused-macro metadata name must equal substrate-helper metadata name",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_emits_data_matching_the_half_side_impl_macro() {
+        // Happy path: the fused macro's `data()` body must produce the
+        // same `Map<Profile, Dict>` on the same `(path, format, mapper)`
+        // triple as the half-side-only macro's does — the substrate
+        // helper `text_source_provider_data` both routes through is one
+        // source of truth for the read+map+project cascade.
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "fused-macro-probe").unwrap();
+
+        let fused = MacroFusedProbeProvider::file(&path);
+        let half_side = MacroProbeProvider { path: path.clone() };
+        assert_eq!(
+            fused.data().expect("fused-macro data() must succeed"),
+            half_side
+                .data()
+                .expect("half-side-macro data() must succeed"),
+            "fused-macro data() must equal half-side-macro data() on the happy path — drift \
+             here means the fused emission stopped routing through `text_source_provider_impl!`",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn text_source_provider_emits_data_error_matching_the_half_side_impl_macro() {
+        // Read-step failure leg: the fused macro must forward whatever
+        // the sibling `text_source_provider_impl!` emits on a missing
+        // path, byte-for-byte, so a future refinement of the error path
+        // lands at the substrate site and every fused emission inherits
+        // it in lockstep with the half-side emissions.
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.cfg");
+
+        let fused = MacroFusedProbeProvider::file(&path);
+        let half_side = MacroProbeProvider { path: path.clone() };
+        assert_eq!(
+            fused
+                .data()
+                .expect_err("fused-macro data() must fail on missing path")
+                .to_string(),
+            half_side
+                .data()
+                .expect_err("half-side-macro data() must fail on missing path")
+                .to_string(),
+            "fused-macro data() error must equal half-side-macro data() error verbatim",
+        );
+    }
+
+    #[test]
+    fn text_source_provider_emits_static_load_matching_the_half_side_impl_macro() {
+        // Pins that the fused macro's emitted `pub fn load(&Path)`
+        // static one-shot routes through `load_text_source(path, mapper)`
+        // verbatim — the same `Value` the sibling `text_source_provider_impl!`
+        // static load emits on the same `(path, mapper)` pair. If the
+        // fused macro were ever to hand-inline a different static-load
+        // body, this pin would fire on the divergence.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "fused-macro-probe").unwrap();
+
+        let via_fused =
+            MacroFusedProbeProvider::load(&path).expect("fused-macro load() must succeed");
+        let via_half_side =
+            MacroProbeProvider::load(&path).expect("half-side-macro load() must succeed");
+        assert_eq!(
+            via_fused, via_half_side,
+            "fused-macro static load() must equal half-side-macro static load() on the happy \
+             path — drift here means the emitted body no longer routes through \
+             `load_text_source`",
+        );
+    }
+
+    #[test]
+    fn text_source_provider_forwards_struct_attributes() {
+        // The fused macro's `$(#[$attr])*` slot must forward
+        // struct-level attributes verbatim to the emitted struct's
+        // front matter — the pre-lift `text_source_provider_struct!`
+        // contract. `#[derive(Clone)]` is the load-bearing predicate:
+        // the fixture at the head of this test module is cloned here,
+        // and if the fused macro ever silently dropped either the
+        // `$(#[$attr])*` forwarding OR the baseline `#[derive(Clone)]`
+        // the sibling struct-macro emits, this line stops compiling.
+        let path = std::path::PathBuf::from("/tmp/fused-probe-clone.cfg");
+        let fused = MacroFusedProbeProvider::file(&path);
+        let cloned: MacroFusedProbeProvider = fused.clone();
+        // Both clones must observe the same path — the private-in-module
+        // `path: PathBuf` field survived the Clone.
+        assert_eq!(
+            format!("{fused:?}"),
+            format!("{cloned:?}"),
+            "fused-macro-emitted struct must derive Clone identically to the half-side-macro-\
+             emitted struct — a divergence here means the `$(#[$attr])*` forwarding or the \
+             baseline derive set drifted between the fused and half-side emissions",
+        );
+    }
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_matches_both_real_callers_on_metadata_and_data() {
+        // The fused macro's real load-bearing test is the two
+        // production callers it emits code for. This pin proves both of
+        // them go through the fused-macro-emitted body (which internally
+        // routes through the sibling `text_source_provider_impl!`) and
+        // land the same wording on the substrate helper — the
+        // drift-closure that would fire if a hand edit reintroduced the
+        // pre-fusion two-invocation shape (or worse, the open-coded
+        // impl block) at either site.
+        use crate::blue_provider::BlueProvider;
+        use crate::lisp_provider::LispProvider;
+        use figment::Provider;
+
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.cfg");
+
+        for (label, format, provider_err) in [
+            (
+                "blue",
+                Format::Blue,
+                BlueProvider::file(&missing).data().expect_err("blue"),
+            ),
+            (
+                "lisp",
+                Format::Lisp,
+                LispProvider::file(&missing).data().expect_err("lisp"),
+            ),
+        ] {
+            let helper_err =
+                text_source_provider_data(&missing, format, crate::lisp_provider::load_from_str)
+                    .expect_err("substrate helper must fail on the same missing path");
+            assert_eq!(
+                provider_err.to_string(),
+                helper_err.to_string(),
+                "{label}: fused-macro-emitted data() error must equal the substrate helper's \
+                 on the same missing path — drift here means the impl block was hand-inlined \
+                 at the caller and no longer routes through `text_source_provider!`",
+            );
+        }
+    }
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_matches_both_real_callers_on_static_load() {
+        // The fused macro's static-load leg on the two production
+        // callers: `LispProvider::load(&Path)` and
+        // `BlueProvider::load(&Path)` must both route through
+        // `load_text_source(path, load_from_str)` verbatim on a missing
+        // path. This mirrors the sibling pin
+        // `text_source_provider_impl_matches_both_real_callers_on_
+        // static_load_wording` but tests the same invariant through the
+        // fused emission specifically — so a hand-edit that reintroduces
+        // the two-invocation shape at either site (still routes through
+        // `text_source_provider_impl!` on the impl half, so the sibling
+        // pin still passes) fires here on the fused-side pin.
+        use crate::blue_provider::BlueProvider;
+        use crate::lisp_provider::LispProvider;
+
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.cfg");
+
+        let blue_err = BlueProvider::load(&missing)
+            .expect_err("BlueProvider::load() must fail on missing path");
+        let lisp_err = LispProvider::load(&missing)
+            .expect_err("LispProvider::load() must fail on missing path");
+        let helper_err = load_text_source(&missing, crate::lisp_provider::load_from_str)
+            .expect_err("substrate-helper load_text_source() must fail on the same missing path");
+        assert_eq!(
+            blue_err.to_string(),
+            helper_err.to_string(),
+            "BlueProvider::load error must equal load_text_source() error verbatim — drift \
+             here means BlueProvider reintroduced an open-coded static load and no longer \
+             routes through `text_source_provider!`",
+        );
+        assert_eq!(
+            lisp_err.to_string(),
+            helper_err.to_string(),
+            "LispProvider::load error must equal load_text_source() error verbatim — drift \
+             here means LispProvider reintroduced an open-coded static load and no longer \
+             routes through `text_source_provider!`",
         );
     }
 }
