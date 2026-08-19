@@ -795,6 +795,67 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
     }
 }
 
+/// The "alternative extensions" phrase for a missing-feature warning
+/// about `missing` — every OTHER format's primary extension
+/// (from [`Format::extensions`]'s first entry, canonicalized through
+/// [`Format::as_str`]), dot-prefixed and `/`-joined in
+/// [`Format::ALL`] declaration order.
+///
+/// One source of truth for the alternatives list every feature-gated
+/// arm of [`ProviderChain::with_file`]'s `#[cfg(not(feature = "…"))]`
+/// warning previously hard-coded — an `.a/.b/.c`-shaped operator hint
+/// telling the reader which other formats the current build can still
+/// load. Two open-coded copies of the list (the `Lisp` arm's
+/// `.yaml/.toml/.nix` and the `Blue` arm's `.yaml/.toml/.lisp/.nix`)
+/// were two places any future [`Format`] variant landing would silently
+/// stale each existing warning — exactly what the `Lisp` arm's list did
+/// on the `Blue` variant lift: it never learned about `.b` and kept
+/// suggesting the pre-`Blue` set, so an operator whose build lacked
+/// `lisp` was told to `convert to .yaml/.toml/.nix` even though `.b`
+/// was equally an option.
+///
+/// A future [`Format`] variant lands ONE arm in the exhaustive match
+/// in [`Format::extensions`] / [`Format::as_str`] / [`Format::ALL`] —
+/// pinned by the existing `format_all_covers_every_variant` test — and
+/// every existing warning's alternatives list automatically extends to
+/// include it, without touching either open-coded warning site. Sits
+/// beside the other shared substrate helpers on the provider surface
+/// ([`provider_data_from_value`], [`provider_data_from_shikumi_load`],
+/// [`provider_metadata_for`], [`read_source_or_parse_err`],
+/// [`load_text_source`], [`text_source_provider_data`],
+/// [`json_value_to_figment`]) for the same reason those exist: any
+/// future shikumi-built provider whose format is feature-gated —
+/// a Ruby-syntax `.rb` front-end whose parser dependency is optional,
+/// a HOCON or JSON5 reader riding an optional-feature crate — routes
+/// its own missing-feature warning through this single site instead of
+/// hard-coding the alternatives list a fourth time.
+///
+/// The output is a [`String`] rather than an `&'static str` because the
+/// per-format list can only be assembled at runtime from the
+/// [`Format::ALL`] slice; the missing-feature warning path is not a
+/// hot loop, so the one small allocation on the diagnostic edge is
+/// invisible to the caller.
+///
+/// The helper is `cfg`-gated to exactly the builds that have at least
+/// one caller — the two `ProviderChain::with_file` arms that reach it
+/// live inside `#[cfg(not(feature = "…"))]` branches, so when BOTH
+/// `lisp` and `blue` are enabled the fn has no live consumer and the
+/// gate keeps `warn(dead_code)` honest. `#[cfg(test)]` is bundled in
+/// so the pin-tests below (which reference the helper unconditionally)
+/// still compile.
+#[cfg(any(test, not(feature = "lisp"), not(feature = "blue")))]
+#[must_use]
+pub(crate) fn missing_feature_alternatives(missing: Format) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(Format::ALL.len().saturating_sub(1));
+    for &f in Format::ALL {
+        if f == missing {
+            continue;
+        }
+        parts.push(format!(".{}", f.as_str()));
+    }
+    parts.join("/")
+}
+
 /// Builder for a figment provider chain.
 ///
 /// Layers are merged in order — later layers override earlier ones.
@@ -909,10 +970,11 @@ impl ProviderChain {
                 }
                 #[cfg(not(feature = "lisp"))]
                 {
+                    let alternatives = missing_feature_alternatives(Format::Lisp);
                     tracing::warn!(
                         path = %path.display(),
                         "shikumi built without the `lisp` feature; skipping .lisp config. \
-                         Enable the feature or convert to .yaml/.toml/.nix."
+                         Enable the feature or convert to {alternatives}."
                     );
                 }
             }
@@ -935,10 +997,11 @@ impl ProviderChain {
                 }
                 #[cfg(not(feature = "blue"))]
                 {
+                    let alternatives = missing_feature_alternatives(Format::Blue);
                     tracing::warn!(
                         path = %path.display(),
                         "shikumi built without the `blue` feature; skipping .b config. \
-                         Enable the feature or convert to .yaml/.toml/.lisp/.nix."
+                         Enable the feature or convert to {alternatives}."
                     );
                 }
             }
@@ -1208,6 +1271,172 @@ mod tests {
             original.metadata().name,
             cloned.metadata().name,
             "Clone must preserve the stored path verbatim",
+        );
+    }
+
+    // ---- missing_feature_alternatives (per-format alternatives phrase) ----
+    //
+    // The `.a/.b/.c` operator hint the two feature-gated arms of
+    // `ProviderChain::with_file` emit inside their `#[cfg(not(feature =
+    // "…"))]` warning branches. Before this lift both arms hard-coded
+    // their own alternatives list — the `Lisp` arm's `.yaml/.toml/.nix`
+    // never learned about the `Blue` variant when it landed, so an
+    // operator whose build lacked `lisp` was told to convert to a set
+    // that omitted `.b`. These tests pin the derivation at ONE substrate
+    // site so a new `Format` variant automatically extends every
+    // existing warning's alternatives list.
+
+    /// The helper MUST omit the caller-supplied missing format from the
+    /// output — the whole point of the "alternatives" framing is to
+    /// suggest formats the current build can still load. A future
+    /// regression that forgot the exclusion would tell an operator to
+    /// convert `.lisp` to `.lisp`.
+    #[test]
+    fn missing_feature_alternatives_omits_the_missing_format() {
+        for &missing in Format::ALL {
+            let alt = missing_feature_alternatives(missing);
+            let self_ext = format!(".{}", missing.as_str());
+            assert!(
+                !alt.contains(&self_ext),
+                "alternatives for {missing:?} must not contain `{self_ext}`; got `{alt}`",
+            );
+        }
+    }
+
+    /// The helper MUST include every OTHER format's primary extension —
+    /// the fix the pre-lift `Lisp` arm quietly missed on the `Blue`
+    /// landing. Pinned against `Format::ALL`, so a future variant is
+    /// covered by construction rather than by memory.
+    #[test]
+    fn missing_feature_alternatives_includes_every_other_format() {
+        for &missing in Format::ALL {
+            let alt = missing_feature_alternatives(missing);
+            for &other in Format::ALL {
+                if other == missing {
+                    continue;
+                }
+                let other_ext = format!(".{}", other.as_str());
+                assert!(
+                    alt.contains(&other_ext),
+                    "alternatives for {missing:?} must contain `{other_ext}`; got `{alt}`",
+                );
+            }
+        }
+    }
+
+    /// Each entry MUST be dot-prefixed and `/`-joined, matching the
+    /// pre-lift open-coded shape the two `with_file` warnings emitted —
+    /// what the operator sees on the diagnostic edge does not drift
+    /// across the lift. A future refinement (space-separated, quoted,
+    /// listed on newlines) lands at one site now instead of two.
+    #[test]
+    fn missing_feature_alternatives_is_slash_joined_dot_prefixed() {
+        for &missing in Format::ALL {
+            let alt = missing_feature_alternatives(missing);
+            let expected_count = Format::ALL.len() - 1;
+            let actual_count = alt.split('/').count();
+            assert_eq!(
+                actual_count, expected_count,
+                "alternatives for {missing:?} must contain exactly {expected_count} `/`-joined \
+                 entries; got `{alt}`",
+            );
+            for entry in alt.split('/') {
+                assert!(
+                    entry.starts_with('.'),
+                    "each alternatives entry must be dot-prefixed; got `{entry}` in `{alt}`",
+                );
+            }
+        }
+    }
+
+    /// The alternatives list MUST honour `Format::ALL` declaration
+    /// order — the same order every other `Format::ALL`-driven surface
+    /// on this axis already renders in (`BTreeMap<Format, T>` iteration,
+    /// per-format telemetry rollups, attestation manifest rows). A
+    /// future implementation that sorts alphabetically, or drops in an
+    /// arbitrary iteration order, would fire this pin.
+    #[test]
+    fn missing_feature_alternatives_preserves_format_all_declaration_order() {
+        for &missing in Format::ALL {
+            let alt = missing_feature_alternatives(missing);
+            let expected: Vec<String> = Format::ALL
+                .iter()
+                .filter(|&&f| f != missing)
+                .map(|f| format!(".{}", f.as_str()))
+                .collect();
+            assert_eq!(
+                alt,
+                expected.join("/"),
+                "alternatives for {missing:?} must equal `Format::ALL` \\ {{missing}} \
+                 in declaration order, joined by `/`",
+            );
+        }
+    }
+
+    /// Each alternatives entry MUST use `Format::as_str` verbatim as its
+    /// suffix — the same canonical lowercase label every other
+    /// [`Format`]-axis surface projects through. A future implementation
+    /// that switches to the extensions()[1] alias (`.yml`, `.lsp`,
+    /// `.el`), or fabricates a per-format nickname, would fire this
+    /// drift-closure. Pins the (helper × `Format::as_str`) invariant at
+    /// the substrate site.
+    #[test]
+    fn missing_feature_alternatives_uses_format_as_str_verbatim() {
+        for &missing in Format::ALL {
+            let alt = missing_feature_alternatives(missing);
+            let entries: Vec<&str> = alt.split('/').collect();
+            let mut cursor = 0;
+            for &other in Format::ALL {
+                if other == missing {
+                    continue;
+                }
+                let expected_entry = format!(".{}", other.as_str());
+                assert_eq!(
+                    entries[cursor],
+                    expected_entry,
+                    "alternatives[{cursor}] for {missing:?} must be `.{as_str}` verbatim from \
+                     Format::as_str; got `{got}`",
+                    as_str = other.as_str(),
+                    got = entries[cursor],
+                );
+                cursor += 1;
+            }
+        }
+    }
+
+    /// A hard-coded reproduction of what each of the five `Format`
+    /// variants MUST render to today, byte-for-byte. Complements the
+    /// per-variant structural pins above: those enforce the
+    /// derivation-rule invariants (omit self, include others, dot-
+    /// prefixed, `/`-joined, `Format::ALL` order, `Format::as_str`
+    /// verbatim); this table pins the exact strings so a future
+    /// refactor whose per-invariant behavior still passes but whose
+    /// rendered output has drifted (an added trailing space, a swapped
+    /// separator) fires here. New `Format` variants will require
+    /// updating this table alongside `Format::ALL` — the same
+    /// lockstep-with-`ALL` obligation `format_all_covers_every_variant`
+    /// already enforces on the primitive itself.
+    #[test]
+    fn missing_feature_alternatives_renders_verbatim_for_every_variant() {
+        assert_eq!(
+            missing_feature_alternatives(Format::Yaml),
+            ".toml/.lisp/.nix/.b",
+        );
+        assert_eq!(
+            missing_feature_alternatives(Format::Toml),
+            ".yaml/.lisp/.nix/.b",
+        );
+        assert_eq!(
+            missing_feature_alternatives(Format::Lisp),
+            ".yaml/.toml/.nix/.b",
+        );
+        assert_eq!(
+            missing_feature_alternatives(Format::Nix),
+            ".yaml/.toml/.lisp/.b",
+        );
+        assert_eq!(
+            missing_feature_alternatives(Format::Blue),
+            ".yaml/.toml/.lisp/.nix",
         );
     }
 
