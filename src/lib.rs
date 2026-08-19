@@ -286,6 +286,19 @@ mod check_cfg_tests {
         // their own; keeping the gate at the block boundary is what holds this
         // count proportional to the gated SURFACE rather than to its method
         // count.
+        //
+        // UPDATED 2026-08-19, store.rs 6 -> 5, per this test's own instruction.
+        // The non-watching `load` / `load_merged` constructors now route
+        // their struct-literal body through the new `assemble_unwatched`
+        // substrate helper. That collapse removed TWO bare `pending_restart:
+        // Arc::new(ArcSwapOption::empty())` gates (one per collapsed
+        // constructor body) and added ONE (inside the shared helper's own
+        // struct literal). Net drop 6 → 5; the gated SURFACE shrank by one
+        // site because the two constructors now reach the pending-restart
+        // slot through ONE named substrate helper instead of open-coding
+        // it apiece — exactly the drift-class this crate's shared-substrate
+        // lifts (e.g. `record_failure_and_log`, `should_reload_on_event`,
+        // the `merge_*_layer` tier helpers) spend to close on other seams.
         let lib_hits = count_gate_attribute_lines(LIB_RS);
         let store_hits = count_gate_attribute_lines(STORE_RS);
         assert_eq!(
@@ -293,8 +306,8 @@ mod check_cfg_tests {
             "src/lib.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 2",
         );
         assert_eq!(
-            store_hits, 6,
-            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 6",
+            store_hits, 5,
+            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 5",
         );
     }
 

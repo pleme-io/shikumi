@@ -111,16 +111,7 @@ where
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn load(path: &Path, env_prefix: &str) -> Result<Self, ShikumiError> {
         let (config, sources) = Self::load_from_path(path, env_prefix)?;
-
-        Ok(Self {
-            inner: Arc::new(ArcSwap::from_pointee(config)),
-            path: path.to_owned(),
-            sources,
-            observatory: ReloadObservatory::new(),
-            _watcher: None,
-            #[cfg(feature = "hotswap")]
-            pending_restart: Arc::new(ArcSwapOption::empty()),
-        })
+        Ok(Self::assemble_unwatched(config, path.to_owned(), sources))
     }
 
     /// Load config and start a file watcher for hot-reload.
@@ -524,16 +515,7 @@ where
     pub fn load_merged(paths: &[PathBuf], env_prefix: &str) -> Result<Self, ShikumiError> {
         let (config, sources) = Self::load_from_paths(paths, env_prefix)?;
         let primary_path = paths.last().cloned().unwrap_or_default();
-
-        Ok(Self {
-            inner: Arc::new(ArcSwap::from_pointee(config)),
-            path: primary_path,
-            sources,
-            observatory: ReloadObservatory::new(),
-            _watcher: None,
-            #[cfg(feature = "hotswap")]
-            pending_restart: Arc::new(ArcSwapOption::empty()),
-        })
+        Ok(Self::assemble_unwatched(config, primary_path, sources))
     }
 
     fn load_from_path(
@@ -579,6 +561,52 @@ where
             .iter()
             .fold(ProviderChain::new(), ProviderChain::with_source)
             .extract_with_sources()
+    }
+
+    /// Assemble a non-watching [`ConfigStore`] from an initial value,
+    /// primary path, and provider chain.
+    ///
+    /// One source of truth for the "start with a fresh non-watching store"
+    /// [`Self`] struct literal every non-watching [`ConfigStore`] constructor
+    /// previously open-coded at its own body. Two callers today —
+    /// [`Self::load`] and [`Self::load_merged`] — each wrote the identical
+    /// five-field literal (six under `hotswap`): wrap the initial value in
+    /// a shared [`ArcSwap`], stamp a fresh [`ReloadObservatory`], hold no
+    /// [`ConfigWatcher`], and start with an empty pending-restart slot
+    /// under the `hotswap` feature. Two places any future field added to
+    /// [`ConfigStore`] (a startup-timestamp field pinning when the store
+    /// was constructed, a per-store tenant tag, a shared health-probe
+    /// handle, an operator-facing label, an initial-load-sources digest
+    /// carrying the input path bytes for attestation) would have to be
+    /// initialised in lockstep — exactly the drift-class this crate spends
+    /// load-bearing lifts to close.
+    ///
+    /// A future non-watching [`ConfigStore`] constructor — a
+    /// [`ConfigDiscovery::load_merged`](crate::ConfigDiscovery)-fed
+    /// convenience one-liner, a [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// push-side "install-once" variant, an in-memory `from_value`
+    /// short-circuit for tests — routes its own body through this helper
+    /// and inherits the non-watching default state by construction; each
+    /// per-constructor decision stays a per-constructor edit, but the
+    /// non-watching default state lives at ONE site.
+    ///
+    /// Watching constructors ([`Self::load_and_watch`] and, under the
+    /// `hotswap` feature, [`Self::load_and_watch_hotswap`]) deliberately
+    /// do NOT route through here: they hold a pre-shared `inner` and
+    /// `observatory` cloned into the watcher closure — not the fresh
+    /// slots this helper produces — and set `_watcher: Some(watcher)`
+    /// rather than [`None`]. The pending-restart slot they populate is
+    /// a distinct pre-shared handle under the `hotswap` peer.
+    fn assemble_unwatched(config: T, path: PathBuf, sources: Vec<ConfigSource>) -> Self {
+        Self {
+            inner: Arc::new(ArcSwap::from_pointee(config)),
+            path,
+            sources,
+            observatory: ReloadObservatory::new(),
+            _watcher: None,
+            #[cfg(feature = "hotswap")]
+            pending_restart: Arc::new(ArcSwapOption::empty()),
+        }
     }
 }
 
@@ -2947,6 +2975,141 @@ mod tests {
             6,
             "sum is the total reload-attempt count",
         );
+    }
+
+    // ── assemble_unwatched ────────────────────────────────────────────
+    //
+    // The non-watching constructor substrate every `load` / `load_merged`
+    // caller now routes through. Pinned so a future field added to
+    // `ConfigStore` — a startup-timestamp field, a per-store tenant tag,
+    // a shared health-probe handle — extends the fresh-slot defaults at
+    // ONE named substrate site instead of a two-way scatter across the
+    // two constructors that call it.
+
+    #[test]
+    fn assemble_unwatched_starts_with_fresh_observatory_slots() {
+        // Every fresh-slot invariant load()/load_merged() ever pinned on
+        // their published stores flows out of the substrate helper: a
+        // published inner-value visible through `get()`, a `generation()`
+        // still at 0 (no reload has been recorded yet), a
+        // `failure_count()` still at 0, an empty `last_reload_error()`
+        // slot, an empty `last_failure_at()` slot, and a `path()` that
+        // returns the exact PathBuf the helper was handed. A future
+        // refactor that drifts the observatory defaults — a
+        // non-zero-initialised counter, a pre-populated failure slot, a
+        // pre-populated publish-time reserved for a subsequent
+        // reload — breaks this test at the ONE shared substrate site
+        // both non-watching constructors reach through.
+        let path = PathBuf::from("/tmp/assemble.yaml");
+        let sources = vec![ConfigSource::Env("ASSEMBLE_".to_owned())];
+        let store = ConfigStore::<TestConfig>::assemble_unwatched(
+            TestConfig {
+                name: Some("initial".into()),
+                count: Some(7),
+            },
+            path.clone(),
+            sources.clone(),
+        );
+        assert_eq!(store.get().name.as_deref(), Some("initial"));
+        assert_eq!(store.get().count, Some(7));
+        assert_eq!(store.path(), path.as_path());
+        assert_eq!(store.sources(), sources.as_slice());
+        assert_eq!(store.generation(), 0);
+        assert_eq!(store.failure_count(), 0);
+        assert!(store.last_reload_error().is_none());
+        assert!(store.last_failure_at().is_none());
+    }
+
+    #[test]
+    fn assemble_unwatched_holds_no_watcher() {
+        // The non-watching-store contract: `assemble_unwatched` produces
+        // a store whose `_watcher` slot is `None`. Pinned indirectly
+        // through the reload-callback surface: no watcher means a
+        // subsequent file mutation does NOT trigger an automatic
+        // reload; the caller must go through `reload()` explicitly. A
+        // future refactor that accidentally installs a watcher on this
+        // path (e.g. mistakenly cloned in from the watching sibling)
+        // would auto-reload on file mutation and bump generation
+        // through the watcher closure — this test's post-mutation
+        // generation check would break.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("nowatch.yaml");
+        fs::write(&file, "name: initial\n").unwrap();
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_NOWATCH_").unwrap();
+        assert_eq!(store.generation(), 0);
+        // Mutate the file; without a watcher, nothing observes the write.
+        fs::write(&file, "name: mutated\n").unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert_eq!(
+            store.generation(),
+            0,
+            "non-watching store must not auto-reload on file mutation",
+        );
+        assert_eq!(store.get().name.as_deref(), Some("initial"));
+    }
+
+    #[test]
+    fn assemble_unwatched_publishes_time_within_construction_window() {
+        // The `last_publish_at` slot is stamped by `ReloadObservatory::new`
+        // at the moment of construction — the substrate helper does not
+        // re-stamp it before returning. A future refactor that drifts
+        // the stamp forward or backward past the construction window
+        // (e.g. by lazily initialising the slot on first `record_success`)
+        // breaks this test at the ONE shared substrate site both
+        // non-watching constructors reach through.
+        let before = Instant::now();
+        let store = ConfigStore::<TestConfig>::assemble_unwatched(
+            TestConfig::default(),
+            PathBuf::from("/tmp/publish.yaml"),
+            vec![],
+        );
+        let after = Instant::now();
+        let stamped = store.last_publish_at();
+        assert!(stamped >= before && stamped <= after);
+        // The sibling `.time_since_publish()` accessor reads the same
+        // stamp: on a freshly-assembled store its elapsed must be small
+        // (this test measures inside a millisecond-scale window), so
+        // a future refactor that drifted the stamp far into the past
+        // (e.g. by hard-coding a fixed epoch) would break it here.
+        assert!(store.time_since_publish() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn load_and_load_merged_construct_byte_identical_default_slots() {
+        // The compounding payoff of the substrate lift: `load` and
+        // `load_merged` now assemble their non-observatory-observable
+        // defaults through one funnel, so the atomic-slot state they
+        // publish on construction is byte-identical modulo the input
+        // path. Any future field added to `ConfigStore` that shows up
+        // on the observation surface (a startup-timestamp field, a
+        // per-store tenant tag) inherits this equivalence by
+        // construction — the two constructors cannot drift their
+        // fresh-slot state apart, because they read from ONE helper.
+        let dir = TempDir::new().unwrap();
+        let single = dir.path().join("single.yaml");
+        let merged = dir.path().join("merged.yaml");
+        fs::write(&single, "name: same\ncount: 5\n").unwrap();
+        fs::write(&merged, "name: same\ncount: 5\n").unwrap();
+
+        let load_store = ConfigStore::<TestConfig>::load(&single, "SHIKUMI_ASM_L_").unwrap();
+        let merged_store =
+            ConfigStore::<TestConfig>::load_merged(&[merged], "SHIKUMI_ASM_M_").unwrap();
+
+        // Observatory-observable defaults agree byte-for-byte.
+        assert_eq!(load_store.generation(), merged_store.generation());
+        assert_eq!(load_store.failure_count(), merged_store.failure_count());
+        assert_eq!(
+            load_store.last_reload_error().is_some(),
+            merged_store.last_reload_error().is_some(),
+        );
+        assert_eq!(
+            load_store.last_failure_at().is_some(),
+            merged_store.last_failure_at().is_some(),
+        );
+        // And the parsed value under each is the same, so the shape
+        // check is not obscured by a value drift.
+        assert_eq!(load_store.get().name, merged_store.get().name);
+        assert_eq!(load_store.get().count, merged_store.get().count);
     }
 }
 
