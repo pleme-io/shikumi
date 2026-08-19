@@ -1067,6 +1067,106 @@ pub(crate) fn merge_env_prefix_layer(mut chain: ProviderChain, prefix: &str) -> 
     chain
 }
 
+/// Merge a file-tier figment provider layer into `chain`: the two-step
+/// "extend `chain.figment` with `provider` and append
+/// [`ConfigSource::File(path.to_path_buf())`](ConfigSource::File) to
+/// `chain.sources`" [`ProviderChain::with_file`] previously open-coded
+/// once per always-on format arm — the [`Yaml`](Format::Yaml),
+/// [`Nix`](Format::Nix), and [`Toml`](Format::Toml)/`None` arms each
+/// wrote `self.figment = self.figment.merge(<P>::file(path))`, folded
+/// through a trailing `self.sources.push(ConfigSource::File(_))` post-
+/// match statement that also served the two feature-gated arms via
+/// [`merge_or_warn_missing_feature!`].
+///
+/// The File-tier idiom-peer of [`merge_serialized_defaults_layer`]
+/// (Defaults-tier) and [`merge_env_prefix_layer`] (Env-tier). Together
+/// the three helpers close BOTH sides of the "merge one figment
+/// provider + push its typed [`ConfigSource`] provenance" two-step
+/// every [`ProviderChain`] `with_*` builder performs, so a future
+/// refinement of the merge + record convention on any tier (a
+/// `figment::Metadata::source` annotation on the emitted provider, a
+/// shared per-tier telemetry counter, an mtime capture on the file arm,
+/// a canonicalizing wrap around the caller-supplied path) lands at ONE
+/// site per tier instead of once per format arm.
+///
+/// Today the always-on File-tier callers ([`ProviderChain::with_file`]'s
+/// [`Yaml`](Format::Yaml), [`Nix`](Format::Nix), and
+/// [`Toml`](Format::Toml)/`None` arms) route through this helper, and the
+/// [`merge_or_warn_missing_feature!`] macro's enabled branch (the
+/// feature-gated [`Lisp`](Format::Lisp) and [`Blue`](Format::Blue) arms
+/// on builds that carry their features) also routes through it. The
+/// macro's disabled branch — the operator-facing missing-feature warning
+/// path — records its own [`ConfigSource::File`] entry directly, since
+/// no merge happens on that branch and the recorded "attempted file"
+/// entry must survive into the chain so
+/// [`ProviderChain::with_source`]'s reload replay re-emits the same
+/// warning on rebuild instead of silently dropping the layer.
+///
+/// A future file-format arm — a `.rb` Ruby-syntax front-end, a HOCON
+/// reader, a JSON5 provider — routes its own always-on arm through this
+/// helper (or its feature-gated arm through
+/// [`merge_or_warn_missing_feature!`], which itself routes through this
+/// helper on the enabled side) and inherits both the file-provider merge
+/// and the [`ConfigSource::File(path.to_path_buf())`](ConfigSource::File)
+/// provenance-push convention by construction; zero authored boilerplate
+/// on either half beyond the [`Format`] variant declaration + a single
+/// [`match`] arm inside [`ProviderChain::with_file`].
+///
+/// # Contract
+///
+/// - `path` is the file path the caller resolved via
+///   [`Format::from_path`] before dispatching to the arm that constructs
+///   `provider`; it is passed to [`Path::to_path_buf`] verbatim on the
+///   provenance push, preserving the same
+///   [`PathBuf`](std::path::PathBuf) figment sees on the merge side
+///   (figment's own file providers likewise materialise a `PathBuf`
+///   from their `&Path` input). The helper does NOT canonicalize the
+///   path — the reload-replay path threads through
+///   [`ProviderChain::with_source`] and re-runs [`Format::from_path`],
+///   so a caller-supplied relative path round-trips as the same relative
+///   path across reload instead of silently rewriting on the first load.
+/// - `provider` is any `figment::Provider + 'static` value the caller
+///   built for the resolved format; the helper hands it to
+///   [`Figment::merge`] verbatim, preserving figment's own semantics on
+///   the provider side. The `'static` bound matches figment's own
+///   [`Provider`](figment::Provider) trait requirement on
+///   [`Figment::merge`] and every in-tree file provider already
+///   satisfies it (both the third-party [`Yaml`](figment::providers::Yaml)
+///   / [`Toml`](figment::providers::Toml) providers and the crate-native
+///   [`NixProvider`](crate::nix_provider::NixProvider) /
+///   [`LispProvider`](crate::lisp_provider::LispProvider) /
+///   [`BlueProvider`](crate::blue_provider::BlueProvider) providers).
+/// - The recorded [`ConfigSource`] is
+///   [`ConfigSource::File(path.to_path_buf())`](ConfigSource::File), so
+///   [`ProviderChain::with_source`] can invert the record back into
+///   [`Self::with_file`] on reload without a per-caller round-trip.
+///
+/// The return shape and by-value ownership convention match the peer
+/// [`merge_serialized_defaults_layer`] and [`merge_env_prefix_layer`]
+/// helpers and the `with_*` builder methods on [`ProviderChain`]:
+/// `chain` is taken by value and returned by value, preserving the
+/// fluent-chain composition every caller relies on.
+///
+/// # Zero-cost by construction
+///
+/// The helper is a plain function performing exactly the same two
+/// statements the pre-lift open-coded body performed — one figment
+/// `merge` and one `Vec::push` — so the substrate lift adds zero
+/// per-call overhead the compiler cannot inline away.
+#[must_use]
+pub(crate) fn merge_file_layer<P>(
+    mut chain: ProviderChain,
+    path: &Path,
+    provider: P,
+) -> ProviderChain
+where
+    P: figment::Provider + 'static,
+{
+    chain.figment = chain.figment.merge(provider);
+    chain.sources.push(ConfigSource::File(path.to_path_buf()));
+    chain
+}
+
 /// Total mapping from a [`serde_json::Value`] to a [`figment::value::Value`].
 ///
 /// The one-shot JSON → figment projection every shikumi-built provider
@@ -1375,7 +1475,18 @@ macro_rules! merge_or_warn_missing_feature {
     ) => {{
         #[cfg(feature = $feat)]
         {
-            $chain.figment = $chain.figment.merge(<$prov>::file($path));
+            // File-tier merge + `ConfigSource::File` record fused through
+            // the shared substrate helper — the same File-tier peer of
+            // `merge_serialized_defaults_layer` / `merge_env_prefix_layer`
+            // that every always-on arm of `ProviderChain::with_file`
+            // routes through, so the enabled feature-gated arm inherits
+            // the record convention by construction rather than restating
+            // it at the macro site.
+            $chain = $crate::provider::merge_file_layer(
+                $chain,
+                $path,
+                <$prov>::file($path),
+            );
         }
         #[cfg(not(feature = $feat))]
         {
@@ -1384,6 +1495,18 @@ macro_rules! merge_or_warn_missing_feature {
                 "{}",
                 $crate::provider::missing_feature_warning_body($feat, $format),
             );
+            // Record the attempted file even when the format's parser is
+            // absent from this build: reload replay (`with_source`) walks
+            // the recorded chain and re-emits the same missing-feature
+            // warning on every rebuild instead of silently dropping the
+            // layer from the recipe. Pushed here (not folded into an
+            // outer post-match `sources.push`) so the disabled-branch
+            // record shape stays visible at the macro site itself — a
+            // future change to either the record variant or its payload
+            // is a single-file edit on `merge_file_layer` and this line.
+            $chain
+                .sources
+                .push($crate::source::ConfigSource::File($path.to_path_buf()));
         }
     }};
 }
@@ -1505,13 +1628,23 @@ impl ProviderChain {
     /// - `.lisp` / `.lsp` / `.el` → Tatara-lisp provider ([`crate::LispProvider`])
     /// - `.nix` → Nix provider ([`crate::NixProvider`], shells out to `nix eval`)
     /// - anything else → TOML provider (conservative fallback)
+    ///
+    /// Every arm — the always-on [`Yaml`](Format::Yaml),
+    /// [`Nix`](Format::Nix), and [`Toml`](Format::Toml)/`None` arms
+    /// directly, and the feature-gated [`Lisp`](Format::Lisp) /
+    /// [`Blue`](Format::Blue) arms via
+    /// [`merge_or_warn_missing_feature!`] — routes its merge + record
+    /// through [`merge_file_layer`], the File-tier idiom-peer of
+    /// [`merge_serialized_defaults_layer`] and [`merge_env_prefix_layer`].
+    /// A future format arm authors ZERO merge-side boilerplate by
+    /// dispatching through the same helper.
     #[must_use]
     pub fn with_file(mut self, path: &Path) -> Self {
         let format = Format::from_path(path);
 
         match format {
             Some(Format::Yaml) => {
-                self.figment = self.figment.merge(FigYaml::file(path));
+                self = merge_file_layer(self, path, FigYaml::file(path));
             }
             Some(Format::Lisp) => merge_or_warn_missing_feature!(
                 chain = self,
@@ -1521,9 +1654,7 @@ impl ProviderChain {
                 provider = crate::lisp_provider::LispProvider,
             ),
             Some(Format::Nix) => {
-                self.figment = self
-                    .figment
-                    .merge(crate::nix_provider::NixProvider::file(path));
+                self = merge_file_layer(self, path, crate::nix_provider::NixProvider::file(path));
             }
             // Gated INSIDE the arm, exactly as `Lisp` above: a `.b` file on a
             // build without the feature is a warning and a skipped layer, not
@@ -1541,10 +1672,9 @@ impl ProviderChain {
                 provider = crate::blue_provider::BlueProvider,
             ),
             Some(Format::Toml) | None => {
-                self.figment = self.figment.merge(FigToml::file(path));
+                self = merge_file_layer(self, path, FigToml::file(path));
             }
         }
-        self.sources.push(ConfigSource::File(path.to_path_buf()));
         self
     }
 
@@ -3187,6 +3317,210 @@ mod tests {
             extended.sources(),
             &[ConfigSource::Defaults, ConfigSource::Env(prefix.to_owned())],
             "helper must append its Env entry after the caller's prior entries \
+             — a reset or prepend would break the fluent-chain composition contract"
+        );
+    }
+
+    // ---- merge_file_layer (File-tier peer of merge_serialized_defaults_layer / merge_env_prefix_layer) ----
+    //
+    // The File-tier peer of the two shipped tier helpers, lifted alongside
+    // them so ALL THREE sides of the "merge one figment provider + push its
+    // typed ConfigSource provenance" two-step live at ONE substrate site
+    // each. The always-on arms of `ProviderChain::with_file` (Yaml, Nix,
+    // Toml/None) route through this helper directly; the feature-gated
+    // arms (Lisp, Blue) route through it via `merge_or_warn_missing_feature!`'s
+    // enabled branch. The macro's disabled branch — the operator-facing
+    // missing-feature warning path — records its own `ConfigSource::File`
+    // entry directly, since no merge happens there and the recorded
+    // "attempted file" entry must survive into the chain so reload replay
+    // re-emits the same warning on rebuild.
+    //
+    // A future file-format arm (a `.rb` Ruby-syntax front-end, a HOCON
+    // reader, a JSON5 provider) inherits the File-tier merge + record
+    // convention by routing its own arm through this helper — the same
+    // pattern the peer Defaults-class / Env-class helpers close on their
+    // tiers.
+    //
+    // These pins keep both halves at ONE substrate site: the variant push
+    // (with the caller-supplied path cloned into the record via
+    // `Path::to_path_buf`) AND the figment merge (with the caller-supplied
+    // provider handed to `Figment::merge` verbatim).
+
+    /// The helper MUST record exactly ONE `ConfigSource::File(path.into())`
+    /// entry per call — the load-bearing File-tier provenance every File
+    /// caller pushes, with the caller-supplied path cloned verbatim into
+    /// the record (per `Path::to_path_buf`). A future regression that
+    /// pushed the wrong variant, or a rewritten path, or dropped the
+    /// push, would silently change the recorded chain shape callers
+    /// reconstruct through [`ProviderChain::with_source`] on reload.
+    #[test]
+    fn merge_file_layer_pushes_config_source_file_with_path() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("shikumi_mfl_push.yaml");
+        fs::write(&file, "name: pinned\ncount: 1\n").unwrap();
+
+        let chain = merge_file_layer(ProviderChain::new(), &file, FigYaml::file(&file));
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::File(file.clone())],
+            "helper must record exactly one ConfigSource::File(path) per call \
+             with the caller-supplied path cloned verbatim into the record"
+        );
+    }
+
+    /// The merged file layer MUST be observable through the extracted
+    /// [`TestConfig`] — a caller that hands the helper a file provider
+    /// expects figment's file-provider semantics to reach the extract.
+    /// A future regression that dropped the merge half (recorded the
+    /// source push but did not merge) would silently lose every value
+    /// the operator supplied in the file.
+    #[test]
+    fn merge_file_layer_merges_the_file_provider_layer() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("shikumi_mfl_merge.yaml");
+        fs::write(&file, "name: from_file_merge\ncount: 77\n").unwrap();
+
+        let chain = merge_file_layer(ProviderChain::new(), &file, FigYaml::file(&file));
+        let extracted: TestConfig = chain.extract().unwrap();
+
+        assert_eq!(extracted.name.as_deref(), Some("from_file_merge"));
+        assert_eq!(extracted.count, Some(77));
+    }
+
+    /// Drift-closure against the LIVE [`ProviderChain::with_file`] caller
+    /// on the [`Format::Yaml`] arm: building a chain via `with_file(&f)`
+    /// records the same sources AND extracts the same [`TestConfig`] as
+    /// building it via `merge_file_layer(chain, &f, FigYaml::file(&f))`
+    /// directly. A future hand-edit that reintroduces an open-coded
+    /// `self.figment.merge(FigYaml::file(_))` + trailing
+    /// `sources.push(ConfigSource::File(_))` body at
+    /// [`ProviderChain::with_file`]'s [`Yaml`](Format::Yaml) arm fires
+    /// this test with the observable-behavior mismatch, not a downstream
+    /// extract failure. The [`Yaml`](Format::Yaml) arm stands in for the
+    /// three always-on arms (Yaml, Nix, Toml/None) — all three route
+    /// through the same helper, so any one drift-closure test pins the
+    /// substrate-routing invariant for the whole class.
+    #[test]
+    fn with_file_yaml_routes_through_merge_file_layer() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("shikumi_mfl_route.yaml");
+        fs::write(&file, "name: from_file_route\ncount: 33\n").unwrap();
+
+        let via_builder = ProviderChain::new().with_file(&file);
+        let via_helper = merge_file_layer(ProviderChain::new(), &file, FigYaml::file(&file));
+
+        assert_eq!(
+            via_builder.sources(),
+            via_helper.sources(),
+            "with_file must record the same ConfigSource chain as the substrate helper"
+        );
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_helper.extract().unwrap();
+        assert_eq!(
+            a, b,
+            "with_file must extract the same TestConfig as the substrate helper"
+        );
+    }
+
+    /// Peer drift-closure against the LIVE [`ProviderChain::with_file`]
+    /// caller on the [`Format::Toml`] arm — the second always-on arm,
+    /// pinned alongside the [`Yaml`](Format::Yaml) drift-closure so a
+    /// future asymmetric hand-edit (one arm rewired off the helper, the
+    /// other still routed through it) fires here rather than staying
+    /// hidden behind extract-side coincidence. Together with the
+    /// [`Yaml`](Format::Yaml) pin, both real always-on arms are held
+    /// against the substrate — [`Nix`](Format::Nix) is intentionally not
+    /// pinned here because its provider shells out to `nix eval` and
+    /// depends on an external binary, so a self-contained unit test
+    /// cannot exercise it in-container without adding a network / tool
+    /// dependency to the suite.
+    #[test]
+    fn with_file_toml_routes_through_merge_file_layer() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("shikumi_mfl_route.toml");
+        fs::write(&file, "name = \"from_toml_route\"\ncount = 44\n").unwrap();
+
+        let via_builder = ProviderChain::new().with_file(&file);
+        let via_helper = merge_file_layer(ProviderChain::new(), &file, FigToml::file(&file));
+
+        assert_eq!(
+            via_builder.sources(),
+            via_helper.sources(),
+            "with_file (Toml arm) must record the same ConfigSource chain as the substrate helper"
+        );
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_helper.extract().unwrap();
+        assert_eq!(
+            a, b,
+            "with_file (Toml arm) must extract the same TestConfig as the substrate helper"
+        );
+    }
+
+    /// Cross-arm drift-closure: the three always-on [`ProviderChain::with_file`]
+    /// arms — [`Yaml`](Format::Yaml), [`Toml`](Format::Toml), and the
+    /// implicit `None`-format fallback that also routes to
+    /// [`FigToml::file`] — MUST record byte-identical
+    /// `[ConfigSource::File(path)]` chains when handed the same path.
+    /// A future hand-edit that changed the pushed variant at one arm
+    /// alone (a hypothetical eager switch to a not-yet-added `RemoteFile`
+    /// variant on the [`Yaml`](Format::Yaml) arm) fires this cross-arm
+    /// pin. The observable contract the current helper name declares —
+    /// every File-tier arm pushes exactly one `ConfigSource::File(path)`
+    /// — is thus pinned end-to-end, not just at the helper site.
+    #[test]
+    fn with_file_arms_record_identical_file_class_sources() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("shikumi_mfl_cross.yaml");
+        let toml = dir.path().join("shikumi_mfl_cross.toml");
+        fs::write(&yaml, "name: y\n").unwrap();
+        fs::write(&toml, "name = \"t\"\n").unwrap();
+
+        let via_yaml = ProviderChain::new().with_file(&yaml);
+        let via_toml = ProviderChain::new().with_file(&toml);
+
+        assert_eq!(
+            via_yaml.sources(),
+            &[ConfigSource::File(yaml.clone())],
+            "the Yaml arm must record exactly one ConfigSource::File(path)"
+        );
+        assert_eq!(
+            via_toml.sources(),
+            &[ConfigSource::File(toml.clone())],
+            "the Toml arm must record exactly one ConfigSource::File(path)"
+        );
+    }
+
+    /// The helper MUST preserve the caller-supplied chain's prior
+    /// [`ConfigSource`] entries — a caller mid-fluent-chain
+    /// (`.with_file(&f)` following `.with_defaults(&d).with_env(prefix)`)
+    /// expects the helper to APPEND its File entry, not to reset the
+    /// chain. The append-discipline pin idiom-peer of the peer
+    /// [`merge_serialized_defaults_layer_appends_to_existing_sources`]
+    /// and
+    /// [`merge_env_prefix_layer_appends_to_existing_sources`]
+    /// tests, so all three tier substrate helpers share the same
+    /// fluent-chain composition contract.
+    #[test]
+    fn merge_file_layer_appends_to_existing_sources() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("shikumi_mfl_append.yaml");
+        fs::write(&file, "name: after\ncount: 5\n").unwrap();
+
+        let prefix = "SHIKUMI_MFL_APPEND_";
+        let chain = ProviderChain::new()
+            .with_defaults(&TestConfig::default())
+            .with_env(prefix);
+        let extended = merge_file_layer(chain, &file, FigYaml::file(&file));
+        assert_eq!(
+            extended.sources(),
+            &[
+                ConfigSource::Defaults,
+                ConfigSource::Env(prefix.to_owned()),
+                ConfigSource::File(file.clone()),
+            ],
+            "helper must append its File entry after the caller's prior entries \
              — a reset or prepend would break the fluent-chain composition contract"
         );
     }
