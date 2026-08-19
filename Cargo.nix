@@ -7964,9 +7964,9 @@ rec {
       };
       "ref-cast" = rec {
         crateName = "ref-cast";
-        version = "1.0.26";
+        version = "1.0.27";
         edition = "2021";
-        sha256 = "0vdra0766jcc2czzqwhql41kkfyajdnai1pbkjxbq8vr7mvqyvi1";
+        sha256 = "1hv5sf0j7b65gz2g57c3wp0fzr5r3807dywf6fap455lwjs0yi3y";
         libName = "ref_cast";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
@@ -7981,9 +7981,9 @@ rec {
       };
       "ref-cast-impl" = rec {
         crateName = "ref-cast-impl";
-        version = "1.0.26";
+        version = "1.0.27";
         edition = "2021";
-        sha256 = "0g70ff9an5i97cw9kijgzqrqydz7smcfic2zyydddizfbxl874ic";
+        sha256 = "0fnzgkvddgl9xs3884x5ypi9rd0dgc1p5vd1k4b74lw49ybdiv4j";
         procMacro = true;
         libName = "ref_cast_impl";
         authors = [
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.597";
+        version = "0.1.598";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
