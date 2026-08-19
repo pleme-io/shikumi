@@ -56,7 +56,7 @@
 //! [`crate::lisp_provider`]. Restating it is how two copies of one rule begin
 //! to disagree.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use figment::value::Value;
 
@@ -87,29 +87,19 @@ impl BlueProvider {
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
-
-    /// Load and map a blue file, or fail with a `blue:`-prefixed error.
-    ///
-    /// Both legs — the file-read step and the fused read+map cascade —
-    /// route through the shared [`crate::provider::load_text_source`]
-    /// substrate helper, which in turn calls
-    /// [`crate::provider::read_source_or_parse_err`] for the read step
-    /// (so the `"reading {path}: {e}"` I/O error wording is defined once)
-    /// and delegates to the mapper for the parse step. The whole `load`
-    /// body is a single call, and cannot drift out of lockstep with the
-    /// peer text-source provider
-    /// [`crate::lisp_provider::LispProvider::load`], which routes through
-    /// the same helper.
-    pub fn load(path: &Path) -> Result<Value, ShikumiError> {
-        crate::provider::load_text_source(path, load_from_str)
-    }
 }
 
-// The whole `impl Provider` body — `metadata` + `data`, four lines each
-// — is emitted by the `text_source_provider_impl!` substrate macro from
-// (Ty, Format, mapper). See `crate::provider::text_source_provider_impl`
-// for the full lift rationale; the peer `LispProvider` rides the same
-// macro, and the two cannot drift on the impl-block shape.
+// Emits BOTH the `impl Provider for BlueProvider` block AND the
+// ergonomic `impl BlueProvider { pub fn load(&Path) -> ... }` static
+// one-shot every text-source provider exposes for tests and direct
+// callers — both routed through the shared `crate::provider` substrate
+// helpers (`provider_metadata_for` + `text_source_provider_data` +
+// `load_text_source`), so a future refinement of either surface lands
+// once and this caller inherits it by construction. The peer
+// `LispProvider` rides the same macro; the two cannot drift on the
+// impl-block shape or the static-load body. See
+// `crate::provider::text_source_provider_impl` for the full lift
+// rationale.
 text_source_provider_impl!(BlueProvider, Format::Blue, load_from_str);
 
 /// Parse a blue source string into a figment [`Value`].

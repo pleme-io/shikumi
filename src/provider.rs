@@ -340,53 +340,60 @@ pub(crate) fn text_source_provider_data(
     provider_data_from_shikumi_load(load_text_source(path, map), format)
 }
 
-/// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —
-/// the whole [`figment::Provider`] impl block a text-source shikumi-built
-/// provider carries, routed through the substrate helpers
-/// [`provider_metadata_for`] and [`text_source_provider_data`].
+/// Emit the whole shape a text-source shikumi-built provider carries
+/// beyond its per-provider constructor: the [`figment::Provider`] impl
+/// block routed through [`provider_metadata_for`] +
+/// [`text_source_provider_data`], AND the static
+/// `pub fn load(path: &Path) -> Result<Value, ShikumiError>` one-shot
+/// routed through [`load_text_source`].
 ///
 /// One source of truth for the shape of a text-source provider's
-/// [`figment::Provider`] impl. The last remaining open-coded duplication
-/// on the text-source provider surface after
-/// [`read_source_or_parse_err`] (`8119f42`), [`load_text_source`]
+/// [`figment::Provider`] impl AND its ergonomic static-load one-shot.
+/// After [`read_source_or_parse_err`] (`8119f42`), [`load_text_source`]
 /// (`5d07b1a`), and [`text_source_provider_data`] (`e535174`) closed the
-/// read / read+map / read+map+project cascades: each of the two
-/// text-source `Provider` impls carried an identical four-line body
+/// read / read+map / read+map+project cascades, and [`Self`] (`1988106`)
+/// closed the [`figment::Provider`] impl-block body itself, each of the
+/// two text-source callers still carried an identical two-line static
+/// method
 ///
 /// ```text
-/// impl Provider for $Ty {
-///     fn metadata(&self) -> Metadata {
-///         crate::provider::provider_metadata_for(Format::X, &self.path)
-///     }
-///     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
-///         crate::provider::text_source_provider_data(&self.path, Format::X, load_from_str)
+/// impl $Ty {
+///     pub fn load(path: &Path) -> Result<Value, ShikumiError> {
+///         crate::provider::load_text_source(path, load_from_str)
 ///     }
 /// }
 /// ```
 ///
-/// modulo `Format::X` and the module-local `load_from_str` — two places
-/// a future refinement of the impl-block shape (an added
-/// [`figment::Provider::profile`] override, a
-/// [`figment::Metadata::source`]-populated metadata builder, structured
-/// miette annotations on the data path, richer per-file diagnostic
-/// context threaded through both surfaces) would have to be applied in
-/// lockstep, which is exactly the drift-class this crate spends
-/// load-bearing lifts to close.
+/// modulo the module-local `load_from_str` — two places a future
+/// refinement of the static-load convention (path canonicalization on
+/// the way in, a `LoadedSource<Value>` return threading provenance,
+/// gating on source size before the map runs) would have to be applied
+/// in lockstep, which is exactly the drift-class this crate spends
+/// load-bearing lifts to close. Emitting the static leg alongside the
+/// impl-block leg from this same macro is idiom-peer to how
+/// [`text_source_provider_data`] fuses the read+map+project cascade at
+/// one site — the macro is now the fused emitter for BOTH ends of the
+/// text-source provider's public surface, and cannot leave one
+/// text-source caller riding an old shape while the other rides the
+/// new.
 ///
 /// A future text-source shikumi-built provider — a Ruby-syntax `.rb`
 /// front-end, a HOCON reader, a JSON5 or KDL provider — implements its
-/// [`figment::Provider`] surface as ONE macro invocation
+/// entire [`figment::Provider`] surface AND its ergonomic
+/// `load(&Path) -> Result<Value, ShikumiError>` one-shot as ONE macro
+/// invocation
 /// (`text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);`),
-/// inheriting the metadata + data protocol by construction. The
-/// provider's public `load(&Path) -> Result<Value, ShikumiError>` static
-/// method — the ergonomic one-shot every text-source provider exposes
-/// for tests and direct callers — is unaffected and continues to route
-/// through [`load_text_source`] directly.
+/// inheriting the metadata + data + static-load protocol by
+/// construction — zero authored per-provider boilerplate beyond the
+/// struct declaration and its `file(path)` constructor. That closes
+/// the last two lines of per-caller drift on the text-source provider
+/// surface after the four prior lifts.
 ///
 /// Idiom-peer to the sibling substrate helpers each closing one leg of
 /// the text-source provider surface. This closes the fused
-/// `impl Provider` body itself, the last piece of authored boilerplate
-/// left after the other four lifts collapsed the per-method bodies.
+/// `impl Provider` body AND the static-load one-shot at one call site,
+/// the last pieces of authored boilerplate left after the earlier lifts
+/// collapsed the per-method bodies and the impl-block body.
 ///
 /// # Contract
 ///
@@ -394,12 +401,18 @@ pub(crate) fn text_source_provider_data(
 ///   [`std::borrow::Borrow`]s [`Path`] (typically `PathBuf`) — the
 ///   [`figment::Provider::metadata`] and [`figment::Provider::data`]
 ///   bodies both borrow `&self.path`, matching the convention every
-///   text-source provider in-tree already uses.
+///   text-source provider in-tree already uses. The emitted static
+///   `load(&Path)` one-shot is a free-function-style method (no
+///   `&self` receiver), so it does not touch the `path` field — it
+///   takes its own `&Path` argument for the read step.
 /// - `$format` is any [`Format`]-typed expression (`const` or value).
 /// - `$mapper` is a `fn(&str) -> Result<Value, ShikumiError>` path — a
-///   free function, not a stateful closure, matching the ABI
-///   [`text_source_provider_data`]'s bare-`fn` parameter declares. The
-///   caller is expected to pass its own module-level `load_from_str`.
+///   free function, not a stateful closure, matching the ABI both
+///   [`text_source_provider_data`]'s and [`load_text_source`]'s
+///   bare-`fn` parameters declare. The caller is expected to pass its
+///   own module-level `load_from_str`, and both the emitted
+///   `impl Provider::data` body and the emitted static
+///   `load(&Path)` one-shot route through it.
 ///
 /// The macro is `pub(crate)` because both substrate helpers it routes
 /// through are `pub(crate)`; a `#[macro_export]` variant would emit
@@ -415,6 +428,11 @@ pub(crate) fn text_source_provider_data(
 ///
 /// fn load_from_str(src: &str) -> Result<Value, ShikumiError> { /* … */ }
 ///
+/// // Emits both the `impl Provider for MyProvider` block AND the
+/// // ergonomic `impl MyProvider { pub fn load(&Path) -> ... }` static
+/// // one-shot. Consumers of `MyProvider::load(path)` continue to work
+/// // as before; the difference is that the body is now defined at
+/// // ONE substrate site instead of once per provider.
 /// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
 /// ```
 macro_rules! text_source_provider_impl {
@@ -431,6 +449,33 @@ macro_rules! text_source_provider_impl {
                 ::figment::Error,
             > {
                 $crate::provider::text_source_provider_data(&self.path, $format, $mapper)
+            }
+        }
+
+        impl $ty {
+            /// Read + parse the file at `path`, routing through the
+            /// shared [`load_text_source`](crate::provider::load_text_source)
+            /// substrate helper — which itself calls
+            /// [`read_source_or_parse_err`](crate::provider::read_source_or_parse_err)
+            /// for the read step (so the `"reading {path}: {e}"` I/O
+            /// error wording is defined once) and hands the source to
+            /// this provider's `$mapper` for the parse step. The whole
+            /// body is a single call, and cannot drift out of lockstep
+            /// with the peer text-source providers riding the same
+            /// [`text_source_provider_impl!`](crate::provider::text_source_provider_impl)
+            /// macro.
+            ///
+            /// # Errors
+            ///
+            /// Returns
+            /// [`ShikumiError::Parse`](crate::error::ShikumiError::Parse)
+            /// on read-step failure (verbatim from `read_source_or_parse_err`)
+            /// or whatever [`ShikumiError`](crate::error::ShikumiError)
+            /// this provider's `$mapper` produces on a parse-step failure.
+            pub fn load(
+                path: &::std::path::Path,
+            ) -> ::core::result::Result<::figment::value::Value, $crate::error::ShikumiError> {
+                $crate::provider::load_text_source(path, $mapper)
             }
         }
     };
@@ -2918,6 +2963,107 @@ mod tests {
                  caller and no longer routes through `text_source_provider_impl!`",
             );
         }
+    }
+
+    #[test]
+    fn text_source_provider_impl_emits_static_load_that_matches_the_substrate_helper() {
+        // Pins that the macro's emitted `pub fn load(&Path)` static
+        // one-shot routes through `load_text_source(path, mapper)`
+        // verbatim — the same `Value` the substrate helper produces
+        // from the same `(path, mapper)` pair on the happy path. This is
+        // the load-bearing pin for the second leg of the macro's
+        // emission: after this lift, the whole ergonomic
+        // `Ty::load(&Path) -> Result<Value, ShikumiError>` static
+        // method every text-source provider previously open-coded is
+        // gone from every caller and lives at one substrate site.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("payload.txt");
+        fs::write(&path, "hello, world").unwrap();
+
+        let via_macro = MacroProbeProvider::load(&path).expect("macro-emitted load() must succeed");
+        let via_helper = load_text_source(&path, macro_probe_mapper)
+            .expect("substrate-helper load_text_source() must succeed");
+        assert_eq!(
+            via_macro, via_helper,
+            "macro-emitted static load() must equal substrate-helper load_text_source() on the \
+             happy path — drift here means the emitted body no longer routes through \
+             `load_text_source`",
+        );
+    }
+
+    #[test]
+    fn text_source_provider_impl_emits_static_load_error_matching_the_substrate_helper() {
+        // Read-step failure leg on the emitted static `load(&Path)`: the
+        // macro must forward whatever the substrate helper emits on a
+        // missing path, byte-for-byte, so a future refinement of the
+        // read-side wording (path canonicalization, `io::ErrorKind`
+        // triage, structured provenance) lands at one substrate site and
+        // every macro-emitted `Ty::load(&Path)` inherits it by
+        // construction — the same drift-closure the `Provider::data`
+        // error-leg pin above establishes on the other half of the
+        // macro's emission.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.cfg");
+
+        let via_macro = MacroProbeProvider::load(&path)
+            .expect_err("macro-emitted load() must fail on missing path");
+        let via_helper = load_text_source(&path, macro_probe_mapper)
+            .expect_err("substrate-helper load_text_source() must fail on missing path");
+        assert_eq!(
+            via_macro.to_string(),
+            via_helper.to_string(),
+            "macro-emitted static load() error must equal substrate-helper error verbatim",
+        );
+    }
+
+    #[cfg(feature = "blue")]
+    #[test]
+    fn text_source_provider_impl_static_load_matches_both_real_callers() {
+        // The load-bearing drift-closure for the static-load leg on the
+        // two production callers. If a hand edit at either
+        // `blue_provider` or `lisp_provider` re-introduced an open-coded
+        // `pub fn load(path: &Path) -> Result<Value, ShikumiError> {
+        // crate::provider::load_text_source(path, load_from_str) }`
+        // static method on the type, this pin would still hold on the
+        // happy path — it exercises the byte-shape of the emitted body,
+        // not the source-code shape of the caller — so its load-bearing
+        // aim is on the error path, where the shared substrate helper's
+        // wording is defined once and the drift-closure fires if a hand
+        // edit swaps it for a bespoke string. Both callers ride the same
+        // macro, so both errors match the substrate helper's byte-for-
+        // byte, and the two callers agree with each other by transitivity.
+        use crate::blue_provider::BlueProvider;
+        use crate::lisp_provider::LispProvider;
+
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.cfg");
+
+        let blue_err =
+            BlueProvider::load(&missing).expect_err("BlueProvider::load must fail on missing path");
+        let lisp_err =
+            LispProvider::load(&missing).expect_err("LispProvider::load must fail on missing path");
+        let helper_err = load_text_source(&missing, crate::lisp_provider::load_from_str)
+            .expect_err("substrate-helper load_text_source() must fail on the same missing path");
+
+        assert_eq!(
+            blue_err.to_string(),
+            helper_err.to_string(),
+            "BlueProvider::load error must equal load_text_source() error verbatim — drift here \
+             means BlueProvider re-introduced an open-coded static load and no longer routes \
+             through `text_source_provider_impl!`",
+        );
+        assert_eq!(
+            lisp_err.to_string(),
+            helper_err.to_string(),
+            "LispProvider::load error must equal load_text_source() error verbatim — drift here \
+             means LispProvider re-introduced an open-coded static load and no longer routes \
+             through `text_source_provider_impl!`",
+        );
+        assert_eq!(
+            blue_err.to_string(),
+            lisp_err.to_string(),
+            "BlueProvider and LispProvider must agree on static-load wording by transitivity",
+        );
     }
 
     // ---- path_provider_impl! (general impl Provider block emitter) ----
