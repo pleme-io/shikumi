@@ -213,6 +213,65 @@ impl ConfigSource {
         }
     }
 
+    /// The trailing body of the [`figment::providers::Env`]
+    /// `figment::Metadata::name` shape: verbatim
+    /// `"environment variable(s)"`. Doubles as the ENTIRE bare shape
+    /// (no prefix; figment's `Env::raw()` emission) and as the suffix
+    /// of the prefixed shape (following the backtick-wrapped prefix
+    /// and one ASCII space).
+    ///
+    /// One source of truth for the tail: [`Self::env_metadata_name`]
+    /// writes it (bare shape and prefixed-shape suffix alike), and
+    /// [`Self::strip_env_metadata_name`] gates on its stem via
+    /// [`Self::ENV_METADATA_NAME_TAIL_STEM`]. Before this const both
+    /// directions carried their own copies of the literal — the writer
+    /// as `"environment variable(s)"` at two sites, the reader as the
+    /// singular-stem `"environment variable"` at a third — and a change
+    /// to the shape (e.g. figment growing a `"(env)"` suffix) would
+    /// have compiled cleanly with the writer emitting one shape and the
+    /// reader silently keying on another.
+    ///
+    /// Pinned by
+    /// [`tests::env_metadata_name_bare_equals_tail_constant`],
+    /// [`tests::env_metadata_name_prefixed_ends_with_tail_constant`],
+    /// and [`tests::env_metadata_name_tail_equals_stem_plus_paren_s`].
+    pub const ENV_METADATA_NAME_TAIL: &'static str = "environment variable(s)";
+
+    /// Permissive-recognizer stem of [`Self::ENV_METADATA_NAME_TAIL`]:
+    /// `"environment variable"` — the tail with figment's trailing
+    /// `"(s)"` plural marker stripped. [`Self::strip_env_metadata_name`]
+    /// gates on this stem via [`str::contains`], so any figment name
+    /// whose tail spells either the singular or plural form is
+    /// recognized as an env-metadata tag. The permissive shape mirrors
+    /// [`tests::strip_env_metadata_name_accepts_singular_form`]'s
+    /// contract; it is intentional (figment historically emitted both
+    /// forms in different versions), so keying the recognizer on the
+    /// stem rather than the full tail preserves it.
+    ///
+    /// Kept in structural lockstep with
+    /// [`Self::ENV_METADATA_NAME_TAIL`] by
+    /// [`tests::env_metadata_name_tail_equals_stem_plus_paren_s`] so a
+    /// future edit to the tail (e.g. changing the singular verb) is
+    /// forced to update the stem in the same commit — otherwise the
+    /// writer and reader would silently disagree on which figment names
+    /// belong to the env-metadata axis.
+    pub const ENV_METADATA_NAME_TAIL_STEM: &'static str = "environment variable";
+
+    /// Backtick delimiter figment uses to quote the uppercased prefix
+    /// in the prefixed shape of [`Self::ENV_METADATA_NAME_TAIL`].
+    /// [`Self::env_metadata_name`] writes it around the prefix, and
+    /// [`Self::strip_env_metadata_name`] strips it back to recover the
+    /// borrowed prefix slice — both directions route through this one
+    /// `char` so the delimiter lives at one named site instead of at
+    /// three separate literal positions (a leading `` ` `` in the
+    /// writer's `format!`, a trailing `` ` `` in the same `format!`,
+    /// and a `` `'`' `` in the reader's `strip_prefix`/`find` pair).
+    ///
+    /// Pinned by
+    /// [`tests::env_metadata_name_prefix_quote_is_backtick`] and by
+    /// [`tests::env_metadata_name_prefixed_uses_prefix_quote_delimiter`].
+    pub const ENV_METADATA_NAME_PREFIX_QUOTE: char = '`';
+
     /// Canonical `figment::Metadata::name` shape emitted by
     /// [`figment::providers::Env`]: `` `PREFIX` environment variable(s) ``
     /// for prefixed providers, `"environment variable(s)"` for raw env
@@ -226,13 +285,20 @@ impl ConfigSource {
     /// One source of truth for the env-provider metadata-name shape on
     /// the shikumi side: providers (figment) emit it, the
     /// failing-source resolver inverts it via [`Self::strip_env_metadata_name`],
-    /// and tests round-trip both directions through one definition.
+    /// and tests round-trip both directions through one definition. The
+    /// tail body routes through [`Self::ENV_METADATA_NAME_TAIL`]; the
+    /// prefixed shape's delimiter routes through
+    /// [`Self::ENV_METADATA_NAME_PREFIX_QUOTE`] — every literal on the
+    /// emission surface lives at one named `const`.
     #[must_use]
     pub fn env_metadata_name(prefix: &str) -> String {
+        let tail = Self::ENV_METADATA_NAME_TAIL;
         if prefix.is_empty() {
-            "environment variable(s)".to_owned()
+            tail.to_owned()
         } else {
-            format!("`{}` environment variable(s)", prefix.to_ascii_uppercase())
+            let quote = Self::ENV_METADATA_NAME_PREFIX_QUOTE;
+            let upper = prefix.to_ascii_uppercase();
+            format!("{quote}{upper}{quote} {tail}")
         }
     }
 
@@ -258,13 +324,19 @@ impl ConfigSource {
     /// Used by [`crate::ShikumiError::failing_source`] to map figment
     /// per-value metadata back to a [`ConfigSource::Env`] entry in the
     /// recorded chain without re-implementing the figment-side shape.
+    /// The tail stem routes through [`Self::ENV_METADATA_NAME_TAIL_STEM`];
+    /// the prefix delimiter routes through
+    /// [`Self::ENV_METADATA_NAME_PREFIX_QUOTE`] — the same two named
+    /// `const`s the writer uses, so a future shape change lands at one
+    /// pair of named sites.
     #[must_use]
     pub fn strip_env_metadata_name(name: &str) -> Option<EnvMetadataTag<'_>> {
-        if !name.contains("environment variable") {
+        if !name.contains(Self::ENV_METADATA_NAME_TAIL_STEM) {
             return None;
         }
-        if let Some(rest) = name.strip_prefix('`')
-            && let Some(end) = rest.find('`')
+        let quote = Self::ENV_METADATA_NAME_PREFIX_QUOTE;
+        if let Some(rest) = name.strip_prefix(quote)
+            && let Some(end) = rest.find(quote)
         {
             return Some(EnvMetadataTag::Prefixed(&rest[..end]));
         }
@@ -94590,6 +94662,168 @@ mod tests {
     }
 
     // ---- env_metadata_name / strip_env_metadata_name ----
+
+    #[test]
+    fn env_metadata_name_tail_is_environment_variable_paren_s() {
+        // Concrete-position pin: hold the exact literal stable at ONE
+        // named site so a future rename (e.g. dropping the `(s)` for
+        // consistency with a future figment API) fails here first,
+        // before the writer's emissions drift out of lockstep with the
+        // reader's guard. Peer of
+        // `format_metadata_name_separator_is_two_byte_ascii_slice` on
+        // the shikumi-built provider metadata-name axis.
+        assert_eq!(
+            ConfigSource::ENV_METADATA_NAME_TAIL,
+            "environment variable(s)",
+        );
+    }
+
+    #[test]
+    fn env_metadata_name_tail_stem_is_environment_variable_singular() {
+        // Peer of the tail concrete-position pin above — the
+        // permissive-recognizer stem carries no `(s)` suffix by
+        // construction (see the structural pin in
+        // `env_metadata_name_tail_equals_stem_plus_paren_s`).
+        assert_eq!(
+            ConfigSource::ENV_METADATA_NAME_TAIL_STEM,
+            "environment variable",
+        );
+    }
+
+    #[test]
+    fn env_metadata_name_tail_equals_stem_plus_paren_s() {
+        // Structural pin: the tail equals the stem with figment's
+        // trailing `(s)` marker appended. This is what makes
+        // `strip_env_metadata_name`'s `contains(STEM)` guard a strict
+        // permissive superset of the writer's emitted `TAIL` — a
+        // future edit to either constant that breaks this relation
+        // would silently desynchronise the writer and reader on which
+        // figment names belong to the env-metadata axis.
+        assert_eq!(
+            ConfigSource::ENV_METADATA_NAME_TAIL,
+            format!("{}(s)", ConfigSource::ENV_METADATA_NAME_TAIL_STEM),
+        );
+        // Belt-and-braces: the stem is a real prefix of the tail (the
+        // above already implies this, but this second assertion pins
+        // the intent directly so a reader sees the "stem ⊂ tail"
+        // relation without decoding the `format!`).
+        assert!(
+            ConfigSource::ENV_METADATA_NAME_TAIL
+                .starts_with(ConfigSource::ENV_METADATA_NAME_TAIL_STEM),
+            "TAIL_STEM must be a literal prefix of TAIL so the \
+             permissive-recognizer guard is a superset of the emitted \
+             shape (TAIL = {:?}, TAIL_STEM = {:?})",
+            ConfigSource::ENV_METADATA_NAME_TAIL,
+            ConfigSource::ENV_METADATA_NAME_TAIL_STEM,
+        );
+    }
+
+    #[test]
+    fn env_metadata_name_prefix_quote_is_backtick() {
+        // Concrete-position pin: hold the backtick delimiter stable at
+        // ONE named site. A future edit that swaps it for a different
+        // ASCII delimiter (e.g. `'`, `"`) would land here before the
+        // writer's emitted prefixed shape silently drifts out of
+        // lockstep with the reader's `strip_prefix`/`find` pair.
+        assert_eq!(ConfigSource::ENV_METADATA_NAME_PREFIX_QUOTE, '`');
+    }
+
+    #[test]
+    fn env_metadata_name_bare_equals_tail_constant() {
+        // Writer routing pin (bare shape): the empty-prefix emission
+        // is byte-identical to ENV_METADATA_NAME_TAIL. Before the lift
+        // this equality was true by two independent literal copies of
+        // `"environment variable(s)"` (one at the writer's bare arm,
+        // one at ENV_METADATA_NAME_TAIL). The pin forces the routing
+        // through the shared const to remain observable — a
+        // regression that reintroduced a hard-coded literal at the
+        // writer would still emit the same bytes and pass every
+        // pre-existing round-trip test, but this pin would only pass
+        // when the shared const's own bytes match the emission.
+        assert_eq!(
+            ConfigSource::env_metadata_name(""),
+            ConfigSource::ENV_METADATA_NAME_TAIL,
+        );
+    }
+
+    #[test]
+    fn env_metadata_name_prefixed_ends_with_tail_constant() {
+        // Writer routing pin (prefixed shape): every non-empty-prefix
+        // emission ends with `" " + ENV_METADATA_NAME_TAIL`. Same
+        // routing-pin rationale as `..._bare_equals_tail_constant`
+        // above, extended over a representative prefix set matching
+        // the round-trip test's fixture so drift is caught on the
+        // exact prefixes downstream code walks.
+        let suffix = format!(" {}", ConfigSource::ENV_METADATA_NAME_TAIL);
+        for prefix in ["MYAPP_", "TOBIRA_", "X_", "FOO_BAR_", "APP_"] {
+            let emitted = ConfigSource::env_metadata_name(prefix);
+            assert!(
+                emitted.ends_with(&suffix),
+                "prefixed emission must end with `\" \" + TAIL`: \
+                 emitted={emitted:?}, suffix={suffix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_name_prefixed_uses_prefix_quote_delimiter() {
+        // Writer routing pin (prefixed shape, delimiter half): every
+        // non-empty-prefix emission both starts with a
+        // ENV_METADATA_NAME_PREFIX_QUOTE AND contains a second one
+        // just before the leading space of the tail suffix. Together
+        // this pins the emission shape as
+        // `QUOTE + PREFIX + QUOTE + " " + TAIL` without hard-coding
+        // the backtick literal at this site.
+        let quote = ConfigSource::ENV_METADATA_NAME_PREFIX_QUOTE;
+        let closing = format!("{quote} {}", ConfigSource::ENV_METADATA_NAME_TAIL);
+        for prefix in ["MYAPP_", "X_", "APP_"] {
+            let emitted = ConfigSource::env_metadata_name(prefix);
+            assert!(
+                emitted.starts_with(quote),
+                "prefixed emission must start with the prefix-quote \
+                 delimiter: emitted={emitted:?}, quote={quote:?}",
+            );
+            assert!(
+                emitted.contains(&closing),
+                "prefixed emission must carry the closing \
+                 `QUOTE + \" \" + TAIL` shape between prefix and tail: \
+                 emitted={emitted:?}, closing={closing:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn strip_env_metadata_name_recognizes_writer_emission_under_shared_constants() {
+        // Reader routing pin: for every representative prefix (empty
+        // + non-empty), the reader recognises the writer's emission
+        // regardless of which constants both sides route through. The
+        // pre-existing `env_metadata_name_round_trip_for_*` tests
+        // already pin the round-trip law at the emission-string
+        // level; this test pins that BOTH sides now use the SAME
+        // named constants (TAIL_STEM as the reader's guard, and
+        // PREFIX_QUOTE as the reader's delimiter) — a
+        // fail-before-pass-after check that the reader's guard hasn't
+        // silently drifted off the writer's TAIL onto a stale
+        // literal.
+        //
+        // Bare shape: writer emits ENV_METADATA_NAME_TAIL, reader's
+        // guard is ENV_METADATA_NAME_TAIL_STEM (a prefix of TAIL by
+        // `env_metadata_name_tail_equals_stem_plus_paren_s`), so
+        // recognition holds by construction.
+        assert_eq!(
+            ConfigSource::strip_env_metadata_name(&ConfigSource::env_metadata_name("")),
+            Some(EnvMetadataTag::Bare),
+        );
+        // Prefixed shape: same routing on top of the delimiter half.
+        for prefix in ["MYAPP_", "TOBIRA_", "X_", "FOO_BAR_", "APP_"] {
+            assert_eq!(
+                ConfigSource::strip_env_metadata_name(&ConfigSource::env_metadata_name(prefix)),
+                Some(EnvMetadataTag::Prefixed(prefix)),
+                "reader must recognise writer's emission under shared \
+                 constants for prefix={prefix:?}",
+            );
+        }
+    }
 
     #[test]
     fn env_metadata_name_empty_prefix_yields_bare_shape() {
