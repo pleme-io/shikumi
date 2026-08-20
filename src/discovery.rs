@@ -460,9 +460,45 @@ impl Format {
     /// should gate on `has_shikumi_provider` first; resolvers that need
     /// to invert can use [`Self::strip_metadata_name`] which already
     /// filters to the shikumi-provider subset.
+    ///
+    /// Composed from [`Self::write_metadata_name`] via
+    /// [`FormatMetadataTag`]'s [`fmt::Display`] impl (`ToString`
+    /// allocates one `String` and drives the same alloc-free write-side
+    /// helper the `Display` surface uses), so the emission shape lives
+    /// at ONE named site — `write_metadata_name` — and both this
+    /// allocating surface and the alloc-free `Display` path on
+    /// [`FormatMetadataTag`] inherit it by construction.
     #[must_use]
     pub fn metadata_name(self, path: &Path) -> String {
-        format!(
+        FormatMetadataTag { format: self, path }.to_string()
+    }
+
+    /// Alloc-free write-side of [`Self::metadata_name`]: emit the
+    /// canonical `"<format>: <path>"` shape into any [`fmt::Write`].
+    ///
+    /// This is the ONE named site the `<format>` token, the
+    /// [`Self::METADATA_NAME_SEPARATOR`], and the [`Path::display`]
+    /// projection compose at. Both consumers — [`Self::metadata_name`]
+    /// (via a `String` buffer) and the [`fmt::Display`] impl on
+    /// [`FormatMetadataTag`] (via a `fmt::Formatter`, no allocation) —
+    /// route through this helper, so a future change to the emission
+    /// shape (a wider separator, a Windows-safe path renderer, a
+    /// version-tagged prefix) lands at one site and every consumer
+    /// inherits it by construction. Before this helper the
+    /// `write!(f, "{}: {}", self.format, self.path.display())` inside
+    /// `Display::fmt` carried a *third* independent `": "` literal that
+    /// had to agree with the emitter's `format!("{}{}{}", …,
+    /// METADATA_NAME_SEPARATOR, …)` and the resolver's `strip_prefix`
+    /// chain by hand — the compiler enforced nothing between them.
+    ///
+    /// Pinned by
+    /// [`tests::format_write_metadata_name_matches_format_metadata_name`]
+    /// (byte-equality across every `(Format, Path)` pair) and by
+    /// [`tests::format_metadata_tag_display_matches_format_metadata_name`]
+    /// (the pre-existing transitive pin on the `Display` surface).
+    pub(crate) fn write_metadata_name<W: fmt::Write>(self, w: &mut W, path: &Path) -> fmt::Result {
+        write!(
+            w,
             "{}{}{}",
             self.as_str(),
             Self::METADATA_NAME_SEPARATOR,
@@ -1423,10 +1459,13 @@ impl fmt::Display for FormatMetadataTag<'_> {
     /// which asserts `format!("{tag}") == tag.format.metadata_name(tag.path)`
     /// pointwise across every `(Format, Path)` pair (both shikumi-provider
     /// and figment-builtin variants). The two surfaces stay
-    /// byte-for-byte aligned by construction; a future change to either
-    /// must update the other in lockstep.
+    /// byte-for-byte aligned by construction because both route through
+    /// [`Format::write_metadata_name`] — the ONE named write-side
+    /// helper the allocating and alloc-free emitters share — so a
+    /// future change to the emission shape lands at one site and this
+    /// impl inherits it without a lockstep manual edit.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.format, self.path.display())
+        self.format.write_metadata_name(f, self.path)
     }
 }
 
@@ -5081,6 +5120,75 @@ mod tests {
                     tag.to_string(),
                     f.metadata_name(path),
                     "Display must match Format::metadata_name pointwise for {f:?} at {path:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_write_metadata_name_matches_format_metadata_name() {
+        // The alloc-free `write_metadata_name` write-side must emit the
+        // exact same bytes as the allocating `metadata_name` surface for
+        // every `(Format, Path)` pair. This is the load-bearing pin on
+        // the shared-substrate lift: both `metadata_name` (via a String
+        // buffer) and `impl fmt::Display for FormatMetadataTag<'_>` (via
+        // a `fmt::Formatter`) now route through `write_metadata_name`,
+        // so a future change to the emission shape lands at ONE named
+        // site and every consumer inherits it by construction. If this
+        // test fails, the write-side helper and the allocating façade
+        // have drifted — likely because one was edited without the
+        // other, exactly the failure mode the helper exists to
+        // eliminate. Sweeps every Format variant (the helper is total
+        // over Format::ALL, same as `metadata_name`).
+        for &f in Format::ALL {
+            for path in [
+                Path::new("/a"),
+                Path::new("/etc/app/app.cfg"),
+                Path::new("/srv/cfg/x.lisp"),
+                Path::new("relative/path"),
+                Path::new(""),
+            ] {
+                let mut buf = String::new();
+                f.write_metadata_name(&mut buf, path)
+                    .expect("writing to a String cannot fail");
+                assert_eq!(
+                    buf,
+                    f.metadata_name(path),
+                    "write_metadata_name must match metadata_name pointwise for {f:?} at {path:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_display_routes_through_write_metadata_name() {
+        // Direct pin on the Display → write_metadata_name routing: the
+        // Display impl must emit exactly what the write-side helper
+        // emits for the same `(format, path)` pair. This is the third
+        // vertex of the byte-equality triangle
+        // (`Display` ≡ `metadata_name` ≡ `write_metadata_name`); the
+        // pre-existing `format_metadata_tag_display_matches_format_metadata_name`
+        // pins the top edge, `format_write_metadata_name_matches_format_metadata_name`
+        // pins the right edge, and this test pins the left edge so any
+        // one drift becomes visible without waiting on the transitive
+        // chain to notice. Sweeps every Format variant (both
+        // shikumi-provider and figment-builtin — the write-side is
+        // total, same as `metadata_name`).
+        for &f in Format::ALL {
+            for path in [
+                Path::new("/a"),
+                Path::new("/etc/app/app.cfg"),
+                Path::new("/srv/cfg/x.lisp"),
+                Path::new("relative/path"),
+            ] {
+                let tag = FormatMetadataTag { format: f, path };
+                let mut buf = String::new();
+                f.write_metadata_name(&mut buf, path)
+                    .expect("writing to a String cannot fail");
+                assert_eq!(
+                    tag.to_string(),
+                    buf,
+                    "Display must route through write_metadata_name for {f:?} at {path:?}"
                 );
             }
         }
