@@ -13637,9 +13637,54 @@ impl PartitionFace {
     /// the face was produced from. Pinned in lockstep with the cube
     /// predicate by
     /// [`tests::partition_ordinal_face_agrees_with_is_realizable`].
+    ///
+    /// Idiom-peer of the closed-binary sibling-predicate pattern this
+    /// crate carries on every other cardinality-`2` [`ClosedAxis`]
+    /// primitive: [`crate::SecretRefShape::is_whole`] /
+    /// [`crate::SecretRefShape::is_field`],
+    /// [`crate::AttributionConfidence::is_exact`] /
+    /// [`crate::AttributionConfidence::is_fallback`],
+    /// [`crate::FormatProvenance::is_shikumi_built`] /
+    /// [`crate::FormatProvenance::is_figment_builtin`],
+    /// [`crate::AttributionAxis::is_metadata_source`] /
+    /// [`crate::AttributionAxis::is_metadata_name`], and the peer pair
+    /// on the [`crate::FigmentNameTagKind`] axis. Where this predicate
+    /// tests the recognized-image half, [`Self::is_unrealizable`] tests
+    /// the cross-axis consistency-violation complement — the two
+    /// together define the (realizable, unrealizable) partition ONCE
+    /// at the face-axis altitude, so every consumer partitioning a
+    /// mixed stream of face tags reaches the same polarity through a
+    /// single call without a fresh `matches!` at the callsite.
     #[must_use]
     pub const fn is_realizable(self) -> bool {
         matches!(self, Self::Realizable)
+    }
+
+    /// `true` exactly on [`PartitionFace::Unrealizable`]; equivalent
+    /// to `self == PartitionFace::Unrealizable` and to
+    /// `!self.is_realizable()`.
+    ///
+    /// Sibling of [`Self::is_realizable`] on the other half of the
+    /// closed binary partition — the face-level dual of the negated
+    /// cube predicate `!ProductCube::is_realizable(cell)`. Pinned in
+    /// lockstep with the cube predicate by
+    /// [`tests::partition_ordinal_face_agrees_with_is_unrealizable`]
+    /// and against its own sibling by
+    /// [`tests::partition_face_predicates_are_a_closed_binary_partition`].
+    ///
+    /// Compounding payoff: a consumer partitioning a stream of face
+    /// tags into the two halves reaches the recognized and
+    /// unrecognized sides through symmetric predicate calls without
+    /// asymmetric `!face.is_realizable()` at every unrecognized
+    /// callsite — the same closed-binary sibling-pair shape every
+    /// other cardinality-`2` [`ClosedAxis`] primitive on the crate
+    /// already carries. This closes the sibling-predicate sweep the
+    /// prior commits (`aa30052`, `afccd9f`, `f4c1a82`, `c0d15a8`,
+    /// `5c2add4`) advanced, leaving zero binary closed axes carrying
+    /// only one half of their partition predicate.
+    #[must_use]
+    pub const fn is_unrealizable(self) -> bool {
+        matches!(self, Self::Unrealizable)
     }
 
     /// Canonical operator-facing lowercase name of the face —
@@ -18608,6 +18653,74 @@ mod tests {
         assert!(!PartitionFace::Unrealizable.is_realizable());
     }
 
+    #[test]
+    fn partition_face_is_unrealizable_true_only_for_unrealizable_variant() {
+        // Per-variant polarity pin on the Unrealizable side of the
+        // (realizable, unrealizable) partition. Sibling of
+        // `partition_face_is_realizable_matches_variant` on the other
+        // corner; mirror of
+        // `secret_ref_shape_is_field_true_only_for_field_variant` on
+        // the whole/field axis and
+        // `attribution_confidence_is_fallback_true_only_for_fallback`
+        // on the confidence axis. Pins what the sibling predicate
+        // returns on each cell in `PartitionFace::ALL`, so the two
+        // predicates form a closed pair whose polarity a single edit
+        // cannot silently flip.
+        assert!(PartitionFace::Unrealizable.is_unrealizable());
+        assert!(!PartitionFace::Realizable.is_unrealizable());
+    }
+
+    #[test]
+    fn partition_face_predicates_are_a_closed_binary_partition() {
+        // Closed-binary-partition pin on the (realizable, unrealizable)
+        // split. Mirror of
+        // `secret_ref_shape_predicates_are_a_closed_binary_partition`
+        // on the whole/field axis,
+        // `attribution_axis_predicates_are_a_closed_binary_partition`
+        // on the metadata axis, and
+        // `attribution_confidence_predicates_are_a_closed_binary_partition`
+        // on the confidence axis: every ALL cell satisfies exactly one
+        // of the two sibling predicates — none satisfy both (a face
+        // claiming to be both recognized-image and consistency-violation
+        // complement at once), none satisfy neither (a face outside the
+        // partition entirely).
+        //
+        // A future tertiary `PartitionFace` variant — not anticipated:
+        // the partition is XOR-complementary by construction, so a
+        // third face would first fail `partition_face_all_has_two_entries`
+        // — would fail this pin by design: the new class must declare
+        // its own partition arm (either extend one of the existing
+        // predicates to admit it, or introduce a third predicate)
+        // rather than silently landing under the negation of one of
+        // the existing two.
+        for &face in PartitionFace::ALL {
+            let realizable = face.is_realizable();
+            let unrealizable = face.is_unrealizable();
+            assert!(
+                realizable ^ unrealizable,
+                "{face:?} must satisfy exactly one of is_realizable / is_unrealizable",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_is_unrealizable_agrees_with_negated_is_realizable() {
+        // Negation-agreement pin at the face-axis altitude: on every
+        // `PartitionFace::ALL` cell, `is_unrealizable` returns the
+        // same bit as `!is_realizable`. The two predicates ARE the
+        // two halves of one closed partition, so this pin catches any
+        // future edit that shifts the polarity of one arm without the
+        // other (say, admitting a new variant into `is_realizable` but
+        // not removing it from `is_unrealizable`, or vice versa).
+        for &face in PartitionFace::ALL {
+            assert_eq!(
+                face.is_unrealizable(),
+                !face.is_realizable(),
+                "{face:?}: is_unrealizable must equal !is_realizable",
+            );
+        }
+    }
+
     fn assert_partition_ordinal_face_agrees_with_is_realizable<C>()
     where
         C: ProductCube + std::fmt::Debug,
@@ -18646,6 +18759,41 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_partition_ordinal_face_agrees_with_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    fn assert_partition_ordinal_face_agrees_with_is_unrealizable<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // Face-axis sibling of
+        // `assert_partition_ordinal_face_agrees_with_is_realizable`:
+        // the face tag projected from `partition_ordinal(cell)`
+        // classifies as `is_unrealizable` in lockstep with the NEGATED
+        // cube predicate `!ProductCube::is_realizable(cell)`, on every
+        // cell of every cube. The cube predicate's complement, the
+        // variant tag's `Unrealizable` corner, and
+        // `PartitionFace::is_unrealizable` are three readings of the
+        // same bit — pinned pointwise here through one trait-uniform
+        // helper.
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
+            let face = partition_ordinal::<C>(cell).face();
+            assert_eq!(
+                face.is_unrealizable(),
+                !ProductCube::is_realizable(cell),
+                "cell {cell:?}: partition_ordinal(cell).face().is_unrealizable() must equal \
+                 !ProductCube::is_realizable(cell)",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_face_agrees_with_is_unrealizable() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_face_agrees_with_is_unrealizable::<$ty>();
             };
         }
         for_each_product_cube!(check);
