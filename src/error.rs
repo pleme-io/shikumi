@@ -699,16 +699,31 @@ impl AttributionRule {
 
     /// Returns `true` if this rule is equality-based; equivalent to
     /// `self.confidence() == AttributionConfidence::Exact`.
+    ///
+    /// Delegates to the sibling predicate
+    /// [`AttributionConfidence::is_exact`] on the resolved confidence
+    /// class, so the polarity of the (exact, fallback) partition is
+    /// defined in exactly one place (the confidence altitude) and this
+    /// source-altitude convenience follows automatically. Peer to
+    /// [`crate::Format::has_shikumi_provider`], which routes through
+    /// [`crate::FormatProvenance::is_shikumi_built`] the same way.
+    /// Pinned pointwise by
+    /// `attribution_rule_is_exact_agrees_with_confidence_is_exact`.
     #[must_use]
     pub fn is_exact(self) -> bool {
-        matches!(self.confidence(), AttributionConfidence::Exact)
+        self.confidence().is_exact()
     }
 
     /// Returns `true` if this rule is uniqueness-based; equivalent to
     /// `self.confidence() == AttributionConfidence::Fallback`.
+    ///
+    /// Delegates to the sibling predicate
+    /// [`AttributionConfidence::is_fallback`]; see [`Self::is_exact`]
+    /// for the routing rationale. Pinned pointwise by
+    /// `attribution_rule_is_fallback_agrees_with_confidence_is_fallback`.
     #[must_use]
     pub fn is_fallback(self) -> bool {
-        matches!(self.confidence(), AttributionConfidence::Fallback)
+        self.confidence().is_fallback()
     }
 
     /// [`ConfigSourceKind`] of the layer this rule attributes to:
@@ -2432,6 +2447,46 @@ impl AttributionConfidence {
             Self::Exact => "exact",
             Self::Fallback => "fallback",
         }
+    }
+
+    /// Returns `true` for [`Self::Exact`]; equivalent to
+    /// `self == AttributionConfidence::Exact`.
+    ///
+    /// Convenience predicate matching the sibling pair on
+    /// [`crate::FormatProvenance`] ([`crate::FormatProvenance::is_shikumi_built`]
+    /// / [`crate::FormatProvenance::is_figment_builtin`]): typescape
+    /// primitives expose a per-variant predicate alongside the closed-
+    /// enum dispatch so the common "is it this one?" question stays
+    /// one method call.
+    ///
+    /// The source-altitude peers on [`AttributionRule`]
+    /// ([`AttributionRule::is_exact`] / [`AttributionRule::is_fallback`])
+    /// now route through this sibling — the polarity of the (exact,
+    /// fallback) partition is defined once here, and the rule-altitude
+    /// convenience follows automatically via
+    /// `AttributionRule::is_exact() == self.confidence().is_exact()`.
+    /// Before the routing, both the rule-altitude and the
+    /// (implicit) confidence-altitude reads reached for a fresh
+    /// `matches!` against `AttributionConfidence::Exact`, so a future
+    /// change to what "exact" means (e.g. collapsing an added
+    /// `Heuristic` cell into the exact half, or the reverse) had two
+    /// places to keep in lockstep by convention. The routing collapses
+    /// that to one.
+    #[must_use]
+    pub const fn is_exact(self) -> bool {
+        matches!(self, Self::Exact)
+    }
+
+    /// Returns `true` for [`Self::Fallback`]; equivalent to
+    /// `self == AttributionConfidence::Fallback`.
+    ///
+    /// Sibling of [`Self::is_exact`] on the other half of the closed
+    /// binary partition; same routing rationale (see [`Self::is_exact`]
+    /// docs), same peer pattern
+    /// ([`crate::FormatProvenance::is_figment_builtin`]).
+    #[must_use]
+    pub const fn is_fallback(self) -> bool {
+        matches!(self, Self::Fallback)
     }
 }
 
@@ -4408,6 +4463,105 @@ mod tests {
             <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("fall"),
             None,
         );
+    }
+
+    #[test]
+    fn attribution_confidence_is_exact_true_only_for_exact() {
+        // Per-variant polarity pin on the sibling predicate. Exact is
+        // the only cell that satisfies is_exact; the pin fires if a
+        // future refactor flips the polarity (e.g. matches!(self,
+        // Self::Fallback)) or widens the cell (e.g. a landed
+        // Heuristic variant silently rolling into the exact half).
+        // Mirror of format_has_shikumi_provider_lisp_and_nix_only on
+        // the format-provenance altitude — same discipline applied
+        // to the confidence altitude.
+        assert!(AttributionConfidence::Exact.is_exact());
+        assert!(!AttributionConfidence::Fallback.is_exact());
+    }
+
+    #[test]
+    fn attribution_confidence_is_fallback_true_only_for_fallback() {
+        // Per-variant polarity pin on the sibling predicate's other
+        // half. Fallback is the only cell that satisfies is_fallback.
+        // Mirror of format_has_figment_builtin_provider_yaml_and_toml_only.
+        assert!(AttributionConfidence::Fallback.is_fallback());
+        assert!(!AttributionConfidence::Exact.is_fallback());
+    }
+
+    #[test]
+    fn attribution_confidence_predicates_are_a_closed_binary_partition() {
+        // The two sibling predicates form a closed binary partition
+        // over AttributionConfidence::ALL: every variant satisfies
+        // exactly one, none satisfy neither, none satisfy both. This
+        // is the confidence-altitude peer of the format-altitude
+        // format_provider_class_predicates_are_a_closed_binary_partition
+        // pin. A future tertiary confidence variant (e.g. Heuristic)
+        // landing would fail this test — by design: the new class
+        // must declare its own predicate and its own partition arm
+        // rather than silently landing under the negation of one of
+        // the existing two.
+        for c in AttributionConfidence::ALL.iter().copied() {
+            assert_ne!(
+                c.is_exact(),
+                c.is_fallback(),
+                "confidence is binary; the two predicates must disagree pointwise on {c:?}",
+            );
+        }
+        // Cover check: every variant satisfies at least one predicate
+        // (rules out an added variant that neither predicate names).
+        for c in AttributionConfidence::ALL.iter().copied() {
+            assert!(
+                c.is_exact() || c.is_fallback(),
+                "closed binary partition: {c:?} must satisfy one of is_exact / is_fallback",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_exact_agrees_with_confidence_is_exact() {
+        // The rule-altitude predicate and the confidence-altitude
+        // predicate on the same corner (Exact) must agree pointwise
+        // across AttributionRule::ALL — the rule-altitude peer is a
+        // thin lift of self.confidence().is_exact(), and the two
+        // entry points cannot drift. Mirror of the format-altitude
+        // format_has_figment_builtin_provider_agrees_with_provenance_is_figment_builtin
+        // pin. A future regression that re-inlines matches!(...) on
+        // the rule side would still pass today because the polarity
+        // still agrees; this pin is loud specifically when
+        // AttributionConfidence::is_exact's polarity flips — the
+        // rule-side must follow.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_exact(),
+                rule.confidence().is_exact(),
+                "is_exact must route through confidence().is_exact() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_exact(),
+                rule.confidence() == AttributionConfidence::Exact,
+                "is_exact must agree with confidence == Exact on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_fallback_agrees_with_confidence_is_fallback() {
+        // Mirror of the Exact-corner routing pin, on the Fallback
+        // corner. Same rationale: the polarity of the (exact,
+        // fallback) partition is defined once at the confidence
+        // altitude; the rule-altitude convenience follows.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_fallback(),
+                rule.confidence().is_fallback(),
+                "is_fallback must route through confidence().is_fallback() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_fallback(),
+                rule.confidence() == AttributionConfidence::Fallback,
+                "is_fallback must agree with confidence == Fallback on {rule:?}",
+            );
+        }
     }
 
     #[test]
