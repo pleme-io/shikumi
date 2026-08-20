@@ -2201,15 +2201,41 @@ mod tests {
     // cell (Some on either source-axis or name-axis); unattributed
     // envelopes surface None on both.
 
-    fn synthetic_failure_with_rule(rule: AttributionRule) -> ReloadFailure {
+    /// Build a synthetic Extract-shaped `ReloadFailure` populated with an
+    /// arbitrary failing source layer and its matching attribution rule.
+    ///
+    /// One source of truth for the "synthetic attribution-populated
+    /// envelope" construction the tests module previously open-coded at
+    /// three distinct shapes: the majority `synthetic_failure_with_rule`
+    /// suite (which fixes the failing source at `Defaults` and now
+    /// delegates here), the file-provenance concrete-pin loop over
+    /// `Some(ConfigSource::File(_))` sources, and the
+    /// `attribution_name_kind_coordinates` clone-survival pin over
+    /// `Some(ConfigSource::Env(_))` sources. Every synthetic Extract
+    /// envelope carrying a populated `(failing_source, attribution_rule)`
+    /// diagonal cell now routes through here; a future `ReloadFailure`
+    /// field addition (the struct is `#[non_exhaustive]` exactly for this)
+    /// lands at ONE named site and every call site inherits the new
+    /// field by construction rather than failing to compile at each
+    /// hand-typed struct literal apart. Idiom-peer of
+    /// `synthetic_failure_with_rule` on the fixed-Defaults side of the
+    /// same drift-class partition.
+    fn synthetic_failure_with_source_and_rule(
+        source: ConfigSource,
+        rule: AttributionRule,
+    ) -> ReloadFailure {
         ReloadFailure {
             message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
-            failing_source: Some(ConfigSource::Defaults),
+            failing_source: Some(source),
             attribution_rule: Some(rule),
         }
+    }
+
+    fn synthetic_failure_with_rule(rule: AttributionRule) -> ReloadFailure {
+        synthetic_failure_with_source_and_rule(ConfigSource::Defaults, rule)
     }
 
     #[test]
@@ -2471,14 +2497,10 @@ mod tests {
             ),
         ];
         for (rule, provenance) in cases {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::File(std::path::PathBuf::from("/etc/x"))),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_source_and_rule(
+                ConfigSource::File(std::path::PathBuf::from("/etc/x")),
+                rule,
+            );
             assert_eq!(f.file_provenance(), Some(provenance), "rule {rule:?}");
         }
     }
@@ -3539,14 +3561,10 @@ mod tests {
         // ShikumiError, parallel to the figment_name_tag_kind-clone
         // and attribution_source_kind_coordinates-clone invariants
         // already pinned on the cross-thread envelope.
-        let f = ReloadFailure {
-            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-            kind: ShikumiErrorKind::Extract,
-            sources: vec![],
-            field_path: vec![],
-            failing_source: Some(ConfigSource::Env("APP_".to_owned())),
-            attribution_rule: Some(AttributionRule::EnvByPrefix),
-        };
+        let f = synthetic_failure_with_source_and_rule(
+            ConfigSource::Env("APP_".to_owned()),
+            AttributionRule::EnvByPrefix,
+        );
         let g = f.clone();
         assert_eq!(
             g.attribution_name_kind_coordinates(),
@@ -3722,6 +3740,112 @@ mod tests {
              through the shared `synthetic_failure_with_rule(rule)` helper \
              so a future `ReloadFailure` field addition lands at the helper \
              and every call site inherits the new field by construction",
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_synthetic_source_and_rule_extract_failures_through_helper() {
+        // Source-text pin on the wider, source-parameterized shape of the
+        // sibling `synthetic_failure_with_rule` pin — the same 7-line
+        // `ReloadFailure { message: SYNTHETIC_TEST_MESSAGE, kind: Extract,
+        // sources: vec![], field_path: vec![], failing_source:
+        // Some(ConfigSource::<any variant>(...)), attribution_rule:
+        // Some(...) }` struct-literal shape but with any `ConfigSource`
+        // variant in the failing-source slot, not only `Defaults`.
+        //
+        // Every synthetic driving the accessor / clone-survival suite over
+        // a non-`Defaults` failing source (concrete `File` paths in the
+        // `file_provenance_pins_each_file_rule_on_envelope` loop, concrete
+        // `Env` prefixes in the
+        // `attribution_name_kind_coordinates_survives_clone_independent_of_originating_error`
+        // pin, and any future addition over a `Sexp` / `Nix` / `Bare`
+        // failing-source cell) routes through the shared
+        // `synthetic_failure_with_source_and_rule(source, rule)` helper
+        // defined above, so the same `#[non_exhaustive]`-of-ReloadFailure
+        // future-field-addition drift-class the sibling pin closes on the
+        // Defaults axis is also closed on the wider ConfigSource-variant
+        // axis.
+        //
+        // The pin keys on the joint two-line signature `failing_source:
+        // Some(ConfigSource::` followed on the next line at the same
+        // indent by `attribution_rule: Some(` — the two attribution
+        // fields' Some/Some diagonal-cell shape. The helper's own body
+        // at 8-space indent (the tests-module `fn` body of
+        // `synthetic_failure_with_source_and_rule`) is exempt by
+        // construction: it uses `Some(source),` (a bare parameter, no
+        // `ConfigSource::` path) on the `failing_source` line, so the
+        // needle does not match the helper.
+        //
+        // The three off-diagonal cell literals inside
+        // `failing_attribution_some_iff_both_source_and_rule_some_envelope`
+        // are exempt by construction: they legitimately carry
+        // `attribution_rule: None` (or `failing_source: None`) on the
+        // second line, so the `Some(` half of the needle does not match.
+        // The `synthetic_failure_with_rule(rule)` fixed-Defaults sibling
+        // is guarded by the paired
+        // `reload_tests_route_synthetic_defaults_extract_failures_through_helper`
+        // pin above; this pin adds the wider ConfigSource-variant axis
+        // rather than replacing that one.
+        //
+        // Fail-before-pass-after cross-check: the wider shape count was
+        // 2 at the parent commit (the File-source concrete pin loop plus
+        // the Env-source clone-survival pin); this pin fires 2 offenders
+        // at that state and 0 here.
+        const SRC: &str = include_str!("reload.rs");
+        // Two indent variants live in-tree: 16-space (inside the
+        // `file_provenance_pins_each_file_rule_on_envelope` `for` loop)
+        // and 12-space (inside the top-level clone-survival test body).
+        // Both are covered by matching the FULL four-line signature
+        // (`sources: vec![],` → `field_path: vec![],` → `failing_source:
+        // Some(ConfigSource::` → `attribution_rule: Some(`) on
+        // consecutive lines with `line.trim_start()`. A single scan over
+        // lines pairs each match with its three-line successor window.
+        //
+        // The four-line window discipline is what keeps the pin honest
+        // against three otherwise-adjacent shapes that legitimately do
+        // NOT belong at the helper:
+        //   - `clone_preserves_data` populates `sources` and `field_path`
+        //     with non-empty vectors, so the first two lines of its
+        //     struct literal do NOT match `vec![],` — exempt by
+        //     construction.
+        //   - The three off-diagonal cells in
+        //     `failing_attribution_some_iff_both_source_and_rule_some_envelope`
+        //     carry `failing_source: None,` or `attribution_rule: None,`
+        //     on the last two lines — the `Some(` sub-pattern rules them
+        //     out.
+        //   - The sibling `reload_tests_route_synthetic_defaults_extract_failures_through_helper`
+        //     pin above contains a multi-line `NEEDLE` string literal
+        //     whose visual layout also spells out three of the four
+        //     tokens, but the line BEFORE the `sources: vec![],`
+        //     fragment is `const NEEDLE: &str = "...` (trim_start starts
+        //     with `const`), so the window-based match rooted at
+        //     `sources:` never begins there.
+        let lines: Vec<&str> = SRC.lines().collect();
+        let mut offenders: Vec<usize> = Vec::new();
+        for i in 0..lines.len().saturating_sub(3) {
+            let l0 = lines[i].trim_start();
+            if l0.starts_with("//") || l0 != "sources: vec![]," {
+                continue;
+            }
+            let l1 = lines[i + 1].trim_start();
+            let l2 = lines[i + 2].trim_start();
+            let l3 = lines[i + 3].trim_start();
+            if l1 == "field_path: vec![],"
+                && l2.starts_with("failing_source: Some(ConfigSource::")
+                && l3.starts_with("attribution_rule: Some(")
+            {
+                offenders.push(i + 1);
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "reload.rs re-inlines the wider `synthetic_failure_with_source_and_rule` \
+             shape at {} non-comment line pair(s) — route each through the shared \
+             `synthetic_failure_with_source_and_rule(source, rule)` helper so a \
+             future `ReloadFailure` field addition lands at the helper and every \
+             call site inherits the new field by construction (offending line \
+             numbers: {offenders:?})",
+            offenders.len(),
         );
     }
 }
