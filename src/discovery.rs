@@ -438,6 +438,100 @@ impl Format {
         matches!(self.provenance(), FormatProvenance::FigmentBuiltin)
     }
 
+    /// The cargo feature that must be enabled for [`crate::ProviderChain::with_file`]
+    /// to actually parse a file of this format, or [`None`] when the format
+    /// is always available in every build.
+    ///
+    /// Today's mapping (pinned per-variant by
+    /// [`tests::format_required_feature_pinned_per_variant`]):
+    ///
+    /// - [`Self::Yaml`] / [`Self::Toml`] → [`None`] (figment-builtin;
+    ///   parsed by `figment::providers::Yaml` / `figment::providers::Toml`,
+    ///   which are unconditional dependencies).
+    /// - [`Self::Nix`] → [`None`] (shikumi-built but always shipped;
+    ///   [`crate::NixProvider`] shells out to `nix eval`, so it carries no
+    ///   extra Rust dep beyond what shikumi already links).
+    /// - [`Self::Lisp`] → [`Some("lisp")`] ([`crate::lisp_provider`] is
+    ///   `#[cfg(feature = "lisp")]`-gated; the `tatara-lisp` dep is
+    ///   optional).
+    /// - [`Self::Blue`] → [`Some("blue")`] ([`crate::blue_provider`] is
+    ///   `#[cfg(feature = "blue")]`-gated; the `blue-lang-syntax` dep is
+    ///   optional).
+    ///
+    /// One source of truth for the (format → optional-feature) projection.
+    /// Before this accessor, the `(Format, required_feature)` correspondence
+    /// was implicit — split across the `#[cfg(feature = "…")] mod
+    /// <provider>;` gates in [`crate::lib`], the two
+    /// `merge_or_warn_missing_feature!` calls inside
+    /// [`crate::ProviderChain::with_file`] (which pass the feature literal as
+    /// the `feature = "…"` macro arg), and the fallback prose inside
+    /// [`crate::provider::missing_feature_warning_body`] — with `Format`
+    /// itself carrying no typed knowledge of which feature (if any) any
+    /// given variant requires. That's the drift-class the sibling typed
+    /// accessors on this type ([`Self::extensions`], [`Self::as_str`],
+    /// [`Self::dict_required_message`], [`Self::provenance`],
+    /// [`Self::has_shikumi_provider`], [`Self::has_figment_builtin_provider`])
+    /// each close on their own axis: pin one typed answer per format-axis
+    /// question at ONE named site.
+    ///
+    /// Widens the compile-time invariant surface: a future [`Format`]
+    /// variant landing forces an arm in the exhaustive match here in
+    /// lockstep with its module gate — the compiler enforces the axis
+    /// declaration. A future rename of an existing feature (e.g. `blue` →
+    /// `blue-syntax`) lands as a paired edit at exactly two sites — this
+    /// accessor's match arm, and the module gate in [`crate::lib`] — with
+    /// [`tests::format_required_feature_agrees_with_lib_rs_module_gates`]
+    /// pinning the two sites in lockstep and
+    /// [`tests::format_required_feature_agrees_with_provider_macro_call_sites`]
+    /// pinning that the two
+    /// [`merge_or_warn_missing_feature!`](crate::provider::merge_or_warn_missing_feature)
+    /// call sites in [`crate::provider::ProviderChain::with_file`] each pass
+    /// the same feature literal this accessor returns.
+    ///
+    /// **Structural invariants** (pinned by tests):
+    ///
+    /// - `f.required_feature().is_some()` implies
+    ///   `f.has_shikumi_provider()` — every feature-gated format is
+    ///   shikumi-built. The converse does not hold (`Format::Nix` is
+    ///   shikumi-built but returns [`None`]). Pinned by
+    ///   [`tests::format_required_feature_some_implies_shikumi_built`].
+    /// - `f.has_figment_builtin_provider()` implies
+    ///   `f.required_feature() == None` — figment-builtin formats are
+    ///   always available. Pinned by
+    ///   [`tests::format_figment_builtin_implies_no_required_feature`].
+    /// - Every returned feature literal appears in the crate's `Cargo.toml`
+    ///   `[features]` table. Pinned by
+    ///   [`tests::format_required_feature_names_appear_in_cargo_toml_features_table`].
+    ///
+    /// **Composes with the (`Format`, `FormatProvenance`) cube.** The
+    /// (`provenance == ShikumiBuilt`, `required_feature == Some`) cells are
+    /// the fiber of formats that are both shikumi-built AND feature-gated
+    /// (`Lisp`, `Blue`). The (`ShikumiBuilt`, `None`) cell is exactly
+    /// [`Self::Nix`]; the (`FigmentBuiltin`, `None`) cells are exactly
+    /// [`Self::Yaml`] and [`Self::Toml`]; the (`FigmentBuiltin`, `Some`)
+    /// cell is empty by the first invariant above and impossible by
+    /// construction.
+    ///
+    /// **Intended consumers.** A ConfigPlane / camelot diagnostic surface
+    /// answering "which cargo features must be enabled to load `.b`?" reads
+    /// [`Format::Blue.required_feature()`]. An attestation manifest
+    /// recording the feature set a resolved config depended on reads this
+    /// accessor over the recorded [`crate::ConfigSource::File`] chain. The
+    /// operator-facing missing-feature warning body
+    /// ([`crate::provider::missing_feature_warning_body`]) will
+    /// progressively route through this accessor rather than accepting the
+    /// feature label as a caller-passed argument, closing the last
+    /// duplication between the macro literal and the warning prose in a
+    /// follow-up lift.
+    #[must_use]
+    pub const fn required_feature(self) -> Option<&'static str> {
+        match self {
+            Self::Yaml | Self::Toml | Self::Nix => None,
+            Self::Lisp => Some("lisp"),
+            Self::Blue => Some("blue"),
+        }
+    }
+
     /// Canonical `figment::Metadata::name` shape used by shikumi-built
     /// providers for per-value attribution: `"<format>: <path>"` (e.g.
     /// `"lisp: /home/u/.config/app/app.lisp"`,
@@ -4425,6 +4519,252 @@ mod tests {
             shikumi_count + figment_count,
             Format::ALL.len(),
             "the two provider-class predicates must partition Format::ALL exhaustively",
+        );
+    }
+
+    // ---- required_feature (the format → optional-cargo-feature axis) ----
+    //
+    // The (format → feature) projection was implicit across three sites
+    // before this accessor: the `#[cfg(feature = "…")] mod <provider>;`
+    // gates in `src/lib.rs`, the two `merge_or_warn_missing_feature!`
+    // invocations in `src/provider.rs` (which pass the feature literal as
+    // `feature = "…"`), and the fallback prose inside
+    // `crate::provider::missing_feature_warning_body`. Lifting it to a
+    // typed accessor on `Format` closes the axis at ONE named site; these
+    // tests pin the per-variant mapping, the compile-time invariants that
+    // relate it to the sibling axes, and the two source-text agreements
+    // that keep it in lockstep with the module gates and the macro literals.
+
+    #[test]
+    fn format_required_feature_pinned_per_variant() {
+        // Concrete-position pin on the projection: every `Format` variant
+        // resolves to a specific `Option<&'static str>` at THIS site,
+        // matching the module gates in `src/lib.rs` and the macro
+        // literals in `src/provider.rs`'s `ProviderChain::with_file`.
+        // A future refactor that renamed either an existing feature or
+        // silently reshuffled which formats gate on which trips exactly
+        // this test.
+        assert_eq!(Format::Yaml.required_feature(), None);
+        assert_eq!(Format::Toml.required_feature(), None);
+        assert_eq!(Format::Nix.required_feature(), None);
+        assert_eq!(Format::Lisp.required_feature(), Some("lisp"));
+        assert_eq!(Format::Blue.required_feature(), Some("blue"));
+    }
+
+    #[test]
+    fn format_required_feature_some_implies_shikumi_built() {
+        // Structural invariant: every feature-gated format is loaded by a
+        // shikumi-built provider. The figment-builtin providers ship
+        // unconditionally, so a Yaml/Toml with `required_feature() =
+        // Some(_)` would be a category error. Pinned as a per-variant
+        // implication rather than a global filter so a future variant
+        // that broke the invariant on a specific cell fires with the
+        // offending variant named.
+        for &f in Format::ALL {
+            if f.required_feature().is_some() {
+                assert!(
+                    f.has_shikumi_provider(),
+                    "{f:?}: required_feature is Some but has_shikumi_provider is false — \
+                     a figment-builtin format cannot be feature-gated (its provider ships \
+                     unconditionally)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_figment_builtin_implies_no_required_feature() {
+        // Contrapositive of the above stated directly as its own pin
+        // (equivalent by classical logic, but named separately so a
+        // future variant that breaks THIS direction reports the
+        // figment-builtin corner as the failure site rather than the
+        // shikumi-built implication).
+        for &f in Format::ALL {
+            if f.has_figment_builtin_provider() {
+                assert_eq!(
+                    f.required_feature(),
+                    None,
+                    "{f:?}: has_figment_builtin_provider but required_feature is Some — \
+                     figment-builtin providers ship unconditionally",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_required_feature_names_appear_in_cargo_toml_features_table() {
+        // Cross-file pin: every feature literal `required_feature()`
+        // returns must actually name a feature declared in the crate's
+        // `Cargo.toml` `[features]` table. Catches a typo (`"lsp"` vs
+        // `"lisp"`) or a rename that drifted only one side. The needle
+        // is the `<name> =` shape a `[features]` entry always writes,
+        // scoped to the `[features]` section so a coincidental match
+        // elsewhere in the manifest (a dep name colliding with a feature
+        // name, a comment mentioning the string) does not silently pass.
+        const CARGO_TOML: &str = include_str!("../Cargo.toml");
+        // Anchor on the `[features]` HEADER (line-start with the leading
+        // newline) rather than the bare substring — Cargo.toml elsewhere
+        // mentions the word `[features]` inside a `# ...` comment (see the
+        // `[lints.rust]` header block), and a bare `.split("[features]")`
+        // would split at that comment mention instead of the real section
+        // header.
+        let after_features = CARGO_TOML
+            .split("\n[features]\n")
+            .nth(1)
+            .expect("Cargo.toml must have a [features] section header on its own line");
+        let scope_end = after_features.find("\n[").unwrap_or(after_features.len());
+        let features_scope = &after_features[..scope_end];
+        for &f in Format::ALL {
+            if let Some(feature) = f.required_feature() {
+                let needle = format!("\n{feature} =");
+                assert!(
+                    features_scope.contains(&needle),
+                    "{f:?}.required_feature() = Some({feature:?}) but Cargo.toml \
+                     [features] table has no `{feature} =` entry — the accessor and \
+                     the manifest have drifted",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_required_feature_agrees_with_lib_rs_module_gates() {
+        // Cross-file source-text pin: every feature literal
+        // `required_feature()` returns must correspond to a
+        // `#[cfg(feature = "…")] pub mod <name>_provider;` gate in
+        // `src/lib.rs`. Catches a rename that drifted only one side
+        // (e.g. an accessor returning `Some("blue")` while the module
+        // gate said `#[cfg(feature = "blue-syntax")]`) — the two axes
+        // must move together. Complements the `Cargo.toml` pin above:
+        // this one enforces that the accessor and the crate's own
+        // module-gating convention agree; the manifest pin enforces
+        // that both agree with the [features] table upstream.
+        const LIB_RS: &str = include_str!("lib.rs");
+        for &f in Format::ALL {
+            if let Some(feature) = f.required_feature() {
+                let needle = format!("#[cfg(feature = \"{feature}\")]");
+                assert!(
+                    LIB_RS.contains(&needle),
+                    "{f:?}.required_feature() = Some({feature:?}) but src/lib.rs has \
+                     no matching `{needle}` module gate — accessor and module gate \
+                     have drifted",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_required_feature_agrees_with_provider_macro_call_sites() {
+        // Cross-file source-text pin: every
+        // `merge_or_warn_missing_feature!` call site in
+        // `src/provider.rs` passes a `feature = "…"` literal that must
+        // match `format.required_feature()` for whatever `Format::X`
+        // the same call site passes as `format = …`. The pin walks the
+        // paired lines and asserts the literals agree with the
+        // accessor pointwise, so a future rename or new gate cannot
+        // land at the macro literal without a paired edit here.
+        //
+        // Restricted to the `merge_or_warn_missing_feature!` block —
+        // other files may mention `feature = "…"` in unrelated
+        // contexts (Cargo.toml comments, doc-strings) and are out of
+        // scope for this pin.
+        const PROVIDER_RS: &str = include_str!("provider.rs");
+        // Every `feature = "<name>",` followed within a few lines by a
+        // `format = Format::<Variant>,` pair — the shape both
+        // `merge_or_warn_missing_feature!` call sites use inside
+        // `with_file`. The `contains` walk is over the whole file; the
+        // parser is deliberately minimal because there are only two
+        // call sites today.
+        let mut pairs_checked = 0usize;
+        for (i, line) in PROVIDER_RS.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("feature = \"") {
+                if let Some(end) = rest.find('"') {
+                    let feature = &rest[..end];
+                    // Look ahead up to 3 lines for the matching `format =
+                    // Format::<Variant>` line inside the same macro
+                    // invocation.
+                    let format_line = PROVIDER_RS
+                        .lines()
+                        .skip(i + 1)
+                        .take(3)
+                        .find_map(|l| l.trim_start().strip_prefix("format = Format::"));
+                    let Some(format_ident_rest) = format_line else {
+                        continue;
+                    };
+                    let variant = format_ident_rest.trim_end_matches(',').trim_end();
+                    let matched = Format::ALL.iter().copied().find(|f| match f {
+                        Format::Yaml => variant == "Yaml",
+                        Format::Toml => variant == "Toml",
+                        Format::Nix => variant == "Nix",
+                        Format::Lisp => variant == "Lisp",
+                        Format::Blue => variant == "Blue",
+                    });
+                    let Some(format) = matched else {
+                        continue;
+                    };
+                    assert_eq!(
+                        format.required_feature(),
+                        Some(feature),
+                        "src/provider.rs line {}: `feature = {feature:?}` paired with \
+                         `format = Format::{variant}` but Format::{variant}.required_feature() \
+                         = {:?} — macro literal and accessor have drifted",
+                        i + 1,
+                        format.required_feature(),
+                    );
+                    pairs_checked += 1;
+                }
+            }
+        }
+        assert_eq!(
+            pairs_checked, 2,
+            "expected exactly 2 `merge_or_warn_missing_feature!`-style feature/format pairs \
+             in src/provider.rs (one per feature-gated format arm of ProviderChain::with_file); \
+             found {pairs_checked}",
+        );
+    }
+
+    #[test]
+    fn format_required_feature_none_variants_are_always_available() {
+        // Structural pin: the None-image of `required_feature` is exactly
+        // {Yaml, Toml, Nix} — the three formats `ProviderChain::with_file`
+        // reaches through a direct `merge_file_layer(…)` call (no
+        // `merge_or_warn_missing_feature!` macro), so their loaders are
+        // unconditionally linked. Any future variant that landed in this
+        // set without a corresponding unconditional-loader arm in
+        // `with_file` would silently fall through the conservative TOML
+        // fallback at load-time; pinning the None-image at the type
+        // level catches that drift before it ships.
+        let none_variants: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.required_feature().is_none())
+            .collect();
+        assert_eq!(
+            none_variants,
+            vec![Format::Yaml, Format::Toml, Format::Nix],
+            "the always-available format set is {{Yaml, Toml, Nix}}; a fourth cell here \
+             means either a new format shipped without its `merge_or_warn_missing_feature!` \
+             arm, or an existing feature-gated format quietly lost its gate",
+        );
+    }
+
+    #[test]
+    fn format_required_feature_some_variants_match_feature_gated_modules() {
+        // Structural pin on the complementary Some-image: the
+        // feature-gated set is exactly {Lisp, Blue} today. Peer of the
+        // None-image pin above; catches a drift where a shikumi-built
+        // format silently gained or lost its gate.
+        let some_variants: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.required_feature().is_some())
+            .collect();
+        assert_eq!(
+            some_variants,
+            vec![Format::Lisp, Format::Blue],
+            "the feature-gated format set is {{Lisp, Blue}}; a change here means either \
+             a new gated format landed, or an existing gate was removed",
         );
     }
 
