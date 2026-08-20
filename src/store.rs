@@ -196,13 +196,9 @@ where
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn reload(&self) -> Result<(), ShikumiError> {
-        match Self::load_from_sources(&self.sources) {
-            Ok((new, _)) => {
-                self.observatory.record_success(&self.inner, new);
-                Ok(())
-            }
-            Err(err) => self.observatory.record_failure_and_return_err(err),
-        }
+        let (new, _) = self.load_from_own_sources_or_record_failure()?;
+        self.observatory.record_success(&self.inner, new);
+        Ok(())
     }
 
     /// Replace the current snapshot with a caller-provided value
@@ -560,6 +556,84 @@ where
             .extract_with_sources()
     }
 
+    /// Replay [`Self::sources`] into a fresh candidate, routing any parse
+    /// or extraction failure through the observatory's
+    /// [`ReloadObservatory::record_failure_and_return_err`] surface in one
+    /// composed step.
+    ///
+    /// One source of truth for the "re-read the stored [`ConfigSource`]
+    /// chain, and on failure record + propagate through the observatory"
+    /// two-step every caller-owns-logging **whole-chain** reload path in
+    /// [`ConfigStore`] previously open-coded at its own body. Two callers
+    /// today — [`Self::reload`] (the plain manual sibling of the
+    /// [`Self::load_and_watch`] watcher-driven auto-reload) and, under
+    /// the `hotswap` feature, [`Self::reload_hotswap`] (the hot-swap
+    /// manual sibling of the [`Self::load_and_watch_hotswap`]
+    /// watcher-driven auto-reload) — each wrote the identical
+    /// `Self::load_from_sources(&self.sources)` match whose `Err` arm
+    /// funnelled through `self.observatory.record_failure_and_return_err(err)`,
+    /// differing only in whether the arm sat inline as the match's tail
+    /// expression (as in [`Self::reload`]) or fired an early
+    /// `return self.observatory.record_failure_and_return_err(err)` before
+    /// a validate-and-conditionally-swap tail (as in
+    /// [`Self::reload_hotswap`]). Two places any future refinement of the
+    /// caller-owns-logging **load-side** failure diagnostic — a
+    /// per-source-chain-shape [`ShikumiError`] re-classification pass
+    /// that fires before the observatory records (a well-known
+    /// [`ShikumiError::Extract`] on a specific
+    /// [`ConfigSource`] chain becomes a distinct error kind for
+    /// caller-side matching), a per-reload replay-attempt counter feeding
+    /// a manual-reload-cost histogram, an operator-facing structured
+    /// field naming which stored chain was replayed on the failing
+    /// attempt, a debounce that folds two back-to-back replay failures
+    /// on the same identical stored chain into one recorded failure —
+    /// would have to be applied in lockstep. That is exactly the
+    /// drift-class this crate spends load-bearing lifts to close, on
+    /// the caller-owns-logging side of the reload-load-and-record
+    /// two-step.
+    ///
+    /// The [`Self::load_and_watch`] / [`Self::load_and_watch_hotswap`]
+    /// watcher closures deliberately do NOT route through here: they
+    /// re-read via [`Self::load_from_path`] (not the stored
+    /// [`Self::sources`] chain) and log the failure via
+    /// [`ReloadObservatory::record_failure_and_log`] rather than
+    /// propagating an `Err` a watcher-closure return type cannot carry.
+    /// The [`Self::apply_hotswap_candidate`] validate-and-swap step
+    /// likewise does NOT route through here: it is downstream of the
+    /// load step (its input is an already-produced candidate) and
+    /// funnels its own validation failure through
+    /// [`ReloadObservatory::record_failure_and_return_err`] directly.
+    /// The three named surfaces — this helper on the caller-owns-logging
+    /// load side, the observatory's `record_failure_and_log` on the
+    /// watcher-owns-logging side, the observatory's
+    /// `record_failure_and_return_err` on the validate-and-swap step —
+    /// partition the reload-failure recording space by which step of
+    /// the reload pipeline produced the failure and which side owns
+    /// logging.
+    ///
+    /// # Return-value fidelity
+    ///
+    /// On success returns exactly the `(T, Vec<ConfigSource>)` tuple
+    /// [`Self::load_from_sources`] produced — the fresh candidate and
+    /// the newly re-extracted [`ConfigSource`] chain, byte-for-byte on
+    /// the candidate side and structurally identical to the pre-reload
+    /// [`Self::sources`] on the chain side (a stored chain replayed
+    /// through the same fold reproduces the same chain). On failure
+    /// returns the [`ShikumiError`] `load_from_sources` produced,
+    /// byte-for-byte on the [`std::fmt::Display`] surface (the
+    /// observatory's `record_failure_and_return_err` preserves that
+    /// fidelity), so a caller matching on the returned error's kind or
+    /// rendering its message sees exactly what
+    /// [`Self::load_from_sources`] produced.
+    fn load_from_own_sources_or_record_failure(
+        &self,
+    ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
+        match Self::load_from_sources(&self.sources) {
+            Ok(v) => Ok(v),
+            Err(err) => self.observatory.record_failure_and_return_err(err),
+        }
+    }
+
     /// Assemble a non-watching [`ConfigStore`] from an initial value,
     /// primary path, and provider chain.
     ///
@@ -729,10 +803,7 @@ where
     /// Returns `ShikumiError` if the file cannot be re-parsed or the
     /// candidate fails [`crate::hotswap::Validate::validate`].
     pub fn reload_hotswap(&self) -> Result<(), ShikumiError> {
-        let (candidate, _) = match Self::load_from_sources(&self.sources) {
-            Ok(v) => v,
-            Err(err) => return self.observatory.record_failure_and_return_err(err),
-        };
+        let (candidate, _) = self.load_from_own_sources_or_record_failure()?;
         Self::apply_hotswap_candidate(
             candidate,
             &self.inner,
@@ -1043,6 +1114,143 @@ mod tests {
 
         // Previous config should remain
         assert_eq!(store.get().count, Some(5));
+    }
+
+    // ---------- load_from_own_sources_or_record_failure pinning tests ----------
+    //
+    // The helper is the shared load-and-record-failure two-step both
+    // `reload` (base impl) and `reload_hotswap` (feature `hotswap`
+    // impl) route their whole-chain reload attempts through. The tests
+    // below pin the four contracts that make the substrate load-bearing;
+    // a future refactor that drifts any of these breaks a named test
+    // rather than silently changing what the two manual whole-chain
+    // reload paths propagate to their callers.
+
+    #[test]
+    fn load_from_own_sources_or_record_failure_returns_ok_tuple_matching_load_from_sources() {
+        // Ok pass-through fidelity: on success the helper returns exactly
+        // the (T, Vec<ConfigSource>) tuple `load_from_sources(&self.sources)`
+        // produced — same candidate value, same replayed source chain.
+        // A future refactor that wrapped the Ok tuple, filtered the
+        // source chain, or re-projected the candidate breaks this test
+        // before the two reload paths inherit the drift.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ok_tuple.yaml");
+        fs::write(&file, "name: pinned\ncount: 11\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_LOAD_OR_RECORD_OK_").unwrap();
+
+        let (candidate, replayed) = store
+            .load_from_own_sources_or_record_failure()
+            .expect("helper must succeed on a well-formed file");
+        assert_eq!(candidate.name.as_deref(), Some("pinned"));
+        assert_eq!(candidate.count, Some(11));
+        // The replayed chain reproduces the stored chain structurally.
+        assert_eq!(replayed, store.sources());
+    }
+
+    #[test]
+    fn load_from_own_sources_or_record_failure_leaves_failure_slots_untouched_on_ok() {
+        // Ok side-effect fidelity: on success the helper touches
+        // NEITHER the failure_count counter, NOR the last_reload_error
+        // slot, NOR the last_failure_at stamp. A future refactor that
+        // funnelled the Ok arm through `record_failure` on its way out
+        // (a debug counter, a "successful attempt observed" side note)
+        // would trip this test.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ok_slots.yaml");
+        fs::write(&file, "name: quiet\ncount: 3\n").unwrap();
+
+        let store =
+            ConfigStore::<TestConfig>::load(&file, "SHIKUMI_LOAD_OR_RECORD_OK_SLOTS_").unwrap();
+
+        assert_eq!(store.failure_count(), 0);
+        assert!(store.last_reload_error().is_none());
+        assert!(store.last_failure_at().is_none());
+
+        let _ = store
+            .load_from_own_sources_or_record_failure()
+            .expect("helper must succeed on a well-formed file");
+
+        assert_eq!(store.failure_count(), 0);
+        assert!(store.last_reload_error().is_none());
+        assert!(store.last_failure_at().is_none());
+    }
+
+    #[test]
+    fn load_from_own_sources_or_record_failure_records_and_returns_err_verbatim() {
+        // Err failure-recording + return-value fidelity: on failure the
+        // helper (a) bumps `failure_count` by exactly 1, (b) populates
+        // `last_reload_error` with a `ReloadFailure` whose Display
+        // matches the returned `ShikumiError`, (c) stamps
+        // `last_failure_at`, and (d) returns the same `ShikumiError`
+        // verbatim on the Display surface. A future refactor that
+        // wrapped or re-classified the error on the way out (a
+        // re-boxed variant, an added context prefix) breaks this test
+        // before the two reload paths silently change what they
+        // propagate.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_verbatim.yaml");
+        fs::write(&file, "name: pre\ncount: 7\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_LOAD_OR_RECORD_ERR_").unwrap();
+
+        assert_eq!(store.failure_count(), 0);
+        assert!(store.last_reload_error().is_none());
+        assert!(store.last_failure_at().is_none());
+
+        // Overwrite with malformed YAML so the file-tier replay fails.
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = store
+            .load_from_own_sources_or_record_failure()
+            .expect_err("helper must propagate the parse/extract failure");
+
+        assert_eq!(store.failure_count(), 1);
+        let recorded = store
+            .last_reload_error()
+            .expect("failure slot must be populated after Err");
+        assert_eq!(recorded.message, err.to_string());
+        assert!(
+            store.last_failure_at().is_some(),
+            "last_failure_at must be stamped after Err"
+        );
+    }
+
+    #[test]
+    fn load_from_own_sources_or_record_failure_does_not_touch_value_or_generation_on_err() {
+        // Err safe-slot preservation: on failure the helper NEVER
+        // touches the value slot or the generation counter — the
+        // same fail-safe contract the two manual reload paths advertise
+        // (a failed reload preserves the previously-published value and
+        // its generation). A future refactor that leaked the Err arm
+        // into the value slot (a "last-attempted-candidate" cache
+        // regression) breaks this test at the helper before either
+        // reload path silently corrupts a live consumer's view.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_safeslots.yaml");
+        fs::write(&file, "name: locked\ncount: 42\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_LOAD_OR_RECORD_ERR_SAFESLOTS_")
+            .unwrap();
+
+        let generation_before = store.generation();
+        let value_before = TestConfig {
+            name: store.get().name.clone(),
+            count: store.get().count,
+        };
+        assert_eq!(value_before.name.as_deref(), Some("locked"));
+        assert_eq!(value_before.count, Some(42));
+
+        // Two back-to-back failures: failure_count must bump twice
+        // while value and generation stay pinned.
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.load_from_own_sources_or_record_failure().is_err());
+        assert!(store.load_from_own_sources_or_record_failure().is_err());
+
+        assert_eq!(store.failure_count(), 2);
+        assert_eq!(store.generation(), generation_before);
+        assert_eq!(store.get().name.as_deref(), value_before.name.as_deref());
+        assert_eq!(store.get().count, value_before.count);
     }
 
     #[test]
