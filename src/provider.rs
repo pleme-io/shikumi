@@ -1327,7 +1327,7 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
 /// emits — the whole `"shikumi built without the `<feature>` feature;
 /// skipping .<ext> config. Enable the feature or convert to
 /// <alternatives>."` sentence assembled from the substrate helpers, with
-/// `<feature>` taken verbatim from the caller-supplied `feature` label,
+/// `<feature>` derived from [`Format::required_feature`] on `format`,
 /// `<ext>` derived from [`Format::as_str`] on `format` (dot-prefixed),
 /// and `<alternatives>` derived through [`missing_feature_alternatives`].
 ///
@@ -1361,6 +1361,31 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
 /// and alternatives-list all derive at this single site, with zero
 /// re-typed prose at the caller.
 ///
+/// **Single-format-axis contract.** The helper takes only `format`:
+/// the operator-facing feature label is derived inside via
+/// [`Format::required_feature`], not accepted as a second parameter,
+/// so a caller cannot pass a `feature` string that disagrees with the
+/// format's typed answer. That closes the last drift-class the pre-lift
+/// signature exposed — the `(caller-passed feature literal, format's
+/// typed required_feature)` pair could disagree, and only a source-text
+/// pin at
+/// [`format_required_feature_agrees_with_provider_macro_call_sites`](crate::discovery::tests)
+/// caught the drift. With the parameter dropped, the axis is closed
+/// by the type system: the format determines the feature label, and
+/// [`merge_or_warn_missing_feature!`]'s `$feat` literal is now used
+/// only for the `#[cfg(feature = $feat)]` gate itself.
+///
+/// # Panics
+///
+/// Panics if `format` has no [`Format::required_feature`] — i.e. if this
+/// helper is called for an always-available format ([`Format::Yaml`] /
+/// [`Format::Toml`] / [`Format::Nix`]). The single production caller,
+/// [`merge_or_warn_missing_feature!`]'s `#[cfg(not(feature = $feat))]`
+/// branch, only fires for feature-gated formats, so the panic is
+/// unreachable from real code; it exists to make the substrate
+/// invariant loud under any future misuse (a new caller landing that
+/// forgot to gate on `required_feature().is_some()` first).
+///
 /// The output is a [`String`] rather than an `&'static str` because both
 /// the alternatives phrase and the format-name are runtime-assembled
 /// from [`Format::ALL`] / [`Format::as_str`]; the missing-feature
@@ -1382,7 +1407,14 @@ pub(crate) fn json_value_to_figment(v: &serde_json::Value) -> Value {
 /// declares.
 #[cfg(any(test, not(feature = "lisp"), not(feature = "blue")))]
 #[must_use]
-pub(crate) fn missing_feature_warning_body(feature: &str, format: Format) -> String {
+pub(crate) fn missing_feature_warning_body(format: Format) -> String {
+    let feature = format.required_feature().expect(
+        "missing_feature_warning_body is only reachable from \
+         merge_or_warn_missing_feature!'s `#[cfg(not(feature = ...))]` \
+         branch, which only fires for formats whose required_feature is \
+         Some(_); an always-available format landing here means a new \
+         caller forgot to gate on required_feature().is_some() first",
+    );
     let ext = format.as_str();
     let alternatives = missing_feature_alternatives(format);
     format!(
@@ -1497,12 +1529,21 @@ pub(crate) fn missing_feature_alternatives(missing: Format) -> String {
 /// - `$feat` is the [`str`] literal naming the feature — a `:literal`
 ///   because the enabled and disabled `#[cfg(feature = $feat)]` /
 ///   `#[cfg(not(feature = $feat))]` attributes both require a literal
-///   token; it also flows into the warning body as the operator-facing
-///   feature label through [`missing_feature_warning_body`].
+///   token. It is used ONLY for those `#[cfg]` gates; the operator-facing
+///   feature label in the disabled-branch warning body is derived from
+///   `$format`'s [`Format::required_feature`] inside
+///   [`missing_feature_warning_body`], so the macro carries the
+///   feature name at exactly one axis (the `#[cfg]` attribute) and the
+///   warning body reads it through the typed accessor rather than
+///   receiving it as a second argument that could disagree. The
+///   source-text pin
+///   [`format_required_feature_agrees_with_provider_macro_call_sites`](crate::discovery::tests)
+///   keeps the `$feat` literal in lockstep with `$format.required_feature()`.
 /// - `$format` is any [`Format`]-typed expression (`const` or value);
 ///   the disabled branch passes it to [`missing_feature_warning_body`]
-///   for both the skipped-extension (derived via [`Format::as_str`]) and
-///   the alternatives list (derived via [`missing_feature_alternatives`]).
+///   for the feature label (derived via [`Format::required_feature`]),
+///   the skipped-extension (derived via [`Format::as_str`]) and the
+///   alternatives list (derived via [`missing_feature_alternatives`]).
 /// - `$prov` is any type expression naming the provider constructor
 ///   (typically `crate::lisp_provider::LispProvider`), whose
 ///   `file(&Path) -> Self` ctor the enabled branch calls.
@@ -1554,7 +1595,7 @@ macro_rules! merge_or_warn_missing_feature {
             ::tracing::warn!(
                 path = %$path.display(),
                 "{}",
-                $crate::provider::missing_feature_warning_body($feat, $format),
+                $crate::provider::missing_feature_warning_body($format),
             );
             // Record the attempted file even when the format's parser is
             // absent from this build: reload replay (`with_source`) walks
@@ -2307,23 +2348,53 @@ mod tests {
     // derivation at ONE substrate site so a future refinement of the
     // operator-facing sentence lands once instead of once per caller.
 
-    /// The body MUST embed the caller-supplied `feature` label verbatim
-    /// inside a `` `…` `` pair — the operator-facing name of the missing
-    /// build feature. A future regression that misprints the label
-    /// (drops the backticks, prints the format's name instead of the
-    /// feature's name, quietly translates the label) fires this pin.
-    /// Pinned for the two feature names both in-tree arms use plus a
-    /// third label a future gated caller might use (`ruby`), so the
-    /// invariant is checked across the exact class of literals the
-    /// macro accepts.
+    /// The body MUST embed the format's typed
+    /// [`Format::required_feature`] label verbatim inside a `` `…` `` pair
+    /// — the operator-facing name of the missing build feature. A future
+    /// regression that misprints the label (drops the backticks, prints
+    /// the format's name instead of the feature's name, quietly
+    /// translates the label) fires this pin. Iterates every feature-
+    /// gated `Format` variant — the ONLY class of format the helper is
+    /// reachable for — so the invariant is checked across every real
+    /// callsite.
     #[test]
     fn missing_feature_warning_body_embeds_feature_label_verbatim() {
-        for &feature in &["lisp", "blue", "ruby"] {
-            let body = missing_feature_warning_body(feature, Format::Yaml);
+        for &format in Format::ALL {
+            let Some(feature) = format.required_feature() else {
+                continue;
+            };
+            let body = missing_feature_warning_body(format);
             let quoted = format!("`{feature}`");
             assert!(
                 body.contains(&quoted),
-                "body must embed feature label `{feature}` inside backticks; got `{body}`",
+                "body for {format:?} must embed feature label `{feature}` \
+                 inside backticks; got `{body}`",
+            );
+        }
+    }
+
+    /// The body's feature label MUST derive from
+    /// [`Format::required_feature`] on the passed format, not from any
+    /// separately-passed literal. A future regression that hard-coded
+    /// the label a second time inside the helper (bypassing the typed
+    /// accessor) would silently disagree with the accessor on a
+    /// rename, and a caller could no longer trust that the label the
+    /// warning prints matches the feature they must enable — pins the
+    /// (helper × [`Format::required_feature`]) invariant at the
+    /// substrate site.
+    #[test]
+    fn missing_feature_warning_body_derives_feature_label_from_required_feature() {
+        for &format in Format::ALL {
+            let Some(feature) = format.required_feature() else {
+                continue;
+            };
+            let body = missing_feature_warning_body(format);
+            let expected = format!("shikumi built without the `{feature}` feature;");
+            assert!(
+                body.starts_with(&expected),
+                "body for {format:?} must start with `{expected}` — the feature \
+                 label is derived from Format::required_feature, not hard-coded; \
+                 got `{body}`",
             );
         }
     }
@@ -2334,11 +2405,16 @@ mod tests {
     /// [`Format::extensions`]`[1]` alias (`.yml`, `.lsp`, `.el`), or
     /// fabricates a per-format nickname, or drops the leading dot,
     /// fires this drift-closure. Pins the (helper × `Format::as_str`)
-    /// invariant at the substrate site.
+    /// invariant at the substrate site. Iterates every feature-gated
+    /// `Format` variant — the ONLY class of format the helper is
+    /// reachable for.
     #[test]
     fn missing_feature_warning_body_derives_skipped_ext_from_format_as_str() {
         for &format in Format::ALL {
-            let body = missing_feature_warning_body("lisp", format);
+            if format.required_feature().is_none() {
+                continue;
+            }
+            let body = missing_feature_warning_body(format);
             let expected = format!("skipping .{ext} config", ext = format.as_str());
             assert!(
                 body.contains(&expected),
@@ -2354,10 +2430,15 @@ mod tests {
     /// list a second time in this helper would silently stale on the
     /// next [`Format`] variant. Pins the (helper × peer helper)
     /// composition at the substrate site so both halves cannot drift.
+    /// Iterates every feature-gated `Format` variant — the ONLY class
+    /// of format the helper is reachable for.
     #[test]
     fn missing_feature_warning_body_embeds_missing_feature_alternatives_verbatim() {
         for &format in Format::ALL {
-            let body = missing_feature_warning_body("lisp", format);
+            if format.required_feature().is_none() {
+                continue;
+            }
+            let body = missing_feature_warning_body(format);
             let alt = missing_feature_alternatives(format);
             let expected_tail = format!("convert to {alt}.");
             assert!(
@@ -2367,62 +2448,62 @@ mod tests {
         }
     }
 
-    /// A hard-coded reproduction of what each of the five `Format`
-    /// variants MUST render to today, byte-for-byte, for the two
-    /// feature labels both in-tree arms use. Complements the
-    /// per-invariant structural pins above: those enforce the
-    /// derivation-rule invariants (feature verbatim, skipped-ext via
-    /// `Format::as_str`, alternatives via `missing_feature_alternatives`);
-    /// this table pins the exact rendered strings so a future refactor
-    /// whose per-invariant behavior still passes but whose rendered
-    /// output has drifted (an added trailing space, a swapped phrase, a
-    /// dropped period) fires here. New `Format` variants require
-    /// updating this table alongside `Format::ALL`, the same lockstep-
-    /// with-`ALL` obligation `format_all_covers_every_variant` enforces
-    /// on the primitive itself and
+    /// A hard-coded reproduction of what each of the two feature-gated
+    /// `Format` variants MUST render to today, byte-for-byte. These
+    /// are the ONLY two combinations `ProviderChain::with_file` ever
+    /// reaches — one per feature-gated arm — and the whole warning
+    /// sentence's shape is pinned here so a future refactor whose
+    /// per-invariant behavior still passes but whose rendered output
+    /// has drifted (an added trailing space, a swapped phrase, a
+    /// dropped period) fires. New feature-gated `Format` variants
+    /// require adding a row here alongside their `Format::ALL` entry,
+    /// the same lockstep-with-`ALL` obligation
+    /// `format_all_covers_every_variant` enforces on the primitive
+    /// itself and
     /// `missing_feature_alternatives_renders_verbatim_for_every_variant`
     /// enforces on the peer sub-phrase helper.
     #[test]
-    fn missing_feature_warning_body_renders_verbatim_for_every_variant() {
-        // The `lisp` feature label, one row per `Format` variant.
+    fn missing_feature_warning_body_renders_verbatim_for_every_gated_variant() {
         assert_eq!(
-            missing_feature_warning_body("lisp", Format::Yaml),
-            "shikumi built without the `lisp` feature; skipping .yaml config. \
-             Enable the feature or convert to .toml/.lisp/.nix/.b.",
-        );
-        assert_eq!(
-            missing_feature_warning_body("lisp", Format::Toml),
-            "shikumi built without the `lisp` feature; skipping .toml config. \
-             Enable the feature or convert to .yaml/.lisp/.nix/.b.",
-        );
-        assert_eq!(
-            missing_feature_warning_body("lisp", Format::Lisp),
+            missing_feature_warning_body(Format::Lisp),
             "shikumi built without the `lisp` feature; skipping .lisp config. \
              Enable the feature or convert to .yaml/.toml/.nix/.b.",
         );
         assert_eq!(
-            missing_feature_warning_body("lisp", Format::Nix),
-            "shikumi built without the `lisp` feature; skipping .nix config. \
-             Enable the feature or convert to .yaml/.toml/.lisp/.b.",
-        );
-        assert_eq!(
-            missing_feature_warning_body("lisp", Format::Blue),
-            "shikumi built without the `lisp` feature; skipping .b config. \
-             Enable the feature or convert to .yaml/.toml/.lisp/.nix.",
-        );
-        // The `blue` feature label, same variants — pins the two
-        // in-tree caller-relevant `(feature, format)` pairs verbatim.
-        // `("lisp", Format::Lisp)` above and `("blue", Format::Blue)`
-        // below are the ONLY two combinations `ProviderChain::with_file`
-        // ever reaches today; the others exist so a third gated caller
-        // (a `ruby`/`hocon`/`json5`/`kdl` front-end) inherits a body
-        // shape whose derivation is pinned across every `Format`
-        // variant it could land under.
-        assert_eq!(
-            missing_feature_warning_body("blue", Format::Blue),
+            missing_feature_warning_body(Format::Blue),
             "shikumi built without the `blue` feature; skipping .b config. \
              Enable the feature or convert to .yaml/.toml/.lisp/.nix.",
         );
+    }
+
+    /// The helper panics for an always-available format — a substrate
+    /// invariant made loud so a future caller that lands with an
+    /// ungated format (forgetting to check
+    /// `required_feature().is_some()` first) fails immediately at the
+    /// misuse site rather than silently emitting a body with a
+    /// misleading label. The panic message names both the invariant
+    /// and the reason it holds, so the failure mode is discoverable
+    /// from the panic text alone.
+    ///
+    /// Pinned once per always-available `Format` variant — the same
+    /// [Yaml, Toml, Nix] set
+    /// `format_required_feature_none_variants_are_always_available`
+    /// pins on the accessor itself.
+    #[test]
+    fn missing_feature_warning_body_panics_for_always_available_format() {
+        for &format in Format::ALL {
+            if format.required_feature().is_some() {
+                continue;
+            }
+            let result = std::panic::catch_unwind(|| missing_feature_warning_body(format));
+            assert!(
+                result.is_err(),
+                "missing_feature_warning_body({format:?}) must panic — the helper \
+                 is only reachable for feature-gated formats; an always-available \
+                 format landing here means a new caller forgot to gate on \
+                 required_feature().is_some() first",
+            );
+        }
     }
 
     #[test]

@@ -518,11 +518,14 @@ impl Format {
     /// recording the feature set a resolved config depended on reads this
     /// accessor over the recorded [`crate::ConfigSource::File`] chain. The
     /// operator-facing missing-feature warning body
-    /// ([`crate::provider::missing_feature_warning_body`]) will
-    /// progressively route through this accessor rather than accepting the
-    /// feature label as a caller-passed argument, closing the last
-    /// duplication between the macro literal and the warning prose in a
-    /// follow-up lift.
+    /// ([`crate::provider::missing_feature_warning_body`]) now derives its
+    /// feature label through this accessor rather than accepting it as a
+    /// caller-passed argument, closing the last duplication between the
+    /// macro literal and the warning prose: the
+    /// [`merge_or_warn_missing_feature!`](crate::provider::merge_or_warn_missing_feature)
+    /// macro's `$feat` literal is now used only for the `#[cfg(feature =
+    /// $feat)]` gate itself, and the warning body reads the feature label
+    /// off the `$format` argument via this accessor.
     #[must_use]
     pub const fn required_feature(self) -> Option<&'static str> {
         match self {
