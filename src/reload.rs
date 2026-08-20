@@ -1136,14 +1136,7 @@ mod tests {
         ] {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive confidence from it directly.
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.attribution_confidence(), Some(rule.confidence()));
         }
     }
@@ -1258,14 +1251,7 @@ mod tests {
         ] {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive layer_kind from it directly.
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.layer_kind(), Some(rule.layer_kind()));
         }
     }
@@ -1339,14 +1325,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let kind = f.layer_kind().expect("attributed → kind some");
             let conf = f.attribution_confidence().expect("attributed → conf some");
             pairs.insert((kind, conf));
@@ -1953,14 +1932,7 @@ mod tests {
         ] {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive metadata_axis from it directly.
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.metadata_axis(), Some(rule.metadata_axis()));
         }
     }
@@ -1981,14 +1953,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let axis = f.metadata_axis().expect("attributed → axis some");
             let conf = f.attribution_confidence().expect("attributed → conf some");
             pairs.insert((axis, conf));
@@ -2015,14 +1980,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let axis = f.metadata_axis().expect("attributed → axis some");
             let kind = f.layer_kind().expect("attributed → kind some");
             pairs.insert((axis, kind));
@@ -2123,14 +2081,7 @@ mod tests {
             AttributionRule::EnvByPrefix,
             AttributionRule::EnvByUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert!(f.attribution_rule.is_some(), "rule {rule:?}");
             assert!(
                 f.figment_source_kind().is_none(),
@@ -2151,14 +2102,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.figment_source_kind(), rule.figment_source_kind());
         }
     }
@@ -2175,14 +2119,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -2221,14 +2158,7 @@ mod tests {
             ),
         ];
         for (rule, fk, ck) in cases {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.figment_source_kind(), Some(fk), "rule {rule:?}");
             assert_eq!(f.layer_kind(), Some(ck), "rule {rule:?}");
         }
@@ -2490,14 +2420,7 @@ mod tests {
         // `figment_source_kind_agrees_with_rule_figment_source_kind_pointwise`
         // on the file-provenance axis.
         for rule in AttributionRule::ALL.iter().copied() {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(f.file_provenance(), rule.file_provenance());
         }
     }
@@ -2514,14 +2437,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -2720,14 +2636,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let coords = f.coordinates().expect("attributed → coords some");
             assert_eq!(Some(coords.axis), f.metadata_axis());
             assert_eq!(Some(coords.layer_kind), f.layer_kind());
@@ -2749,14 +2658,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let coords = f.coordinates().expect("coords some");
             assert_eq!(
                 AttributionRule::from_coordinates(coords),
@@ -2814,14 +2716,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             coords_set.insert(f.coordinates().expect("coords some"));
         }
         assert_eq!(
@@ -2873,14 +2768,7 @@ mod tests {
         // Some-iff-rule.
 
         // Both Some: envelope Some.
-        let both = ReloadFailure {
-            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-            kind: ShikumiErrorKind::Extract,
-            sources: vec![],
-            field_path: vec![],
-            failing_source: Some(ConfigSource::Defaults),
-            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
-        };
+        let both = synthetic_failure_with_rule(AttributionRule::DefaultsByCodeUniqueness);
         assert!(both.failing_attribution().is_some());
 
         // Both None: envelope None.
@@ -3062,14 +2950,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let envelope = f.failing_attribution().expect("attributed → envelope some");
             assert_eq!(Some(envelope.coordinates()), f.coordinates());
             assert_eq!(envelope.confidence(), rule.confidence());
@@ -3340,14 +3221,7 @@ mod tests {
             AttributionRule::EnvByPrefix,
             AttributionRule::EnvByUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert!(f.attribution_rule.is_some(), "rule {rule:?}");
             assert!(
                 f.attribution_source_kind_coordinates().is_none(),
@@ -3363,14 +3237,7 @@ mod tests {
         // attribution_rule.and_then(AttributionRule::attribution_source_kind_coordinates)
         // — pinning the convenience accessor as a pure projection.
         for rule in AttributionRule::ALL.iter().copied() {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(
                 f.attribution_source_kind_coordinates(),
                 rule.attribution_source_kind_coordinates(),
@@ -3387,14 +3254,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -3422,14 +3282,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -3530,14 +3383,7 @@ mod tests {
             AttributionRule::FileBySource,
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert!(f.attribution_rule.is_some(), "rule {rule:?}");
             assert!(
                 f.attribution_name_kind_coordinates().is_none(),
@@ -3577,14 +3423,7 @@ mod tests {
             ),
         ];
         for (rule, expected) in cases {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(
                 f.attribution_name_kind_coordinates(),
                 Some(expected),
@@ -3600,14 +3439,7 @@ mod tests {
         // attribution_rule.and_then(AttributionRule::attribution_name_kind_coordinates)
         // — pinning the convenience accessor as a pure projection.
         for rule in AttributionRule::ALL.iter().copied() {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             assert_eq!(
                 f.attribution_name_kind_coordinates(),
                 rule.attribution_name_kind_coordinates(),
@@ -3624,14 +3456,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -3659,14 +3484,7 @@ mod tests {
         let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
             .iter()
             .copied()
-            .map(|rule| ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            })
+            .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
                 &ShikumiError::Parse("x".to_owned()),
             )))
@@ -3700,14 +3518,7 @@ mod tests {
         // envelope, mirror of the rule-side
         // `attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`.
         for rule in AttributionRule::ALL.iter().copied() {
-            let f = ReloadFailure {
-                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
-                kind: ShikumiErrorKind::Extract,
-                sources: vec![],
-                field_path: vec![],
-                failing_source: Some(ConfigSource::Defaults),
-                attribution_rule: Some(rule),
-            };
+            let f = synthetic_failure_with_rule(rule);
             let source = f.attribution_source_kind_coordinates().is_some();
             let name = f.attribution_name_kind_coordinates().is_some();
             assert_ne!(
@@ -3861,6 +3672,56 @@ mod tests {
              silently desynchronising the synthetic from every other test-side \
              site in the crate: {offenders:#?}",
             offenders.len(),
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_synthetic_defaults_extract_failures_through_helper() {
+        // Source-text pin on the synthetic-with-rule + Defaults-failing-
+        // source shape: no test body in this file may re-inline the
+        // seven-line `ReloadFailure { message: SYNTHETIC_TEST_MESSAGE,
+        // kind: Extract, sources: vec![], field_path: vec![],
+        // failing_source: Some(ConfigSource::Defaults), attribution_rule:
+        // Some(...) }` struct literal at call-site indent (fields at 16
+        // spaces).
+        //
+        // Every synthetic driving the resolver / accessor suite over the
+        // full `AttributionRule::ALL` axis with Defaults as the failing
+        // source routes through the shared `synthetic_failure_with_rule`
+        // helper defined above at 12-space indent, so a future field
+        // addition to `ReloadFailure` (the struct is `#[non_exhaustive]`
+        // exactly for this) lands at ONE named site — the helper — and
+        // every one of the 27 previously-open-coded call sites inherits
+        // the new field by construction instead of failing to compile at
+        // 27 distinct places, one per hand-typed struct literal.
+        //
+        // The pin keys on the call-site indent (`\n                ` — 16
+        // spaces before `sources: vec![],`) so the helper's own body at
+        // 12-space indent is exempt by construction; it does not need a
+        // second exemption filter. The `only_source` off-diagonal shape
+        // at 12-space indent that legitimately carries
+        // `attribution_rule: None` (not `Some(_)`) is also exempt by
+        // construction — the pin's needle names `Some(ConfigSource::Defaults),`
+        // followed on the next line by `attribution_rule: Some(`, so the
+        // `None` off-diagonal is out of scope.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 27 at
+        // the parent commit (before the lift routed each site through
+        // `synthetic_failure_with_rule`); this pin fires 27 offenders at
+        // that state and 0 here.
+        const SRC: &str = include_str!("reload.rs");
+        const NEEDLE: &str = "\n                sources: vec![],\n                \
+                              field_path: vec![],\n                \
+                              failing_source: Some(ConfigSource::Defaults),\n                \
+                              attribution_rule: Some(";
+        assert_eq!(
+            SRC.matches(NEEDLE).count(),
+            0,
+            "reload.rs re-inlines the 7-line `synthetic_failure_with_rule` \
+             shape at call-site indent (fields at 16 spaces) — route each \
+             through the shared `synthetic_failure_with_rule(rule)` helper \
+             so a future `ReloadFailure` field addition lands at the helper \
+             and every call site inherits the new field by construction",
         );
     }
 }
