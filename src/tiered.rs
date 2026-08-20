@@ -332,6 +332,68 @@ impl ConfigTier {
             Self::Custom(_) => ConfigTierKind::Custom,
         }
     }
+
+    /// Returns `true` for [`Self::Bare`]; the tag-side sibling of
+    /// [`ConfigTierKind::is_bare`] (auto-derived via
+    /// `gen_platform::IsVariant`).
+    ///
+    /// One source of truth for the "is this the bare tier?" question
+    /// over [`ConfigTier`] — a consumer that only wants the yes/no
+    /// answer (a startup log branch, an operator-facing "how did we
+    /// resolve?" summary, a telemetry counter keyed on the operator's
+    /// tier selection) matches on this predicate instead of routing
+    /// through [`Self::kind`] and then a second `matches!` at every
+    /// site, or open-coding `matches!(tier, ConfigTier::Bare)` and
+    /// paying the closed-partition bookkeeping tax again.
+    ///
+    /// Kind-side/tag-side agreement is a structural law:
+    /// `tier.is_bare() == tier.kind().is_bare()` for every
+    /// [`ConfigTier`] — pinned pointwise by
+    /// [`tests::config_tier_agrees_with_kind_predicates_pointwise`]
+    /// (mirror of `config_source_kind_agrees_with_source_predicates_pointwise`
+    /// on the [`crate::ConfigSource`] axis). The four sibling
+    /// predicates form a closed disjoint partition of the variant
+    /// space — every [`ConfigTier`] value satisfies exactly one —
+    /// pinned by
+    /// [`tests::config_tier_predicates_are_a_closed_quaternary_partition`],
+    /// the quaternary analogue of the trio-partition pin on
+    /// [`crate::ConfigSourceKind`].
+    #[must_use]
+    pub const fn is_bare(&self) -> bool {
+        matches!(self, Self::Bare)
+    }
+
+    /// Returns `true` for [`Self::Discovered`]; tag-side sibling of
+    /// [`ConfigTierKind::is_discovered`]. See [`Self::is_bare`] for
+    /// the full contract.
+    #[must_use]
+    pub const fn is_discovered(&self) -> bool {
+        matches!(self, Self::Discovered)
+    }
+
+    /// Returns `true` for [`Self::Default`]; tag-side sibling of
+    /// [`ConfigTierKind::is_default`]. See [`Self::is_bare`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Default)
+    }
+
+    /// Returns `true` for [`Self::Custom`] regardless of the inner
+    /// [`std::path::PathBuf`] payload; tag-side sibling of
+    /// [`ConfigTierKind::is_custom`]. See [`Self::is_bare`] for the
+    /// full contract.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Custom(path)` — is what the pointwise-agreement pin locks
+    /// in: the kind-side predicate cannot see the [`PathBuf`], and
+    /// a future edit that changed this arm to inspect the path would
+    /// diverge from the kind-side and fail
+    /// [`tests::config_tier_agrees_with_kind_predicates_pointwise`].
+    #[must_use]
+    pub const fn is_custom(&self) -> bool {
+        matches!(self, Self::Custom(_))
+    }
 }
 
 /// Trait every shikumi-typed config implements to participate in the
@@ -25651,6 +25713,135 @@ mod tests {
         for (tier, expected_kind) in pairs {
             assert_eq!(tier.kind(), expected_kind);
             assert_eq!(tier.name(), expected_kind.as_str());
+        }
+    }
+
+    #[test]
+    fn config_tier_is_bare_true_only_for_bare_variant() {
+        // Per-variant polarity pin on the Bare corner of the ConfigTier
+        // tag-side sibling-predicate quartet. Mirror of
+        // `config_source_kind_is_defaults_true_only_for_defaults_variant`
+        // on the ConfigSourceKind trio and of the binary-axis polarity
+        // pins on PartitionFace / SecretRefShape / AttributionConfidence;
+        // a future edit that flips the `matches!` arm on
+        // `ConfigTier::is_bare` fails here before the pointwise-agreement
+        // and closed-partition pins mask it.
+        assert!(ConfigTier::Bare.is_bare());
+        assert!(!ConfigTier::Discovered.is_bare());
+        assert!(!ConfigTier::Default.is_bare());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::from("/x")).is_bare());
+    }
+
+    #[test]
+    fn config_tier_is_discovered_true_only_for_discovered_variant() {
+        assert!(!ConfigTier::Bare.is_discovered());
+        assert!(ConfigTier::Discovered.is_discovered());
+        assert!(!ConfigTier::Default.is_discovered());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::from("/x")).is_discovered());
+    }
+
+    #[test]
+    fn config_tier_is_default_true_only_for_default_variant() {
+        assert!(!ConfigTier::Bare.is_default());
+        assert!(!ConfigTier::Discovered.is_default());
+        assert!(ConfigTier::Default.is_default());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::from("/x")).is_default());
+    }
+
+    #[test]
+    fn config_tier_is_custom_true_only_for_custom_variant() {
+        // Payload-independence pin: `is_custom` fires for every
+        // Custom(path), regardless of whether the path is absolute,
+        // relative, or empty. A future edit that peeks at the inner
+        // PathBuf to answer this question would diverge from the
+        // kind-side predicate (which cannot see the payload) and
+        // fail `config_tier_agrees_with_kind_predicates_pointwise`.
+        assert!(!ConfigTier::Bare.is_custom());
+        assert!(!ConfigTier::Discovered.is_custom());
+        assert!(!ConfigTier::Default.is_custom());
+        assert!(ConfigTier::Custom(std::path::PathBuf::from("/x")).is_custom());
+        assert!(ConfigTier::Custom(std::path::PathBuf::from("rel.yaml")).is_custom());
+        assert!(ConfigTier::Custom(std::path::PathBuf::new()).is_custom());
+    }
+
+    #[test]
+    fn config_tier_predicates_are_a_closed_quaternary_partition() {
+        // Every ConfigTier value in the canonical sample table
+        // satisfies exactly one of the four sibling predicates:
+        // none satisfies two, none satisfies zero. This is the
+        // quaternary-partition analogue of the ternary-partition
+        // pin on ConfigSourceKind
+        // (`config_source_kind_predicates_are_a_closed_ternary_partition`)
+        // and of the binary-partition pins on the crate's binary
+        // closed axes (`partition_face_predicates_are_a_closed_binary_partition`,
+        // `secret_ref_shape_predicates_are_a_closed_binary_partition`,
+        // etc.). A future fifth ConfigTier variant landing without
+        // its own sibling predicate collapses the partition to zero
+        // on that variant, failing here before drifting through any
+        // consumer site.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("rel.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            let hits = usize::from(tier.is_bare())
+                + usize::from(tier.is_discovered())
+                + usize::from(tier.is_default())
+                + usize::from(tier.is_custom());
+            assert_eq!(
+                hits, 1,
+                "ConfigTier::{tier:?} must satisfy exactly one of \
+                 is_bare/is_discovered/is_default/is_custom (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_agrees_with_kind_predicates_pointwise() {
+        // Structural law: for every ConfigTier variant, the tag-side
+        // predicate and the kind-side sibling predicate agree.
+        // `tier.is_X() == tier.kind().is_X()` for X in
+        // {bare, discovered, default, custom}. Mirrors the trio-side pin
+        // `config_source_kind_agrees_with_source_predicates_pointwise`
+        // on the ConfigSource ↔ ConfigSourceKind axis; catches a
+        // future edit that drifts one side's polarity without the
+        // other, and pins the payload-independence contract on the
+        // Custom arm (kind-side has no PathBuf visibility, so
+        // tag-side is forbidden from consulting it).
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("rel.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            let k = tier.kind();
+            assert_eq!(
+                tier.is_bare(),
+                k.is_bare(),
+                "is_bare must agree tag ↔ kind for {tier:?}",
+            );
+            assert_eq!(
+                tier.is_discovered(),
+                k.is_discovered(),
+                "is_discovered must agree tag ↔ kind for {tier:?}",
+            );
+            assert_eq!(
+                tier.is_default(),
+                k.is_default(),
+                "is_default must agree tag ↔ kind for {tier:?}",
+            );
+            assert_eq!(
+                tier.is_custom(),
+                k.is_custom(),
+                "is_custom must agree tag ↔ kind for {tier:?}",
+            );
         }
     }
 
