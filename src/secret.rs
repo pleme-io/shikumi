@@ -612,6 +612,65 @@ impl SecretRefShape {
             Self::Field => "field",
         }
     }
+
+    /// Returns `true` for [`Self::Whole`]; equivalent to
+    /// `self == SecretRefShape::Whole`.
+    ///
+    /// Convenience predicate matching the sibling pairs already carried
+    /// by every peer binary closed-axis primitive in the crate:
+    /// [`crate::AttributionConfidence::is_exact`] /
+    /// [`crate::AttributionConfidence::is_fallback`] on the confidence
+    /// axis, [`crate::AttributionAxis::is_metadata_source`] /
+    /// [`crate::AttributionAxis::is_metadata_name`] on the metadata
+    /// axis, [`crate::FormatProvenance::is_shikumi_built`] /
+    /// [`crate::FormatProvenance::is_figment_builtin`] on the
+    /// format-provenance axis, [`crate::FigmentNameTagKind::is_format`]
+    /// / [`crate::FigmentNameTagKind::is_env`] on the figment-Name
+    /// axis, and [`crate::EnvMetadataTagKind::is_prefixed`] /
+    /// [`crate::EnvMetadataTagKind::is_bare`] on the env-name sub-axis.
+    /// `SecretRefShape` carried `ALL` and `as_str` but *no* predicate at
+    /// all — the only binary closed axis in the crate with neither half
+    /// of the pair; this lands both halves so consumers dispatching on
+    /// the whole-vs-field split (per-shape resolution-success
+    /// histograms, dashboards weighting whole-payload reads differently
+    /// from field extractions since the whole shape decrypts a larger
+    /// payload, structured-log filters, attestation manifests
+    /// partitioning resolved secrets by extraction shape) stop
+    /// re-inventing `matches!(shape, SecretRefShape::Whole)` at each
+    /// site.
+    ///
+    /// The predicate classifies the *shape tag* itself, independent of
+    /// which backend produced it: both [`SopsRef::shape`] and
+    /// [`VaultRef::shape`] project onto this one axis, so a consumer
+    /// partitioning a mixed stream of Sops and Vault references reaches
+    /// the same polarity through a single call.
+    ///
+    /// A future tertiary variant (e.g. the `MultiField { fields }` shape
+    /// named in [`Self::ALL`]'s docs) landing on [`Self`] must either
+    /// extend one predicate to admit it or introduce a third — the
+    /// `secret_ref_shape_predicates_are_a_closed_binary_partition` test
+    /// refuses a silent landing under the negation of one of the
+    /// existing two.
+    #[must_use]
+    pub const fn is_whole(self) -> bool {
+        matches!(self, Self::Whole)
+    }
+
+    /// Returns `true` for [`Self::Field`]; equivalent to
+    /// `!self.is_whole()`.
+    ///
+    /// Sibling of [`Self::is_whole`] on the other half of the closed
+    /// binary partition over the secret-ref extraction-shape axis; same
+    /// routing rationale (see [`Self::is_whole`] docs), same peer
+    /// pattern ([`crate::AttributionConfidence::is_fallback`],
+    /// [`crate::AttributionAxis::is_metadata_name`],
+    /// [`crate::FormatProvenance::is_figment_builtin`],
+    /// [`crate::FigmentNameTagKind::is_env`],
+    /// [`crate::EnvMetadataTagKind::is_bare`]).
+    #[must_use]
+    pub const fn is_field(self) -> bool {
+        matches!(self, Self::Field)
+    }
 }
 
 impl crate::ClosedAxis for SecretRefShape {
@@ -2481,6 +2540,97 @@ mod tests {
         // drifting through the round-trip law.
         assert_eq!(SecretRefShape::Whole.as_str(), "whole");
         assert_eq!(SecretRefShape::Field.as_str(), "field");
+    }
+
+    #[test]
+    fn secret_ref_shape_is_whole_true_only_for_whole_variant() {
+        // Per-variant polarity pin on the Whole side of the (whole,
+        // field) partition. Mirror of
+        // `attribution_axis_is_metadata_source_true_only_for_metadata_source_variant`
+        // on the metadata axis and
+        // `attribution_confidence_is_exact_true_only_for_exact` on the
+        // confidence axis: pin what the sibling predicate returns on
+        // each cell in SecretRefShape::ALL. A future edit that widened
+        // is_whole to admit Field (or narrowed it to reject Whole)
+        // would fail here before drifting through the whole-vs-field
+        // polarity at every consumer site.
+        assert!(SecretRefShape::Whole.is_whole());
+        assert!(!SecretRefShape::Field.is_whole());
+    }
+
+    #[test]
+    fn secret_ref_shape_is_field_true_only_for_field_variant() {
+        // Sibling of the Whole-corner polarity pin, on the Field
+        // corner. Same rationale (see the sibling test's docs): pins
+        // what the closed-binary sibling returns on every cell in
+        // SecretRefShape::ALL, so the two predicates form a closed pair
+        // whose polarity a single edit cannot silently flip.
+        assert!(!SecretRefShape::Whole.is_field());
+        assert!(SecretRefShape::Field.is_field());
+    }
+
+    #[test]
+    fn secret_ref_shape_predicates_are_a_closed_binary_partition() {
+        // Closed-binary-partition pin on the (whole, field) split.
+        // Mirror of
+        // `attribution_axis_predicates_are_a_closed_binary_partition`
+        // on the metadata axis,
+        // `attribution_confidence_predicates_are_a_closed_binary_partition`
+        // on the confidence axis, and
+        // `is_figment_bearing_predicates_are_a_closed_binary_partition`
+        // on the kind axis: every ALL cell satisfies exactly one of the
+        // two sibling predicates — none satisfy both (a shape claiming
+        // to be a whole-payload read and a field extraction at once),
+        // none satisfy neither (a shape outside the partition
+        // entirely).
+        //
+        // A future tertiary SecretRefShape variant (e.g. the
+        // `MultiField { fields: Vec<String> }` shape referenced in
+        // SecretRefShape::ALL's own doc-comment) would fail this pin by
+        // design: the new class must declare its own partition arm —
+        // either extend one of the existing predicates to admit it, or
+        // introduce a third predicate — rather than silently landing
+        // under the negation of one of the existing two.
+        for &shape in SecretRefShape::ALL {
+            let whole = shape.is_whole();
+            let field = shape.is_field();
+            assert!(
+                whole ^ field,
+                "{shape:?} must satisfy exactly one of is_whole / is_field",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_predicates_agree_with_both_ref_type_projections() {
+        // The compounding payoff at the typed consumer site: the shape
+        // predicates classify the tag itself, so a consumer
+        // partitioning a MIXED stream of Sops and Vault references
+        // reaches the same polarity through one call regardless of
+        // which backend produced the reference. Pins that
+        // `SopsRef::shape` and `VaultRef::shape` agree pointwise under
+        // the predicates on both corners — the predicate-level dual of
+        // `secret_ref_shape_all_declaration_order_matches_ref_variants`,
+        // which pins the same pointwise correspondence at the ALL-slice
+        // altitude.
+        assert!(SopsRef::File(PathBuf::from("a")).shape().is_whole());
+        assert!(VaultRef::Path("a".into()).shape().is_whole());
+        assert!(
+            SopsRef::Field {
+                file: PathBuf::from("a"),
+                field: "k".into(),
+            }
+            .shape()
+            .is_field()
+        );
+        assert!(
+            VaultRef::Field {
+                path: "a".into(),
+                field: "k".into(),
+            }
+            .shape()
+            .is_field()
+        );
     }
 
     // ── SecretBackendKind — Ord / Display / FromStr / serde ──────────
