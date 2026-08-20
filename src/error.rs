@@ -2758,6 +2758,57 @@ impl AttributionAxis {
             Self::MetadataName => "metadata-name",
         }
     }
+
+    /// Returns `true` for [`Self::MetadataSource`]; equivalent to
+    /// `self == AttributionAxis::MetadataSource`.
+    ///
+    /// Convenience predicate matching the sibling pairs on every peer
+    /// closed-axis primitive in the module: [`AttributionConfidence::is_exact`]
+    /// / [`AttributionConfidence::is_fallback`] on the confidence axis,
+    /// [`FieldPathLocalization::is_applicable`] /
+    /// [`FieldPathLocalization::is_not_applicable`] on the localization
+    /// axis, [`ShikumiErrorKind::is_figment_bearing`] /
+    /// [`ShikumiErrorKind::is_not_figment_bearing`] on the kind axis,
+    /// and [`crate::FormatProvenance::is_shikumi_built`] /
+    /// [`crate::FormatProvenance::is_figment_builtin`] on the
+    /// format-provenance axis. `AttributionAxis` was the last remaining
+    /// single-predicate primitive in `error.rs`; this closes the
+    /// sibling-predicate pattern on the metadata axis so consumers
+    /// dispatching on the source-vs-name split (attribution-count
+    /// dashboards weighting name-axis attributions visibly weaker,
+    /// structured-log filters, per-axis histogram partitioning) stop
+    /// re-inventing `matches!(axis, AttributionAxis::MetadataSource)` at
+    /// each site — six such consumer sites in `error::tests` and two in
+    /// `discovery::tests` already reach for a fresh `==
+    /// AttributionAxis::MetadataSource` comparison; each is a candidate
+    /// to route through this sibling as the polarity of the (source,
+    /// name) partition consolidates at the axis altitude.
+    ///
+    /// A future tertiary variant (e.g. a `MetadataExtras` cell for
+    /// figment providers that surface additional typed metadata fields)
+    /// landing on [`Self`] must either extend one predicate to admit it
+    /// or introduce a third predicate — the `attribution_axis_predicates
+    /// _are_a_closed_binary_partition` test refuses to compile through
+    /// a silent-landing under the negation of one of the existing two.
+    #[must_use]
+    pub const fn is_metadata_source(self) -> bool {
+        matches!(self, Self::MetadataSource)
+    }
+
+    /// Returns `true` for [`Self::MetadataName`]; equivalent to
+    /// `!self.is_metadata_source()`.
+    ///
+    /// Sibling of [`Self::is_metadata_source`] on the other half of the
+    /// closed binary partition over the metadata axis; same routing
+    /// rationale (see [`Self::is_metadata_source`] docs), same peer
+    /// pattern ([`AttributionConfidence::is_fallback`],
+    /// [`FieldPathLocalization::is_not_applicable`],
+    /// [`ShikumiErrorKind::is_not_figment_bearing`],
+    /// [`crate::FormatProvenance::is_figment_builtin`]).
+    #[must_use]
+    pub const fn is_metadata_name(self) -> bool {
+        matches!(self, Self::MetadataName)
+    }
 }
 
 impl crate::ClosedAxisLabel for AttributionAxis {
@@ -4664,6 +4715,66 @@ mod tests {
     }
 
     #[test]
+    fn attribution_axis_is_metadata_source_true_only_for_metadata_source_variant() {
+        // Per-variant polarity pin on the MetadataSource side of the
+        // (metadata-source, metadata-name) partition. Mirror of
+        // `attribution_confidence_is_exact_true_only_for_exact` on the
+        // confidence axis and
+        // `field_path_localization_is_applicable_true_only_for_applicable_variants`
+        // on the localization axis: pin what the sibling predicate
+        // returns on each cell in AttributionAxis::ALL. A future edit
+        // that widened AttributionAxis::is_metadata_source to admit
+        // MetadataName (or narrowed it to reject MetadataSource) would
+        // fail here before drifting through the (metadata-source,
+        // metadata-name) polarity at every consumer site.
+        assert!(AttributionAxis::MetadataSource.is_metadata_source());
+        assert!(!AttributionAxis::MetadataName.is_metadata_source());
+    }
+
+    #[test]
+    fn attribution_axis_is_metadata_name_true_only_for_metadata_name_variant() {
+        // Sibling of the MetadataSource-corner polarity pin, on the
+        // MetadataName corner. Same rationale (see the sibling test's
+        // docs): pins what the closed-binary sibling returns on every
+        // cell in AttributionAxis::ALL, so the two predicates form a
+        // closed pair whose polarity a single edit cannot silently flip.
+        assert!(!AttributionAxis::MetadataSource.is_metadata_name());
+        assert!(AttributionAxis::MetadataName.is_metadata_name());
+    }
+
+    #[test]
+    fn attribution_axis_predicates_are_a_closed_binary_partition() {
+        // Closed-binary-partition pin on the (metadata-source,
+        // metadata-name) split. Mirror of
+        // `attribution_confidence_predicates_are_a_closed_binary_partition`
+        // on the confidence axis,
+        // `field_path_localization_predicates_are_a_closed_binary_partition`
+        // on the localization axis, and
+        // `is_figment_bearing_predicates_are_a_closed_binary_partition`
+        // on the kind axis: every ALL cell satisfies exactly one of the
+        // two sibling predicates — none satisfy both (a variant
+        // claiming to be both source-axis and name-axis at once), none
+        // satisfy neither (a variant outside the partition entirely).
+        //
+        // A future tertiary AttributionAxis variant (e.g. a
+        // MetadataExtras cell for figment providers that surface
+        // additional typed metadata fields, referenced in the enum's
+        // doc-comment) would fail this pin by design: the new class
+        // must declare its own partition arm — either extend one of
+        // the existing predicates to admit it, or introduce a third
+        // predicate — rather than silently landing under the negation
+        // of one of the existing two.
+        for &axis in AttributionAxis::ALL {
+            let source = axis.is_metadata_source();
+            let name = axis.is_metadata_name();
+            assert!(
+                source ^ name,
+                "{axis:?} must satisfy exactly one of is_metadata_source / is_metadata_name",
+            );
+        }
+    }
+
+    #[test]
     fn attribution_axis_as_str_yields_canonical_kebab_case_names() {
         // Concrete-position pin on AttributionAxis::as_str. The
         // trait-uniform round-trip test in cube::tests pins labels
@@ -6264,9 +6375,9 @@ mod tests {
         for rule in AttributionRule::ALL.iter().copied() {
             assert_eq!(
                 rule.figment_source_kind().is_some(),
-                rule.metadata_axis() == AttributionAxis::MetadataSource,
+                rule.metadata_axis().is_metadata_source(),
                 "rule {rule:?}: figment_source_kind.is_some() must equal \
-                 (metadata_axis == MetadataSource)",
+                 metadata_axis().is_metadata_source()",
             );
         }
     }
@@ -6384,9 +6495,9 @@ mod tests {
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(
                 attr.figment_source_kind().is_some(),
-                attr.metadata_axis() == AttributionAxis::MetadataSource,
+                attr.metadata_axis().is_metadata_source(),
                 "envelope for rule {rule:?}: figment_source_kind.is_some() must equal \
-                 (metadata_axis == MetadataSource)",
+                 metadata_axis().is_metadata_source()",
             );
         }
     }
@@ -6492,9 +6603,9 @@ mod tests {
         for rule in AttributionRule::ALL.iter().copied() {
             assert_eq!(
                 rule.figment_name_tag_kind().is_some(),
-                rule.metadata_axis() == AttributionAxis::MetadataName,
+                rule.metadata_axis().is_metadata_name(),
                 "rule {rule:?}: figment_name_tag_kind.is_some() must equal \
-                 (metadata_axis == MetadataName)",
+                 metadata_axis().is_metadata_name()",
             );
         }
     }
@@ -6578,9 +6689,9 @@ mod tests {
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(
                 attr.figment_name_tag_kind().is_some(),
-                attr.metadata_axis() == AttributionAxis::MetadataName,
+                attr.metadata_axis().is_metadata_name(),
                 "envelope for rule {rule:?}: figment_name_tag_kind.is_some() must equal \
-                 (metadata_axis == MetadataName)",
+                 metadata_axis().is_metadata_name()",
             );
         }
     }
@@ -7558,11 +7669,11 @@ mod tests {
         // ALL.len() with no rule unaccounted for.
         let source = AttributionRule::ALL
             .iter()
-            .filter(|r| r.metadata_axis() == AttributionAxis::MetadataSource)
+            .filter(|r| r.metadata_axis().is_metadata_source())
             .count();
         let name = AttributionRule::ALL
             .iter()
-            .filter(|r| r.metadata_axis() == AttributionAxis::MetadataName)
+            .filter(|r| r.metadata_axis().is_metadata_name())
             .count();
         assert_eq!(source, 2, "two ALL rules dispatch off metadata.source");
         assert_eq!(name, 3, "three ALL rules dispatch off metadata.name");
@@ -8056,9 +8167,9 @@ mod tests {
         for rule in AttributionRule::ALL.iter().copied() {
             assert_eq!(
                 rule.attribution_source_kind_coordinates().is_some(),
-                rule.metadata_axis() == AttributionAxis::MetadataSource,
+                rule.metadata_axis().is_metadata_source(),
                 "rule {rule:?}: attribution_source_kind_coordinates.is_some() must equal \
-                 (metadata_axis == MetadataSource)",
+                 metadata_axis().is_metadata_source()",
             );
         }
     }
@@ -8396,9 +8507,9 @@ mod tests {
         for rule in AttributionRule::ALL.iter().copied() {
             assert_eq!(
                 rule.attribution_name_kind_coordinates().is_some(),
-                rule.metadata_axis() == AttributionAxis::MetadataName,
+                rule.metadata_axis().is_metadata_name(),
                 "rule {rule:?}: attribution_name_kind_coordinates.is_some() must equal \
-                 (metadata_axis == MetadataName)",
+                 metadata_axis().is_metadata_name()",
             );
         }
     }
