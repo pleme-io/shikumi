@@ -1137,7 +1137,7 @@ mod tests {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive confidence from it directly.
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -1259,7 +1259,7 @@ mod tests {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive layer_kind from it directly.
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -1340,7 +1340,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -1954,7 +1954,7 @@ mod tests {
             // Build a synthetic ReloadFailure carrying just the rule;
             // the accessor must derive metadata_axis from it directly.
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -1982,7 +1982,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2016,7 +2016,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2124,7 +2124,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2152,7 +2152,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2176,7 +2176,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2222,7 +2222,7 @@ mod tests {
         ];
         for (rule, fk, ck) in cases {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2273,7 +2273,7 @@ mod tests {
 
     fn synthetic_failure_with_rule(rule: AttributionRule) -> ReloadFailure {
         ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
@@ -2491,7 +2491,7 @@ mod tests {
         // on the file-provenance axis.
         for rule in AttributionRule::ALL.iter().copied() {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2515,7 +2515,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2556,7 +2556,7 @@ mod tests {
         ];
         for (rule, provenance) in cases {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2721,7 +2721,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2750,7 +2750,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2815,7 +2815,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -2874,7 +2874,7 @@ mod tests {
 
         // Both Some: envelope Some.
         let both = ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
@@ -2885,7 +2885,7 @@ mod tests {
 
         // Both None: envelope None.
         let neither = ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Parse,
             sources: vec![],
             field_path: vec![],
@@ -2898,7 +2898,7 @@ mod tests {
         // collapse pins the structural invariant even if a future
         // construction site lands inconsistent halves.
         let only_source = ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
@@ -2909,7 +2909,7 @@ mod tests {
 
         // Off-diagonal (only rule): envelope None.
         let only_rule = ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
@@ -3063,7 +3063,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3341,7 +3341,7 @@ mod tests {
             AttributionRule::EnvByUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3364,7 +3364,7 @@ mod tests {
         // — pinning the convenience accessor as a pure projection.
         for rule in AttributionRule::ALL.iter().copied() {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3388,7 +3388,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3423,7 +3423,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3531,7 +3531,7 @@ mod tests {
             AttributionRule::DefaultsByCodeUniqueness,
         ] {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3578,7 +3578,7 @@ mod tests {
         ];
         for (rule, expected) in cases {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3601,7 +3601,7 @@ mod tests {
         // — pinning the convenience accessor as a pure projection.
         for rule in AttributionRule::ALL.iter().copied() {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3625,7 +3625,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3660,7 +3660,7 @@ mod tests {
             .iter()
             .copied()
             .map(|rule| ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3701,7 +3701,7 @@ mod tests {
         // `attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`.
         for rule in AttributionRule::ALL.iter().copied() {
             let f = ReloadFailure {
-                message: "synth".to_owned(),
+                message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
                 kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
@@ -3729,7 +3729,7 @@ mod tests {
         // and attribution_source_kind_coordinates-clone invariants
         // already pinned on the cross-thread envelope.
         let f = ReloadFailure {
-            message: "synth".to_owned(),
+            message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
             kind: ShikumiErrorKind::Extract,
             sources: vec![],
             field_path: vec![],
@@ -3802,6 +3802,64 @@ mod tests {
              shape edit at `ConfigSource::ENV_METADATA_NAME_TAIL` lands there \
              instead of silently desynchronising the synthetic from the writer: \
              {offenders:#?}",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_synth_message_through_shared_const() {
+        // Source-text pin on the shared placeholder message body: no
+        // test body in this file may re-inline `"synth"` as a `&str`
+        // literal for a `ReloadFailure::message` field or a
+        // `figment::Error::from(...)` construction.
+        //
+        // Every synthetic drives the resolver / accessor suite
+        // through the shared `crate::source::SYNTHETIC_TEST_MESSAGE`
+        // const, so a future placeholder change (rename for grep
+        // coverage in captured test logs, per-test discriminator, or
+        // reserving the bare `"synth"` for a real error shape figment
+        // might emit) lands at ONE named site — the const in
+        // `src/source.rs` — and every one of the thirty-three
+        // `reload.rs::tests` sites plus the two `error.rs::tests`
+        // sites plus the one `source.rs::tests` site inherits the
+        // new placeholder by construction.
+        //
+        // Fail-before-pass-after: at this commit the thirty-three
+        // sites this pin protects are every `ReloadFailure {
+        // message: crate::source::SYNTHETIC_TEST_MESSAGE.to_owned(),
+        // ... }` synthetic in this file's tests
+        // (attribution_confidence / layer_kind / figment_source_kind
+        // / figment_name_tag_kind / severity / serde accessor bodies
+        // plus the `synthetic_failure_with_rule` helper); re-inlining
+        // any of them fires here first before the corresponding
+        // accessor tests silently observe a stale placeholder shape.
+        //
+        // Doc-comment / block-comment mentions of the placeholder are
+        // exempt (they explain the invariant); the check filters
+        // lines whose first non-whitespace token is `//`.
+        const SRC: &str = include_str!("reload.rs");
+        const NEEDLE: &str = "\"synth\"";
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE)
+            })
+            // Exempt this test itself: it mentions the placeholder in
+            // its own body (as a needle) so the assertion can name
+            // what it is looking for.
+            .filter(|(_, line)| !line.contains("reload_tests_route_synth_message"))
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "reload.rs re-inlines the `\"synth\"` placeholder at {} non-comment \
+             line(s) — route each through \
+             `crate::source::SYNTHETIC_TEST_MESSAGE.to_owned()` so a future \
+             placeholder edit at the shared const lands there instead of \
+             silently desynchronising the synthetic from every other test-side \
+             site in the crate: {offenders:#?}",
             offenders.len(),
         );
     }

@@ -28763,6 +28763,61 @@ impl fmt::Display for ConfigSource {
     }
 }
 
+/// Test-only placeholder message body for every synthetic
+/// `figment::Error` and [`crate::reload::ReloadFailure`] the crate's
+/// tests construct in `error.rs`, `reload.rs`, and this file.
+///
+/// Every synthetic that drives the
+/// [`crate::FailingSourceAttribution`] resolver, the
+/// `figment_name_tag_kind` / `figment_source_kind` accessors, or the
+/// [`crate::reload::ReloadFailure`] accessor suite carries a
+/// placeholder message body — a stand-in for the underlying failure's
+/// display text, which the resolver arms never key on (they key on
+/// [`figment::Metadata::name`] / [`figment::Metadata::source`] /
+/// [`ReloadFailure::attribution_rule`], not on the message). Before
+/// this constant every one of thirty-six sites — one in this file
+/// (the body of [`synthetic_env_metadata_error`]), two in
+/// `error.rs::tests` (the body of `synthetic_error_with_metadata_name`
+/// plus the open-coded `figment::Error::from(...)` inside
+/// `failing_attribution_rule_file_by_source_wins_over_file_by_metadata_name`),
+/// and thirty-three in `reload.rs::tests` (every synthetic
+/// [`ReloadFailure`] literal at
+/// `attribution_confidence` / `layer_kind` /
+/// `figment_source_kind` / `figment_name_tag_kind` /
+/// `severity` / `serde` accessor test bodies plus the
+/// `synthetic_failure_with_rule` helper) — re-inlined the same
+/// `"synth"` placeholder literal independently. The compiler enforced
+/// nothing between them, so a future edit that wanted to
+/// (a) rename the placeholder for clearer grep coverage in captured
+/// test logs, (b) embed a per-test discriminator, or (c) reserve the
+/// bare `"synth"` for a real error shape figment might emit would
+/// have compiled cleanly at every re-inlined site with the writer
+/// emitting one placeholder and the readers keying on another.
+///
+/// With this constant, all thirty-six sites route through one named
+/// `pub(crate) const`; a future placeholder change is one edit at
+/// this constant and every synthetic — writer + readers + capture-
+/// round-trip cross-checks — inherits the new placeholder by
+/// construction. Peer of the sibling substrate lifts on the
+/// `figment::Metadata::name` axis
+/// ([`ConfigSource::ENV_METADATA_NAME_TAIL`] et al. from commit
+/// `08b2212`; [`synthetic_env_metadata_error`] from commit
+/// `8c7c161`): together they close every seam on the shared test-
+/// synthesis surface at one named site per axis (message-body,
+/// env-metadata-name, file-metadata-name).
+///
+/// Pinned by `reload.rs::reload_tests_route_synth_message_through_shared_const`
+/// and `error.rs::error_tests_route_synth_message_through_shared_const`
+/// (source-text pins) plus
+/// [`tests::synthetic_test_message_is_synth`] (value pin) plus
+/// [`tests::synthetic_env_metadata_error_message_body_equals_synthetic_test_message`]
+/// (round-trip pin over the [`synthetic_env_metadata_error`] output),
+/// so a future re-inlining of the placeholder at a call site fails
+/// at the source-text pins before drift can silently desynchronise
+/// the synthetic from the substrate.
+#[cfg(test)]
+pub(crate) const SYNTHETIC_TEST_MESSAGE: &str = "synth";
+
 /// Test-only helper: synthesize a `figment::Error` tagged with the
 /// env-provider `figment::Metadata::name` shape for `prefix`, routed
 /// through the ONE shared writer [`ConfigSource::env_metadata_name`].
@@ -28813,7 +28868,7 @@ impl fmt::Display for ConfigSource {
 #[must_use]
 pub(crate) fn synthetic_env_metadata_error(prefix: &str) -> Box<figment::Error> {
     let name = ConfigSource::env_metadata_name(prefix);
-    let mut e = figment::Error::from("synth".to_owned());
+    let mut e = figment::Error::from(SYNTHETIC_TEST_MESSAGE.to_owned());
     e.metadata = Some(figment::Metadata::named(name));
     Box::new(e)
 }
@@ -97251,6 +97306,60 @@ mod tests {
             let tag = ConfigSource::strip_env_metadata_name(name)
                 .expect("figment prefixed Env name must classify as env metadata");
             assert_eq!(tag.kind(), EnvMetadataTagKind::Prefixed);
+        }
+    }
+
+    #[test]
+    fn synthetic_test_message_is_synth() {
+        // Concrete-value pin on the shared placeholder. Hold the
+        // constant's bytes stable so a future rename lands here first,
+        // before any of the thirty-six synthetic sites in
+        // `source.rs`, `error.rs`, and `reload.rs` silently disagree
+        // with the writer over what "the placeholder" is.
+        assert_eq!(super::SYNTHETIC_TEST_MESSAGE, "synth");
+    }
+
+    #[test]
+    fn synthetic_env_metadata_error_message_body_equals_synthetic_test_message() {
+        // Round-trip pin: the writer routes the placeholder through
+        // the shared const, so the emitted `figment::Error`'s display
+        // body is exactly `SYNTHETIC_TEST_MESSAGE`. Fires if a future
+        // edit reintroduces a hard-coded literal at
+        // `synthetic_env_metadata_error`'s body without going through
+        // the shared const.
+        //
+        // Exercised over every `prefix` the ten resolver-arm call
+        // sites feed (empty + the eight MYAPP_ / UNRELATED_ /
+        // BORROWED_ / KIND_INV_ / MAXIS_ / CLONED_ / ONLY_ / BARE_
+        // prefixes commit `8c7c161` routed through the helper), so
+        // the pin catches drift on the placeholder body under exactly
+        // the shapes the tests feed the resolver.
+        for prefix in [
+            "",
+            "MYAPP_",
+            "UNRELATED_",
+            "BORROWED_",
+            "KIND_INV_",
+            "MAXIS_",
+            "CLONED_",
+            "ONLY_",
+            "BARE_",
+        ] {
+            let err = super::synthetic_env_metadata_error(prefix);
+            // `figment::Error`'s Display appends the metadata name
+            // (`"<msg> in <metadata.name>"`), so pin via prefix rather
+            // than full-string equality — the writer routes the raw
+            // message body through the shared const, and the display
+            // form leads with that body.
+            let rendered = err.to_string();
+            assert!(
+                rendered.starts_with(super::SYNTHETIC_TEST_MESSAGE),
+                "synthetic_env_metadata_error({prefix:?}) render {rendered:?} \
+                 must lead with SYNTHETIC_TEST_MESSAGE — a future edit that \
+                 reintroduces a hard-coded `\"synth\"` literal at the writer \
+                 body silently desynchronises the placeholder from the shared \
+                 const",
+            );
         }
     }
 }

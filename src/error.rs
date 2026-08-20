@@ -3812,7 +3812,7 @@ mod tests {
     /// `metadata.name`-shape (`FileByMetadataName`, `Env*`) without
     /// needing a live shikumi-built provider in the test process.
     fn synthetic_error_with_metadata_name(name: &'static str) -> Box<figment::Error> {
-        let mut e = figment::Error::from("synth".to_owned());
+        let mut e = figment::Error::from(crate::source::SYNTHETIC_TEST_MESSAGE.to_owned());
         e.metadata = Some(figment::Metadata::named(name));
         Box::new(e)
     }
@@ -4004,7 +4004,7 @@ mod tests {
             ConfigSource::File(path_a.clone()),
             ConfigSource::File(path_b.clone()),
         ];
-        let mut e = figment::Error::from("synth".to_owned());
+        let mut e = figment::Error::from(crate::source::SYNTHETIC_TEST_MESSAGE.to_owned());
         let mut md = figment::Metadata::named("nix: /b/app.nix");
         md.source = Some(figment::Source::File(path_a.clone()));
         e.metadata = Some(md);
@@ -8465,6 +8465,61 @@ mod tests {
              shape edit at `ConfigSource::ENV_METADATA_NAME_TAIL` lands there \
              instead of silently desynchronising the synthetic from the writer: \
              {offenders:#?}",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn error_tests_route_synth_message_through_shared_const() {
+        // Source-text pin on the shared placeholder message body: no
+        // test body in this file may re-inline `"synth"` as a `&str`
+        // literal for a `figment::Error::from(...)` /
+        // `figment::Metadata::named(...)` construction.
+        //
+        // Every synthetic drives the resolver through the shared
+        // `crate::source::SYNTHETIC_TEST_MESSAGE` const, so a future
+        // placeholder change (rename for grep coverage in captured
+        // test logs, per-test discriminator, or reserving the bare
+        // `"synth"` for a real error shape figment might emit) lands
+        // at ONE named site — the const in `src/source.rs` — and
+        // every one of the two `error.rs::tests` sites plus the
+        // thirty-three `reload.rs::tests` sites plus the one
+        // `source.rs::tests` site inherits the new placeholder by
+        // construction.
+        //
+        // Fail-before-pass-after: at this commit the two sites this
+        // pin protects are `synthetic_error_with_metadata_name`'s
+        // body and the open-coded `figment::Error::from(...)` inside
+        // `failing_attribution_rule_file_by_source_wins_over_file_by_metadata_name`;
+        // re-inlining either fires here first before the resolver
+        // arm tests fall back to a stale placeholder shape.
+        //
+        // Doc-comment / block-comment mentions of the placeholder are
+        // exempt (they explain the invariant); the check filters
+        // lines whose first non-whitespace token is `//`.
+        const SRC: &str = include_str!("error.rs");
+        const NEEDLE: &str = "\"synth\"";
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE)
+            })
+            // Exempt this test itself: it mentions the placeholder in
+            // its own body (as a needle) so the assertion can name what
+            // it is looking for.
+            .filter(|(_, line)| !line.contains("error_tests_route_synth_message"))
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "error.rs re-inlines the `\"synth\"` placeholder at {} non-comment \
+             line(s) — route each through \
+             `crate::source::SYNTHETIC_TEST_MESSAGE.to_owned()` so a future \
+             placeholder edit at the shared const lands there instead of \
+             silently desynchronising the synthetic from every other test-side \
+             site in the crate: {offenders:#?}",
             offenders.len(),
         );
     }
