@@ -28873,6 +28873,68 @@ pub(crate) fn synthetic_env_metadata_error(prefix: &str) -> Box<figment::Error> 
     Box::new(e)
 }
 
+/// Test-only helper: synthesize a boxed `figment::Error` carrying the
+/// shared [`SYNTHETIC_TEST_MESSAGE`] body and a localized field path
+/// set through figment's own [`figment::Error::with_path`] writer.
+///
+/// Before this helper, every `error.rs::tests` / `reload.rs::tests`
+/// synthetic that needed to drive the
+/// [`crate::ShikumiError::field_path`] / [`crate::ShikumiError::field_path_localization`] /
+/// [`crate::reload::ReloadFailure::field_path`] accessors on a
+/// figment-bearing variant re-inlined the same two-token
+/// `figment::Error::from(<placeholder>.to_owned()).with_path(<path>)`
+/// literal at six sites — four in `error.rs::tests`
+/// (`field_path_preserves_dotted_segments_via_with_path` at 3888,
+/// `field_path_localization_localized_for_figment_with_field` at 5276,
+/// the `one_per_localization` construction row at 5315, and the
+/// `error_localization_coordinates_construction_table` row at 7403) and
+/// two in `reload.rs::tests`
+/// (`from_error_captures_field_path_for_extract_with_localized_field`
+/// at 831 and `from_error_captures_field_path_for_figment_variant`
+/// at 864). Three used the placeholder body `"typed"`; two used the
+/// shorter `"t"` — the two forms carried the same meaning (a stand-in
+/// for the underlying failure's display text; the accessors under test
+/// key on `Metadata::source` / `path` / `.with_path`-derived segments,
+/// never on the message body itself), and the compiler enforced
+/// nothing between them or between them and the shared
+/// [`SYNTHETIC_TEST_MESSAGE`] const the sibling substrate helper
+/// [`synthetic_env_metadata_error`] already routes through. A future
+/// edit that wanted to (a) collapse the two placeholder forms onto the
+/// shared const so grep coverage in captured test logs converges, or
+/// (b) change how figment attaches a localized path (a hypothetical
+/// `Error::with_localized_path` replacement, an owned-`String` slice
+/// bound on `with_path`, or a shape reshape that carries the path as
+/// a `Vec<String>` at construction) would have compiled cleanly at
+/// every re-inlined site with each of the six synthetics keying on a
+/// stale path-attachment shape.
+///
+/// With this helper the six sites route through ONE named substrate
+/// call; a future placeholder edit lands at
+/// [`SYNTHETIC_TEST_MESSAGE`] and a future path-attachment shape
+/// change lands at this helper's body, and every one of the six
+/// previously-open-coded synthetics inherits the new shape by
+/// construction. Peer of the sibling substrate lifts on the
+/// message-body axis ([`SYNTHETIC_TEST_MESSAGE`] from commit
+/// `48c4875`), the env-metadata-name axis ([`synthetic_env_metadata_error`]
+/// from commit `8c7c161`), and the `ShikumiError::Parse` axis
+/// ([`crate::error::synthetic_parse_error`] from commit `c717f3a`):
+/// together they close every seam on the shared test-synthesis
+/// surface at one named site per axis (message-body, env-metadata-name,
+/// file-path metadata, `ShikumiError::Parse`, localized field-path).
+///
+/// Pinned by
+/// `error.rs::error_tests_route_field_path_synthetics_through_synthetic_field_path_error`
+/// and
+/// `reload.rs::reload_tests_route_field_path_synthetics_through_synthetic_field_path_error`
+/// (source-text pins) plus
+/// [`tests::synthetic_field_path_error_body_and_field_path_match_shared_substrate`]
+/// (round-trip pin over the [`synthetic_field_path_error`] output).
+#[cfg(test)]
+#[must_use]
+pub(crate) fn synthetic_field_path_error(path: &str) -> Box<figment::Error> {
+    Box::new(figment::Error::from(SYNTHETIC_TEST_MESSAGE.to_owned()).with_path(path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97317,6 +97379,77 @@ mod tests {
         // `source.rs`, `error.rs`, and `reload.rs` silently disagree
         // with the writer over what "the placeholder" is.
         assert_eq!(super::SYNTHETIC_TEST_MESSAGE, "synth");
+    }
+
+    #[test]
+    fn synthetic_field_path_error_body_and_field_path_match_shared_substrate() {
+        // Round-trip pin: the helper routes its message body through
+        // the shared `SYNTHETIC_TEST_MESSAGE` const and attaches the
+        // caller-supplied path via figment's own `with_path` writer,
+        // so the emitted `figment::Error`'s Display leads with
+        // `SYNTHETIC_TEST_MESSAGE` and its path segments equal the
+        // caller-supplied path split on `.`. Fires if a future edit
+        // reintroduces a hard-coded placeholder literal at the
+        // helper's body (bypassing the shared const), reshapes the
+        // path-attachment writer, or drops the caller-supplied path
+        // silently.
+        //
+        // Exercised over every `path` shape the six formerly-open-coded
+        // resolver / accessor call sites feed the helper:
+        // - `"window.size"` (error.rs:3888, reload.rs:831 — the
+        //   two-segment path both tests key on for the
+        //   `field_path_preserves_dotted_segments_via_with_path` /
+        //   `from_error_captures_field_path_for_extract_with_localized_field`
+        //   `["window", "size"]` assertion),
+        // - `"a.b"`         (error.rs:5276 — the `one_per_localization`
+        //   Localized-cell construction path),
+        // - `"a.b.c"`       (reload.rs:864 — the three-segment path
+        //   `from_error_captures_field_path_for_figment_variant` keys
+        //   on for its `["a", "b", "c"]` assertion),
+        // - `"k"`           (error.rs:5315 + error.rs:7403 — the
+        //   one-segment path shared by the two
+        //   `error_localization_coordinates`-adjacent construction
+        //   rows), so the pin catches drift on the placeholder body
+        //   *and* the path-attachment shape under exactly the paths
+        //   the six lifted sites feed the helper.
+        for path in ["window.size", "a.b", "a.b.c", "k"] {
+            let err = super::synthetic_field_path_error(path);
+            let rendered = err.to_string();
+            assert!(
+                rendered.starts_with(super::SYNTHETIC_TEST_MESSAGE),
+                "synthetic_field_path_error({path:?}) render {rendered:?} \
+                 must lead with SYNTHETIC_TEST_MESSAGE — a future edit \
+                 that reintroduces a hard-coded placeholder literal at \
+                 the helper's body silently desynchronises the \
+                 placeholder from the shared const"
+            );
+            // Wrap the helper output in a ShikumiError::Extract so we
+            // exercise the ShikumiError::field_path accessor over the
+            // path-attachment shape the helper produces — the same
+            // accessor the six lifted call sites feed the helper
+            // through. If a future edit lets figment's own
+            // `with_path` writer stop populating the accessor's
+            // reader-side classification, this cross-check fires.
+            let err = crate::error::ShikumiError::Extract {
+                sources: vec![],
+                error: super::synthetic_field_path_error(path),
+            };
+            let segments = err.field_path().unwrap_or_else(|| {
+                panic!(
+                    "synthetic_field_path_error({path:?}) must attach \
+                         a localized field path through figment's with_path \
+                         writer — the ShikumiError::field_path accessor \
+                         reads that classification"
+                )
+            });
+            let expected: Vec<String> = path.split('.').map(str::to_owned).collect();
+            assert_eq!(
+                segments, expected,
+                "synthetic_field_path_error({path:?}).field_path() must \
+                 recover the caller-supplied segments — split on '.' — \
+                 through figment's own with_path writer"
+            );
+        }
     }
 
     #[test]

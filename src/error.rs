@@ -3885,10 +3885,9 @@ mod tests {
     fn field_path_preserves_dotted_segments_via_with_path() {
         // figment's Error::with_path splits on '.'; verify the accessor
         // preserves segment shape rather than collapsing back to a string.
-        let raw = figment::Error::from("typed".to_owned()).with_path("window.size");
         let err = ShikumiError::Extract {
             sources: vec![],
-            error: Box::new(raw),
+            error: crate::source::synthetic_field_path_error("window.size"),
         };
         let path = err.field_path().expect("Extract exposes field path");
         assert_eq!(
@@ -5273,8 +5272,7 @@ mod tests {
         // Figment variant carrying a localized path: still Localized,
         // because the localization axis is on the figment-bearing axis,
         // not the variant axis.
-        let raw = figment::Error::from("typed".to_owned()).with_path("a.b");
-        let err = ShikumiError::Figment(Box::new(raw));
+        let err = ShikumiError::Figment(crate::source::synthetic_field_path_error("a.b"));
         assert_eq!(
             err.field_path_localization(),
             FieldPathLocalization::Localized
@@ -5312,7 +5310,7 @@ mod tests {
             (
                 ShikumiError::Extract {
                     sources: vec![],
-                    error: Box::new(figment::Error::from("t".to_owned()).with_path("k")),
+                    error: crate::source::synthetic_field_path_error("k"),
                 },
                 FieldPathLocalization::Localized,
             ),
@@ -7399,9 +7397,8 @@ mod tests {
         }
         // Figment + Localized: a figment error with a non-empty path
         // wrapped in ShikumiError::Figment.
-        let figment_localized = ShikumiError::Figment(Box::new(
-            figment::Error::from("t".to_owned()).with_path("k"),
-        ));
+        let figment_localized =
+            ShikumiError::Figment(crate::source::synthetic_field_path_error("k"));
         observed.insert(figment_localized.error_localization_coordinates());
         let realizable: HashSet<ErrorLocalizationCoordinates> = ErrorLocalizationCoordinates::ALL
             .iter()
@@ -8668,6 +8665,75 @@ mod tests {
              shape at {} non-comment line(s) — route each through \
              `super::synthetic_parse_error()` so a future \
              `ShikumiError::Parse` shape change lands at the helper body \
+             instead of at each open-coded literal apart: {offenders:#?}",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn error_tests_route_field_path_synthetics_through_synthetic_field_path_error() {
+        // Source-text pin on the shared "synthetic figment error carrying
+        // a localized field path" constructor: no test body in this file
+        // may open-code the two-token
+        // `figment::Error::from(<placeholder>.to_owned()).with_path(<path>)`
+        // literal.
+        //
+        // Every test that needs a canonical
+        // `figment::Error`-with-localized-path synthetic (four such call
+        // sites in this file at the parent commit — one for the
+        // `field_path_preserves_dotted_segments_via_with_path` accessor
+        // check, one for the
+        // `field_path_localization_localized_for_figment_with_field`
+        // localization check, and two for the
+        // `one_per_localization` / `error_localization_coordinates`
+        // construction-table rows) routes through
+        // `crate::source::synthetic_field_path_error(path)`, so a future
+        // change to how figment attaches a localized path (a
+        // hypothetical `Error::with_localized_path` replacement, an
+        // owned-`String` slice bound on `with_path`, or a shape reshape
+        // that carries the path as a `Vec<String>` at construction)
+        // lands at ONE named site — the helper body in
+        // `crate::source::synthetic_field_path_error` — and every one
+        // of the four previously-open-coded call sites inherits the new
+        // shape by construction. Peer of the sibling pin
+        // `reload_tests_route_field_path_synthetics_through_synthetic_field_path_error`
+        // in `reload.rs::tests` which closes the same drift class on
+        // the two remaining call sites of the same substrate.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 4 at
+        // the parent commit (before every site routed through the
+        // helper); this pin fires 4 offenders at that state and 0 here.
+        //
+        // Doc-comment / block-comment mentions of the pattern are
+        // exempt (they explain the invariant); the check filters lines
+        // whose first non-whitespace token is `//`.
+        // Two-token needle: the pattern spans a `figment::Error::from(`
+        // opener AND a `.with_path(` chained call on the SAME line.
+        // Keeping the two fragments on separate lines of the pin body
+        // (both here as `const` declarations AND in the assert message
+        // via `{NEEDLE_A}` / `{NEEDLE_B}` interpolation) is what keeps
+        // this pin from tripping on its own body: no non-comment line
+        // inside this test carries both fragments literally.
+        const NEEDLE_A: &str = "figment::Error::from(";
+        const NEEDLE_B: &str = ".with_path(";
+        const SRC: &str = include_str!("error.rs");
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE_A) && line.contains(NEEDLE_B)
+            })
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "error.rs re-inlines the \
+             `{NEEDLE_A}<placeholder>.to_owned()){NEEDLE_B}<path>)` \
+             shape at {} non-comment line(s) — route each through \
+             `crate::source::synthetic_field_path_error(path)` so a future \
+             `figment::Error::with_path` shape change (or a placeholder-body \
+             collapse onto `SYNTHETIC_TEST_MESSAGE`) lands at the helper body \
              instead of at each open-coded literal apart: {offenders:#?}",
             offenders.len(),
         );

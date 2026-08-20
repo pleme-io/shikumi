@@ -828,10 +828,9 @@ mod tests {
     #[test]
     fn from_error_captures_field_path_for_extract_with_localized_field() {
         // Build a figment error that *has* a path attribution.
-        let raw = figment::Error::from("typed".to_owned()).with_path("window.size");
         let err = ShikumiError::Extract {
             sources: vec![],
-            error: Box::new(raw),
+            error: crate::source::synthetic_field_path_error("window.size"),
         };
         let f = ReloadFailure::from_error(&err);
         assert_eq!(f.field_path, vec!["window".to_owned(), "size".to_owned()]);
@@ -861,8 +860,7 @@ mod tests {
 
     #[test]
     fn from_error_captures_field_path_for_figment_variant() {
-        let raw = figment::Error::from("typed".to_owned()).with_path("a.b.c");
-        let err = ShikumiError::Figment(Box::new(raw));
+        let err = ShikumiError::Figment(crate::source::synthetic_field_path_error("a.b.c"));
         let f = ReloadFailure::from_error(&err);
         assert_eq!(
             f.field_path,
@@ -3900,6 +3898,71 @@ mod tests {
              shape at {} non-comment line(s) — route each through \
              `crate::error::synthetic_parse_error()` so a future \
              `ShikumiError::Parse` shape change lands at the helper body \
+             instead of at each open-coded literal apart: {offenders:#?}",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_field_path_synthetics_through_synthetic_field_path_error() {
+        // Source-text pin on the shared "synthetic figment error carrying
+        // a localized field path" constructor: no test body in this file
+        // may open-code the two-token
+        // `figment::Error::from(<placeholder>.to_owned()).with_path(<path>)`
+        // literal.
+        //
+        // Every test that needs a canonical
+        // `figment::Error`-with-localized-path synthetic to exercise the
+        // `ReloadFailure::from_error` field-path capture on both the
+        // Extract-with-localized-field arm and the Figment-variant arm
+        // (two such call sites in this file at the parent commit —
+        // `from_error_captures_field_path_for_extract_with_localized_field`
+        // and `from_error_captures_field_path_for_figment_variant`)
+        // routes through
+        // `crate::source::synthetic_field_path_error(path)`, so a future
+        // change to how figment attaches a localized path lands at ONE
+        // named site — the helper body in
+        // `crate::source::synthetic_field_path_error` — and every one of
+        // the two previously-open-coded call sites inherits the new
+        // shape by construction. Peer of the sibling pin
+        // `error_tests_route_field_path_synthetics_through_synthetic_field_path_error`
+        // in `error.rs::tests` which closes the same drift class on the
+        // four remaining call sites of the same substrate.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 2 at
+        // the parent commit (before every site routed through the
+        // helper); this pin fires 2 offenders at that state and 0 here.
+        //
+        // Doc-comment / block-comment mentions of the pattern are
+        // exempt (they explain the invariant); the check filters lines
+        // whose first non-whitespace token is `//`.
+        // Two-token needle: the pattern spans a `figment::Error::from(`
+        // opener AND a `.with_path(` chained call on the SAME line.
+        // Keeping the two fragments on separate lines of the pin body
+        // (both here as `const` declarations AND in the assert message
+        // via `{NEEDLE_A}` / `{NEEDLE_B}` interpolation) is what keeps
+        // this pin from tripping on its own body: no non-comment line
+        // inside this test carries both fragments literally.
+        const NEEDLE_A: &str = "figment::Error::from(";
+        const NEEDLE_B: &str = ".with_path(";
+        const SRC: &str = include_str!("reload.rs");
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE_A) && line.contains(NEEDLE_B)
+            })
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "reload.rs re-inlines the \
+             `{NEEDLE_A}<placeholder>.to_owned()){NEEDLE_B}<path>)` \
+             shape at {} non-comment line(s) — route each through \
+             `crate::source::synthetic_field_path_error(path)` so a future \
+             `figment::Error::with_path` shape change (or a placeholder-body \
+             collapse onto `SYNTHETIC_TEST_MESSAGE`) lands at the helper body \
              instead of at each open-coded literal apart: {offenders:#?}",
             offenders.len(),
         );
