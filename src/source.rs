@@ -28763,6 +28763,61 @@ impl fmt::Display for ConfigSource {
     }
 }
 
+/// Test-only helper: synthesize a `figment::Error` tagged with the
+/// env-provider `figment::Metadata::name` shape for `prefix`, routed
+/// through the ONE shared writer [`ConfigSource::env_metadata_name`].
+///
+/// Before this helper, every `error.rs::tests` /
+/// `reload.rs::tests` synthetic that needed to drive the
+/// [`crate::FailingSourceAttribution`] resolver's `EnvBy*` arms
+/// re-inlined the `` `PREFIX` environment variable(s) `` shape
+/// literally at ten sites — eight in `error.rs` (the seven
+/// `synthetic_error_with_metadata_name(...prefix env literal...)`
+/// callers plus the bare-tag `"environment variable(s)"` caller)
+/// and two in `reload.rs` (the two open-coded
+/// `figment::Error::from(...)` + `Metadata::named(...)` constructions
+/// under `figment_name_tag_kind_*_extract_matches_underlying_error`
+/// and `figment_name_tag_kind_survives_clone_independent_of_originating_error`).
+/// The compiler enforced nothing between those ten literals and the
+/// substrate writer [`ConfigSource::env_metadata_name`] (itself
+/// routed through the three
+/// [`ConfigSource::ENV_METADATA_NAME_TAIL`] /
+/// [`ConfigSource::ENV_METADATA_NAME_TAIL_STEM`] /
+/// [`ConfigSource::ENV_METADATA_NAME_PREFIX_QUOTE`] `pub const`s
+/// commit `08b2212` introduced); a future edit to the shape (figment
+/// growing a `"(env)"` suffix, dropping the `(s)` marker for version
+/// consistency, or swapping backtick for a different ASCII delimiter)
+/// would have compiled cleanly with the writer emitting one shape and
+/// every one of the ten test synthetics silently keying on the
+/// pre-edit shape — the resolver arms exercised by those tests would
+/// have stopped attributing without any test failing.
+///
+/// With this helper the ten sites route through the writer at ONE
+/// named substrate call; a future shape change lands at the three
+/// constants and every test synthetic inherits the new shape by
+/// construction.
+///
+/// Empty `prefix` yields the bare shape
+/// (`ConfigSource::ENV_METADATA_NAME_TAIL`, figment's `Env::raw()`
+/// emission); non-empty `prefix` yields the backtick-wrapped
+/// uppercased form. The returned error carries `"synth"` as its
+/// message body — the same placeholder every previous open-coded
+/// caller used.
+///
+/// Pinned by
+/// [`tests::synthetic_env_metadata_error_metadata_name_equals_env_metadata_name`]
+/// across every `prefix` the ten call sites exercise, so a future
+/// re-inlining of the shape at a call site fails at that pin before
+/// drift can silently desynchronise the synthetic from the substrate.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn synthetic_env_metadata_error(prefix: &str) -> Box<figment::Error> {
+    let name = ConfigSource::env_metadata_name(prefix);
+    let mut e = figment::Error::from("synth".to_owned());
+    e.metadata = Some(figment::Metadata::named(name));
+    Box::new(e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94850,6 +94905,102 @@ mod tests {
         assert_eq!(
             ConfigSource::env_metadata_name("APP_"),
             "`APP_` environment variable(s)"
+        );
+    }
+
+    #[test]
+    fn synthetic_env_metadata_error_metadata_name_equals_env_metadata_name() {
+        // Cross-classifier pin: for every `prefix` the ten test-synthetic
+        // call sites in `error.rs::tests` and `reload.rs::tests` exercise
+        // (the empty bare-shape caller plus the nine
+        // MYAPP_/UNRELATED_/BORROWED_/KIND_INV_/MAXIS_/CLONED_/ONLY_/BARE_
+        // prefixed callers — deduplicated below), the helper's
+        // `figment::Metadata::name` shape equals `env_metadata_name(prefix)`
+        // byte-for-byte. Fail-before-pass-after: the helper did not exist
+        // before this commit; a future edit that reintroduces a hard-coded
+        // literal at any call site (bypassing the writer) is caught by the
+        // source-text pins
+        // (`error_tests_route_env_metadata_synthetics_through_env_metadata_name_writer`
+        // in `error.rs`,
+        // `reload_tests_route_env_metadata_synthetics_through_env_metadata_name_writer`
+        // in `reload.rs`); a future edit that lets the helper's routing
+        // drift is caught here — the two pins seal both directions of the
+        // "the ten synthetics agree with the writer" invariant.
+        //
+        // The empty prefix exercises the bare shape
+        // (`ENV_METADATA_NAME_TAIL` alone; figment's `Env::raw` emission);
+        // every non-empty prefix exercises the backtick-wrapped
+        // uppercased form
+        // (`ENV_METADATA_NAME_PREFIX_QUOTE` + upper + quote + space + tail).
+        for prefix in [
+            "",
+            "MYAPP_",
+            "UNRELATED_",
+            "BORROWED_",
+            "KIND_INV_",
+            "MAXIS_",
+            "CLONED_",
+            "ONLY_",
+            "BARE_",
+        ] {
+            let err = super::synthetic_env_metadata_error(prefix);
+            let md = err.metadata.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "synthetic_env_metadata_error({prefix:?}) must attach metadata; \
+                     the resolver's Env* arms key on Metadata::name"
+                )
+            });
+            assert_eq!(
+                md.name,
+                ConfigSource::env_metadata_name(prefix),
+                "synthetic_env_metadata_error({prefix:?}).metadata.name must equal \
+                 ConfigSource::env_metadata_name({prefix:?}) byte-for-byte — \
+                 the routing must go through the shared writer, not an inline literal"
+            );
+        }
+    }
+
+    #[test]
+    fn synthetic_env_metadata_error_strip_round_trips_over_every_caller_prefix() {
+        // Structural pin on the writer↔reader round-trip for exactly the
+        // prefixes the ten test-synthetic call sites exercise:
+        // `strip_env_metadata_name(synthetic_env_metadata_error(p).metadata.name)`
+        // recovers the expected `EnvMetadataTag` on both bare and
+        // prefixed shapes. This is the ONE cross-check on the surface
+        // resolver arms in `error.rs`/`reload.rs` walk: if the helper's
+        // routing accidentally emits a shape the substrate reader no
+        // longer recognises (e.g. a future edit swapping the emission
+        // constants asymmetrically), every attribution test that goes
+        // through the helper would silently fall back to `EnvByUniqueness`
+        // instead of `EnvByPrefix` — this pin fires here first.
+        for prefix in [
+            "MYAPP_",
+            "UNRELATED_",
+            "BORROWED_",
+            "KIND_INV_",
+            "MAXIS_",
+            "CLONED_",
+            "ONLY_",
+            "BARE_",
+        ] {
+            let err = super::synthetic_env_metadata_error(prefix);
+            let name = &err.metadata.as_ref().unwrap().name;
+            let tag = ConfigSource::strip_env_metadata_name(name);
+            assert_eq!(
+                tag,
+                Some(EnvMetadataTag::Prefixed(prefix)),
+                "strip_env_metadata_name must recover the prefix from the \
+                 shape the helper emits for {prefix:?}"
+            );
+        }
+        // The empty prefix routes through the bare shape.
+        let err = super::synthetic_env_metadata_error("");
+        let name = &err.metadata.as_ref().unwrap().name;
+        assert_eq!(
+            ConfigSource::strip_env_metadata_name(name),
+            Some(EnvMetadataTag::Bare),
+            "strip_env_metadata_name must recognise the bare shape the \
+             helper emits for the empty prefix"
         );
     }
 

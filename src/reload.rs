@@ -2439,14 +2439,12 @@ mod tests {
         // shikumi's tests for EnvByPrefix use in error::tests) so the
         // resolver attributes via EnvByPrefix without needing a live
         // figment::providers::Env in the test process.
-        let mut e = figment::Error::from("synth".to_owned());
-        e.metadata = Some(figment::Metadata::named("`MAXIS_` environment variable(s)"));
         let err = ShikumiError::Extract {
             sources: vec![
                 ConfigSource::Defaults,
                 ConfigSource::Env("MAXIS_".to_owned()),
             ],
-            error: Box::new(e),
+            error: crate::source::synthetic_env_metadata_error("MAXIS_"),
         };
         let f = ReloadFailure::from_error(&err);
         let underlying = err
@@ -2468,16 +2466,12 @@ mod tests {
         // figment_source_kind / metadata_axis / layer_kind clone-survival
         // invariants already pinned on the cross-thread envelope.
         let f = {
-            let mut e = figment::Error::from("synth".to_owned());
-            e.metadata = Some(figment::Metadata::named(
-                "`CLONED_` environment variable(s)",
-            ));
             let err = ShikumiError::Extract {
                 sources: vec![
                     ConfigSource::Defaults,
                     ConfigSource::Env("CLONED_".to_owned()),
                 ],
-                error: Box::new(e),
+                error: crate::source::synthetic_env_metadata_error("CLONED_"),
             };
             ReloadFailure::from_error(&err)
         };
@@ -3753,6 +3747,62 @@ mod tests {
         assert_eq!(
             g.attribution_name_kind_coordinates(),
             f.attribution_name_kind_coordinates(),
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_env_metadata_synthetics_through_env_metadata_name_writer() {
+        // Source-text pin, peer of the sibling test on `error.rs`.
+        //
+        // No test body in this file may re-inline the
+        // `` `PREFIX` environment variable(s) `` shape as a `&str` literal.
+        // Every env-provider synthetic routes through
+        // `crate::source::synthetic_env_metadata_error(prefix)` (which
+        // in turn routes through `ConfigSource::env_metadata_name(prefix)`
+        // and its three `ENV_METADATA_NAME_TAIL` / `..._TAIL_STEM` /
+        // `..._PREFIX_QUOTE` `pub const`s), so a future edit to the
+        // env-provider metadata-name shape lands at the three constants
+        // in `src/source.rs` and every synthetic in this file inherits
+        // the new shape by construction.
+        //
+        // Fail-before-pass-after: at this commit the sites this test
+        // protects are the two open-coded `figment::Error::from("synth")`
+        // + `figment::Metadata::named(".. environment variable(s)")`
+        // constructions in the
+        // `figment_name_tag_kind_env_prefixed_extract_matches_underlying_error`
+        // / `figment_name_tag_kind_survives_clone_independent_of_originating_error`
+        // tests. A future re-inlining fires here first, before the two
+        // resolver-arm cross-check tests silently fall back to
+        // `EnvByUniqueness` under a shape edit that only lands at the
+        // constants.
+        //
+        // Doc-comment / block-comment mentions of the shape are exempt
+        // (they explain the invariant); the check filters lines whose
+        // first non-whitespace token is `//`.
+        const SRC: &str = include_str!("reload.rs");
+        const TAIL_STEM: &str = crate::source::ConfigSource::ENV_METADATA_NAME_TAIL_STEM;
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(TAIL_STEM)
+            })
+            .filter(|(_, line)| {
+                !line.contains("ENV_METADATA_NAME_TAIL_STEM")
+                    && !line.contains("reload_tests_route_env_metadata_synthetics")
+            })
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "reload.rs re-inlines the `{TAIL_STEM}[…]` env-metadata-name shape at \
+             {} non-comment line(s) — route each through \
+             `crate::source::synthetic_env_metadata_error(prefix)` so a future \
+             shape edit at `ConfigSource::ENV_METADATA_NAME_TAIL` lands there \
+             instead of silently desynchronising the synthetic from the writer: \
+             {offenders:#?}",
+            offenders.len(),
         );
     }
 }

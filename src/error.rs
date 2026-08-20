@@ -3860,7 +3860,7 @@ mod tests {
         ];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("`MYAPP_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
         };
         let attr = err
             .failing_attribution()
@@ -3880,7 +3880,7 @@ mod tests {
         ];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("UNRELATED_"),
         };
         let attr = err
             .failing_attribution()
@@ -3896,7 +3896,7 @@ mod tests {
         let chain = vec![ConfigSource::Env("BARE_".to_owned())];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error(""),
         };
         let attr = err.failing_attribution().expect("bare-env must attribute");
         assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
@@ -3962,7 +3962,7 @@ mod tests {
         ];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("`BORROWED_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("BORROWED_"),
         };
         let ShikumiError::Extract {
             sources: ref recorded,
@@ -4776,7 +4776,7 @@ mod tests {
         ];
         let err_env = ShikumiError::Extract {
             sources: chain_env,
-            error: synthetic_error_with_metadata_name("`KIND_INV_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("KIND_INV_"),
         };
         let attr_env = err_env.failing_attribution().expect("env attribution");
         assert_eq!(attr_env.layer_kind(), attr_env.source.kind());
@@ -4791,7 +4791,7 @@ mod tests {
         ];
         let err_unique = ShikumiError::Extract {
             sources: chain_unique_env,
-            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("UNRELATED_"),
         };
         let attr_unique = err_unique
             .failing_attribution()
@@ -4841,7 +4841,7 @@ mod tests {
         ];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("UNRELATED_"),
         };
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
@@ -6321,7 +6321,7 @@ mod tests {
         ];
         let err = ShikumiError::Extract {
             sources: chain,
-            error: synthetic_error_with_metadata_name("`MAXIS_` environment variable(s)"),
+            error: crate::source::synthetic_env_metadata_error("MAXIS_"),
         };
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.rule, AttributionRule::EnvByPrefix);
@@ -8409,5 +8409,63 @@ mod tests {
             let yaml = serde_yaml::to_string(k).unwrap();
             assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
         }
+    }
+
+    #[test]
+    fn error_tests_route_env_metadata_synthetics_through_env_metadata_name_writer() {
+        // Source-text pin: no test body in this file may re-inline the
+        // `` `PREFIX` environment variable(s) `` shape as a `&str` literal.
+        // Every env-provider synthetic routes through
+        // `crate::source::synthetic_env_metadata_error(prefix)` (which
+        // in turn routes through `ConfigSource::env_metadata_name(prefix)`
+        // and its three `ENV_METADATA_NAME_TAIL` / `..._TAIL_STEM` /
+        // `..._PREFIX_QUOTE` `pub const`s), so a future edit to the
+        // env-provider metadata-name shape lands at the three constants
+        // in `src/source.rs` and every synthetic in this file inherits
+        // the new shape by construction.
+        //
+        // Fail-before-pass-after: at this commit the eight sites this
+        // test protects are the eight prior
+        // `synthetic_error_with_metadata_name(".. environment variable(s)")`
+        // callers in the `EnvByPrefix` / `EnvByUniqueness` resolver-arm
+        // tests. Any future re-inlining fires here first, before drift
+        // can silently desync the synthetic from the substrate — the
+        // resolver would keep passing on the current shape but
+        // stop attributing under a future shape edit, and no other test
+        // in the crate cross-checks that agreement.
+        //
+        // Doc-comment / block-comment mentions of the shape are exempt
+        // (they explain the invariant); the check filters lines whose
+        // first non-whitespace token is `//`. String-literal mentions
+        // inside test bodies — the exact drift class this test blocks —
+        // are NOT exempt.
+        const SRC: &str = include_str!("error.rs");
+        const TAIL_STEM: &str = crate::source::ConfigSource::ENV_METADATA_NAME_TAIL_STEM;
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(TAIL_STEM)
+            })
+            // Exempt this test itself: it mentions the tail stem in its
+            // own body (through the substrate `const`, not a literal) so
+            // the assertion message can name what it is looking for.
+            .filter(|(_, line)| {
+                !line.contains("ENV_METADATA_NAME_TAIL_STEM")
+                    && !line.contains("error_tests_route_env_metadata_synthetics")
+            })
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "error.rs re-inlines the `{TAIL_STEM}[…]` env-metadata-name shape at \
+             {} non-comment line(s) — route each through \
+             `crate::source::synthetic_env_metadata_error(prefix)` so a future \
+             shape edit at `ConfigSource::ENV_METADATA_NAME_TAIL` lands there \
+             instead of silently desynchronising the synthetic from the writer: \
+             {offenders:#?}",
+            offenders.len(),
+        );
     }
 }
