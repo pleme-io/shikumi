@@ -489,6 +489,65 @@ impl FieldPathLocalization {
             Self::NotApplicable => "not-applicable",
         }
     }
+
+    /// Returns `true` when the localization axis carries a signal about
+    /// figment-side path attribution — [`Self::Localized`] (figment
+    /// attached a non-empty dotted path) or [`Self::FigmentUnlocalized`]
+    /// (figment error present but its `path` slot is empty). Returns
+    /// `false` for [`Self::NotApplicable`] (no figment error at all,
+    /// so "*was* the failure localized" has no meaningful answer — the
+    /// question does not apply).
+    ///
+    /// Single source of truth for the (`Localized`|`FigmentUnlocalized`)
+    /// vs. (`NotApplicable`) partition on the localization axis. Before
+    /// this sibling, the partition was inlined as fresh
+    /// `matches!(loc, FieldPathLocalization::NotApplicable)` reads at
+    /// four sites — [`ErrorLocalizationCoordinates::is_realizable`]
+    /// (routing the realizability invariant against
+    /// [`ShikumiErrorKind::is_figment_bearing`]) plus three test-side
+    /// partition and cross-primitive pins — each of which had to be
+    /// kept in lockstep by convention. A future variant landing on
+    /// [`Self`] (e.g. a third `PartiallyLocalized` cell for a source
+    /// that reports a coarse-grained container but no leaf key) would
+    /// have had four sites to reclassify. The routing collapses that
+    /// to one: the polarity of the partition is defined here, and the
+    /// four consumer sites follow through this predicate.
+    ///
+    /// Peer sibling-predicate pair on the same typescape discipline as
+    /// [`AttributionConfidence::is_exact`] / [`AttributionConfidence::is_fallback`]
+    /// on the confidence axis, [`crate::FormatProvenance::is_shikumi_built`]
+    /// / [`crate::FormatProvenance::is_figment_builtin`] on the
+    /// format-provenance axis, and [`AttributionRule::is_exact`] /
+    /// [`AttributionRule::is_fallback`] on the source-attribution axis:
+    /// typescape primitives expose a per-partition predicate alongside
+    /// the closed-enum dispatch so the common "is it this side?"
+    /// question stays one method call.
+    ///
+    /// Cross-axis: the realizability invariant on
+    /// [`ErrorLocalizationCoordinates`] reads
+    /// `cell.kind.is_figment_bearing() == cell.localization.is_applicable()`
+    /// — the two partition predicates align exactly on the recognized
+    /// 9-cell realizable subset of the 21-cell (kind × localization)
+    /// cube, pinned pointwise by
+    /// `error_localization_coordinates_is_realizable_agrees_with_figment_bearing_law`.
+    #[must_use]
+    pub const fn is_applicable(self) -> bool {
+        matches!(self, Self::Localized | Self::FigmentUnlocalized)
+    }
+
+    /// Returns `true` for [`Self::NotApplicable`]; equivalent to
+    /// `!self.is_applicable()`.
+    ///
+    /// Sibling of [`Self::is_applicable`] on the other half of the
+    /// closed binary partition over the localization axis; same
+    /// routing rationale (see [`Self::is_applicable`] docs), same peer
+    /// pattern ([`AttributionConfidence::is_fallback`],
+    /// [`crate::FormatProvenance::is_figment_builtin`],
+    /// [`AttributionRule::is_fallback`]).
+    #[must_use]
+    pub const fn is_not_applicable(self) -> bool {
+        matches!(self, Self::NotApplicable)
+    }
 }
 
 /// Reason a [`figment::Error`] was attributed to a specific layer in the
@@ -1763,8 +1822,7 @@ impl ErrorLocalizationCoordinates {
     /// cardinality split (test-time) to stay in lockstep.
     #[must_use]
     pub fn is_realizable(self) -> bool {
-        self.kind.is_figment_bearing()
-            == !matches!(self.localization, FieldPathLocalization::NotApplicable)
+        self.kind.is_figment_bearing() == self.localization.is_applicable()
     }
 }
 
@@ -5626,19 +5684,20 @@ mod tests {
         // of the listed cells (Localized, FigmentUnlocalized) classify
         // as figment-bearing on the kind side; the third
         // (NotApplicable) does not. Pins the cross-axis partition
-        // through the constant rather than an inline literal.
+        // through the constant rather than an inline literal — the
+        // (applicable, not-applicable) partition is routed through
+        // the FieldPathLocalization::is_applicable /
+        // is_not_applicable sibling predicates rather than a fresh
+        // `matches!` against the variant literals.
         let bearing_side: usize = FieldPathLocalization::ALL
             .iter()
-            .filter(|loc| {
-                matches!(
-                    loc,
-                    FieldPathLocalization::Localized | FieldPathLocalization::FigmentUnlocalized,
-                )
-            })
+            .copied()
+            .filter(|loc| loc.is_applicable())
             .count();
         let non_bearing_side: usize = FieldPathLocalization::ALL
             .iter()
-            .filter(|loc| matches!(loc, FieldPathLocalization::NotApplicable))
+            .copied()
+            .filter(|loc| loc.is_not_applicable())
             .count();
         assert_eq!(
             bearing_side, 2,
@@ -5649,6 +5708,81 @@ mod tests {
             FieldPathLocalization::ALL.len(),
             "the figment-bearing-side partition must cover ALL exactly once",
         );
+    }
+
+    #[test]
+    fn field_path_localization_is_applicable_true_only_for_applicable_variants() {
+        // Per-variant polarity pin on the applicable side of the new
+        // FieldPathLocalization::is_applicable sibling predicate.
+        // Mirror of `attribution_confidence_is_exact_true_only_for_exact`
+        // on the confidence axis and
+        // `format_has_shikumi_provider_lisp_and_nix_only` on the
+        // format-provenance axis: pins the polarity per variant so a
+        // future edit collapsing / rearranging the (applicable,
+        // not-applicable) partition fails at the polarity level
+        // before drifting through the closed-partition law.
+        assert!(FieldPathLocalization::Localized.is_applicable());
+        assert!(FieldPathLocalization::FigmentUnlocalized.is_applicable());
+        assert!(!FieldPathLocalization::NotApplicable.is_applicable());
+    }
+
+    #[test]
+    fn field_path_localization_is_not_applicable_true_only_for_not_applicable_variant() {
+        // Per-variant polarity pin on the NotApplicable side of the
+        // partition. Mirror of
+        // `attribution_confidence_is_fallback_true_only_for_fallback`.
+        assert!(!FieldPathLocalization::Localized.is_not_applicable());
+        assert!(!FieldPathLocalization::FigmentUnlocalized.is_not_applicable());
+        assert!(FieldPathLocalization::NotApplicable.is_not_applicable());
+    }
+
+    #[test]
+    fn field_path_localization_predicates_are_a_closed_binary_partition() {
+        // Closed-binary-partition pin on the (applicable,
+        // not-applicable) split. Mirror of
+        // `attribution_confidence_predicates_are_a_closed_binary_partition`
+        // on the confidence axis and
+        // `format_provider_class_predicates_are_a_closed_binary_partition`
+        // on the format-provenance axis: every ALL cell satisfies
+        // exactly one of the two sibling predicates — none satisfies
+        // both (a variant claiming to be both applicable and
+        // not-applicable at once), none satisfies neither (a variant
+        // outside the partition entirely).
+        //
+        // A future tertiary FieldPathLocalization variant (e.g. a
+        // PartiallyLocalized cell for a source that reports a
+        // coarse-grained container but no leaf key) would fail this
+        // pin by design: the new class must declare its own partition
+        // arm — either extend one of the existing predicates to admit
+        // it, or introduce a third predicate — rather than silently
+        // landing under the negation of one of the existing two.
+        for &loc in FieldPathLocalization::ALL {
+            let applicable = loc.is_applicable();
+            let not_applicable = loc.is_not_applicable();
+            assert!(
+                applicable ^ not_applicable,
+                "{loc:?} must satisfy exactly one of is_applicable / is_not_applicable",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_is_applicable_agrees_with_kind_is_figment_bearing_pointwise() {
+        // Cross-axis routing pin: on every ShikumiError in the
+        // kind-axis sample table, the localization-axis
+        // is_applicable() predicate agrees with the kind-axis
+        // is_figment_bearing() predicate. Same realizability
+        // invariant that ErrorLocalizationCoordinates::is_realizable
+        // holds cell-wise on the 21-cell cube, projected here through
+        // the constructible-error surface.
+        for (_, err) in one_per_kind() {
+            let loc = err.field_path_localization();
+            assert_eq!(
+                loc.is_applicable(),
+                err.kind().is_figment_bearing(),
+                "loc.is_applicable() must agree with kind.is_figment_bearing() on {err:?} (loc={loc:?})",
+            );
+        }
     }
 
     #[test]
@@ -5671,27 +5805,20 @@ mod tests {
 
     #[test]
     fn field_path_localization_localized_implies_kind_figment_bearing() {
-        // Cross-primitive invariant: when the localization axis says
-        // Localized or FigmentUnlocalized, the kind axis must say
-        // figment-bearing; when NotApplicable, the kind axis must say
-        // not figment-bearing. The two axes are linked by construction.
+        // Cross-primitive invariant: the localization-axis
+        // (applicable, not-applicable) partition agrees pointwise with
+        // the kind-axis figment-bearing partition — i.e.
+        // `loc.is_applicable() == err.kind().is_figment_bearing()`
+        // over every constructible error. The two axes are linked by
+        // construction and the sibling predicate expresses that link
+        // as ONE equality rather than a bipartite match arm.
         for (_, err) in one_per_kind() {
             let loc = err.field_path_localization();
-            let bearing = err.kind().is_figment_bearing();
-            match loc {
-                FieldPathLocalization::Localized | FieldPathLocalization::FigmentUnlocalized => {
-                    assert!(
-                        bearing,
-                        "Localized/FigmentUnlocalized → kind must bear figment ({err:?})"
-                    );
-                }
-                FieldPathLocalization::NotApplicable => {
-                    assert!(
-                        !bearing,
-                        "NotApplicable → kind must not bear figment ({err:?})"
-                    );
-                }
-            }
+            assert_eq!(
+                loc.is_applicable(),
+                err.kind().is_figment_bearing(),
+                "loc.is_applicable() must agree with kind.is_figment_bearing() ({err:?}, loc={loc:?})",
+            );
         }
     }
 
@@ -7483,11 +7610,14 @@ mod tests {
         // Pins the realizability invariant pointwise on every cell of
         // the cube:
         //   is_realizable iff
-        //   kind.is_figment_bearing() == (localization != NotApplicable).
-        // The two definitions agree on all 21 cells.
+        //   kind.is_figment_bearing() == localization.is_applicable().
+        // The two definitions agree on all 21 cells. Routes through
+        // the FieldPathLocalization::is_applicable sibling — same
+        // partition polarity as the inline `!matches!(loc,
+        // NotApplicable)` this replaced, expressed as the typescape
+        // primitive rather than a fresh literal match.
         for cell in ErrorLocalizationCoordinates::ALL.iter().copied() {
-            let expected = cell.kind.is_figment_bearing()
-                == !matches!(cell.localization, FieldPathLocalization::NotApplicable);
+            let expected = cell.kind.is_figment_bearing() == cell.localization.is_applicable();
             assert_eq!(
                 cell.is_realizable(),
                 expected,
