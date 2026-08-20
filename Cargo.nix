@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.615";
+        version = "0.1.616";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -13452,9 +13452,9 @@ rec {
       };
       "zerovec" = rec {
         crateName = "zerovec";
-        version = "0.11.7";
+        version = "0.11.8";
         edition = "2021";
-        sha256 = "1n4n109wgbbin5hljq6gmbnqqg74yp9igzf40gbw2rkdjyswddcl";
+        sha256 = "1n3xlvyba8riys9s8awy4xp533phqycr78nbsmvdkh86g3hn815v";
         authors = [
           "The ICU4X Project Developers"
         ];
