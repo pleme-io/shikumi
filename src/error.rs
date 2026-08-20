@@ -255,12 +255,53 @@ impl ShikumiErrorKind {
     /// carry figment) variants. A future kind landing forces a
     /// classification in the exhaustive match below; the partition
     /// stays coherent by construction.
+    ///
+    /// `const fn` so the polarity is usable in const contexts (static
+    /// slice initializers, const cube arms) — parity with the peer
+    /// sibling predicates on the neighbouring closed axes
+    /// ([`AttributionConfidence::is_exact`],
+    /// [`FieldPathLocalization::is_applicable`],
+    /// [`crate::FormatProvenance::is_shikumi_built`]).
     #[must_use]
-    pub fn is_figment_bearing(self) -> bool {
+    pub const fn is_figment_bearing(self) -> bool {
         match self {
             Self::Extract | Self::Figment => true,
             Self::NotFound | Self::Parse | Self::Watch | Self::Io | Self::Validation => false,
         }
+    }
+
+    /// Returns `true` for the kinds that do *not* wrap a
+    /// [`figment::Error`] — [`Self::NotFound`], [`Self::Parse`],
+    /// [`Self::Watch`], [`Self::Io`], [`Self::Validation`]; equivalent
+    /// to `!self.is_figment_bearing()`.
+    ///
+    /// Sibling of [`Self::is_figment_bearing`] on the other half of the
+    /// closed binary partition over the kind axis. Single source of
+    /// truth for the non-figment-bearing side: before this sibling the
+    /// negation was inlined as fresh `!kind.is_figment_bearing()` reads
+    /// at the ALL-partition cardinality pins
+    /// (`shikumi_error_kind_all_partitions_figment_bearing_axis`,
+    /// `is_figment_bearing_false_for_non_figment_kinds`), each of which
+    /// re-derived the polarity of the negative arm at the call site.
+    /// The routing collapses that to one — the negative half is now a
+    /// named predicate at the kind altitude, so the
+    /// closed-binary-partition pin
+    /// (`is_figment_bearing_predicates_are_a_closed_binary_partition`)
+    /// can hold the two arms exhaustive and disjoint.
+    ///
+    /// Peer sibling-predicate pair on the same typescape discipline as
+    /// [`AttributionConfidence::is_exact`] /
+    /// [`AttributionConfidence::is_fallback`] on the confidence axis,
+    /// [`FieldPathLocalization::is_applicable`] /
+    /// [`FieldPathLocalization::is_not_applicable`] on the localization
+    /// axis, and [`crate::FormatProvenance::is_shikumi_built`] /
+    /// [`crate::FormatProvenance::is_figment_builtin`] on the
+    /// format-provenance axis: closed-axis primitives expose a
+    /// per-partition predicate alongside the closed-enum dispatch so
+    /// the common "is it this side?" question stays one method call.
+    #[must_use]
+    pub const fn is_not_figment_bearing(self) -> bool {
+        !self.is_figment_bearing()
     }
 
     /// Canonical operator-facing lowercase name of the error kind —
@@ -5352,14 +5393,16 @@ mod tests {
         // ALL composes with is_figment_bearing as the universe over
         // which the figment-bearing partition is total: exactly two of
         // the listed kinds bear figment, the rest don't. Stated through
-        // the constant rather than an inline literal.
+        // the constant rather than an inline literal, and through the
+        // is_not_figment_bearing sibling rather than a fresh
+        // `!k.is_figment_bearing()` negation on the non-bearing side.
         let bearing = ShikumiErrorKind::ALL
             .iter()
             .filter(|k| k.is_figment_bearing())
             .count();
         let non_bearing = ShikumiErrorKind::ALL
             .iter()
-            .filter(|k| !k.is_figment_bearing())
+            .filter(|k| k.is_not_figment_bearing())
             .count();
         assert_eq!(bearing, 2, "two ALL variants bear figment");
         assert_eq!(
@@ -5405,6 +5448,38 @@ mod tests {
             ShikumiErrorKind::Io,
         ] {
             assert!(!kind.is_figment_bearing(), "{kind:?} must not bear figment");
+            assert!(
+                kind.is_not_figment_bearing(),
+                "{kind:?} must satisfy the is_not_figment_bearing sibling",
+            );
+        }
+    }
+
+    #[test]
+    fn is_figment_bearing_predicates_are_a_closed_binary_partition() {
+        // The two sibling predicates form a closed binary partition
+        // over ShikumiErrorKind::ALL: every variant satisfies exactly
+        // one, none satisfy neither, none satisfy both. Kind-altitude
+        // peer of
+        // `attribution_confidence_predicates_are_a_closed_binary_partition`
+        // (confidence axis) and
+        // `field_path_localization_predicates_are_a_closed_binary_partition`
+        // (localization axis). A future tertiary classification of the
+        // figment-bearing axis — a kind that wraps figment through a
+        // third path the two current arms don't name — would have to
+        // declare its own arm in the exhaustive match rather than
+        // silently landing under the negation of one of the existing
+        // two.
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            assert_ne!(
+                k.is_figment_bearing(),
+                k.is_not_figment_bearing(),
+                "figment-bearing is binary; the two predicates must disagree pointwise on {k:?}",
+            );
+            assert!(
+                k.is_figment_bearing() || k.is_not_figment_bearing(),
+                "closed binary partition: {k:?} must satisfy one of is_figment_bearing / is_not_figment_bearing",
+            );
         }
     }
 
