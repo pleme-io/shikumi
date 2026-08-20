@@ -487,7 +487,7 @@ mod tests {
         // sitting in the failing candidate.
         let obs = ReloadObservatory::new();
         let inner = ArcSwap::from_pointee(99u32);
-        obs.record_failure_and_log(&ShikumiError::Parse("x".to_owned()));
+        obs.record_failure_and_log(&crate::error::synthetic_parse_error());
         assert_eq!(**inner.load(), 99);
         assert_eq!(obs.generation(), 0);
     }
@@ -495,7 +495,7 @@ mod tests {
     #[test]
     fn record_failure_is_monotonic() {
         let obs = ReloadObservatory::new();
-        let err = ShikumiError::Parse("x".to_owned());
+        let err = crate::error::synthetic_parse_error();
         for i in 1..=5 {
             obs.record_failure(&err);
             assert_eq!(obs.failure_count(), i);
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(cloned.generation(), 1);
         assert_eq!(obs.generation(), 1);
 
-        cloned.record_failure(&ShikumiError::Parse("x".to_owned()));
+        cloned.record_failure(&crate::error::synthetic_parse_error());
         assert_eq!(obs.failure_count(), 1);
         assert!(obs.last_reload_error().is_some());
     }
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(g.load(Ordering::Acquire), 1);
         assert_eq!(**pub_handle.load(), obs.last_publish_at());
 
-        obs.record_failure(&ShikumiError::Parse("x".to_owned()));
+        obs.record_failure(&crate::error::synthetic_parse_error());
         assert_eq!(fc.load(Ordering::Acquire), 1);
         assert!(err_handle.load_full().is_some());
         assert!(fail_handle.load_full().is_some());
@@ -580,7 +580,7 @@ mod tests {
         let inner = ArcSwap::from_pointee(0u32);
         let (g, fc, err_h, pub_h, fail_h, gen_observed) = {
             let obs = ReloadObservatory::new();
-            obs.record_failure(&ShikumiError::Parse("x".to_owned()));
+            obs.record_failure(&crate::error::synthetic_parse_error());
             obs.record_success(&inner, 1);
             (
                 obs.shared_generation(),
@@ -637,7 +637,7 @@ mod tests {
     fn time_since_failure_none_until_first_failure() {
         let obs = ReloadObservatory::new();
         assert!(obs.time_since_failure().is_none());
-        obs.record_failure(&ShikumiError::Parse("x".to_owned()));
+        obs.record_failure(&crate::error::synthetic_parse_error());
         assert!(obs.time_since_failure().is_some());
     }
 
@@ -747,8 +747,65 @@ mod tests {
         let obs = ReloadObservatory::new();
         let inner = ArcSwap::from_pointee(99u32);
         let _: Result<(), ShikumiError> =
-            obs.record_failure_and_return_err(ShikumiError::Parse("x".to_owned()));
+            obs.record_failure_and_return_err(crate::error::synthetic_parse_error());
         assert_eq!(**inner.load(), 99);
         assert_eq!(obs.generation(), 0);
+    }
+
+    #[test]
+    fn observatory_tests_route_synth_parse_through_synthetic_parse_error() {
+        // Source-text pin on the shared "synthetic non-`Extract`
+        // `ShikumiError`" constructor: no test body in this file may
+        // re-inline `ShikumiError::Parse("x".to_owned())` as a literal.
+        //
+        // Every test that needs a canonical non-`Extract` error class to
+        // exercise the observatory record/log surface (7 such call sites
+        // in this file at the parent commit — the record_failure_and_log
+        // fail-safe pin, the monotonicity pin, the clone-independence
+        // pin, the atomic-side-effects pin, the shared-generation
+        // survival pin, the time_since_failure pin, and the
+        // record_failure_and_return_err fail-safe pin) routes through
+        // `crate::error::synthetic_parse_error()`, so a future change to
+        // the [`crate::ShikumiError::Parse`] variant shape lands at ONE
+        // named site — the helper body in `crate::error` — and every
+        // one of the 7 previously-open-coded call sites inherits the
+        // new shape by construction rather than failing to compile at 7
+        // distinct places one paired edit at a time. Peer of the sibling
+        // pins in `error.rs::tests` (6 sites) and `reload.rs::tests`
+        // (27 sites), which close the same drift class on the other two
+        // axes of the same substrate.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 7 at
+        // the parent commit (before every site routed through
+        // `crate::error::synthetic_parse_error()`); this pin fires 7
+        // offenders at that state and 0 here.
+        //
+        // Doc-comment / block-comment mentions of the pattern are
+        // exempt (they explain the invariant); the check filters lines
+        // whose first non-whitespace token is `//`.
+        const SRC: &str = include_str!("observatory.rs");
+        const NEEDLE: &str = "ShikumiError::Parse(\"x\".to_owned())";
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE)
+            })
+            // Exempt this test itself: it mentions the pattern in its own
+            // body (as a needle) so the assertion can name what it looks
+            // for.
+            .filter(|(_, line)| !line.contains("observatory_tests_route_synth_parse"))
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "observatory.rs re-inlines the `ShikumiError::Parse(\"x\".to_owned())` \
+             shape at {} non-comment line(s) — route each through \
+             `crate::error::synthetic_parse_error()` so a future \
+             `ShikumiError::Parse` shape change lands at the helper body \
+             instead of at each open-coded literal apart: {offenders:#?}",
+            offenders.len(),
+        );
     }
 }

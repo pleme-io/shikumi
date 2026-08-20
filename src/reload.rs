@@ -759,7 +759,7 @@ mod tests {
 
     #[test]
     fn from_error_yields_empty_sources_for_non_extract_variant() {
-        let err = ShikumiError::Parse("x".to_owned());
+        let err = crate::error::synthetic_parse_error();
         let f = ReloadFailure::from_error(&err);
         assert!(f.sources.is_empty());
     }
@@ -915,7 +915,7 @@ mod tests {
     #[test]
     fn from_error_yields_none_failing_source_for_non_extract_variants() {
         assert!(
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()))
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error())
                 .failing_source
                 .is_none()
         );
@@ -1012,7 +1012,7 @@ mod tests {
         assert!(unattr.attribution_rule.is_none());
 
         // Non-Extract: both None.
-        let parse = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        let parse = ReloadFailure::from_error(&crate::error::synthetic_parse_error());
         assert!(parse.failing_source.is_none());
         assert!(parse.attribution_rule.is_none());
     }
@@ -1108,7 +1108,7 @@ mod tests {
         // is. Pins the strict-superset contract that the accessor is a
         // pure forwarder over `rule.map(AttributionRule::confidence)`.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Extract {
                 sources: vec![ConfigSource::Defaults],
                 error: fake_figment_error(),
@@ -1212,7 +1212,7 @@ mod tests {
     fn layer_kind_none_for_non_extract_variants() {
         // Non-figment-bearing variants never carry attribution.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
         ] {
             assert!(f.layer_kind().is_none());
@@ -1226,7 +1226,7 @@ mod tests {
         // is. Pins the strict-superset contract that the accessor is
         // a pure forwarder over `rule.map(AttributionRule::layer_kind)`.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Extract {
                 sources: vec![ConfigSource::Defaults],
                 error: fake_figment_error(),
@@ -1579,7 +1579,7 @@ mod tests {
         // "figment couldn't localize"; the typed accessor restores
         // the distinction.
         for err in [
-            ShikumiError::Parse("x".to_owned()),
+            crate::error::synthetic_parse_error(),
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")],
             },
@@ -1661,7 +1661,7 @@ mod tests {
 
     #[test]
     fn field_path_dotted_empty_for_non_figment_capture() {
-        let err = ShikumiError::Parse("x".to_owned());
+        let err = crate::error::synthetic_parse_error();
         let f = ReloadFailure::from_error(&err);
         assert_eq!(f.field_path_dotted(), "");
         assert!(err.field_path_dotted().is_none());
@@ -1886,7 +1886,7 @@ mod tests {
         // never carry attribution; the accessor must report None
         // across them all.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
             ReloadFailure::from_error(&ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")],
@@ -1906,7 +1906,7 @@ mod tests {
         // accessor is a pure forwarder over
         // `rule.map(AttributionRule::metadata_axis)`.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Extract {
                 sources: vec![ConfigSource::Defaults],
                 error: fake_figment_error(),
@@ -2061,7 +2061,7 @@ mod tests {
         // Non-figment-bearing variants and bare Figment never carry
         // attribution → never carry a figment_source_kind.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
         ] {
             assert!(f.figment_source_kind().is_none());
@@ -2121,7 +2121,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -2282,7 +2282,7 @@ mod tests {
         // Non-figment-bearing variants and bare Figment never carry
         // attribution → never carry a figment_name_tag_kind.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
         ] {
             assert!(f.figment_name_tag_kind().is_none());
@@ -2338,7 +2338,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -2375,7 +2375,7 @@ mod tests {
             );
         }
         // Unattributed envelope: both halves None.
-        let f = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        let f = ReloadFailure::from_error(&crate::error::synthetic_parse_error());
         assert!(f.figment_source_kind().is_none());
         assert!(f.figment_name_tag_kind().is_none());
     }
@@ -2465,7 +2465,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -2632,7 +2632,7 @@ mod tests {
         // populated exactly when the rule slot is, peer to
         // attribution_confidence / layer_kind / metadata_axis.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Extract {
                 sources: vec![ConfigSource::Defaults],
                 error: fake_figment_error(),
@@ -2847,7 +2847,7 @@ mod tests {
         // None across them all, peer to the four sibling
         // Option-returning projection accessors.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
             ReloadFailure::from_error(&ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")],
@@ -2947,7 +2947,7 @@ mod tests {
 
         // Non-Extract variants: both surfaces must agree on None.
         for err in [
-            ShikumiError::Parse("x".to_owned()),
+            crate::error::synthetic_parse_error(),
             ShikumiError::Figment(fake_figment_error()),
         ] {
             let f = ReloadFailure::from_error(&err);
@@ -3059,7 +3059,7 @@ mod tests {
         });
 
         // Non-Extract.
-        let f_parse = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        let f_parse = ReloadFailure::from_error(&crate::error::synthetic_parse_error());
 
         for f in [&f_file, &f_def, &f_unattr, &f_parse] {
             let env_some = f.failing_attribution().is_some();
@@ -3223,7 +3223,7 @@ mod tests {
         // Non-figment-bearing variants and bare Figment never carry
         // attribution → never carry a joint cell.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
         ] {
             assert!(f.attribution_source_kind_coordinates().is_none());
@@ -3278,7 +3278,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -3306,7 +3306,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -3386,7 +3386,7 @@ mod tests {
         // Non-figment-bearing variants and bare Figment never carry
         // attribution → never carry a name-axis joint cell.
         for f in [
-            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&crate::error::synthetic_parse_error()),
             ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
         ] {
             assert!(f.attribution_name_kind_coordinates().is_none());
@@ -3480,7 +3480,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -3508,7 +3508,7 @@ mod tests {
             .copied()
             .map(synthetic_failure_with_rule)
             .chain(std::iter::once(ReloadFailure::from_error(
-                &ShikumiError::Parse("x".to_owned()),
+                &crate::error::synthetic_parse_error(),
             )))
             .collect();
         for f in scenarios {
@@ -3549,7 +3549,7 @@ mod tests {
             );
         }
         // Unattributed envelope: both None.
-        let unattributed = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        let unattributed = ReloadFailure::from_error(&crate::error::synthetic_parse_error());
         assert!(unattributed.attribution_source_kind_coordinates().is_none());
         assert!(unattributed.attribution_name_kind_coordinates().is_none());
     }
@@ -3845,6 +3845,62 @@ mod tests {
              future `ReloadFailure` field addition lands at the helper and every \
              call site inherits the new field by construction (offending line \
              numbers: {offenders:?})",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn reload_tests_route_synth_parse_through_synthetic_parse_error() {
+        // Source-text pin on the shared "synthetic non-`Extract`
+        // `ShikumiError`" constructor: no test body in this file may
+        // re-inline `ShikumiError::Parse("x".to_owned())` as a literal.
+        //
+        // Every test that needs a canonical non-`Extract` error class to
+        // exercise the fully-unattributed side of the `ReloadFailure`
+        // envelope (27 such call sites in this file at the parent
+        // commit — the accessor / attribution_confidence / layer_kind /
+        // figment_source_kind / figment_name_tag_kind / metadata_axis /
+        // field_path_dotted grid) routes through
+        // `crate::error::synthetic_parse_error()`, so a future change to
+        // the [`crate::ShikumiError::Parse`] variant shape lands at ONE
+        // named site — the helper body in `crate::error` — and every
+        // one of the 27 previously-open-coded call sites inherits the
+        // new shape by construction rather than failing to compile at
+        // 27 distinct places one paired edit at a time. Peer of the
+        // sibling pins in `error.rs::tests` (6 sites) and
+        // `observatory.rs::tests` (7 sites), which close the same drift
+        // class on the other two axes of the same substrate.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 27 at
+        // the parent commit (before every site routed through
+        // `crate::error::synthetic_parse_error()`); this pin fires 27
+        // offenders at that state and 0 here.
+        //
+        // Doc-comment / block-comment mentions of the pattern are
+        // exempt (they explain the invariant); the check filters lines
+        // whose first non-whitespace token is `//`.
+        const SRC: &str = include_str!("reload.rs");
+        const NEEDLE: &str = "ShikumiError::Parse(\"x\".to_owned())";
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE)
+            })
+            // Exempt this test itself: it mentions the pattern in its own
+            // body (as a needle) so the assertion can name what it looks
+            // for.
+            .filter(|(_, line)| !line.contains("reload_tests_route_synth_parse"))
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "reload.rs re-inlines the `ShikumiError::Parse(\"x\".to_owned())` \
+             shape at {} non-comment line(s) — route each through \
+             `crate::error::synthetic_parse_error()` so a future \
+             `ShikumiError::Parse` shape change lands at the helper body \
+             instead of at each open-coded literal apart: {offenders:#?}",
             offenders.len(),
         );
     }

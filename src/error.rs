@@ -3152,6 +3152,72 @@ impl ShikumiError {
     }
 }
 
+/// Placeholder message body for the canonical "synthetic non-`Extract`
+/// [`ShikumiError`] for typed-projection tests".
+///
+/// One source of truth for the arbitrary short string every test in
+/// `error.rs`, `reload.rs`, and `observatory.rs` used to hand-inline as
+/// `ShikumiError::Parse("x".to_owned())` when it needed a non-`Extract`
+/// error class to exercise the `sources() == None` /
+/// `field_path() == None` / `failing_source() == None` /
+/// `failing_attribution() == None` / `kind() == Parse` /
+/// `attribution_confidence() == None` / `layer_kind() == None` axes of
+/// the accessor / envelope surface. Value is meaningless — the tests key
+/// on the closed-enum classification and the accessor `None`s, not the
+/// message body — but pinned to `"x"` for byte-compatibility with the
+/// forty pre-lift call sites.
+///
+/// Peer of [`crate::source::SYNTHETIC_TEST_MESSAGE`] on the
+/// `figment::Error` / [`crate::ReloadFailure::message`] side of the same
+/// shared test-synthesis substrate axis. Pinned by the value pin
+/// [`tests::synthetic_parse_message_is_x`] and the round-trip pin
+/// [`tests::synthetic_parse_error_is_parse_variant_with_shared_message`]
+/// (both on the helper's output shape) so a future placeholder change
+/// lands at ONE named site and every test-side call site inherits the
+/// new placeholder by construction.
+#[cfg(test)]
+pub(crate) const SYNTHETIC_PARSE_MESSAGE: &str = "x";
+
+/// Test-only helper: synthesize a [`ShikumiError::Parse`] carrying the
+/// shared [`SYNTHETIC_PARSE_MESSAGE`] body.
+///
+/// One source of truth for the previously-40-site byte-identical pattern
+/// `ShikumiError::Parse("x".to_owned())` (27 in `reload.rs::tests`,
+/// 7 in `observatory.rs::tests`, 6 in `error.rs::tests`), used
+/// throughout the crate as the canonical "non-`Extract` synthetic error
+/// class" — one whose [`ShikumiError::sources`] /
+/// [`ShikumiError::field_path`] / [`ShikumiError::failing_source`] /
+/// [`ShikumiError::failing_attribution`] accessors all return `None`,
+/// whose [`ShikumiError::kind`] is [`ShikumiErrorKind::Parse`], and
+/// whose projection onto [`crate::ReloadFailure`] yields the
+/// fully-unattributed envelope shape.
+///
+/// Before this helper, the compiler enforced nothing between those
+/// forty literals. Today [`ShikumiError::Parse`] is `Parse(String)`;
+/// a future shape change — a second tuple field (e.g. `Parse(String,
+/// FileSpan)` for a per-line span), a reshape to a struct-like variant
+/// with source context, or a rename — would have failed to compile at
+/// each of the forty open-coded call sites in lockstep, one recompile
+/// per fix, forty paired edits before the accessor / envelope test grid
+/// could observe the new shape. Routing every synthetic through this
+/// helper collapses the drift class: a future shape change lands at
+/// ONE named site (this fn's body) and every one of the forty call
+/// sites inherits the new shape by construction.
+///
+/// Peer of [`crate::source::synthetic_env_metadata_error`] on the
+/// name-axis synthetic-substrate boundary. Pinned by
+/// [`tests::synthetic_parse_error_is_parse_variant_with_shared_message`]
+/// (round-trip pin) plus per-file source-text pins
+/// (`error_tests_route_synth_parse_through_synthetic_parse_error` +
+/// the sibling pins in `reload.rs::tests` and `observatory.rs::tests`)
+/// so a future re-inlining at a call site fires before the substrate
+/// drifts.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn synthetic_parse_error() -> ShikumiError {
+    ShikumiError::Parse(SYNTHETIC_PARSE_MESSAGE.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3179,6 +3245,43 @@ mod tests {
         let err = ShikumiError::Parse("unexpected token".to_owned());
         let msg = err.to_string();
         assert!(msg.contains("unexpected token"));
+    }
+
+    #[test]
+    fn synthetic_parse_message_is_x() {
+        // Value pin on the shared placeholder for the "synthetic
+        // non-`Extract` `ShikumiError` for typed-projection tests"
+        // universe. Peer of `source.rs::tests::synthetic_test_message_is_synth`
+        // on the ShikumiError side of the same substrate axis.
+        assert_eq!(super::SYNTHETIC_PARSE_MESSAGE, "x");
+    }
+
+    #[test]
+    fn synthetic_parse_error_is_parse_variant_with_shared_message() {
+        // Round-trip pin on the shared helper's output shape. Every
+        // accessor the forty pre-lift call sites keyed on is exercised
+        // here: kind() classifies to Parse, sources()/field_path()/
+        // failing_source()/failing_attribution() all return None, and
+        // the rendered display leads with the "config parse error: "
+        // prefix followed by the shared placeholder body. A future
+        // change to `synthetic_parse_error` that broke any of these
+        // invariants (a Parse-variant shape change, a placeholder
+        // rename, a wrong variant selection) fires here rather than at
+        // one of the forty call sites the helper replaces.
+        let err = super::synthetic_parse_error();
+        assert_eq!(err.kind(), ShikumiErrorKind::Parse);
+        assert!(
+            matches!(&err, ShikumiError::Parse(s) if s == super::SYNTHETIC_PARSE_MESSAGE),
+            "helper must return ShikumiError::Parse(SYNTHETIC_PARSE_MESSAGE)"
+        );
+        assert!(err.sources().is_none());
+        assert!(err.field_path().is_none());
+        assert!(err.failing_source().is_none());
+        assert!(err.failing_attribution().is_none());
+        assert_eq!(
+            err.to_string(),
+            format!("config parse error: {}", super::SYNTHETIC_PARSE_MESSAGE),
+        );
     }
 
     #[test]
@@ -3351,7 +3454,7 @@ mod tests {
 
     #[test]
     fn sources_helper_returns_none_for_other_variants() {
-        assert!(ShikumiError::Parse("x".to_owned()).sources().is_none());
+        assert!(super::synthetic_parse_error().sources().is_none());
         assert!(
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")]
@@ -3421,7 +3524,7 @@ mod tests {
 
     #[test]
     fn field_path_none_for_non_figment_variants() {
-        assert!(ShikumiError::Parse("x".to_owned()).field_path().is_none());
+        assert!(super::synthetic_parse_error().field_path().is_none());
         assert!(
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")]
@@ -3513,11 +3616,7 @@ mod tests {
 
     #[test]
     fn field_path_dotted_none_for_non_figment_variants() {
-        assert!(
-            ShikumiError::Parse("x".to_owned())
-                .field_path_dotted()
-                .is_none()
-        );
+        assert!(super::synthetic_parse_error().field_path_dotted().is_none());
         assert!(
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")]
@@ -3682,11 +3781,7 @@ mod tests {
 
     #[test]
     fn failing_source_none_for_non_figment_variants() {
-        assert!(
-            ShikumiError::Parse("x".to_owned())
-                .failing_source()
-                .is_none()
-        );
+        assert!(super::synthetic_parse_error().failing_source().is_none());
         assert!(
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")]
@@ -5192,7 +5287,7 @@ mod tests {
         // Io) classify as NotApplicable — they don't carry a figment
         // error at all, so the localization axis simply does not apply.
         for err in [
-            ShikumiError::Parse("x".to_owned()),
+            super::synthetic_parse_error(),
             ShikumiError::NotFound {
                 tried: vec![PathBuf::from("/a")],
             },
@@ -5229,7 +5324,7 @@ mod tests {
                 FieldPathLocalization::FigmentUnlocalized,
             ),
             (
-                ShikumiError::Parse("x".to_owned()),
+                super::synthetic_parse_error(),
                 FieldPathLocalization::NotApplicable,
             ),
         ]
@@ -8520,6 +8615,60 @@ mod tests {
              placeholder edit at the shared const lands there instead of \
              silently desynchronising the synthetic from every other test-side \
              site in the crate: {offenders:#?}",
+            offenders.len(),
+        );
+    }
+
+    #[test]
+    fn error_tests_route_synth_parse_through_synthetic_parse_error() {
+        // Source-text pin on the shared "synthetic non-`Extract`
+        // `ShikumiError`" constructor: no test body in this file may
+        // re-inline `ShikumiError::Parse("x".to_owned())` as a literal.
+        //
+        // Every test that needs a canonical non-`Extract` error class
+        // (six such call sites in this file at the parent commit) routes
+        // through `super::synthetic_parse_error()`, so a future change to
+        // the [`ShikumiError::Parse`] variant shape (adding a per-line
+        // span field, reshaping to a struct-like variant carrying source
+        // context, or renaming) lands at ONE named site — the helper
+        // body in `crate::error::synthetic_parse_error` — and every one
+        // of the six previously-open-coded call sites inherits the new
+        // shape by construction rather than failing to compile at six
+        // distinct places one paired edit at a time. Peer of the sibling
+        // pins in `reload.rs::tests` (27 sites) and
+        // `observatory.rs::tests` (7 sites), which close the same
+        // drift class on the other two axes of the same substrate.
+        //
+        // Fail-before-pass-after cross-check: the shape count was 6 at
+        // the parent commit (before every site routed through
+        // `super::synthetic_parse_error()`); this pin fires 6 offenders
+        // at that state and 0 here.
+        //
+        // Doc-comment / block-comment mentions of the pattern are
+        // exempt (they explain the invariant); the check filters lines
+        // whose first non-whitespace token is `//`.
+        const SRC: &str = include_str!("error.rs");
+        const NEEDLE: &str = "ShikumiError::Parse(\"x\".to_owned())";
+        let offenders: Vec<(usize, &str)> = SRC
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("//") && line.contains(NEEDLE)
+            })
+            // Exempt this test itself: it mentions the pattern in its own
+            // body (as a needle) so the assertion can name what it looks
+            // for.
+            .filter(|(_, line)| !line.contains("error_tests_route_synth_parse"))
+            .map(|(n, l)| (n + 1, l))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "error.rs re-inlines the `ShikumiError::Parse(\"x\".to_owned())` \
+             shape at {} non-comment line(s) — route each through \
+             `super::synthetic_parse_error()` so a future \
+             `ShikumiError::Parse` shape change lands at the helper body \
+             instead of at each open-coded literal apart: {offenders:#?}",
             offenders.len(),
         );
     }
