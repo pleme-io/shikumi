@@ -102,6 +102,20 @@ impl Format {
     pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix, Self::Blue];
 
     /// Returns the file extensions associated with this format.
+    ///
+    /// The single source of truth for the `(Format → extension-alias set)`
+    /// map. The first entry is the canonical extension (pinned by
+    /// [`Self::as_str`] via
+    /// `format_extensions_first_entry_matches_as_str`); the remainder are
+    /// aliases the format also accepts. [`Self::from_extension`] is the
+    /// inverse lookup — it iterates [`Self::ALL`] and matches an incoming
+    /// token against each variant's extension slice ASCII-case-
+    /// insensitively, so the alias set for a format lives at exactly one
+    /// site rather than duplicated between this table and a mirrored
+    /// per-alias match in [`Self::from_extension`]. Adding a new alias
+    /// here automatically makes [`Self::from_extension`], [`Self::from_path`],
+    /// [`<Self as std::str::FromStr>`], and [`<Self as TryFrom<&Path>>`]
+    /// recognize it — no lockstep edit required.
     #[must_use]
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
@@ -118,27 +132,38 @@ impl Format {
     /// ASCII-case-insensitive: `"YAML"`, `"Yml"`, and `"yaml"` all map to
     /// [`Self::Yaml`]. Returns `None` for unrecognized extensions.
     ///
-    /// The single source of truth for the `(extension-token → Format)`
-    /// alias algebra. [`FromStr`] is the `ok_or_else` error-wrapping shell
-    /// over this map — exactly as [`TryFrom<&Path>`] is the `ok_or_else`
-    /// shell over [`Self::from_path`] — so the alias arms
-    /// (`"yml"`/`"lsp"`/`"el"`) live at one site instead of being
-    /// re-encoded by the string parser. Case-insensitivity matters on the
-    /// nix-darwin deployment target, whose default filesystem is
-    /// case-insensitive: an env-override path like `Config.YAML` reaches
-    /// [`Self::from_path`] with an uppercase extension and must still
-    /// resolve to YAML rather than falling through to the conservative
-    /// TOML fallback in [`crate::ProviderChain::with_file`].
+    /// Derived from [`Self::extensions`] — the inverse lookup iterates
+    /// [`Self::ALL`] and returns the first [`Format`] variant whose
+    /// extension slice contains `ext` (compared via
+    /// [`str::eq_ignore_ascii_case`]). Before this derivation the alias
+    /// arms (`"yml"`/`"lsp"`/`"el"`/…) were mirrored in a second `match`
+    /// here that had to be kept in lockstep with the extension table by
+    /// hand; now the alias set lives at one site (in
+    /// [`Self::extensions`]) and the two directions can never disagree —
+    /// pinned by `format_from_extension_recognizes_every_declared_alias`
+    /// and `format_extensions_and_from_extension_round_trip_over_all`.
+    /// The derivation also drops the per-call `to_ascii_lowercase`
+    /// allocation: [`str::eq_ignore_ascii_case`] compares byte-wise
+    /// without materializing a lowered copy.
+    ///
+    /// Case-insensitivity matters on the nix-darwin deployment target,
+    /// whose default filesystem is case-insensitive: an env-override
+    /// path like `Config.YAML` reaches [`Self::from_path`] with an
+    /// uppercase extension and must still resolve to YAML rather than
+    /// falling through to the conservative TOML fallback in
+    /// [`crate::ProviderChain::with_file`]. [`FromStr`] is the
+    /// `ok_or_else` error-wrapping shell over this lookup — exactly as
+    /// [`TryFrom<&Path>`] is the `ok_or_else` shell over
+    /// [`Self::from_path`] — so the string parser inherits the same
+    /// alias algebra without re-encoding it.
     #[must_use]
     pub fn from_extension(ext: &str) -> Option<Self> {
-        match ext.to_ascii_lowercase().as_str() {
-            "yaml" | "yml" => Some(Self::Yaml),
-            "toml" => Some(Self::Toml),
-            "lisp" | "lsp" | "el" => Some(Self::Lisp),
-            "nix" => Some(Self::Nix),
-            "b" => Some(Self::Blue),
-            _ => None,
-        }
+        Self::ALL.iter().copied().find(|format| {
+            format
+                .extensions()
+                .iter()
+                .any(|alias| alias.eq_ignore_ascii_case(ext))
+        })
     }
 
     /// Infer format from a path's file extension.
@@ -2187,6 +2212,80 @@ mod tests {
         assert_eq!(Format::from_extension("Nix"), Some(Format::Nix));
         // Unrecognized tokens stay None regardless of case.
         assert_eq!(Format::from_extension("JSON"), None);
+    }
+
+    #[test]
+    fn format_from_extension_recognizes_every_declared_alias() {
+        // Structural pin on the invariant that lets `from_extension` derive
+        // from `extensions()` instead of mirroring the alias set in a
+        // second match: EVERY extension declared by ANY format resolves
+        // back to that format, both in its declared case and lifted to
+        // uppercase (the nix-darwin case-insensitive-fs contingency).
+        // Adding a new alias to `Format::extensions()` — say
+        // `Yaml => &["yaml", "yml", "yaml.j2"]` — is proven end-to-end
+        // by this test alone, no lockstep edit to `from_extension`.
+        for &format in Format::ALL {
+            for &alias in format.extensions() {
+                assert_eq!(
+                    Format::from_extension(alias),
+                    Some(format),
+                    "declared alias {alias:?} for {format:?} must round-trip",
+                );
+                let upper = alias.to_ascii_uppercase();
+                assert_eq!(
+                    Format::from_extension(&upper),
+                    Some(format),
+                    "declared alias {alias:?} for {format:?} must round-trip \
+                     under ASCII uppercase ({upper:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_extensions_and_from_extension_round_trip_over_all() {
+        // Complements `format_from_extension_recognizes_every_declared_alias`
+        // on the same invariant from the OTHER direction: rather than
+        // pinning that every declared alias parses back to its declaring
+        // format, this pins that the alias set as reached through
+        // `from_extension` is the union of `extensions()` — i.e. an
+        // alias emitted by `extensions()` for one format cannot silently
+        // parse to a different format, and no alias is dropped by the
+        // lookup. Together the pair pins the bijection between
+        // `Format::extensions()` and the recognized half of
+        // `Format::from_extension`, so the sole alias table (in
+        // `extensions()`) is the sealed source of truth.
+        use std::collections::BTreeSet;
+        let mut alias_pairs: BTreeSet<(&'static str, Format)> = BTreeSet::new();
+        for &format in Format::ALL {
+            for &alias in format.extensions() {
+                assert!(
+                    alias_pairs.insert((alias, format)),
+                    "extensions() double-listed alias {alias:?} for {format:?}",
+                );
+            }
+        }
+        for (alias, format) in &alias_pairs {
+            assert_eq!(
+                Format::from_extension(alias),
+                Some(*format),
+                "declared alias {alias:?} for {format:?} must reach from_extension",
+            );
+        }
+        // No two distinct formats can claim the same alias: the inverse
+        // lookup would be ambiguous. A future variant that duplicates
+        // (say) `"yaml"` would break the bijection here rather than
+        // silently shadow.
+        let mut alias_to_format: std::collections::BTreeMap<&'static str, Format> =
+            std::collections::BTreeMap::new();
+        for (alias, format) in alias_pairs {
+            if let Some(prev) = alias_to_format.insert(alias, format) {
+                panic!(
+                    "alias {alias:?} declared by both {prev:?} and {format:?} \
+                     — the extension→format map would be ambiguous",
+                );
+            }
+        }
     }
 
     #[test]
