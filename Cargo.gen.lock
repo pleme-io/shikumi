@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "38ec88ea5bfddfc066134ea438e5773ed87db1cb13c7af770296e53f8cfa2c96",
+  "cargo_lock_sha256": "885e6bacbb550962f67b93ad31b5298bddc6c02d7f318ecf2ee315832e9c1ae8",
   "manifest_sha256": {
-    "Cargo.toml": "b4b25f35a163ed7a9acac1bc152f3ec088ac2cbc4b8ebabcdfd77fce322eb14d"
+    "Cargo.toml": "d7caf22cb4ad9e16bf69ec58d66a4eabe466fdc297f3caef5567dd6ee427ec9b"
   },
   "target_resolves": {
     "base": {
@@ -22,8 +22,19 @@
         "build_dependencies": [],
         "features": []
       },
-      "arrayref-0.3.9": {
-        "runtime_dependencies": [],
+      "arrayref-0.3.10": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro1",
+            "package_key": "proc-macro1-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [],
         "features": []
       },
@@ -79,6 +90,15 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "base64-0.22.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default",
+          "std"
+        ]
       },
       "bitflags-2.13.1": {
         "runtime_dependencies": [],
@@ -176,6 +196,42 @@
         "features": [
           "std"
         ]
+      },
+      "displaydoc-0.2.7": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
       },
       "equivalent-1.0.2": {
         "runtime_dependencies": [],
@@ -307,6 +363,25 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "form_urlencoded-1.2.2": {
+        "runtime_dependencies": [
+          {
+            "name": "percent_encoding",
+            "package_key": "percent-encoding-2.3.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "std"
+        ]
       },
       "gen-macros-0.1.34": {
         "runtime_dependencies": [
@@ -497,6 +572,32 @@
         "build_dependencies": [],
         "features": []
       },
+      "getrandom-0.2.17": {
+        "runtime_dependencies": [
+          {
+            "name": "cfg_if",
+            "package_key": "cfg-if-1.0.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.189",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(unix)",
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "getrandom-0.4.3": {
         "runtime_dependencies": [
           {
@@ -598,6 +699,447 @@
         "build_dependencies": [],
         "features": []
       },
+      "icu_collections-2.3.0": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "potential_utf",
+            "package_key": "potential_utf-0.1.6",
+            "kind": "normal",
+            "features": [
+              "zerovec"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "utf8_iter",
+            "package_key": "utf8_iter-1.0.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "yoke",
+            "package_key": "yoke-0.8.3",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerofrom",
+            "package_key": "zerofrom-0.1.8",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [
+              "derive",
+              "yoke"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
+      "icu_locale_core-2.3.0": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "litemap",
+            "package_key": "litemap-0.8.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "tinystr",
+            "package_key": "tinystr-0.8.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "writeable",
+            "package_key": "writeable-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "zerovec"
+        ]
+      },
+      "icu_normalizer-2.3.0": {
+        "runtime_dependencies": [
+          {
+            "name": "icu_collections",
+            "package_key": "icu_collections-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_normalizer_data",
+            "package_key": "icu_normalizer_data-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_provider",
+            "package_key": "icu_provider-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "smallvec",
+            "package_key": "smallvec-1.15.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "compiled_data"
+        ]
+      },
+      "icu_normalizer_data-2.3.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "icu_properties-2.3.0": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "icu_collections",
+            "package_key": "icu_collections-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_locale_core",
+            "package_key": "icu_locale_core-2.3.0",
+            "kind": "normal",
+            "features": [
+              "zerovec"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_properties_data",
+            "package_key": "icu_properties_data-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_provider",
+            "package_key": "icu_provider-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerotrie",
+            "package_key": "zerotrie-0.2.5",
+            "kind": "normal",
+            "features": [
+              "yoke",
+              "zerofrom"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [
+              "derive",
+              "yoke"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "compiled_data"
+        ]
+      },
+      "icu_properties_data-2.3.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "icu_provider-2.3.0": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "icu_locale_core",
+            "package_key": "icu_locale_core-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "writeable",
+            "package_key": "writeable-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "yoke",
+            "package_key": "yoke-0.8.3",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerofrom",
+            "package_key": "zerofrom-0.1.8",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerotrie",
+            "package_key": "zerotrie-0.2.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "baked"
+        ]
+      },
+      "idna-1.1.0": {
+        "runtime_dependencies": [
+          {
+            "name": "idna_adapter",
+            "package_key": "idna_adapter-1.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "smallvec",
+            "package_key": "smallvec-1.15.2",
+            "kind": "normal",
+            "features": [
+              "const_generics"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "utf8_iter",
+            "package_key": "utf8_iter-1.0.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "compiled_data",
+          "std"
+        ]
+      },
+      "idna_adapter-1.2.2": {
+        "runtime_dependencies": [
+          {
+            "name": "icu_normalizer",
+            "package_key": "icu_normalizer-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "icu_properties",
+            "package_key": "icu_properties-2.3.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "compiled_data"
+        ]
+      },
       "indexmap-2.14.0": {
         "runtime_dependencies": [
           {
@@ -660,6 +1202,11 @@
           "default",
           "std"
         ]
+      },
+      "litemap-0.8.3": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "log-0.4.33": {
         "runtime_dependencies": [],
@@ -806,6 +1353,14 @@
         "build_dependencies": [],
         "features": []
       },
+      "percent-encoding-2.3.2": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "std"
+        ]
+      },
       "pin-project-lite-0.2.17": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -848,6 +1403,80 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "potential_utf-0.1.6": {
+        "runtime_dependencies": [
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "zerovec"
+        ]
+      },
+      "proc-macro1-1.0.107": {
+        "runtime_dependencies": [
+          {
+            "name": "unicode_ident",
+            "package_key": "unicode-ident-1.0.24",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [
+          {
+            "name": "base64",
+            "package_key": "base64-0.22.1",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "rustls",
+            "package_key": "rustls-0.23.43",
+            "kind": "build",
+            "features": [
+              "ring",
+              "std",
+              "tls12"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "ureq",
+            "package_key": "ureq-2.12.1",
+            "kind": "build",
+            "features": [
+              "tls"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ]
       },
       "proc-macro2-1.0.107": {
         "runtime_dependencies": [
@@ -946,6 +1575,155 @@
         "features": [
           "default",
           "proc-macro"
+        ]
+      },
+      "rustls-0.23.43": {
+        "runtime_dependencies": [
+          {
+            "name": "log",
+            "package_key": "log-0.4.33",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "once_cell",
+            "package_key": "once_cell-1.21.4",
+            "kind": "normal",
+            "features": [
+              "alloc",
+              "race"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "ring",
+            "package_key": "ring-0.17.14",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pki_types",
+            "package_key": "rustls-pki-types-1.15.1",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "webpki",
+            "package_key": "rustls-webpki-0.103.14",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "subtle",
+            "package_key": "subtle-2.6.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "log",
+          "logging",
+          "ring",
+          "std",
+          "tls12"
+        ]
+      },
+      "rustls-pki-types-1.15.1": {
+        "runtime_dependencies": [
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default",
+          "std"
+        ]
+      },
+      "rustls-webpki-0.103.14": {
+        "runtime_dependencies": [
+          {
+            "name": "ring",
+            "package_key": "ring-0.17.14",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pki_types",
+            "package_key": "rustls-pki-types-1.15.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "untrusted",
+            "package_key": "untrusted-0.9.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "ring",
+          "std"
         ]
       },
       "rustversion-1.0.23": {
@@ -1175,7 +1953,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.620": {
+      "shikumi-0.1.621": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1319,6 +2097,23 @@
           "std"
         ]
       },
+      "smallvec-1.15.2": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "const_generics"
+        ]
+      },
+      "stable_deref_trait-1.2.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "subtle-2.6.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "syn-2.0.119": {
         "runtime_dependencies": [
           {
@@ -1358,6 +2153,7 @@
           "default",
           "derive",
           "extra-traits",
+          "fold",
           "full",
           "parsing",
           "printing",
@@ -1404,11 +2200,58 @@
           "clone-impls",
           "default",
           "derive",
+          "extra-traits",
           "full",
           "parsing",
           "printing",
           "proc-macro",
           "visit-mut"
+        ]
+      },
+      "synstructure-0.13.2": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-2.0.119",
+            "kind": "normal",
+            "features": [
+              "clone-impls",
+              "derive",
+              "extra-traits",
+              "parsing",
+              "printing",
+              "visit"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default",
+          "proc-macro"
         ]
       },
       "tempfile-3.27.0": {
@@ -1518,6 +2361,34 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "tinystr-0.8.4": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "zerovec",
+            "package_key": "zerovec-0.11.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "zerovec"
+        ]
       },
       "tokio-1.53.1": {
         "runtime_dependencies": [
@@ -1878,6 +2749,145 @@
         "build_dependencies": [],
         "features": []
       },
+      "untrusted-0.9.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "ureq-2.12.1": {
+        "runtime_dependencies": [
+          {
+            "name": "base64",
+            "package_key": "base64-0.22.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "log",
+            "package_key": "log-0.4.33",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "once_cell",
+            "package_key": "once_cell-1.21.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rustls",
+            "package_key": "rustls-0.23.43",
+            "kind": "normal",
+            "features": [
+              "logging",
+              "ring",
+              "std",
+              "tls12"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rustls_pki_types",
+            "package_key": "rustls-pki-types-1.15.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "url",
+            "package_key": "url-2.5.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "webpki_roots",
+            "package_key": "webpki-roots-0.26.11",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "tls"
+        ]
+      },
+      "url-2.5.8": {
+        "runtime_dependencies": [
+          {
+            "name": "form_urlencoded",
+            "package_key": "form_urlencoded-1.2.2",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "idna",
+            "package_key": "idna-1.1.0",
+            "kind": "normal",
+            "features": [
+              "alloc",
+              "compiled_data"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "percent_encoding",
+            "package_key": "percent-encoding-2.3.2",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default",
+          "std"
+        ]
+      },
+      "utf8_iter-1.0.4": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "version_check-0.9.5": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -1899,6 +2909,38 @@
         "build_dependencies": [],
         "features": []
       },
+      "webpki-roots-0.26.11": {
+        "runtime_dependencies": [
+          {
+            "name": "parent",
+            "package_key": "webpki-roots-1.0.9",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
+      "webpki-roots-1.0.9": {
+        "runtime_dependencies": [
+          {
+            "name": "pki_types",
+            "package_key": "rustls-pki-types-1.15.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "winnow-0.7.15": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -1908,6 +2950,11 @@
           "std"
         ]
       },
+      "writeable-0.6.4": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "yansi-1.0.1": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -1916,6 +2963,285 @@
           "default",
           "std"
         ]
+      },
+      "yoke-0.8.3": {
+        "runtime_dependencies": [
+          {
+            "name": "stable_deref_trait",
+            "package_key": "stable_deref_trait-1.2.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "yoke_derive",
+            "package_key": "yoke-derive-0.8.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "zerofrom",
+            "package_key": "zerofrom-0.1.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "derive",
+          "zerofrom"
+        ]
+      },
+      "yoke-derive-0.8.2": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-2.0.119",
+            "kind": "normal",
+            "features": [
+              "fold"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "synstructure",
+            "package_key": "synstructure-0.13.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
+      "zerofrom-0.1.8": {
+        "runtime_dependencies": [
+          {
+            "name": "zerofrom_derive",
+            "package_key": "zerofrom-derive-0.1.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "derive"
+        ]
+      },
+      "zerofrom-derive-0.1.7": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-2.0.119",
+            "kind": "normal",
+            "features": [
+              "fold"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "synstructure",
+            "package_key": "synstructure-0.13.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
+      "zeroize-1.9.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default"
+        ]
+      },
+      "zerotrie-0.2.5": {
+        "runtime_dependencies": [
+          {
+            "name": "displaydoc",
+            "package_key": "displaydoc-0.2.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "yoke",
+            "package_key": "yoke-0.8.3",
+            "kind": "normal",
+            "features": [
+              "derive"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerofrom",
+            "package_key": "zerofrom-0.1.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "yoke",
+          "zerofrom"
+        ]
+      },
+      "zerovec-0.11.8": {
+        "runtime_dependencies": [
+          {
+            "name": "yoke",
+            "package_key": "yoke-0.8.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerofrom",
+            "package_key": "zerofrom-0.1.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zerovec_derive",
+            "package_key": "zerovec-derive-0.11.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "derive",
+          "yoke"
+        ]
+      },
+      "zerovec-derive-0.11.5": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.3",
+            "kind": "normal",
+            "features": [
+              "extra-traits"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
       },
       "zmij-1.0.23": {
         "runtime_dependencies": [],
@@ -1930,7 +3256,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2097,6 +3423,77 @@
               "macos_fsevent"
             ]
           },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(all(target_arch = \"aarch64\", target_endian = \"little\"), target_vendor = \"apple\", any(target_os = \"ios\", target_os = \"macos\", target_os = \"tvos\", target_os = \"visionos\", target_os = \"watchos\")))",
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(any(all(target_arch = \"aarch64\", target_endian = \"little\"), all(target_arch = \"arm\", target_endian = \"little\")), any(target_os = \"android\", target_os = \"linux\")))",
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
+            ]
+          },
           "rustix-1.1.4": {
             "runtime_dependencies": [
               {
@@ -2176,7 +3573,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2415,6 +3812,77 @@
             "features": [
               "fsevent-sys",
               "macos_fsevent"
+            ]
+          },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(all(target_arch = \"aarch64\", target_endian = \"little\"), target_vendor = \"apple\", any(target_os = \"ios\", target_os = \"macos\", target_os = \"tvos\", target_os = \"visionos\", target_os = \"watchos\")))",
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(any(all(target_arch = \"aarch64\", target_endian = \"little\"), all(target_arch = \"arm\", target_endian = \"little\")), any(target_os = \"android\", target_os = \"linux\")))",
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
             ]
           },
           "rustix-1.1.4": {
@@ -2527,7 +3995,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2768,6 +4236,77 @@
               "macos_fsevent"
             ]
           },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(all(target_arch = \"aarch64\", target_endian = \"little\"), target_vendor = \"apple\", any(target_os = \"ios\", target_os = \"macos\", target_os = \"tvos\", target_os = \"visionos\", target_os = \"watchos\")))",
+                "tree": "target"
+              },
+              {
+                "name": "libc",
+                "package_key": "libc-0.2.189",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(any(all(target_arch = \"aarch64\", target_endian = \"little\"), all(target_arch = \"arm\", target_endian = \"little\")), any(target_os = \"android\", target_os = \"linux\")))",
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
+            ]
+          },
           "rustix-1.1.4": {
             "runtime_dependencies": [
               {
@@ -2878,7 +4417,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3060,6 +4599,57 @@
               "macos_fsevent"
             ]
           },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
+            ]
+          },
           "rustix-1.1.4": {
             "runtime_dependencies": [
               {
@@ -3139,7 +4729,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3393,6 +4983,57 @@
             "features": [
               "fsevent-sys",
               "macos_fsevent"
+            ]
+          },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
             ]
           },
           "rustix-1.1.4": {
@@ -3505,7 +5146,7 @@
             "runtime_dependencies": [
               {
                 "name": "arrayref",
-                "package_key": "arrayref-0.3.9",
+                "package_key": "arrayref-0.3.10",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3761,6 +5402,57 @@
               "macos_fsevent"
             ]
           },
+          "ring-0.17.14": {
+            "runtime_dependencies": [
+              {
+                "name": "cfg_if",
+                "package_key": "cfg-if-1.0.4",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "getrandom",
+                "package_key": "getrandom-0.2.17",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "untrusted",
+                "package_key": "untrusted-0.9.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [
+              {
+                "name": "cc",
+                "package_key": "cc-1.4.3",
+                "kind": "build",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "host"
+              }
+            ],
+            "features": [
+              "alloc",
+              "default",
+              "dev_urandom_fallback"
+            ]
+          },
           "rustix-1.1.4": {
             "runtime_dependencies": [
               {
@@ -3871,7 +5563,7 @@
     "arc-swap-1.9.2": {
       "edition": "2018"
     },
-    "arrayref-0.3.9": {
+    "arrayref-0.3.10": {
       "edition": "2015"
     },
     "arrayvec-0.7.8": {
@@ -3883,6 +5575,9 @@
     },
     "autocfg-1.5.1": {
       "edition": "2015"
+    },
+    "base64-0.22.1": {
+      "edition": "2018"
     },
     "bitflags-2.13.1": {
       "edition": "2021"
@@ -3909,6 +5604,10 @@
     "cpufeatures-0.3.0": {
       "edition": "2024"
     },
+    "displaydoc-0.2.7": {
+      "edition": "2021",
+      "proc_macro": true
+    },
     "equivalent-1.0.2": {
       "edition": "2015"
     },
@@ -3925,6 +5624,9 @@
     "find-msvc-tools-0.1.11": {
       "edition": "2021"
     },
+    "form_urlencoded-1.2.2": {
+      "edition": "2018"
+    },
     "fsevent-sys-4.1.0": {
       "edition": "2018"
     },
@@ -3938,6 +5640,9 @@
     "gen-types-0.1.34": {
       "edition": "2024"
     },
+    "getrandom-0.2.17": {
+      "edition": "2018"
+    },
     "getrandom-0.4.3": {
       "edition": "2024",
       "build_script": "build.rs"
@@ -3947,6 +5652,35 @@
     },
     "iana-time-zone-0.1.65": {
       "edition": "2021"
+    },
+    "icu_collections-2.3.0": {
+      "edition": "2024"
+    },
+    "icu_locale_core-2.3.0": {
+      "edition": "2024"
+    },
+    "icu_normalizer-2.3.0": {
+      "edition": "2024"
+    },
+    "icu_normalizer_data-2.3.0": {
+      "edition": "2024",
+      "build_script": "build.rs"
+    },
+    "icu_properties-2.3.0": {
+      "edition": "2024"
+    },
+    "icu_properties_data-2.3.0": {
+      "edition": "2024",
+      "build_script": "build.rs"
+    },
+    "icu_provider-2.3.0": {
+      "edition": "2024"
+    },
+    "idna-1.1.0": {
+      "edition": "2018"
+    },
+    "idna_adapter-1.2.2": {
+      "edition": "2024"
     },
     "indexmap-2.14.0": {
       "edition": "2024"
@@ -3972,6 +5706,9 @@
       "build_script": "build.rs"
     },
     "linux-raw-sys-0.12.1": {
+      "edition": "2021"
+    },
+    "litemap-0.8.3": {
       "edition": "2021"
     },
     "log-0.4.33": {
@@ -4003,12 +5740,22 @@
       "edition": "2018",
       "proc_macro": true
     },
+    "percent-encoding-2.3.2": {
+      "edition": "2018"
+    },
     "pin-project-lite-0.2.17": {
       "edition": "2018"
     },
     "pleme-hotswap-derive-0.1.3": {
       "edition": "2024",
       "proc_macro": true
+    },
+    "potential_utf-0.1.6": {
+      "edition": "2021"
+    },
+    "proc-macro1-1.0.107": {
+      "edition": "2021",
+      "build_script": "build.rs"
     },
     "proc-macro2-1.0.107": {
       "edition": "2021",
@@ -4022,9 +5769,28 @@
       "edition": "2021",
       "build_script": "build.rs"
     },
+    "ring-0.17.14": {
+      "edition": "2021",
+      "build_script": "build.rs",
+      "links": "ring_core_0_17_14_"
+    },
     "rustix-1.1.4": {
       "edition": "2021",
       "build_script": "build.rs"
+    },
+    "rustls-0.23.43": {
+      "edition": "2021",
+      "build_script": "build.rs"
+    },
+    "rustls-pki-types-1.15.1": {
+      "edition": "2021"
+    },
+    "rustls-webpki-0.103.14": {
+      "edition": "2021",
+      "lib_target": {
+        "name": "webpki",
+        "path": "src/lib.rs"
+      }
     },
     "rustversion-1.0.23": {
       "edition": "2018",
@@ -4059,7 +5825,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.620": {
+    "shikumi-0.1.621": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4069,11 +5835,23 @@
     "shlex-2.0.1": {
       "edition": "2018"
     },
+    "smallvec-1.15.2": {
+      "edition": "2018"
+    },
+    "stable_deref_trait-1.2.1": {
+      "edition": "2015"
+    },
+    "subtle-2.6.1": {
+      "edition": "2018"
+    },
     "syn-2.0.119": {
       "edition": "2021"
     },
     "syn-3.0.3": {
       "edition": "2021"
+    },
+    "synstructure-0.13.2": {
+      "edition": "2018"
     },
     "tempfile-3.27.0": {
       "edition": "2021"
@@ -4085,6 +5863,9 @@
     "thiserror-impl-2.0.20": {
       "edition": "2021",
       "proc_macro": true
+    },
+    "tinystr-0.8.4": {
+      "edition": "2021"
     },
     "tokio-1.53.1": {
       "edition": "2021"
@@ -4135,17 +5916,65 @@
         }
       ]
     },
+    "untrusted-0.9.0": {
+      "edition": "2018"
+    },
+    "ureq-2.12.1": {
+      "edition": "2018"
+    },
+    "url-2.5.8": {
+      "edition": "2018"
+    },
+    "utf8_iter-1.0.4": {
+      "edition": "2021"
+    },
     "version_check-0.9.5": {
       "edition": "2015"
     },
     "walkdir-2.5.0": {
       "edition": "2018"
     },
+    "webpki-roots-0.26.11": {
+      "edition": "2021"
+    },
+    "webpki-roots-1.0.9": {
+      "edition": "2021"
+    },
     "winnow-0.7.15": {
+      "edition": "2021"
+    },
+    "writeable-0.6.4": {
       "edition": "2021"
     },
     "yansi-1.0.1": {
       "edition": "2021"
+    },
+    "yoke-0.8.3": {
+      "edition": "2021"
+    },
+    "yoke-derive-0.8.2": {
+      "edition": "2021",
+      "proc_macro": true
+    },
+    "zerofrom-0.1.8": {
+      "edition": "2021"
+    },
+    "zerofrom-derive-0.1.7": {
+      "edition": "2021",
+      "proc_macro": true
+    },
+    "zeroize-1.9.0": {
+      "edition": "2024"
+    },
+    "zerotrie-0.2.5": {
+      "edition": "2021"
+    },
+    "zerovec-0.11.8": {
+      "edition": "2021"
+    },
+    "zerovec-derive-0.11.5": {
+      "edition": "2021",
+      "proc_macro": true
     },
     "zmij-1.0.23": {
       "edition": "2021",
