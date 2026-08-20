@@ -101,6 +101,39 @@ impl Format {
     /// matching every variant.
     pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix, Self::Blue];
 
+    /// Canonical separator between the format token and the path in the
+    /// `"<format>: <path>"` shape shikumi-built providers write into
+    /// `figment::Metadata::name` for per-value attribution.
+    ///
+    /// The single source of truth for the separator on both directions of
+    /// the metadata-name algebra. [`Self::metadata_name`] emits it after
+    /// the [`Self::as_str`] token; [`Self::strip_metadata_name`] (and
+    /// through it [`Self::parse_metadata_tag`]) strips it back off between
+    /// the token and the trailing path. Before this constant the `": "`
+    /// separator lived untypedly at two sites — the emitter's
+    /// `format!("{self}: {}", ...)` and the resolver's per-variant
+    /// `format!("{f}: ")` — that had to stay in lockstep by hand; a
+    /// future change to the separator (e.g. tightening to `": "` with a
+    /// tab prefix, or moving to an inequality-safe `" | "` when a `:` in
+    /// a Windows path started confusing the leftmost-`:` split) required
+    /// a paired edit at both sites. Now both directions route through
+    /// this one `&'static str`, so a new shape lives at one site and the
+    /// two directions cannot disagree.
+    ///
+    /// The value is a two-byte ASCII slice (`": "`), so [`str::strip_prefix`]
+    /// against it is a byte-wise compare that never allocates — closing
+    /// the second half of the drop-per-call `String` allocation the old
+    /// [`Self::strip_metadata_name`] shape carried via `format!("{f}: ")`
+    /// (the first half being the alias-canonical-name allocation, dropped
+    /// by routing through [`Self::as_str`] as `&'static str`).
+    ///
+    /// Pinned by `tests::format_metadata_name_uses_metadata_name_separator`
+    /// (writer routes through this const) and
+    /// `tests::format_strip_metadata_name_routes_through_metadata_name_separator`
+    /// (reader routes through this const), so the pair inherits the shape
+    /// from one source of truth by construction.
+    pub const METADATA_NAME_SEPARATOR: &'static str = ": ";
+
     /// Returns the file extensions associated with this format.
     ///
     /// The single source of truth for the `(Format → extension-alias set)`
@@ -410,11 +443,16 @@ impl Format {
     /// `"lisp: /home/u/.config/app/app.lisp"`,
     /// `"nix: /etc/app/app.nix"`).
     ///
-    /// The `<format>` token is the [`fmt::Display`] form of the variant,
-    /// so [`Format::Display`] is the single source of truth for the
-    /// token shape on both sides of attribution: providers emit it via
-    /// this constructor, and [`Self::strip_metadata_name`] inverts it
-    /// for resolution back to a [`crate::ConfigSource`].
+    /// The `<format>` token is the [`fmt::Display`] form of the variant
+    /// (which delegates to [`Self::as_str`] via the
+    /// `closed_axis_label_string_surface!` macro), so [`Self::as_str`]
+    /// is the single source of truth for the token shape on both sides
+    /// of attribution. The `": "` separator between the token and the
+    /// path routes through [`Self::METADATA_NAME_SEPARATOR`] — the
+    /// second single source of truth on the same shape — so a resolver
+    /// that consumes the emission ([`Self::strip_metadata_name`] and
+    /// [`Self::parse_metadata_tag`]) reads the same bytes the emitter
+    /// wrote without a duplicated separator literal that could drift.
     ///
     /// Defined for every [`Format`] variant — including those for which
     /// [`Self::has_shikumi_provider`] returns `false` — so the morphism
@@ -424,19 +462,37 @@ impl Format {
     /// filters to the shikumi-provider subset.
     #[must_use]
     pub fn metadata_name(self, path: &Path) -> String {
-        format!("{self}: {}", path.display())
+        format!(
+            "{}{}{}",
+            self.as_str(),
+            Self::METADATA_NAME_SEPARATOR,
+            path.display()
+        )
     }
 
     /// Inverse of [`Self::metadata_name`]: try to recognize `name` as a
     /// shikumi-built provider's metadata-name and recover the
     /// `(format, path_str)` pair.
     ///
-    /// Iterates [`Self::ALL`] in declaration order, restricted to
-    /// variants for which [`Self::has_shikumi_provider`] returns `true`,
-    /// and tries the `"<format>: "` prefix from [`Self::metadata_name`]
-    /// against `name`. The first matching variant wins; the trailing
-    /// substring is returned by reference into `name` so callers don't
-    /// allocate.
+    /// Iterates [`FormatProvenance::ShikumiBuilt::formats`] in declaration
+    /// order and, for each candidate, strips the format's canonical token
+    /// ([`Self::as_str`]) from the head of `name` and then the shared
+    /// [`Self::METADATA_NAME_SEPARATOR`] from what remains — the exact
+    /// two-step inverse of the `format!("{}{}{}", as_str(), separator,
+    /// path.display())` shape [`Self::metadata_name`] writes. The first
+    /// matching variant wins; the trailing substring is returned by
+    /// reference into `name` so callers don't allocate.
+    ///
+    /// **Alloc-free.** Prior to routing through [`Self::as_str`] and
+    /// [`Self::METADATA_NAME_SEPARATOR`], each candidate iteration built
+    /// its `"<format>: "` prefix through `format!("{f}: ")`, allocating a
+    /// fresh `String` per variant tried — up to three heap allocations per
+    /// call across the [`FormatProvenance::ShikumiBuilt`] cohort even on
+    /// the miss path. The classifier now reduces to byte-wise
+    /// [`str::strip_prefix`] compares against two `&'static str` slices,
+    /// so a resolver iterating a long chain of `figment::Metadata` (the
+    /// [`crate::ShikumiError::failing_source`] path) no longer drips
+    /// per-cell allocations.
     ///
     /// Returns `None` for `figment::Metadata::name` values produced by
     /// figment's built-in YAML/TOML providers (which use `Source::File`
@@ -456,8 +512,9 @@ impl Format {
             .formats()
             .iter()
             .find_map(|f| {
-                let prefix = format!("{f}: ");
-                name.strip_prefix(&prefix).map(|rest| (*f, rest))
+                name.strip_prefix(f.as_str())
+                    .and_then(|rest| rest.strip_prefix(Self::METADATA_NAME_SEPARATOR))
+                    .map(|rest| (*f, rest))
             })
     }
 
@@ -4758,6 +4815,78 @@ mod tests {
             rest_start >= name_start && rest_start < name_end,
             "rest must be a sub-slice of name"
         );
+    }
+
+    #[test]
+    fn format_metadata_name_uses_metadata_name_separator() {
+        // The writer routes through `Format::METADATA_NAME_SEPARATOR`:
+        // for every variant, `metadata_name(p)` splits as
+        // `<as_str><METADATA_NAME_SEPARATOR><p.display()>` byte-for-byte.
+        // A future edit to the separator that skipped either direction
+        // would fail this pin — the metadata-name shape is a single
+        // source of truth on both halves.
+        for f in Format::ALL {
+            let path = Path::new("/srv/app.cfg");
+            let name = f.metadata_name(path);
+            let after_token = name
+                .strip_prefix(f.as_str())
+                .unwrap_or_else(|| panic!("{f:?} metadata_name must start with the as_str token"));
+            let after_sep = after_token
+                .strip_prefix(Format::METADATA_NAME_SEPARATOR)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{f:?} metadata_name must place METADATA_NAME_SEPARATOR \
+                         immediately after the as_str token"
+                    )
+                });
+            assert_eq!(
+                after_sep,
+                path.display().to_string(),
+                "metadata_name must end in the path.display() region for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_strip_metadata_name_routes_through_metadata_name_separator() {
+        // The reader routes through the same
+        // `Format::METADATA_NAME_SEPARATOR`: for every shikumi-built
+        // variant, the trailing region `strip_metadata_name` surfaces
+        // equals what a hand-written strip that consumes the shared
+        // token+separator prefix would return. The two directions of
+        // the metadata-name algebra now inherit the shape from one
+        // constant, not from two duplicated `": "` literals that could
+        // drift.
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let path = Path::new("/srv/app.cfg");
+            let name = f.metadata_name(path);
+            let (recovered, rest) =
+                Format::strip_metadata_name(&name).expect("round-trip must succeed");
+            let expected = name
+                .strip_prefix(f.as_str())
+                .and_then(|r| r.strip_prefix(Format::METADATA_NAME_SEPARATOR))
+                .expect("shared token+separator prefix must strip");
+            assert_eq!(recovered, *f);
+            assert_eq!(
+                rest, expected,
+                "strip_metadata_name must consume exactly \
+                 <as_str><METADATA_NAME_SEPARATOR> for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_metadata_name_separator_is_two_byte_ascii_slice() {
+        // The separator is a two-byte ASCII slice by design (colon +
+        // space): `str::strip_prefix` against it is a byte-wise compare
+        // that never allocates, which is exactly the property that
+        // closes the second half of the per-call `String` drop in
+        // `strip_metadata_name` (the first half being the
+        // alias-canonical-name allocation, dropped by routing through
+        // `Self::as_str` as `&'static str`).
+        assert_eq!(Format::METADATA_NAME_SEPARATOR, ": ");
+        assert_eq!(Format::METADATA_NAME_SEPARATOR.len(), 2);
+        assert!(Format::METADATA_NAME_SEPARATOR.is_ascii());
     }
 
     // ---- FormatMetadataTag / parse_metadata_tag tests ----
