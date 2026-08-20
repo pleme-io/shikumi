@@ -494,6 +494,52 @@ impl ConfigSourceKind {
             Self::File => "file",
         }
     }
+
+    /// Returns `true` for [`Self::Defaults`]; equivalent to
+    /// `self == ConfigSourceKind::Defaults`.
+    ///
+    /// Kind-side sibling of [`ConfigSource::is_defaults`]: the tag-side
+    /// predicate over the data-carrying [`ConfigSource`] enum lifts here
+    /// to a `Copy`-taking `const fn` on the data-free discriminant, so a
+    /// consumer holding only the layer kind (a `HashMap`/`HashSet` key,
+    /// a `BTreeMap` bucket, an [`crate::AttributionRule::layer_kind`]
+    /// projection) can classify without materializing a synthetic
+    /// [`ConfigSource`] first. Peer to
+    /// [`FigmentSourceKind::is_file`] / [`FigmentSourceKind::is_code`] /
+    /// [`FigmentSourceKind::is_custom`] on the figment-side kind axis
+    /// and [`EnvMetadataTagKind::is_prefixed`] /
+    /// [`EnvMetadataTagKind::is_bare`] on the env-metadata kind axis.
+    ///
+    /// Agreement with the tag-side predicate is a structural law:
+    /// `source.is_defaults() == source.kind().is_defaults()` for every
+    /// [`ConfigSource`], pinned pointwise by
+    /// [`tests::config_source_kind_agrees_with_source_predicates_pointwise`]
+    /// against the canonical sample table. The three sibling predicates
+    /// form a closed disjoint partition of [`Self::ALL`] — every
+    /// variant satisfies exactly one — pinned by
+    /// [`tests::config_source_kind_predicates_are_a_closed_ternary_partition`].
+    #[must_use]
+    pub const fn is_defaults(self) -> bool {
+        matches!(self, Self::Defaults)
+    }
+
+    /// Returns `true` for [`Self::Env`]; equivalent to
+    /// `self == ConfigSourceKind::Env`. Kind-side sibling of
+    /// [`ConfigSource::is_env`]; see [`Self::is_defaults`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_env(self) -> bool {
+        matches!(self, Self::Env)
+    }
+
+    /// Returns `true` for [`Self::File`]; equivalent to
+    /// `self == ConfigSourceKind::File`. Kind-side sibling of
+    /// [`ConfigSource::is_file`]; see [`Self::is_defaults`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_file(self) -> bool {
+        matches!(self, Self::File)
+    }
 }
 
 impl crate::ClosedAxis for ConfigSourceKind {
@@ -94601,6 +94647,110 @@ mod tests {
             <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("http"),
             None,
         );
+    }
+
+    #[test]
+    fn config_source_kind_is_defaults_true_only_for_defaults_variant() {
+        // Per-variant polarity pin on the Defaults corner. Sibling to
+        // `figment_source_kind_agrees_with_predicates_pointwise`; a
+        // future edit that flips the `matches!` arm on `is_defaults`
+        // fails here before the pointwise-agreement pin masks it.
+        assert!(ConfigSourceKind::Defaults.is_defaults());
+        assert!(!ConfigSourceKind::Env.is_defaults());
+        assert!(!ConfigSourceKind::File.is_defaults());
+    }
+
+    #[test]
+    fn config_source_kind_is_env_true_only_for_env_variant() {
+        assert!(!ConfigSourceKind::Defaults.is_env());
+        assert!(ConfigSourceKind::Env.is_env());
+        assert!(!ConfigSourceKind::File.is_env());
+    }
+
+    #[test]
+    fn config_source_kind_is_file_true_only_for_file_variant() {
+        assert!(!ConfigSourceKind::Defaults.is_file());
+        assert!(!ConfigSourceKind::Env.is_file());
+        assert!(ConfigSourceKind::File.is_file());
+    }
+
+    #[test]
+    fn config_source_kind_predicates_are_a_closed_ternary_partition() {
+        // Every ConfigSourceKind::ALL cell satisfies exactly one of the
+        // three sibling predicates: none satisfies two, none satisfies
+        // zero. This is the ternary-partition analogue of the
+        // sibling-pair pins on the crate's binary closed axes
+        // (`partition_face_predicates_are_a_closed_binary_partition`,
+        // `secret_ref_shape_predicates_are_a_closed_binary_partition`,
+        // etc.) and the disjointness pin on the figment-side kind
+        // axis (`figment_source_kind_partitions_disjointly`); a future
+        // variant landing on ConfigSourceKind without its own sibling
+        // predicate collapses the partition to "zero", failing here
+        // before drifting through any consumer site.
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            let hits =
+                usize::from(k.is_defaults()) + usize::from(k.is_env()) + usize::from(k.is_file());
+            assert_eq!(
+                hits, 1,
+                "ConfigSourceKind::{k:?} must satisfy exactly one of \
+                 is_defaults/is_env/is_file (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_agrees_with_source_predicates_pointwise() {
+        // Structural law: for every ConfigSource variant, the tag-side
+        // predicate and the kind-side sibling predicate agree.
+        // `source.is_X() == source.kind().is_X()` for X in
+        // {defaults, env, file}. Mirrors the figment-side pin
+        // `figment_source_kind_agrees_with_predicates_pointwise`;
+        // catches a future edit that drifts one side's polarity
+        // without the other.
+        let sources = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("MYAPP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+            ConfigSource::File(PathBuf::from("rel.toml")),
+        ];
+        for src in &sources {
+            let k = src.kind();
+            assert_eq!(
+                src.is_defaults(),
+                k.is_defaults(),
+                "is_defaults must agree tag ↔ kind for {src:?}",
+            );
+            assert_eq!(
+                src.is_env(),
+                k.is_env(),
+                "is_env must agree tag ↔ kind for {src:?}",
+            );
+            assert_eq!(
+                src.is_file(),
+                k.is_file(),
+                "is_file must agree tag ↔ kind for {src:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_predicates_agree_with_equality_pointwise() {
+        // Kind-side predicates agree with the closed-equality check
+        // against their own variant, over the whole ALL slice. This is
+        // the sibling of the figment-side pin
+        // `figment_source_kind_agrees_with_predicates_pointwise`
+        // (its second half, over the kind alone). A future landing
+        // that adds a fourth variant to ConfigSourceKind without
+        // extending the three sibling predicates leaves the new cell
+        // failing every predicate — the ternary-partition pin above
+        // catches that; this pin catches the dual case where a
+        // predicate's arm silently accepts a second variant.
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(k.is_defaults(), k == ConfigSourceKind::Defaults);
+            assert_eq!(k.is_env(), k == ConfigSourceKind::Env);
+            assert_eq!(k.is_file(), k == ConfigSourceKind::File);
+        }
     }
 
     #[test]
