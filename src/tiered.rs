@@ -17922,6 +17922,82 @@ impl DiffLine {
             Self::Removed(s) | Self::Added(s) | Self::Context(s) => s.as_str(),
         }
     }
+
+    /// Returns `true` for [`Self::Removed`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of
+    /// [`DiffLineKind::is_removed`].
+    ///
+    /// One source of truth for the diff-cell polarity on the
+    /// payload-bearing [`DiffLine`] enum, so consumers that need only
+    /// the cell-kind axis (filtering the removed side of a
+    /// [`ConfigDiff`] between two tiers, per-kind counters over the
+    /// unified-diff line stream, structured-log fields naming the
+    /// diff cell class) match on this predicate instead of an inline
+    /// `matches!(l, DiffLine::Removed(_))` pattern that both re-states
+    /// the variant name at the call site and drifts if a future
+    /// variant lands. Direct peer of
+    /// [`ConfigTier::is_bare`]/[`ConfigTier::is_discovered`]/…
+    /// (commit `aefc87a`, the tag-side sibling quartet on
+    /// [`ConfigTier`] against the payload-bearing `Custom(PathBuf)`
+    /// arm): same discipline lifted to the diff-cell axis, so every
+    /// closed enum with a `.kind()` projection in the crate carries a
+    /// full tag-side sibling set of predicates.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Removed(text)` regardless of text content — is what the
+    /// pointwise-agreement pin locks in: the kind-side predicate
+    /// cannot see the [`String`], and a future edit that peeked at
+    /// the inner payload would diverge from the kind-side and fail
+    /// [`tests::diff_line_agrees_with_kind_predicates_pointwise`].
+    ///
+    /// The four sibling predicates
+    /// [`Self::is_removed`]/[`Self::is_added`]/[`Self::is_context`]/[`Self::is_changed`]
+    /// mirror the four predicates on [`DiffLineKind`]; the first three
+    /// form a closed disjoint partition of the variant space — every
+    /// [`DiffLine`] value satisfies exactly one — pinned by
+    /// [`tests::diff_line_predicates_are_a_closed_ternary_partition`],
+    /// the ternary analogue of the quaternary-partition pin on
+    /// [`ConfigTier`].
+    #[must_use]
+    pub const fn is_removed(&self) -> bool {
+        matches!(self, Self::Removed(_))
+    }
+
+    /// Returns `true` for [`Self::Added`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of
+    /// [`DiffLineKind::is_added`]. See [`Self::is_removed`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_added(&self) -> bool {
+        matches!(self, Self::Added(_))
+    }
+
+    /// Returns `true` for [`Self::Context`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of
+    /// [`DiffLineKind::is_context`]. See [`Self::is_removed`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_context(&self) -> bool {
+        matches!(self, Self::Context(_))
+    }
+
+    /// Returns `true` when this line represents a structural change
+    /// between the two sides (`true` for [`Self::Added`] or
+    /// [`Self::Removed`], `false` for [`Self::Context`]); tag-side
+    /// sibling of [`DiffLineKind::is_changed`].
+    ///
+    /// Refines [`ConfigDiff::is_empty_diff`], which today walks
+    /// `self.lines.iter().any(|l| l.kind().is_changed())` — the
+    /// tag-side predicate is a shorter alias for that exact call, so
+    /// consumers dropping into `is_changed()` no longer need to
+    /// spell out the `.kind()` hop. See [`Self::is_removed`] for the
+    /// tag ↔ kind agreement discipline; the polarity-refinement law
+    /// `is_changed() == is_added() || is_removed()` is pinned by
+    /// [`tests::diff_line_is_changed_matches_added_or_removed_on_tag_side`].
+    #[must_use]
+    pub const fn is_changed(&self) -> bool {
+        matches!(self, Self::Added(_) | Self::Removed(_))
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -26040,6 +26116,162 @@ mod tests {
         assert_eq!(DiffLineKind::Removed.glyph(), '-');
         assert_eq!(DiffLineKind::Added.glyph(), '+');
         assert_eq!(DiffLineKind::Context.glyph(), ' ');
+    }
+
+    #[test]
+    fn diff_line_is_removed_true_only_for_removed_variant() {
+        // Per-variant polarity pin on the Removed corner of the
+        // DiffLine tag-side sibling-predicate quartet. Mirror of
+        // `config_tier_is_bare_true_only_for_bare_variant` on the
+        // ConfigTier tag-side quartet (`aefc87a`) and of the trio-side
+        // pin `config_source_kind_is_defaults_true_only_for_defaults_variant`
+        // on ConfigSourceKind; a future edit that flips the
+        // `matches!` arm on `DiffLine::is_removed` fails here before
+        // the pointwise-agreement and closed-partition pins mask it.
+        // Payload-independence sub-pin: the answer is the same for
+        // every `Removed(text)` regardless of text content — empty,
+        // short, long, whitespace-only.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert!(DiffLine::Removed(payload.into()).is_removed());
+            assert!(!DiffLine::Added(payload.into()).is_removed());
+            assert!(!DiffLine::Context(payload.into()).is_removed());
+        }
+    }
+
+    #[test]
+    fn diff_line_is_added_true_only_for_added_variant() {
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert!(!DiffLine::Removed(payload.into()).is_added());
+            assert!(DiffLine::Added(payload.into()).is_added());
+            assert!(!DiffLine::Context(payload.into()).is_added());
+        }
+    }
+
+    #[test]
+    fn diff_line_is_context_true_only_for_context_variant() {
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert!(!DiffLine::Removed(payload.into()).is_context());
+            assert!(!DiffLine::Added(payload.into()).is_context());
+            assert!(DiffLine::Context(payload.into()).is_context());
+        }
+    }
+
+    #[test]
+    fn diff_line_is_changed_matches_added_or_removed_on_tag_side() {
+        // Polarity-refinement law on the DiffLine tag-side:
+        // `is_changed()` is true exactly when the line is Added or
+        // Removed, false when it is Context. Mirror of the kind-side
+        // pin `diff_line_kind_is_changed_partitions_added_or_removed`
+        // and structural analogue of the `is_custom` payload-
+        // independence pin on ConfigTier (`aefc87a`) — every payload,
+        // including the empty string, answers uniformly on the
+        // is-it-a-change axis. Also pins the algebraic identity
+        // `l.is_changed() == l.is_added() || l.is_removed()` at the
+        // tag-side level so the two sibling sets stay coherent.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            let removed = DiffLine::Removed(payload.into());
+            let added = DiffLine::Added(payload.into());
+            let context = DiffLine::Context(payload.into());
+            assert!(removed.is_changed());
+            assert!(added.is_changed());
+            assert!(!context.is_changed());
+            // Sibling-set coherence.
+            for line in [&removed, &added, &context] {
+                assert_eq!(
+                    line.is_changed(),
+                    line.is_added() || line.is_removed(),
+                    "is_changed must equal is_added || is_removed for {line:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn diff_line_predicates_are_a_closed_ternary_partition() {
+        // Every DiffLine value in the canonical sample table satisfies
+        // exactly one of the three base sibling predicates: none
+        // satisfies two, none satisfies zero. Ternary-partition
+        // analogue of the quaternary-partition pin on ConfigTier
+        // (`config_tier_predicates_are_a_closed_quaternary_partition`,
+        // `aefc87a`) and of the trio-partition pin on ConfigSourceKind
+        // (`config_source_kind_predicates_are_a_closed_ternary_partition`).
+        // Excludes the compound `is_changed` predicate — that is a
+        // union of two base predicates, not a fourth cell, and is
+        // pinned separately by
+        // `diff_line_is_changed_matches_added_or_removed_on_tag_side`.
+        // A future fourth DiffLine variant landing without its own
+        // sibling predicate collapses the partition to zero on that
+        // variant, failing here before drifting through any consumer
+        // site.
+        let lines = [
+            DiffLine::Removed("name: ''".into()),
+            DiffLine::Added("name: default-name".into()),
+            DiffLine::Context("size: 42".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Removed("  leading spaces".into()),
+            DiffLine::Added("multi\nline\nblob".into()),
+            DiffLine::Context("unicode: 仕組み".into()),
+        ];
+        for line in &lines {
+            let hits = usize::from(line.is_removed())
+                + usize::from(line.is_added())
+                + usize::from(line.is_context());
+            assert_eq!(
+                hits, 1,
+                "DiffLine::{line:?} must satisfy exactly one of \
+                 is_removed/is_added/is_context (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_agrees_with_kind_predicates_pointwise() {
+        // Structural law: for every DiffLine variant, the tag-side
+        // predicate and the kind-side sibling predicate agree.
+        // `line.is_X() == line.kind().is_X()` for X in
+        // {removed, added, context, changed}. Mirror of the tag ↔ kind
+        // pin `config_tier_agrees_with_kind_predicates_pointwise`
+        // (`aefc87a`); catches a future edit that drifts one side's
+        // polarity without the other, and pins the payload-
+        // independence contract on every arm — the kind-side has no
+        // String visibility, so the tag-side is forbidden from
+        // consulting it.
+        let lines = [
+            DiffLine::Removed("name: ''".into()),
+            DiffLine::Added("name: default-name".into()),
+            DiffLine::Context("size: 42".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Removed("  leading spaces".into()),
+            DiffLine::Added("multi\nline\nblob".into()),
+            DiffLine::Context("unicode: 仕組み".into()),
+        ];
+        for line in &lines {
+            let k = line.kind();
+            assert_eq!(
+                line.is_removed(),
+                k.is_removed(),
+                "is_removed must agree tag ↔ kind for {line:?}",
+            );
+            assert_eq!(
+                line.is_added(),
+                k.is_added(),
+                "is_added must agree tag ↔ kind for {line:?}",
+            );
+            assert_eq!(
+                line.is_context(),
+                k.is_context(),
+                "is_context must agree tag ↔ kind for {line:?}",
+            );
+            assert_eq!(
+                line.is_changed(),
+                k.is_changed(),
+                "is_changed must agree tag ↔ kind for {line:?}",
+            );
+        }
     }
 
     #[test]
