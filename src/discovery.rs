@@ -1957,11 +1957,46 @@ impl ConfigDiscovery {
     }
 
     /// Check if a filename matches the partial pattern `[.]{app}-*.{ext}`.
+    ///
+    /// The extension arm routes through [`Format::from_path`] — the same
+    /// path→[`Format`] classifier that [`Self::discover`] /
+    /// [`Self::discover_all`]'s primary paths reach via
+    /// [`crate::ProviderChain::with_file`] — and then gates the result on
+    /// [`Self::formats`] membership. Before this lift the arm iterated
+    /// [`Self::configured_extensions`] and called `name.ends_with(&format!(".{ext}"))`
+    /// for each extension: two drift-classes ran open in that shape and
+    /// this lift closes both together —
+    ///
+    /// - **Alias-algebra drift with primary discovery.** [`Format::from_path`]
+    ///   (and its underlying [`Format::from_extension`]) is ASCII
+    ///   case-insensitive; `name.ends_with(&format!(".{ext}"))` is
+    ///   case-sensitive. Primary discovery would recognize a file named
+    ///   `app-theme.YAML` as YAML — `nix-darwin`'s default filesystem is
+    ///   case-insensitive so the on-disk case is not guaranteed to be
+    ///   lower — while partial discovery would silently skip it. The
+    ///   two directions of one alias algebra now agree by construction:
+    ///   [`Format::from_path`] is the single site case-insensitivity is
+    ///   defined and both callers reach it.
+    /// - **Per-check allocation.** `format!(".{ext}")` allocated one
+    ///   [`String`] per configured extension per file name checked — for
+    ///   the default 8-alias set (`yaml`, `yml`, `toml`, `lisp`, `lsp`,
+    ///   `el`, `nix`, `b`), up to 8 heap allocations per directory entry
+    ///   in [`Self::collect_partials`]'s inner loop. [`Format::from_path`]
+    ///   composes [`Path::extension`] with the derivation-shipped
+    ///   [`Format::from_extension`] (which does byte-wise
+    ///   [`str::eq_ignore_ascii_case`] against `&'static` slices), so the
+    ///   check is now allocation-free on the classifier side.
+    ///
+    /// A future [`Format`] variant landing (e.g. `Json`, `Hocon`) becomes
+    /// recognizable on the partial-discovery axis by construction, in
+    /// lockstep with the primary-discovery axis: both reach
+    /// [`Format::from_extension`] as the one alias-set table (shipped by
+    /// commit `d90e9dd`, which derived `Format::from_extension` from
+    /// `Format::extensions`).
     fn is_partial_match(&self, name: &str, app: &str, style: NameStyle) -> bool {
         name.starts_with(&style.partial_prefix(app))
-            && self
-                .configured_extensions()
-                .any(|ext| name.ends_with(&format!(".{ext}")))
+            && Format::from_path(Path::new(name))
+                .is_some_and(|format| self.formats.contains(&format))
     }
 
     /// Iterator over every file extension this discovery honors, in the
@@ -3925,6 +3960,72 @@ mod tests {
             assert!(
                 !d.is_partial_match(&name, "inv3", NameStyle::Bare),
                 "ext `.{ext}` is not configured; partial `{name}` must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn is_partial_match_recognizes_uppercase_alias_matching_from_path() {
+        // Alias-algebra parity: `Format::from_path` is ASCII case-
+        // insensitive (the `nix-darwin` case-insensitive-filesystem
+        // contingency named in `Format::from_extension`'s doc), and the
+        // 2026-08-20 lift routes `is_partial_match` through it so the
+        // two directions of the same alias algebra can no longer disagree.
+        // Before the lift `name.ends_with(&format!(".{ext}"))` compared
+        // case-sensitively — a partial file named `app-theme.YAML` was
+        // silently rejected by partial discovery while primary discovery
+        // (which reaches `Format::from_path`) would have accepted it. This
+        // test fails on the pre-lift shape and pins the fix.
+        let d = ConfigDiscovery::new("myapp").formats(&[Format::Yaml, Format::Toml, Format::Nix]);
+        for (name, ext_case) in [
+            ("myapp-overlay.YAML", "YAML"),
+            ("myapp-overlay.Yml", "Yml"),
+            ("myapp-overlay.TOML", "TOML"),
+            ("myapp-overlay.Nix", "Nix"),
+        ] {
+            assert!(
+                d.is_partial_match(name, "myapp", NameStyle::Bare),
+                "is_partial_match must accept `{name}` — its extension `{ext_case}` \
+                 lifts to a configured format via Format::from_path's case-\
+                 insensitive alias algebra",
+            );
+        }
+    }
+
+    #[test]
+    fn is_partial_match_and_from_path_agree_on_configured_alias_algebra() {
+        // Cross-classifier invariant: for every filename shaped like a
+        // partial (`{app}-*.<ext>`), `is_partial_match` accepts it iff
+        // `Format::from_path` classifies its extension into a format the
+        // discovery's `self.formats` includes. The two callers of the
+        // (name → is-config-alias?) question — primary discovery via
+        // `Format::from_path` (through `ProviderChain::with_file`) and
+        // partial discovery via `is_partial_match` — now agree
+        // pointwise, so the alias set for a format lives at exactly one
+        // site (`Format::extensions`) instead of duplicated between
+        // that table and a per-alias `ends_with` scan.
+        let d = ConfigDiscovery::new("app").formats(&[Format::Yaml, Format::Toml]);
+        // Cover both cases: canonical lowercase, ASCII-uppercase, mixed
+        // case, and unconfigured/unknown extensions. The invariant is
+        // that BOTH classifiers agree — not that a particular case is
+        // accepted or rejected.
+        for suffix in [
+            "yaml", "YAML", "Yaml", "yml", "YML", "toml", "TOML", "Toml", "nix", "lisp", "lsp",
+            "el", "b", "json", "txt", "",
+        ] {
+            let name = if suffix.is_empty() {
+                "app-overlay".to_string()
+            } else {
+                format!("app-overlay.{suffix}")
+            };
+            let from_path = Format::from_path(std::path::Path::new(&name))
+                .is_some_and(|f| d.formats.contains(&f));
+            let via_partial = d.is_partial_match(&name, "app", NameStyle::Bare);
+            assert_eq!(
+                via_partial, from_path,
+                "is_partial_match({name:?}) must agree with Format::from_path \
+                 gated on `self.formats`; via_partial={via_partial}, \
+                 from_path={from_path}",
             );
         }
     }
