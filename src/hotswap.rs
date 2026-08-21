@@ -725,6 +725,94 @@ impl WatermarkRelation {
     pub const fn partitioned_class_invariant_holds(&self) -> bool {
         !matches!(self, Self::UnclassifiedDrift)
     }
+
+    /// True iff this classification is [`Self::UnclassifiedDrift`] — the
+    /// `(true, false, false)` corner where the full watermark moved but
+    /// neither class-scoped half did. The four other variants
+    /// ([`Self::Stationary`], [`Self::RestartRequiredOnly`],
+    /// [`Self::FreeOnly`], [`Self::Both`]) all return `false`.
+    ///
+    /// The per-variant tag-only classifier for the "did an unclassified
+    /// field drift?" question — the sole invariant-violating shape a
+    /// non-exhaustive `field_classes` slice allows through, complement
+    /// of [`Self::partitioned_class_invariant_holds`]. Peer to
+    /// [`Self::stationary`] on the closed quintet: every
+    /// [`WatermarkRelation`] value now carries a per-variant sibling
+    /// alongside the pre-existing welded predicates
+    /// ([`Self::any_moved`], [`Self::restart_pending`],
+    /// [`Self::hot_swappable_drift`],
+    /// [`Self::partitioned_class_invariant_holds`]) so a consumer that
+    /// wants "is this the unclassified-drift corner?" reaches the answer
+    /// through one method call rather than open-coding
+    /// `matches!(rel, WatermarkRelation::UnclassifiedDrift)` at each site
+    /// and paying the closed-partition bookkeeping tax again.
+    #[must_use]
+    pub const fn unclassified_drift(&self) -> bool {
+        matches!(self, Self::UnclassifiedDrift)
+    }
+
+    /// True iff this classification is [`Self::RestartRequiredOnly`] —
+    /// the `(true, true, false)` corner where a `RequiresRestart` field
+    /// drifted but no Free field did. The four other variants
+    /// ([`Self::Stationary`], [`Self::UnclassifiedDrift`],
+    /// [`Self::FreeOnly`], [`Self::Both`]) all return `false`.
+    ///
+    /// The per-variant tag-only classifier for the CALHA-side "did ONLY
+    /// a restart-required field drift?" question — a strict subset of
+    /// the welded [`Self::restart_pending`] predicate whose other
+    /// inhabitant is [`Self::Both`]. Peer to [`Self::stationary`],
+    /// [`Self::unclassified_drift`], [`Self::free_only`], and
+    /// [`Self::both`] on the closed quintet partition; consumers that
+    /// need to distinguish "restart pending, no hot-swap" from
+    /// "restart pending AND hot-swap" reach the finer classification
+    /// through this per-variant sibling rather than the welded union.
+    #[must_use]
+    pub const fn restart_required_only(&self) -> bool {
+        matches!(self, Self::RestartRequiredOnly)
+    }
+
+    /// True iff this classification is [`Self::FreeOnly`] — the
+    /// `(true, false, true)` corner where a Free field drifted but no
+    /// `RequiresRestart` field did. The four other variants
+    /// ([`Self::Stationary`], [`Self::UnclassifiedDrift`],
+    /// [`Self::RestartRequiredOnly`], [`Self::Both`]) all return `false`.
+    ///
+    /// The per-variant tag-only classifier for the operator-side "did
+    /// ONLY a hot-swappable knob drift?" question — a strict subset of
+    /// the welded [`Self::hot_swappable_drift`] predicate whose other
+    /// inhabitant is [`Self::Both`]. Peer to [`Self::stationary`],
+    /// [`Self::unclassified_drift`], [`Self::restart_required_only`],
+    /// and [`Self::both`] on the closed quintet partition; consumers
+    /// that need to distinguish "hot-swap, no pending restart" from
+    /// "hot-swap AND pending restart" reach the finer classification
+    /// through this per-variant sibling rather than the welded union.
+    #[must_use]
+    pub const fn free_only(&self) -> bool {
+        matches!(self, Self::FreeOnly)
+    }
+
+    /// True iff this classification is [`Self::Both`] — the
+    /// `(true, true, true)` corner where at least one field of each
+    /// class drifted. The four other variants ([`Self::Stationary`],
+    /// [`Self::UnclassifiedDrift`], [`Self::RestartRequiredOnly`],
+    /// [`Self::FreeOnly`]) all return `false`.
+    ///
+    /// The per-variant tag-only classifier for the "both classes drifted
+    /// at once" corner — the overlap point of the two welded predicates
+    /// [`Self::restart_pending`] and [`Self::hot_swappable_drift`],
+    /// pinned pointwise by
+    /// `restart_pending() == restart_required_only() || both()` and
+    /// `hot_swappable_drift() == free_only() || both()`. Peer to
+    /// [`Self::stationary`], [`Self::unclassified_drift`],
+    /// [`Self::restart_required_only`], and [`Self::free_only`] on the
+    /// closed quintet partition; a consumer that must fire BOTH a
+    /// hot-swap and a restart-pending notification reaches this arm
+    /// directly rather than intersecting the two welded predicates at
+    /// its own seam.
+    #[must_use]
+    pub const fn both(&self) -> bool {
+        matches!(self, Self::Both)
+    }
 }
 
 /// A [`WatermarkDelta`] whose "at least one half moved" invariant is
@@ -1199,6 +1287,55 @@ impl WatermarkRelationWire {
     #[must_use]
     pub const fn partitioned_class_invariant_holds(&self) -> bool {
         !matches!(self, Self::UnclassifiedDrift)
+    }
+
+    /// True iff this classification is [`Self::UnclassifiedDrift`] — the
+    /// wire-side receiver-sibling of
+    /// [`WatermarkRelation::unclassified_drift`]. Answers "did an
+    /// unclassified field drift?" through the wire tag alone, without
+    /// detouring through [`WatermarkRelation::from_wire`] for a question
+    /// the wire variant tag already answers. Complement of
+    /// [`Self::partitioned_class_invariant_holds`]; peer to
+    /// [`Self::stationary`], [`Self::restart_required_only`],
+    /// [`Self::free_only`], and [`Self::both`] on the closed quintet
+    /// partition welded through the wire boundary.
+    #[must_use]
+    pub const fn unclassified_drift(&self) -> bool {
+        matches!(self, Self::UnclassifiedDrift)
+    }
+
+    /// True iff this classification is [`Self::RestartRequiredOnly`] —
+    /// the wire-side receiver-sibling of
+    /// [`WatermarkRelation::restart_required_only`]. Answers "did ONLY
+    /// a restart-required field drift?" through the wire tag alone;
+    /// strict subset of [`Self::restart_pending`] whose other inhabitant
+    /// is [`Self::Both`] (pinned by
+    /// `restart_pending() == restart_required_only() || both()`).
+    #[must_use]
+    pub const fn restart_required_only(&self) -> bool {
+        matches!(self, Self::RestartRequiredOnly)
+    }
+
+    /// True iff this classification is [`Self::FreeOnly`] — the
+    /// wire-side receiver-sibling of [`WatermarkRelation::free_only`].
+    /// Answers "did ONLY a hot-swappable knob drift?" through the wire
+    /// tag alone; strict subset of [`Self::hot_swappable_drift`] whose
+    /// other inhabitant is [`Self::Both`] (pinned by
+    /// `hot_swappable_drift() == free_only() || both()`).
+    #[must_use]
+    pub const fn free_only(&self) -> bool {
+        matches!(self, Self::FreeOnly)
+    }
+
+    /// True iff this classification is [`Self::Both`] — the wire-side
+    /// receiver-sibling of [`WatermarkRelation::both`]. Answers "did
+    /// both classes drift at once?" through the wire tag alone; the
+    /// overlap point of [`Self::restart_pending`] and
+    /// [`Self::hot_swappable_drift`] surfaced as its own arm rather than
+    /// intersected at each consumer seam.
+    #[must_use]
+    pub const fn both(&self) -> bool {
+        matches!(self, Self::Both)
     }
 }
 
@@ -18995,6 +19132,181 @@ mod watermark_relation_tests {
             "same (full, restart, free) tuple must yield the same variant",
         );
     }
+
+    // ---------- Per-variant sibling predicates on the closed quintet ----------
+
+    fn all_variants() -> [WatermarkRelation; 5] {
+        [
+            WatermarkRelation::Stationary,
+            WatermarkRelation::UnclassifiedDrift,
+            WatermarkRelation::RestartRequiredOnly,
+            WatermarkRelation::FreeOnly,
+            WatermarkRelation::Both,
+        ]
+    }
+
+    #[test]
+    fn unclassified_drift_predicate_true_only_for_unclassified_drift_variant() {
+        for v in all_variants() {
+            let expected = matches!(v, WatermarkRelation::UnclassifiedDrift);
+            assert_eq!(
+                v.unclassified_drift(),
+                expected,
+                "unclassified_drift() must fire only on UnclassifiedDrift; got {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn restart_required_only_predicate_true_only_for_restart_required_only_variant() {
+        for v in all_variants() {
+            let expected = matches!(v, WatermarkRelation::RestartRequiredOnly);
+            assert_eq!(
+                v.restart_required_only(),
+                expected,
+                "restart_required_only() must fire only on RestartRequiredOnly; got {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn free_only_predicate_true_only_for_free_only_variant() {
+        for v in all_variants() {
+            let expected = matches!(v, WatermarkRelation::FreeOnly);
+            assert_eq!(
+                v.free_only(),
+                expected,
+                "free_only() must fire only on FreeOnly; got {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn both_predicate_true_only_for_both_variant() {
+        for v in all_variants() {
+            let expected = matches!(v, WatermarkRelation::Both);
+            assert_eq!(
+                v.both(),
+                expected,
+                "both() must fire only on Both; got {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn per_variant_predicates_are_a_closed_quintet_partition() {
+        // Every variant satisfies exactly one of the five per-variant
+        // siblings — none zero, none two. Adding a hypothetical sixth
+        // variant without a lockstep sibling addition fails this
+        // exhaustive scan on the new cell.
+        for v in all_variants() {
+            let hits = [
+                v.stationary(),
+                v.unclassified_drift(),
+                v.restart_required_only(),
+                v.free_only(),
+                v.both(),
+            ]
+            .iter()
+            .filter(|&&b| b)
+            .count();
+            assert_eq!(
+                hits, 1,
+                "exactly one per-variant sibling must fire on {v:?}, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn restart_pending_is_the_union_of_restart_required_only_and_both() {
+        // The welded restart_pending predicate on the two-variant union
+        // ({RestartRequiredOnly, Both}) is the disjunction of the two
+        // corresponding per-variant siblings. A future variant landing
+        // under the restart-pending half without wiring itself into ONE
+        // of the two siblings drifts the union silently — the pin
+        // catches it.
+        for v in all_variants() {
+            assert_eq!(
+                v.restart_pending(),
+                v.restart_required_only() || v.both(),
+                "restart_pending must equal restart_required_only || both on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hot_swappable_drift_is_the_union_of_free_only_and_both() {
+        // Mirror of the restart-pending union law on the Free half.
+        for v in all_variants() {
+            assert_eq!(
+                v.hot_swappable_drift(),
+                v.free_only() || v.both(),
+                "hot_swappable_drift must equal free_only || both on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn any_moved_is_the_union_of_the_four_non_stationary_per_variant_siblings() {
+        // The welded any_moved predicate decomposes into the disjunction
+        // of the four non-stationary per-variant siblings. Pins the
+        // "any_moved covers every non-stationary variant" invariant
+        // through the finer siblings rather than the coarser stationary
+        // complement alone.
+        for v in all_variants() {
+            let by_siblings =
+                v.unclassified_drift() || v.restart_required_only() || v.free_only() || v.both();
+            assert_eq!(
+                v.any_moved(),
+                by_siblings,
+                "any_moved must equal (unclassified_drift || restart_required_only || free_only || both) on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partitioned_class_invariant_holds_is_the_complement_of_unclassified_drift() {
+        // The welded partitioned_class_invariant_holds predicate is the
+        // exact complement of the per-variant unclassified_drift
+        // sibling — the sole invariant-violating shape at this
+        // altitude. Pins the complement law through the new
+        // per-variant sibling rather than the inline matches! the
+        // pre-existing sibling used.
+        for v in all_variants() {
+            assert_eq!(
+                v.partitioned_class_invariant_holds(),
+                !v.unclassified_drift(),
+                "partitioned_class_invariant_holds must equal !unclassified_drift on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn per_variant_predicates_are_const_callable() {
+        // Compile-time-known WatermarkRelation values project their
+        // per-variant sibling verdicts at compile time too, matching
+        // the const-ness of the pre-existing stationary /
+        // any_moved / restart_pending / hot_swappable_drift /
+        // partitioned_class_invariant_holds siblings.
+        const UNC_UNCLASSIFIED: bool = WatermarkRelation::UnclassifiedDrift.unclassified_drift();
+        const UNC_BOTH: bool = WatermarkRelation::UnclassifiedDrift.both();
+        const RRO_RESTART_ONLY: bool =
+            WatermarkRelation::RestartRequiredOnly.restart_required_only();
+        const RRO_FREE_ONLY: bool = WatermarkRelation::RestartRequiredOnly.free_only();
+        const FO_FREE_ONLY: bool = WatermarkRelation::FreeOnly.free_only();
+        const FO_BOTH: bool = WatermarkRelation::FreeOnly.both();
+        const BOTH_BOTH: bool = WatermarkRelation::Both.both();
+        const BOTH_STATIONARY: bool = WatermarkRelation::Both.stationary();
+
+        assert!(UNC_UNCLASSIFIED);
+        assert!(!UNC_BOTH);
+        assert!(RRO_RESTART_ONLY);
+        assert!(!RRO_FREE_ONLY);
+        assert!(FO_FREE_ONLY);
+        assert!(!FO_BOTH);
+        assert!(BOTH_BOTH);
+        assert!(!BOTH_STATIONARY);
+    }
 }
 
 #[cfg(test)]
@@ -24086,6 +24398,178 @@ mod watermark_relation_wire_predicate_tests {
                 | WatermarkRelationWire::Both => {}
             }
         }
+    }
+
+    // ---------- Per-variant sibling predicates on the closed quintet ----------
+
+    #[test]
+    fn wire_unclassified_drift_predicate_true_only_for_unclassified_drift_variant() {
+        for wire in all_wire_variants() {
+            let expected = matches!(wire, WatermarkRelationWire::UnclassifiedDrift);
+            assert_eq!(
+                wire.unclassified_drift(),
+                expected,
+                "wire.unclassified_drift() must fire only on UnclassifiedDrift; got {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_restart_required_only_predicate_true_only_for_restart_required_only_variant() {
+        for wire in all_wire_variants() {
+            let expected = matches!(wire, WatermarkRelationWire::RestartRequiredOnly);
+            assert_eq!(
+                wire.restart_required_only(),
+                expected,
+                "wire.restart_required_only() must fire only on RestartRequiredOnly; got {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_free_only_predicate_true_only_for_free_only_variant() {
+        for wire in all_wire_variants() {
+            let expected = matches!(wire, WatermarkRelationWire::FreeOnly);
+            assert_eq!(
+                wire.free_only(),
+                expected,
+                "wire.free_only() must fire only on FreeOnly; got {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_both_predicate_true_only_for_both_variant() {
+        for wire in all_wire_variants() {
+            let expected = matches!(wire, WatermarkRelationWire::Both);
+            assert_eq!(
+                wire.both(),
+                expected,
+                "wire.both() must fire only on Both; got {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_per_variant_predicates_are_a_closed_quintet_partition() {
+        for wire in all_wire_variants() {
+            let hits = [
+                wire.stationary(),
+                wire.unclassified_drift(),
+                wire.restart_required_only(),
+                wire.free_only(),
+                wire.both(),
+            ]
+            .iter()
+            .filter(|&&b| b)
+            .count();
+            assert_eq!(
+                hits, 1,
+                "exactly one wire-side per-variant sibling must fire on {wire:?}, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_restart_pending_is_the_union_of_restart_required_only_and_both() {
+        for wire in all_wire_variants() {
+            assert_eq!(
+                wire.restart_pending(),
+                wire.restart_required_only() || wire.both(),
+                "wire.restart_pending must equal restart_required_only || both on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_hot_swappable_drift_is_the_union_of_free_only_and_both() {
+        for wire in all_wire_variants() {
+            assert_eq!(
+                wire.hot_swappable_drift(),
+                wire.free_only() || wire.both(),
+                "wire.hot_swappable_drift must equal free_only || both on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_any_moved_is_the_union_of_the_four_non_stationary_per_variant_siblings() {
+        for wire in all_wire_variants() {
+            let by_siblings = wire.unclassified_drift()
+                || wire.restart_required_only()
+                || wire.free_only()
+                || wire.both();
+            assert_eq!(
+                wire.any_moved(),
+                by_siblings,
+                "wire.any_moved must equal (unclassified_drift || restart_required_only || free_only || both) on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_partitioned_class_invariant_holds_is_the_complement_of_unclassified_drift() {
+        for wire in all_wire_variants() {
+            assert_eq!(
+                wire.partitioned_class_invariant_holds(),
+                !wire.unclassified_drift(),
+                "wire.partitioned_class_invariant_holds must equal !unclassified_drift on {wire:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_and_value_per_variant_predicate_rows_agree_pointwise() {
+        // The five per-variant siblings on the wire agree pointwise with
+        // their value-side counterparts on every variant, closing the
+        // (value, wire) × (per-variant sibling) grid at the classification
+        // altitude. Peers the pre-existing
+        // `value_and_wire_predicate_rows_agree_pointwise_on_every_variant`
+        // pin on the coarser welded predicate row.
+        for value in all_value_variants() {
+            let wire = value.to_wire();
+            let value_row = [
+                value.stationary(),
+                value.unclassified_drift(),
+                value.restart_required_only(),
+                value.free_only(),
+                value.both(),
+            ];
+            let wire_row = [
+                wire.stationary(),
+                wire.unclassified_drift(),
+                wire.restart_required_only(),
+                wire.free_only(),
+                wire.both(),
+            ];
+            assert_eq!(
+                value_row, wire_row,
+                "value-side and wire-side per-variant sibling rows must agree on {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn wire_per_variant_predicates_are_const_callable() {
+        const UNC_UNCLASSIFIED: bool =
+            WatermarkRelationWire::UnclassifiedDrift.unclassified_drift();
+        const UNC_BOTH: bool = WatermarkRelationWire::UnclassifiedDrift.both();
+        const RRO_RESTART_ONLY: bool =
+            WatermarkRelationWire::RestartRequiredOnly.restart_required_only();
+        const RRO_FREE_ONLY: bool = WatermarkRelationWire::RestartRequiredOnly.free_only();
+        const FO_FREE_ONLY: bool = WatermarkRelationWire::FreeOnly.free_only();
+        const FO_BOTH: bool = WatermarkRelationWire::FreeOnly.both();
+        const BOTH_BOTH: bool = WatermarkRelationWire::Both.both();
+        const BOTH_STATIONARY: bool = WatermarkRelationWire::Both.stationary();
+
+        assert!(UNC_UNCLASSIFIED);
+        assert!(!UNC_BOTH);
+        assert!(RRO_RESTART_ONLY);
+        assert!(!RRO_FREE_ONLY);
+        assert!(FO_FREE_ONLY);
+        assert!(!FO_BOTH);
+        assert!(BOTH_BOTH);
+        assert!(!BOTH_STATIONARY);
     }
 }
 
