@@ -28158,6 +28158,68 @@ impl<'a> FigmentNameTag<'a> {
         }
     }
 
+    /// Returns `true` for [`Self::Format`] regardless of the inner borrowed
+    /// [`crate::FormatMetadataTag`] envelope; tag-side sibling of
+    /// [`Self::is_env`] on the [`FigmentNameTag`] binary partition.
+    ///
+    /// The predicate names the **borrowed figment-Name shape** — the
+    /// per-value attribution attached by every shikumi-built provider
+    /// (any [`crate::Format`] whose [`crate::Format::has_shikumi_provider`]
+    /// is true — YAML, TOML, and the feature-gated Lisp/Nix/Blue
+    /// providers — emits a `"<format>: <path>"` metadata-name shape that
+    /// classifies here). Tag-side peer of the `'static`
+    /// [`FigmentNameTagKind`] projection carried by [`Self::kind`]: for
+    /// [`FigmentNameTag`] the tag axis and the kind axis agree pointwise
+    /// (`Self::Format(_) → FigmentNameTagKind::Format`,
+    /// `Self::Env(_) → FigmentNameTagKind::Env`), and the
+    /// `figment_name_tag_predicates_agree_with_kind` pin refuses a future
+    /// third variant that would break that agreement without also
+    /// extending the sibling-predicate pair through the tag → kind
+    /// forward map.
+    ///
+    /// A consumer that wants the cross-thread `'static` axis reads
+    /// `tag.kind().is_format()`; one that wants the borrowed-tag axis
+    /// directly (a structured-log field naming the borrowed shape of a
+    /// failing attribution without projecting through
+    /// [`FigmentNameTagKind`], a per-shape dispatch inside a resolver
+    /// already holding the borrowed tag, a partition-coverage assertion
+    /// pinning that every sample tag satisfies exactly one arm) reads
+    /// this tag-side predicate instead. Both live at the type level so
+    /// neither consumer re-derives the corresponding `matches!` pattern
+    /// at every site — until this predicate landed, the [`Self::Format`]
+    /// and [`Self::Env`] arms were reachable only through the payload
+    /// extractors [`Self::as_format`] and [`Self::as_env`], forcing
+    /// callers that wanted the boolean tag test to `.is_some()`-chain
+    /// each extractor at every site.
+    ///
+    /// Direct peer of the [`FigmentSourceTag::is_file`] /
+    /// [`FigmentSourceTag::is_code`] / [`FigmentSourceTag::is_custom`]
+    /// tag-side ternary on the figment-Source axis (commit `4cd1a9e`):
+    /// the two axes now carry symmetric tag-side sibling-predicate
+    /// coverage, closing the borrowed figment-metadata coordinate space's
+    /// primary axes ([`FigmentSourceTag`] on `Metadata::source`,
+    /// [`FigmentNameTag`] on `Metadata::name`) under one typescape
+    /// discipline. Also aligned with the tag-side sibling predicates
+    /// already carried by [`crate::ConfigTier`] (commit `aefc87a`),
+    /// [`crate::SecretSource`] (`87ed70a`), [`crate::SopsRef`] /
+    /// [`crate::VaultRef`] (`a260efd`), and [`crate::SecretBackend`]
+    /// (`55b8382`).
+    ///
+    /// The two sibling predicates [`Self::is_format`] / [`Self::is_env`]
+    /// form a closed disjoint partition of the [`FigmentNameTag`] variant
+    /// space — every value satisfies exactly one — pinned by
+    /// [`tests::figment_name_tag_predicates_are_a_closed_binary_partition`].
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Format`] regardless of inner envelope content, and for
+    /// every [`Self::Env`] regardless of inner prefix — is pinned by
+    /// [`tests::figment_name_tag_predicates_are_payload_independent`].
+    /// Tag ↔ kind pointwise agreement is pinned by
+    /// [`tests::figment_name_tag_predicates_agree_with_kind`].
+    #[must_use]
+    pub fn is_format(self) -> bool {
+        matches!(self.kind(), FigmentNameTagKind::Format)
+    }
+
     /// Returns the inner [`EnvMetadataTag`] if this is the
     /// [`Self::Env`] variant.
     #[must_use]
@@ -28166,6 +28228,23 @@ impl<'a> FigmentNameTag<'a> {
             Self::Env(tag) => Some(tag),
             Self::Format(_) => None,
         }
+    }
+
+    /// Returns `true` for [`Self::Env`] regardless of the inner
+    /// [`EnvMetadataTag`] payload (prefixed or bare); tag-side sibling of
+    /// [`Self::is_format`] on the [`FigmentNameTag`] binary partition.
+    /// See [`Self::is_format`] for the full contract — same borrowed-tag
+    /// axis, [`Self::Env`] polarity.
+    ///
+    /// The predicate does not project through the inner [`EnvMetadataTag`]
+    /// prefixed/bare sub-axis — both [`EnvMetadataTag::Prefixed`] and
+    /// [`EnvMetadataTag::Bare`] answer the same on this tag axis. A
+    /// consumer that needs the prefixed/bare distinction reads
+    /// [`Self::as_env`] to recover the inner [`EnvMetadataTag`] and
+    /// dispatches on [`EnvMetadataTagKind`] instead.
+    #[must_use]
+    pub fn is_env(self) -> bool {
+        matches!(self.kind(), FigmentNameTagKind::Env)
     }
 
     /// Data-free, `'static` discriminant of this [`FigmentNameTag`]:
@@ -97440,6 +97519,144 @@ mod tests {
             let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
             let tag = FigmentNameTag::classify(&name).expect("format-emitted name classifies");
             assert_eq!(tag.kind(), FigmentNameTagKind::Format);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_is_format_true_only_for_format_variant() {
+        // Per-variant pin on the Format arm: every shikumi-built
+        // provider's `"<format>: <path>"` metadata-name shape flips
+        // is_format on and the sibling is_env off. Direct peer of
+        // `figment_source_tag_is_file_true_only_for_file_variant` on
+        // the figment-Source axis.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
+            let tag = FigmentNameTag::classify(&name).expect("format tag must classify");
+            assert!(
+                tag.is_format(),
+                "Format tag must satisfy is_format: {tag:?}"
+            );
+            assert!(!tag.is_env(), "Format tag must not satisfy is_env: {tag:?}");
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_is_env_true_only_for_env_variant() {
+        // Per-variant pin on the Env arm: every figment env-provider
+        // metadata-name shape (prefixed and bare alike) flips is_env
+        // on and the sibling is_format off. Direct peer of
+        // `figment_source_tag_is_custom_true_only_for_custom_variant`
+        // on the figment-Source axis.
+        for name in [
+            ConfigSource::env_metadata_name("MYAPP_"),
+            ConfigSource::env_metadata_name(""),
+        ] {
+            let tag = FigmentNameTag::classify(&name).expect("env name tag must classify");
+            assert!(tag.is_env(), "Env tag must satisfy is_env: {tag:?}");
+            assert!(
+                !tag.is_format(),
+                "Env tag must not satisfy is_format: {tag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_predicates_are_a_closed_binary_partition() {
+        // Closed disjoint binary partition: for every canonical sample,
+        // exactly one of {is_format, is_env} is true. A future
+        // FigmentNameTag variant (e.g. a hypothetical
+        // `"http://… config endpoint"` shape) that lands without a
+        // matching sibling-predicate arm breaks this pin — the new
+        // variant reachable through classify must extend the pair in
+        // lockstep. Peer of
+        // `figment_source_tag_predicates_are_a_closed_ternary_partition`
+        // on the figment-Source axis (adjusted for the binary
+        // cardinality of the figment-Name axis).
+        for (name, _) in canonical_figment_name_tag_kind_samples() {
+            let tag =
+                FigmentNameTag::classify(&name).expect("every canonical sample must classify");
+            let matches: u32 = u32::from(tag.is_format()) + u32::from(tag.is_env());
+            assert_eq!(
+                matches, 1,
+                "exactly one of is_format/is_env must hold; got {matches} for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_predicates_are_payload_independent() {
+        // The tag-side answer must not vary with the inner borrowed
+        // payload — every Format(envelope) answers is_format regardless
+        // of format/path content; every Env(sub-tag) answers is_env
+        // regardless of the prefixed/bare distinction. Pinned across
+        // multiple representative payloads per variant so a future
+        // payload-sensitive predicate refactor collapses this test
+        // immediately. Direct peer of
+        // `figment_source_tag_predicates_are_payload_independent` on
+        // the figment-Source axis.
+        use crate::discovery::Format;
+
+        // Format-side payloads: every shikumi-provider format crossed
+        // with a handful of representative paths (absolute, relative,
+        // empty, root).
+        let format_paths = [
+            PathBuf::from("/etc/app/app.cfg"),
+            PathBuf::from("relative/app.cfg"),
+            PathBuf::from("/"),
+            PathBuf::new(),
+        ];
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            for p in &format_paths {
+                let name = f.metadata_name(p);
+                let tag = FigmentNameTag::classify(&name).expect("format tag must classify");
+                assert!(
+                    tag.is_format(),
+                    "is_format must hold for Format({f:?}, {p:?})",
+                );
+                assert!(!tag.is_env());
+            }
+        }
+
+        // Env-side payloads: bare (empty prefix) and a handful of
+        // uppercase/mixed-case prefixes to cover figment's
+        // prefixed-shape emission surface.
+        let env_prefixes = ["", "MYAPP_", "TOBIRA_", "AyaTsuri_", "X_"];
+        for prefix in env_prefixes {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = FigmentNameTag::classify(&name).expect("env name tag must classify");
+            assert!(tag.is_env(), "is_env must hold for Env({prefix:?})",);
+            assert!(!tag.is_format());
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_predicates_agree_with_kind() {
+        // Pointwise agreement between the tag-side binary pair and the
+        // `'static` FigmentNameTagKind projection: for every canonical
+        // sample, `tag.is_X()` iff `tag.kind() == FigmentNameTagKind::X`.
+        // This is the load-bearing structural pin — a future variant
+        // landing on FigmentNameTag without a matching FigmentNameTagKind
+        // arm breaks the exhaustive `kind()` match at compile time; a
+        // mis-wired sibling predicate (e.g. `is_format` matching Env by
+        // copy-paste error) breaks this pin at test time. Direct peer of
+        // `figment_source_tag_predicates_agree_with_kind` on the
+        // figment-Source axis.
+        for (name, expected_kind) in canonical_figment_name_tag_kind_samples() {
+            let tag =
+                FigmentNameTag::classify(&name).expect("every canonical sample must classify");
+            let kind = tag.kind();
+            assert_eq!(kind, expected_kind, "kind mismatch for {tag:?}");
+            assert_eq!(
+                tag.is_format(),
+                kind == FigmentNameTagKind::Format,
+                "is_format must agree with kind() == Format for {tag:?}",
+            );
+            assert_eq!(
+                tag.is_env(),
+                kind == FigmentNameTagKind::Env,
+                "is_env must agree with kind() == Env for {tag:?}",
+            );
         }
     }
 
