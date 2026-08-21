@@ -628,6 +628,98 @@ impl SecretOperation {
             Self::GetVersion => caps.versions,
         }
     }
+
+    /// Returns `true` for [`Self::Get`]; equivalent to
+    /// `self == SecretOperation::Get`.
+    ///
+    /// Per-variant sibling predicate over the closed six-way
+    /// [`SecretOperation`] partition. Consumers carrying the operation
+    /// tag alone (per-operation request-rate histograms bucketing on
+    /// the read path, dispatch-side "am I about to call `.get()` on
+    /// this client?" gating, attestation manifests recording the
+    /// refused-operation mix, structured-diagnostic legends bucketing
+    /// per-operation counters) classify without spelling
+    /// `op == SecretOperation::Get` at their own site, and the
+    /// sextet-partition + equality-agreement pins catch the two
+    /// failure modes of `matches!`-based predicates (silent widen to
+    /// a second arm, silent robbery of an arm) before drift reaches
+    /// any dispatch site.
+    ///
+    /// Peer to [`SecretErrorKind::is_not_found`] /
+    /// [`SecretErrorKind::is_unauthorized`] / … on the secret-client
+    /// error-variant kind axis (commit `6b67a81`),
+    /// [`crate::SecretBackendKind::is_literal`] /
+    /// [`crate::SecretBackendKind::is_command`] / … on the
+    /// payload-carrying secret-backend kind axis (commit `9dc6d1f`),
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] on the shikumi-side
+    /// layer-kind axis, and [`crate::Format::is_yaml`] /
+    /// [`crate::Format::is_toml`] / … on the top-level config-file
+    /// format axis: same sibling-predicate discipline applied to the
+    /// secret-client operation axis, the last surface-carrying
+    /// closed-enum primitive in the crate holding zero per-variant
+    /// sibling predicates before this landing.
+    ///
+    /// The six sibling predicates form a closed disjoint partition
+    /// of [`Self::ALL`] — every variant satisfies exactly one, none
+    /// satisfies two, none satisfies zero — pinned by
+    /// [`tests::secret_operation_predicates_are_a_closed_sextet_partition`].
+    /// The equality-agreement law (`op.is_X() == (op == Self::X)` for
+    /// every variant) is pinned by
+    /// [`tests::secret_operation_predicates_agree_with_equality_pointwise`].
+    #[must_use]
+    pub const fn is_get(self) -> bool {
+        matches!(self, Self::Get)
+    }
+
+    /// Returns `true` for [`Self::List`]; equivalent to
+    /// `self == SecretOperation::List`. Per-variant sibling
+    /// predicate; see [`Self::is_get`] for the full contract.
+    #[must_use]
+    pub const fn is_list(self) -> bool {
+        matches!(self, Self::List)
+    }
+
+    /// Returns `true` for [`Self::Put`]; equivalent to
+    /// `self == SecretOperation::Put`. Per-variant sibling predicate;
+    /// see [`Self::is_get`] for the full contract.
+    #[must_use]
+    pub const fn is_put(self) -> bool {
+        matches!(self, Self::Put)
+    }
+
+    /// Returns `true` for [`Self::Delete`]; equivalent to
+    /// `self == SecretOperation::Delete`. Per-variant sibling
+    /// predicate; see [`Self::is_get`] for the full contract.
+    #[must_use]
+    pub const fn is_delete(self) -> bool {
+        matches!(self, Self::Delete)
+    }
+
+    /// Returns `true` for [`Self::Rotate`]; equivalent to
+    /// `self == SecretOperation::Rotate`. Per-variant sibling
+    /// predicate; see [`Self::is_get`] for the full contract.
+    #[must_use]
+    pub const fn is_rotate(self) -> bool {
+        matches!(self, Self::Rotate)
+    }
+
+    /// Returns `true` for [`Self::GetVersion`]; equivalent to
+    /// `self == SecretOperation::GetVersion`. Per-variant sibling
+    /// predicate; see [`Self::is_get`] for the full contract.
+    ///
+    /// Names the operation whose (Capabilities-side `versions` plural
+    /// × trait-side `get_version` singular) surface-disagreement the
+    /// [`SecretOperation`] primitive reconciles — consumers can now
+    /// classify the historical-version read path by named predicate
+    /// (`op.is_get_version()`) without spelling either surface's
+    /// magic string, or the closed-equality
+    /// `op == SecretOperation::GetVersion`, at their own site.
+    #[must_use]
+    pub const fn is_get_version(self) -> bool {
+        matches!(self, Self::GetVersion)
+    }
 }
 
 impl crate::ClosedAxis for SecretOperation {
@@ -3213,6 +3305,121 @@ mod tests {
         let caps = Capabilities::full();
         for op in SecretOperation::ALL.iter().copied() {
             assert!(caps.supports(op), "full caps must support {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_operation_is_get_true_only_for_get_variant() {
+        // Per-variant polarity pin on the Get corner. Sibling to the
+        // quintet-shape pins on SecretErrorKind
+        // (`secret_error_kind_is_not_found_true_only_for_not_found_variant`)
+        // and the trio-shape pins on ConfigSourceKind; a future edit
+        // that flips the `matches!` arm on `is_get` fails here before
+        // the equality-agreement pin masks it.
+        assert!(SecretOperation::Get.is_get());
+        assert!(!SecretOperation::List.is_get());
+        assert!(!SecretOperation::Put.is_get());
+        assert!(!SecretOperation::Delete.is_get());
+        assert!(!SecretOperation::Rotate.is_get());
+        assert!(!SecretOperation::GetVersion.is_get());
+    }
+
+    #[test]
+    fn secret_operation_is_list_true_only_for_list_variant() {
+        assert!(!SecretOperation::Get.is_list());
+        assert!(SecretOperation::List.is_list());
+        assert!(!SecretOperation::Put.is_list());
+        assert!(!SecretOperation::Delete.is_list());
+        assert!(!SecretOperation::Rotate.is_list());
+        assert!(!SecretOperation::GetVersion.is_list());
+    }
+
+    #[test]
+    fn secret_operation_is_put_true_only_for_put_variant() {
+        assert!(!SecretOperation::Get.is_put());
+        assert!(!SecretOperation::List.is_put());
+        assert!(SecretOperation::Put.is_put());
+        assert!(!SecretOperation::Delete.is_put());
+        assert!(!SecretOperation::Rotate.is_put());
+        assert!(!SecretOperation::GetVersion.is_put());
+    }
+
+    #[test]
+    fn secret_operation_is_delete_true_only_for_delete_variant() {
+        assert!(!SecretOperation::Get.is_delete());
+        assert!(!SecretOperation::List.is_delete());
+        assert!(!SecretOperation::Put.is_delete());
+        assert!(SecretOperation::Delete.is_delete());
+        assert!(!SecretOperation::Rotate.is_delete());
+        assert!(!SecretOperation::GetVersion.is_delete());
+    }
+
+    #[test]
+    fn secret_operation_is_rotate_true_only_for_rotate_variant() {
+        assert!(!SecretOperation::Get.is_rotate());
+        assert!(!SecretOperation::List.is_rotate());
+        assert!(!SecretOperation::Put.is_rotate());
+        assert!(!SecretOperation::Delete.is_rotate());
+        assert!(SecretOperation::Rotate.is_rotate());
+        assert!(!SecretOperation::GetVersion.is_rotate());
+    }
+
+    #[test]
+    fn secret_operation_is_get_version_true_only_for_get_version_variant() {
+        assert!(!SecretOperation::Get.is_get_version());
+        assert!(!SecretOperation::List.is_get_version());
+        assert!(!SecretOperation::Put.is_get_version());
+        assert!(!SecretOperation::Delete.is_get_version());
+        assert!(!SecretOperation::Rotate.is_get_version());
+        assert!(SecretOperation::GetVersion.is_get_version());
+    }
+
+    #[test]
+    fn secret_operation_predicates_are_a_closed_sextet_partition() {
+        // Every SecretOperation::ALL cell satisfies exactly one of
+        // the six sibling predicates: none satisfies two, none
+        // satisfies zero. Sextet analogue of the quintet-partition
+        // pin on `secret_error_kind_predicates_are_a_closed_quintet_partition`,
+        // the ternary-partition pin on
+        // `config_source_kind_predicates_are_a_closed_ternary_partition`,
+        // and the binary-partition pins on the crate's Ord/partition
+        // axes. A future operation landing on SecretOperation without
+        // its own sibling predicate collapses the partition to "zero"
+        // on that cell, failing here before drifting through any
+        // per-operation dispatch site.
+        for op in SecretOperation::ALL.iter().copied() {
+            let hits = usize::from(op.is_get())
+                + usize::from(op.is_list())
+                + usize::from(op.is_put())
+                + usize::from(op.is_delete())
+                + usize::from(op.is_rotate())
+                + usize::from(op.is_get_version());
+            assert_eq!(
+                hits, 1,
+                "SecretOperation::{op:?} must satisfy exactly one of \
+                 is_get/is_list/is_put/is_delete/is_rotate/is_get_version \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_predicates_agree_with_equality_pointwise() {
+        // Sibling predicates agree with the closed-equality check
+        // against their own variant, over the whole ALL slice. Dual
+        // to the closed-sextet-partition pin above: the partition
+        // pin catches a new variant landing without its own
+        // predicate; this pin catches the dual case where a
+        // predicate's arm silently accepts a second variant (a
+        // future edit changing `matches!(self, Self::Get)` to
+        // `matches!(self, Self::Get | Self::List)`).
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(op.is_get(), op == SecretOperation::Get);
+            assert_eq!(op.is_list(), op == SecretOperation::List);
+            assert_eq!(op.is_put(), op == SecretOperation::Put);
+            assert_eq!(op.is_delete(), op == SecretOperation::Delete);
+            assert_eq!(op.is_rotate(), op == SecretOperation::Rotate);
+            assert_eq!(op.is_get_version(), op == SecretOperation::GetVersion);
         }
     }
 
