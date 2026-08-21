@@ -1094,6 +1094,117 @@ impl SecretClientKind {
             Self::GcpSecretManager => "gcp-secret-manager",
         }
     }
+
+    /// Returns `true` for [`Self::Mem`]; equivalent to
+    /// `self == SecretClientKind::Mem`. Per-variant sibling predicate
+    /// on the closed seven-way runtime-client kind partition.
+    ///
+    /// Idiom-peer of [`crate::secret::SecretBackendKind::is_literal`]
+    /// / [`crate::secret::SecretBackendKind::is_command`] / … on the
+    /// payload-carrying secret-backend kind axis (commit `9dc6d1f`),
+    /// [`crate::SecretErrorKind::is_not_found`] /
+    /// [`crate::SecretErrorKind::is_unauthorized`] / … on the
+    /// secret-client error-kind axis (commit `6b67a81`),
+    /// [`crate::SecretOperation::is_get`] /
+    /// [`crate::SecretOperation::is_list`] / … on the secret-client
+    /// operation axis (commit `8c326b1`),
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] on the shikumi-side
+    /// layer-kind axis (commit `9600b8b`), and [`crate::Format::is_yaml`]
+    /// / [`crate::Format::is_toml`] / … on the top-level config-file
+    /// format axis (commit `95f2c76`): same sibling-predicate
+    /// discipline applied to the runtime `SecretClient` implementor
+    /// axis, the last surface-carrying closed-enum primitive in the
+    /// crate holding zero per-variant sibling predicates.
+    ///
+    /// The seven sibling predicates form a closed disjoint partition
+    /// of [`Self::ALL`] — every variant satisfies exactly one, none
+    /// satisfies two, none satisfies zero — pinned by
+    /// [`tests::secret_client_kind_predicates_are_a_closed_septet_partition`].
+    /// The equality-agreement law (`k.is_X() == (k == Self::X)` for
+    /// every variant) is pinned by
+    /// [`tests::secret_client_kind_predicates_agree_with_equality_pointwise`].
+    #[must_use]
+    pub const fn is_mem(self) -> bool {
+        matches!(self, Self::Mem)
+    }
+
+    /// Returns `true` for [`Self::Command`]; equivalent to
+    /// `self == SecretClientKind::Command`. Per-variant sibling
+    /// predicate; see [`Self::is_mem`] for the full contract.
+    #[must_use]
+    pub const fn is_command(self) -> bool {
+        matches!(self, Self::Command)
+    }
+
+    /// Returns `true` for [`Self::Akeyless`]; equivalent to
+    /// `self == SecretClientKind::Akeyless`. Per-variant sibling
+    /// predicate; see [`Self::is_mem`] for the full contract.
+    ///
+    /// Coincides with
+    /// [`crate::secret::SecretBackendKind::is_akeyless`] on the
+    /// runtime-client / config-author-backend agreement corner where
+    /// the two labels are byte-identical (`"akeyless"`).
+    #[must_use]
+    pub const fn is_akeyless(self) -> bool {
+        matches!(self, Self::Akeyless)
+    }
+
+    /// Returns `true` for [`Self::AwsSecretsManager`]; equivalent to
+    /// `self == SecretClientKind::AwsSecretsManager`. Per-variant
+    /// sibling predicate; see [`Self::is_mem`] for the full contract.
+    ///
+    /// Distinct from
+    /// [`crate::secret::SecretBackendKind::is_aws_secret`] by
+    /// runtime-transport design — the runtime client labels its
+    /// transport (`"aws-secrets-manager"`) while the config-author
+    /// backend labels its YAML key (`"aws_secret"`) — but the two
+    /// predicates classify the same upstream vault.
+    #[must_use]
+    pub const fn is_aws_secrets_manager(self) -> bool {
+        matches!(self, Self::AwsSecretsManager)
+    }
+
+    /// Returns `true` for [`Self::OpConnect`]; equivalent to
+    /// `self == SecretClientKind::OpConnect`. Per-variant sibling
+    /// predicate; see [`Self::is_mem`] for the full contract.
+    ///
+    /// Distinct from [`crate::secret::SecretBackendKind::is_op`]:
+    /// the config-author `Op` backend dispatches the `op` CLI, while
+    /// this runtime client talks HTTP to a 1Password Connect server
+    /// (different transport, same upstream 1Password vault).
+    #[must_use]
+    pub const fn is_op_connect(self) -> bool {
+        matches!(self, Self::OpConnect)
+    }
+
+    /// Returns `true` for [`Self::Vault`]; equivalent to
+    /// `self == SecretClientKind::Vault`. Per-variant sibling
+    /// predicate; see [`Self::is_mem`] for the full contract.
+    ///
+    /// Coincides with [`crate::secret::SecretBackendKind::is_vault`]
+    /// on the runtime-client / config-author-backend agreement corner
+    /// where the two labels are byte-identical (`"vault"`).
+    #[must_use]
+    pub const fn is_vault(self) -> bool {
+        matches!(self, Self::Vault)
+    }
+
+    /// Returns `true` for [`Self::GcpSecretManager`]; equivalent to
+    /// `self == SecretClientKind::GcpSecretManager`. Per-variant
+    /// sibling predicate; see [`Self::is_mem`] for the full contract.
+    ///
+    /// Distinct from
+    /// [`crate::secret::SecretBackendKind::is_gcp_secret`] by
+    /// runtime-transport design — the runtime client labels its
+    /// transport (`"gcp-secret-manager"`) while the config-author
+    /// backend labels its YAML key (`"gcp_secret"`) — but the two
+    /// predicates classify the same upstream vault.
+    #[must_use]
+    pub const fn is_gcp_secret_manager(self) -> bool {
+        matches!(self, Self::GcpSecretManager)
+    }
 }
 
 impl crate::ClosedAxis for SecretClientKind {
@@ -4586,6 +4697,149 @@ mod tests {
             SecretClientKind::GcpSecretManager.as_str(),
             "gcp-secret-manager",
         );
+    }
+
+    #[test]
+    fn secret_client_kind_is_mem_true_only_for_mem_variant() {
+        // Sibling of the per-variant polarity pins on
+        // `secret_operation_is_get_true_only_for_get_variant`,
+        // `secret_error_kind_is_not_found_true_only_for_not_found_variant`,
+        // `secret_backend_kind_is_literal_true_only_for_literal_variant`.
+        // A future edit that flips the `matches!` arm on `is_mem` to
+        // accept a second variant fails here before drifting through
+        // any per-client dispatch site.
+        assert!(SecretClientKind::Mem.is_mem());
+        assert!(!SecretClientKind::Command.is_mem());
+        assert!(!SecretClientKind::Akeyless.is_mem());
+        assert!(!SecretClientKind::AwsSecretsManager.is_mem());
+        assert!(!SecretClientKind::OpConnect.is_mem());
+        assert!(!SecretClientKind::Vault.is_mem());
+        assert!(!SecretClientKind::GcpSecretManager.is_mem());
+    }
+
+    #[test]
+    fn secret_client_kind_is_command_true_only_for_command_variant() {
+        assert!(!SecretClientKind::Mem.is_command());
+        assert!(SecretClientKind::Command.is_command());
+        assert!(!SecretClientKind::Akeyless.is_command());
+        assert!(!SecretClientKind::AwsSecretsManager.is_command());
+        assert!(!SecretClientKind::OpConnect.is_command());
+        assert!(!SecretClientKind::Vault.is_command());
+        assert!(!SecretClientKind::GcpSecretManager.is_command());
+    }
+
+    #[test]
+    fn secret_client_kind_is_akeyless_true_only_for_akeyless_variant() {
+        assert!(!SecretClientKind::Mem.is_akeyless());
+        assert!(!SecretClientKind::Command.is_akeyless());
+        assert!(SecretClientKind::Akeyless.is_akeyless());
+        assert!(!SecretClientKind::AwsSecretsManager.is_akeyless());
+        assert!(!SecretClientKind::OpConnect.is_akeyless());
+        assert!(!SecretClientKind::Vault.is_akeyless());
+        assert!(!SecretClientKind::GcpSecretManager.is_akeyless());
+    }
+
+    #[test]
+    fn secret_client_kind_is_aws_secrets_manager_true_only_for_aws_secrets_manager_variant() {
+        assert!(!SecretClientKind::Mem.is_aws_secrets_manager());
+        assert!(!SecretClientKind::Command.is_aws_secrets_manager());
+        assert!(!SecretClientKind::Akeyless.is_aws_secrets_manager());
+        assert!(SecretClientKind::AwsSecretsManager.is_aws_secrets_manager());
+        assert!(!SecretClientKind::OpConnect.is_aws_secrets_manager());
+        assert!(!SecretClientKind::Vault.is_aws_secrets_manager());
+        assert!(!SecretClientKind::GcpSecretManager.is_aws_secrets_manager());
+    }
+
+    #[test]
+    fn secret_client_kind_is_op_connect_true_only_for_op_connect_variant() {
+        assert!(!SecretClientKind::Mem.is_op_connect());
+        assert!(!SecretClientKind::Command.is_op_connect());
+        assert!(!SecretClientKind::Akeyless.is_op_connect());
+        assert!(!SecretClientKind::AwsSecretsManager.is_op_connect());
+        assert!(SecretClientKind::OpConnect.is_op_connect());
+        assert!(!SecretClientKind::Vault.is_op_connect());
+        assert!(!SecretClientKind::GcpSecretManager.is_op_connect());
+    }
+
+    #[test]
+    fn secret_client_kind_is_vault_true_only_for_vault_variant() {
+        assert!(!SecretClientKind::Mem.is_vault());
+        assert!(!SecretClientKind::Command.is_vault());
+        assert!(!SecretClientKind::Akeyless.is_vault());
+        assert!(!SecretClientKind::AwsSecretsManager.is_vault());
+        assert!(!SecretClientKind::OpConnect.is_vault());
+        assert!(SecretClientKind::Vault.is_vault());
+        assert!(!SecretClientKind::GcpSecretManager.is_vault());
+    }
+
+    #[test]
+    fn secret_client_kind_is_gcp_secret_manager_true_only_for_gcp_secret_manager_variant() {
+        assert!(!SecretClientKind::Mem.is_gcp_secret_manager());
+        assert!(!SecretClientKind::Command.is_gcp_secret_manager());
+        assert!(!SecretClientKind::Akeyless.is_gcp_secret_manager());
+        assert!(!SecretClientKind::AwsSecretsManager.is_gcp_secret_manager());
+        assert!(!SecretClientKind::OpConnect.is_gcp_secret_manager());
+        assert!(!SecretClientKind::Vault.is_gcp_secret_manager());
+        assert!(SecretClientKind::GcpSecretManager.is_gcp_secret_manager());
+    }
+
+    #[test]
+    fn secret_client_kind_predicates_are_a_closed_septet_partition() {
+        // Every SecretClientKind::ALL cell satisfies exactly one of
+        // the seven sibling predicates: none satisfies two, none
+        // satisfies zero. Septet analogue of the sextet-partition
+        // pin on `secret_operation_predicates_are_a_closed_sextet_partition`,
+        // the octuple-partition pin on
+        // `secret_backend_kind_predicates_are_a_closed_octuple_partition`,
+        // and the quintet-partition pin on
+        // `secret_error_kind_predicates_are_a_closed_quintet_partition`.
+        // A future eighth `SecretClientKind` variant landing without
+        // its own sibling predicate collapses the partition to zero
+        // on that cell, failing here before drifting through any
+        // per-client dispatch site.
+        for k in SecretClientKind::ALL.iter().copied() {
+            let hits = usize::from(k.is_mem())
+                + usize::from(k.is_command())
+                + usize::from(k.is_akeyless())
+                + usize::from(k.is_aws_secrets_manager())
+                + usize::from(k.is_op_connect())
+                + usize::from(k.is_vault())
+                + usize::from(k.is_gcp_secret_manager());
+            assert_eq!(
+                hits, 1,
+                "SecretClientKind::{k:?} must satisfy exactly one of \
+                 is_mem/is_command/is_akeyless/is_aws_secrets_manager/\
+                 is_op_connect/is_vault/is_gcp_secret_manager \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_predicates_agree_with_equality_pointwise() {
+        // Sibling predicates agree with the closed-equality check
+        // against their own variant, over the whole ALL slice. Dual
+        // to the closed-septet-partition pin above: the partition
+        // pin catches a new variant landing without its own
+        // predicate; this pin catches the dual case where a
+        // predicate's arm silently accepts a second variant (a
+        // future edit changing `matches!(self, Self::Mem)` to
+        // `matches!(self, Self::Mem | Self::Command)`).
+        for k in SecretClientKind::ALL.iter().copied() {
+            assert_eq!(k.is_mem(), k == SecretClientKind::Mem);
+            assert_eq!(k.is_command(), k == SecretClientKind::Command);
+            assert_eq!(k.is_akeyless(), k == SecretClientKind::Akeyless);
+            assert_eq!(
+                k.is_aws_secrets_manager(),
+                k == SecretClientKind::AwsSecretsManager,
+            );
+            assert_eq!(k.is_op_connect(), k == SecretClientKind::OpConnect);
+            assert_eq!(k.is_vault(), k == SecretClientKind::Vault);
+            assert_eq!(
+                k.is_gcp_secret_manager(),
+                k == SecretClientKind::GcpSecretManager,
+            );
+        }
     }
 
     #[test]
