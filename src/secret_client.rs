@@ -90,6 +90,17 @@ pub enum SecretError {
 
 impl SecretError {
     /// Retryable errors: network hiccups, rate limits, 5xx responses.
+    ///
+    /// Payload-inspecting sibling of the tag-side quintet
+    /// [`Self::is_not_found`] / [`Self::is_unauthorized`] /
+    /// [`Self::is_unsupported`] / [`Self::is_backend`] /
+    /// [`Self::is_shikumi`] — this predicate consults the
+    /// [`Self::Backend`] arm's message-string content, while the five
+    /// tag-side siblings project the closed-partition variant tag
+    /// through [`Self::kind`] without touching the payload. Observers
+    /// wanting the full retryability decision compose
+    /// `err.is_backend() && err.is_retryable()` instead of re-deriving
+    /// the kind-axis half by open-coded `matches!`.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Backend(msg) if msg.contains("timeout") || msg.contains("5"))
@@ -148,6 +159,14 @@ impl SecretError {
     /// [`SecretError`] variant landing forces a corresponding
     /// [`SecretErrorKind`] variant in lockstep at compile time — the
     /// kind partition stays coherent by construction.
+    ///
+    /// Strict superset of the tag-side quintet [`Self::is_not_found`] /
+    /// [`Self::is_unauthorized`] / [`Self::is_unsupported`] /
+    /// [`Self::is_backend`] / [`Self::is_shikumi`]: each `is_X()` is
+    /// `self.kind() == SecretErrorKind::X`. The five predicates remain
+    /// as convenience accessors; new code that needs to distinguish
+    /// more than one kind should prefer this one accessor over a chain
+    /// of predicates.
     #[must_use]
     pub const fn kind(&self) -> SecretErrorKind {
         match self {
@@ -177,6 +196,103 @@ impl SecretError {
             Self::Shikumi(inner) => Some(inner),
             _ => None,
         }
+    }
+
+    /// Returns `true` if this is a `NotFound` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == SecretErrorKind::NotFound`.
+    ///
+    /// Tag-side sibling predicate over the closed five-way
+    /// [`SecretError`] variant space. Peer of [`Self::is_unauthorized`]
+    /// / [`Self::is_unsupported`] / [`Self::is_backend`] /
+    /// [`Self::is_shikumi`] — the full tag-side quintet mirroring the
+    /// kind-side quintet on [`SecretErrorKind::is_not_found`] et al.
+    /// Pointwise-agreement bridge with the kind-side predicate is
+    /// pinned by
+    /// [`tests::secret_error_predicates_agree_pointwise_with_secret_error_kind_predicates`];
+    /// the closed-quintet partition on the tag-side (exactly one of
+    /// the five predicates holds on every constructed error) is
+    /// pinned by
+    /// [`tests::secret_error_predicates_are_a_closed_quintet_partition`].
+    ///
+    /// Direct methodological analogue of [`ShikumiError::is_not_found`]
+    /// on the [`ShikumiError`] tag-side septet — same routing shape
+    /// (`matches!(self.kind(), SecretErrorKind::NotFound)`), same
+    /// closed-partition contract at one altitude lower, same
+    /// pointwise-agreement bridge to the kind-side sibling.
+    #[must_use]
+    pub const fn is_not_found(&self) -> bool {
+        matches!(self.kind(), SecretErrorKind::NotFound)
+    }
+
+    /// Returns `true` if this is an `Unauthorized` error. Convenience
+    /// over [`Self::kind`]; equivalent to
+    /// `self.kind() == SecretErrorKind::Unauthorized`. Tag-side
+    /// sibling predicate; see [`Self::is_not_found`] for the full
+    /// contract.
+    #[must_use]
+    pub const fn is_unauthorized(&self) -> bool {
+        matches!(self.kind(), SecretErrorKind::Unauthorized)
+    }
+
+    /// Returns `true` if this is an `Unsupported` error. Convenience
+    /// over [`Self::kind`]; equivalent to
+    /// `self.kind() == SecretErrorKind::Unsupported`. Tag-side
+    /// sibling predicate; see [`Self::is_not_found`] for the full
+    /// contract.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Unsupported { backend, operation }` — is what the
+    /// pointwise-agreement bridge locks in: the kind-side predicate
+    /// cannot see the `backend`/`operation` string pair, and a future
+    /// edit that changed this arm to inspect them would diverge from
+    /// the kind-side and fail
+    /// [`tests::secret_error_predicates_agree_pointwise_with_secret_error_kind_predicates`].
+    #[must_use]
+    pub const fn is_unsupported(&self) -> bool {
+        matches!(self.kind(), SecretErrorKind::Unsupported)
+    }
+
+    /// Returns `true` if this is a `Backend` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == SecretErrorKind::Backend`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Coincides on the kind axis with the payload-inspecting
+    /// [`Self::is_retryable`] predicate's domain — that predicate
+    /// returns `true` only on a subset of [`Self::Backend`] payloads
+    /// (whose message hints at a transient failure via `timeout` or
+    /// `5` substrings). Observers wanting the full retryability
+    /// decision compose `err.is_backend() && err.is_retryable()`
+    /// (equivalent to `err.is_retryable()` alone since `is_retryable`
+    /// only fires on `Self::Backend`, but explicit about the two-part
+    /// contract) instead of re-deriving the kind-axis half by
+    /// open-coded `matches!`.
+    #[must_use]
+    pub const fn is_backend(&self) -> bool {
+        matches!(self.kind(), SecretErrorKind::Backend)
+    }
+
+    /// Returns `true` if this is a `Shikumi` pass-through error.
+    /// Convenience over [`Self::kind`]; equivalent to
+    /// `self.kind() == SecretErrorKind::Shikumi`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Structural sibling of [`Self::as_shikumi`]:
+    /// `err.is_shikumi() == err.as_shikumi().is_some()` for every
+    /// [`SecretError`], pinned by the pre-existing
+    /// [`tests::secret_error_as_shikumi_agrees_with_kind_pointwise`]
+    /// through the [`Self::kind`] projection; this predicate lets the
+    /// same observation surface phrase the check without spelling the
+    /// closed-equality on the kind axis at its own site. Observers
+    /// wanting to refine the kind partition further on the
+    /// wrapped-shikumi sub-axis compose
+    /// `err.as_shikumi().map(ShikumiError::kind)` after gating on
+    /// `err.is_shikumi()` — the tag-side sibling here replaces the
+    /// prior `err.kind() == SecretErrorKind::Shikumi` phrasing.
+    #[must_use]
+    pub const fn is_shikumi(&self) -> bool {
+        matches!(self.kind(), SecretErrorKind::Shikumi)
     }
 }
 
@@ -4158,6 +4274,159 @@ mod tests {
                 "as_shikumi must preserve inner ShikumiError::kind ({shikumi_kind:?})",
             );
             assert_eq!(err.kind(), SecretErrorKind::Shikumi);
+        }
+    }
+
+    // ── SecretError — tag-side quintet sibling predicates ────────────
+    //
+    // Peer of the ShikumiError tag-side septet (`error::tests` —
+    // `shikumi_error_predicates_are_a_closed_septet_partition`,
+    // `shikumi_error_predicates_agree_pointwise_with_shikumi_error_kind_predicates`,
+    // and the seven `kind_agrees_with_is_*_pointwise` bridges). The
+    // pre-existing pointwise-agreement suite pinned the kind() axis
+    // alone; the tag-side siblings on `SecretError` now let observers
+    // holding the borrowed error phrase per-variant classification
+    // questions at the tag altitude, and this test cluster pins the
+    // cross-altitude agreement.
+
+    #[test]
+    fn secret_error_is_not_found_agrees_with_kind_pointwise() {
+        // Pointwise-agreement bridge on the NotFound arm. Peer of
+        // `kind_agrees_with_is_not_found_pointwise` on the
+        // ShikumiError tag-side septet: for every canonical
+        // construction-table cell, `err.is_not_found()` agrees with
+        // the closed-equality check against `SecretErrorKind::NotFound`.
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_not_found(),
+                err.kind() == SecretErrorKind::NotFound,
+                "is_not_found must agree with kind() for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_is_unauthorized_agrees_with_kind_pointwise() {
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_unauthorized(),
+                err.kind() == SecretErrorKind::Unauthorized,
+                "is_unauthorized must agree with kind() for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_is_unsupported_agrees_with_kind_pointwise() {
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_unsupported(),
+                err.kind() == SecretErrorKind::Unsupported,
+                "is_unsupported must agree with kind() for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_is_backend_agrees_with_kind_pointwise() {
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_backend(),
+                err.kind() == SecretErrorKind::Backend,
+                "is_backend must agree with kind() for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_is_shikumi_agrees_with_kind_pointwise() {
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_shikumi(),
+                err.kind() == SecretErrorKind::Shikumi,
+                "is_shikumi must agree with kind() for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_predicates_are_a_closed_quintet_partition() {
+        // Tag-side quintet-partition pin, sibling of the kind-side
+        // `secret_error_kind_predicates_are_a_closed_quintet_partition`
+        // one altitude up on the closed [`SecretErrorKind`] partition.
+        // Every value in the canonical construction table satisfies
+        // exactly one of the five tag-side sibling predicates: none
+        // satisfies two, none satisfies zero. A future variant landing
+        // on SecretError without its own tag-side sibling predicate
+        // collapses the partition to "zero" on that constructed cell,
+        // failing here before drifting through any consumer site (a
+        // retry-policy dispatch reading the tag-side answer before
+        // projecting through kind(), a structured-log field naming
+        // the tag-side variant, a cross-thread failure-tag capture on
+        // the borrowed error's owned payloads).
+        for (err, _) in one_per_secret_error_kind() {
+            let hits = usize::from(err.is_not_found())
+                + usize::from(err.is_unauthorized())
+                + usize::from(err.is_unsupported())
+                + usize::from(err.is_backend())
+                + usize::from(err.is_shikumi());
+            assert_eq!(
+                hits, 1,
+                "{err:?} must satisfy exactly one of \
+                 is_not_found/is_unauthorized/is_unsupported/is_backend/is_shikumi \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_predicates_agree_pointwise_with_secret_error_kind_predicates() {
+        // Structural bridge between the tag-side quintet and the
+        // kind-side quintet: for every constructed error and every
+        // sibling arm, `err.is_X() == err.kind().is_X()`. Peer of
+        // `shikumi_error_predicates_agree_pointwise_with_shikumi_error_kind_predicates`
+        // on the ShikumiError axis one crate module over. A future
+        // rename or matches!-arm drift on either altitude fails here
+        // before the two altitudes silently disagree on any consumer
+        // site (a per-kind retry-policy dispatch reading the kind
+        // side and a resolver reading the tag side must classify the
+        // same error identically).
+        for (err, _) in one_per_secret_error_kind() {
+            let k = err.kind();
+            assert_eq!(err.is_not_found(), k.is_not_found(), "not_found on {err:?}");
+            assert_eq!(
+                err.is_unauthorized(),
+                k.is_unauthorized(),
+                "unauthorized on {err:?}",
+            );
+            assert_eq!(
+                err.is_unsupported(),
+                k.is_unsupported(),
+                "unsupported on {err:?}",
+            );
+            assert_eq!(err.is_backend(), k.is_backend(), "backend on {err:?}");
+            assert_eq!(err.is_shikumi(), k.is_shikumi(), "shikumi on {err:?}");
+        }
+    }
+
+    #[test]
+    fn secret_error_is_shikumi_agrees_with_as_shikumi_pointwise() {
+        // Structural bridge between the new tag-side convenience
+        // `SecretError::is_shikumi` and the pre-existing
+        // `SecretError::as_shikumi` partial projection:
+        // `err.is_shikumi() == err.as_shikumi().is_some()` for every
+        // constructed error. Extends the pre-existing
+        // `secret_error_as_shikumi_agrees_with_kind_pointwise` pin
+        // through the new tag-side sibling predicate rather than the
+        // kind-equality against `SecretErrorKind::Shikumi`, letting
+        // observers phrase the check without spelling the closed-
+        // equality on the kind axis at their own site.
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.is_shikumi(),
+                err.as_shikumi().is_some(),
+                "is_shikumi must agree with as_shikumi().is_some() on {err:?}",
+            );
         }
     }
 
