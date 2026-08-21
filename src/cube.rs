@@ -13889,6 +13889,65 @@ impl PartitionOrdinal {
             Self::Realizable(i) | Self::Unrealizable(i) => i,
         }
     }
+
+    /// `true` exactly on [`PartitionOrdinal::Realizable`] — the
+    /// disjoint-union encoding's recognized-image half.
+    ///
+    /// The disjoint-union-level dual of
+    /// [`PartitionFace::is_realizable`]: where the face-axis predicate
+    /// answers "which half?" on the variant-tag projection
+    /// ([`Self::face`]), this method answers the same question
+    /// directly on the [`PartitionOrdinal`] carrier without a
+    /// two-step `.face().is_realizable()` chain. Consumers holding a
+    /// captured cube-cell address that want the boolean shape answer —
+    /// a face-keyed observability counter, a manifest field
+    /// distinguishing the realizable image from the consistency-violation
+    /// complement without addressing the specific cell, a partition-
+    /// coverage assertion pinning exactly-one-arm over a
+    /// [`Vec<PartitionOrdinal>`] mixed stream — stop re-deriving
+    /// `matches!(p, PartitionOrdinal::Realizable(_))` at each site.
+    ///
+    /// Idiom-peer of the closed-binary sibling-predicate pattern this
+    /// crate carries on every other cardinality-`2` typescape primitive
+    /// (already directly present on [`PartitionFace`],
+    /// [`crate::AttributionConfidence`], [`crate::AttributionAxis`],
+    /// [`crate::SecretRefShape`], [`crate::FormatProvenance`]) and
+    /// pointwise-agreeable with the face-side predicate through
+    /// [`Self::face`]: `p.is_realizable() == p.face().is_realizable()`
+    /// on every value of every cube, pinned by
+    /// [`tests::partition_ordinal_is_realizable_agrees_with_face_predicate`].
+    /// A future third variant landing on [`PartitionOrdinal`] (which is
+    /// not anticipated — the partition is XOR-complementary by
+    /// construction — but which would first extend [`PartitionFace`]
+    /// with a matching variant) forces an arm here in lockstep; the
+    /// closed-binary partition pin
+    /// [`tests::partition_ordinal_predicates_are_a_closed_binary_partition`]
+    /// breaks first.
+    #[must_use]
+    pub const fn is_realizable(self) -> bool {
+        matches!(self, Self::Realizable(_))
+    }
+
+    /// `true` exactly on [`PartitionOrdinal::Unrealizable`] — the
+    /// disjoint-union encoding's cross-axis consistency-violation
+    /// complement.
+    ///
+    /// Sibling of [`Self::is_realizable`] on the other half of the
+    /// closed binary partition; equivalent to
+    /// `!self.is_realizable()` on every value (pinned by
+    /// [`tests::partition_ordinal_is_unrealizable_agrees_with_negated_is_realizable`])
+    /// and to `self.face().is_unrealizable()` on every value (pinned
+    /// by
+    /// [`tests::partition_ordinal_is_unrealizable_agrees_with_face_predicate`]).
+    /// Symmetric predicate calls on both halves — a consumer
+    /// partitioning a `Vec<PartitionOrdinal>` mixed stream into the two
+    /// blocks reaches the recognized and unrecognized sides through
+    /// the same call shape rather than an asymmetric
+    /// `!p.is_realizable()` at every unrecognized callsite.
+    #[must_use]
+    pub const fn is_unrealizable(self) -> bool {
+        matches!(self, Self::Unrealizable(_))
+    }
 }
 
 impl std::fmt::Display for PartitionOrdinal {
@@ -18794,6 +18853,212 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_partition_ordinal_face_agrees_with_is_unrealizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    // ---- PartitionOrdinal direct sibling-predicate pair ----
+    //
+    // Direct `is_realizable` / `is_unrealizable` predicates on the
+    // disjoint-union carrier, closing the closed-binary sibling gap on
+    // `PartitionOrdinal` alongside the pair already present at the
+    // variant-tag projection (`PartitionFace`). Five pins cover the
+    // pair:
+    //
+    //   (a) per-variant polarity on each arm across a representative
+    //       sample crossing both inner-ordinal boundaries (`0`,
+    //       `usize::MAX`);
+    //   (b) closed binary partition — exactly one of {is_realizable,
+    //       is_unrealizable} holds on every sample value, none satisfy
+    //       both, none satisfy neither;
+    //   (c) inner-ordinal independence — the polarity depends only on
+    //       the variant tag, not on the dense inner ordinal (a hidden
+    //       tiebreak field on either variant would not silently shift
+    //       the polarity);
+    //   (d) negation agreement — `is_unrealizable` returns the same bit
+    //       as `!is_realizable` pointwise (the two predicates ARE the
+    //       two halves of one closed partition);
+    //   (e) face-agreement pointwise across every cube via
+    //       `for_each_product_cube!` — `p.is_realizable() ==
+    //       p.face().is_realizable()` and dually for the
+    //       unrealizable arm, closing the two-step
+    //       `.face().is_realizable()` chain into a one-step
+    //       direct predicate uniformly across every cube of the
+    //       typescape.
+
+    fn partition_ordinal_sibling_predicate_sample() -> [PartitionOrdinal; 6] {
+        // Representative canonical sample crossing both faces at both
+        // inner-ordinal boundaries (`0`, `1`, `usize::MAX`). Shared by
+        // every direct-predicate pin below so the polarity-pair pin
+        // matches the polarity of the per-arm pins on the same
+        // sample.
+        [
+            PartitionOrdinal::Realizable(0),
+            PartitionOrdinal::Realizable(1),
+            PartitionOrdinal::Realizable(usize::MAX),
+            PartitionOrdinal::Unrealizable(0),
+            PartitionOrdinal::Unrealizable(1),
+            PartitionOrdinal::Unrealizable(usize::MAX),
+        ]
+    }
+
+    #[test]
+    fn partition_ordinal_is_realizable_true_only_for_realizable_variant() {
+        // Per-variant polarity pin on the Realizable arm of the direct
+        // `PartitionOrdinal` sibling-predicate pair. Sweeps both
+        // inner-ordinal boundaries (`0`, `usize::MAX`) so a hidden
+        // dependence on the inner ordinal would surface as a mismatched
+        // arm here rather than at a downstream consumer.
+        for p in partition_ordinal_sibling_predicate_sample() {
+            let expected = matches!(p, PartitionOrdinal::Realizable(_));
+            assert_eq!(
+                p.is_realizable(),
+                expected,
+                "{p:?}: is_realizable must return {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_is_unrealizable_true_only_for_unrealizable_variant() {
+        // Per-variant polarity pin on the Unrealizable arm of the
+        // direct `PartitionOrdinal` sibling-predicate pair. Sibling of
+        // `partition_ordinal_is_realizable_true_only_for_realizable_variant`
+        // on the other half of the closed binary partition; sweeps the
+        // same inner-ordinal boundaries so both arms are pinned under
+        // one payload space.
+        for p in partition_ordinal_sibling_predicate_sample() {
+            let expected = matches!(p, PartitionOrdinal::Unrealizable(_));
+            assert_eq!(
+                p.is_unrealizable(),
+                expected,
+                "{p:?}: is_unrealizable must return {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_predicates_are_a_closed_binary_partition() {
+        // Closed-binary-partition pin on the direct `PartitionOrdinal`
+        // sibling-predicate pair — mirror of
+        // `partition_face_predicates_are_a_closed_binary_partition` at
+        // the disjoint-union carrier altitude. Every canonical sample
+        // value satisfies exactly one of {is_realizable,
+        // is_unrealizable} — none satisfy both (an ordinal claiming to
+        // sit on both the recognized image and the consistency-
+        // violation complement simultaneously), none satisfy neither
+        // (an ordinal outside the partition entirely).
+        //
+        // A future third variant landing on `PartitionOrdinal` — not
+        // anticipated: the partition is XOR-complementary by
+        // construction, and any such variant would first extend
+        // `PartitionFace` and fail
+        // `partition_face_all_has_two_entries` — would fail this pin
+        // by design: the new arm must declare its own partition arm
+        // rather than silently landing under the negation of one of
+        // the existing two.
+        for p in partition_ordinal_sibling_predicate_sample() {
+            let realizable = p.is_realizable();
+            let unrealizable = p.is_unrealizable();
+            assert!(
+                realizable ^ unrealizable,
+                "{p:?} must satisfy exactly one of is_realizable / is_unrealizable",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_is_unrealizable_agrees_with_negated_is_realizable() {
+        // Negation-agreement pin at the disjoint-union-carrier
+        // altitude: on every canonical sample value, `is_unrealizable`
+        // returns the same bit as `!is_realizable`. Mirror of
+        // `partition_face_is_unrealizable_agrees_with_negated_is_realizable`
+        // one altitude up. The two predicates ARE the two halves of
+        // one closed partition, so this pin catches any future edit
+        // that shifts the polarity of one arm without the other.
+        for p in partition_ordinal_sibling_predicate_sample() {
+            assert_eq!(
+                p.is_unrealizable(),
+                !p.is_realizable(),
+                "{p:?}: is_unrealizable must equal !is_realizable",
+            );
+        }
+    }
+
+    fn assert_partition_ordinal_is_realizable_agrees_with_face_predicate<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // Trait-uniform face-agreement pin: on every cell of every
+        // cube, the direct `PartitionOrdinal::is_realizable` returns
+        // the same bit as the two-step `p.face().is_realizable()`
+        // chain, and both agree with `ProductCube::is_realizable(cell)`.
+        // Closes the three-way agreement (cube-predicate, face-side
+        // predicate, direct disjoint-union-carrier predicate) at the
+        // trait-uniform site so a future fifth cube inherits the pin
+        // by extending `for_each_product_cube!` with one call at the
+        // pin site.
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
+            let p = partition_ordinal::<C>(cell);
+            let direct = p.is_realizable();
+            let via_face = p.face().is_realizable();
+            let via_cube = ProductCube::is_realizable(cell);
+            assert_eq!(
+                direct, via_face,
+                "cell {cell:?}: PartitionOrdinal::is_realizable must equal .face().is_realizable()",
+            );
+            assert_eq!(
+                direct, via_cube,
+                "cell {cell:?}: PartitionOrdinal::is_realizable must equal \
+                 ProductCube::is_realizable(cell)",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_is_realizable_agrees_with_face_predicate() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_is_realizable_agrees_with_face_predicate::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    fn assert_partition_ordinal_is_unrealizable_agrees_with_face_predicate<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // Sibling of
+        // `assert_partition_ordinal_is_realizable_agrees_with_face_predicate`
+        // on the other half of the partition. Pins the three-way
+        // agreement on the unrealizable arm pointwise across every
+        // cell of every cube, closing the sibling-predicate pair's
+        // trait-uniform coverage.
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
+            let p = partition_ordinal::<C>(cell);
+            let direct = p.is_unrealizable();
+            let via_face = p.face().is_unrealizable();
+            let via_cube = !ProductCube::is_realizable(cell);
+            assert_eq!(
+                direct, via_face,
+                "cell {cell:?}: PartitionOrdinal::is_unrealizable must equal \
+                 .face().is_unrealizable()",
+            );
+            assert_eq!(
+                direct, via_cube,
+                "cell {cell:?}: PartitionOrdinal::is_unrealizable must equal \
+                 !ProductCube::is_realizable(cell)",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_is_unrealizable_agrees_with_face_predicate() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_is_unrealizable_agrees_with_face_predicate::<$ty>();
             };
         }
         for_each_product_cube!(check);
