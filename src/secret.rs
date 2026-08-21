@@ -154,6 +154,78 @@ impl SecretSource {
             Self::Backend(backend) => backend.kind(),
         }
     }
+
+    /// Returns `true` for [`Self::Literal`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of [`Self::is_backend`] on
+    /// the top-level [`SecretSource`] partition.
+    ///
+    /// The predicate names the **top-level YAML shape** the operator
+    /// authored — the untagged bare-string shortcut
+    /// (`jwt_secret: dev-secret`) versus the internally-tagged
+    /// [`Self::Backend`] wrapper (`jwt_secret: { literal: dev-secret }`
+    /// and all other backend tags). This is a strictly finer axis than
+    /// [`Self::backend_kind`]: the kind projection collapses both
+    /// literal-resolving shapes onto [`SecretBackendKind::Literal`]
+    /// (that's the fact
+    /// `secret_source_backend_kind_collapses_literal_paths` pins),
+    /// while this predicate distinguishes them. A consumer that only
+    /// wants the resolved-value axis reads
+    /// `source.backend_kind().is_literal()`; one that wants the
+    /// authored-shape axis (a YAML-shape lint reporting how many
+    /// configs still use the bare-string shortcut, a migration
+    /// dashboard tracking the tagged-form uptake per repo, a
+    /// structured-log field naming which YAML shape the operator
+    /// wrote when the resolver fails) reads this tag-side predicate
+    /// instead. Both live at the type level so neither consumer
+    /// re-derives the corresponding `matches!` pattern at every site.
+    ///
+    /// Peer of the tag-side sibling predicates already carried by every
+    /// payload-bearing closed-axis primitive in the crate: the
+    /// [`crate::ConfigTier::is_bare`] / [`crate::ConfigTier::is_custom`]
+    /// quartet against the payload-bearing `Custom(PathBuf)` arm
+    /// (commit `aefc87a`), the
+    /// [`crate::DiffLine::is_removed`] / [`crate::DiffLine::is_added`]
+    /// / [`crate::DiffLine::is_context`] trio against the three
+    /// `String`-payload variants (commit `deaa9b4`), and the
+    /// [`SecretBackend::is_literal`]…[`SecretBackend::is_gcp_secret`]
+    /// octet against the payload-bearing tagged variants
+    /// (commit `55b8382`).
+    ///
+    /// The two sibling predicates [`Self::is_literal`] / [`Self::is_backend`]
+    /// form a closed disjoint partition of the [`SecretSource`] variant
+    /// space — every value satisfies exactly one — pinned by
+    /// [`tests::secret_source_predicates_are_a_closed_binary_partition`].
+    /// Payload-independence — the answer is the same for every
+    /// `Literal(text)` and every `Backend(backend)` regardless of inner
+    /// content — is pinned by
+    /// [`tests::secret_source_predicates_are_payload_independent`]. The
+    /// tag-axis-vs-kind-axis divergence on the
+    /// [`Self::Backend`]-wrapped-literal shape is pinned by
+    /// [`tests::secret_source_tag_axis_diverges_from_backend_kind_axis_on_backend_literal`].
+    #[must_use]
+    pub const fn is_literal(&self) -> bool {
+        matches!(self, Self::Literal(_))
+    }
+
+    /// Returns `true` for [`Self::Backend`] regardless of the inner
+    /// [`SecretBackend`] payload; tag-side sibling of
+    /// [`Self::is_literal`] on the top-level [`SecretSource`]
+    /// partition. See [`Self::is_literal`] for the full contract —
+    /// same authored-shape axis, opposite polarity.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Backend(backend)` regardless of which backend variant it
+    /// wraps, including [`SecretBackend::Literal`] — is what makes
+    /// this the *tag* axis rather than the *kind* axis. A consumer
+    /// that wants "did the operator use a tagged backend form?"
+    /// (rather than "does this source resolve via a backend other
+    /// than literal?") reads this predicate; the two answers agree
+    /// on every source except the [`Self::Backend`]-wrapped literal,
+    /// where the tag axis says yes and the kind axis says no.
+    #[must_use]
+    pub const fn is_backend(&self) -> bool {
+        matches!(self, Self::Backend(_))
+    }
 }
 
 /// Internally-tagged variants — the backends proper.
@@ -2493,6 +2565,133 @@ mod tests {
             "resolve dispatch over SecretSource must reach every \
              SecretBackendKind cell via the backend_kind projection",
         );
+    }
+
+    // ── SecretSource tag-side sibling predicates — the closed binary ─
+    //
+    // The two is_* predicates lifted onto SecretSource close the
+    // predicate-free gap on the top-level payload-bearing enum, mirror
+    // of the tag-side sweeps on ConfigTier (commit `aefc87a`) and
+    // DiffLine (commit `deaa9b4`). The four pins below lock the
+    // per-variant polarity, the closed-binary partition, payload
+    // independence over every canonical (SecretSource, inner-payload)
+    // cell, and the crucial tag-axis ↔ kind-axis divergence on the
+    // Backend(SecretBackend::Literal) shape — the one source-value
+    // where the top-level authored-shape axis diverges from the
+    // backend_kind projection.
+
+    #[test]
+    fn secret_source_predicates_return_true_only_for_matching_variant() {
+        // Per-variant polarity pin over every (predicate, variant) cell
+        // of the 2×2 grid: each sibling predicate returns `true` on its
+        // own tag and `false` on the other. Catches a future edit that
+        // widened `is_literal` to also admit the `Backend`-wrapped
+        // literal, or narrowed `is_backend` to reject a specific
+        // backend kind: either drift fails a cell of the grid.
+        let literal = SecretSource::Literal("dev".into());
+        let backend = SecretSource::Backend(SecretBackend::Command("echo x".into()));
+
+        assert!(literal.is_literal());
+        assert!(!literal.is_backend());
+        assert!(backend.is_backend());
+        assert!(!backend.is_literal());
+    }
+
+    #[test]
+    fn secret_source_predicates_are_a_closed_binary_partition() {
+        // Structural law: for every canonical SecretSource, exactly one
+        // of is_literal / is_backend returns `true`. The `xor` shape
+        // catches both a drift that admits neither (adding a third
+        // top-level variant without extending either predicate) and a
+        // drift that admits both (widening one predicate onto the
+        // other's cell).
+        //
+        // The witness set covers the top-level Literal shape plus every
+        // canonical Backend sample so a future backend variant lands
+        // through the shared sample table rather than a bespoke case
+        // list here.
+        let mut sources: Vec<SecretSource> = vec![SecretSource::Literal("bare".into())];
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            sources.push(SecretSource::Backend(backend));
+        }
+        for source in &sources {
+            let literal = source.is_literal();
+            let backend = source.is_backend();
+            assert!(
+                literal ^ backend,
+                "{source:?} must satisfy exactly one of is_literal / is_backend",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_predicates_are_payload_independent() {
+        // Payload-independence pin: the tag-side answer is the same for
+        // every `Literal(text)` regardless of inner text content, and
+        // for every `Backend(backend)` regardless of which backend
+        // variant it wraps. Distinguishes this tag-side predicate from
+        // any hypothetical payload-inspecting one, and pins the
+        // structural fact that the SecretSource partition axis is the
+        // top-level enum tag — nothing deeper.
+        for payload in ["", "dev", "very-long-secret-payload-$@!"] {
+            let literal = SecretSource::Literal(payload.into());
+            assert!(literal.is_literal());
+            assert!(!literal.is_backend());
+        }
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend);
+            assert!(source.is_backend());
+            assert!(!source.is_literal());
+        }
+    }
+
+    #[test]
+    fn secret_source_tag_axis_diverges_from_backend_kind_axis_on_backend_literal() {
+        // The load-bearing distinction between the tag-side predicate
+        // (`SecretSource::is_literal`) and the kind-side projection
+        // (`SecretSource::backend_kind().is_literal`): the two axes
+        // agree on the top-level `Literal(_)` shape (both say literal)
+        // and on every non-literal backend (both say non-literal), but
+        // diverge on the `Backend(SecretBackend::Literal(_))` shape
+        // where the tag axis says `Backend`/not-literal and the kind
+        // axis collapses onto `Literal` — the two-literal-paths
+        // equivalence `secret_source_backend_kind_collapses_literal_paths`
+        // pins on the kind side.
+        //
+        // Without this pin a well-meaning refactor could route the
+        // tag-side predicate through `backend_kind().is_literal()`,
+        // silently changing the authored-shape axis into the
+        // resolved-value axis — the drift this test refuses.
+        let backend_literal = SecretSource::Backend(SecretBackend::Literal("dev".into()));
+        assert!(
+            !backend_literal.is_literal(),
+            "tag-side is_literal must reject the Backend(SecretBackend::Literal) shape",
+        );
+        assert!(
+            backend_literal.is_backend(),
+            "tag-side is_backend must accept the Backend(SecretBackend::Literal) shape",
+        );
+        assert!(
+            backend_literal.backend_kind().is_literal(),
+            "kind-side backend_kind must collapse Backend(SecretBackend::Literal) to Literal",
+        );
+
+        // Agreement corners: on every other constructible source the
+        // two axes agree, so the divergence is isolated to precisely
+        // the one two-literal-paths cell above.
+        let top_literal = SecretSource::Literal("dev".into());
+        assert_eq!(
+            top_literal.is_literal(),
+            top_literal.backend_kind().is_literal()
+        );
+        for (backend, kind) in canonical_secret_backend_kind_samples() {
+            if kind.is_literal() {
+                continue; // the divergent cell, handled above
+            }
+            let source = SecretSource::Backend(backend);
+            assert!(!source.is_literal());
+            assert!(!source.backend_kind().is_literal());
+        }
     }
 
     // ── SecretBackendKind sibling predicates — the closed octuple ────
