@@ -340,6 +340,93 @@ impl SecretErrorKind {
             Self::Shikumi => "shikumi",
         }
     }
+
+    /// Returns `true` for [`Self::NotFound`]; equivalent to
+    /// `self == SecretErrorKind::NotFound`.
+    ///
+    /// Kind-side sibling predicate over the closed five-way
+    /// [`SecretErrorKind`] partition. Consumers holding only the kind
+    /// (a `HashMap`/`HashSet` key, a `BTreeMap` bucket, a per-kind
+    /// retry-policy dispatch, a cross-thread failure-class tag captured
+    /// on a per-request observability record after the borrowed
+    /// [`SecretError`] payload has been dropped) classify without
+    /// materializing a synthetic [`SecretError`] first — the tag-side
+    /// data-carrying enum holds owned `String` / `ShikumiError`
+    /// payloads a kind-only observer cannot cheaply reconstruct.
+    ///
+    /// Peer to [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] on the shikumi-side
+    /// layer-kind axis, [`crate::FigmentSourceKind::is_file`] /
+    /// [`crate::FigmentSourceKind::is_code`] /
+    /// [`crate::FigmentSourceKind::is_custom`] on the figment-side
+    /// source axis, and [`crate::SecretBackendKind::is_literal`] /
+    /// [`crate::SecretBackendKind::is_op`] / … on the payload-carrying
+    /// secret-backend axis: same kind-side sibling-predicate
+    /// discipline applied to the secret-client error-variant axis, the
+    /// last kind-enum primitive in the crate carrying zero per-variant
+    /// sibling predicates before this landing.
+    ///
+    /// The five sibling predicates form a closed disjoint partition
+    /// of [`Self::ALL`] — every variant satisfies exactly one, none
+    /// satisfies two, none satisfies zero — pinned by
+    /// [`tests::secret_error_kind_predicates_are_a_closed_quintet_partition`].
+    /// The kind-alone equality-agreement law
+    /// (`k.is_X() == (k == Self::X)` for every variant) is pinned by
+    /// [`tests::secret_error_kind_predicates_agree_with_equality_pointwise`].
+    #[must_use]
+    pub const fn is_not_found(self) -> bool {
+        matches!(self, Self::NotFound)
+    }
+
+    /// Returns `true` for [`Self::Unauthorized`]; equivalent to
+    /// `self == SecretErrorKind::Unauthorized`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    #[must_use]
+    pub const fn is_unauthorized(self) -> bool {
+        matches!(self, Self::Unauthorized)
+    }
+
+    /// Returns `true` for [`Self::Unsupported`]; equivalent to
+    /// `self == SecretErrorKind::Unsupported`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    #[must_use]
+    pub const fn is_unsupported(self) -> bool {
+        matches!(self, Self::Unsupported)
+    }
+
+    /// Returns `true` for [`Self::Backend`]; equivalent to
+    /// `self == SecretErrorKind::Backend`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Coincides with the domain [`SecretError::is_retryable`] targets
+    /// today — that tag-side predicate returns `true` only for
+    /// [`SecretError::Backend`] payloads whose message hints at a
+    /// transient failure (timeout / 5xx substring). The kind-side
+    /// predicate does not consult the payload; observers wanting the
+    /// full retryability decision compose
+    /// `err.kind().is_backend() && err.is_retryable()` instead of
+    /// re-deriving the kind-axis half by open-coded `matches!`.
+    #[must_use]
+    pub const fn is_backend(self) -> bool {
+        matches!(self, Self::Backend)
+    }
+
+    /// Returns `true` for [`Self::Shikumi`]; equivalent to
+    /// `self == SecretErrorKind::Shikumi`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Structural sibling of [`SecretError::as_shikumi`]:
+    /// `err.kind().is_shikumi() == err.as_shikumi().is_some()` for
+    /// every [`SecretError`], already pinned by the pre-existing
+    /// [`tests::secret_error_as_shikumi_agrees_with_kind_pointwise`]
+    /// under the kind-equality form; this predicate lets the same
+    /// observation surface phrase the check without spelling the
+    /// closed-equality on the kind axis at its own site.
+    #[must_use]
+    pub const fn is_shikumi(self) -> bool {
+        matches!(self, Self::Shikumi)
+    }
 }
 
 impl crate::ClosedAxis for SecretErrorKind {
@@ -3594,6 +3681,124 @@ mod tests {
                 SecretErrorKind::Unsupported,
                 "unsupported({op:?}) must classify as SecretErrorKind::Unsupported",
             );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_is_not_found_true_only_for_not_found_variant() {
+        // Per-variant polarity pin on the NotFound corner. Sibling to
+        // the trio-shape pins on ConfigSourceKind
+        // (`config_source_kind_is_defaults_true_only_for_defaults_variant`)
+        // and the binary-axis pins on the crate's Ord/partition
+        // primitives; a future edit that flips the `matches!` arm on
+        // `is_not_found` fails here before the equality-agreement pin
+        // masks it.
+        assert!(SecretErrorKind::NotFound.is_not_found());
+        assert!(!SecretErrorKind::Unauthorized.is_not_found());
+        assert!(!SecretErrorKind::Unsupported.is_not_found());
+        assert!(!SecretErrorKind::Backend.is_not_found());
+        assert!(!SecretErrorKind::Shikumi.is_not_found());
+    }
+
+    #[test]
+    fn secret_error_kind_is_unauthorized_true_only_for_unauthorized_variant() {
+        assert!(!SecretErrorKind::NotFound.is_unauthorized());
+        assert!(SecretErrorKind::Unauthorized.is_unauthorized());
+        assert!(!SecretErrorKind::Unsupported.is_unauthorized());
+        assert!(!SecretErrorKind::Backend.is_unauthorized());
+        assert!(!SecretErrorKind::Shikumi.is_unauthorized());
+    }
+
+    #[test]
+    fn secret_error_kind_is_unsupported_true_only_for_unsupported_variant() {
+        assert!(!SecretErrorKind::NotFound.is_unsupported());
+        assert!(!SecretErrorKind::Unauthorized.is_unsupported());
+        assert!(SecretErrorKind::Unsupported.is_unsupported());
+        assert!(!SecretErrorKind::Backend.is_unsupported());
+        assert!(!SecretErrorKind::Shikumi.is_unsupported());
+    }
+
+    #[test]
+    fn secret_error_kind_is_backend_true_only_for_backend_variant() {
+        assert!(!SecretErrorKind::NotFound.is_backend());
+        assert!(!SecretErrorKind::Unauthorized.is_backend());
+        assert!(!SecretErrorKind::Unsupported.is_backend());
+        assert!(SecretErrorKind::Backend.is_backend());
+        assert!(!SecretErrorKind::Shikumi.is_backend());
+    }
+
+    #[test]
+    fn secret_error_kind_is_shikumi_true_only_for_shikumi_variant() {
+        assert!(!SecretErrorKind::NotFound.is_shikumi());
+        assert!(!SecretErrorKind::Unauthorized.is_shikumi());
+        assert!(!SecretErrorKind::Unsupported.is_shikumi());
+        assert!(!SecretErrorKind::Backend.is_shikumi());
+        assert!(SecretErrorKind::Shikumi.is_shikumi());
+    }
+
+    #[test]
+    fn secret_error_kind_predicates_are_a_closed_quintet_partition() {
+        // Every SecretErrorKind::ALL cell satisfies exactly one of the
+        // five sibling predicates: none satisfies two, none satisfies
+        // zero. Quintet analogue of the ternary-partition pin on
+        // `config_source_kind_predicates_are_a_closed_ternary_partition`
+        // and the binary-partition pins on the crate's Ord/partition
+        // axes (`partition_face_predicates_are_a_closed_binary_partition`,
+        // `secret_ref_shape_predicates_are_a_closed_binary_partition`).
+        // A future variant landing on SecretErrorKind without its own
+        // sibling predicate collapses the partition to "zero" on that
+        // cell, failing here before drifting through any consumer site.
+        for k in SecretErrorKind::ALL.iter().copied() {
+            let hits = usize::from(k.is_not_found())
+                + usize::from(k.is_unauthorized())
+                + usize::from(k.is_unsupported())
+                + usize::from(k.is_backend())
+                + usize::from(k.is_shikumi());
+            assert_eq!(
+                hits, 1,
+                "SecretErrorKind::{k:?} must satisfy exactly one of \
+                 is_not_found/is_unauthorized/is_unsupported/is_backend/is_shikumi \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_predicates_agree_with_equality_pointwise() {
+        // Kind-side predicates agree with the closed-equality check
+        // against their own variant, over the whole ALL slice. Dual
+        // to the closed-quintet-partition pin above: the partition pin
+        // catches a new variant landing without its own predicate;
+        // this pin catches the dual case where a predicate's arm
+        // silently accepts a second variant (a future edit changing
+        // `matches!(self, Self::NotFound)` to
+        // `matches!(self, Self::NotFound | Self::Unauthorized)`).
+        for k in SecretErrorKind::ALL.iter().copied() {
+            assert_eq!(k.is_not_found(), k == SecretErrorKind::NotFound);
+            assert_eq!(k.is_unauthorized(), k == SecretErrorKind::Unauthorized);
+            assert_eq!(k.is_unsupported(), k == SecretErrorKind::Unsupported);
+            assert_eq!(k.is_backend(), k == SecretErrorKind::Backend);
+            assert_eq!(k.is_shikumi(), k == SecretErrorKind::Shikumi);
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_shikumi_predicate_agrees_with_as_shikumi_pointwise() {
+        // Structural bridge: `err.kind().is_shikumi()` agrees with
+        // `err.as_shikumi().is_some()` over the canonical construction
+        // table, matching the pre-existing
+        // `secret_error_as_shikumi_agrees_with_kind_pointwise` pin
+        // through the new kind-side sibling predicate (rather than
+        // through the closed-equality against SecretErrorKind::Shikumi).
+        // Consumers can now phrase the check without spelling the
+        // kind-axis equality at their own site.
+        for (err, expected_kind) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.as_shikumi().is_some(),
+                err.kind().is_shikumi(),
+                "as_shikumi().is_some() must agree with kind().is_shikumi() on {err:?}",
+            );
+            assert_eq!(err.kind().is_shikumi(), expected_kind.is_shikumi());
         }
     }
 
