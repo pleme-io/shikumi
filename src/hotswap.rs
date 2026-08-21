@@ -2459,6 +2459,65 @@ impl SameStoreImpossibilityKind {
         }
     }
 
+    /// Returns `true` for [`Self::Regressed`]; per-variant tag-side
+    /// sibling of [`Self::is_cross_store`] on the impossibility-half
+    /// binary partition.
+    ///
+    /// One source of truth for the "did this same-store impossibility
+    /// signal a strictly-backwards generation counter?" question over
+    /// [`SameStoreImpossibilityKind`]. Before this predicate, a
+    /// consumer holding a captured [`SameStoreImpossibilityKind`]
+    /// (a per-corner metrics counter, an attester filter routing on
+    /// `--only=regressed`, a dashboard tile histogramming the two
+    /// impossibility corners separately, a routing switch inside a
+    /// log formatter that pages on the regression corner and only
+    /// annotates on the cross-store corner) reached the classification
+    /// either by [`Self::name`] string compare against `"regressed"`
+    /// (which drops the compile-time closed-set guarantee — a typo in
+    /// the compared literal silently disagrees with every future
+    /// [`Self::name`] arm) or by open-coding
+    /// `matches!(k, SameStoreImpossibilityKind::Regressed)` at every
+    /// site (which pays the closed-partition bookkeeping tax again
+    /// per consumer). The typed sibling routes the question through
+    /// one `const fn` at the impossibility-kind altitude, alongside
+    /// the [`Self::name`] / [`std::fmt::Display`] / [`std::str::FromStr`]
+    /// / serde surface already welded to the enum.
+    ///
+    /// Peer sibling pattern on the same typescape discipline as
+    /// [`crate::SecretErrorKind::is_not_found`] on the secret-client
+    /// error-kind quintet, [`crate::ConfigSourceKind::is_file`] on
+    /// the layer-kind trio, [`crate::DiffLineKind::is_removed`] on
+    /// the diff-cell axis, and [`crate::WatchEventClass::is_reload`]
+    /// on the reload-relevance ternary. Per-variant polarity pinned by
+    /// `variants_tests::same_store_impossibility_kind_is_regressed_true_only_for_regressed_variant`;
+    /// closed binary partition over [`Self::VARIANTS`] pinned by
+    /// `variants_tests::same_store_impossibility_kind_per_variant_predicates_are_a_closed_binary_partition`;
+    /// pointwise agreement with [`Self::name`] pinned by
+    /// `variants_tests::same_store_impossibility_kind_per_variant_predicates_agree_with_name_pointwise`;
+    /// cross-projection refinement into
+    /// [`ProofRelationKind::impossibility`] pinned by
+    /// `variants_tests::proof_relation_kind_impossibility_projection_refines_impossibility_kind_per_variant_predicates`.
+    #[must_use]
+    pub const fn is_regressed(&self) -> bool {
+        matches!(*self, Self::Regressed)
+    }
+
+    /// Returns `true` for [`Self::CrossStore`]; per-variant tag-side
+    /// sibling of [`Self::is_regressed`] on the impossibility-half
+    /// binary partition. See [`Self::is_regressed`] for the full
+    /// contract — same axis, [`Self::CrossStore`] polarity.
+    ///
+    /// The cross-store corner is the moved-watermark-at-unchanged-
+    /// generation impossibility; a consumer that wants to distinguish
+    /// "watermark moved without a publish" from "generation went
+    /// backwards" without routing through [`Self::name`] string
+    /// compare or an inline `matches!` matches on this predicate
+    /// directly.
+    #[must_use]
+    pub const fn is_cross_store(&self) -> bool {
+        matches!(*self, Self::CrossStore)
+    }
+
     /// The closed set of variant values in declaration order — an
     /// ordered slice of every possible [`SameStoreImpossibilityKind`]
     /// value, whose length ([`slice::len`](slice)) is the axis
@@ -7715,6 +7774,82 @@ impl SameStoreConsistencyKind {
             Self::IdentityRepublish => "identity_republish",
             Self::Progression => "progression",
         }
+    }
+
+    /// Returns `true` for [`Self::Stationary`]; per-variant tag-side
+    /// sibling of [`Self::is_identity_republish`] / [`Self::is_progression`]
+    /// on the consistency-half ternary partition.
+    ///
+    /// One source of truth for the "did this same-store consistency
+    /// land in the null-hypothesis stationary corner?" question over
+    /// [`SameStoreConsistencyKind`]. The mirror of
+    /// [`SameStoreImpossibilityKind::is_regressed`] lifted to the
+    /// consistent half's three-cell partition — a consumer holding a
+    /// captured [`SameStoreConsistencyKind`] (per-corner metrics
+    /// counters, dashboard tiles separating the three legitimate
+    /// corners, a log formatter short-circuiting on the
+    /// `/healthz/config` stationary polling path, an attester filter
+    /// on `--only=progression`) matches on this predicate instead of
+    /// [`Self::name`] string compare against `"stationary"` or
+    /// open-coding `matches!(k, SameStoreConsistencyKind::Stationary)`
+    /// at every site. The typed sibling routes the question through
+    /// one `const fn` at the consistency-kind altitude, alongside the
+    /// [`Self::name`] / [`std::fmt::Display`] / [`std::str::FromStr`]
+    /// / serde surface already welded to the enum.
+    ///
+    /// Peer sibling pattern on the same typescape discipline as
+    /// [`crate::SecretErrorKind::is_not_found`] on the secret-client
+    /// error-kind quintet, [`crate::ConfigSourceKind::is_file`] on
+    /// the layer-kind trio, and [`crate::DiffLineKind::is_removed`]
+    /// on the diff-cell axis; direct peer of
+    /// [`SameStoreImpossibilityKind::is_regressed`] on the
+    /// impossibility half of the same classification. Per-variant
+    /// polarity pinned by
+    /// `variants_tests::same_store_consistency_kind_is_stationary_true_only_for_stationary_variant`;
+    /// closed ternary partition over [`Self::VARIANTS`] pinned by
+    /// `variants_tests::same_store_consistency_kind_per_variant_predicates_are_a_closed_ternary_partition`;
+    /// pointwise agreement with [`Self::name`] pinned by
+    /// `variants_tests::same_store_consistency_kind_per_variant_predicates_agree_with_name_pointwise`;
+    /// cross-projection refinement into
+    /// [`ProofRelationKind::consistency`] pinned by
+    /// `variants_tests::proof_relation_kind_consistency_projection_refines_consistency_kind_per_variant_predicates`.
+    #[must_use]
+    pub const fn is_stationary(&self) -> bool {
+        matches!(*self, Self::Stationary)
+    }
+
+    /// Returns `true` for [`Self::IdentityRepublish`]; per-variant
+    /// tag-side sibling of [`Self::is_stationary`] /
+    /// [`Self::is_progression`] on the consistency-half ternary
+    /// partition. See [`Self::is_stationary`] for the full contract
+    /// — same axis, [`Self::IdentityRepublish`] polarity.
+    ///
+    /// The identity-republish corner is the watermark-stationary-
+    /// but-generation-advanced legitimate corner (a reload cycle
+    /// over a filesystem that flipped and flipped back before the
+    /// observer noticed); a consumer that wants to distinguish the
+    /// two non-null legitimate corners without routing through
+    /// [`Self::name`] string compare or an inline `matches!` matches
+    /// on this predicate directly.
+    #[must_use]
+    pub const fn is_identity_republish(&self) -> bool {
+        matches!(*self, Self::IdentityRepublish)
+    }
+
+    /// Returns `true` for [`Self::Progression`]; per-variant tag-side
+    /// sibling of [`Self::is_stationary`] /
+    /// [`Self::is_identity_republish`] on the consistency-half
+    /// ternary partition. See [`Self::is_stationary`] for the full
+    /// contract — same axis, [`Self::Progression`] polarity.
+    ///
+    /// The progression corner is the moved-watermark-with-
+    /// generation-advance normal-progression legitimate corner (every
+    /// routine config-file edit lands here); a consumer histogramming
+    /// the routine-edit rate against the stationary polling rate
+    /// matches on this predicate at one site.
+    #[must_use]
+    pub const fn is_progression(&self) -> bool {
+        matches!(*self, Self::Progression)
     }
 
     /// The closed set of variant values in declaration order — the
@@ -31758,6 +31893,221 @@ mod variants_tests {
         assert_eq!(FUS_NAMES_LEN, 5);
         assert_eq!(FUS_VAR_ACC_LEN, 5);
         assert_eq!(FUS_NAM_ACC_LEN, 5);
+    }
+
+    // ---------- (11) Per-variant `is_*` sibling predicates on the
+    // two half-side receiver kinds. Peer of the crate-wide
+    // sibling-predicate discipline already carried by
+    // `SecretErrorKind` (quintet), `ConfigSourceKind` (trio),
+    // `DiffLineKind` (ternary), `WatchEventClass` (ternary), etc. —
+    // brought to hotswap's two half-side `*Kind` axes here.
+
+    #[test]
+    fn same_store_impossibility_kind_is_regressed_true_only_for_regressed_variant() {
+        // Per-variant polarity pin on the `Regressed` corner of the
+        // impossibility binary partition. Mirror of the per-variant
+        // polarity pins on every other `*Kind` axis carrying its own
+        // `is_*` sibling predicates (`SecretErrorKind`,
+        // `ConfigSourceKind`, `DiffLineKind`, `WatchEventClass`).
+        assert!(SameStoreImpossibilityKind::Regressed.is_regressed());
+        assert!(!SameStoreImpossibilityKind::CrossStore.is_regressed());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_cross_store_true_only_for_cross_store_variant() {
+        // Sibling per-variant polarity pin on the `CrossStore`
+        // corner. Same rationale as
+        // `same_store_impossibility_kind_is_regressed_true_only_for_regressed_variant`.
+        assert!(!SameStoreImpossibilityKind::Regressed.is_cross_store());
+        assert!(SameStoreImpossibilityKind::CrossStore.is_cross_store());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_per_variant_predicates_are_a_closed_binary_partition() {
+        // Every SameStoreImpossibilityKind::VARIANTS cell satisfies
+        // exactly one of the two per-variant siblings — none two,
+        // none zero. A future third impossibility corner (a
+        // signed-attestation mismatch, say) that lands without its
+        // own `is_*` arm fails here (satisfies zero) rather than
+        // silently sitting in the negation of both existing arms at
+        // every consumer site.
+        for k in SameStoreImpossibilityKind::VARIANTS {
+            let fires: u32 = u32::from(k.is_regressed()) + u32::from(k.is_cross_store());
+            assert_eq!(
+                fires, 1,
+                "SameStoreImpossibilityKind::{k:?} must satisfy exactly one per-variant sibling; got {fires}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_per_variant_predicates_agree_with_name_pointwise() {
+        // The per-variant sibling that fires for each cell matches
+        // the `Self::name()` snake-case identifier for that cell:
+        // `is_regressed` iff name == "regressed", `is_cross_store`
+        // iff name == "cross_store". A drift between the sibling
+        // predicate and the canonical name (via a `matches!` arm
+        // going to the wrong variant) fails here rather than at
+        // every downstream consumer that routes on `.name()` in one
+        // place and `.is_*()` in another.
+        for k in SameStoreImpossibilityKind::VARIANTS {
+            match k.name() {
+                "regressed" => {
+                    assert!(
+                        k.is_regressed(),
+                        "{k:?}.name() == \"regressed\" but !is_regressed()"
+                    );
+                    assert!(!k.is_cross_store());
+                }
+                "cross_store" => {
+                    assert!(
+                        k.is_cross_store(),
+                        "{k:?}.name() == \"cross_store\" but !is_cross_store()"
+                    );
+                    assert!(!k.is_regressed());
+                }
+                other => panic!("unrecognized SameStoreImpossibilityKind name: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_stationary_true_only_for_stationary_variant() {
+        // Per-variant polarity pin on the `Stationary` corner of the
+        // consistency ternary partition.
+        assert!(SameStoreConsistencyKind::Stationary.is_stationary());
+        assert!(!SameStoreConsistencyKind::IdentityRepublish.is_stationary());
+        assert!(!SameStoreConsistencyKind::Progression.is_stationary());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_identity_republish_true_only_for_identity_republish_variant()
+    {
+        // Sibling per-variant polarity pin on the
+        // `IdentityRepublish` corner.
+        assert!(!SameStoreConsistencyKind::Stationary.is_identity_republish());
+        assert!(SameStoreConsistencyKind::IdentityRepublish.is_identity_republish());
+        assert!(!SameStoreConsistencyKind::Progression.is_identity_republish());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_progression_true_only_for_progression_variant() {
+        // Sibling per-variant polarity pin on the `Progression`
+        // corner.
+        assert!(!SameStoreConsistencyKind::Stationary.is_progression());
+        assert!(!SameStoreConsistencyKind::IdentityRepublish.is_progression());
+        assert!(SameStoreConsistencyKind::Progression.is_progression());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_per_variant_predicates_are_a_closed_ternary_partition() {
+        // Every SameStoreConsistencyKind::VARIANTS cell satisfies
+        // exactly one of the three per-variant siblings — none two,
+        // none zero. Ternary analogue of
+        // `same_store_impossibility_kind_per_variant_predicates_are_a_closed_binary_partition`
+        // on the impossibility half.
+        for k in SameStoreConsistencyKind::VARIANTS {
+            let fires: u32 = u32::from(k.is_stationary())
+                + u32::from(k.is_identity_republish())
+                + u32::from(k.is_progression());
+            assert_eq!(
+                fires, 1,
+                "SameStoreConsistencyKind::{k:?} must satisfy exactly one per-variant sibling; got {fires}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_per_variant_predicates_agree_with_name_pointwise() {
+        // The per-variant sibling that fires for each cell matches
+        // the `Self::name()` snake-case identifier for that cell.
+        // Ternary analogue of
+        // `same_store_impossibility_kind_per_variant_predicates_agree_with_name_pointwise`.
+        for k in SameStoreConsistencyKind::VARIANTS {
+            match k.name() {
+                "stationary" => {
+                    assert!(k.is_stationary());
+                    assert!(!k.is_identity_republish());
+                    assert!(!k.is_progression());
+                }
+                "identity_republish" => {
+                    assert!(!k.is_stationary());
+                    assert!(k.is_identity_republish());
+                    assert!(!k.is_progression());
+                }
+                "progression" => {
+                    assert!(!k.is_stationary());
+                    assert!(!k.is_identity_republish());
+                    assert!(k.is_progression());
+                }
+                other => panic!("unrecognized SameStoreConsistencyKind name: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_consistency_projection_refines_consistency_kind_per_variant_predicates()
+    {
+        // Cross-projection refinement pin: for every `Consistent(k)`
+        // cell of ProofRelationKind::VARIANTS, `.consistency()`
+        // returns `Some(k)` whose sibling predicate agrees with
+        // `.name()`; for every `Impossible(_)` cell, `.consistency()`
+        // returns `None`. Welds the per-variant sibling coverage on
+        // `SameStoreConsistencyKind` to the fused
+        // `ProofRelationKind` sum: a hypothetical fourth legitimate
+        // corner landing without its own consistency sibling arm
+        // fails this pin's exhaustive-name match rather than silently
+        // sitting in the negation of the existing three.
+        for k in ProofRelationKind::VARIANTS {
+            match k.consistency() {
+                Some(c) => {
+                    let fires: u32 = u32::from(c.is_stationary())
+                        + u32::from(c.is_identity_republish())
+                        + u32::from(c.is_progression());
+                    assert_eq!(
+                        fires, 1,
+                        "ProofRelationKind::{k:?}.consistency() == Some({c:?}) must satisfy exactly one per-variant sibling; got {fires}",
+                    );
+                    assert!(k.is_consistent());
+                    assert!(!k.is_impossible());
+                    assert!(k.impossibility().is_none());
+                }
+                None => {
+                    assert!(!k.is_consistent());
+                    assert!(k.is_impossible());
+                    assert!(k.impossibility().is_some());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_impossibility_projection_refines_impossibility_kind_per_variant_predicates()
+     {
+        // Cross-projection refinement pin: mirror of
+        // `proof_relation_kind_consistency_projection_refines_consistency_kind_per_variant_predicates`
+        // on the impossibility half. Welds the per-variant sibling
+        // coverage on `SameStoreImpossibilityKind` to the fused
+        // `ProofRelationKind` sum.
+        for k in ProofRelationKind::VARIANTS {
+            match k.impossibility() {
+                Some(i) => {
+                    let fires: u32 = u32::from(i.is_regressed()) + u32::from(i.is_cross_store());
+                    assert_eq!(
+                        fires, 1,
+                        "ProofRelationKind::{k:?}.impossibility() == Some({i:?}) must satisfy exactly one per-variant sibling; got {fires}",
+                    );
+                    assert!(!k.is_consistent());
+                    assert!(k.is_impossible());
+                    assert!(k.consistency().is_none());
+                }
+                None => {
+                    assert!(k.is_consistent());
+                    assert!(!k.is_impossible());
+                    assert!(k.consistency().is_some());
+                }
+            }
+        }
     }
 }
 
