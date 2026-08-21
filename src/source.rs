@@ -27883,6 +27883,81 @@ impl EnvMetadataTag<'_> {
             Self::Bare => EnvMetadataTagKind::Bare,
         }
     }
+
+    /// Returns `true` for [`Self::Prefixed`] regardless of the inner
+    /// borrowed prefix slice; tag-side sibling of [`Self::is_bare`] on
+    /// the [`EnvMetadataTag`] binary partition.
+    ///
+    /// The predicate names the **borrowed env-metadata shape** — a
+    /// `figment::providers::Env::prefixed(prefix)` emission whose
+    /// `figment::Metadata::name` classifies here through
+    /// [`ConfigSource::strip_env_metadata_name`]. Tag-side peer of the
+    /// `'static` [`EnvMetadataTagKind`] projection carried by
+    /// [`Self::kind`]: for [`EnvMetadataTag`] the tag axis and the kind
+    /// axis agree pointwise (`Self::Prefixed(_) →
+    /// EnvMetadataTagKind::Prefixed`, `Self::Bare →
+    /// EnvMetadataTagKind::Bare`), and the
+    /// `env_metadata_tag_predicates_agree_with_kind` pin refuses a future
+    /// third variant that would break that agreement without also
+    /// extending the sibling-predicate pair through the tag → kind
+    /// forward map.
+    ///
+    /// A consumer that wants the cross-thread `'static` axis reads
+    /// `tag.kind().is_prefixed()`; one that wants the borrowed-tag axis
+    /// directly (a structured-log field naming the borrowed shape of a
+    /// failing env attribution without projecting through
+    /// [`EnvMetadataTagKind`], a per-shape dispatch inside a resolver
+    /// already holding the borrowed tag, a partition-coverage assertion
+    /// pinning that every sample tag satisfies exactly one arm) reads
+    /// this tag-side predicate instead. Both live at the type level so
+    /// neither consumer re-derives the corresponding `matches!` pattern
+    /// at every site — until this predicate landed, the [`Self::Prefixed`]
+    /// arm was reachable only through the exhaustive `kind()` projection
+    /// or an inline `matches!(tag, EnvMetadataTag::Prefixed(_))` at each
+    /// call site.
+    ///
+    /// Direct peer of the [`FigmentSourceTag::is_file`] /
+    /// [`FigmentSourceTag::is_code`] / [`FigmentSourceTag::is_custom`]
+    /// tag-side ternary on the figment-Source axis (commit `4cd1a9e`) and
+    /// the [`FigmentNameTag::is_format`] / [`FigmentNameTag::is_env`]
+    /// tag-side binary on the figment-Name axis (commit `fa62717`): the
+    /// three borrowed figment-metadata sub-axes now carry symmetric
+    /// tag-side sibling-predicate coverage, closing the borrowed
+    /// figment-metadata coordinate space ([`FigmentSourceTag`] on
+    /// `Metadata::source`, [`FigmentNameTag`] on `Metadata::name`,
+    /// [`EnvMetadataTag`] on the env-name sub-axis inside
+    /// `FigmentNameTag::Env`) under one typescape discipline. Also
+    /// aligned with the tag-side sibling predicates already carried by
+    /// [`crate::ConfigTier`] (`aefc87a`), [`crate::SecretSource`]
+    /// (`87ed70a`), [`crate::SopsRef`] / [`crate::VaultRef`] (`a260efd`),
+    /// and [`crate::SecretBackend`] (`55b8382`).
+    ///
+    /// The two sibling predicates [`Self::is_prefixed`] / [`Self::is_bare`]
+    /// form a closed disjoint partition of the [`EnvMetadataTag`] variant
+    /// space — every value satisfies exactly one — pinned by
+    /// [`tests::env_metadata_tag_predicates_are_a_closed_binary_partition`].
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Prefixed`] regardless of inner borrowed prefix content —
+    /// is pinned by
+    /// [`tests::env_metadata_tag_predicates_are_payload_independent`].
+    /// Tag ↔ kind pointwise agreement is pinned by
+    /// [`tests::env_metadata_tag_predicates_agree_with_kind`].
+    #[must_use]
+    pub fn is_prefixed(self) -> bool {
+        matches!(self.kind(), EnvMetadataTagKind::Prefixed)
+    }
+
+    /// Returns `true` for [`Self::Bare`]; tag-side sibling of
+    /// [`Self::is_prefixed`] on the [`EnvMetadataTag`] binary partition.
+    /// See [`Self::is_prefixed`] for the full contract — same borrowed-tag
+    /// axis, [`Self::Bare`] polarity.
+    ///
+    /// The bare variant carries no inner payload — the classification is
+    /// constant.
+    #[must_use]
+    pub fn is_bare(self) -> bool {
+        matches!(self.kind(), EnvMetadataTagKind::Bare)
+    }
 }
 
 /// Data-free, `'static` discriminant of [`EnvMetadataTag`]: the kind of
@@ -97958,6 +98033,158 @@ mod tests {
             let tag = ConfigSource::strip_env_metadata_name(name)
                 .expect("figment prefixed Env name must classify as env metadata");
             assert_eq!(tag.kind(), EnvMetadataTagKind::Prefixed);
+        }
+    }
+
+    // ---- EnvMetadataTag tag-side sibling predicates ----
+    //
+    // The borrowed `EnvMetadataTag<'a>` axis carries the tag-side
+    // sibling-predicate pair `is_prefixed`/`is_bare`, symmetric to the
+    // `FigmentSourceTag` ternary (`is_file`/`is_code`/`is_custom`,
+    // commit `4cd1a9e`) and the `FigmentNameTag` binary
+    // (`is_format`/`is_env`, commit `fa62717`). The five pins below
+    // mirror the `figment_name_tag_predicates_*` suite pointwise on
+    // the env-name sub-axis.
+
+    #[test]
+    fn env_metadata_tag_is_prefixed_true_only_for_prefixed_variant() {
+        // Per-variant pin on the Prefixed arm: every prefixed
+        // env-metadata name (empty prefix is Bare, non-empty prefixes
+        // hit Prefixed) flips is_prefixed on and the sibling is_bare
+        // off. Direct peer of
+        // `figment_name_tag_is_format_true_only_for_format_variant`
+        // on the figment-Name axis.
+        for prefix in ["MYAPP_", "TOBIRA_", "AyaTsuri_", "X_", "VERY_LONG_PREFIX_"] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("prefixed env-metadata name must classify");
+            assert!(
+                tag.is_prefixed(),
+                "Prefixed tag must satisfy is_prefixed: {tag:?}"
+            );
+            assert!(
+                !tag.is_bare(),
+                "Prefixed tag must not satisfy is_bare: {tag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_is_bare_true_only_for_bare_variant() {
+        // Per-variant pin on the Bare arm: the empty-prefix
+        // env-metadata name (figment `Env::raw()` shape) flips is_bare
+        // on and the sibling is_prefixed off. Direct peer of
+        // `figment_name_tag_is_env_true_only_for_env_variant` on the
+        // figment-Name axis.
+        let name = ConfigSource::env_metadata_name("");
+        let tag = ConfigSource::strip_env_metadata_name(&name)
+            .expect("bare env-metadata name must classify");
+        assert!(tag.is_bare(), "Bare tag must satisfy is_bare: {tag:?}");
+        assert!(
+            !tag.is_prefixed(),
+            "Bare tag must not satisfy is_prefixed: {tag:?}"
+        );
+        // Constructor-side witness — Bare has no inner payload, so
+        // the direct enum literal is the canonical form.
+        let tag = EnvMetadataTag::Bare;
+        assert!(tag.is_bare());
+        assert!(!tag.is_prefixed());
+    }
+
+    #[test]
+    fn env_metadata_tag_predicates_are_a_closed_binary_partition() {
+        // Closed disjoint binary partition: for every canonical sample,
+        // exactly one of {is_prefixed, is_bare} is true. A future
+        // EnvMetadataTag variant (e.g. a hypothetical `Glob(&str)`
+        // shape if figment grows pattern-matched env providers) that
+        // lands without a matching sibling-predicate arm breaks this
+        // pin — the new variant reachable through
+        // `ConfigSource::strip_env_metadata_name` must extend the pair
+        // in lockstep. Peer of
+        // `figment_name_tag_predicates_are_a_closed_binary_partition`
+        // on the figment-Name axis.
+        for (name, _) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("every canonical sample must classify");
+            let matches: u32 = u32::from(tag.is_prefixed()) + u32::from(tag.is_bare());
+            assert_eq!(
+                matches, 1,
+                "exactly one of is_prefixed/is_bare must hold; got {matches} for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_predicates_are_payload_independent() {
+        // The tag-side answer must not vary with the inner borrowed
+        // prefix — every Prefixed(prefix) answers is_prefixed
+        // regardless of prefix content (uppercase, mixed-case,
+        // one-char, long); the Bare variant is data-free so its
+        // answer is constant. Pinned across multiple representative
+        // payloads so a future payload-sensitive predicate refactor
+        // collapses this test immediately. Direct peer of
+        // `figment_name_tag_predicates_are_payload_independent` on the
+        // figment-Name axis.
+        //
+        // Prefixed-side payloads: uppercase, mixed-case, one-char,
+        // and a long prefix cover figment's prefixed-shape emission
+        // surface plus the shikumi `env_metadata_name` synthesis
+        // path.
+        for prefix in [
+            "MYAPP_",
+            "TOBIRA_",
+            "AyaTsuri_",
+            "X_",
+            "VERY_LONG_PREFIX_UNDERSCORE_",
+        ] {
+            let tag = EnvMetadataTag::Prefixed(prefix);
+            assert!(
+                tag.is_prefixed(),
+                "is_prefixed must hold for Prefixed({prefix:?})",
+            );
+            assert!(!tag.is_bare());
+        }
+
+        // Bare-side: the variant is data-free so a single witness
+        // suffices, but pin it explicitly against the direct enum
+        // literal and against the classify-side reconstruction.
+        assert!(EnvMetadataTag::Bare.is_bare());
+        assert!(!EnvMetadataTag::Bare.is_prefixed());
+        let bare_name = ConfigSource::env_metadata_name("");
+        let tag = ConfigSource::strip_env_metadata_name(&bare_name)
+            .expect("bare env-metadata name must classify");
+        assert!(tag.is_bare());
+        assert!(!tag.is_prefixed());
+    }
+
+    #[test]
+    fn env_metadata_tag_predicates_agree_with_kind() {
+        // Pointwise agreement between the tag-side binary pair and the
+        // `'static` EnvMetadataTagKind projection: for every canonical
+        // sample, `tag.is_X()` iff `tag.kind() == EnvMetadataTagKind::X`.
+        // This is the load-bearing structural pin — a future variant
+        // landing on EnvMetadataTag without a matching
+        // EnvMetadataTagKind arm breaks the exhaustive `kind()` match
+        // at compile time; a mis-wired sibling predicate (e.g.
+        // `is_prefixed` matching Bare by copy-paste error) breaks this
+        // pin at test time. Direct peer of
+        // `figment_name_tag_predicates_agree_with_kind` on the
+        // figment-Name axis.
+        for (name, expected_kind) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("every canonical sample must classify");
+            let kind = tag.kind();
+            assert_eq!(kind, expected_kind, "kind mismatch for {tag:?}");
+            assert_eq!(
+                tag.is_prefixed(),
+                kind == EnvMetadataTagKind::Prefixed,
+                "is_prefixed must agree with kind() == Prefixed for {tag:?}",
+            );
+            assert_eq!(
+                tag.is_bare(),
+                kind == EnvMetadataTagKind::Bare,
+                "is_bare must agree with kind() == Bare for {tag:?}",
+            );
         }
     }
 
