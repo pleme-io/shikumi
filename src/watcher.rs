@@ -100,9 +100,65 @@ impl WatchEventClass {
 
     /// Whether this class warrants re-reading the config — `true` exactly
     /// on [`Self::Reload`].
+    ///
+    /// Retained as the operator-facing name for the reload-trigger
+    /// decision (the imperative "should we reload?" question at the
+    /// watcher closure's dispatch site); pointwise byte-identical to the
+    /// closed-axis sibling predicate [`Self::is_reload`] — pinned by
+    /// [`tests::should_reload_agrees_with_is_reload_pointwise`] — so the
+    /// two surfaces cannot drift.
     #[must_use]
     pub const fn should_reload(self) -> bool {
         matches!(self, Self::Reload)
+    }
+
+    /// Returns `true` for [`Self::Reload`]; equivalent to
+    /// `self == WatchEventClass::Reload`. Sibling of [`Self::is_removed`]
+    /// and [`Self::is_ignored`] — the closed ternary partition of the
+    /// reload-relevance axis lifted to three named `const fn` predicates
+    /// at the primitive's altitude, mirror of the trio-shape
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] and of the tag-side quartet
+    /// [`crate::ConfigTier::is_bare`] /
+    /// [`crate::ConfigTier::is_discovered`] /
+    /// [`crate::ConfigTier::is_default`] / [`crate::ConfigTier::is_custom`].
+    ///
+    /// One source of truth for the "is this the reload class?" question
+    /// over [`WatchEventClass`] — a consumer that only wants the yes/no
+    /// answer (a per-class watcher-event histogram bin, an attestation
+    /// manifest grouping by class, a reload-trigger dashboard counter)
+    /// matches on this predicate instead of open-coding
+    /// `matches!(class, WatchEventClass::Reload)` and paying the
+    /// closed-partition bookkeeping tax again. The three sibling
+    /// predicates form a closed disjoint partition of the variant space
+    /// — every [`WatchEventClass`] value satisfies exactly one — pinned
+    /// by [`tests::watch_event_class_predicates_are_a_closed_ternary_partition`],
+    /// the ternary analogue of the trio-partition pin on
+    /// [`crate::ConfigSourceKind`]. Pointwise byte-identical to the
+    /// long-standing [`Self::should_reload`] — pinned by
+    /// [`tests::should_reload_agrees_with_is_reload_pointwise`] — so a
+    /// future edit to either arm that drifts one polarity fails here
+    /// before drifting through any consumer site.
+    #[must_use]
+    pub const fn is_reload(self) -> bool {
+        matches!(self, Self::Reload)
+    }
+
+    /// Returns `true` for [`Self::Removed`]; equivalent to
+    /// `self == WatchEventClass::Removed`. Sibling of [`Self::is_reload`];
+    /// see [`Self::is_reload`] for the full contract.
+    #[must_use]
+    pub const fn is_removed(self) -> bool {
+        matches!(self, Self::Removed)
+    }
+
+    /// Returns `true` for [`Self::Ignored`]; equivalent to
+    /// `self == WatchEventClass::Ignored`. Sibling of [`Self::is_reload`];
+    /// see [`Self::is_reload`] for the full contract.
+    #[must_use]
+    pub const fn is_ignored(self) -> bool {
+        matches!(self, Self::Ignored)
     }
 
     /// Canonical operator-facing lowercase name — `"reload"`, `"removed"`,
@@ -546,6 +602,86 @@ mod tests {
         // should_reload is exactly the Reload-class predicate.
         for class in WatchEventClass::ALL.iter().copied() {
             assert_eq!(class.should_reload(), class == WatchEventClass::Reload);
+        }
+    }
+
+    #[test]
+    fn watch_event_class_is_reload_true_only_for_reload_variant() {
+        // Per-variant polarity pin on the Reload corner. Sibling of
+        // `config_source_kind_is_defaults_true_only_for_defaults_variant`
+        // and the trio-shape pins on the crate's ternary closed axes; a
+        // future edit that flips the `matches!` arm on `is_reload` fails
+        // here before the closed-ternary-partition pin masks it.
+        assert!(WatchEventClass::Reload.is_reload());
+        assert!(!WatchEventClass::Removed.is_reload());
+        assert!(!WatchEventClass::Ignored.is_reload());
+    }
+
+    #[test]
+    fn watch_event_class_is_removed_true_only_for_removed_variant() {
+        assert!(!WatchEventClass::Reload.is_removed());
+        assert!(WatchEventClass::Removed.is_removed());
+        assert!(!WatchEventClass::Ignored.is_removed());
+    }
+
+    #[test]
+    fn watch_event_class_is_ignored_true_only_for_ignored_variant() {
+        assert!(!WatchEventClass::Reload.is_ignored());
+        assert!(!WatchEventClass::Removed.is_ignored());
+        assert!(WatchEventClass::Ignored.is_ignored());
+    }
+
+    #[test]
+    fn watch_event_class_predicates_are_a_closed_ternary_partition() {
+        // Every WatchEventClass::ALL cell satisfies exactly one of the
+        // three sibling predicates: none satisfies two, none satisfies
+        // zero. Ternary-partition analogue of the trio-partition pin on
+        // `ConfigSourceKind` and of the binary-partition pins on the
+        // crate's seven binary axes. A future fourth-class landing
+        // without its own sibling predicate collapses the partition to
+        // zero on that variant, failing here before drifting through any
+        // consumer site.
+        for class in WatchEventClass::ALL.iter().copied() {
+            let hits = usize::from(class.is_reload())
+                + usize::from(class.is_removed())
+                + usize::from(class.is_ignored());
+            assert_eq!(
+                hits, 1,
+                "class {class:?} must satisfy exactly one sibling predicate, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_predicates_agree_with_equality_pointwise() {
+        // The kind-alone equality-agreement law over ALL: for every
+        // variant, `class.is_X()` is exactly `class == Self::X`. Catches
+        // a future edit whose `matches!` arm silently accepts a second
+        // variant on the same predicate. Idiom-peer of
+        // `config_source_kind_predicates_agree_with_equality_pointwise`.
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(class.is_reload(), class == WatchEventClass::Reload);
+            assert_eq!(class.is_removed(), class == WatchEventClass::Removed);
+            assert_eq!(class.is_ignored(), class == WatchEventClass::Ignored);
+        }
+    }
+
+    #[test]
+    fn should_reload_agrees_with_is_reload_pointwise() {
+        // The two Reload-class predicates on WatchEventClass — the
+        // operator-facing `should_reload` (retained for the imperative
+        // "should we reload?" question at the watcher dispatch site) and
+        // the sibling-shape `is_reload` (the closed-axis idiom peer of
+        // `is_removed`/`is_ignored`) — are pointwise byte-identical
+        // across ALL. A future edit that drifts one arm without the
+        // other fails here before any consumer of either surface can
+        // observe the divergence.
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                class.should_reload(),
+                class.is_reload(),
+                "should_reload and is_reload must agree pointwise on {class:?}",
+            );
         }
     }
 
