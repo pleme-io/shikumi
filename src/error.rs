@@ -374,6 +374,156 @@ impl ShikumiErrorKind {
             Self::Validation => "validation",
         }
     }
+
+    /// Returns `true` for [`Self::NotFound`]; equivalent to
+    /// `self == ShikumiErrorKind::NotFound`.
+    ///
+    /// Kind-side sibling predicate over the closed seven-way
+    /// [`ShikumiErrorKind`] partition. Consumers holding only the kind
+    /// (a `HashMap`/`HashSet` key, a `BTreeMap` bucket, a per-kind
+    /// alerting-threshold table, a cross-thread failure-class tag
+    /// captured on a [`crate::ReloadFailure`] envelope after the
+    /// borrowed [`ShikumiError`] payload's owned
+    /// `Vec<PathBuf>` / `notify::Error` / `Box<figment::Error>` /
+    /// `Vec<ConfigSource>` fields have been dropped) classify without
+    /// materializing a synthetic [`ShikumiError`] first — the tag-side
+    /// data-carrying enum holds payloads a kind-only observer cannot
+    /// cheaply reconstruct.
+    ///
+    /// Peer to [`crate::SecretErrorKind::is_not_found`] /
+    /// [`crate::SecretErrorKind::is_unauthorized`] / … on the
+    /// secret-client error-kind axis (closed by `6b67a81`),
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] on the shikumi-side
+    /// layer-kind axis (closed by `9600b8b`),
+    /// [`crate::FigmentSourceKind::is_file`] /
+    /// [`crate::FigmentSourceKind::is_code`] /
+    /// [`crate::FigmentSourceKind::is_custom`] on the figment-side
+    /// source axis, and [`crate::SecretBackendKind::is_literal`] /
+    /// [`crate::SecretBackendKind::is_op`] / … on the payload-carrying
+    /// secret-backend axis (closed by `9dc6d1f`): same kind-side
+    /// sibling-predicate discipline applied to the shikumi error-
+    /// variant axis, previously carrying only the meta-partition
+    /// predicates [`Self::is_figment_bearing`] /
+    /// [`Self::is_not_figment_bearing`] with no per-variant
+    /// classification at the primitive's altitude.
+    ///
+    /// Structural bridge to the tag-side sibling
+    /// [`ShikumiError::is_not_found`]:
+    /// `err.kind().is_not_found() == err.is_not_found()` for every
+    /// [`ShikumiError`], pinned by
+    /// [`tests::shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_not_found_pointwise`].
+    /// The seven sibling predicates form a closed disjoint partition of
+    /// [`Self::ALL`] — every variant satisfies exactly one, none
+    /// satisfies two, none satisfies zero — pinned by
+    /// [`tests::shikumi_error_kind_predicates_are_a_closed_septet_partition`].
+    /// The kind-alone equality-agreement law
+    /// (`k.is_X() == (k == Self::X)` for every variant) is pinned by
+    /// [`tests::shikumi_error_kind_predicates_agree_with_equality_pointwise`].
+    #[must_use]
+    pub const fn is_not_found(self) -> bool {
+        matches!(self, Self::NotFound)
+    }
+
+    /// Returns `true` for [`Self::Parse`]; equivalent to
+    /// `self == ShikumiErrorKind::Parse`. Kind-side sibling predicate;
+    /// see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Structural bridge to the tag-side sibling
+    /// [`ShikumiError::is_parse`]:
+    /// `err.kind().is_parse() == err.is_parse()` for every
+    /// [`ShikumiError`], pinned by
+    /// [`tests::shikumi_error_kind_parse_predicate_agrees_with_shikumi_error_is_parse_pointwise`].
+    #[must_use]
+    pub const fn is_parse(self) -> bool {
+        matches!(self, Self::Parse)
+    }
+
+    /// Returns `true` for [`Self::Watch`]; equivalent to
+    /// `self == ShikumiErrorKind::Watch`. Kind-side sibling predicate;
+    /// see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Classifies the file-watcher (`notify` crate) failure surface —
+    /// symlink-target churn, inotify/FSEvents backpressure, or the
+    /// polling-watcher's `read_dir` errors — as its own kind
+    /// distinct from [`Self::Io`] (which surfaces a bare
+    /// [`std::io::Error`] from a config-file operation without
+    /// [`notify`] context).
+    #[must_use]
+    pub const fn is_watch(self) -> bool {
+        matches!(self, Self::Watch)
+    }
+
+    /// Returns `true` for [`Self::Io`]; equivalent to
+    /// `self == ShikumiErrorKind::Io`. Kind-side sibling predicate;
+    /// see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Classifies a [`std::io::Error`] surfaced from a config-file
+    /// operation (directory listing, file read) — distinct from
+    /// [`Self::Watch`] (a [`notify`]-level failure that may itself
+    /// wrap an I/O error) and from [`Self::NotFound`] (typed
+    /// exhaustion-of-search-locations reporting rather than a raw
+    /// [`std::io::ErrorKind::NotFound`]).
+    #[must_use]
+    pub const fn is_io(self) -> bool {
+        matches!(self, Self::Io)
+    }
+
+    /// Returns `true` for [`Self::Figment`]; equivalent to
+    /// `self == ShikumiErrorKind::Figment`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Kind-side refinement of [`Self::is_figment_bearing`] — one of
+    /// the two figment-bearing kinds ([`Self::Figment`] and
+    /// [`Self::Extract`]); the sibling
+    /// `k.is_figment() || k.is_extract() == k.is_figment_bearing()`
+    /// law is pinned by
+    /// [`tests::shikumi_error_kind_figment_extract_siblings_partition_is_figment_bearing`].
+    /// Observers wanting to distinguish a raw [`figment::Error`]
+    /// (`From<Box<figment::Error>>` construction, without a recorded
+    /// [`ConfigSource`] chain) from an
+    /// [`ShikumiError::Extract`] (with recorded chain) — a
+    /// [`crate::ProviderChain`]-attributed failure that
+    /// [`crate::ReloadFailure::failing_attribution`] can localize —
+    /// route on this predicate at the kind altitude rather than
+    /// re-deriving the two-way split from
+    /// [`Self::is_figment_bearing`] plus a second predicate.
+    #[must_use]
+    pub const fn is_figment(self) -> bool {
+        matches!(self, Self::Figment)
+    }
+
+    /// Returns `true` for [`Self::Extract`]; equivalent to
+    /// `self == ShikumiErrorKind::Extract`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Kind-side refinement of [`Self::is_figment_bearing`] — the
+    /// figment-bearing kind that also carries a recorded
+    /// [`ConfigSource`] chain via [`ShikumiError::sources`], the
+    /// prerequisite for [`ShikumiError::failing_attribution`] to
+    /// localize a failing layer via the recognized rules in
+    /// [`AttributionRule::ALL`]. Peer of [`Self::is_figment`] on the
+    /// other cell of the figment-bearing partition.
+    #[must_use]
+    pub const fn is_extract(self) -> bool {
+        matches!(self, Self::Extract)
+    }
+
+    /// Returns `true` for [`Self::Validation`]; equivalent to
+    /// `self == ShikumiErrorKind::Validation`. Kind-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Classifies the [`crate::hotswap::Validate::validate`]
+    /// (feature `hotswap`) semantic-refusal surface: a candidate
+    /// parsed cleanly by figment/serde but failed a cross-field
+    /// invariant, an out-of-range port, or an unknown-enum string —
+    /// distinct from the two figment-bearing kinds that report
+    /// shape/type mismatches figment can detect on its own.
+    #[must_use]
+    pub const fn is_validation(self) -> bool {
+        matches!(self, Self::Validation)
+    }
 }
 
 /// Closed tri-state partition over the field-path-localization axis of
@@ -5623,6 +5773,207 @@ mod tests {
                 kind.is_figment_bearing(),
                 err.field_path().is_some(),
                 "is_figment_bearing must mirror field_path-some for {kind:?}"
+            );
+        }
+    }
+
+    // ---- ShikumiErrorKind per-variant sibling predicates ----
+
+    #[test]
+    fn shikumi_error_kind_is_not_found_true_only_for_not_found_variant() {
+        // Per-variant polarity pin on the NotFound corner of the septet.
+        // Sibling to the quintet-shape pins on SecretErrorKind
+        // (`secret_error_kind_is_not_found_true_only_for_not_found_variant`,
+        // added by 6b67a81) and the trio-shape pins on ConfigSourceKind
+        // (`config_source_kind_is_defaults_true_only_for_defaults_variant`).
+        // A future edit that flips the `matches!` arm on `is_not_found`
+        // fails here before the equality-agreement pin masks it.
+        assert!(ShikumiErrorKind::NotFound.is_not_found());
+        assert!(!ShikumiErrorKind::Parse.is_not_found());
+        assert!(!ShikumiErrorKind::Watch.is_not_found());
+        assert!(!ShikumiErrorKind::Io.is_not_found());
+        assert!(!ShikumiErrorKind::Figment.is_not_found());
+        assert!(!ShikumiErrorKind::Extract.is_not_found());
+        assert!(!ShikumiErrorKind::Validation.is_not_found());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_parse_true_only_for_parse_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_parse());
+        assert!(ShikumiErrorKind::Parse.is_parse());
+        assert!(!ShikumiErrorKind::Watch.is_parse());
+        assert!(!ShikumiErrorKind::Io.is_parse());
+        assert!(!ShikumiErrorKind::Figment.is_parse());
+        assert!(!ShikumiErrorKind::Extract.is_parse());
+        assert!(!ShikumiErrorKind::Validation.is_parse());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_watch_true_only_for_watch_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_watch());
+        assert!(!ShikumiErrorKind::Parse.is_watch());
+        assert!(ShikumiErrorKind::Watch.is_watch());
+        assert!(!ShikumiErrorKind::Io.is_watch());
+        assert!(!ShikumiErrorKind::Figment.is_watch());
+        assert!(!ShikumiErrorKind::Extract.is_watch());
+        assert!(!ShikumiErrorKind::Validation.is_watch());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_io_true_only_for_io_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_io());
+        assert!(!ShikumiErrorKind::Parse.is_io());
+        assert!(!ShikumiErrorKind::Watch.is_io());
+        assert!(ShikumiErrorKind::Io.is_io());
+        assert!(!ShikumiErrorKind::Figment.is_io());
+        assert!(!ShikumiErrorKind::Extract.is_io());
+        assert!(!ShikumiErrorKind::Validation.is_io());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_figment_true_only_for_figment_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_figment());
+        assert!(!ShikumiErrorKind::Parse.is_figment());
+        assert!(!ShikumiErrorKind::Watch.is_figment());
+        assert!(!ShikumiErrorKind::Io.is_figment());
+        assert!(ShikumiErrorKind::Figment.is_figment());
+        assert!(!ShikumiErrorKind::Extract.is_figment());
+        assert!(!ShikumiErrorKind::Validation.is_figment());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_extract_true_only_for_extract_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_extract());
+        assert!(!ShikumiErrorKind::Parse.is_extract());
+        assert!(!ShikumiErrorKind::Watch.is_extract());
+        assert!(!ShikumiErrorKind::Io.is_extract());
+        assert!(!ShikumiErrorKind::Figment.is_extract());
+        assert!(ShikumiErrorKind::Extract.is_extract());
+        assert!(!ShikumiErrorKind::Validation.is_extract());
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_validation_true_only_for_validation_variant() {
+        assert!(!ShikumiErrorKind::NotFound.is_validation());
+        assert!(!ShikumiErrorKind::Parse.is_validation());
+        assert!(!ShikumiErrorKind::Watch.is_validation());
+        assert!(!ShikumiErrorKind::Io.is_validation());
+        assert!(!ShikumiErrorKind::Figment.is_validation());
+        assert!(!ShikumiErrorKind::Extract.is_validation());
+        assert!(ShikumiErrorKind::Validation.is_validation());
+    }
+
+    #[test]
+    fn shikumi_error_kind_predicates_are_a_closed_septet_partition() {
+        // Every ShikumiErrorKind::ALL cell satisfies exactly one of the
+        // seven sibling predicates: none satisfies two, none satisfies
+        // zero. Septet analogue of the quintet-partition pin on
+        // SecretErrorKind
+        // (`secret_error_kind_predicates_are_a_closed_quintet_partition`)
+        // and the ternary-partition pin on ConfigSourceKind
+        // (`config_source_kind_predicates_are_a_closed_ternary_partition`).
+        // A future variant landing on ShikumiErrorKind without its own
+        // sibling predicate collapses the partition to "zero" on that
+        // cell, failing here before drifting through any consumer site
+        // (a per-kind retry-policy dispatch, a structured-diagnostic
+        // legend, an attestation manifest recording the kind histogram
+        // of captured failures).
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            let hits = usize::from(k.is_not_found())
+                + usize::from(k.is_parse())
+                + usize::from(k.is_watch())
+                + usize::from(k.is_io())
+                + usize::from(k.is_figment())
+                + usize::from(k.is_extract())
+                + usize::from(k.is_validation());
+            assert_eq!(
+                hits, 1,
+                "ShikumiErrorKind::{k:?} must satisfy exactly one of \
+                 is_not_found/is_parse/is_watch/is_io/is_figment/is_extract/is_validation \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_predicates_agree_with_equality_pointwise() {
+        // The kind-alone equality-agreement law over
+        // ShikumiErrorKind::ALL, matching the shape of
+        // `secret_error_kind_predicates_agree_with_equality_pointwise`
+        // on the secret-client error-kind axis and of
+        // `config_source_kind_predicates_agree_with_equality_pointwise`
+        // on the shikumi-side layer-kind axis. Catches the dual case
+        // where a predicate's `matches!` arm silently accepts a second
+        // variant (say a copy-paste that widened `is_io` to
+        // `Self::Io | Self::Watch`) — the closed-septet-partition pin
+        // catches the "zero" side of that drift by flipping the robbed
+        // corner's hits from 1 to 0; this pin catches the "two on the
+        // same corner" side without needing another corner to change.
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            assert_eq!(k.is_not_found(), k == ShikumiErrorKind::NotFound);
+            assert_eq!(k.is_parse(), k == ShikumiErrorKind::Parse);
+            assert_eq!(k.is_watch(), k == ShikumiErrorKind::Watch);
+            assert_eq!(k.is_io(), k == ShikumiErrorKind::Io);
+            assert_eq!(k.is_figment(), k == ShikumiErrorKind::Figment);
+            assert_eq!(k.is_extract(), k == ShikumiErrorKind::Extract);
+            assert_eq!(k.is_validation(), k == ShikumiErrorKind::Validation);
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_extract_siblings_partition_is_figment_bearing() {
+        // Cross-partition refinement law: the meta-predicate
+        // `is_figment_bearing` on the kind axis coincides pointwise
+        // with the disjunction of the two per-variant sibling
+        // predicates over the figment-bearing cells
+        // (`is_figment` ∪ `is_extract`). Pins the invariant that the
+        // finer per-variant partition is a refinement of the coarser
+        // binary partition — a future third figment-bearing kind
+        // would fail here if its is_figment_bearing arm was flipped
+        // to `true` without also naming it in the per-variant sibling
+        // set, or vice versa.
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                k.is_figment_bearing(),
+                k.is_figment() || k.is_extract(),
+                "figment-bearing must equal (is_figment ∨ is_extract) on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_not_found_pointwise() {
+        // Structural bridge between the new kind-side sibling
+        // `is_not_found()` on ShikumiErrorKind and the pre-existing
+        // tag-side accessor `ShikumiError::is_not_found()`, over the
+        // canonical construction table `one_per_kind()`. The existing
+        // `kind_agrees_with_is_not_found_pointwise` pin already held
+        // the bridge under the closed-equality form
+        // (`err.is_not_found() == (err.kind() == ShikumiErrorKind::NotFound)`);
+        // consumers now read it through the named predicate at both
+        // altitudes without spelling the closed-equality at their own
+        // site — matching the shape of
+        // `secret_error_kind_shikumi_predicate_agrees_with_as_shikumi_pointwise`
+        // on the secret-client kind axis.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.kind().is_not_found(),
+                err.is_not_found(),
+                "kind-side and tag-side is_not_found must agree on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_parse_predicate_agrees_with_shikumi_error_is_parse_pointwise() {
+        // Structural bridge for the Parse corner; peer of
+        // `shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_parse_pointwise`
+        // on the other pre-existing tag-side sibling.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.kind().is_parse(),
+                err.is_parse(),
+                "kind-side and tag-side is_parse must agree on {err:?}",
             );
         }
     }
