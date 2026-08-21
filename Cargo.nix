@@ -4922,9 +4922,9 @@ rec {
       };
       "icu_provider" = rec {
         crateName = "icu_provider";
-        version = "2.3.0";
+        version = "2.3.1";
         edition = "2024";
-        sha256 = "0a343jlrb7jlb20xv1airslzv63559wf38jihrx81bba39kyv9wj";
+        sha256 = "0wrydhwprwgyka3r3sw6276syjnlw6fpqr2zsm2srvxv7afvnyyj";
         authors = [
           "The ICU4X Project Developers"
         ];
@@ -9470,7 +9470,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.637";
+        version = "0.1.638";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -13484,9 +13484,9 @@ rec {
       };
       "zerovec-derive" = rec {
         crateName = "zerovec-derive";
-        version = "0.11.5";
+        version = "0.11.6";
         edition = "2021";
-        sha256 = "1a8pz516ddcgxvxq3j1xgprac5wnprlrbyzsgzarj0423la2l8cz";
+        sha256 = "1ni5j8v99x3fcf3l8kp64b7aq4vf8y22jshfq74xs9mxkp1nzprl";
         procMacro = true;
         libName = "zerovec_derive";
         authors = [
