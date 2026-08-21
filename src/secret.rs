@@ -719,6 +719,77 @@ impl SopsRef {
             Self::Field { .. } => SecretRefShape::Field,
         }
     }
+
+    /// Returns `true` for [`Self::File`] regardless of the inner
+    /// [`PathBuf`] payload; tag-side sibling of [`Self::is_field`] on
+    /// the [`SopsRef`] partition.
+    ///
+    /// The predicate names the **operator-authored SOPS reference
+    /// shape** — the bare-file shorthand
+    /// (`jwt_secret: { sops: secrets/prod.yaml }`) versus the explicit
+    /// `{file, field}` extraction pair
+    /// (`jwt_secret: { sops: { file: …, field: … } }`). Tag-side peer
+    /// of the shared [`SecretRefShape`] projection carried by
+    /// [`Self::shape`]: for [`SopsRef`] the tag axis and the shape axis
+    /// agree pointwise (`Self::File → SecretRefShape::Whole`,
+    /// `Self::Field → SecretRefShape::Field`), and the
+    /// `sops_ref_tag_axis_agrees_with_shape_axis` pin refuses a future
+    /// third variant that would break that agreement without also
+    /// extending the sibling-predicate pair. The cross-type divergence
+    /// lives one axis up: the shape projection normalizes
+    /// [`Self::File`] and [`VaultRef::Path`] onto the same
+    /// [`SecretRefShape::Whole`] label, while the tag-side predicates
+    /// [`Self::is_file`] and [`VaultRef::is_path`] name each
+    /// operator-authored form under its own per-backend tag — pinned by
+    /// `sops_and_vault_tag_axes_split_the_shared_shape_whole_cell`.
+    ///
+    /// A consumer that wants the resolved-value / cross-backend axis
+    /// reads `ref.shape().is_whole()`; one that wants the per-backend
+    /// authored-tag axis (per-backend telemetry counting SOPS
+    /// bare-file authors distinct from Vault bare-path authors, a
+    /// structured-log field naming which SOPS shape the operator
+    /// wrote, a migration dashboard tracking uptake of the explicit
+    /// `{file, field}` form on SOPS specifically) reads this tag-side
+    /// predicate instead. Both live at the type level so neither
+    /// consumer re-derives the corresponding `matches!` pattern at
+    /// every site.
+    ///
+    /// Peer of the tag-side sibling predicates already carried by
+    /// every other payload-bearing closed-axis primitive in the crate:
+    /// the [`SecretSource::is_literal`] / [`SecretSource::is_backend`]
+    /// pair on the top-level source-shape axis (commit `87ed70a`), the
+    /// [`crate::ConfigTier::is_bare`]…[`crate::ConfigTier::is_custom`]
+    /// quartet against the payload-bearing `Custom(PathBuf)` arm
+    /// (commit `aefc87a`), and the
+    /// [`SecretBackend::is_literal`]…[`SecretBackend::is_gcp_secret`]
+    /// octet against the payload-bearing tagged variants
+    /// (commit `55b8382`). [`SopsRef`] and [`VaultRef`] carried
+    /// [`Self::shape`] but *no* tag-side predicates at all — the last
+    /// payload-bearing untagged binary enums in the crate without any
+    /// half of the pair; this lands both halves on both types.
+    ///
+    /// The two sibling predicates [`Self::is_file`] / [`Self::is_field`]
+    /// form a closed disjoint partition of the [`SopsRef`] variant
+    /// space — every value satisfies exactly one — pinned by
+    /// [`tests::sops_ref_predicates_are_a_closed_binary_partition`].
+    /// Payload-independence — the answer is the same for every
+    /// `File(path)` regardless of inner path content, and for every
+    /// `Field { file, field }` regardless of inner file/field
+    /// content — is pinned by
+    /// [`tests::sops_ref_predicates_are_payload_independent`].
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
+        matches!(self, Self::File(_))
+    }
+
+    /// Returns `true` for [`Self::Field`] regardless of the inner
+    /// `{file, field}` payload; tag-side sibling of [`Self::is_file`]
+    /// on the [`SopsRef`] partition. See [`Self::is_file`] for the full
+    /// contract — same authored-shape axis, opposite polarity.
+    #[must_use]
+    pub const fn is_field(&self) -> bool {
+        matches!(self, Self::Field { .. })
+    }
 }
 
 /// HashiCorp Vault secret reference.
@@ -762,6 +833,58 @@ impl VaultRef {
             Self::Path(_) => SecretRefShape::Whole,
             Self::Field { .. } => SecretRefShape::Field,
         }
+    }
+
+    /// Returns `true` for [`Self::Path`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of [`Self::is_field`] on
+    /// the [`VaultRef`] partition.
+    ///
+    /// The predicate names the **operator-authored Vault reference
+    /// shape** — the bare-path shorthand
+    /// (`jwt_secret: { vault: secret/data/prod/app }`) versus the
+    /// explicit `{path, field}` extraction pair
+    /// (`jwt_secret: { vault: { path: …, field: … } }`). Tag-side peer
+    /// of the shared [`SecretRefShape`] projection carried by
+    /// [`Self::shape`]: for [`VaultRef`] the tag axis and the shape
+    /// axis agree pointwise (`Self::Path → SecretRefShape::Whole`,
+    /// `Self::Field → SecretRefShape::Field`), and the
+    /// `vault_ref_tag_axis_agrees_with_shape_axis` pin refuses a future
+    /// third variant that would break that agreement without also
+    /// extending the sibling-predicate pair. The cross-type divergence
+    /// lives one axis up: the shape projection normalizes
+    /// [`SopsRef::File`] and [`Self::Path`] onto the same
+    /// [`SecretRefShape::Whole`] label, while the tag-side predicates
+    /// [`SopsRef::is_file`] and [`Self::is_path`] name each
+    /// operator-authored form under its own per-backend tag — pinned by
+    /// `sops_and_vault_tag_axes_split_the_shared_shape_whole_cell`.
+    ///
+    /// See [`SopsRef::is_file`] for the full contract; same
+    /// per-backend authored-tag axis carried under the Vault backend
+    /// with the ref-type-specific `Path` naming rather than SOPS's
+    /// `File`. `Vault::Path` names the tagged bare-path shorthand even
+    /// though the `vault read -field=value <path>` dispatch picks a
+    /// specific field name — the shape axis (both the shared
+    /// projection and this tag-side predicate) classifies the
+    /// **operator-authored config shape**, not the resolver's
+    /// downstream dispatch, which is precisely the invariant a
+    /// telemetry / legend consumer wants.
+    ///
+    /// The two sibling predicates [`Self::is_path`] / [`Self::is_field`]
+    /// form a closed disjoint partition of the [`VaultRef`] variant
+    /// space — every value satisfies exactly one — pinned by
+    /// [`tests::vault_ref_predicates_are_a_closed_binary_partition`].
+    #[must_use]
+    pub const fn is_path(&self) -> bool {
+        matches!(self, Self::Path(_))
+    }
+
+    /// Returns `true` for [`Self::Field`] regardless of the inner
+    /// `{path, field}` payload; tag-side sibling of [`Self::is_path`]
+    /// on the [`VaultRef`] partition. See [`Self::is_path`] for the
+    /// full contract — same authored-shape axis, opposite polarity.
+    #[must_use]
+    pub const fn is_field(&self) -> bool {
+        matches!(self, Self::Field { .. })
     }
 }
 
@@ -3944,5 +4067,226 @@ mod tests {
         assert_eq!(yaml, "whole\n");
         let yaml = serde_yaml::to_string(&SecretRefShape::Field).unwrap();
         assert_eq!(yaml, "field\n");
+    }
+
+    // ── SopsRef / VaultRef tag-side sibling predicates ───────────────
+    //
+    // The `is_file` / `is_field` pair on SopsRef and the `is_path` /
+    // `is_field` pair on VaultRef close the last predicate-free
+    // payload-bearing untagged binary enums in the crate. Peer of the
+    // tag-side sweep on SecretSource (commit `87ed70a`) and the
+    // shared-projection ancestor SecretRefShape which already carried
+    // `is_whole` / `is_field` on the cross-type extraction-shape axis.
+    // The four pins below lock (1) per-variant polarity per type, (2)
+    // the closed binary partition per type, (3) payload-independence
+    // per type, (4) tag-axis ↔ shape-axis pointwise agreement per type,
+    // and (5) the cross-type divergence — SopsRef::is_file and
+    // VaultRef::is_path split the shared SecretRefShape::Whole cell
+    // that the projection collapses them onto.
+
+    #[test]
+    fn sops_ref_predicates_return_true_only_for_matching_variant() {
+        // Per-variant polarity pin over every (predicate, variant) cell
+        // of the 2×2 grid: each sibling predicate returns `true` on its
+        // own tag and `false` on the other. Catches a future edit that
+        // widened `is_file` to also admit the `Field { .. }` shape (or
+        // narrowed `is_field` to reject a specific payload shape):
+        // either drift fails a cell of the grid.
+        let file = SopsRef::File(PathBuf::from("secrets/prod.yaml"));
+        let field = SopsRef::Field {
+            file: PathBuf::from("secrets/prod.yaml"),
+            field: "jwt_secret".into(),
+        };
+
+        assert!(file.is_file());
+        assert!(!file.is_field());
+        assert!(field.is_field());
+        assert!(!field.is_file());
+    }
+
+    #[test]
+    fn vault_ref_predicates_return_true_only_for_matching_variant() {
+        // Per-variant polarity pin over every (predicate, variant) cell
+        // of the 2×2 grid on the sibling Vault ref-type. Same shape as
+        // the SopsRef pin — the two types carry parallel sibling
+        // predicates on the same authored-shape axis, spelled with the
+        // ref-type-specific `Path` / `File` naming rather than the
+        // shared shape-axis `Whole` label.
+        let path = VaultRef::Path("secret/data/prod/app".into());
+        let field = VaultRef::Field {
+            path: "secret/data/prod/app".into(),
+            field: "password".into(),
+        };
+
+        assert!(path.is_path());
+        assert!(!path.is_field());
+        assert!(field.is_field());
+        assert!(!field.is_path());
+    }
+
+    #[test]
+    fn sops_ref_predicates_are_a_closed_binary_partition() {
+        // Structural law: for every canonical SopsRef, exactly one of
+        // is_file / is_field returns `true`. The `xor` shape catches
+        // both a drift that admits neither (adding a third variant
+        // without extending either predicate) and a drift that admits
+        // both (widening one predicate onto the other's cell). The
+        // witness set is the shared canonical-samples table used by
+        // the shape() pins, so a future third variant lands through
+        // one table rather than a bespoke case list per test.
+        for (sops, _) in canonical_sops_ref_shape_samples() {
+            let file = sops.is_file();
+            let field = sops.is_field();
+            assert!(
+                file ^ field,
+                "{sops:?} must satisfy exactly one of is_file / is_field",
+            );
+        }
+    }
+
+    #[test]
+    fn vault_ref_predicates_are_a_closed_binary_partition() {
+        // Structural law: for every canonical VaultRef, exactly one of
+        // is_path / is_field returns `true`. Mirror of the SopsRef pin
+        // on the sibling Vault ref-type.
+        for (vault, _) in canonical_vault_ref_shape_samples() {
+            let path = vault.is_path();
+            let field = vault.is_field();
+            assert!(
+                path ^ field,
+                "{vault:?} must satisfy exactly one of is_path / is_field",
+            );
+        }
+    }
+
+    #[test]
+    fn sops_ref_predicates_are_payload_independent() {
+        // Payload-independence pin: the tag-side answer is the same
+        // for every `File(path)` regardless of inner path content, and
+        // for every `Field { file, field }` regardless of inner
+        // file/field content. Distinguishes this tag-side predicate
+        // from any hypothetical payload-inspecting one, and pins the
+        // structural fact that the SopsRef partition axis is the
+        // top-level enum tag — nothing deeper.
+        for path in ["", "a.yaml", "/very/long/path/to/b.json"] {
+            let sops = SopsRef::File(PathBuf::from(path));
+            assert!(sops.is_file());
+            assert!(!sops.is_field());
+        }
+        for (file, field) in [("", ""), ("a.yaml", "k"), ("/p/q.json", "deeply.nested.k")] {
+            let sops = SopsRef::Field {
+                file: PathBuf::from(file),
+                field: field.into(),
+            };
+            assert!(sops.is_field());
+            assert!(!sops.is_file());
+        }
+    }
+
+    #[test]
+    fn vault_ref_predicates_are_payload_independent() {
+        // Payload-independence pin on the sibling Vault ref-type: the
+        // tag-side answer is the same for every `Path(text)` regardless
+        // of inner text content, and for every `Field { path, field }`
+        // regardless of inner content.
+        for p in ["", "p", "secret/data/prod/app"] {
+            let vault = VaultRef::Path(p.into());
+            assert!(vault.is_path());
+            assert!(!vault.is_field());
+        }
+        for (path, field) in [("", ""), ("p", "f"), ("secret/data/x", "password")] {
+            let vault = VaultRef::Field {
+                path: path.into(),
+                field: field.into(),
+            };
+            assert!(vault.is_field());
+            assert!(!vault.is_path());
+        }
+    }
+
+    #[test]
+    fn sops_ref_tag_axis_agrees_with_shape_axis() {
+        // For SopsRef the tag axis (is_file/is_field) and the shape
+        // axis (shape().is_whole/is_field) agree pointwise: File →
+        // Whole, Field → Field. This pin refuses a future edit that
+        // desynchronizes the two — either by adding a third SopsRef
+        // variant whose tag-side predicate answer does not line up
+        // with its shape() projection, or by mislabelling one axis
+        // relative to the other. The cross-type divergence lives one
+        // axis up (see
+        // sops_and_vault_tag_axes_split_the_shared_shape_whole_cell);
+        // per-type the two axes agree.
+        for (sops, expected_shape) in canonical_sops_ref_shape_samples() {
+            assert_eq!(sops.is_file(), expected_shape.is_whole());
+            assert_eq!(sops.is_field(), expected_shape.is_field());
+            assert_eq!(sops.shape(), expected_shape);
+        }
+    }
+
+    #[test]
+    fn vault_ref_tag_axis_agrees_with_shape_axis() {
+        // For VaultRef the tag axis (is_path/is_field) and the shape
+        // axis (shape().is_whole/is_field) agree pointwise: Path →
+        // Whole, Field → Field. Mirror of the SopsRef pin on the
+        // sibling Vault ref-type; same rationale for refusing an
+        // axis-desynchronizing edit.
+        for (vault, expected_shape) in canonical_vault_ref_shape_samples() {
+            assert_eq!(vault.is_path(), expected_shape.is_whole());
+            assert_eq!(vault.is_field(), expected_shape.is_field());
+            assert_eq!(vault.shape(), expected_shape);
+        }
+    }
+
+    #[test]
+    fn sops_and_vault_tag_axes_split_the_shared_shape_whole_cell() {
+        // Cross-type divergence pin — the load-bearing distinction
+        // between the per-type tag axes (SopsRef::is_file /
+        // VaultRef::is_path) and the shared shape axis
+        // (SecretRefShape::is_whole they both project onto): the shape
+        // projection normalizes SopsRef::File and VaultRef::Path onto
+        // the same SecretRefShape::Whole label, while the tag-side
+        // predicates keep the per-backend authored-form naming under
+        // its own tag. A consumer that wants the cross-backend
+        // whole-vs-field split reads ref.shape().is_whole(); one that
+        // wants the per-backend authored-tag reads
+        // sops.is_file() / vault.is_path().
+        //
+        // Without this pin a well-meaning refactor could route the
+        // tag-side predicates through shape().is_whole(), silently
+        // collapsing the per-backend authored-tag axis into the
+        // shared shape axis — the drift this test refuses.
+        let sops_file = SopsRef::File(PathBuf::from("secrets/prod.yaml"));
+        let vault_path = VaultRef::Path("secret/data/prod/app".into());
+
+        // Both project to the same shared Whole cell.
+        assert_eq!(sops_file.shape(), SecretRefShape::Whole);
+        assert_eq!(vault_path.shape(), SecretRefShape::Whole);
+        assert!(sops_file.shape().is_whole());
+        assert!(vault_path.shape().is_whole());
+
+        // The per-type tag axes disagree on which authored form
+        // produced that shared shape — Sops says `is_file`, Vault
+        // says `is_path`. Neither reads its own tag-side predicate
+        // through the other's naming.
+        assert!(sops_file.is_file());
+        assert!(vault_path.is_path());
+
+        // And the field-side agrees under a shared spelling: both
+        // types name the extracted-field shape as `is_field`,
+        // matching the shape-axis label pointwise. The witness set
+        // for the shared field-cell agreement is the two canonical
+        // Field samples on each type.
+        let sops_field = SopsRef::Field {
+            file: PathBuf::from("secrets/prod.yaml"),
+            field: "jwt_secret".into(),
+        };
+        let vault_field = VaultRef::Field {
+            path: "secret/data/prod/app".into(),
+            field: "password".into(),
+        };
+        assert_eq!(sops_field.shape(), SecretRefShape::Field);
+        assert_eq!(vault_field.shape(), SecretRefShape::Field);
+        assert!(sops_field.is_field());
+        assert!(vault_field.is_field());
     }
 }
