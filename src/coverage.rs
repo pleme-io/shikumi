@@ -1161,6 +1161,62 @@ impl HintSurface {
         Self::ValueKey,
         Self::EnvVar,
     ];
+
+    /// Returns `true` for [`Self::DeadKnob`]; equivalent to
+    /// `self == HintSurface::DeadKnob`.
+    ///
+    /// Tag-side sibling of the other three quartet predicates
+    /// ([`Self::is_stale_entry`], [`Self::is_value_key`],
+    /// [`Self::is_env_var`]): the closed-partition arm on the
+    /// coverage-hint surface tag lifts to a `Copy`-taking `const fn` on
+    /// the discriminant, so a consumer routing a [`SurfaceHint`] by
+    /// surface — a per-surface dashboard column, a `filter` over
+    /// [`HealthReport::hint_iter`], a per-tag remediation counter —
+    /// can classify without spelling `hint.surface ==
+    /// HintSurface::DeadKnob` at its own site (and without materializing
+    /// a synthetic four-arm `match` when only one surface is of
+    /// interest). Peer to the trio-shape sibling predicates on
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] and the octet-shape sibling
+    /// predicates on [`crate::SecretBackendKind`].
+    ///
+    /// The four sibling predicates form a closed disjoint partition of
+    /// [`Self::ALL`] — every variant satisfies exactly one — pinned by
+    /// [`tests::hint_surface_predicates_are_a_closed_quaternary_partition`].
+    /// Agreement with the closed-equality check against each variant is
+    /// pinned pointwise over [`Self::ALL`] by
+    /// [`tests::hint_surface_predicates_agree_with_equality_pointwise`],
+    /// so a future edit whose `matches!` arm silently accepts a second
+    /// variant fails there before drifting through any consumer site.
+    #[must_use]
+    pub const fn is_dead_knob(self) -> bool {
+        matches!(self, Self::DeadKnob)
+    }
+
+    /// Returns `true` for [`Self::StaleEntry`]; equivalent to
+    /// `self == HintSurface::StaleEntry`. Quartet sibling of
+    /// [`Self::is_dead_knob`]; see it for the full contract.
+    #[must_use]
+    pub const fn is_stale_entry(self) -> bool {
+        matches!(self, Self::StaleEntry)
+    }
+
+    /// Returns `true` for [`Self::ValueKey`]; equivalent to
+    /// `self == HintSurface::ValueKey`. Quartet sibling of
+    /// [`Self::is_dead_knob`]; see it for the full contract.
+    #[must_use]
+    pub const fn is_value_key(self) -> bool {
+        matches!(self, Self::ValueKey)
+    }
+
+    /// Returns `true` for [`Self::EnvVar`]; equivalent to
+    /// `self == HintSurface::EnvVar`. Quartet sibling of
+    /// [`Self::is_dead_knob`]; see it for the full contract.
+    #[must_use]
+    pub const fn is_env_var(self) -> bool {
+        matches!(self, Self::EnvVar)
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -6973,6 +7029,97 @@ tags: []
                 HintSurface::ALL.contains(&expected),
                 "HintSurface::ALL must contain {expected:?}",
             );
+        }
+    }
+
+    // ─── HintSurface sibling predicates — quartet-partition arms
+    // ─── on the coverage-hint surface tag ───────────────────────────
+
+    #[test]
+    fn hint_surface_is_dead_knob_true_only_for_dead_knob_variant() {
+        // Per-variant polarity pin on the DeadKnob corner. Sibling of
+        // the per-variant polarity pins on the crate's trio-shape kind
+        // axes (`config_source_kind_is_defaults_true_only_for_defaults_variant`,
+        // `figment_source_kind_agrees_with_predicates_pointwise`) and
+        // the octet-shape sibling pins on `SecretBackendKind`. A
+        // future edit that flips the `matches!` arm on `is_dead_knob`
+        // fails here before the closed-quaternary-partition pin masks
+        // it as a coincidence.
+        assert!(HintSurface::DeadKnob.is_dead_knob());
+        assert!(!HintSurface::StaleEntry.is_dead_knob());
+        assert!(!HintSurface::ValueKey.is_dead_knob());
+        assert!(!HintSurface::EnvVar.is_dead_knob());
+    }
+
+    #[test]
+    fn hint_surface_is_stale_entry_true_only_for_stale_entry_variant() {
+        assert!(!HintSurface::DeadKnob.is_stale_entry());
+        assert!(HintSurface::StaleEntry.is_stale_entry());
+        assert!(!HintSurface::ValueKey.is_stale_entry());
+        assert!(!HintSurface::EnvVar.is_stale_entry());
+    }
+
+    #[test]
+    fn hint_surface_is_value_key_true_only_for_value_key_variant() {
+        assert!(!HintSurface::DeadKnob.is_value_key());
+        assert!(!HintSurface::StaleEntry.is_value_key());
+        assert!(HintSurface::ValueKey.is_value_key());
+        assert!(!HintSurface::EnvVar.is_value_key());
+    }
+
+    #[test]
+    fn hint_surface_is_env_var_true_only_for_env_var_variant() {
+        assert!(!HintSurface::DeadKnob.is_env_var());
+        assert!(!HintSurface::StaleEntry.is_env_var());
+        assert!(!HintSurface::ValueKey.is_env_var());
+        assert!(HintSurface::EnvVar.is_env_var());
+    }
+
+    #[test]
+    fn hint_surface_predicates_are_a_closed_quaternary_partition() {
+        // Every HintSurface::ALL cell satisfies exactly one of the four
+        // sibling predicates: none satisfies two, none satisfies zero.
+        // This is the quaternary-partition analogue of the trio-shape
+        // partition pin on the shikumi-side kind axis
+        // (`config_source_kind_predicates_are_a_closed_ternary_partition`)
+        // and the binary-partition pins on the crate's closed binary
+        // axes (`partition_face_predicates_are_a_closed_binary_partition`,
+        // `secret_ref_shape_predicates_are_a_closed_binary_partition`,
+        // `attribution_axis_predicates_are_a_closed_binary_partition`).
+        // A future variant landing on `HintSurface` without its own
+        // sibling predicate collapses the partition to "zero", failing
+        // here before drifting through any consumer routing on the
+        // surface tag.
+        for s in HintSurface::ALL.iter().copied() {
+            let hits = usize::from(s.is_dead_knob())
+                + usize::from(s.is_stale_entry())
+                + usize::from(s.is_value_key())
+                + usize::from(s.is_env_var());
+            assert_eq!(
+                hits, 1,
+                "HintSurface::{s:?} must satisfy exactly one of \
+                 is_dead_knob/is_stale_entry/is_value_key/is_env_var \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_predicates_agree_with_equality_pointwise() {
+        // The tag-alone equality-agreement law over HintSurface::ALL,
+        // matching the shape of
+        // `config_source_kind_predicates_agree_with_equality_pointwise`.
+        // Catches the dual case where a predicate's `matches!` arm
+        // silently accepts a second variant (say a copy-paste that
+        // widened `is_value_key` to `Self::ValueKey | Self::EnvVar`)
+        // — the closed-quaternary-partition pin catches "zero"; this
+        // pin catches "two on the same corner without flipping a
+        // second corner's hits down to zero".
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(s.is_dead_knob(), s == HintSurface::DeadKnob);
+            assert_eq!(s.is_stale_entry(), s == HintSurface::StaleEntry);
+            assert_eq!(s.is_value_key(), s == HintSurface::ValueKey);
+            assert_eq!(s.is_env_var(), s == HintSurface::EnvVar);
         }
     }
 
