@@ -177,6 +177,73 @@ pub enum OutputFormat {
     Json,
 }
 
+impl OutputFormat {
+    /// Every [`OutputFormat`] variant in declaration order — the
+    /// CLI-side emission-format peer of [`TierArg::ALL`] (the CLI-side
+    /// tier tag) and of [`crate::discovery::Format::ALL`] (the shikumi
+    /// config-file-format axis). The emission axis is deliberately
+    /// narrower than the read axis: the four-cell parser-format space
+    /// (YAML/TOML/lisp/nix/blue) folds down to a two-cell emitter
+    /// space (YAML + JSON) because JSON is the ubiquitous machine-
+    /// readable escape hatch every jq/downstream-pipeline consumer
+    /// speaks, and TOML/lisp/nix/blue add no operator-facing round-
+    /// tripping benefit over YAML at emission time.
+    ///
+    /// Consumers iterate this to enumerate every operator-selectable
+    /// `--format` value without hand-listing variants — a shell-
+    /// completion helper listing the allowed emissions, a
+    /// documentation renderer covering every `<APP> config-show
+    /// --format` value, a `for fmt in OutputFormat::ALL` loop in a
+    /// fleet-wide smoke test that dispatches every emitter through
+    /// [`ConfigShowCommand::run`]. A new [`OutputFormat`] variant is
+    /// picked up here in one place and flows through every ALL-driven
+    /// caller automatically.
+    pub const ALL: &'static [Self] = &[Self::Yaml, Self::Json];
+
+    /// Returns `true` for [`Self::Yaml`]; equivalent to
+    /// `self == OutputFormat::Yaml`.
+    ///
+    /// CLI-side emission-axis sibling of the shikumi-side
+    /// [`crate::discovery::Format::is_yaml`] parser-axis predicate —
+    /// same closed-partition shape, one axis over (emission not
+    /// read). The two-arm partition on the CLI operator-facing
+    /// emission tag lifts to a `Copy`-taking `const fn` on the
+    /// discriminant, so a consumer routing a [`ConfigShowCommand`]
+    /// by emission — a fleet-wide operator-facing log line
+    /// ("emitted as yaml"), a completion helper filtering the
+    /// `--format` value space, a telemetry counter keyed on the
+    /// operator's emission selection — can classify without spelling
+    /// `self.format == OutputFormat::Yaml` at its own site.
+    ///
+    /// The two sibling predicates form a closed disjoint partition
+    /// of [`Self::ALL`] — every variant satisfies exactly one —
+    /// pinned by
+    /// [`tests::output_format_predicates_are_a_closed_binary_partition`].
+    /// Agreement with the closed-equality check against each variant
+    /// is pinned pointwise over [`Self::ALL`] by
+    /// [`tests::output_format_predicates_agree_with_equality_pointwise`],
+    /// so a future edit whose `matches!` arm silently accepts a
+    /// second variant fails there before drifting through any
+    /// consumer site.
+    ///
+    /// Peer of the binary-partition closures on
+    /// [`crate::SecretRefShape`] (`aa30052`) and
+    /// [`crate::PartitionFace`] (`990892e`) — same closed-binary
+    /// shape, applied to the CLI-side emission format tag.
+    #[must_use]
+    pub const fn is_yaml(self) -> bool {
+        matches!(self, Self::Yaml)
+    }
+
+    /// Returns `true` for [`Self::Json`]; equivalent to
+    /// `self == OutputFormat::Json`. Sibling of [`Self::is_yaml`];
+    /// see [`Self::is_yaml`] for the full contract.
+    #[must_use]
+    pub const fn is_json(self) -> bool {
+        matches!(self, Self::Json)
+    }
+}
+
 /// The clap subcommand every TieredConfig consumer pulls in.
 ///
 /// Drop into your `Commands` enum; the `run` method takes the type
@@ -489,6 +556,98 @@ mod tests {
             assert_eq!(arg.is_default(), arg == TierArg::Default);
             assert_eq!(arg.is_custom(), arg == TierArg::Custom);
             assert_eq!(arg.is_env(), arg == TierArg::Env);
+        }
+    }
+
+    // ─── OutputFormat sibling predicates — binary-partition arms
+    // ─── on the CLI operator-facing emission-format tag ────────────
+
+    #[test]
+    fn output_format_all_enumerates_every_variant_in_declaration_order() {
+        // Exhaustiveness pin on OutputFormat::ALL: every variant
+        // appears exactly once and in declaration order. The `match`
+        // below is the compile-time hook — a future variant landing
+        // on OutputFormat must extend both the match arms and
+        // OutputFormat::ALL in lockstep. Peer of
+        // `tier_arg_all_enumerates_every_variant_in_declaration_order`
+        // on the CLI tier tag and of
+        // `format_all_covers_every_variant` on the shikumi parser
+        // format tag.
+        for fmt in OutputFormat::ALL.iter().copied() {
+            match fmt {
+                OutputFormat::Yaml | OutputFormat::Json => {}
+            }
+            assert!(
+                OutputFormat::ALL.contains(&fmt),
+                "OutputFormat::ALL must contain {fmt:?}",
+            );
+        }
+        assert_eq!(OutputFormat::ALL.len(), 2);
+        assert_eq!(OutputFormat::ALL[0], OutputFormat::Yaml);
+        assert_eq!(OutputFormat::ALL[1], OutputFormat::Json);
+    }
+
+    #[test]
+    fn output_format_is_yaml_true_only_for_yaml_variant() {
+        // Per-variant polarity pin on the Yaml corner of the
+        // OutputFormat binary partition. Sibling of
+        // `tier_arg_is_bare_true_only_for_bare_variant` on the CLI
+        // tier tag and of `format_is_yaml_true_only_for_yaml_variant`
+        // on the shikumi parser format tag — same shape, one axis
+        // over (emission not read) and three cells narrower (no
+        // TOML/lisp/nix/blue emitter arms).
+        assert!(OutputFormat::Yaml.is_yaml());
+        assert!(!OutputFormat::Json.is_yaml());
+    }
+
+    #[test]
+    fn output_format_is_json_true_only_for_json_variant() {
+        assert!(!OutputFormat::Yaml.is_json());
+        assert!(OutputFormat::Json.is_json());
+    }
+
+    #[test]
+    fn output_format_predicates_are_a_closed_binary_partition() {
+        // Every OutputFormat::ALL cell satisfies exactly one of the
+        // two sibling predicates: none satisfies two, none satisfies
+        // zero. The binary-partition analogue of the quinary-
+        // partition pin on TierArg
+        // (`tier_arg_predicates_are_a_closed_quinary_partition`) and
+        // of the quinary-partition pin on Format
+        // (`format_predicates_are_a_closed_quinary_partition`), and
+        // the CLI operator-surface peer of the binary-partition
+        // closures on SecretRefShape and PartitionFace. A future
+        // third OutputFormat variant landing without its own sibling
+        // predicate collapses the partition to zero on that variant,
+        // failing here before drifting through any operator dispatch
+        // site (a `--format` documentation renderer, a shell-
+        // completion helper, the [`OutputFormat::Yaml`] / [`OutputFormat::Json`]
+        // dispatch inside [`ConfigShowCommand::run`]).
+        for fmt in OutputFormat::ALL.iter().copied() {
+            let hits = usize::from(fmt.is_yaml()) + usize::from(fmt.is_json());
+            assert_eq!(
+                hits, 1,
+                "OutputFormat::{fmt:?} must satisfy exactly one of \
+                 is_yaml/is_json (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_predicates_agree_with_equality_pointwise() {
+        // The tag-alone equality-agreement law over OutputFormat::ALL,
+        // matching the shape of
+        // `tier_arg_predicates_agree_with_equality_pointwise` on the
+        // CLI tier tag. Catches the dual case where a predicate's
+        // `matches!` arm silently accepts a second variant (say a
+        // copy-paste that widened `is_yaml` to `Self::Yaml | Self::Json`)
+        // — the closed-binary-partition pin catches the "zero" side
+        // of that drift by flipping the robbed corner's hits from 1
+        // to 0; this pin catches the "two on the same corner" side
+        // without needing another corner to change.
+        for fmt in OutputFormat::ALL.iter().copied() {
+            assert_eq!(fmt.is_yaml(), fmt == OutputFormat::Yaml);
+            assert_eq!(fmt.is_json(), fmt == OutputFormat::Json);
         }
     }
 }
