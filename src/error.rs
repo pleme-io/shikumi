@@ -976,6 +976,62 @@ impl AttributionRule {
         self.confidence().is_fallback()
     }
 
+    /// Returns `true` for [`Self::FileBySource`] only.
+    ///
+    /// Per-variant sibling of the closed quintet partition over the rule
+    /// axis. [`Self::is_exact`] / [`Self::is_fallback`] answer the
+    /// coarser *confidence* meta-partition; these five answer "which
+    /// rule fired?" at the rule's own altitude, so a consumer holding a
+    /// captured [`AttributionRule`] stops spelling
+    /// `rule == AttributionRule::FileBySource` at its own site. Same
+    /// shape as [`ShikumiErrorKind::is_not_found`] on the error-kind
+    /// axis and [`ConfigSourceKind::is_file`] on the layer-kind axis.
+    /// The quintet is pinned closed by
+    /// `attribution_rule_predicates_are_a_closed_quintet_partition`, and
+    /// refines the confidence, layer-kind, and metadata-axis
+    /// projections by the three `attribution_rule_predicates_refine_*`
+    /// pins.
+    #[must_use]
+    pub const fn is_file_by_source(self) -> bool {
+        matches!(self, Self::FileBySource)
+    }
+
+    /// Returns `true` for [`Self::FileByMetadataName`] only.
+    ///
+    /// Sibling of [`Self::is_file_by_source`]; see it for the partition
+    /// rationale.
+    #[must_use]
+    pub const fn is_file_by_metadata_name(self) -> bool {
+        matches!(self, Self::FileByMetadataName)
+    }
+
+    /// Returns `true` for [`Self::EnvByPrefix`] only.
+    ///
+    /// Sibling of [`Self::is_file_by_source`]; see it for the partition
+    /// rationale.
+    #[must_use]
+    pub const fn is_env_by_prefix(self) -> bool {
+        matches!(self, Self::EnvByPrefix)
+    }
+
+    /// Returns `true` for [`Self::EnvByUniqueness`] only.
+    ///
+    /// Sibling of [`Self::is_file_by_source`]; see it for the partition
+    /// rationale.
+    #[must_use]
+    pub const fn is_env_by_uniqueness(self) -> bool {
+        matches!(self, Self::EnvByUniqueness)
+    }
+
+    /// Returns `true` for [`Self::DefaultsByCodeUniqueness`] only.
+    ///
+    /// Sibling of [`Self::is_file_by_source`]; see it for the partition
+    /// rationale.
+    #[must_use]
+    pub const fn is_defaults_by_code_uniqueness(self) -> bool {
+        matches!(self, Self::DefaultsByCodeUniqueness)
+    }
+
     /// [`ConfigSourceKind`] of the layer this rule attributes to:
     /// [`ConfigSourceKind::File`] for the file-axis rules
     /// ([`Self::FileBySource`], [`Self::FileByMetadataName`]),
@@ -4944,6 +5000,145 @@ mod tests {
                 rule.is_fallback(),
                 rule.confidence() == AttributionConfidence::Fallback,
                 "is_fallback must agree with confidence == Fallback on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_per_variant_predicates_are_true_only_for_their_own_variant() {
+        // Per-variant polarity pin on each of the five corners. Mirror
+        // of `shikumi_error_kind_is_*_true_only_for_*_variant` on the
+        // error-kind axis and `config_source_kind_is_defaults_...` on
+        // the layer-kind axis: pin what each sibling returns on every
+        // cell of AttributionRule::ALL, so a `matches!` arm that
+        // silently widened to admit a second variant fails here rather
+        // than drifting through every consumer's classification.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_file_by_source(),
+                rule == AttributionRule::FileBySource,
+                "is_file_by_source must hold only on FileBySource, not {rule:?}",
+            );
+            assert_eq!(
+                rule.is_file_by_metadata_name(),
+                rule == AttributionRule::FileByMetadataName,
+                "is_file_by_metadata_name must hold only on FileByMetadataName, not {rule:?}",
+            );
+            assert_eq!(
+                rule.is_env_by_prefix(),
+                rule == AttributionRule::EnvByPrefix,
+                "is_env_by_prefix must hold only on EnvByPrefix, not {rule:?}",
+            );
+            assert_eq!(
+                rule.is_env_by_uniqueness(),
+                rule == AttributionRule::EnvByUniqueness,
+                "is_env_by_uniqueness must hold only on EnvByUniqueness, not {rule:?}",
+            );
+            assert_eq!(
+                rule.is_defaults_by_code_uniqueness(),
+                rule == AttributionRule::DefaultsByCodeUniqueness,
+                "is_defaults_by_code_uniqueness must hold only on DefaultsByCodeUniqueness, not {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_predicates_are_a_closed_quintet_partition() {
+        // Every cell of AttributionRule::ALL satisfies exactly one of
+        // the five siblings — none two, none zero. The quintet analogue
+        // of `shikumi_error_kind_predicates_are_a_closed_septet_partition`
+        // and `secret_error_kind_...`: a future sixth rule variant that
+        // lands without its own sibling arm satisfies zero predicates
+        // and fails here, before a consumer silently classifies it
+        // under the negation of an existing arm.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_file_by_source())
+                + usize::from(rule.is_file_by_metadata_name())
+                + usize::from(rule.is_env_by_prefix())
+                + usize::from(rule.is_env_by_uniqueness())
+                + usize::from(rule.is_defaults_by_code_uniqueness());
+            assert_eq!(
+                held, 1,
+                "exactly one sibling predicate must hold on {rule:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_predicates_refine_confidence() {
+        // Cross-partition refinement law on the (exact × fallback)
+        // meta-axis: the finer per-variant quintet must compose back
+        // into the coarser confidence binary exactly. Mirror of
+        // `shikumi_error_kind_figment_extract_siblings_partition_is_figment_bearing`.
+        // A future rule whose confidence assignment and sibling
+        // membership disagree — e.g. a new equality-based rule filed
+        // under Fallback in `confidence()` — fails here.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_exact(),
+                rule.is_file_by_source()
+                    || rule.is_file_by_metadata_name()
+                    || rule.is_env_by_prefix(),
+                "the exact-confidence arm must be exactly the three equality-based siblings on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_fallback(),
+                rule.is_env_by_uniqueness() || rule.is_defaults_by_code_uniqueness(),
+                "the fallback-confidence arm must be exactly the two uniqueness-based siblings on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_predicates_refine_layer_kind() {
+        // Refinement law on the (file × env × defaults) layer-kind axis,
+        // stated through ConfigSourceKind's own sibling predicates
+        // (commit 9600b8b) rather than by equality. Pins that the rule
+        // quintet and the layer-kind trio cannot drift apart: the two
+        // file-axis rules are exactly the file-kind cell, the two
+        // env-axis rules exactly the env-kind cell, the single defaults
+        // rule exactly the defaults-kind cell.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.layer_kind().is_file(),
+                rule.is_file_by_source() || rule.is_file_by_metadata_name(),
+                "the file layer-kind cell must be exactly the two file-axis siblings on {rule:?}",
+            );
+            assert_eq!(
+                rule.layer_kind().is_env(),
+                rule.is_env_by_prefix() || rule.is_env_by_uniqueness(),
+                "the env layer-kind cell must be exactly the two env-axis siblings on {rule:?}",
+            );
+            assert_eq!(
+                rule.layer_kind().is_defaults(),
+                rule.is_defaults_by_code_uniqueness(),
+                "the defaults layer-kind cell must be exactly the one defaults-axis sibling on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_predicates_refine_metadata_axis() {
+        // Refinement law on the third orthogonal projection, the
+        // (metadata-source × metadata-name) dispatch axis, stated
+        // through AttributionAxis's own sibling predicates (commit
+        // afccd9f). Together with the confidence and layer-kind
+        // refinement pins this closes the quintet against all three
+        // orthogonal projections `AttributionCoordinates` is built
+        // from, so the per-variant siblings and the coordinate cube
+        // cannot disagree on any cell.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.metadata_axis().is_metadata_source(),
+                rule.is_file_by_source() || rule.is_defaults_by_code_uniqueness(),
+                "the metadata-source axis cell must be exactly the two source-dispatched siblings on {rule:?}",
+            );
+            assert_eq!(
+                rule.metadata_axis().is_metadata_name(),
+                rule.is_file_by_metadata_name()
+                    || rule.is_env_by_prefix()
+                    || rule.is_env_by_uniqueness(),
+                "the metadata-name axis cell must be exactly the three name-dispatched siblings on {rule:?}",
             );
         }
     }
