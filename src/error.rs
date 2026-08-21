@@ -735,9 +735,73 @@ impl FieldPathLocalization {
     /// pattern ([`AttributionConfidence::is_fallback`],
     /// [`crate::FormatProvenance::is_figment_builtin`],
     /// [`AttributionRule::is_fallback`]).
+    ///
+    /// Doubles as the per-variant sibling of [`Self::is_localized`] /
+    /// [`Self::is_figment_unlocalized`] on the [`Self::NotApplicable`]
+    /// corner: the coarser applicable/not-applicable meta-partition
+    /// and the finer per-variant ternary partition agree on this cell
+    /// because [`Self::NotApplicable`] is the sole inhabitant of the
+    /// not-applicable side. Pinned pointwise by
+    /// [`tests::field_path_localization_per_variant_predicates_refine_is_applicable`].
     #[must_use]
     pub const fn is_not_applicable(self) -> bool {
         matches!(self, Self::NotApplicable)
+    }
+
+    /// Returns `true` for [`Self::Localized`]; the per-variant sibling
+    /// on the applicable side of the partition.
+    ///
+    /// One source of truth for the "did figment attach a non-empty
+    /// dotted field path?" question over [`FieldPathLocalization`].
+    /// [`Self::is_applicable`] answers the coarser meta-question — is
+    /// the localization axis *carrying a signal* about figment-side
+    /// path attribution at all — which fuses [`Self::Localized`] and
+    /// [`Self::FigmentUnlocalized`] into one cell; a consumer that
+    /// only wants the "localized-with-path" answer (a structured-log
+    /// branch that renders the dotted path when present, a CLI filter
+    /// on `--filter-localization=localized`, a miette diagnostic that
+    /// annotates the source span when a leaf key is available, a
+    /// telemetry counter keyed on the "figment gave us a path" side of
+    /// the finer ternary) matches on this predicate instead of routing
+    /// through [`Self::is_applicable`] and a second `matches!` at
+    /// every site, or open-coding `matches!(loc,
+    /// FieldPathLocalization::Localized)` and paying the
+    /// closed-partition bookkeeping tax again.
+    ///
+    /// Peer sibling pattern on the same typescape discipline as
+    /// [`AttributionRule::is_file_by_source`] on the rule-axis quintet,
+    /// [`crate::ShikumiErrorKind::is_extract`] on the kind-axis septet,
+    /// and [`crate::ConfigSourceKind::is_file`] on the layer-kind trio.
+    /// Per-variant polarity pinned by
+    /// [`tests::field_path_localization_is_localized_true_only_for_localized_variant`];
+    /// the closed ternary partition over `Self::ALL` pinned by
+    /// [`tests::field_path_localization_per_variant_predicates_are_a_closed_ternary_partition`];
+    /// cross-partition refinement into the coarser applicable /
+    /// not-applicable meta-axis pinned by
+    /// [`tests::field_path_localization_per_variant_predicates_refine_is_applicable`].
+    #[must_use]
+    pub const fn is_localized(self) -> bool {
+        matches!(self, Self::Localized)
+    }
+
+    /// Returns `true` for [`Self::FigmentUnlocalized`]; the
+    /// per-variant sibling on the applicable side of the partition
+    /// alongside [`Self::is_localized`].
+    ///
+    /// Names the second half of the applicable meta-cell —
+    /// figment-bearing errors whose `path` slot is empty (typically a
+    /// top-level type mismatch, a deserializer error reported without
+    /// a key context, or a manually constructed `figment::Error`
+    /// lacking metadata). A consumer that wants to distinguish "we
+    /// have a figment error but no leaf-key path" from "we have a
+    /// figment error with a dotted path" without routing through
+    /// [`Self::is_applicable`] followed by a negated
+    /// [`Self::is_localized`] check matches this predicate directly.
+    /// See [`Self::is_localized`] for the full contract and peer
+    /// pattern.
+    #[must_use]
+    pub const fn is_figment_unlocalized(self) -> bool {
+        matches!(self, Self::FigmentUnlocalized)
     }
 }
 
@@ -6791,6 +6855,88 @@ mod tests {
                 loc.is_applicable(),
                 err.kind().is_figment_bearing(),
                 "loc.is_applicable() must agree with kind.is_figment_bearing() ({err:?}, loc={loc:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_is_localized_true_only_for_localized_variant() {
+        // Per-variant polarity pin on the Localized corner. Mirror of
+        // `attribution_rule_per_variant_predicates_are_true_only_for_their_own_variant`
+        // (AttributionRule quintet) and
+        // `shikumi_error_kind_is_extract_true_only_for_extract_variant`
+        // (ShikumiErrorKind septet): pin what each per-variant sibling
+        // returns on every cell of FieldPathLocalization::ALL so a
+        // `matches!` arm that silently widened to admit a second
+        // variant fails here rather than drifting through every
+        // consumer's classification.
+        assert!(FieldPathLocalization::Localized.is_localized());
+        assert!(!FieldPathLocalization::FigmentUnlocalized.is_localized());
+        assert!(!FieldPathLocalization::NotApplicable.is_localized());
+    }
+
+    #[test]
+    fn field_path_localization_is_figment_unlocalized_true_only_for_figment_unlocalized_variant() {
+        // Sibling per-variant polarity pin on the FigmentUnlocalized
+        // corner. Same rationale as
+        // `field_path_localization_is_localized_true_only_for_localized_variant`.
+        assert!(!FieldPathLocalization::Localized.is_figment_unlocalized());
+        assert!(FieldPathLocalization::FigmentUnlocalized.is_figment_unlocalized());
+        assert!(!FieldPathLocalization::NotApplicable.is_figment_unlocalized());
+    }
+
+    #[test]
+    fn field_path_localization_per_variant_predicates_are_a_closed_ternary_partition() {
+        // Every FieldPathLocalization::ALL cell satisfies exactly one
+        // of the three per-variant siblings — none satisfies two, none
+        // satisfies zero. Ternary analogue of
+        // `attribution_rule_predicates_are_a_closed_quintet_partition`
+        // on the rule axis and
+        // `config_source_kind_predicates_are_a_closed_ternary_partition`
+        // on the layer-kind axis. A future variant landing on
+        // FieldPathLocalization without its own sibling arm satisfies
+        // zero predicates and fails here, before a consumer silently
+        // classifies it under the negation of an existing arm.
+        for &loc in FieldPathLocalization::ALL {
+            let held = usize::from(loc.is_localized())
+                + usize::from(loc.is_figment_unlocalized())
+                + usize::from(loc.is_not_applicable());
+            assert_eq!(
+                held, 1,
+                "exactly one per-variant sibling must hold on {loc:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_per_variant_predicates_refine_is_applicable() {
+        // Cross-partition refinement law on the (applicable ×
+        // not-applicable) meta-axis: the finer per-variant ternary
+        // must compose back into the coarser applicable /
+        // not-applicable binary exactly. Mirror of
+        // `attribution_rule_predicates_refine_confidence` on the rule
+        // axis, where the finer quintet composes into the coarser
+        // (exact × fallback) confidence binary. A future edit that
+        // reclassified `FigmentUnlocalized` under the not-applicable
+        // side of `is_applicable` (or reclassified `NotApplicable`
+        // under the applicable side) while leaving the per-variant
+        // siblings unchanged fails here.
+        for &loc in FieldPathLocalization::ALL {
+            assert_eq!(
+                loc.is_applicable(),
+                loc.is_localized() || loc.is_figment_unlocalized(),
+                "the applicable meta-cell must be exactly the two per-variant siblings on {loc:?}",
+            );
+            // The not-applicable meta-cell is stated through the
+            // per-variant partition (negation of the applicable side)
+            // rather than the equality-with-itself tautology on the
+            // shared method: pins that the coarser and finer sides
+            // agree that `NotApplicable` is the sole inhabitant of
+            // the not-applicable half.
+            assert_eq!(
+                loc.is_not_applicable(),
+                !(loc.is_localized() || loc.is_figment_unlocalized()),
+                "the not-applicable meta-cell must be exactly the complement of the applicable siblings on {loc:?}",
             );
         }
     }
