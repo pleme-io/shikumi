@@ -3263,12 +3263,14 @@ impl ShikumiError {
     /// underlying variant — but the closed-enum return value composes
     /// further (it's `Copy + Eq + Hash`), where a `bool` does not.
     ///
-    /// Strict superset of [`Self::is_not_found`] and [`Self::is_parse`]:
-    /// `err.is_not_found()` is `err.kind() == ShikumiErrorKind::NotFound`,
-    /// and likewise for `is_parse`. The two predicates remain as
-    /// convenience accessors; new code that needs to distinguish more
-    /// than one kind should prefer this one accessor over a chain of
-    /// predicates.
+    /// Strict superset of the tag-side septet [`Self::is_not_found`] /
+    /// [`Self::is_parse`] / [`Self::is_watch`] / [`Self::is_io`] /
+    /// [`Self::is_figment`] / [`Self::is_extract`] /
+    /// [`Self::is_validation`]: each `is_X()` is
+    /// `self.kind() == ShikumiErrorKind::X`. The seven predicates
+    /// remain as convenience accessors; new code that needs to
+    /// distinguish more than one kind should prefer this one accessor
+    /// over a chain of predicates.
     ///
     /// The implementation is one exhaustive `match`, so a future
     /// [`ShikumiError`] variant landing forces a corresponding
@@ -3290,6 +3292,18 @@ impl ShikumiError {
     /// Returns `true` if this is a `NotFound` error. Convenience over
     /// [`Self::kind`]; equivalent to
     /// `self.kind() == ShikumiErrorKind::NotFound`.
+    ///
+    /// Tag-side sibling predicate over the closed seven-way
+    /// [`ShikumiError`] variant space. Peer of [`Self::is_parse`] /
+    /// [`Self::is_watch`] / [`Self::is_io`] / [`Self::is_figment`] /
+    /// [`Self::is_extract`] / [`Self::is_validation`] — the full
+    /// tag-side septet mirroring the kind-side septet on
+    /// [`ShikumiErrorKind::is_not_found`] et al. Pointwise-agreement
+    /// bridge with the kind-side predicate is pinned by
+    /// [`tests::shikumi_error_is_not_found_agrees_with_shikumi_error_kind_is_not_found_pointwise`];
+    /// the closed-septet partition on the tag-side (exactly one of the
+    /// seven predicates holds on every constructed error) is pinned by
+    /// [`tests::shikumi_error_predicates_are_a_closed_septet_partition`].
     #[must_use]
     pub fn is_not_found(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::NotFound)
@@ -3297,10 +3311,80 @@ impl ShikumiError {
 
     /// Returns `true` if this is a `Parse` error. Convenience over
     /// [`Self::kind`]; equivalent to
-    /// `self.kind() == ShikumiErrorKind::Parse`.
+    /// `self.kind() == ShikumiErrorKind::Parse`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
     #[must_use]
     pub fn is_parse(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Parse)
+    }
+
+    /// Returns `true` if this is a `Watch` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Watch`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    #[must_use]
+    pub fn is_watch(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::Watch)
+    }
+
+    /// Returns `true` if this is an `Io` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Io`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    #[must_use]
+    pub fn is_io(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::Io)
+    }
+
+    /// Returns `true` if this is a `Figment` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Figment`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Tag-side refinement of [`Self::is_figment_bearing`] — one of
+    /// the two figment-bearing corners
+    /// (`self.is_figment() || self.is_extract() ==
+    /// self.kind().is_figment_bearing()` pointwise, pinned by
+    /// [`tests::shikumi_error_figment_extract_siblings_partition_is_figment_bearing`]).
+    #[must_use]
+    pub fn is_figment(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::Figment)
+    }
+
+    /// Returns `true` if this is an `Extract` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Extract`. Tag-side sibling
+    /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// Tag-side refinement of [`Self::is_figment_bearing`] — the
+    /// other figment-bearing corner, peer of [`Self::is_figment`].
+    #[must_use]
+    pub fn is_extract(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::Extract)
+    }
+
+    /// Returns `true` if this is a `Validation` error. Convenience
+    /// over [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Validation`. Tag-side
+    /// sibling predicate; see [`Self::is_not_found`] for the full
+    /// contract.
+    #[must_use]
+    pub fn is_validation(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::Validation)
+    }
+
+    /// True iff this error's kind carries a boxed [`figment::Error`]
+    /// payload — the tag-side view of
+    /// [`ShikumiErrorKind::is_figment_bearing`] one altitude down.
+    ///
+    /// Convenience over [`Self::kind`]; equivalent to
+    /// `self.kind().is_figment_bearing()`. Consumers holding the
+    /// borrowed error stop routing through the kind projection at
+    /// the two figment-bearing corners
+    /// ([`Self::Figment`] / [`Self::Extract`]) named at the type level.
+    #[must_use]
+    pub fn is_figment_bearing(&self) -> bool {
+        self.kind().is_figment_bearing()
     }
 
     /// Returns the list of paths that were tried, if this is a `NotFound` error.
@@ -5549,6 +5633,163 @@ mod tests {
                 err.is_parse(),
                 err.kind() == ShikumiErrorKind::Parse,
                 "is_parse must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_watch_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_watch(),
+                err.kind() == ShikumiErrorKind::Watch,
+                "is_watch must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_io_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_io(),
+                err.kind() == ShikumiErrorKind::Io,
+                "is_io must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_figment_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_figment(),
+                err.kind() == ShikumiErrorKind::Figment,
+                "is_figment must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_extract_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_extract(),
+                err.kind() == ShikumiErrorKind::Extract,
+                "is_extract must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_validation_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_validation(),
+                err.kind() == ShikumiErrorKind::Validation,
+                "is_validation must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_predicates_are_a_closed_septet_partition() {
+        // Tag-side septet-partition pin, sibling of the kind-side
+        // `shikumi_error_kind_predicates_are_a_closed_septet_partition`
+        // one altitude up on the closed [`ShikumiErrorKind`] partition.
+        // Every value in the canonical construction table satisfies
+        // exactly one of the seven tag-side sibling predicates: none
+        // satisfies two, none satisfies zero. A future variant landing
+        // on ShikumiError without its own tag-side sibling predicate
+        // collapses the partition to "zero" on that constructed cell,
+        // failing here before drifting through any consumer site
+        // (a resolver holding the borrowed error routing on the
+        // tag-side answer before projecting through kind(), a
+        // structured-log field naming the tag-side variant, a
+        // cross-thread failure-tag capture on the borrowed error's
+        // owned payloads).
+        for (_, err) in one_per_kind() {
+            let hits = usize::from(err.is_not_found())
+                + usize::from(err.is_parse())
+                + usize::from(err.is_watch())
+                + usize::from(err.is_io())
+                + usize::from(err.is_figment())
+                + usize::from(err.is_extract())
+                + usize::from(err.is_validation());
+            assert_eq!(
+                hits, 1,
+                "{err:?} must satisfy exactly one of \
+                 is_not_found/is_parse/is_watch/is_io/is_figment/is_extract/is_validation \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_predicates_agree_pointwise_with_shikumi_error_kind_predicates() {
+        // Structural bridge between the tag-side septet and the
+        // kind-side septet: for every constructed error and every
+        // sibling arm, `err.is_X() == err.kind().is_X()`. Peer of
+        // `shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_not_found_pointwise`
+        // and its `..._is_parse` sibling — extending the pair of
+        // pre-existing pointwise-agreement pins to the full septet in
+        // one loop. A future rename or matches!-arm drift on either
+        // altitude fails here before the two altitudes silently
+        // disagree on any consumer site (a per-kind alert threshold
+        // reading the kind side and a resolver reading the tag side
+        // must classify the same error identically).
+        for (_, err) in one_per_kind() {
+            let k = err.kind();
+            assert_eq!(err.is_not_found(), k.is_not_found(), "not_found on {err:?}");
+            assert_eq!(err.is_parse(), k.is_parse(), "parse on {err:?}");
+            assert_eq!(err.is_watch(), k.is_watch(), "watch on {err:?}");
+            assert_eq!(err.is_io(), k.is_io(), "io on {err:?}");
+            assert_eq!(err.is_figment(), k.is_figment(), "figment on {err:?}");
+            assert_eq!(err.is_extract(), k.is_extract(), "extract on {err:?}");
+            assert_eq!(
+                err.is_validation(),
+                k.is_validation(),
+                "validation on {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_figment_extract_siblings_partition_is_figment_bearing() {
+        // Tag-side refinement law mirroring the kind-side
+        // `shikumi_error_kind_figment_extract_siblings_partition_is_figment_bearing`:
+        // the coarser tag-side meta-predicate `is_figment_bearing()`
+        // coincides pointwise with the disjunction of the two
+        // figment-bearing sibling predicates
+        // (`is_figment() ∨ is_extract()`) over the canonical
+        // construction table. A future third figment-bearing variant
+        // landing on ShikumiError must extend the sibling-predicate
+        // septet AND route through `is_figment_bearing`'s
+        // matches!-arm at the kind altitude; either half of the
+        // refinement drifting alone fails here.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_figment_bearing(),
+                err.is_figment() || err.is_extract(),
+                "figment-bearing must equal (is_figment ∨ is_extract) on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_is_figment_bearing_agrees_with_kind_is_figment_bearing_pointwise() {
+        // Structural bridge between the new tag-side convenience
+        // `ShikumiError::is_figment_bearing` and the pre-existing
+        // kind-side `ShikumiErrorKind::is_figment_bearing`: the
+        // tag-side accessor is the kind-side answer one altitude
+        // down. A future edit whose matches!-arm on either altitude
+        // silently drifts fails here before the two altitudes
+        // disagree on any consumer site.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_figment_bearing(),
+                err.kind().is_figment_bearing(),
+                "figment-bearing must agree across altitudes on {err:?}",
             );
         }
     }
