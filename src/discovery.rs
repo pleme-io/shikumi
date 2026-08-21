@@ -1455,6 +1455,104 @@ pub enum ParseFormatCoordinatesError {
     },
 }
 
+impl ParseFormatCoordinatesError {
+    /// True iff this rejection is [`Self::MissingSeparator`] — the input
+    /// carried no `:` separator between the two halves of the canonical
+    /// `<format>:<provenance>` scalar. The two label-check variants
+    /// ([`Self::UnknownFormat`] and [`Self::UnknownProvenance`]) both
+    /// return `false`.
+    ///
+    /// **The tag-only classifier on the structural-versus-label
+    /// polarity axis.** A consumer holding a freshly returned
+    /// [`ParseFormatCoordinatesError`] previously had two paths for
+    /// asking "is the failure the structural separator check, or a
+    /// per-half label rejection?", each leaking work: (a)
+    /// `matches!(err, ParseFormatCoordinatesError::MissingSeparator {
+    /// .. })` inline at every seam, a shape the exhaustiveness checker
+    /// cannot help keep in sync with a future variant addition (a
+    /// hypothetical `LeadingSeparator { .. }` fourth variant would
+    /// silently keep answering `false` at every inline `matches!` site);
+    /// or (b) an outer `match` decomposing the whole three-arm sum at
+    /// each classification site, forcing a re-declaration of the arms a
+    /// consumer that only wants the polarity does not care about.
+    ///
+    /// The tag-only sibling here answers the same question through a
+    /// single welded [`matches!`]: adding a fourth variant fails to
+    /// compile at this method's pattern in lockstep with
+    /// [`Self::is_unknown_format`] and [`Self::is_unknown_provenance`]
+    /// via the ternary-partition pin
+    /// [`tests::parse_format_coordinates_error_predicates_are_a_closed_ternary_partition`],
+    /// which fires when a new variant collapses the partition sum to
+    /// zero at that variant. Retry-policy dispatches that treat
+    /// separator-missing inputs uniformly (never worth retrying — no
+    /// prompt-completion heuristic recovers a missing separator) split
+    /// from the two label-check arms (potentially recoverable through
+    /// operator suggestions of nearby canonical labels) reach the
+    /// polarity through one method call.
+    ///
+    /// **Idiom-peer of the tag-side sibling-predicate closures on other
+    /// closed-partition error primitives.** The direct methodological
+    /// analogue of [`crate::ShikumiError`]'s
+    /// `is_watch`/`is_io`/`is_figment`/`is_extract`/`is_validation`
+    /// septet (commit `f881f6f`) and
+    /// [`crate::secret_client::SecretError`]'s
+    /// `is_not_found`/`is_unauthorized`/`is_unsupported`/`is_backend`/`is_shikumi`
+    /// quintet (commit `bc1db8f`): same routing shape, same
+    /// closed-partition contract on a payload-bearing error enum with
+    /// zero pre-existing tag-side siblings.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParseFormatCoordinatesError`] projects its polarity at compile
+    /// time too.
+    #[must_use]
+    pub const fn is_missing_separator(&self) -> bool {
+        matches!(self, Self::MissingSeparator { .. })
+    }
+
+    /// True iff this rejection is [`Self::UnknownFormat`] — the input
+    /// carried a `:` separator, but the format half (before the `:`)
+    /// did not match any canonical [`Format`] label (`yaml` / `toml` /
+    /// `lisp` / `nix`, or the recognized aliases `yml` / `lsp` / `el`).
+    /// The structural-check variant [`Self::MissingSeparator`] and the
+    /// mirror label-check variant [`Self::UnknownProvenance`] both
+    /// return `false`.
+    ///
+    /// Sibling of [`Self::is_missing_separator`] and
+    /// [`Self::is_unknown_provenance`] on the same closed ternary
+    /// partition; same routing rationale (see
+    /// [`Self::is_missing_separator`] docs). A retry-policy dispatch or
+    /// operator-facing suggestion engine ("did you mean `yaml`?") that
+    /// wants to fire only on the format-half rejection routes on this
+    /// predicate at the borrowed error without matching on the whole
+    /// three-arm sum.
+    #[must_use]
+    pub const fn is_unknown_format(&self) -> bool {
+        matches!(self, Self::UnknownFormat { .. })
+    }
+
+    /// True iff this rejection is [`Self::UnknownProvenance`] — the
+    /// input carried a `:` separator and a recognized format half, but
+    /// the provenance half (after the `:`) did not match any canonical
+    /// [`FormatProvenance`] label (`figment-builtin` / `shikumi-built`).
+    /// The structural-check variant [`Self::MissingSeparator`] and the
+    /// mirror label-check variant [`Self::UnknownFormat`] both return
+    /// `false`.
+    ///
+    /// Sibling of [`Self::is_missing_separator`] and
+    /// [`Self::is_unknown_format`] on the same closed ternary partition;
+    /// same routing rationale (see [`Self::is_missing_separator`] docs).
+    /// The provenance-half rejection is the deepest of the three
+    /// precedence levels — reached only when both the separator check
+    /// and the format-label check passed — so a diagnostic layer that
+    /// wants to surface "the format was recognized but its provenance
+    /// tag was not" as a distinct operator-facing hint routes on this
+    /// predicate.
+    #[must_use]
+    pub const fn is_unknown_provenance(&self) -> bool {
+        matches!(self, Self::UnknownProvenance { .. })
+    }
+}
+
 impl FromStr for FormatCoordinates {
     type Err = ParseFormatCoordinatesError;
 
@@ -7299,6 +7397,211 @@ mod tests {
                 panic!("unknown-provenance input must reject with UnknownProvenance: {other:?}",)
             }
         }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_is_missing_separator_true_only_for_missing_separator_variant()
+    {
+        // Per-variant polarity pin on the MissingSeparator corner of
+        // the `ParseFormatCoordinatesError` tag-side sibling-predicate
+        // trio. A future edit that flips the `matches!` arm on
+        // `ParseFormatCoordinatesError::is_missing_separator` fails
+        // here before the closed-partition pin below masks it.
+        // Payload-independence sub-pin: the answer is the same for
+        // every `MissingSeparator { input }` regardless of the input
+        // content — empty, short, structured, whitespace-only,
+        // unicode. Direct methodological analogue of
+        // `diff_line_is_removed_true_only_for_removed_variant` on the
+        // `DiffLine` tag-side trio (`deaa9b4`).
+        for payload in ["", "x", "yaml-no-colon", "  leading spaces", "no:c\u{2028}"] {
+            assert!(
+                ParseFormatCoordinatesError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_missing_separator(),
+                "MissingSeparator {{ input: {payload:?} }} must satisfy is_missing_separator",
+            );
+            assert!(
+                !ParseFormatCoordinatesError::UnknownFormat {
+                    label: payload.into(),
+                }
+                .is_missing_separator(),
+                "UnknownFormat {{ label: {payload:?} }} must not satisfy is_missing_separator",
+            );
+            assert!(
+                !ParseFormatCoordinatesError::UnknownProvenance {
+                    label: payload.into(),
+                }
+                .is_missing_separator(),
+                "UnknownProvenance {{ label: {payload:?} }} must not satisfy \
+                 is_missing_separator",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_is_unknown_format_true_only_for_unknown_format_variant() {
+        // Mirror per-variant polarity pin on the UnknownFormat corner.
+        for payload in ["", "vault", "YAML", "  yaml  ", "yaml-with-suffix"] {
+            assert!(
+                !ParseFormatCoordinatesError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_unknown_format(),
+                "MissingSeparator {{ input: {payload:?} }} must not satisfy is_unknown_format",
+            );
+            assert!(
+                ParseFormatCoordinatesError::UnknownFormat {
+                    label: payload.into(),
+                }
+                .is_unknown_format(),
+                "UnknownFormat {{ label: {payload:?} }} must satisfy is_unknown_format",
+            );
+            assert!(
+                !ParseFormatCoordinatesError::UnknownProvenance {
+                    label: payload.into(),
+                }
+                .is_unknown_format(),
+                "UnknownProvenance {{ label: {payload:?} }} must not satisfy is_unknown_format",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_is_unknown_provenance_true_only_for_unknown_provenance_variant()
+     {
+        // Mirror per-variant polarity pin on the UnknownProvenance
+        // corner — the deepest of the three precedence levels.
+        for payload in [
+            "",
+            "upstream-figment",
+            "SHIKUMI-BUILT",
+            "figment-builtin:extra",
+            "unknown-provenance-with-unicode-仕組み",
+        ] {
+            assert!(
+                !ParseFormatCoordinatesError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_unknown_provenance(),
+                "MissingSeparator {{ input: {payload:?} }} must not satisfy \
+                 is_unknown_provenance",
+            );
+            assert!(
+                !ParseFormatCoordinatesError::UnknownFormat {
+                    label: payload.into(),
+                }
+                .is_unknown_provenance(),
+                "UnknownFormat {{ label: {payload:?} }} must not satisfy is_unknown_provenance",
+            );
+            assert!(
+                ParseFormatCoordinatesError::UnknownProvenance {
+                    label: payload.into(),
+                }
+                .is_unknown_provenance(),
+                "UnknownProvenance {{ label: {payload:?} }} must satisfy is_unknown_provenance",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_predicates_are_a_closed_ternary_partition() {
+        // Every `ParseFormatCoordinatesError` value in the canonical
+        // sample table satisfies exactly one of the three sibling
+        // predicates: none satisfies two, none satisfies zero.
+        // Ternary-partition analogue of the pin
+        // `diff_line_predicates_are_a_closed_ternary_partition`
+        // (`deaa9b4`) on `DiffLine`, lifted here onto a payload-bearing
+        // parse-error primitive. A future fourth variant landing under
+        // `#[non_exhaustive]` without its own sibling predicate
+        // collapses the partition to zero on that variant, failing
+        // here before drifting through any retry-policy dispatch or
+        // operator-facing suggestion engine that routes on the polarity
+        // trio.
+        let errors = [
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: String::new(),
+            },
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: "no-colon-here-at-all".into(),
+            },
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: "unicode\u{2028}no colon 仕組み".into(),
+            },
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: String::new(),
+            },
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: "vault".into(),
+            },
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: "  yaml  ".into(),
+            },
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: String::new(),
+            },
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: "upstream-figment".into(),
+            },
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: "figment-builtin:extra".into(),
+            },
+        ];
+        for err in &errors {
+            let hits = usize::from(err.is_missing_separator())
+                + usize::from(err.is_unknown_format())
+                + usize::from(err.is_unknown_provenance());
+            assert_eq!(
+                hits, 1,
+                "ParseFormatCoordinatesError::{err:?} must satisfy exactly one of \
+                 is_missing_separator/is_unknown_format/is_unknown_provenance (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_predicates_agree_with_from_str_rejection_paths() {
+        // The three canonical rejection paths through
+        // `<FormatCoordinates as FromStr>::from_str` each land on the
+        // sibling predicate that names their rejection mode: an input
+        // with no `:` fires `is_missing_separator`; an input with a
+        // colon and an unrecognized format half fires
+        // `is_unknown_format`; an input with a colon, a recognized
+        // format half, and an unrecognized provenance half fires
+        // `is_unknown_provenance`. Cross-cuts the parser's
+        // precedence-order contract
+        // (`MissingSeparator → UnknownFormat → UnknownProvenance`)
+        // and pins that a future precedence swap between the two
+        // label-check arms would surface here before drifting through
+        // any consumer routing on the polarity trio. Sibling of the
+        // per-variant `format_coordinates_from_str_rejects_*` pins
+        // above, extended to the tag-side classifier surface.
+        let missing_sep: Result<FormatCoordinates, _> = "no-colon-here-at-all".parse();
+        let err = missing_sep.expect_err("input without `:` must reject");
+        assert!(
+            err.is_missing_separator(),
+            "expected is_missing_separator for {err:?}"
+        );
+        assert!(!err.is_unknown_format());
+        assert!(!err.is_unknown_provenance());
+
+        let unknown_fmt: Result<FormatCoordinates, _> = "vault:shikumi-built".parse();
+        let err = unknown_fmt.expect_err("input with unrecognized format half must reject");
+        assert!(!err.is_missing_separator());
+        assert!(
+            err.is_unknown_format(),
+            "expected is_unknown_format for {err:?}"
+        );
+        assert!(!err.is_unknown_provenance());
+
+        let unknown_prov: Result<FormatCoordinates, _> = "yaml:upstream-figment".parse();
+        let err = unknown_prov.expect_err("input with unrecognized provenance half must reject");
+        assert!(!err.is_missing_separator());
+        assert!(!err.is_unknown_format());
+        assert!(
+            err.is_unknown_provenance(),
+            "expected is_unknown_provenance for {err:?}"
+        );
     }
 
     #[test]
