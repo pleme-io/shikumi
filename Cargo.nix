@@ -8558,7 +8558,7 @@ rec {
           }
           {
             name = "rustls-webpki";
-            packageId = "rustls-webpki 0.103.14";
+            packageId = "rustls-webpki 0.103.15";
             rename = "webpki";
             usesDefaultFeatures = false;
             features = [ "alloc" ];
@@ -8674,11 +8674,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "alloc" "default" "std" ];
       };
-      "rustls-webpki 0.103.14" = rec {
+      "rustls-webpki 0.103.15" = rec {
         crateName = "rustls-webpki";
-        version = "0.103.14";
+        version = "0.103.15";
         edition = "2021";
-        sha256 = "0njk28gvbqrsfg1b5r35y4f80n37kcjylj72fpc0k0g60n3529q5";
+        sha256 = "1hhanq3lz384v4nccacnjfwsyy99n3yc6m6iw8kljz8yicfwzhzk";
         libName = "webpki";
         dependencies = [
           {
@@ -9470,7 +9470,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.652";
+        version = "0.1.653";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
