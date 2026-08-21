@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "a49b6416f4b2f4f9d5c227a4a69ef7dbedeb08c4a39b58169f40960f3aee0f8b",
+  "cargo_lock_sha256": "54af8f3f93ed73010b4f4270b6e43c50ad280f3f81193b946ce0a3c982bffcae",
   "manifest_sha256": {
-    "Cargo.toml": "93c3c6218a5277075c6ea026b90d79b398fab282fedff9a64359818add5f9ad2"
+    "Cargo.toml": "4c9265481a389790839be33dee464e3d66b77486ec17e64dd30d1b9b76e817cb"
   },
   "target_resolves": {
     "base": {
@@ -82,7 +82,7 @@
           "std"
         ]
       },
-      "cc-1.4.3": {
+      "cc-1.4.4": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.642": {
+      "shikumi-0.1.643": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1957,7 +1957,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2193,7 +2193,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2534,7 +2534,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2885,7 +2885,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3136,7 +3136,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3492,7 +3492,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.3",
+                "package_key": "cc-1.4.4",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3823,7 +3823,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.4.3": {
+    "cc-1.4.4": {
       "edition": "2021"
     },
     "cfg-if-1.0.4": {
@@ -3991,7 +3991,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.642": {
+    "shikumi-0.1.643": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
