@@ -28496,7 +28496,80 @@ impl<'a> FigmentSourceTag<'a> {
         }
     }
 
-    /// Returns `true` for [`Self::Code`].
+    /// Returns `true` for [`Self::File`] regardless of the inner borrowed
+    /// path payload; tag-side sibling of [`Self::is_code`] /
+    /// [`Self::is_custom`] on the [`FigmentSourceTag`] ternary partition.
+    ///
+    /// The predicate names the **borrowed figment-Source shape** — the
+    /// per-value attribution attached by figment's built-in file
+    /// providers ([`figment::providers::Yaml::file`],
+    /// [`figment::providers::Toml::file`], and every shikumi-built
+    /// file-based provider). Tag-side peer of the `'static`
+    /// [`FigmentSourceKind`] projection carried by [`Self::kind`]: for
+    /// [`FigmentSourceTag`] the tag axis and the kind axis agree
+    /// pointwise (`Self::File → FigmentSourceKind::File`,
+    /// `Self::Code → FigmentSourceKind::Code`,
+    /// `Self::Custom → FigmentSourceKind::Custom`), and the
+    /// `figment_source_tag_predicates_agree_with_kind` pin refuses a
+    /// future fourth variant that would break that agreement without
+    /// also extending the sibling-predicate trio through the tag → kind
+    /// forward map.
+    ///
+    /// A consumer that wants the cross-thread `'static` axis reads
+    /// `tag.kind().is_file()`; one that wants the borrowed-tag axis
+    /// directly (a structured-log field naming the borrowed shape of a
+    /// failing attribution without projecting through
+    /// [`FigmentSourceKind`], a per-shape dispatch inside a resolver
+    /// already holding the borrowed tag, a partition-coverage
+    /// assertion pinning that every sample tag satisfies exactly one
+    /// arm) reads this tag-side predicate instead. Both live at the
+    /// type level so neither consumer re-derives the corresponding
+    /// `matches!` pattern at every site — until this predicate landed,
+    /// [`Self::is_code`] was the only tag-side sibling on the borrowed
+    /// figment-Source-axis partition; the [`Self::File`] and
+    /// [`Self::Custom`] arms were reachable only through the payload
+    /// extractors [`Self::as_file_path`] and [`Self::as_custom`],
+    /// forcing callers that wanted the boolean tag test to
+    /// `.is_some()`-chain each extractor at every site.
+    ///
+    /// Peer of the tag-side sibling predicates already carried by
+    /// every other payload-bearing closed-axis primitive in the crate:
+    /// the [`crate::SopsRef::is_file`] / [`crate::SopsRef::is_field`]
+    /// pair on the SOPS authored-ref-shape axis (commit `a260efd`),
+    /// the [`crate::VaultRef::is_path`] / [`crate::VaultRef::is_field`]
+    /// pair on the Vault authored-ref-shape axis (same commit), the
+    /// [`crate::SecretSource::is_literal`] /
+    /// [`crate::SecretSource::is_backend`] pair on the top-level
+    /// source-shape axis (commit `87ed70a`), and the tag-side
+    /// [`crate::ConfigTier::is_bare`]…[`crate::ConfigTier::is_custom`]
+    /// quartet (commit `aefc87a`). [`FigmentSourceTag`] carried only
+    /// [`Self::is_code`] — a partial sibling with two of three arms
+    /// reachable only through payload extractors, out of alignment
+    /// with the other payload-bearing closed-axis primitives; this
+    /// closes the pattern by landing the missing pair.
+    ///
+    /// The three sibling predicates [`Self::is_file`] / [`Self::is_code`]
+    /// / [`Self::is_custom`] form a closed disjoint partition of the
+    /// [`FigmentSourceTag`] variant space — every value satisfies
+    /// exactly one — pinned by
+    /// [`tests::figment_source_tag_predicates_are_a_closed_ternary_partition`].
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::File`] regardless of inner path content, and for every
+    /// [`Self::Custom`] regardless of inner string content — is pinned
+    /// by [`tests::figment_source_tag_predicates_are_payload_independent`].
+    /// Tag ↔ kind pointwise agreement is pinned by
+    /// [`tests::figment_source_tag_predicates_agree_with_kind`].
+    #[must_use]
+    pub fn is_file(self) -> bool {
+        matches!(self.kind(), FigmentSourceKind::File)
+    }
+
+    /// Returns `true` for [`Self::Code`] regardless of the inner
+    /// `&'static Location<'static>` payload; tag-side sibling of
+    /// [`Self::is_file`] / [`Self::is_custom`] on the
+    /// [`FigmentSourceTag`] ternary partition. See [`Self::is_file`]
+    /// for the full contract — same borrowed-tag axis, [`Self::Code`]
+    /// polarity.
     #[must_use]
     pub fn is_code(self) -> bool {
         matches!(self.kind(), FigmentSourceKind::Code)
@@ -28509,6 +28582,16 @@ impl<'a> FigmentSourceTag<'a> {
             Self::Custom(c) => Some(c),
             _ => None,
         }
+    }
+
+    /// Returns `true` for [`Self::Custom`] regardless of the inner
+    /// borrowed string payload; tag-side sibling of [`Self::is_file`] /
+    /// [`Self::is_code`] on the [`FigmentSourceTag`] ternary
+    /// partition. See [`Self::is_file`] for the full contract — same
+    /// borrowed-tag axis, [`Self::Custom`] polarity.
+    #[must_use]
+    pub fn is_custom(self) -> bool {
+        matches!(self.kind(), FigmentSourceKind::Custom)
     }
 
     /// Data-free, `'static` discriminant of this [`FigmentSourceTag`]:
@@ -95543,6 +95626,146 @@ mod tests {
         assert!(file_tag.as_custom().is_none());
         assert!(custom_tag.as_custom().is_some() && !custom_tag.is_code());
         assert!(custom_tag.as_file_path().is_none());
+    }
+
+    // ---- FigmentSourceTag tag-side sibling predicates
+    //      (is_file / is_code / is_custom) ----
+
+    /// Helper: canonical sample table over all three
+    /// [`FigmentSourceTag`] variants — one [`FigmentSourceTag::File`]
+    /// (via a real `Source::File`), one [`FigmentSourceTag::Code`]
+    /// (via the `Serialized` provider figment tags with `Source::Code`),
+    /// and one [`FigmentSourceTag::Custom`] (via a real `Source::Custom`).
+    /// Returned as an owned [`figment::Source`] triple so the borrowed
+    /// tag can be re-classified per-assertion without re-constructing
+    /// the underlying `Source`.
+    fn figment_source_tag_canonical_samples() -> [figment::Source; 3] {
+        use figment::Provider;
+        let file = figment::Source::File(PathBuf::from("/etc/app/app.yaml"));
+        let serialized = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let code = serialized
+            .metadata()
+            .source
+            .as_ref()
+            .expect("Serialized attaches a Source::Code")
+            .clone();
+        let custom = figment::Source::Custom("ftp://configs.example.com/app.yaml".to_owned());
+        [file, code, custom]
+    }
+
+    #[test]
+    fn figment_source_tag_is_file_true_only_for_file_variant() {
+        // Per-variant pin on the File arm: matching the operator-authored
+        // (or figment-file-provider-attributed) File shape flips
+        // is_file on and every other sibling off.
+        let src = figment::Source::File(PathBuf::from("/etc/app/app.yaml"));
+        let tag = FigmentSourceTag::classify(&src).expect("File must classify");
+        assert!(tag.is_file(), "File tag must satisfy is_file");
+        assert!(!tag.is_code(), "File tag must not satisfy is_code");
+        assert!(!tag.is_custom(), "File tag must not satisfy is_custom");
+    }
+
+    #[test]
+    fn figment_source_tag_is_custom_true_only_for_custom_variant() {
+        // Per-variant pin on the Custom arm: figment-ecosystem
+        // providers that can't fit the File/Code shape (HTTP, Vault,
+        // in-memory dicts) attach Source::Custom, which classifies to
+        // FigmentSourceTag::Custom, which flips is_custom on and every
+        // sibling off.
+        let src = figment::Source::Custom("ftp://configs.example.com/app.yaml".to_owned());
+        let tag = FigmentSourceTag::classify(&src).expect("Custom must classify");
+        assert!(tag.is_custom(), "Custom tag must satisfy is_custom");
+        assert!(!tag.is_file(), "Custom tag must not satisfy is_file");
+        assert!(!tag.is_code(), "Custom tag must not satisfy is_code");
+    }
+
+    #[test]
+    fn figment_source_tag_predicates_are_a_closed_ternary_partition() {
+        // Closed disjoint ternary partition: for every canonical
+        // sample, exactly one of {is_file, is_code, is_custom} is
+        // true. A future FigmentSourceTag variant (e.g. Source::Url)
+        // that lands without a matching sibling-predicate arm
+        // breaks this pin (unrecognized variant classifies as None
+        // upstream; a new variant reachable through classify must
+        // extend the trio in lockstep).
+        for src in figment_source_tag_canonical_samples() {
+            let tag =
+                FigmentSourceTag::classify(&src).expect("every canonical sample must classify");
+            let matches: u32 =
+                u32::from(tag.is_file()) + u32::from(tag.is_code()) + u32::from(tag.is_custom());
+            assert_eq!(
+                matches, 1,
+                "exactly one of is_file/is_code/is_custom must hold; got {matches} for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_tag_predicates_are_payload_independent() {
+        // The tag-side answer must not vary with the inner borrowed
+        // payload — every File(path) answers is_file regardless of
+        // path content; every Custom(s) answers is_custom regardless
+        // of string content. Pinned across multiple representative
+        // payloads per variant so a future path/string-sensitive
+        // predicate refactor collapses this test immediately.
+        let file_payloads = [
+            PathBuf::from("/etc/app/app.yaml"),
+            PathBuf::from("relative/path.toml"),
+            PathBuf::from("/"),
+            PathBuf::new(),
+        ];
+        for p in &file_payloads {
+            let src = figment::Source::File(p.clone());
+            let tag = FigmentSourceTag::classify(&src).expect("File must classify");
+            assert!(tag.is_file(), "is_file must hold for File({p:?})");
+            assert!(!tag.is_code() && !tag.is_custom());
+        }
+
+        let custom_payloads = [
+            String::new(),
+            "http://x/y".to_owned(),
+            "vault://kv/app".to_owned(),
+            "custom with spaces".to_owned(),
+        ];
+        for s in &custom_payloads {
+            let src = figment::Source::Custom(s.clone());
+            let tag = FigmentSourceTag::classify(&src).expect("Custom must classify");
+            assert!(tag.is_custom(), "is_custom must hold for Custom({s:?})");
+            assert!(!tag.is_file() && !tag.is_code());
+        }
+    }
+
+    #[test]
+    fn figment_source_tag_predicates_agree_with_kind() {
+        // Pointwise agreement between the tag-side ternary trio and
+        // the `'static` FigmentSourceKind projection: for every
+        // canonical sample, `tag.is_X()` iff `tag.kind() ==
+        // FigmentSourceKind::X`. This is the load-bearing structural
+        // pin — a future variant landing on FigmentSourceTag without
+        // a matching FigmentSourceKind arm breaks the exhaustive
+        // `kind()` match at compile time; a mis-wired sibling
+        // predicate (e.g. `is_file` matching Custom by copy-paste
+        // error) breaks this pin at test time.
+        for src in figment_source_tag_canonical_samples() {
+            let tag =
+                FigmentSourceTag::classify(&src).expect("every canonical sample must classify");
+            let kind = tag.kind();
+            assert_eq!(
+                tag.is_file(),
+                kind == FigmentSourceKind::File,
+                "is_file must agree with kind() == File for {tag:?}",
+            );
+            assert_eq!(
+                tag.is_code(),
+                kind == FigmentSourceKind::Code,
+                "is_code must agree with kind() == Code for {tag:?}",
+            );
+            assert_eq!(
+                tag.is_custom(),
+                kind == FigmentSourceKind::Custom,
+                "is_custom must agree with kind() == Custom for {tag:?}",
+            );
+        }
     }
 
     // ---- FigmentNameTag::classify ----
