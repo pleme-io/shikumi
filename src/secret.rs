@@ -366,6 +366,110 @@ impl SecretBackendKind {
             Self::GcpSecret => "gcp_secret",
         }
     }
+
+    /// Returns `true` for [`Self::Literal`]; equivalent to
+    /// `self == SecretBackendKind::Literal`.
+    ///
+    /// Convenience predicate matching the sibling `is_*` sets already
+    /// carried by every peer closed-axis kind primitive in the crate:
+    /// [`crate::ConfigSourceKind::is_defaults`] /
+    /// [`crate::ConfigSourceKind::is_env`] /
+    /// [`crate::ConfigSourceKind::is_file`] on the layer-kind trio
+    /// (commit `9600b8b`), [`crate::DiffLineKind::is_removed`] /
+    /// [`crate::DiffLineKind::is_added`] / [`crate::DiffLineKind::is_context`]
+    /// on the diff-cell trio, [`crate::FigmentSourceKind`]'s
+    /// `is_file` / `is_code` / `is_custom` trio, and the binary-axis
+    /// sibling pairs on [`SecretRefShape`],
+    /// [`crate::AttributionConfidence`], [`crate::AttributionAxis`],
+    /// [`crate::FormatProvenance`], [`crate::FigmentNameTagKind`], and
+    /// [`crate::EnvMetadataTagKind`]. Before this landing
+    /// [`SecretBackendKind`] carried the `ALL` slice and the canonical
+    /// [`Self::as_str`] label but ZERO sibling predicates — the largest
+    /// closed kind axis in the crate (eight cells) with none of the
+    /// tag-projection tax lifted onto the primitive, forcing every
+    /// per-kind consumer (a per-backend resolution-success histogram
+    /// keyed on the kind bin, a dashboard weighting `Sops` /`Vault`
+    /// / `AwsSecret` reads differently than `Literal` / `Command`, a
+    /// structured-log filter selecting only cloud-backend cells for
+    /// alerting) to open-code
+    /// `matches!(k, SecretBackendKind::Literal)` or `k ==
+    /// SecretBackendKind::Literal` at every site. The eight sibling
+    /// predicates lift that classification to one canonical site.
+    ///
+    /// A future ninth [`SecretBackendKind`] variant (e.g. an `EnvVar`
+    /// or `Kubernetes` backend named in [`SecretBackend::kind`]'s
+    /// docs) landing without its own sibling predicate collapses the
+    /// closed-octuple partition to zero on that variant, failing
+    /// `secret_backend_kind_predicates_are_a_closed_octuple_partition`
+    /// before drifting through any per-kind consumer site.
+    #[must_use]
+    pub const fn is_literal(self) -> bool {
+        matches!(self, Self::Literal)
+    }
+
+    /// Returns `true` for [`Self::Command`]; equivalent to
+    /// `self == SecretBackendKind::Command`. Sibling of
+    /// [`Self::is_literal`] on the shell-command corner of the closed
+    /// eight-way partition. See [`Self::is_literal`] for the full
+    /// contract.
+    #[must_use]
+    pub const fn is_command(self) -> bool {
+        matches!(self, Self::Command)
+    }
+
+    /// Returns `true` for [`Self::Op`]; equivalent to
+    /// `self == SecretBackendKind::Op`. Sibling of [`Self::is_literal`]
+    /// on the 1Password corner. See [`Self::is_literal`] for the full
+    /// contract.
+    #[must_use]
+    pub const fn is_op(self) -> bool {
+        matches!(self, Self::Op)
+    }
+
+    /// Returns `true` for [`Self::Sops`]; equivalent to
+    /// `self == SecretBackendKind::Sops`. Sibling of [`Self::is_literal`]
+    /// on the SOPS corner. See [`Self::is_literal`] for the full
+    /// contract.
+    #[must_use]
+    pub const fn is_sops(self) -> bool {
+        matches!(self, Self::Sops)
+    }
+
+    /// Returns `true` for [`Self::Akeyless`]; equivalent to
+    /// `self == SecretBackendKind::Akeyless`. Sibling of
+    /// [`Self::is_literal`] on the Akeyless corner. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_akeyless(self) -> bool {
+        matches!(self, Self::Akeyless)
+    }
+
+    /// Returns `true` for [`Self::Vault`]; equivalent to
+    /// `self == SecretBackendKind::Vault`. Sibling of
+    /// [`Self::is_literal`] on the [`SecretBackend::Vault`] corner. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_vault(self) -> bool {
+        matches!(self, Self::Vault)
+    }
+
+    /// Returns `true` for [`Self::AwsSecret`]; equivalent to
+    /// `self == SecretBackendKind::AwsSecret`. Sibling of
+    /// [`Self::is_literal`] on the AWS Secrets Manager corner. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_aws_secret(self) -> bool {
+        matches!(self, Self::AwsSecret)
+    }
+
+    /// Returns `true` for [`Self::GcpSecret`]; equivalent to
+    /// `self == SecretBackendKind::GcpSecret`. Sibling of
+    /// [`Self::is_literal`] on the GCP Secret Manager corner. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_gcp_secret(self) -> bool {
+        matches!(self, Self::GcpSecret)
+    }
 }
 
 impl crate::ClosedAxis for SecretBackendKind {
@@ -2289,6 +2393,188 @@ mod tests {
             "resolve dispatch over SecretSource must reach every \
              SecretBackendKind cell via the backend_kind projection",
         );
+    }
+
+    // ── SecretBackendKind sibling predicates — the closed octuple ────
+    //
+    // The eight is_* predicates lifted onto SecretBackendKind close the
+    // last predicate-free closed kind-axis primitive in the crate — and
+    // the largest (eight cells) — mirroring the trio-shape sweep on
+    // ConfigSourceKind (commit `9600b8b`) and DiffLineKind, and the
+    // binary-axis sweep on SecretRefShape / AttributionConfidence /
+    // AttributionAxis / FormatProvenance / FigmentNameTagKind /
+    // EnvMetadataTagKind. The three pins below lock the per-variant
+    // polarity, the closed-octuple partition (the first eight-way
+    // partition pin in the crate), and the (predicate ↔ as_str) label
+    // agreement so a future ninth backend variant (EnvVar, Kubernetes,
+    // …) must extend the sibling-predicate octet in lockstep with the
+    // enum, the ALL slice, and the as_str map — the closed-image
+    // discipline the substrate now names at one canonical site.
+
+    #[test]
+    fn secret_backend_kind_is_predicates_return_true_only_for_matching_variant() {
+        // Per-variant polarity pin over every (predicate, variant) cell
+        // of the 8×8 grid: each sibling predicate returns `true` on
+        // exactly its own cell and `false` on every other. Mirror of
+        // the trio-shape pins on ConfigSourceKind (`is_defaults` /
+        // `is_env` / `is_file`) and the quaternary-shape pins on
+        // ConfigTier / DiffLine / DiffLineKind — the same discipline
+        // scaled to eight cells. Catches a future edit that widened
+        // (say) `is_sops` to also admit `Vault`, or narrowed
+        // `is_literal` to reject `Literal`: either drift fails a
+        // specific cell of the grid.
+        //
+        // The grid form (one loop over every cell) rather than eight
+        // per-variant tests keeps the surface tight and forces each
+        // predicate through every sibling cell — a shape a per-variant
+        // test would let drift by omission.
+        type Predicate = fn(SecretBackendKind) -> bool;
+        let predicates: &[(&str, SecretBackendKind, Predicate)] = &[
+            ("is_literal", SecretBackendKind::Literal, |k| k.is_literal()),
+            ("is_command", SecretBackendKind::Command, |k| k.is_command()),
+            ("is_op", SecretBackendKind::Op, |k| k.is_op()),
+            ("is_sops", SecretBackendKind::Sops, |k| k.is_sops()),
+            ("is_akeyless", SecretBackendKind::Akeyless, |k| {
+                k.is_akeyless()
+            }),
+            ("is_vault", SecretBackendKind::Vault, |k| k.is_vault()),
+            ("is_aws_secret", SecretBackendKind::AwsSecret, |k| {
+                k.is_aws_secret()
+            }),
+            ("is_gcp_secret", SecretBackendKind::GcpSecret, |k| {
+                k.is_gcp_secret()
+            }),
+        ];
+        for &(name, own_variant, pred) in predicates {
+            for &kind in SecretBackendKind::ALL {
+                let expected = kind == own_variant;
+                assert_eq!(
+                    pred(kind),
+                    expected,
+                    "{name} returned {} on {kind:?} (expected {expected})",
+                    pred(kind),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_predicates_are_a_closed_octuple_partition() {
+        // Closed-octuple-partition pin on the eight-way secret-backend
+        // classification. Every value in SecretBackendKind::ALL
+        // satisfies exactly one of the eight sibling predicates — none
+        // satisfy two (a kind claiming to be both `Sops` and `Vault`
+        // through predicate widening), none satisfy zero (a kind
+        // outside the octet entirely). Peer of
+        // `config_tier_predicates_are_a_closed_quaternary_partition`
+        // (commit `aefc87a`) and
+        // `config_source_kind_predicates_are_a_closed_ternary_partition`
+        // (commit `9600b8b`), scaled to eight cells — the first
+        // eight-way partition pin in the crate.
+        //
+        // A future ninth [`SecretBackendKind`] variant (EnvVar,
+        // Kubernetes, …) landing without its own sibling predicate
+        // collapses the partition to zero on that variant and fails
+        // here, before drifting through any per-kind consumer site (a
+        // per-backend resolution-success histogram, a dashboard
+        // weighting cloud backends differently from literal / command,
+        // a structured-log filter, an attestation manifest).
+        for &kind in SecretBackendKind::ALL {
+            let hits = [
+                kind.is_literal(),
+                kind.is_command(),
+                kind.is_op(),
+                kind.is_sops(),
+                kind.is_akeyless(),
+                kind.is_vault(),
+                kind.is_aws_secret(),
+                kind.is_gcp_secret(),
+            ];
+            let count = hits.iter().filter(|hit| **hit).count();
+            assert_eq!(
+                count, 1,
+                "{kind:?} must satisfy exactly one is_* predicate, but hits={hits:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_predicates_agree_with_as_str_pointwise() {
+        // The (predicate ↔ label) agreement law: the predicate that
+        // fires on a kind agrees pointwise with the canonical
+        // as_str label the same kind exposes. Consumers reading the
+        // kind through either altitude (a per-predicate branch OR a
+        // string switch keyed on `as_str`) reach the same
+        // classification — the two surfaces cannot drift apart without
+        // failing this pin.
+        //
+        // Sibling of the same pointwise-agreement law that pins
+        // `ConfigSourceKind::is_X` against the ConfigSource surface at
+        // `config_source_kind_agrees_with_source_predicates_pointwise`
+        // (commit `9600b8b`), lifted onto the (kind, label) pair on
+        // the eight-way secret-backend axis. Catches a future rename
+        // that touched only one side (e.g. renaming a predicate
+        // without updating the paired `as_str` arm) before the drift
+        // reaches an operator-facing surface.
+        let expected: &[(SecretBackendKind, fn(SecretBackendKind) -> bool, &str)] = &[
+            (SecretBackendKind::Literal, |k| k.is_literal(), "literal"),
+            (SecretBackendKind::Command, |k| k.is_command(), "command"),
+            (SecretBackendKind::Op, |k| k.is_op(), "op"),
+            (SecretBackendKind::Sops, |k| k.is_sops(), "sops"),
+            (SecretBackendKind::Akeyless, |k| k.is_akeyless(), "akeyless"),
+            (SecretBackendKind::Vault, |k| k.is_vault(), "vault"),
+            (
+                SecretBackendKind::AwsSecret,
+                |k| k.is_aws_secret(),
+                "aws_secret",
+            ),
+            (
+                SecretBackendKind::GcpSecret,
+                |k| k.is_gcp_secret(),
+                "gcp_secret",
+            ),
+        ];
+        for &(kind, pred, label) in expected {
+            assert!(
+                pred(kind),
+                "predicate paired with label {label:?} must fire on {kind:?}",
+            );
+            assert_eq!(
+                kind.as_str(),
+                label,
+                "as_str for {kind:?} must equal the label paired with its predicate ({label:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_predicates_agree_with_secret_backend_kind_pointwise() {
+        // The (payload-carrying ↔ kind-projection) agreement law: for
+        // every canonical [`SecretBackend`] sample, the eight sibling
+        // predicates read off `backend.kind()` return the same
+        // partition cell as reading the predicates directly on the
+        // projected `SecretBackendKind`. This makes the payload-
+        // independence of the kind axis structural — a future edit
+        // that peeked at the inner String / SopsRef / VaultRef payload
+        // when computing the kind would diverge from the kind-side
+        // predicate answer and fail here, sibling of
+        // `config_tier_agrees_with_kind_predicates_pointwise`
+        // (commit `aefc87a`) on the operator-tier axis.
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let projected = backend.kind();
+            assert_eq!(
+                projected, expected_kind,
+                "canonical-sample projection sanity check for {backend:?}",
+            );
+            assert_eq!(projected.is_literal(), expected_kind.is_literal());
+            assert_eq!(projected.is_command(), expected_kind.is_command());
+            assert_eq!(projected.is_op(), expected_kind.is_op());
+            assert_eq!(projected.is_sops(), expected_kind.is_sops());
+            assert_eq!(projected.is_akeyless(), expected_kind.is_akeyless());
+            assert_eq!(projected.is_vault(), expected_kind.is_vault());
+            assert_eq!(projected.is_aws_secret(), expected_kind.is_aws_secret());
+            assert_eq!(projected.is_gcp_secret(), expected_kind.is_gcp_secret());
+        }
     }
 
     // ── SecretRefShape — the shared (whole × field) projection over
