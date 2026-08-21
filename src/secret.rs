@@ -220,6 +220,106 @@ impl SecretBackend {
             Self::GcpSecret(_) => SecretBackendKind::GcpSecret,
         }
     }
+
+    /// Returns `true` for [`Self::Literal`] regardless of the inner
+    /// [`String`] payload; tag-side sibling of
+    /// [`SecretBackendKind::is_literal`].
+    ///
+    /// Tag-side peer of the eight sibling predicates
+    /// [`SecretBackendKind`] carries since commit `9dc6d1f`, lifted
+    /// onto the payload-carrying [`SecretBackend`] so consumers holding
+    /// a `&SecretBackend` at their site — a per-backend telemetry
+    /// counter over resolved secrets, a structured-log filter selecting
+    /// only cloud-backend cells, a dashboard row weighting `Sops` /
+    /// `Vault` / `AwsSecret` reads differently from `Literal` /
+    /// `Command`, an attestation manifest bucketing by resolution
+    /// backend — no longer need to route through
+    /// `backend.kind().is_literal()` or open-code
+    /// `matches!(backend, SecretBackend::Literal(_))` at the call
+    /// site. Direct peer of [`crate::DiffLine::is_removed`] et al on
+    /// the diff-cell axis (`deaa9b4`), applied to the eight-way
+    /// secret-resolution backend axis.
+    ///
+    /// The predicate answer is payload-independent by construction:
+    /// the inner `String` / `SopsRef` / `VaultRef` payload is
+    /// discarded before the `matches!` fires, so an operator writing
+    /// `{literal: ""}`, `{literal: "dev-secret"}`, or `{literal: "a
+    /// very long secret with unicode ⚡"}` all hit the same cell of
+    /// the eight-way partition — the same invariant
+    /// [`Self::kind`] pins on the projection side and
+    /// [`SecretBackendKind::is_literal`] pins on the kind side. The
+    /// tag ↔ kind pointwise-agreement law is pinned by
+    /// [`tests::secret_backend_agrees_with_kind_predicates_pointwise`];
+    /// the closed-octuple partition law is pinned by
+    /// [`tests::secret_backend_predicates_are_a_closed_octuple_partition`].
+    #[must_use]
+    pub const fn is_literal(&self) -> bool {
+        matches!(self, Self::Literal(_))
+    }
+
+    /// Returns `true` for [`Self::Command`] regardless of the inner
+    /// shell-command payload; tag-side sibling of
+    /// [`SecretBackendKind::is_command`]. See [`Self::is_literal`]
+    /// for the full contract.
+    #[must_use]
+    pub const fn is_command(&self) -> bool {
+        matches!(self, Self::Command(_))
+    }
+
+    /// Returns `true` for [`Self::Op`] regardless of the inner
+    /// 1Password reference payload; tag-side sibling of
+    /// [`SecretBackendKind::is_op`]. See [`Self::is_literal`] for the
+    /// full contract.
+    #[must_use]
+    pub const fn is_op(&self) -> bool {
+        matches!(self, Self::Op(_))
+    }
+
+    /// Returns `true` for [`Self::Sops`] regardless of the inner
+    /// [`SopsRef`] payload ([`SopsRef::File`] or [`SopsRef::Field`]);
+    /// tag-side sibling of [`SecretBackendKind::is_sops`]. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_sops(&self) -> bool {
+        matches!(self, Self::Sops(_))
+    }
+
+    /// Returns `true` for [`Self::Akeyless`] regardless of the inner
+    /// secret-name payload; tag-side sibling of
+    /// [`SecretBackendKind::is_akeyless`]. See [`Self::is_literal`]
+    /// for the full contract.
+    #[must_use]
+    pub const fn is_akeyless(&self) -> bool {
+        matches!(self, Self::Akeyless(_))
+    }
+
+    /// Returns `true` for [`Self::Vault`] regardless of the inner
+    /// [`VaultRef`] payload ([`VaultRef::Path`] or
+    /// [`VaultRef::Field`]); tag-side sibling of
+    /// [`SecretBackendKind::is_vault`]. See [`Self::is_literal`] for
+    /// the full contract.
+    #[must_use]
+    pub const fn is_vault(&self) -> bool {
+        matches!(self, Self::Vault(_))
+    }
+
+    /// Returns `true` for [`Self::AwsSecret`] regardless of the inner
+    /// secret-id payload; tag-side sibling of
+    /// [`SecretBackendKind::is_aws_secret`]. See [`Self::is_literal`]
+    /// for the full contract.
+    #[must_use]
+    pub const fn is_aws_secret(&self) -> bool {
+        matches!(self, Self::AwsSecret(_))
+    }
+
+    /// Returns `true` for [`Self::GcpSecret`] regardless of the inner
+    /// resource-name payload; tag-side sibling of
+    /// [`SecretBackendKind::is_gcp_secret`]. See [`Self::is_literal`]
+    /// for the full contract.
+    #[must_use]
+    pub const fn is_gcp_secret(&self) -> bool {
+        matches!(self, Self::GcpSecret(_))
+    }
 }
 
 /// Data-free, `'static` discriminant of [`SecretBackend`]: the kind of
@@ -2574,6 +2674,221 @@ mod tests {
             assert_eq!(projected.is_vault(), expected_kind.is_vault());
             assert_eq!(projected.is_aws_secret(), expected_kind.is_aws_secret());
             assert_eq!(projected.is_gcp_secret(), expected_kind.is_gcp_secret());
+        }
+    }
+
+    // ── SecretBackend tag-side sibling predicates ────────────────────
+    //
+    // The eight tag-side `is_*` predicates on the payload-carrying
+    // SecretBackend enum mirror the kind-side octet on
+    // SecretBackendKind (commit `9dc6d1f`) at the payload-bearing
+    // altitude. Direct peer of the DiffLine tag-side quartet
+    // (`deaa9b4`) applied to the eight-way secret-resolution backend
+    // axis: same shape (per-variant polarity grid, closed-octuple
+    // partition, tag ↔ kind pointwise agreement over the canonical
+    // sample table), scaled from three cells to eight.
+
+    #[test]
+    fn secret_backend_is_predicates_return_true_only_for_matching_variant() {
+        // Per-variant polarity pin over every (predicate, sample)
+        // cell of the 8 × N grid: each sibling predicate returns
+        // `true` on exactly its own variant across every payload
+        // shape in the canonical sample table (which covers empty
+        // and multi-flavor payloads for the compound `Sops` /
+        // `Vault` backends via SopsRef / VaultRef), and `false` on
+        // every other variant. Tag-side mirror of
+        // `secret_backend_kind_is_predicates_return_true_only_for_matching_variant`
+        // (kind side, commit `9dc6d1f`), pointing at the
+        // payload-bearing enum rather than the discriminant. Catches
+        // a future edit that widened (say) `is_sops` on the tag side
+        // to also admit `Vault(_)`, or narrowed `is_literal` to
+        // reject empty-string literals: either drift fails a specific
+        // cell of the grid.
+        //
+        // The grid form (one loop over every cell) rather than eight
+        // per-variant tests forces each predicate through every
+        // sibling cell — a shape a per-variant test would let drift
+        // by omission.
+        type Predicate = fn(&SecretBackend) -> bool;
+        let predicates: &[(&str, SecretBackendKind, Predicate)] = &[
+            ("is_literal", SecretBackendKind::Literal, |b| b.is_literal()),
+            ("is_command", SecretBackendKind::Command, |b| b.is_command()),
+            ("is_op", SecretBackendKind::Op, |b| b.is_op()),
+            ("is_sops", SecretBackendKind::Sops, |b| b.is_sops()),
+            ("is_akeyless", SecretBackendKind::Akeyless, |b| {
+                b.is_akeyless()
+            }),
+            ("is_vault", SecretBackendKind::Vault, |b| b.is_vault()),
+            ("is_aws_secret", SecretBackendKind::AwsSecret, |b| {
+                b.is_aws_secret()
+            }),
+            ("is_gcp_secret", SecretBackendKind::GcpSecret, |b| {
+                b.is_gcp_secret()
+            }),
+        ];
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            for &(name, own_variant, pred) in predicates {
+                let expected = own_variant == expected_kind;
+                assert_eq!(
+                    pred(&backend),
+                    expected,
+                    "{name} returned {} on {backend:?} (kind {expected_kind:?}); expected {expected}",
+                    pred(&backend),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secret_backend_predicates_are_a_closed_octuple_partition() {
+        // Closed-octuple-partition pin on the tag side of the eight-
+        // way secret-backend axis. Every canonical [`SecretBackend`]
+        // sample satisfies exactly one of the eight sibling
+        // predicates — none satisfy two (a backend claiming to be
+        // both `Sops` and `Vault` through predicate widening), none
+        // satisfy zero (a backend outside the octet entirely). Tag-
+        // side peer of
+        // `secret_backend_kind_predicates_are_a_closed_octuple_partition`
+        // (kind side, commit `9dc6d1f`), lifted onto the payload-
+        // bearing enum so a future ninth [`SecretBackend`] variant
+        // (an `EnvVar`, `Kubernetes`, `1PasswordConnect`, …) landing
+        // without its own sibling predicate collapses the partition
+        // to zero on that variant and fails here, before drifting
+        // through any per-backend consumer site.
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            let hits = [
+                backend.is_literal(),
+                backend.is_command(),
+                backend.is_op(),
+                backend.is_sops(),
+                backend.is_akeyless(),
+                backend.is_vault(),
+                backend.is_aws_secret(),
+                backend.is_gcp_secret(),
+            ];
+            let count = hits.iter().filter(|hit| **hit).count();
+            assert_eq!(
+                count, 1,
+                "{backend:?} must satisfy exactly one is_* predicate, but hits={hits:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_agrees_with_kind_predicates_pointwise() {
+        // The tag ↔ kind structural law over the canonical
+        // [`SecretBackend`] sample table:
+        // `backend.is_X() == backend.kind().is_X()` for every sibling
+        // X in {literal, command, op, sops, akeyless, vault,
+        // aws_secret, gcp_secret}, exercising each variant across
+        // the payload shapes the canonical samples carry (empty and
+        // populated literals via the sibling
+        // `secret_backend_kind_is_data_free` pin, and the multi-
+        // flavor `Sops` / `Vault` payloads through `SopsRef::File` /
+        // `SopsRef::Field` / `VaultRef::Path` / `VaultRef::Field`).
+        //
+        // Direct peer of
+        // `secret_backend_kind_predicates_agree_with_secret_backend_kind_pointwise`
+        // (kind side reads through `.kind()`, this reads through
+        // both altitudes and pins them coincident) and of
+        // `diff_line_agrees_with_kind_predicates_pointwise`
+        // (`deaa9b4`, the trio-shape analogue on the diff-cell axis).
+        // Catches a future edit that peeked at the inner `String` /
+        // `SopsRef` / `VaultRef` payload when computing a tag-side
+        // predicate: it would diverge from the kind-side predicate
+        // answer and fail here.
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let kind = backend.kind();
+            assert_eq!(
+                kind, expected_kind,
+                "canonical-sample projection sanity check for {backend:?}",
+            );
+            assert_eq!(
+                backend.is_literal(),
+                kind.is_literal(),
+                "is_literal drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_command(),
+                kind.is_command(),
+                "is_command drift on {backend:?}",
+            );
+            assert_eq!(backend.is_op(), kind.is_op(), "is_op drift on {backend:?}");
+            assert_eq!(
+                backend.is_sops(),
+                kind.is_sops(),
+                "is_sops drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_akeyless(),
+                kind.is_akeyless(),
+                "is_akeyless drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_vault(),
+                kind.is_vault(),
+                "is_vault drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_aws_secret(),
+                kind.is_aws_secret(),
+                "is_aws_secret drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_gcp_secret(),
+                kind.is_gcp_secret(),
+                "is_gcp_secret drift on {backend:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_predicates_are_payload_independent() {
+        // Payload-independence pin on the tag side: for each variant,
+        // multiple payload shapes (empty / short / long-with-special-
+        // chars for the string-carrying variants, both `SopsRef` /
+        // `VaultRef` shapes for the compound variants) all agree on
+        // the same predicate answer. The `matches!` bodies discard
+        // the inner payload by construction, so any future edit that
+        // widened (say) `is_literal` to consult the inner string
+        // length would diverge across payload shapes on the same
+        // variant and fail here — the structural form of the
+        // sibling `secret_backend_kind_is_data_free` pin on the tag
+        // side.
+        let literals: &[SecretBackend] = &[
+            SecretBackend::Literal(String::new()),
+            SecretBackend::Literal("dev".into()),
+            SecretBackend::Literal("very-long-secret-payload-with-special-chars-$@!".into()),
+        ];
+        for backend in literals {
+            assert!(backend.is_literal(), "is_literal must fire on {backend:?}");
+            assert!(
+                !backend.is_command(),
+                "is_command must be false on {backend:?}"
+            );
+        }
+        let sops: &[SecretBackend] = &[
+            SecretBackend::Sops(SopsRef::File(PathBuf::from("a.yaml"))),
+            SecretBackend::Sops(SopsRef::File(PathBuf::from("/very/long/path/b.json"))),
+            SecretBackend::Sops(SopsRef::Field {
+                file: PathBuf::from("c.yaml"),
+                field: "k".into(),
+            }),
+        ];
+        for backend in sops {
+            assert!(backend.is_sops(), "is_sops must fire on {backend:?}");
+            assert!(!backend.is_vault(), "is_vault must be false on {backend:?}");
+        }
+        let vaults: &[SecretBackend] = &[
+            SecretBackend::Vault(VaultRef::Path("p".into())),
+            SecretBackend::Vault(VaultRef::Field {
+                path: "p".into(),
+                field: "f".into(),
+            }),
+        ];
+        for backend in vaults {
+            assert!(backend.is_vault(), "is_vault must fire on {backend:?}");
+            assert!(!backend.is_sops(), "is_sops must be false on {backend:?}");
         }
     }
 
