@@ -679,6 +679,70 @@ impl Format {
             path: Path::new(rest),
         })
     }
+
+    /// Returns `true` for [`Self::Yaml`]; equivalent to
+    /// `self == Format::Yaml`. Sibling of [`Self::is_toml`],
+    /// [`Self::is_lisp`], [`Self::is_nix`], and [`Self::is_blue`] — the
+    /// closed quinary partition of the config-file-format axis lifted to
+    /// five named `const fn` predicates at the primitive's altitude,
+    /// mirror of the tag-side quintet [`crate::cli::TierArg::is_bare`] /
+    /// [`crate::cli::TierArg::is_discovered`] /
+    /// [`crate::cli::TierArg::is_default`] /
+    /// [`crate::cli::TierArg::is_custom`] / [`crate::cli::TierArg::is_env`]
+    /// and of the quartet-shape [`crate::ConfigTier::is_bare`] /
+    /// [`crate::ConfigTier::is_discovered`] /
+    /// [`crate::ConfigTier::is_default`] / [`crate::ConfigTier::is_custom`].
+    ///
+    /// One source of truth for the "is this the YAML format?" question
+    /// over [`Format`] — a consumer that only wants the yes/no answer
+    /// (a per-format load-latency histogram bin, an attestation manifest
+    /// grouping by format, a doc-render iterating [`Format::ALL`] and
+    /// keying rows by format, a CLI flag filtering discovered files by
+    /// format) matches on this predicate instead of open-coding
+    /// `matches!(f, Format::Yaml)` or `f == Format::Yaml` and paying
+    /// the closed-partition bookkeeping tax again. The five sibling
+    /// predicates form a closed disjoint partition of the variant space
+    /// — every [`Format`] value satisfies exactly one — pinned by
+    /// [`tests::format_predicates_are_a_closed_quinary_partition`], the
+    /// quinary analogue of the ternary-partition pin on
+    /// [`crate::WatchEventClass`] and of the quaternary-partition pins
+    /// on [`crate::ConfigTier`] and [`crate::coverage::HintSurface`].
+    #[must_use]
+    pub const fn is_yaml(self) -> bool {
+        matches!(self, Self::Yaml)
+    }
+
+    /// Returns `true` for [`Self::Toml`]; equivalent to
+    /// `self == Format::Toml`. Sibling of [`Self::is_yaml`];
+    /// see [`Self::is_yaml`] for the full contract.
+    #[must_use]
+    pub const fn is_toml(self) -> bool {
+        matches!(self, Self::Toml)
+    }
+
+    /// Returns `true` for [`Self::Lisp`]; equivalent to
+    /// `self == Format::Lisp`. Sibling of [`Self::is_yaml`];
+    /// see [`Self::is_yaml`] for the full contract.
+    #[must_use]
+    pub const fn is_lisp(self) -> bool {
+        matches!(self, Self::Lisp)
+    }
+
+    /// Returns `true` for [`Self::Nix`]; equivalent to
+    /// `self == Format::Nix`. Sibling of [`Self::is_yaml`];
+    /// see [`Self::is_yaml`] for the full contract.
+    #[must_use]
+    pub const fn is_nix(self) -> bool {
+        matches!(self, Self::Nix)
+    }
+
+    /// Returns `true` for [`Self::Blue`]; equivalent to
+    /// `self == Format::Blue`. Sibling of [`Self::is_yaml`];
+    /// see [`Self::is_yaml`] for the full contract.
+    #[must_use]
+    pub const fn is_blue(self) -> bool {
+        matches!(self, Self::Blue)
+    }
 }
 
 /// Closed binary partition over the [`Format`] variant space along the
@@ -4523,6 +4587,115 @@ mod tests {
             Format::ALL.len(),
             "the two provider-class predicates must partition Format::ALL exhaustively",
         );
+    }
+
+    // ---- Format sibling-predicate quintet
+    // ---- (is_yaml / is_toml / is_lisp / is_nix / is_blue) ----
+    //
+    // The closed-axis idiom peer of the ternary `WatchEventClass`
+    // predicate closure (`is_reload` / `is_removed` / `is_ignored`,
+    // commit `2b5a962`), the quaternary `HintSurface` closure (`face7ff`)
+    // and `ConfigTier` closure (`aefc87a`), and the quinary `TierArg`
+    // closure (`cc038ef`) lifted onto the config-file-format axis. Every
+    // Format value satisfies exactly one of the five predicates.
+
+    #[test]
+    fn format_is_yaml_true_only_for_yaml_variant() {
+        // Per-variant polarity pin on the Yaml corner. Sibling of
+        // `tier_arg_is_bare_true_only_for_bare_variant` and the trio-shape
+        // pins on the crate's ternary closed axes; a future edit that
+        // flips the `matches!` arm on `is_yaml` fails here before the
+        // closed-quinary-partition pin masks it.
+        assert!(Format::Yaml.is_yaml());
+        assert!(!Format::Toml.is_yaml());
+        assert!(!Format::Lisp.is_yaml());
+        assert!(!Format::Nix.is_yaml());
+        assert!(!Format::Blue.is_yaml());
+    }
+
+    #[test]
+    fn format_is_toml_true_only_for_toml_variant() {
+        assert!(!Format::Yaml.is_toml());
+        assert!(Format::Toml.is_toml());
+        assert!(!Format::Lisp.is_toml());
+        assert!(!Format::Nix.is_toml());
+        assert!(!Format::Blue.is_toml());
+    }
+
+    #[test]
+    fn format_is_lisp_true_only_for_lisp_variant() {
+        assert!(!Format::Yaml.is_lisp());
+        assert!(!Format::Toml.is_lisp());
+        assert!(Format::Lisp.is_lisp());
+        assert!(!Format::Nix.is_lisp());
+        assert!(!Format::Blue.is_lisp());
+    }
+
+    #[test]
+    fn format_is_nix_true_only_for_nix_variant() {
+        assert!(!Format::Yaml.is_nix());
+        assert!(!Format::Toml.is_nix());
+        assert!(!Format::Lisp.is_nix());
+        assert!(Format::Nix.is_nix());
+        assert!(!Format::Blue.is_nix());
+    }
+
+    #[test]
+    fn format_is_blue_true_only_for_blue_variant() {
+        assert!(!Format::Yaml.is_blue());
+        assert!(!Format::Toml.is_blue());
+        assert!(!Format::Lisp.is_blue());
+        assert!(!Format::Nix.is_blue());
+        assert!(Format::Blue.is_blue());
+    }
+
+    #[test]
+    fn format_predicates_are_a_closed_quinary_partition() {
+        // Every `Format::ALL` cell satisfies exactly one of the five
+        // sibling predicates: none satisfies two, none satisfies zero.
+        // Quinary-partition analogue of the quaternary-partition pins on
+        // `HintSurface`
+        // (`hint_surface_predicates_are_a_closed_quaternary_partition`),
+        // `ConfigTier`
+        // (`config_tier_predicates_are_a_closed_quaternary_partition`),
+        // the ternary-partition pin on `WatchEventClass`
+        // (`watch_event_class_predicates_are_a_closed_ternary_partition`),
+        // and the quinary-partition pin on `TierArg`
+        // (`tier_arg_predicates_are_a_closed_quinary_partition`). A future
+        // sixth-format landing without its own sibling predicate collapses
+        // the partition to zero on that variant, failing here before
+        // drifting through any consumer site.
+        for f in Format::ALL.iter().copied() {
+            let hits = usize::from(f.is_yaml())
+                + usize::from(f.is_toml())
+                + usize::from(f.is_lisp())
+                + usize::from(f.is_nix())
+                + usize::from(f.is_blue());
+            assert_eq!(
+                hits, 1,
+                "format {f:?} must satisfy exactly one sibling predicate, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_predicates_agree_with_equality_pointwise() {
+        // The tag-alone equality-agreement law over `Format::ALL`: for
+        // every variant, `f.is_X()` is exactly `f == Format::X`. Catches
+        // a future edit whose `matches!` arm silently accepts a second
+        // variant on the same predicate while some other corner drops
+        // from one hit to zero (the closed-partition pin above catches
+        // "zero"; this pin catches "two on the same corner without
+        // flipping a second corner's hits down to zero"). Idiom-peer of
+        // `tier_arg_predicates_agree_with_equality_pointwise` and
+        // `watch_event_class_predicates_agree_with_equality_pointwise`.
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(f.is_yaml(), f == Format::Yaml);
+            assert_eq!(f.is_toml(), f == Format::Toml);
+            assert_eq!(f.is_lisp(), f == Format::Lisp);
+            assert_eq!(f.is_nix(), f == Format::Nix);
+            assert_eq!(f.is_blue(), f == Format::Blue);
+        }
     }
 
     // ---- required_feature (the format → optional-cargo-feature axis) ----
