@@ -706,8 +706,20 @@ impl Provenance {
     /// A computed-defaults tier (`bare` / `discovered` / `prescribed`):
     /// source is [`ConfigSource::Defaults`] — machine-derived, not
     /// operator-supplied.
+    ///
+    /// `const`-callable — the body is a struct-literal expression over a
+    /// [`Copy`] [`ConfigTierKind`] field and the unit-variant
+    /// [`ConfigSource::Defaults`], both const-eligible, so a
+    /// compile-time-known tier projects to a compile-time-known
+    /// [`Provenance`]. This is the seam the tier-axis predicate quartet
+    /// ([`Self::is_bare`] / [`Self::is_discovered`] / [`Self::is_default`]
+    /// / [`Self::is_custom`]) welds its const-callability against:
+    /// [`tests::provenance_tier_predicates_are_const_callable`] threads
+    /// `const P: Provenance = Provenance::computed(_);` through the four
+    /// predicates in const context to pin the whole pipeline at compile
+    /// time.
     #[must_use]
-    pub fn computed(tier: ConfigTierKind) -> Self {
+    pub const fn computed(tier: ConfigTierKind) -> Self {
         Self {
             tier,
             source: ConfigSource::Defaults,
@@ -821,6 +833,112 @@ impl Provenance {
     #[must_use]
     pub fn tier_ordinal(&self) -> usize {
         crate::axis_ordinal(self.tier)
+    }
+
+    /// Returns `true` iff this provenance's tier is
+    /// [`ConfigTierKind::Bare`] — the scalar tier-axis predicate
+    /// projection of the atomic `(tier, source)` pair, mirroring the
+    /// [`ConfigTier::is_bare`] tag-side and [`ConfigTierKind::is_bare`]
+    /// kind-side siblings that already close the same partition one
+    /// altitude down on the [`ConfigTier`] enum and its
+    /// [`ConfigTierKind`] tag.
+    ///
+    /// Equal to `self.tier().is_bare()` by construction — one method
+    /// call answers "was this leaf produced by the bare tier?" without
+    /// borrowing through the [`Self::tier`] projection at every site.
+    /// Peer of [`Self::tier_ordinal`] on the same tier axis of the
+    /// atomic pair: `tier_ordinal` projects the axis to a scalar
+    /// `usize`, this quartet projects it to a scalar `bool` per cell,
+    /// together they close both the ordinal-projection and the
+    /// predicate-projection sibling gaps on the tier altitude of the
+    /// atomic `(tier, source)` pair the provenance carries.
+    ///
+    /// Before this seam, a caller wanting the yes/no answer for a
+    /// tier cell — a startup log branch (`if prov.is_bare() { skip
+    /// prescribed-default warmup }`), a telemetry counter keyed on
+    /// the resolved tier without paying for the four-cell histogram
+    /// walk, an operator-facing `/healthz/provenance` cell that only
+    /// distinguishes `custom` vs everything else — reached through
+    /// `prov.tier().is_bare()`, a two-hop copy-and-predicate chain
+    /// that named the [`Self::tier`] projection at the call site
+    /// instead of the inherent seam.
+    ///
+    /// `const`-callable — the body is a one-hop call into
+    /// [`ConfigTierKind::is_bare`] (auto-derived `pub const fn` via
+    /// `gen_platform::IsVariant`), so a compile-time-known
+    /// [`Provenance`] projects its bare-tier polarity at compile time
+    /// too. Composes with the `const`-callable [`Self::computed`]
+    /// constructor to weld the whole `computed → is_bare` pipeline
+    /// through
+    /// [`tests::provenance_tier_predicates_are_const_callable`],
+    /// mirroring the [`ConfigSource`] tag-side const-callability weld
+    /// at `config_source_predicates_and_kind_are_const_callable`
+    /// (`8db9806`) one altitude down.
+    ///
+    /// Kind-side/tag-side agreement is a structural law:
+    /// `prov.is_bare() == prov.tier().is_bare()` on every constructor
+    /// row — pinned pointwise by
+    /// [`tests::provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise`],
+    /// the [`Provenance`]-altitude analogue of the
+    /// [`ConfigTier`]↔[`ConfigTierKind`] agreement pin
+    /// `config_tier_agrees_with_kind_predicates_pointwise`
+    /// (`aefc87a`) and of the [`DiffLine`]↔[`DiffLineKind`] agreement
+    /// pin `diff_line_agrees_with_kind_predicates_pointwise`
+    /// (`deaa9b4`). The four sibling predicates form a closed
+    /// disjoint partition of the tier-axis variant space — every
+    /// [`Provenance`] value satisfies exactly one — pinned by
+    /// [`tests::provenance_tier_predicates_are_a_closed_quaternary_partition`],
+    /// the [`Provenance`]-altitude analogue of the quaternary-partition
+    /// pin `config_tier_predicates_are_a_closed_quaternary_partition`
+    /// on the tier enum itself.
+    #[must_use]
+    pub const fn is_bare(&self) -> bool {
+        self.tier.is_bare()
+    }
+
+    /// Returns `true` iff this provenance's tier is
+    /// [`ConfigTierKind::Discovered`]; tier-axis sibling of
+    /// [`Self::is_bare`]. See [`Self::is_bare`] for the full contract
+    /// (const-callability, agreement pin, quaternary-partition pin).
+    #[must_use]
+    pub const fn is_discovered(&self) -> bool {
+        self.tier.is_discovered()
+    }
+
+    /// Returns `true` iff this provenance's tier is
+    /// [`ConfigTierKind::Default`]; tier-axis sibling of
+    /// [`Self::is_bare`]. See [`Self::is_bare`] for the full contract.
+    ///
+    /// The prescribed-default constructor [`Self::prescribed_default`]
+    /// pins this tier, and every leaf the sealed fold credits to
+    /// [`TieredConfig::prescribed_default`] answers `true` here — the
+    /// yes/no cell of the tier axis's third position.
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        self.tier.is_default()
+    }
+
+    /// Returns `true` iff this provenance's tier is
+    /// [`ConfigTierKind::Custom`] regardless of the source payload
+    /// ([`ConfigSource::File`] path, [`ConfigSource::Env`] prefix, or a
+    /// [`ConfigSource::Defaults`] slot carrying the `Custom` tier via
+    /// [`Self::computed`] — the same yes/no answer holds on every one).
+    /// Tier-axis sibling of [`Self::is_bare`]; see [`Self::is_bare`] for
+    /// the full contract.
+    ///
+    /// Source-independence — the answer is the same whether the source
+    /// is `Defaults`, `Env`, or `File` — mirrors the
+    /// payload-independence contract on [`ConfigTier::is_custom`]
+    /// (which cannot see the [`std::path::PathBuf`] inside its
+    /// `Custom(path)` arm) and is pinned by the same pointwise-
+    /// agreement law
+    /// [`tests::provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise`]:
+    /// the kind-side predicate has no [`ConfigSource`] visibility, so a
+    /// future edit that made this arm inspect the source would diverge
+    /// from the kind-side and fail the pin.
+    #[must_use]
+    pub const fn is_custom(&self) -> bool {
+        self.tier.is_custom()
     }
 
     /// The [`crate::ConfigSourceKind`] this provenance's source belongs
@@ -63058,6 +63176,194 @@ mod progressive_tests {
                 "source_kind_ordinal {ord} out of range for cardinality {card}",
             );
         }
+    }
+
+    // ── Provenance::is_bare / is_discovered / is_default / is_custom —
+    //    scalar tier-axis predicate projection of the atomic (tier, source)
+    //    pair; the predicate-projection sibling of `tier_ordinal` on the
+    //    same altitude ──
+
+    #[test]
+    fn provenance_is_bare_true_only_for_bare_tier() {
+        // Polarity pin per constructor row on the tier axis: exactly
+        // the `bare()` constructor answers `true`; every other shipped
+        // constructor answers `false`. Mirrors
+        // `config_tier_is_bare_true_only_for_bare_variant` on
+        // `ConfigTier` one altitude down.
+        assert!(Provenance::bare().is_bare());
+        assert!(!Provenance::discovered().is_bare());
+        assert!(!Provenance::prescribed_default().is_bare());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_bare());
+        assert!(!Provenance::file("/etc/is_bare_polarity.yaml").is_bare());
+        assert!(!Provenance::env("SHIKUMI_IS_BARE_POLARITY_").is_bare());
+    }
+
+    #[test]
+    fn provenance_is_discovered_true_only_for_discovered_tier() {
+        // Polarity pin on the discovered cell of the tier axis; peer of
+        // `provenance_is_bare_true_only_for_bare_tier`.
+        assert!(!Provenance::bare().is_discovered());
+        assert!(Provenance::discovered().is_discovered());
+        assert!(!Provenance::prescribed_default().is_discovered());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_discovered());
+        assert!(!Provenance::file("/etc/is_discovered_polarity.yaml").is_discovered());
+        assert!(!Provenance::env("SHIKUMI_IS_DISCOVERED_POLARITY_").is_discovered());
+    }
+
+    #[test]
+    fn provenance_is_default_true_only_for_default_tier() {
+        // Polarity pin on the default cell of the tier axis; peer of
+        // `provenance_is_bare_true_only_for_bare_tier`.
+        assert!(!Provenance::bare().is_default());
+        assert!(!Provenance::discovered().is_default());
+        assert!(Provenance::prescribed_default().is_default());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_default());
+        assert!(!Provenance::file("/etc/is_default_polarity.yaml").is_default());
+        assert!(!Provenance::env("SHIKUMI_IS_DEFAULT_POLARITY_").is_default());
+    }
+
+    #[test]
+    fn provenance_is_custom_true_only_for_custom_tier() {
+        // Polarity pin on the custom cell of the tier axis; peer of
+        // `provenance_is_bare_true_only_for_bare_tier`. Source-
+        // independence pin: the answer is the same whether the Custom
+        // tier carries a `File`, `Env`, or `Defaults` source. A future
+        // edit that peeked at `self.source` inside `is_custom` (a
+        // path-shape check on `File`, a prefix-shape check on `Env`)
+        // would diverge from the kind-side predicate — which cannot see
+        // the source at all — and fail the pointwise-agreement pin
+        // below.
+        assert!(!Provenance::bare().is_custom());
+        assert!(!Provenance::discovered().is_custom());
+        assert!(!Provenance::prescribed_default().is_custom());
+        assert!(Provenance::computed(ConfigTierKind::Custom).is_custom());
+        assert!(Provenance::file("/etc/is_custom_polarity.yaml").is_custom());
+        assert!(Provenance::env("SHIKUMI_IS_CUSTOM_POLARITY_").is_custom());
+    }
+
+    #[test]
+    fn provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise() {
+        // Structural law: for every shipped constructor row,
+        // `prov.is_X() == prov.tier().is_X()` for X in
+        // {bare, discovered, default, custom}. Mirrors
+        // `config_tier_agrees_with_kind_predicates_pointwise` (`aefc87a`)
+        // one altitude down on the `ConfigTier`↔`ConfigTierKind` tag/kind
+        // axis; catches a future edit that drifts one side's polarity
+        // without the other, and pins the source-independence contract
+        // on the `is_custom` arm (the kind-side has no `ConfigSource`
+        // visibility, so the tag-side is forbidden from consulting it).
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/tier_predicate_agreement.yaml"),
+            Provenance::env("SHIKUMI_TIER_PREDICATE_AGREEMENT_"),
+        ] {
+            let k = prov.tier();
+            assert_eq!(prov.is_bare(), k.is_bare(), "is_bare drift on {prov:?}");
+            assert_eq!(
+                prov.is_discovered(),
+                k.is_discovered(),
+                "is_discovered drift on {prov:?}",
+            );
+            assert_eq!(
+                prov.is_default(),
+                k.is_default(),
+                "is_default drift on {prov:?}",
+            );
+            assert_eq!(
+                prov.is_custom(),
+                k.is_custom(),
+                "is_custom drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_tier_predicates_are_a_closed_quaternary_partition() {
+        // Every Provenance value from the shipped constructor surface
+        // satisfies exactly one of the four sibling predicates: none
+        // satisfies two, none satisfies zero. Quaternary-partition
+        // analogue of `config_tier_predicates_are_a_closed_quaternary_partition`
+        // one altitude down on the `ConfigTier` enum; ties the
+        // Provenance-altitude closure to the same closed-partition
+        // discipline the four cells of `ConfigTierKind::ALL` carry.
+        //
+        // A future fifth `ConfigTierKind` variant landing without its
+        // own sibling predicate on `Provenance` (a `KubeCluster` tier,
+        // a `Signed` tier, etc.) collapses the partition to zero on
+        // that variant, failing here before drifting through any
+        // consumer site keying on the four inherent predicates.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/tier_predicate_partition.yaml"),
+            Provenance::env("SHIKUMI_TIER_PREDICATE_PARTITION_"),
+        ] {
+            let hits = usize::from(prov.is_bare())
+                + usize::from(prov.is_discovered())
+                + usize::from(prov.is_default())
+                + usize::from(prov.is_custom());
+            assert_eq!(
+                hits, 1,
+                "Provenance {prov:?} must satisfy exactly one of \
+                 is_bare/is_discovered/is_default/is_custom (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_tier_predicates_are_const_callable() {
+        // Weld the const-callability of the tier-axis predicate quartet
+        // (`Provenance::is_bare` / `is_discovered` / `is_default` /
+        // `is_custom`) with the const-callable `Provenance::computed`
+        // constructor at compile time. Mirrors the shape of
+        // `config_source_predicates_and_kind_are_const_callable`
+        // (`8db9806`) on the `ConfigSource` tag-side and
+        // `relation_wire_is_const_callable` in `hotswap.rs` one
+        // altitude up — the crate's established idiom for pinning
+        // compile-time-callability at the exact line a future edit
+        // would drift it.
+        //
+        // `Provenance` cannot be bound to a `const` item because its
+        // `source: ConfigSource` field carries a non-`const`-Drop
+        // payload (`PathBuf` / `String`), so we route through a
+        // `static` binding: statics never drop, so the drop-check that
+        // rejects a `const` Provenance does not apply, and every
+        // method call `.is_X()` in the const-init positions below still
+        // routes through the const-fn `Provenance::computed`
+        // constructor and the const-fn `Provenance::is_X` predicate.
+        // The moment either half of the composition loses its
+        // const-ness (a future edit that reaches for a non-const
+        // helper — `.to_owned()`, `.into()`, `.as_str()` on a borrowed
+        // payload — inside `computed` or any of the four predicates)
+        // one of the seven `const _: bool = ...` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the type.
+        static BARE_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+        static DISCOVERED_PROV: Provenance = Provenance::computed(ConfigTierKind::Discovered);
+        static DEFAULT_PROV: Provenance = Provenance::computed(ConfigTierKind::Default);
+        static CUSTOM_PROV: Provenance = Provenance::computed(ConfigTierKind::Custom);
+
+        const BARE_IS_BARE: bool = BARE_PROV.is_bare();
+        const BARE_IS_DISCOVERED: bool = BARE_PROV.is_discovered();
+        const BARE_IS_DEFAULT: bool = BARE_PROV.is_default();
+        const BARE_IS_CUSTOM: bool = BARE_PROV.is_custom();
+
+        const DISCOVERED_IS_DISCOVERED: bool = DISCOVERED_PROV.is_discovered();
+        const DEFAULT_IS_DEFAULT: bool = DEFAULT_PROV.is_default();
+        const CUSTOM_IS_CUSTOM: bool = CUSTOM_PROV.is_custom();
+
+        assert!(BARE_IS_BARE);
+        assert!(!BARE_IS_DISCOVERED);
+        assert!(!BARE_IS_DEFAULT);
+        assert!(!BARE_IS_CUSTOM);
+        assert!(DISCOVERED_IS_DISCOVERED);
+        assert!(DEFAULT_IS_DEFAULT);
+        assert!(CUSTOM_IS_CUSTOM);
     }
 
     // ── ProvenanceMap::source_kind_histogram — cube-native per-layer-kind
