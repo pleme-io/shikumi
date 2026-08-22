@@ -27904,8 +27904,16 @@ impl EnvMetadataTag<'_> {
     /// `Glob(&str)` shape if figment grows pattern-matched env
     /// providers) forces a corresponding [`EnvMetadataTagKind`] arm
     /// through the exhaustive match below.
+    ///
+    /// `const`-callable end-to-end (welded by
+    /// [`tests::env_metadata_tag_predicates_and_kind_are_const_callable`]);
+    /// direct peer of [`FigmentSourceTag::kind`] (const at commit
+    /// `22b705a`) and [`FigmentNameTag::kind`] (const at commit `41ca5ca`).
+    /// With this method const the entire borrowed figment-metadata triple
+    /// ([`FigmentSourceTag`] × [`FigmentNameTag`] × [`EnvMetadataTag`])
+    /// carries const-callable `kind()` projections in lockstep.
     #[must_use]
-    pub fn kind(self) -> EnvMetadataTagKind {
+    pub const fn kind(self) -> EnvMetadataTagKind {
         match self {
             Self::Prefixed(_) => EnvMetadataTagKind::Prefixed,
             Self::Bare => EnvMetadataTagKind::Bare,
@@ -27970,8 +27978,13 @@ impl EnvMetadataTag<'_> {
     /// [`tests::env_metadata_tag_predicates_are_payload_independent`].
     /// Tag ↔ kind pointwise agreement is pinned by
     /// [`tests::env_metadata_tag_predicates_agree_with_kind`].
+    ///
+    /// `const`-callable (welded by
+    /// [`tests::env_metadata_tag_predicates_and_kind_are_const_callable`]);
+    /// direct peer of the const-callable tag-side predicates on
+    /// [`FigmentSourceTag`] (`22b705a`) and [`FigmentNameTag`] (`41ca5ca`).
     #[must_use]
-    pub fn is_prefixed(self) -> bool {
+    pub const fn is_prefixed(self) -> bool {
         matches!(self.kind(), EnvMetadataTagKind::Prefixed)
     }
 
@@ -27982,8 +27995,11 @@ impl EnvMetadataTag<'_> {
     ///
     /// The bare variant carries no inner payload — the classification is
     /// constant.
+    ///
+    /// `const`-callable (welded by
+    /// [`tests::env_metadata_tag_predicates_and_kind_are_const_callable`]).
     #[must_use]
-    pub fn is_bare(self) -> bool {
+    pub const fn is_bare(self) -> bool {
         matches!(self.kind(), EnvMetadataTagKind::Bare)
     }
 }
@@ -28094,14 +28110,23 @@ impl EnvMetadataTagKind {
     /// matching the [`FigmentNameTagKind::is_format`] /
     /// [`FigmentNameTagKind::is_env`] sibling pattern on the
     /// figment-Name axis.
+    ///
+    /// `const`-callable (welded by
+    /// [`tests::env_metadata_tag_predicates_and_kind_are_const_callable`]);
+    /// direct peer of the const-callable kind-side predicates on
+    /// [`FigmentSourceKind`] (`22b705a`) and [`FigmentNameTagKind`]
+    /// (`41ca5ca`).
     #[must_use]
-    pub fn is_prefixed(self) -> bool {
+    pub const fn is_prefixed(self) -> bool {
         matches!(self, Self::Prefixed)
     }
 
     /// Returns `true` for [`Self::Bare`].
+    ///
+    /// `const`-callable (welded by
+    /// [`tests::env_metadata_tag_predicates_and_kind_are_const_callable`]).
     #[must_use]
-    pub fn is_bare(self) -> bool {
+    pub const fn is_bare(self) -> bool {
         matches!(self, Self::Bare)
     }
 
@@ -98460,6 +98485,72 @@ mod tests {
                 "is_bare must agree with kind() == Bare for {tag:?}",
             );
         }
+    }
+
+    #[test]
+    fn env_metadata_tag_predicates_and_kind_are_const_callable() {
+        // Weld the const-callability of the tag-side sibling triple
+        // (`EnvMetadataTag::is_prefixed` / `is_bare` and the `kind()`
+        // projection they route around) at compile time — and its
+        // composition with the kind-side sibling binary
+        // (`EnvMetadataTagKind::is_prefixed` / `is_bare`, both now
+        // `const`).
+        //
+        // Assigning the results to `const` bindings pins the const-ness
+        // at THIS line so the moment any of the five methods stops being
+        // `const`-callable (a future edit that reaches for a non-const
+        // std helper — `.to_owned()`, `.to_string()`, or `.into()` on the
+        // borrowed prefix payload — inside one of the bodies) the pin
+        // fails to compile before the drift can reach downstream consumers
+        // that assumed const-ness through the type. Direct peer of
+        // `figment_source_tag_predicates_and_kind_are_const_callable`
+        // (commit `22b705a`, ternary axis) and
+        // `figment_name_tag_predicates_and_kind_are_const_callable`
+        // (commit `41ca5ca`, binary axis): with this pin, all three
+        // borrowed figment-metadata sub-axes carry symmetric
+        // const-callability seals — the const-callability universe over
+        // the borrowed-figment-metadata triple ([`FigmentSourceTag`] ×
+        // [`FigmentNameTag`] × [`EnvMetadataTag`]) now closes end-to-end
+        // under one typescape discipline.
+        //
+        // Both variants weld directly from const positions: `Bare` is
+        // data-free, and `Prefixed(&'static str)` accepts a string literal
+        // in const context — unlike the peer figment-Name and
+        // figment-Source seals, which had to route through their
+        // data-free `Env`/`Custom` arms because their `Format`/`File`
+        // payloads (`FormatMetadataTag<'static>` / `&'static Path`) use
+        // `Path::new` (not stable-const on rust 1.89 per
+        // rust-lang/rust#143874). The kind-side binary
+        // (`EnvMetadataTagKind::is_prefixed` / `is_bare`) is data-free,
+        // so both arms weld directly through `const KIND_*` bindings.
+        const PREFIXED: EnvMetadataTag<'static> = EnvMetadataTag::Prefixed("MYAPP_");
+        const BARE: EnvMetadataTag<'static> = EnvMetadataTag::Bare;
+        const PREFIXED_IS_PREFIXED: bool = PREFIXED.is_prefixed();
+        const PREFIXED_IS_BARE: bool = PREFIXED.is_bare();
+        const PREFIXED_KIND: EnvMetadataTagKind = PREFIXED.kind();
+        const BARE_IS_PREFIXED: bool = BARE.is_prefixed();
+        const BARE_IS_BARE: bool = BARE.is_bare();
+        const BARE_KIND: EnvMetadataTagKind = BARE.kind();
+        const KIND_PREFIXED: EnvMetadataTagKind = EnvMetadataTagKind::Prefixed;
+        const KIND_BARE: EnvMetadataTagKind = EnvMetadataTagKind::Bare;
+        const KIND_PREFIXED_IS_PREFIXED: bool = KIND_PREFIXED.is_prefixed();
+        const KIND_PREFIXED_IS_BARE: bool = KIND_PREFIXED.is_bare();
+        const KIND_BARE_IS_PREFIXED: bool = KIND_BARE.is_prefixed();
+        const KIND_BARE_IS_BARE: bool = KIND_BARE.is_bare();
+        const PREFIXED_KIND_IS_PREFIXED: bool = PREFIXED_KIND.is_prefixed();
+        const BARE_KIND_IS_BARE: bool = BARE_KIND.is_bare();
+        assert!(PREFIXED_IS_PREFIXED);
+        assert!(!PREFIXED_IS_BARE);
+        assert!(matches!(PREFIXED_KIND, EnvMetadataTagKind::Prefixed));
+        assert!(!BARE_IS_PREFIXED);
+        assert!(BARE_IS_BARE);
+        assert!(matches!(BARE_KIND, EnvMetadataTagKind::Bare));
+        assert!(KIND_PREFIXED_IS_PREFIXED);
+        assert!(!KIND_PREFIXED_IS_BARE);
+        assert!(!KIND_BARE_IS_PREFIXED);
+        assert!(KIND_BARE_IS_BARE);
+        assert!(PREFIXED_KIND_IS_PREFIXED);
+        assert!(BARE_KIND_IS_BARE);
     }
 
     #[test]
