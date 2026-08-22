@@ -138,7 +138,8 @@ pub use store::ConfigStore;
 pub use tiered::{
     ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, DiffLineKind, ProgressiveLayer,
     ProgressiveResolution, Provenance, ProvenanceMap, ProvenanceMapEntries, ProvenanceMapIntoIter,
-    ProvenanceMapPaths, ProvenanceMapProvenances, TieredConfig,
+    ProvenanceMapPaths, ProvenanceMapProvenances, ProvenanceMapSourceKinds, ProvenanceMapTiers,
+    TieredConfig,
 };
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};
 

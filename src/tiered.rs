@@ -1503,6 +1503,106 @@ impl ProvenanceMap {
         }
     }
 
+    /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
+    /// tier-axis projection walker of [`Self::provenances`], one step
+    /// down from `&Provenance` to the [`Provenance::tier`] scalar every
+    /// leaf carries. Yields owned [`ConfigTierKind`] items ([`Copy`], no
+    /// borrow) in the same lex order on the (hidden) leaf path as
+    /// [`Self::entries`] emits the `(path, provenance)` pairs — the same
+    /// element count and same element identity as
+    /// `self.provenances().map(Provenance::tier)`, at zero allocation
+    /// and pinned by [`tests::provenance_map_tiers_agrees_with_provenances_tier_projection`].
+    ///
+    /// The tier-altitude peer of [`Self::source_kinds`] on the same
+    /// primitive: the two walkers project the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries to its two closed-axis
+    /// coordinates ([`ConfigTierKind`] here,
+    /// [`crate::ConfigSourceKind`] there), matching by name, by
+    /// return-type shape (a newtype iterator over the axis type), by
+    /// delegation seam ([`std::collections::btree_map::Values`] on the
+    /// underlying [`BTreeMap`]), and by ordering discipline
+    /// (lex on the hidden leaf path). One altitude further inland than
+    /// [`Self::provenances`] — where [`Self::provenances`] hands out
+    /// `&Provenance` and every consumer opens `prov.tier()` /
+    /// `prov.source_kind()` at every leaf — these walkers project the
+    /// scalar directly.
+    ///
+    /// # Contrast with [`Self::tier_histogram`]
+    ///
+    /// [`Self::tier_histogram`] folds the per-leaf tier stream into
+    /// per-cell counts on the [`ConfigTierKind`] closed axis, losing
+    /// position information; [`Self::tiers`] retains it. A consumer
+    /// asking "which tier produced the *first* / *last* / *third*
+    /// leaf?" reaches for [`Self::tiers`]; a consumer asking "how many
+    /// leaves came from each tier?" folds through
+    /// [`Self::tier_histogram`]. Both project the same
+    /// [`Provenance::tier`] scalar off the same underlying
+    /// [`BTreeMap`]; the histogram is the count-summarised fold of the
+    /// walker, `self.tiers().collect::<crate::AxisHistogram<_>>()`
+    /// verbatim.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapTiers`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapProvenances`] carries on the value walker,
+    /// projected one altitude down to the [`ConfigTierKind`] scalar.
+    /// Pointwise-equal to `self.provenances().map(Provenance::tier)` in
+    /// element count, order, and element identity by construction.
+    #[must_use]
+    pub fn tiers(&self) -> ProvenanceMapTiers<'_> {
+        ProvenanceMapTiers {
+            inner: self.inner.values(),
+        }
+    }
+
+    /// Sorted iterator over just the leaf [`crate::ConfigSourceKind`]
+    /// — the source-kind-axis projection walker of
+    /// [`Self::provenances`], one step down from `&Provenance` to the
+    /// [`Provenance::source_kind`] scalar every leaf carries. Yields
+    /// owned [`crate::ConfigSourceKind`] items ([`Copy`], no borrow) in
+    /// the same lex order on the (hidden) leaf path as
+    /// [`Self::entries`] emits the `(path, provenance)` pairs — the
+    /// same element count and same element identity as
+    /// `self.provenances().map(Provenance::source_kind)`, at zero
+    /// allocation and pinned by [`tests::provenance_map_source_kinds_agrees_with_provenances_source_kind_projection`].
+    ///
+    /// The source-kind-altitude peer of [`Self::tiers`] on the same
+    /// primitive: the two walkers project the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries to its two closed-axis
+    /// coordinates ([`ConfigTierKind`] on [`Self::tiers`],
+    /// [`crate::ConfigSourceKind`] here), closing the coordinate space
+    /// of the pair at one seam each on the walker altitude.
+    ///
+    /// # Contrast with [`Self::source_kind_histogram`]
+    ///
+    /// [`Self::source_kind_histogram`] folds the per-leaf source-kind
+    /// stream into per-cell counts on the
+    /// [`crate::ConfigSourceKind`] closed axis, losing position
+    /// information; [`Self::source_kinds`] retains it. Same shape as
+    /// the [`Self::tiers`] / [`Self::tier_histogram`] contrast on the
+    /// tier altitude.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapSourceKinds`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapProvenances`] carries on the value walker,
+    /// projected one altitude down to the
+    /// [`crate::ConfigSourceKind`] scalar. Pointwise-equal to
+    /// `self.provenances().map(Provenance::source_kind)` in element
+    /// count, order, and element identity by construction.
+    #[must_use]
+    pub fn source_kinds(&self) -> ProvenanceMapSourceKinds<'_> {
+        ProvenanceMapSourceKinds {
+            inner: self.inner.values(),
+        }
+    }
+
     /// Per-tier leaf-count histogram — the shikumi cube-native
     /// [`AxisHistogram<ConfigTierKind>`][crate::AxisHistogram] view over
     /// the tier attribution of each resolved leaf. Every leaf's
@@ -18168,6 +18268,126 @@ impl ExactSizeIterator for ProvenanceMapProvenances<'_> {
 }
 
 impl std::iter::FusedIterator for ProvenanceMapProvenances<'_> {}
+
+/// Sorted iterator over just the leaf [`ConfigTierKind`] of a
+/// [`ProvenanceMap`] — the concrete return type of
+/// [`ProvenanceMap::tiers`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that projects each
+/// `&Provenance` through [`Provenance::tier`] to the owned
+/// [`ConfigTierKind`] scalar ([`Copy`]).
+///
+/// Peer of [`ProvenanceMapProvenances`] on one altitude further inland:
+/// where [`ProvenanceMapProvenances`] yields `&Provenance` and every
+/// consumer opens `prov.tier()` at every leaf, this iterator yields the
+/// [`ConfigTierKind`] directly — the same elements, same order (lex on
+/// the hidden leaf path), same length, restricted to the tier axis of
+/// the atomic `(tier, source)` pair each [`Provenance`] carries. The
+/// tier-altitude peer of [`ProvenanceMapSourceKinds`] on the source-kind
+/// axis of the same primitive.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapProvenances`] carries on the value walker. [`Clone`]
+/// hands out an independent walk over the same underlying [`BTreeMap`]
+/// (a two-pass "any / all / count" over the tier stream without a
+/// `.collect::<Vec<_>>()` intermediate).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapTiers<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl Iterator for ProvenanceMapTiers<'_> {
+    type Item = ConfigTierKind;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Provenance::tier)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapTiers<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Provenance::tier)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapTiers<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapTiers<'_> {}
+
+/// Sorted iterator over just the leaf [`crate::ConfigSourceKind`] of a
+/// [`ProvenanceMap`] — the concrete return type of
+/// [`ProvenanceMap::source_kinds`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that projects each
+/// `&Provenance` through [`Provenance::source_kind`] to the owned
+/// [`crate::ConfigSourceKind`] scalar ([`Copy`]).
+///
+/// Peer of [`ProvenanceMapProvenances`] on one altitude further inland:
+/// where [`ProvenanceMapProvenances`] yields `&Provenance` and every
+/// consumer opens `prov.source_kind()` at every leaf, this iterator
+/// yields the [`crate::ConfigSourceKind`] directly — the same elements,
+/// same order (lex on the hidden leaf path), same length, restricted to
+/// the source-kind axis of the atomic `(tier, source)` pair each
+/// [`Provenance`] carries. The source-kind-altitude peer of
+/// [`ProvenanceMapTiers`] on the tier axis of the same primitive.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapProvenances`] carries on the value walker. [`Clone`]
+/// hands out an independent walk over the same underlying [`BTreeMap`].
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapSourceKinds<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl Iterator for ProvenanceMapSourceKinds<'_> {
+    type Item = crate::ConfigSourceKind;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Provenance::source_kind)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapSourceKinds<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Provenance::source_kind)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapSourceKinds<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapSourceKinds<'_> {}
 
 /// Consuming iterator over the owned `(Vec<String>, Provenance)` pairs
 /// of a [`ProvenanceMap`], yielded in lex order on the path.
@@ -43317,6 +43537,370 @@ mod progressive_tests {
         assert_eq!(empty.provenances().size_hint(), (0, Some(0)));
         assert!(empty.provenances().next().is_none());
         assert!(empty.provenances().next_back().is_none());
+    }
+
+    // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
+
+    #[test]
+    fn provenance_map_tiers_agrees_with_provenances_tier_projection() {
+        // The tier-only walker yields the same element stream, in the
+        // same order, as `provenances().map(Provenance::tier)`. The pin
+        // catches a future edit that reroutes `tiers()` through a
+        // different BTreeMap projection (a `.iter().rev()` cursor, an
+        // `.into_values()` consume by mistake, or a projection through a
+        // different Provenance accessor) that would break the shared-order
+        // contract.
+        let r = Prog::resolve_progressive();
+        let via_tiers: Vec<ConfigTierKind> = r.provenance().tiers().collect();
+        let via_provs: Vec<ConfigTierKind> =
+            r.provenance().provenances().map(Provenance::tier).collect();
+        assert_eq!(via_tiers, via_provs);
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_agrees_with_provenances_source_kind_projection() {
+        // Peer of the tiers pin above on the source-kind axis of the
+        // same underlying BTreeMap. Pointwise-equal to
+        // `provenances().map(Provenance::source_kind)`.
+        let r = Prog::resolve_progressive();
+        let via_kinds: Vec<crate::ConfigSourceKind> = r.provenance().source_kinds().collect();
+        let via_provs: Vec<crate::ConfigSourceKind> = r
+            .provenance()
+            .provenances()
+            .map(Provenance::source_kind)
+            .collect();
+        assert_eq!(via_kinds, via_provs);
+    }
+
+    #[test]
+    fn provenance_map_tiers_matches_prog_fixture_by_leaf_order() {
+        // Prog's per-leaf tier stream in lex order (a, b, c, d):
+        // a → Discovered, b → Default, c → Bare, d → Default. A distinguishing
+        // witness pin — the four cells occupy three distinct tiers with
+        // one repeat, so the sequence is not recoverable from
+        // `contributing_tiers()` or `tier_histogram()` alone.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<ConfigTierKind> = r.provenance().tiers().collect();
+        assert_eq!(
+            seq,
+            vec![
+                ConfigTierKind::Discovered,
+                ConfigTierKind::Default,
+                ConfigTierKind::Bare,
+                ConfigTierKind::Default,
+            ]
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_matches_prog_fixture_by_leaf_order() {
+        // Prog is a pure-progressive fixture (no overlays), so every
+        // leaf's source_kind is Defaults. Peer of the tiers fixture pin
+        // on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<crate::ConfigSourceKind> = r.provenance().source_kinds().collect();
+        assert_eq!(
+            seq,
+            vec![
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Defaults,
+            ]
+        );
+    }
+
+    #[test]
+    fn provenance_map_tiers_len_matches_map_len_pointwise() {
+        // ExactSizeIterator on the tiers walker reports the same
+        // remaining count as the pair walker on the same underlying
+        // BTreeMap — the projection is element-preserving, so
+        // `tiers().len() == entries().len() == map.len()` at every
+        // remaining cursor position.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().tiers();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_len_matches_map_len_pointwise() {
+        // Peer of the tiers len pin on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().source_kinds();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_tiers_next_back_walks_specific_to_coarse() {
+        // DoubleEndedIterator on the tiers walker: reversed stream
+        // equals the forward stream reversed via `.collect().rev()`.
+        // The Prog fixture's tier sequence is
+        // [Discovered, Default, Bare, Default] so the tail cursor
+        // yields Default, Bare, Default, Discovered.
+        let r = Prog::resolve_progressive();
+        let backward: Vec<ConfigTierKind> = r.provenance().tiers().rev().collect();
+        assert_eq!(
+            backward,
+            vec![
+                ConfigTierKind::Default,
+                ConfigTierKind::Bare,
+                ConfigTierKind::Default,
+                ConfigTierKind::Discovered,
+            ]
+        );
+        let mut forward: Vec<ConfigTierKind> = r.provenance().tiers().collect();
+        forward.reverse();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_next_back_walks_specific_to_coarse() {
+        // Peer on the source-kind axis: the reversed source-kind
+        // stream equals the forward stream reversed via
+        // `.collect().rev()`.
+        let r = Prog::resolve_progressive();
+        let mut forward: Vec<crate::ConfigSourceKind> = r.provenance().source_kinds().collect();
+        forward.reverse();
+        let backward: Vec<crate::ConfigSourceKind> = r.provenance().source_kinds().rev().collect();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_tiers_clone_hands_out_independent_walk() {
+        // A static bound accepting Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone verifies the full
+        // trait algebra at compile time. Then a runtime cross-walk
+        // asserts the cloned walker yields the same tier stream as the
+        // original — the two cursors are independent handles on the
+        // same underlying BTreeMap.
+        fn assert_algebra<I>(_: &I)
+        where
+            I: Iterator<Item = ConfigTierKind>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().tiers();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<ConfigTierKind> = it.collect();
+        let b: Vec<ConfigTierKind> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_clone_hands_out_independent_walk() {
+        // Peer of the tiers trait-algebra pin, on the source-kind axis.
+        fn assert_algebra<I>(_: &I)
+        where
+            I: Iterator<Item = crate::ConfigSourceKind>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().source_kinds();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<crate::ConfigSourceKind> = it.collect();
+        let b: Vec<crate::ConfigSourceKind> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_tiers_return_type_is_nameable_provenance_map_tiers() {
+        // Pin the concrete-return-type sharpen at the type-signature
+        // level: a struct field bound on `ProvenanceMapTiers<'a>` holds
+        // the handle across a return. Same shape as the pre-existing
+        // paths / provenances nameability pins.
+        struct Held<'a> {
+            walker: ProvenanceMapTiers<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.tiers(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_return_type_is_nameable_provenance_map_source_kinds() {
+        // Peer of the tiers nameability pin, on the source-kind axis.
+        struct Held<'a> {
+            walker: ProvenanceMapSourceKinds<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.source_kinds(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_tiers_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().tiers();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapTiers"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().source_kinds();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapSourceKinds"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_tiers_and_paths_zip_recompose_leaf_to_tier_pairs() {
+        // The composability law: zipping `paths()` and `tiers()` yields
+        // the same `(path, tier)` stream as
+        // `entries().map(|(p, prov)| (p, prov.tier()))`, in the same
+        // lex order. Regression against a future edit that reordered
+        // either projection walker independently of the other.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, ConfigTierKind)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().tiers())
+            .map(|(p, t)| (p.to_vec(), t))
+            .collect();
+        let from_entries: Vec<(Vec<String>, ConfigTierKind)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.tier()))
+            .collect();
+        assert_eq!(zipped, from_entries);
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_and_paths_zip_recompose_leaf_to_source_kind_pairs() {
+        // Peer of the tiers zip-recompose pin on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, crate::ConfigSourceKind)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().source_kinds())
+            .map(|(p, k)| (p.to_vec(), k))
+            .collect();
+        let from_entries: Vec<(Vec<String>, crate::ConfigSourceKind)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.source_kind()))
+            .collect();
+        assert_eq!(zipped, from_entries);
+    }
+
+    #[test]
+    fn provenance_map_tiers_folded_recovers_tier_histogram() {
+        // Cross-altitude consistency: folding the per-leaf tier stream
+        // through the shikumi cube-native `axis_histogram` recovers the
+        // same per-cell counts as `tier_histogram()`. This is the
+        // fold-summarise law: the walker is the position-preserving
+        // primitive, the histogram is its count-summarised fold, and
+        // both project through the same `Provenance::tier` accessor on
+        // the same underlying BTreeMap values.
+        let r = Prog::resolve_progressive();
+        let from_walker: crate::AxisHistogram<ConfigTierKind> =
+            crate::axis_histogram(r.provenance().tiers());
+        let direct: crate::AxisHistogram<ConfigTierKind> = r.provenance().tier_histogram();
+        for t in ConfigTierKind::ALL {
+            assert_eq!(from_walker.count(*t), direct.count(*t));
+        }
+        assert_eq!(from_walker.total(), direct.total());
+    }
+
+    #[test]
+    fn provenance_map_source_kinds_folded_recovers_source_kind_histogram() {
+        // Peer of the tiers fold-summarise law on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let from_walker: crate::AxisHistogram<crate::ConfigSourceKind> =
+            crate::axis_histogram(r.provenance().source_kinds());
+        let direct: crate::AxisHistogram<crate::ConfigSourceKind> =
+            r.provenance().source_kind_histogram();
+        for k in crate::ConfigSourceKind::ALL {
+            assert_eq!(from_walker.count(*k), direct.count(*k));
+        }
+        assert_eq!(from_walker.total(), direct.total());
+    }
+
+    #[test]
+    fn provenance_map_tiers_and_source_kinds_empty_on_empty_map() {
+        // Empty-map degenerate on both projection walkers: len() == 0,
+        // size_hint() == (0, Some(0)), and None on the first pull from
+        // either end.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.tiers().len(), 0);
+        assert_eq!(empty.tiers().size_hint(), (0, Some(0)));
+        assert!(empty.tiers().next().is_none());
+        assert!(empty.tiers().next_back().is_none());
+        assert_eq!(empty.source_kinds().len(), 0);
+        assert_eq!(empty.source_kinds().size_hint(), (0, Some(0)));
+        assert!(empty.source_kinds().next().is_none());
+        assert!(empty.source_kinds().next_back().is_none());
+    }
+
+    #[test]
+    fn provenance_map_tiers_distinguishes_leaf_position_from_histogram() {
+        // The load-bearing distinction between the walker and the
+        // histogram: the walker retains per-leaf position, so a fixture
+        // where leaf a is Discovered and leaf b is Default is
+        // distinguishable from one where leaf a is Default and leaf b
+        // is Discovered — both produce the same tier_histogram counts
+        // (one Discovered, one Default), and both produce the same
+        // contributing_tiers set ({Discovered, Default}), so those
+        // aggregations cannot recover the per-leaf ordering. The
+        // walker can.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<ConfigTierKind> = r.provenance().tiers().collect();
+        // Prog fixture: (a=Discovered, b=Default, c=Bare, d=Default).
+        assert_eq!(seq[0], ConfigTierKind::Discovered);
+        assert_eq!(seq[1], ConfigTierKind::Default);
+        assert_eq!(seq[2], ConfigTierKind::Bare);
+        assert_eq!(seq[3], ConfigTierKind::Default);
+        // The histogram sees only counts, and a swapped-position fixture
+        // (a=Default, b=Discovered, c=Bare, d=Default) would produce the
+        // identical histogram — the position information the walker
+        // carries is genuinely new signal.
+        let hist = r.provenance().tier_histogram();
+        assert_eq!(hist.count(ConfigTierKind::Discovered), 1);
+        assert_eq!(hist.count(ConfigTierKind::Default), 2);
+        assert_eq!(hist.count(ConfigTierKind::Bare), 1);
+        assert_eq!(hist.count(ConfigTierKind::Custom), 0);
     }
 
     // -------- IntoIterator / FromIterator / Extend on ProvenanceMap --------
