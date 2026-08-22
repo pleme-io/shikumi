@@ -1603,6 +1603,59 @@ impl ProvenanceMap {
         }
     }
 
+    /// Sorted iterator over just the leaf [`ConfigSource`] — the
+    /// source-axis projection walker of [`Self::provenances`], one step
+    /// down from `&Provenance` to the [`Provenance::source`] borrow
+    /// every leaf carries. Yields `&ConfigSource` items in the same lex
+    /// order on the (hidden) leaf path as [`Self::entries`] emits the
+    /// `(path, provenance)` pairs — the same element count and same
+    /// element identity as
+    /// `self.provenances().map(Provenance::source)`, at zero allocation
+    /// and pinned by [`tests::provenance_map_sources_agrees_with_provenances_source_projection`].
+    ///
+    /// The full-source-altitude peer of [`Self::source_kinds`] on the
+    /// same primitive: both walkers project the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries — [`Self::source_kinds`]
+    /// to the [`crate::ConfigSourceKind`] scalar (dropping the
+    /// [`ConfigSource::Env`] prefix / [`ConfigSource::File`] path
+    /// payload), this one to the *whole* [`ConfigSource`] borrow
+    /// (keeping the payload). A consumer asking "which env prefix / file
+    /// path did this leaf come from?" reaches for [`Self::sources`]; a
+    /// consumer asking only "was the source a file, env, or defaults?"
+    /// folds through [`Self::source_kinds`]. The kind-side projection is
+    /// recoverable from the source-side walk pointwise —
+    /// `self.sources().map(ConfigSource::kind)` yields the same stream
+    /// as `self.source_kinds()`, pinned by
+    /// [`tests::provenance_map_sources_folded_to_source_kinds_equals_source_kinds_walker`]
+    /// on the same fixture.
+    ///
+    /// Yields `&ConfigSource` rather than an owned scalar because
+    /// [`ConfigSource`] is not [`Copy`] (its [`ConfigSource::Env`] arm
+    /// carries an owned [`String`] prefix, its [`ConfigSource::File`]
+    /// arm an owned [`std::path::PathBuf`] path) — the borrow-side
+    /// altitude peer of [`Self::paths`] on the key axis, matching the
+    /// shape [`std::collections::btree_map::Values`] carries on any
+    /// keyed map whose value type is not `Copy`. Consumers wanting the
+    /// scalar coordinate reach for [`Self::source_kinds`] (owned
+    /// [`Copy`] [`crate::ConfigSourceKind`]).
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapSources`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapProvenances`] carries on the value walker,
+    /// projected one altitude down to the [`ConfigSource`] borrow.
+    /// Pointwise-equal to `self.provenances().map(Provenance::source)`
+    /// in element count, order, and element identity by construction.
+    #[must_use]
+    pub fn sources(&self) -> ProvenanceMapSources<'_> {
+        ProvenanceMapSources {
+            inner: self.inner.values(),
+        }
+    }
+
     /// Per-tier leaf-count histogram — the shikumi cube-native
     /// [`AxisHistogram<ConfigTierKind>`][crate::AxisHistogram] view over
     /// the tier attribution of each resolved leaf. Every leaf's
@@ -18388,6 +18441,72 @@ impl ExactSizeIterator for ProvenanceMapSourceKinds<'_> {
 }
 
 impl std::iter::FusedIterator for ProvenanceMapSourceKinds<'_> {}
+
+/// Sorted iterator over just the leaf [`ConfigSource`] of a
+/// [`ProvenanceMap`] — the concrete return type of
+/// [`ProvenanceMap::sources`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that projects each
+/// `&Provenance` through [`Provenance::source`] to the borrowed
+/// [`ConfigSource`] reference every leaf carries.
+///
+/// The full-source-altitude peer of [`ProvenanceMapSourceKinds`] on
+/// the source axis of the same primitive: where
+/// [`ProvenanceMapSourceKinds`] yields the [`crate::ConfigSourceKind`]
+/// scalar (dropping the [`ConfigSource::Env`] prefix /
+/// [`ConfigSource::File`] path payload), this iterator yields the
+/// whole [`ConfigSource`] borrow — the same elements, same order (lex
+/// on the hidden leaf path), same length, restricted to the full
+/// source axis of the atomic `(tier, source)` pair each
+/// [`Provenance`] carries. The borrow-side altitude peer of
+/// [`ProvenanceMapProvenances`] on the value walker: both hand out
+/// borrows because their element types are not [`Copy`]. Matches the
+/// same borrow shape [`std::collections::btree_map::Values`] carries
+/// on any keyed map whose value type is not [`Copy`].
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapProvenances`] carries on the value walker. [`Clone`]
+/// hands out an independent walk over the same underlying [`BTreeMap`]
+/// (a two-pass "any / all / count" over the source stream without a
+/// `.collect::<Vec<_>>()` intermediate).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapSources<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl<'a> Iterator for ProvenanceMapSources<'a> {
+    type Item = &'a ConfigSource;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Provenance::source)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapSources<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Provenance::source)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapSources<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapSources<'_> {}
 
 /// Consuming iterator over the owned `(Vec<String>, Provenance)` pairs
 /// of a [`ProvenanceMap`], yielded in lex order on the path.
@@ -43901,6 +44020,221 @@ mod progressive_tests {
         assert_eq!(hist.count(ConfigTierKind::Default), 2);
         assert_eq!(hist.count(ConfigTierKind::Bare), 1);
         assert_eq!(hist.count(ConfigTierKind::Custom), 0);
+    }
+
+    // -------- ProvenanceMap::sources — the full-source-altitude walker --------
+
+    #[test]
+    fn provenance_map_sources_agrees_with_provenances_source_projection() {
+        // The source-only walker yields the same element stream, in the
+        // same order, as `provenances().map(Provenance::source)`. Peer
+        // of the tiers / source_kinds pins on the third axis of the
+        // atomic (tier, source) pair — the whole `ConfigSource` borrow
+        // (not just its kind).
+        let r = Prog::resolve_progressive();
+        let via_sources: Vec<&ConfigSource> = r.provenance().sources().collect();
+        let via_provs: Vec<&ConfigSource> = r
+            .provenance()
+            .provenances()
+            .map(Provenance::source)
+            .collect();
+        assert_eq!(via_sources, via_provs);
+    }
+
+    #[test]
+    fn provenance_map_sources_matches_prog_fixture_by_leaf_order() {
+        // Prog is a pure-progressive fixture (no overlays), so every
+        // leaf's `ConfigSource` is `Defaults`. Peer of the source_kinds
+        // fixture pin on the full-source altitude.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<&ConfigSource> = r.provenance().sources().collect();
+        assert_eq!(
+            seq,
+            vec![
+                &ConfigSource::Defaults,
+                &ConfigSource::Defaults,
+                &ConfigSource::Defaults,
+                &ConfigSource::Defaults,
+            ]
+        );
+    }
+
+    #[test]
+    fn provenance_map_sources_surfaces_file_and_env_payloads_from_overlays() {
+        // Distinguishing witness on the full-source altitude: the
+        // walker projects the whole `ConfigSource` borrow, so a
+        // File("/etc/prog.yaml") overlay and an Env("PROG_") overlay
+        // land under their per-leaf source with their payload
+        // preserved. `source_kinds()` would collapse both to their
+        // `ConfigSourceKind` tag and lose the file path / env prefix —
+        // this pin is the load-bearing distinction between the two
+        // walkers.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let file_layer = ProgressiveLayer::file("/etc/prog.yaml", d);
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let env_layer = ProgressiveLayer::env("PROG_", env_dict);
+        let r = Prog::resolve_progressive_with(&[file_layer, env_layer]);
+        // Prog leaves are (a, b, c, d) in lex order:
+        // a=Discovered(Defaults), b=Custom(File), c=Custom(Env),
+        // d=Default(Defaults).
+        let seq: Vec<&ConfigSource> = r.provenance().sources().collect();
+        assert_eq!(
+            seq,
+            vec![
+                &ConfigSource::Defaults,
+                &ConfigSource::File("/etc/prog.yaml".into()),
+                &ConfigSource::Env("PROG_".to_owned()),
+                &ConfigSource::Defaults,
+            ]
+        );
+    }
+
+    #[test]
+    fn provenance_map_sources_len_matches_map_len_pointwise() {
+        // ExactSizeIterator on the sources walker reports the same
+        // remaining count as the pair walker on the same underlying
+        // BTreeMap — the projection is element-preserving, so
+        // `sources().len() == entries().len() == map.len()` at every
+        // remaining cursor position.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().sources();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_sources_next_back_walks_specific_to_coarse() {
+        // DoubleEndedIterator on the sources walker: reversed stream
+        // equals the forward stream reversed via `.collect().rev()`.
+        let r = Prog::resolve_progressive();
+        let mut forward: Vec<&ConfigSource> = r.provenance().sources().collect();
+        forward.reverse();
+        let backward: Vec<&ConfigSource> = r.provenance().sources().rev().collect();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_sources_clone_hands_out_independent_walk() {
+        // The full trait algebra — Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone — is verified at
+        // compile time by a static bound; then a runtime cross-walk
+        // asserts the cloned walker yields the same source stream as
+        // the original.
+        fn assert_algebra<'a, I>(_: &I)
+        where
+            I: Iterator<Item = &'a ConfigSource>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().sources();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<&ConfigSource> = it.collect();
+        let b: Vec<&ConfigSource> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_sources_return_type_is_nameable_provenance_map_sources() {
+        // Pin the concrete-return-type sharpen at the type-signature
+        // level: a struct field bound on `ProvenanceMapSources<'a>`
+        // holds the handle across a return. Same shape as the
+        // pre-existing paths / provenances / tiers / source_kinds
+        // nameability pins.
+        struct Held<'a> {
+            walker: ProvenanceMapSources<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.sources(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_sources_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().sources();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapSources"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_sources_and_paths_zip_recompose_leaf_to_source_pairs() {
+        // Composability law: zipping `paths()` and `sources()` yields
+        // the same `(path, source)` stream as
+        // `entries().map(|(p, prov)| (p, prov.source()))`, in the same
+        // lex order. Regression against a future edit that reordered
+        // either projection walker independently of the other.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, ConfigSource)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().sources())
+            .map(|(p, s)| (p.to_vec(), s.clone()))
+            .collect();
+        let from_entries: Vec<(Vec<String>, ConfigSource)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.source().clone()))
+            .collect();
+        assert_eq!(zipped, from_entries);
+    }
+
+    #[test]
+    fn provenance_map_sources_folded_to_source_kinds_equals_source_kinds_walker() {
+        // Cross-altitude consistency: mapping the per-leaf source
+        // stream through `ConfigSource::kind` recovers the same
+        // element stream as `source_kinds()`. This is the
+        // full-source ↔ source-kind agreement law: the two walkers
+        // project the same atomic (tier, source) pair through the
+        // same `Provenance::source` accessor on the same underlying
+        // BTreeMap values, differing only in whether the kind
+        // projection happens inside the walker (source_kinds) or
+        // outside it (sources().map(ConfigSource::kind)).
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let file_layer = ProgressiveLayer::file("/etc/prog.yaml", d);
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let env_layer = ProgressiveLayer::env("PROG_", env_dict);
+        let r = Prog::resolve_progressive_with(&[file_layer, env_layer]);
+        let via_sources: Vec<crate::ConfigSourceKind> =
+            r.provenance().sources().map(ConfigSource::kind).collect();
+        let via_source_kinds: Vec<crate::ConfigSourceKind> =
+            r.provenance().source_kinds().collect();
+        assert_eq!(via_sources, via_source_kinds);
+    }
+
+    #[test]
+    fn provenance_map_sources_empty_on_empty_map() {
+        // Empty-map degenerate on the sources walker: len() == 0,
+        // size_hint() == (0, Some(0)), and None on the first pull from
+        // either end.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.sources().len(), 0);
+        assert_eq!(empty.sources().size_hint(), (0, Some(0)));
+        assert!(empty.sources().next().is_none());
+        assert!(empty.sources().next_back().is_none());
     }
 
     // -------- IntoIterator / FromIterator / Extend on ProvenanceMap --------
