@@ -1014,6 +1014,107 @@ impl Provenance {
         crate::axis_ordinal(self.source_kind())
     }
 
+    /// Returns `true` iff this provenance's source is
+    /// [`ConfigSource::Defaults`] — the scalar source-axis predicate
+    /// projection of the atomic `(tier, source)` pair on the source
+    /// altitude, mirroring the tier-altitude quartet
+    /// [`Self::is_bare`] / [`Self::is_discovered`] / [`Self::is_default`]
+    /// / [`Self::is_custom`] one axis over.
+    ///
+    /// Equal to `self.source().is_defaults()` by construction — one
+    /// method call answers "was this leaf produced by a computed-defaults
+    /// layer?" without borrowing the heavier [`ConfigSource`] payload
+    /// (which also carries the file path or env prefix) at every site.
+    /// Peer of [`Self::source_kind_ordinal`] on the same source axis of
+    /// the atomic pair: `source_kind_ordinal` projects the axis to a
+    /// scalar `usize`, this triplet projects it to a scalar `bool` per
+    /// cell, together they close both the ordinal-projection and the
+    /// predicate-projection sibling gaps on the source altitude of the
+    /// atomic `(tier, source)` pair — the exact mirror of the same
+    /// pairing on the tier altitude ([`Self::tier_ordinal`] +
+    /// [`Self::is_bare`] / [`Self::is_discovered`] / [`Self::is_default`]
+    /// / [`Self::is_custom`]).
+    ///
+    /// Before this seam, a caller wanting the yes/no answer for a
+    /// source cell — a `ConfigPlane` broadcast surface tagging each
+    /// broadcast leaf with the `Defaults` source-kind bit at compile
+    /// time (via the const-callability weld below), a telemetry counter
+    /// keyed on the resolved source-kind without paying for the
+    /// three-cell histogram walk, an operator-facing
+    /// `/healthz/provenance` cell that only distinguishes `defaults` vs
+    /// operator-supplied overlays — reached through
+    /// `prov.source().is_defaults()`, a two-hop borrow-and-predicate
+    /// chain that named the [`Self::source`] projection at the call
+    /// site instead of the inherent seam.
+    ///
+    /// `const`-callable — the body is a one-hop call into
+    /// [`ConfigSource::is_defaults`] (already `pub const fn`), so a
+    /// compile-time-known [`Provenance`] projects its defaults-source
+    /// polarity at compile time too. Composes with the `const`-callable
+    /// [`Self::computed`] constructor to weld the whole
+    /// `computed → is_defaults` pipeline through
+    /// [`tests::provenance_source_predicates_are_const_callable`],
+    /// mirroring the [`ConfigSource`] tag-side const-callability weld at
+    /// `config_source_predicates_and_kind_are_const_callable`
+    /// (`8db9806`) one altitude down and the tier-side weld at
+    /// `provenance_tier_predicates_are_const_callable` (`d586c87`) one
+    /// axis over on the same primitive.
+    ///
+    /// Tag-side agreement is a structural law:
+    /// `prov.is_defaults() == prov.source().is_defaults()` on every
+    /// constructor row — pinned pointwise by
+    /// [`tests::provenance_source_predicates_agree_with_source_predicates_pointwise`],
+    /// the source-altitude analogue of the tier-altitude pin
+    /// `provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise`
+    /// (`d586c87`). The three sibling predicates form a closed disjoint
+    /// partition of the source-axis variant space — every [`Provenance`]
+    /// value satisfies exactly one — pinned by
+    /// [`tests::provenance_source_predicates_are_a_closed_ternary_partition`],
+    /// the source-altitude analogue of the tier-altitude quaternary-
+    /// partition pin `provenance_tier_predicates_are_a_closed_quaternary_partition`.
+    #[must_use]
+    pub const fn is_defaults(&self) -> bool {
+        self.source.is_defaults()
+    }
+
+    /// Returns `true` iff this provenance's source is
+    /// [`ConfigSource::Env`] regardless of the inner prefix payload;
+    /// source-axis sibling of [`Self::is_defaults`]. See
+    /// [`Self::is_defaults`] for the full contract (const-callability,
+    /// agreement pin, ternary-partition pin).
+    ///
+    /// Prefix-independence — the answer is the same for every
+    /// `Env(prefix)` regardless of the prefix string — mirrors the
+    /// payload-independence contract on [`ConfigSource::is_env`] (which
+    /// cannot see the [`String`] inside its `Env(prefix)` arm) and is
+    /// pinned by the same pointwise-agreement law
+    /// [`tests::provenance_source_predicates_agree_with_source_predicates_pointwise`]:
+    /// the kind-side predicate has no [`String`] visibility, so a future
+    /// edit that made this arm inspect the prefix would diverge from
+    /// the kind-side and fail the pin.
+    #[must_use]
+    pub const fn is_env(&self) -> bool {
+        self.source.is_env()
+    }
+
+    /// Returns `true` iff this provenance's source is
+    /// [`ConfigSource::File`] regardless of the inner path payload;
+    /// source-axis sibling of [`Self::is_defaults`]. See
+    /// [`Self::is_defaults`] for the full contract.
+    ///
+    /// Path-independence — the answer is the same for every
+    /// `File(path)` regardless of the [`std::path::PathBuf`] value —
+    /// mirrors the payload-independence contract on
+    /// [`ConfigSource::is_file`] (which cannot see the [`PathBuf`] inside
+    /// its `File(path)` arm) and is pinned by the same pointwise-
+    /// agreement law: a future edit that made this arm inspect the path
+    /// (a canonicalization check, an extension-shape check) would
+    /// diverge from the kind-side and fail the pin.
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
+        self.source.is_file()
+    }
+
     /// Consume `self`, yielding the owned `(tier, source)` pair the
     /// provenance carries — the consuming destructuring dual of the
     /// borrow-side [`Self::tier`] / [`Self::source`] accessor pair.
@@ -63364,6 +63465,172 @@ mod progressive_tests {
         assert!(DISCOVERED_IS_DISCOVERED);
         assert!(DEFAULT_IS_DEFAULT);
         assert!(CUSTOM_IS_CUSTOM);
+    }
+
+    // ── Provenance::is_defaults / is_env / is_file —
+    //    scalar source-axis predicate projection of the atomic (tier, source)
+    //    pair; the source-altitude sibling of the tier-altitude quartet
+    //    (`is_bare` / `is_discovered` / `is_default` / `is_custom`) closed one
+    //    axis over on the same primitive by `d586c87` ──
+
+    #[test]
+    fn provenance_is_defaults_true_only_for_defaults_source() {
+        // Polarity pin per constructor row on the source axis: exactly
+        // the four computed-defaults constructors (`bare` / `discovered`
+        // / `prescribed_default` / `computed(_)`) answer `true`; the
+        // `file(_)` / `env(_)` operator overlays answer `false`.
+        // Mirrors `provenance_is_bare_true_only_for_bare_tier` (`d586c87`)
+        // one axis over on the same primitive. The `computed(Custom)`
+        // row doubles as the tier-independence pin: the answer is
+        // `true` for every computed-defaults row regardless of which
+        // tier cell the `ConfigTierKind` argument names.
+        assert!(Provenance::bare().is_defaults());
+        assert!(Provenance::discovered().is_defaults());
+        assert!(Provenance::prescribed_default().is_defaults());
+        assert!(Provenance::computed(ConfigTierKind::Custom).is_defaults());
+        assert!(!Provenance::file("/etc/is_defaults_polarity.yaml").is_defaults());
+        assert!(!Provenance::env("SHIKUMI_IS_DEFAULTS_POLARITY_").is_defaults());
+    }
+
+    #[test]
+    fn provenance_is_env_true_only_for_env_source() {
+        // Polarity pin on the Env cell of the source axis; peer of
+        // `provenance_is_defaults_true_only_for_defaults_source`.
+        // Prefix-independence pin: the answer is the same whether the
+        // Env source carries a short prefix or a long one — the arm
+        // cannot see the `String` payload.
+        assert!(!Provenance::bare().is_env());
+        assert!(!Provenance::discovered().is_env());
+        assert!(!Provenance::prescribed_default().is_env());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_env());
+        assert!(!Provenance::file("/etc/is_env_polarity.yaml").is_env());
+        assert!(Provenance::env("A_").is_env());
+        assert!(Provenance::env("SHIKUMI_IS_ENV_POLARITY_LONG_PREFIX_").is_env());
+    }
+
+    #[test]
+    fn provenance_is_file_true_only_for_file_source() {
+        // Polarity pin on the File cell of the source axis; peer of
+        // `provenance_is_defaults_true_only_for_defaults_source`.
+        // Path-independence pin: the answer is the same for a relative
+        // path, an absolute path, or a path with unusual extensions —
+        // the arm cannot see the `PathBuf` payload.
+        assert!(!Provenance::bare().is_file());
+        assert!(!Provenance::discovered().is_file());
+        assert!(!Provenance::prescribed_default().is_file());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_file());
+        assert!(!Provenance::env("SHIKUMI_IS_FILE_POLARITY_").is_file());
+        assert!(Provenance::file("/etc/is_file_polarity.yaml").is_file());
+        assert!(Provenance::file("relative/path.toml").is_file());
+    }
+
+    #[test]
+    fn provenance_source_predicates_agree_with_source_predicates_pointwise() {
+        // Structural law: for every shipped constructor row,
+        // `prov.is_X() == prov.source().is_X()` for X in
+        // {defaults, env, file}. Mirrors
+        // `provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise`
+        // (`d586c87`) one axis over on the same primitive; catches a
+        // future edit that drifts the source-altitude sibling's polarity
+        // away from the underlying `ConfigSource` predicate. Also pins
+        // the payload-independence contract on the `is_env` / `is_file`
+        // arms — the two-hop `prov.source().is_X()` chain has no
+        // visibility beyond the tag, so the one-hop `prov.is_X()` seam
+        // is forbidden from consulting the payload either.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/source_predicate_agreement.yaml"),
+            Provenance::env("SHIKUMI_SOURCE_PREDICATE_AGREEMENT_"),
+        ] {
+            let s = prov.source();
+            assert_eq!(
+                prov.is_defaults(),
+                s.is_defaults(),
+                "is_defaults drift on {prov:?}",
+            );
+            assert_eq!(prov.is_env(), s.is_env(), "is_env drift on {prov:?}");
+            assert_eq!(prov.is_file(), s.is_file(), "is_file drift on {prov:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_source_predicates_are_a_closed_ternary_partition() {
+        // Every Provenance value from the shipped constructor surface
+        // satisfies exactly one of the three sibling predicates: none
+        // satisfies two, none satisfies zero. Ternary-partition analogue
+        // of `provenance_tier_predicates_are_a_closed_quaternary_partition`
+        // (`d586c87`) one axis over on the same primitive; ties the
+        // Provenance-altitude closure on the source axis to the same
+        // closed-partition discipline the three cells of
+        // `ConfigSourceKind::ALL` carry.
+        //
+        // A future fourth `ConfigSource` variant landing without its
+        // own sibling predicate on `Provenance` (a hypothetical
+        // `Discovered(_)` source-shape once it splits from `Defaults`,
+        // a `Runtime(_)` source-shape, etc.) collapses the partition to
+        // zero on that variant, failing here before drifting through
+        // any consumer site keying on the three inherent predicates.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/source_predicate_partition.yaml"),
+            Provenance::env("SHIKUMI_SOURCE_PREDICATE_PARTITION_"),
+        ] {
+            let hits = usize::from(prov.is_defaults())
+                + usize::from(prov.is_env())
+                + usize::from(prov.is_file());
+            assert_eq!(
+                hits, 1,
+                "Provenance {prov:?} must satisfy exactly one of \
+                 is_defaults/is_env/is_file (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_source_predicates_are_const_callable() {
+        // Weld the const-callability of the source-axis predicate
+        // triplet (`Provenance::is_defaults` / `is_env` / `is_file`)
+        // with the const-callable `Provenance::computed` constructor at
+        // compile time. Mirrors the shape of
+        // `provenance_tier_predicates_are_const_callable` (`d586c87`)
+        // one axis over on the same primitive and of
+        // `config_source_predicates_and_kind_are_const_callable`
+        // (`8db9806`) on the `ConfigSource` tag-side one altitude down
+        // — the crate's established idiom for pinning compile-time-
+        // callability at the exact line a future edit would drift it.
+        //
+        // Every computed-defaults `Provenance::computed(_)` value
+        // carries `ConfigSource::Defaults`, which has no non-const-Drop
+        // payload — but `Provenance` still cannot be bound to a `const`
+        // item because the `source: ConfigSource` field type carries
+        // non-const-Drop variants (`PathBuf` / `String` in the other
+        // arms), so we route through a `static` binding the same way
+        // the tier-side weld does: statics never drop, so the
+        // drop-check that rejects a `const` Provenance does not apply,
+        // and every method call `.is_X()` in the const-init positions
+        // below still routes through the const-fn `Provenance::computed`
+        // constructor and the const-fn `Provenance::is_X` predicate.
+        // The moment either half of the composition loses its
+        // const-ness (a future edit that reaches for a non-const helper
+        // inside `computed` or any of the three predicates) one of the
+        // three `const _: bool = ...` welds below fails to compile at
+        // THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the type.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_IS_DEFAULTS: bool = COMPUTED_PROV.is_defaults();
+        const COMPUTED_IS_ENV: bool = COMPUTED_PROV.is_env();
+        const COMPUTED_IS_FILE: bool = COMPUTED_PROV.is_file();
+
+        assert!(COMPUTED_IS_DEFAULTS);
+        assert!(!COMPUTED_IS_ENV);
+        assert!(!COMPUTED_IS_FILE);
     }
 
     // ── ProvenanceMap::source_kind_histogram — cube-native per-layer-kind
