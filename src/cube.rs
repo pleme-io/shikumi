@@ -12409,6 +12409,117 @@ pub enum ParseAxisHistogramError {
     },
 }
 
+impl ParseAxisHistogramError {
+    /// True iff this rejection is [`Self::MissingEquals`] — a
+    /// `<label>=<count>` pair arrived without the `=` separator between
+    /// its two halves. The three label-check / count-check / uniqueness-
+    /// check variants ([`Self::UnknownLabel`], [`Self::InvalidCount`],
+    /// [`Self::DuplicateLabel`]) all return `false`.
+    ///
+    /// **The tag-only classifier on the structural-versus-label
+    /// polarity axis.** A consumer holding a freshly returned
+    /// [`ParseAxisHistogramError`] previously had two paths for asking
+    /// "is the failure the structural separator check, or a per-pair
+    /// content rejection?", each leaking work: (a) `matches!(err,
+    /// ParseAxisHistogramError::MissingEquals { .. })` inline at every
+    /// seam, a shape the exhaustiveness checker cannot help keep in
+    /// sync with a future variant addition (a hypothetical `EmptyCount`
+    /// or `LabelCaseViolation` fifth variant would silently keep
+    /// answering `false` at every inline `matches!` site); or (b) an
+    /// outer `match` decomposing the whole four-arm sum at each
+    /// classification site, forcing a re-declaration of the arms a
+    /// consumer that only wants the polarity does not care about.
+    ///
+    /// The tag-only sibling here answers the same question through a
+    /// single welded [`matches!`]: adding a fifth variant fails to
+    /// compile at this method's pattern in lockstep with
+    /// [`Self::is_unknown_label`], [`Self::is_invalid_count`], and
+    /// [`Self::is_duplicate_label`] via the quaternary-partition pin
+    /// [`tests::parse_axis_histogram_error_predicates_are_a_closed_quaternary_partition`],
+    /// which fires when a new variant collapses the partition sum to
+    /// zero at that variant. Retry-policy dispatches that treat
+    /// separator-missing inputs uniformly (never worth retrying — no
+    /// prompt-completion heuristic recovers a missing `=` inside a
+    /// pair) split from the three label / count / uniqueness arms
+    /// (each potentially recoverable through a different upstream
+    /// fixup) reach the polarity through one method call.
+    ///
+    /// **Idiom-peer of the tag-side sibling-predicate closures on
+    /// other closed-partition error primitives.** The direct
+    /// methodological analogue of
+    /// [`crate::ParseFormatCoordinatesError`]'s
+    /// `is_missing_separator`/`is_unknown_format`/`is_unknown_provenance`
+    /// trio (commit `dcc8cb3`) and
+    /// [`crate::secret_client::SecretError`]'s tag-side quintet
+    /// (commit `bc1db8f`): same routing shape, same closed-partition
+    /// contract on a payload-bearing parse-error enum with zero
+    /// pre-existing tag-side siblings.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParseAxisHistogramError`] projects its polarity at compile
+    /// time too.
+    #[must_use]
+    pub const fn is_missing_equals(&self) -> bool {
+        matches!(self, Self::MissingEquals { .. })
+    }
+
+    /// True iff this rejection is [`Self::UnknownLabel`] — a label
+    /// substring did not match any canonical name on the axis
+    /// ([`ClosedAxisLabel::from_canonical_str`] returned [`None`]).
+    /// The structural-check variant [`Self::MissingEquals`], the
+    /// count-check variant [`Self::InvalidCount`], and the
+    /// uniqueness-check variant [`Self::DuplicateLabel`] all return
+    /// `false`.
+    ///
+    /// Sibling of [`Self::is_missing_equals`], [`Self::is_invalid_count`],
+    /// and [`Self::is_duplicate_label`] on the same closed quaternary
+    /// partition; same routing rationale (see [`Self::is_missing_equals`]
+    /// docs). An operator-facing suggestion engine that surfaces "did
+    /// you mean `<nearest canonical>`?" only on the label-half
+    /// rejection routes on this predicate at the borrowed error
+    /// without matching on the whole four-arm sum.
+    #[must_use]
+    pub const fn is_unknown_label(&self) -> bool {
+        matches!(self, Self::UnknownLabel { .. })
+    }
+
+    /// True iff this rejection is [`Self::InvalidCount`] — a count
+    /// substring did not parse as [`usize`]. The structural-check
+    /// variant [`Self::MissingEquals`], the label-check variant
+    /// [`Self::UnknownLabel`], and the uniqueness-check variant
+    /// [`Self::DuplicateLabel`] all return `false`.
+    ///
+    /// Sibling of [`Self::is_missing_equals`], [`Self::is_unknown_label`],
+    /// and [`Self::is_duplicate_label`] on the same closed quaternary
+    /// partition; same routing rationale (see [`Self::is_missing_equals`]
+    /// docs). A diagnostic layer that surfaces a numeric-hint underline
+    /// ("expected a non-negative integer") only on the count-half
+    /// rejection routes on this predicate.
+    #[must_use]
+    pub const fn is_invalid_count(&self) -> bool {
+        matches!(self, Self::InvalidCount { .. })
+    }
+
+    /// True iff this rejection is [`Self::DuplicateLabel`] — a label
+    /// appeared more than once in the input. The structural-check
+    /// variant [`Self::MissingEquals`], the label-check variant
+    /// [`Self::UnknownLabel`], and the count-check variant
+    /// [`Self::InvalidCount`] all return `false`.
+    ///
+    /// Sibling of [`Self::is_missing_equals`], [`Self::is_unknown_label`],
+    /// and [`Self::is_invalid_count`] on the same closed quaternary
+    /// partition; same routing rationale (see [`Self::is_missing_equals`]
+    /// docs). The uniqueness rejection is structurally distinct from
+    /// the three per-pair rejections — it fires only after every pair
+    /// has parsed successfully — so a diagnostic layer that wants to
+    /// surface "the input parsed, but a label was named twice" as a
+    /// distinct operator-facing hint routes on this predicate.
+    #[must_use]
+    pub const fn is_duplicate_label(&self) -> bool {
+        matches!(self, Self::DuplicateLabel { .. })
+    }
+}
+
 impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
     type Err = ParseAxisHistogramError;
 
@@ -40955,6 +41066,263 @@ mod tests {
             label: "added".to_owned(),
         };
         assert_eq!(format!("{duplicate}"), "duplicate label \"added\"");
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_is_missing_equals_true_only_for_missing_equals_variant() {
+        // Per-variant polarity pin on the missing-`=` corner of the
+        // closed quaternary partition. Iterates over four payload
+        // shapes (empty, short, whitespace-padded, comma-embedded) to
+        // lock the payload-independence contract structurally: the
+        // sibling predicates key on the variant tag alone and are
+        // forbidden from consulting the `String` field. Direct
+        // methodological analogue of the trio
+        // `parse_format_coordinates_error_is_{missing_separator,
+        // unknown_format, unknown_provenance}_true_only_for_..._variant`
+        // (`dcc8cb3`) one crate module over.
+        let payloads = ["", "addedone", "  added ", "added,removed"];
+        for pair in payloads {
+            let err = ParseAxisHistogramError::MissingEquals {
+                pair: pair.to_owned(),
+            };
+            assert!(
+                err.is_missing_equals(),
+                "MissingEquals {{pair:{pair:?}}} must satisfy is_missing_equals",
+            );
+        }
+        assert!(
+            !ParseAxisHistogramError::UnknownLabel {
+                label: "bogus".to_owned()
+            }
+            .is_missing_equals()
+        );
+        assert!(
+            !ParseAxisHistogramError::InvalidCount {
+                label: "added".to_owned(),
+                count: "oops".to_owned(),
+            }
+            .is_missing_equals()
+        );
+        assert!(
+            !ParseAxisHistogramError::DuplicateLabel {
+                label: "added".to_owned()
+            }
+            .is_missing_equals()
+        );
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_is_unknown_label_true_only_for_unknown_label_variant() {
+        // Mirror per-variant polarity pin on the UnknownLabel corner.
+        let payloads = ["", "bogus", "  bogus ", "BOGUS"];
+        for label in payloads {
+            let err = ParseAxisHistogramError::UnknownLabel {
+                label: label.to_owned(),
+            };
+            assert!(
+                err.is_unknown_label(),
+                "UnknownLabel {{label:{label:?}}} must satisfy is_unknown_label",
+            );
+        }
+        assert!(
+            !ParseAxisHistogramError::MissingEquals {
+                pair: "addedone".to_owned()
+            }
+            .is_unknown_label()
+        );
+        assert!(
+            !ParseAxisHistogramError::InvalidCount {
+                label: "added".to_owned(),
+                count: "oops".to_owned(),
+            }
+            .is_unknown_label()
+        );
+        assert!(
+            !ParseAxisHistogramError::DuplicateLabel {
+                label: "added".to_owned()
+            }
+            .is_unknown_label()
+        );
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_is_invalid_count_true_only_for_invalid_count_variant() {
+        // Mirror per-variant polarity pin on the InvalidCount corner.
+        let payloads = [
+            ("", ""),
+            ("added", "oops"),
+            ("removed", "-1"),
+            ("context", "1.5"),
+        ];
+        for (label, count) in payloads {
+            let err = ParseAxisHistogramError::InvalidCount {
+                label: label.to_owned(),
+                count: count.to_owned(),
+            };
+            assert!(
+                err.is_invalid_count(),
+                "InvalidCount {{label:{label:?}, count:{count:?}}} \
+                 must satisfy is_invalid_count",
+            );
+        }
+        assert!(
+            !ParseAxisHistogramError::MissingEquals {
+                pair: "addedone".to_owned()
+            }
+            .is_invalid_count()
+        );
+        assert!(
+            !ParseAxisHistogramError::UnknownLabel {
+                label: "bogus".to_owned()
+            }
+            .is_invalid_count()
+        );
+        assert!(
+            !ParseAxisHistogramError::DuplicateLabel {
+                label: "added".to_owned()
+            }
+            .is_invalid_count()
+        );
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_is_duplicate_label_true_only_for_duplicate_label_variant() {
+        // Mirror per-variant polarity pin on the DuplicateLabel corner.
+        let payloads = ["", "added", "  added ", "ADDED"];
+        for label in payloads {
+            let err = ParseAxisHistogramError::DuplicateLabel {
+                label: label.to_owned(),
+            };
+            assert!(
+                err.is_duplicate_label(),
+                "DuplicateLabel {{label:{label:?}}} must satisfy is_duplicate_label",
+            );
+        }
+        assert!(
+            !ParseAxisHistogramError::MissingEquals {
+                pair: "addedone".to_owned()
+            }
+            .is_duplicate_label()
+        );
+        assert!(
+            !ParseAxisHistogramError::UnknownLabel {
+                label: "bogus".to_owned()
+            }
+            .is_duplicate_label()
+        );
+        assert!(
+            !ParseAxisHistogramError::InvalidCount {
+                label: "added".to_owned(),
+                count: "oops".to_owned(),
+            }
+            .is_duplicate_label()
+        );
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_predicates_are_a_closed_quaternary_partition() {
+        // Every `ParseAxisHistogramError` value in the canonical sample
+        // table satisfies exactly one of the four sibling predicates:
+        // none satisfies two, none satisfies zero. Quaternary-partition
+        // analogue of the pin
+        // `parse_format_coordinates_error_predicates_are_a_closed_ternary_partition`
+        // (`dcc8cb3`) on `ParseFormatCoordinatesError`, lifted here
+        // onto the histogram-parser rejection tag. A future fifth
+        // variant landing on `ParseAxisHistogramError` (the doc names
+        // hypothetical `EmptyCount` and `LabelCaseViolation` as
+        // possible future rejection modes) without its own sibling
+        // predicate collapses the partition to zero on that variant,
+        // failing here before drifting through any consumer site.
+        let errors = [
+            ParseAxisHistogramError::MissingEquals {
+                pair: "addedone".to_owned(),
+            },
+            ParseAxisHistogramError::UnknownLabel {
+                label: "bogus".to_owned(),
+            },
+            ParseAxisHistogramError::InvalidCount {
+                label: "added".to_owned(),
+                count: "oops".to_owned(),
+            },
+            ParseAxisHistogramError::DuplicateLabel {
+                label: "added".to_owned(),
+            },
+        ];
+        for err in &errors {
+            let hits = usize::from(err.is_missing_equals())
+                + usize::from(err.is_unknown_label())
+                + usize::from(err.is_invalid_count())
+                + usize::from(err.is_duplicate_label());
+            assert_eq!(
+                hits, 1,
+                "ParseAxisHistogramError::{err:?} must satisfy exactly one of \
+                 is_missing_equals/is_unknown_label/is_invalid_count/is_duplicate_label \
+                 (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_predicates_agree_with_from_str_rejection_paths() {
+        // Cross-cut structural pin between the four documented parser
+        // rejection paths through `<AxisHistogram<A> as
+        // FromStr>::from_str` and the new sibling-predicate quartet:
+        // each canonical rejection origin lands on the predicate that
+        // names its rejection mode. Sibling of the per-variant
+        // `assert_from_str_rejects_{unknown_label,missing_equals,
+        // invalid_count}` helpers already in the module, extended here
+        // to the tag-side classifier surface so a future parser change
+        // that swapped the rejection routing for any of the four
+        // rejection paths would fire here before drifting through any
+        // consumer routing on the polarity quartet.
+
+        // ── missing-`=` rejection ──────────────────────────────────
+        let missing: ParseAxisHistogramError = "added"
+            .parse::<AxisHistogram<DiffLineKind>>()
+            .expect_err("`added` with no `=` must reject");
+        assert!(
+            missing.is_missing_equals(),
+            "expected is_missing_equals for {missing:?}",
+        );
+        assert!(!missing.is_unknown_label());
+        assert!(!missing.is_invalid_count());
+        assert!(!missing.is_duplicate_label());
+
+        // ── unknown-label rejection ────────────────────────────────
+        let unknown: ParseAxisHistogramError = "bogus=1"
+            .parse::<AxisHistogram<DiffLineKind>>()
+            .expect_err("`bogus=1` must reject with UnknownLabel");
+        assert!(!unknown.is_missing_equals());
+        assert!(
+            unknown.is_unknown_label(),
+            "expected is_unknown_label for {unknown:?}",
+        );
+        assert!(!unknown.is_invalid_count());
+        assert!(!unknown.is_duplicate_label());
+
+        // ── invalid-count rejection ────────────────────────────────
+        let invalid: ParseAxisHistogramError = "added=oops"
+            .parse::<AxisHistogram<DiffLineKind>>()
+            .expect_err("`added=oops` must reject with InvalidCount");
+        assert!(!invalid.is_missing_equals());
+        assert!(!invalid.is_unknown_label());
+        assert!(
+            invalid.is_invalid_count(),
+            "expected is_invalid_count for {invalid:?}",
+        );
+        assert!(!invalid.is_duplicate_label());
+
+        // ── duplicate-label rejection ──────────────────────────────
+        let duplicate: ParseAxisHistogramError = "added=1, added=2"
+            .parse::<AxisHistogram<DiffLineKind>>()
+            .expect_err("`added=1, added=2` must reject with DuplicateLabel");
+        assert!(!duplicate.is_missing_equals());
+        assert!(!duplicate.is_unknown_label());
+        assert!(!duplicate.is_invalid_count());
+        assert!(
+            duplicate.is_duplicate_label(),
+            "expected is_duplicate_label for {duplicate:?}",
+        );
     }
 
     #[test]
