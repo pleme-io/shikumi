@@ -1452,6 +1452,141 @@ impl AttributionRule {
         }
     }
 
+    /// Returns `true` when [`Self::figment_source_kind`] returns
+    /// [`Some(FigmentSourceKind::File)`]; equivalent to
+    /// `self.figment_source_kind() == Some(FigmentSourceKind::File)`.
+    ///
+    /// Rule-altitude sibling delegator on the figment-`Source`-axis
+    /// [`Option<FigmentSourceKind>`] projection: mirrors
+    /// [`Self::is_file_layer`] / [`Self::is_env_layer`] /
+    /// [`Self::is_defaults_layer`] (the total [`Self::layer_kind`]
+    /// projection's ternary sibling grid) and
+    /// [`Self::is_metadata_source_axis`] / [`Self::is_metadata_name_axis`]
+    /// (the total [`Self::metadata_axis`] projection's binary sibling
+    /// grid) on the two total orthogonal projections, and matches the
+    /// `Some-iff-attribution` discipline the partial projection was
+    /// documented under: the delegator is `false` on every name-axis
+    /// rule (where the outer `Option` is `None`) and `true` on the
+    /// source-axis rule whose identity pins the `File` cell.
+    ///
+    /// One-hop lift through the partial projection. Every consumer
+    /// routing on "did this attribution name a figment `Source::File`
+    /// layer?" — an operator-facing dashboard weighting `File`-source
+    /// attributions in the same bucket as the shikumi-side `File`
+    /// layer (they meet at the shikumi-env-layer ↔ figment-Env-name
+    /// resolution boundary in
+    /// [`AttributionSourceKindCoordinates`]'s realizable diagonal), a
+    /// structured-diagnostics legend rendering distinct prose per
+    /// source-axis kind, a captured-failure counter keyed on the
+    /// figment-Source-axis cell — had to route through the two-hop
+    /// composition `rule.figment_source_kind() == Some(FigmentSourceKind::File)`
+    /// (or the equivalent `is_some_and(FigmentSourceKind::is_file)`) at
+    /// every observation site. The rule-altitude delegator collapses
+    /// the two-hop probe into one, keeping the polarity of the
+    /// figment-Source-axis partition defined in exactly one place
+    /// ([`FigmentSourceKind::is_file`]).
+    ///
+    /// Pinned by
+    /// `attribution_rule_is_figment_source_file_agrees_with_figment_source_kind_is_file`.
+    /// The three source-axis sibling delegators
+    /// ([`Self::is_figment_source_file`], [`Self::is_figment_source_code`],
+    /// [`Self::is_figment_source_custom`]) form a `Some-iff-source-axis`
+    /// disjoint partition of [`Self::ALL`] — exactly one holds on every
+    /// source-axis rule, zero hold on every name-axis rule — pinned by
+    /// `attribution_rule_figment_source_kind_predicates_partition_source_axis_rules`.
+    #[must_use]
+    pub fn is_figment_source_file(self) -> bool {
+        self.figment_source_kind()
+            .is_some_and(FigmentSourceKind::is_file)
+    }
+
+    /// Returns `true` when [`Self::figment_source_kind`] returns
+    /// [`Some(FigmentSourceKind::Code)`]; equivalent to
+    /// `self.figment_source_kind() == Some(FigmentSourceKind::Code)`.
+    /// Sibling of [`Self::is_figment_source_file`]; see it for the
+    /// delegation rationale and the closed-partition pin.
+    ///
+    /// The single source-axis rule dispatched off `Source::Code` —
+    /// [`Self::DefaultsByCodeUniqueness`] — is the exact inhabitant of
+    /// this predicate; pinned by
+    /// `attribution_rule_is_figment_source_code_agrees_with_figment_source_kind_is_code`.
+    #[must_use]
+    pub fn is_figment_source_code(self) -> bool {
+        self.figment_source_kind()
+            .is_some_and(FigmentSourceKind::is_code)
+    }
+
+    /// Returns `true` when [`Self::figment_source_kind`] returns
+    /// [`Some(FigmentSourceKind::Custom)`]; equivalent to
+    /// `self.figment_source_kind() == Some(FigmentSourceKind::Custom)`.
+    /// Sibling of [`Self::is_figment_source_file`]; see it for the
+    /// delegation rationale and the closed-partition pin.
+    ///
+    /// Currently `false` on every recognized [`AttributionRule`] —
+    /// [`FigmentSourceKind::Custom`] is reachable on the figment-side
+    /// classification but no recognized rule currently dispatches off
+    /// `Source::Custom` (see the image-cardinality pin
+    /// `attribution_rule_figment_source_kind_image_is_file_and_code_only`).
+    /// Pinned by
+    /// `attribution_rule_is_figment_source_custom_never_holds` — a
+    /// future custom-source rule landing extends the image in lockstep
+    /// and moves the pin from `never` to per-variant polarity, forcing
+    /// the delegator's routing to be re-verified against the new arm.
+    #[must_use]
+    pub fn is_figment_source_custom(self) -> bool {
+        self.figment_source_kind()
+            .is_some_and(FigmentSourceKind::is_custom)
+    }
+
+    /// Returns `true` when [`Self::figment_name_tag_kind`] returns
+    /// [`Some(FigmentNameTagKind::Format)`]; equivalent to
+    /// `self.figment_name_tag_kind() == Some(FigmentNameTagKind::Format)`.
+    ///
+    /// Rule-altitude sibling delegator on the figment-`Metadata::name`
+    /// axis [`Option<FigmentNameTagKind>`] projection: symmetric peer
+    /// of [`Self::is_figment_source_file`] on the sibling partial
+    /// projection. The delegator is `false` on every source-axis rule
+    /// (where the outer `Option` is `None`) and `true` on the single
+    /// name-axis rule whose identity pins the `Format` cell
+    /// ([`Self::FileByMetadataName`]).
+    ///
+    /// One-hop lift through the partial projection — mirrors the
+    /// rationale documented on [`Self::is_figment_source_file`] and
+    /// keeps the polarity of the figment-`Metadata::name`-axis-kind
+    /// partition defined in exactly one place
+    /// ([`FigmentNameTagKind::is_format`]).
+    ///
+    /// Pinned by
+    /// `attribution_rule_is_figment_name_format_agrees_with_figment_name_tag_kind_is_format`.
+    /// The two name-axis sibling delegators
+    /// ([`Self::is_figment_name_format`], [`Self::is_figment_name_env`])
+    /// form a `Some-iff-name-axis` disjoint partition of [`Self::ALL`] —
+    /// exactly one holds on every name-axis rule, zero hold on every
+    /// source-axis rule — pinned by
+    /// `attribution_rule_figment_name_tag_kind_predicates_partition_name_axis_rules`.
+    #[must_use]
+    pub fn is_figment_name_format(self) -> bool {
+        self.figment_name_tag_kind()
+            .is_some_and(FigmentNameTagKind::is_format)
+    }
+
+    /// Returns `true` when [`Self::figment_name_tag_kind`] returns
+    /// [`Some(FigmentNameTagKind::Env)`]; equivalent to
+    /// `self.figment_name_tag_kind() == Some(FigmentNameTagKind::Env)`.
+    /// Sibling of [`Self::is_figment_name_format`]; see it for the
+    /// delegation rationale and the closed-partition pin.
+    ///
+    /// The two name-axis rules dispatched off env-shaped
+    /// `Metadata::name` values ([`Self::EnvByPrefix`],
+    /// [`Self::EnvByUniqueness`]) are the exact inhabitants of this
+    /// predicate; pinned by
+    /// `attribution_rule_is_figment_name_env_agrees_with_figment_name_tag_kind_is_env`.
+    #[must_use]
+    pub fn is_figment_name_env(self) -> bool {
+        self.figment_name_tag_kind()
+            .is_some_and(FigmentNameTagKind::is_env)
+    }
+
     /// Partial inverse of
     /// [`crate::FormatProvenance::file_attribution_rule`]: re-hydrate the
     /// recognized [`crate::FormatProvenance`] from a file-axis attribution
@@ -7975,6 +8110,228 @@ mod tests {
                 "rule {rule:?}: exactly one of figment_source_kind / \
                  figment_name_tag_kind must be Some (got src_some={src_some}, \
                  name_some={name_some})",
+            );
+        }
+    }
+
+    // ---- AttributionRule rule-altitude sibling delegators on the two
+    // ---- partial figment-metadata projections
+    // ----
+    // Peers of the rule-altitude sibling grids on the two total
+    // projections (`is_file_layer` / `is_env_layer` / `is_defaults_layer`
+    // on `layer_kind()`; `is_metadata_source_axis` / `is_metadata_name_axis`
+    // on `metadata_axis()`), lifted through the partial-Option shape of
+    // `figment_source_kind()` / `figment_name_tag_kind()` — the delegator
+    // is `false` on the whole complementary axis (where the outer
+    // `Option` is `None`), matching the `Some-iff-attribution`
+    // discipline already documented on the partial projections.
+
+    #[test]
+    fn attribution_rule_is_figment_source_file_agrees_with_figment_source_kind_is_file() {
+        // Per-corner routing-agreement pin on the File corner of the
+        // figment-Source-axis projection. The rule-altitude delegator
+        // is a thin lift of `self.figment_source_kind().is_some_and(
+        // FigmentSourceKind::is_file)`; the two entry points cannot
+        // drift. Mirrors `attribution_rule_is_file_layer_agrees_with_layer_kind_is_file`
+        // on the layer-kind projection, lifted through the partial
+        // `Option<_>` shape of the source-axis projection.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_figment_source_file(),
+                rule.figment_source_kind()
+                    .is_some_and(FigmentSourceKind::is_file),
+                "is_figment_source_file must route through \
+                 figment_source_kind().is_some_and(is_file) on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_figment_source_file(),
+                rule.figment_source_kind() == Some(FigmentSourceKind::File),
+                "is_figment_source_file must agree with figment_source_kind == Some(File) on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_figment_source_code_agrees_with_figment_source_kind_is_code() {
+        // Sibling of the File-corner routing pin, on the Code corner.
+        // Same twofold routing shape (delegator == is_some_and(is_code)
+        // and delegator == Option<_> equality).
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_figment_source_code(),
+                rule.figment_source_kind()
+                    .is_some_and(FigmentSourceKind::is_code),
+                "is_figment_source_code must route through \
+                 figment_source_kind().is_some_and(is_code) on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_figment_source_code(),
+                rule.figment_source_kind() == Some(FigmentSourceKind::Code),
+                "is_figment_source_code must agree with figment_source_kind == Some(Code) on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_figment_source_custom_agrees_with_figment_source_kind_is_custom() {
+        // Sibling of the File / Code corner routing pins, on the Custom
+        // corner. Same twofold routing shape; the polarity per rule
+        // happens to be `false` on every currently-recognized rule
+        // (see `attribution_rule_is_figment_source_custom_never_holds`)
+        // but the routing pin does not depend on the image being empty
+        // — it pins the delegator's contract independently of which
+        // rules currently inhabit the Custom cell.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_figment_source_custom(),
+                rule.figment_source_kind()
+                    .is_some_and(FigmentSourceKind::is_custom),
+                "is_figment_source_custom must route through \
+                 figment_source_kind().is_some_and(is_custom) on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_figment_source_custom(),
+                rule.figment_source_kind() == Some(FigmentSourceKind::Custom),
+                "is_figment_source_custom must agree with figment_source_kind == Some(Custom) on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_figment_source_custom_never_holds() {
+        // Image-emptiness pin on the Custom cell: no recognized
+        // AttributionRule currently dispatches off Source::Custom, so
+        // the delegator returns false on every variant. Documented on
+        // `figment_source_kind` and pinned image-side by
+        // `attribution_rule_figment_source_kind_image_is_file_and_code_only`
+        // — this test surfaces the same fact through the rule-altitude
+        // predicate. A future custom-source rule landing (the enum's
+        // doc names it as a future direction) makes at least one
+        // variant return true here, forcing this test to be replaced
+        // with a per-variant polarity pin against the new arm.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert!(
+                !rule.is_figment_source_custom(),
+                "no recognized rule dispatches off Source::Custom yet, but {rule:?} returned true",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_source_kind_predicates_partition_source_axis_rules() {
+        // Some-iff-source-axis disjoint-partition pin: the three
+        // source-axis sibling delegators sum to exactly one on every
+        // source-axis rule (metadata_axis == MetadataSource, the outer
+        // Option is Some) and exactly zero on every name-axis rule
+        // (metadata_axis == MetadataName, the outer Option is None).
+        // The rule-altitude analogue of
+        // `figment_source_kind_predicates_are_a_closed_ternary_partition`
+        // (the closed ternary partition on the FigmentSourceKind axis
+        // itself, if named there) lifted through the partial-Option
+        // shape. A future custom-source rule landing (Some(Custom))
+        // still keeps the sum at 1 on the source-axis side; a future
+        // rule dispatching off a new FigmentSourceKind variant (e.g.
+        // Url) would collapse the sum to 0 on that arm and fail here,
+        // forcing the delegator surface to extend in lockstep.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_figment_source_file())
+                + usize::from(rule.is_figment_source_code())
+                + usize::from(rule.is_figment_source_custom());
+            let expected = usize::from(rule.metadata_axis().is_metadata_source());
+            assert_eq!(
+                held, expected,
+                "rule {rule:?}: exactly {expected} figment-Source-kind delegator(s) must hold \
+                 (Some-iff-source-axis discipline; got held={held})",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_figment_name_format_agrees_with_figment_name_tag_kind_is_format() {
+        // Per-corner routing-agreement pin on the Format corner of the
+        // figment-Name-axis projection. Symmetric peer of the File-corner
+        // routing pin on the source-axis. Same twofold routing shape.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_figment_name_format(),
+                rule.figment_name_tag_kind()
+                    .is_some_and(FigmentNameTagKind::is_format),
+                "is_figment_name_format must route through \
+                 figment_name_tag_kind().is_some_and(is_format) on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_figment_name_format(),
+                rule.figment_name_tag_kind() == Some(FigmentNameTagKind::Format),
+                "is_figment_name_format must agree with figment_name_tag_kind == Some(Format) on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_figment_name_env_agrees_with_figment_name_tag_kind_is_env() {
+        // Sibling of the Format-corner routing pin, on the Env corner.
+        // Same twofold routing shape.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_figment_name_env(),
+                rule.figment_name_tag_kind()
+                    .is_some_and(FigmentNameTagKind::is_env),
+                "is_figment_name_env must route through \
+                 figment_name_tag_kind().is_some_and(is_env) on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_figment_name_env(),
+                rule.figment_name_tag_kind() == Some(FigmentNameTagKind::Env),
+                "is_figment_name_env must agree with figment_name_tag_kind == Some(Env) on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_predicates_partition_name_axis_rules() {
+        // Some-iff-name-axis disjoint-partition pin: the two name-axis
+        // sibling delegators sum to exactly one on every name-axis
+        // rule (metadata_axis == MetadataName, the outer Option is
+        // Some) and exactly zero on every source-axis rule
+        // (metadata_axis == MetadataSource, the outer Option is None).
+        // Dual of `attribution_rule_figment_source_kind_predicates_partition_source_axis_rules`
+        // on the sibling axis. Cross-check pin
+        // `attribution_rule_figment_metadata_delegators_form_bi_partition`
+        // (below) joins the two partitions and asserts they cover the
+        // full rule space exactly once.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_figment_name_format())
+                + usize::from(rule.is_figment_name_env());
+            let expected = usize::from(rule.metadata_axis().is_metadata_name());
+            assert_eq!(
+                held, expected,
+                "rule {rule:?}: exactly {expected} figment-Name-kind delegator(s) must hold \
+                 (Some-iff-name-axis discipline; got held={held})",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_metadata_delegators_form_bi_partition() {
+        // Cross-axis bi-partition pin joining both rule-altitude
+        // delegator groups: the source-axis (3) + name-axis (2) = 5
+        // delegators sum to exactly one on every recognized rule.
+        // Strictly stronger than the two per-axis partition pins
+        // together — pins that the union of the two partial
+        // partitions covers Self::ALL disjointly, mirroring
+        // `attribution_rule_figment_name_tag_kind_xor_figment_source_kind`
+        // at the delegator altitude (the biconditional on Options
+        // becomes an exact-count sum on the booleans).
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_figment_source_file())
+                + usize::from(rule.is_figment_source_code())
+                + usize::from(rule.is_figment_source_custom())
+                + usize::from(rule.is_figment_name_format())
+                + usize::from(rule.is_figment_name_env());
+            assert_eq!(
+                held, 1,
+                "rule {rule:?}: exactly one of the five figment-metadata rule-altitude \
+                 delegators must hold (got held={held})",
             );
         }
     }
