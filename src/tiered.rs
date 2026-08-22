@@ -19262,10 +19262,56 @@ impl<T> ProgressiveResolution<T> {
         &self.provenance
     }
 
-    /// Consume, yielding the resolved value (dropping provenance).
+    /// Consume, yielding the resolved value (dropping provenance) —
+    /// the consuming projection sibling of [`Self::into_provenance`]
+    /// on the other coordinate of the atomic `(value, provenance)`
+    /// pair. Both hand out exactly one coordinate with the other
+    /// discarded, both consume `self` without allocation, and
+    /// together they close the single-coordinate consuming
+    /// projections alongside the pair-destructuring
+    /// [`Self::into_parts`].
     #[must_use]
     pub fn into_value(self) -> T {
         self.value
+    }
+
+    /// Consume, yielding the per-leaf provenance map (dropping the
+    /// value) — the consuming projection sibling of
+    /// [`Self::into_value`] on the other coordinate of the atomic
+    /// `(value, provenance)` pair.
+    ///
+    /// [`Self::into_value`] hands out just the resolved `T` value
+    /// when the caller no longer needs the provenance;
+    /// [`Self::into_provenance`] hands out just the
+    /// [`ProvenanceMap`] when the caller no longer needs the
+    /// resolved value — an attestation manifest hashing the per-leaf
+    /// `(tier, source)` stream without paying to retain the resolved
+    /// config, a `/healthz/provenance` renderer that only serializes
+    /// the provenance envelope, a `ConfigPlane` broadcast surface
+    /// routing the provenance to a downstream consumer that owns its
+    /// inputs.
+    ///
+    /// Before this seam, a caller wanting to move just the
+    /// provenance out of a [`ProgressiveResolution`] reached through
+    /// `res.into_parts().1` (destructures both fields, discards the
+    /// value at the call site) or `res.provenance().clone()` (a full
+    /// [`BTreeMap`] clone with per-leaf `Vec<String>` +
+    /// [`Provenance`] allocation), both of which name the atomic
+    /// pair or the borrow accessor at the call site rather than the
+    /// single-coordinate consuming projection.
+    ///
+    /// Symmetric with [`Self::into_value`] on the resolution
+    /// primitive: both hand out one coordinate of the atomic pair
+    /// with the other discarded, both are `#[must_use]`, both
+    /// consume `self` without allocation. Pointwise equal to
+    /// `self.into_parts().1` on every input — pinned by
+    /// [`progressive_tests::progressive_resolution_into_provenance_agrees_with_into_parts_snd`].
+    /// Pointwise equal to `self.provenance().clone()` on every input
+    /// — pinned by
+    /// [`progressive_tests::progressive_resolution_into_provenance_agrees_with_accessor_clone`].
+    #[must_use]
+    pub fn into_provenance(self) -> ProvenanceMap {
+        self.provenance
     }
 
     /// Consume, yielding both the value and its provenance map — the
@@ -65874,6 +65920,99 @@ mod progressive_tests {
         assert_eq!(
             prov.source(),
             &ConfigSource::File(PathBuf::from("/etc/end_to_end.yaml"))
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_into_provenance_agrees_with_into_parts_snd() {
+        // The load-bearing pointwise agreement between the
+        // single-coordinate consuming projection into_provenance and
+        // the second element of the pair-destructuring into_parts.
+        // The sibling of the pre-existing
+        // progressive_resolution_into_parts_matches_field_accessors
+        // pin one coordinate over: that pin welds the whole pair to
+        // the borrow-and-clone form; this one welds the
+        // provenance-only consuming projection to the pair's second
+        // coordinate on the same fold output. Without this pin, a
+        // future edit that reroutes into_provenance through a
+        // different field (e.g. a new fold-source watermark field
+        // added between value and provenance) could silently return
+        // the wrong field without a compile error.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(101_u32));
+        let layer = ProgressiveLayer::file("/etc/into_provenance.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_into_provenance = r.clone().into_provenance();
+        let (_value, via_into_parts) = r.into_parts();
+        assert_eq!(via_into_provenance, via_into_parts);
+    }
+
+    #[test]
+    fn progressive_resolution_into_provenance_agrees_with_accessor_clone() {
+        // The consuming projection is byte-equal to the borrow-side
+        // accessor followed by a clone — the same equality shape
+        // progressive_resolution_into_parts_matches_field_accessors
+        // pins on the pair walker, restricted to the provenance
+        // coordinate. The load-bearing distinction is the
+        // clone-avoidance: the consuming form moves the
+        // ProvenanceMap out at zero allocation, the accessor form
+        // pays a full BTreeMap clone with per-leaf Vec<String> +
+        // Provenance allocation, but the two paths hand out the
+        // same ProvenanceMap byte-image on every input.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(102_u32));
+        let layer = ProgressiveLayer::file("/etc/into_provenance_accessor.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_into_provenance = r.clone().into_provenance();
+        let via_accessor_clone = r.provenance().clone();
+        assert_eq!(via_into_provenance, via_accessor_clone);
+    }
+
+    #[test]
+    fn progressive_resolution_into_value_and_into_provenance_are_separable_siblings() {
+        // The two single-coordinate consuming projections are named
+        // siblings on the two coordinates of the atomic (value,
+        // provenance) pair: into_value drops provenance and hands out
+        // T; into_provenance drops T and hands out ProvenanceMap.
+        // Reassembling the two independently-projected coordinates via
+        // ProgressiveResolution::new recovers a resolution byte-equal
+        // to the seed — proof the two consuming projections split the
+        // atomic pair losslessly. Without this pin, a future edit that
+        // reroutes either projection through a lossy channel (a
+        // Default fallback, a shared field elided from the return)
+        // could silently drift the reassembly from the seed.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(103_u32));
+        let layer = ProgressiveLayer::file("/etc/into_value_and_provenance.yaml", dict);
+        let seed = Prog::resolve_progressive_with(&[layer]);
+        let value_only = seed.clone().into_value();
+        let prov_only = seed.clone().into_provenance();
+        let rebuilt = ProgressiveResolution::<Prog>::new(value_only, prov_only);
+        assert_eq!(rebuilt, seed);
+    }
+
+    #[test]
+    fn progressive_resolution_into_provenance_preserves_leaf_provenance_stamps() {
+        // End-to-end downstream pin: routing the resolution through
+        // into_provenance retains every leaf's exact (tier, source)
+        // stamp on the same paths as the direct fold's provenance
+        // map. Guards against a future edit that mis-routes the
+        // projection and drops the atomic pair on the way through
+        // the value-discard side of the coordinate. The
+        // provenance-coordinate peer of
+        // progressive_resolution_into_parts_end_to_end_survives_facade
+        // one coordinate over.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(104_u32));
+        let layer = ProgressiveLayer::file("/etc/into_provenance_stamps.yaml", dict);
+        let direct = Prog::resolve_progressive_with(&[layer.clone()]);
+        let via_into_provenance = Prog::resolve_progressive_with(&[layer]).into_provenance();
+        assert_eq!(&via_into_provenance, direct.provenance());
+        let prov = via_into_provenance.provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(
+            prov.source(),
+            &ConfigSource::File(PathBuf::from("/etc/into_provenance_stamps.yaml")),
         );
     }
 
