@@ -859,6 +859,43 @@ impl Provenance {
         self.source.kind()
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this provenance's
+    /// source-kind — the scalar layer-kind ordinal on the
+    /// [`crate::ConfigSourceKind`] axis, mirroring [`Self::tier_ordinal`]
+    /// on the tier axis of the atomic `(tier, source)` pair. `0` for
+    /// [`crate::ConfigSourceKind::Defaults`], `1` for
+    /// [`crate::ConfigSourceKind::Env`], `2` for
+    /// [`crate::ConfigSourceKind::File`] — the declaration order of
+    /// [`crate::ConfigSourceKind::ALL`], which is also the operator-facing
+    /// provider-chain precedence within the [`ConfigTierKind::Custom`]
+    /// row ([`crate::ProviderChain`] layers `Defaults → Env → File` with
+    /// later overriding earlier). A higher source-kind ordinal wins in
+    /// the custom-tier fold, in the same shape [`Self::tier_ordinal`]
+    /// carries for the outer tier fold.
+    ///
+    /// Equal to `crate::axis_ordinal(self.source_kind())` by construction
+    /// — one method call answers "which layer-kind precedence position
+    /// produced this?" without reaching for the [`crate::axis_ordinal`]
+    /// free function or borrowing the heavier [`ConfigSource`] enum.
+    /// Peer of [`Self::tier_ordinal`] on the tier axis: both project the
+    /// scalar precedence ordinal of the atomic pair's respective closed
+    /// axis, both are `Copy`-out and allocation-free, and together they
+    /// close the ordinal-projection sibling gap on the atomic
+    /// `(tier, source)` pair the provenance carries. Before this seam, a
+    /// caller wanting the source-kind precedence ordinal (a
+    /// `ConfigPlane` broadcast surface tagging each broadcast leaf with
+    /// its custom-tier layer position, a `/healthz/provenance` dashboard
+    /// sorting per-source-kind counters by precedence, an attestation
+    /// manifest recording the source-kind ordinal distribution alongside
+    /// [`Self::tier_ordinal`]) reached through
+    /// `crate::axis_ordinal(prov.source_kind())` — a two-hop chain that
+    /// named the free function at the call site instead of the inherent
+    /// seam.
+    #[must_use]
+    pub fn source_kind_ordinal(&self) -> usize {
+        crate::axis_ordinal(self.source_kind())
+    }
+
     /// Consume `self`, yielding the owned `(tier, source)` pair the
     /// provenance carries — the consuming destructuring dual of the
     /// borrow-side [`Self::tier`] / [`Self::source`] accessor pair.
@@ -62932,6 +62969,93 @@ mod progressive_tests {
                 crate::ConfigSourceKind::ALL.contains(&prov.source_kind()),
                 "source_kind {:?} not in ConfigSourceKind::ALL",
                 prov.source_kind(),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_source_kind_ordinal_reuses_closed_axis_order() {
+        // Precedence reuses the const ConfigSourceKind ClosedAxis
+        // declaration order — Defaults < Env < File — which is also
+        // the operator-facing ProviderChain precedence within the
+        // Custom tier (later overrides earlier). The source-axis peer
+        // of `provenance_tier_ordinal_reuses_closed_axis_order` on the
+        // tier axis.
+        assert!(
+            Provenance::prescribed_default().source_kind_ordinal()
+                < Provenance::env("APP_").source_kind_ordinal()
+        );
+        assert!(
+            Provenance::env("APP_").source_kind_ordinal()
+                < Provenance::file("/x.yaml").source_kind_ordinal()
+        );
+    }
+
+    #[test]
+    fn provenance_source_kind_ordinal_agrees_with_axis_ordinal_projection() {
+        // Equal to `crate::axis_ordinal(self.source_kind())` by
+        // construction across every shipped constructor row — the
+        // inherent seam is a one-hop wrapper around the free-function
+        // projection. Pins the two spellings pointwise so a future
+        // edit to either surface can't drift them apart silently.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/source_kind_ordinal_projection.yaml"),
+            Provenance::env("SHIKUMI_SOURCE_KIND_ORDINAL_PROJECTION_"),
+        ] {
+            assert_eq!(
+                prov.source_kind_ordinal(),
+                crate::axis_ordinal(prov.source_kind()),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_source_kind_ordinal_computed_defaults_row_is_zero() {
+        // Every computed-defaults constructor pins
+        // `ConfigSource::Defaults`, whose ordinal on
+        // `ConfigSourceKind::ALL` is `0` (the declaration-order first
+        // cell). Holds independently of which tier the constructor
+        // stamps — `computed(Custom)` reports `0` on the source-kind
+        // ordinal even though its tier ordinal is `Custom`'s (the last
+        // cell of `ConfigTierKind::ALL`), because `computed` pins
+        // `ConfigSource::Defaults` by construction.
+        assert_eq!(Provenance::bare().source_kind_ordinal(), 0);
+        assert_eq!(Provenance::discovered().source_kind_ordinal(), 0);
+        assert_eq!(Provenance::prescribed_default().source_kind_ordinal(), 0);
+        assert_eq!(
+            Provenance::computed(ConfigTierKind::Custom).source_kind_ordinal(),
+            0,
+        );
+    }
+
+    #[test]
+    fn provenance_source_kind_ordinal_partitions_axis_cardinality() {
+        // Cross-constructor pin: the set of source_kind_ordinals
+        // reachable through the shipped constructor surface is a
+        // subset of `0..ConfigSourceKind::ALL.len()`. Guards against
+        // a future edit that adds a `ConfigSource` variant without
+        // extending `ConfigSourceKind::ALL` in lockstep — the
+        // new-variant ordinal would slip past `axis_ordinal`'s
+        // linear scan and its `unreachable!` fallback would fire in
+        // release, so a caller keying dashboards by the ordinal
+        // would see the panic before the drift.
+        let card = crate::ConfigSourceKind::ALL.len();
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/partition_source_kind_ordinal.yaml"),
+            Provenance::env("SHIKUMI_PARTITION_ORDINAL_"),
+        ] {
+            let ord = prov.source_kind_ordinal();
+            assert!(
+                ord < card,
+                "source_kind_ordinal {ord} out of range for cardinality {card}",
             );
         }
     }
