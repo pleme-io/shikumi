@@ -999,8 +999,22 @@ impl AttributionRule {
     /// lockstep — the typescape pins the partition to one site, and
     /// the `attribution_rule_confidence_*` tests pin which side each
     /// rule sits on.
+    ///
+    /// `const fn`: this projection is const-callable on `Copy` receivers
+    /// (welded by
+    /// [`tests::attribution_rule_confidence_and_confidence_predicates_are_const_callable`]),
+    /// so `const` composition through it — a `const AttributionConfidence`
+    /// binding produced from a `const AttributionRule`, or the routed
+    /// `rule.confidence().is_exact()` short-circuit consumed by the
+    /// [`Self::is_exact`] / [`Self::is_fallback`] siblings below — evaluates
+    /// at compile time. Direct peer of the const-callable projection pairs
+    /// on the borrowed figment-metadata triple ([`crate::EnvMetadataTag::kind`]
+    /// at commit `d8db91f`, [`crate::FigmentNameTag::kind`] at commit
+    /// `41ca5ca`, [`crate::FigmentSourceTag::classify`] at commit `22b705a`)
+    /// and on the top-level [`crate::ConfigSource::kind`] projection at
+    /// commit `8db9806`.
     #[must_use]
-    pub fn confidence(self) -> AttributionConfidence {
+    pub const fn confidence(self) -> AttributionConfidence {
         match self {
             Self::FileBySource | Self::FileByMetadataName | Self::EnvByPrefix => {
                 AttributionConfidence::Exact
@@ -1023,8 +1037,15 @@ impl AttributionRule {
     /// [`crate::FormatProvenance::is_shikumi_built`] the same way.
     /// Pinned pointwise by
     /// `attribution_rule_is_exact_agrees_with_confidence_is_exact`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::attribution_rule_confidence_and_confidence_predicates_are_const_callable`]);
+    /// the routed body `self.confidence().is_exact()` composes two
+    /// const-callable primitives ([`Self::confidence`] above, sibling
+    /// [`AttributionConfidence::is_exact`] at commit `5c2add4`), so the
+    /// whole cascade evaluates at compile time.
     #[must_use]
-    pub fn is_exact(self) -> bool {
+    pub const fn is_exact(self) -> bool {
         self.confidence().is_exact()
     }
 
@@ -1035,8 +1056,12 @@ impl AttributionRule {
     /// [`AttributionConfidence::is_fallback`]; see [`Self::is_exact`]
     /// for the routing rationale. Pinned pointwise by
     /// `attribution_rule_is_fallback_agrees_with_confidence_is_fallback`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::attribution_rule_confidence_and_confidence_predicates_are_const_callable`]);
+    /// same routing shape as [`Self::is_exact`] above.
     #[must_use]
-    pub fn is_fallback(self) -> bool {
+    pub const fn is_fallback(self) -> bool {
         self.confidence().is_fallback()
     }
 
@@ -5359,6 +5384,84 @@ mod tests {
                 "is_fallback must agree with confidence == Fallback on {rule:?}",
             );
         }
+    }
+
+    #[test]
+    fn attribution_rule_confidence_and_confidence_predicates_are_const_callable() {
+        // Weld the const-callability of the (rule → confidence)
+        // projection and its two routed sibling predicates
+        // (`AttributionRule::confidence`, `AttributionRule::is_exact`,
+        // `AttributionRule::is_fallback`) at compile time. Assigning
+        // the results to `const` bindings pins const-ness at THIS line,
+        // so the moment any of the three methods (or the routed
+        // downstream `AttributionConfidence::is_exact`
+        // / `is_fallback`) stops being `const`-callable — a future edit
+        // that reaches for a non-const std helper anywhere in the
+        // cascade, or a future variant that lands with a data-carrying
+        // payload projected through a non-const constructor — the pin
+        // fails to compile before the drift can reach downstream
+        // consumers that assumed const-ness through the type.
+        //
+        // Direct peer of the const-callability seals on the borrowed
+        // figment-metadata triple: the kind-side
+        // `AttributionConfidence::is_exact` / `is_fallback` binary
+        // (commit `5c2add4`, kind altitude) plus the tag-side
+        // routing here (this file's rule altitude) mirror the
+        // `FigmentSourceTag` / `FigmentSourceKind` (commit `22b705a`),
+        // `FigmentNameTag` / `FigmentNameTagKind` (commit `41ca5ca`),
+        // and `EnvMetadataTag` / `EnvMetadataTagKind` (commit `d8db91f`)
+        // tag/kind pair seals — every closed binary confidence-shape
+        // projection over the closed rule quintet now carries a
+        // symmetric const-callability seal end-to-end.
+        //
+        // All five `AttributionRule` variants are data-free, so every
+        // `AttributionRule::VAR` literal accepts `const` position
+        // directly (no `Path::new` / `String` payload workaround as
+        // needed on `FigmentSourceTag::Format` / `FigmentNameTag::Format`
+        // per rust-lang/rust#143874). Consequently every cell of the
+        // 5×3 (variant × cascade-step) grid welds directly through
+        // `const` bindings.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const C_FBS: AttributionConfidence = R_FBS.confidence();
+        const C_FBM: AttributionConfidence = R_FBM.confidence();
+        const C_EBP: AttributionConfidence = R_EBP.confidence();
+        const C_EBU: AttributionConfidence = R_EBU.confidence();
+        const C_DBCU: AttributionConfidence = R_DBCU.confidence();
+
+        const IE_FBS: bool = R_FBS.is_exact();
+        const IE_FBM: bool = R_FBM.is_exact();
+        const IE_EBP: bool = R_EBP.is_exact();
+        const IE_EBU: bool = R_EBU.is_exact();
+        const IE_DBCU: bool = R_DBCU.is_exact();
+
+        const IF_FBS: bool = R_FBS.is_fallback();
+        const IF_FBM: bool = R_FBM.is_fallback();
+        const IF_EBP: bool = R_EBP.is_fallback();
+        const IF_EBU: bool = R_EBU.is_fallback();
+        const IF_DBCU: bool = R_DBCU.is_fallback();
+
+        assert!(matches!(C_FBS, AttributionConfidence::Exact));
+        assert!(matches!(C_FBM, AttributionConfidence::Exact));
+        assert!(matches!(C_EBP, AttributionConfidence::Exact));
+        assert!(matches!(C_EBU, AttributionConfidence::Fallback));
+        assert!(matches!(C_DBCU, AttributionConfidence::Fallback));
+
+        assert!(IE_FBS);
+        assert!(IE_FBM);
+        assert!(IE_EBP);
+        assert!(!IE_EBU);
+        assert!(!IE_DBCU);
+
+        assert!(!IF_FBS);
+        assert!(!IF_FBM);
+        assert!(!IF_EBP);
+        assert!(IF_EBU);
+        assert!(IF_DBCU);
     }
 
     #[test]
