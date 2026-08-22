@@ -3507,6 +3507,52 @@ impl ShikumiError {
         self.kind().is_figment_bearing()
     }
 
+    /// True iff this error's kind does *not* wrap a
+    /// [`figment::Error`] — [`Self::NotFound`], [`Self::Parse`],
+    /// [`Self::Watch`], [`Self::Io`], [`Self::Validation`]; the
+    /// tag-side view of [`ShikumiErrorKind::is_not_figment_bearing`]
+    /// one altitude down.
+    ///
+    /// Convenience over [`Self::kind`]; equivalent to
+    /// `self.kind().is_not_figment_bearing()` and to
+    /// `!self.is_figment_bearing()`. Sibling of
+    /// [`Self::is_figment_bearing`] on the other half of the closed
+    /// binary partition over the figment-bearing meta-axis.
+    ///
+    /// Consumers routing on "no figment error to unbox" (a
+    /// [`crate::ConfigStore::last_reload_error`] observer skipping
+    /// the [`Self::field_path`] / [`Self::sources`] fetch, a
+    /// diagnostic layer refusing to reach for
+    /// [`figment::Error::path`] against a kind that cannot carry
+    /// one, a telemetry counter keyed on the non-figment-bearing
+    /// half of the partition) name the answer at the tag altitude
+    /// without a `!self.is_figment_bearing()` negation site or a
+    /// re-derived `matches!(err, ShikumiError::NotFound { .. } | …)`
+    /// against five specific variants. Adding a sixth non-figment-
+    /// bearing variant lands at the kind-side match in
+    /// [`ShikumiErrorKind::is_figment_bearing`] alone; both tag-side
+    /// forwarders (this and [`Self::is_figment_bearing`]) pick the
+    /// new classification up by construction.
+    ///
+    /// Kind-side/tag-side agreement is a structural law:
+    /// `err.is_not_figment_bearing() ==
+    ///  err.kind().is_not_figment_bearing()` for every
+    /// [`ShikumiError`], pinned pointwise by
+    /// [`tests::shikumi_error_is_not_figment_bearing_agrees_with_kind_is_not_figment_bearing_pointwise`].
+    /// Complement identity with [`Self::is_figment_bearing`] —
+    /// `err.is_not_figment_bearing() == !err.is_figment_bearing()`
+    /// pointwise on every variant — is pinned by
+    /// [`tests::shikumi_error_is_not_figment_bearing_is_complement_of_is_figment_bearing_pointwise`].
+    /// The two sibling predicates form a closed disjoint binary
+    /// partition of the [`ShikumiError`] construction table — every
+    /// captured error satisfies exactly one, none satisfies both,
+    /// none satisfies neither — pinned by
+    /// [`tests::shikumi_error_figment_bearing_predicates_are_a_closed_binary_partition`].
+    #[must_use]
+    pub fn is_not_figment_bearing(&self) -> bool {
+        self.kind().is_not_figment_bearing()
+    }
+
     /// Returns the list of paths that were tried, if this is a `NotFound` error.
     #[must_use]
     pub fn tried_paths(&self) -> Option<&[PathBuf]> {
@@ -6049,6 +6095,73 @@ mod tests {
                 err.is_figment_bearing(),
                 err.kind().is_figment_bearing(),
                 "figment-bearing must agree across altitudes on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_is_not_figment_bearing_agrees_with_kind_is_not_figment_bearing_pointwise() {
+        // Structural bridge for the complement half of the
+        // figment-bearing meta-partition: the tag-side
+        // `ShikumiError::is_not_figment_bearing` is the kind-side
+        // `ShikumiErrorKind::is_not_figment_bearing` answer one
+        // altitude down, matching the sibling pointwise-agreement
+        // pin on the positive half
+        // (`shikumi_error_is_figment_bearing_agrees_with_kind_is_figment_bearing_pointwise`).
+        // A future edit whose matches!-arm on either altitude
+        // silently drifts fails here before the two altitudes
+        // disagree on any consumer site.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_not_figment_bearing(),
+                err.kind().is_not_figment_bearing(),
+                "not-figment-bearing must agree across altitudes on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_is_not_figment_bearing_is_complement_of_is_figment_bearing_pointwise() {
+        // Complement identity between the two tag-side halves of
+        // the figment-bearing meta-partition: on every captured
+        // error, `is_not_figment_bearing()` equals the boolean
+        // negation of `is_figment_bearing()`. Mirrors the kind-side
+        // sibling law implicit in the
+        // `is_figment_bearing_predicates_are_a_closed_binary_partition`
+        // pin at the kind altitude; welding both halves into a
+        // pointwise-complement pin at the tag altitude keeps the
+        // two forwarders in lockstep even if one is retargeted at
+        // a different underlying predicate.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_not_figment_bearing(),
+                !err.is_figment_bearing(),
+                "is_not_figment_bearing must be the complement of is_figment_bearing on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_figment_bearing_predicates_are_a_closed_binary_partition() {
+        // Every captured error satisfies exactly one of the two
+        // tag-side halves of the figment-bearing meta-partition
+        // (`is_figment_bearing` XOR `is_not_figment_bearing`) —
+        // never both, never neither. Tag-altitude peer of the
+        // kind-altitude
+        // `is_figment_bearing_predicates_are_a_closed_binary_partition`
+        // pin. A future ShikumiError variant landing on a third
+        // meta-classification (e.g. a hypothetical
+        // `PartiallyFigmentBearing` corner) would force both halves
+        // of the tag-side pair to reclassify in lockstep; either
+        // half drifting alone breaks this partition and fails here
+        // before drifting through any consumer.
+        for (_, err) in one_per_kind() {
+            let a = err.is_figment_bearing();
+            let b = err.is_not_figment_bearing();
+            assert!(
+                a ^ b,
+                "figment-bearing halves must partition every error \
+                 (got is_figment_bearing={a}, is_not_figment_bearing={b} on {err:?})",
             );
         }
     }
