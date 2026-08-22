@@ -52,20 +52,38 @@ impl ConfigSource {
     }
 
     /// Returns `true` for [`ConfigSource::File`].
+    ///
+    /// `const`-callable — a compile-time-known [`ConfigSource`] projects
+    /// its `File`-arm polarity at compile time too, matching the
+    /// `const`-ness of the kind-side sibling [`ConfigSourceKind::is_file`]
+    /// so the tag ↔ kind agreement law
+    /// (`config_source_kind_agrees_with_source_predicates_pointwise`)
+    /// composes in const positions on both sides of the equation.
     #[must_use]
-    pub fn is_file(&self) -> bool {
+    pub const fn is_file(&self) -> bool {
         matches!(self, Self::File(_))
     }
 
     /// Returns `true` for [`ConfigSource::Env`].
+    ///
+    /// `const`-callable — a compile-time-known [`ConfigSource`] projects
+    /// its `Env`-arm polarity at compile time too, matching the
+    /// `const`-ness of the kind-side sibling [`ConfigSourceKind::is_env`].
+    /// See [`Self::is_file`] for the tag ↔ kind agreement contract.
     #[must_use]
-    pub fn is_env(&self) -> bool {
+    pub const fn is_env(&self) -> bool {
         matches!(self, Self::Env(_))
     }
 
     /// Returns `true` for [`ConfigSource::Defaults`].
+    ///
+    /// `const`-callable — a compile-time-known [`ConfigSource`] projects
+    /// its `Defaults`-arm polarity at compile time too, matching the
+    /// `const`-ness of the kind-side sibling
+    /// [`ConfigSourceKind::is_defaults`]. See [`Self::is_file`] for the
+    /// tag ↔ kind agreement contract.
     #[must_use]
-    pub fn is_defaults(&self) -> bool {
+    pub const fn is_defaults(&self) -> bool {
         matches!(self, Self::Defaults)
     }
 
@@ -94,8 +112,18 @@ impl ConfigSource {
     /// trait-bounds parity with the sibling typescape primitives
     /// ([`crate::AttributionRule`], [`crate::AttributionConfidence`],
     /// [`FigmentSourceTag`], [`FigmentNameTag`]).
+    ///
+    /// `const`-callable — a compile-time-known [`ConfigSource`] projects
+    /// its data-free kind at compile time too, matching the `const`-ness
+    /// of the sibling projection [`DiffLine::kind`] on the diff-cell axis
+    /// and [`ConfigTier::kind`] on the tier axis. Composes with the
+    /// kind-side sibling predicates ([`ConfigSourceKind::is_defaults`] /
+    /// [`ConfigSourceKind::is_env`] / [`ConfigSourceKind::is_file`], all
+    /// already `const`) in const positions so a
+    /// `source.kind().is_env()` composition stays const-callable
+    /// end-to-end.
     #[must_use]
-    pub fn kind(&self) -> ConfigSourceKind {
+    pub const fn kind(&self) -> ConfigSourceKind {
         match self {
             Self::Defaults => ConfigSourceKind::Defaults,
             Self::Env(_) => ConfigSourceKind::Env,
@@ -94969,6 +94997,48 @@ mod tests {
                 "is_file must agree tag ↔ kind for {src:?}",
             );
         }
+    }
+
+    #[test]
+    fn config_source_predicates_and_kind_are_const_callable() {
+        // Weld the const-callability of the tag-side sibling quartet
+        // (`ConfigSource::is_defaults` / `is_env` / `is_file` and the
+        // `kind()` projection they route around) at compile time.
+        //
+        // Assigning the results to `const` bindings pins the const-ness
+        // at THIS line so the moment any of the four methods stops being
+        // `const`-callable (a future edit that reaches for a non-const
+        // std helper — `.to_owned()`, `.to_string()`, or `.into()` on a
+        // borrowed field payload — inside one of the four bodies) the
+        // pin fails to compile before the drift can reach downstream
+        // consumers that assumed const-ness through the type. Mirrors the
+        // shape of `relation_wire_is_const_callable` at hotswap.rs one
+        // altitude up (also assigns to a `const` binding to weld the
+        // const-ness of the whole projection pipeline).
+        //
+        // Composes end-to-end with the kind-side siblings
+        // (`ConfigSourceKind::is_defaults` / `is_env` / `is_file`, all
+        // `const` since their own tag/kind axis closed) so the natural
+        // routing shape `src.kind().is_env()` — the exact shape the
+        // `config_source_kind_agrees_with_source_predicates_pointwise`
+        // pin above walks over the canonical sample table — stays
+        // const-callable end-to-end. Each of the six per-cell const
+        // bindings below IS the compile-time evaluation of that
+        // agreement law on one sample, so the assertion body doubles as
+        // a value-level restatement of the compile-time verdict.
+        const DEFAULTS: ConfigSource = ConfigSource::Defaults;
+        const IS_DEFAULTS: bool = DEFAULTS.is_defaults();
+        const IS_ENV: bool = DEFAULTS.is_env();
+        const IS_FILE: bool = DEFAULTS.is_file();
+        const KIND: ConfigSourceKind = DEFAULTS.kind();
+        const KIND_IS_DEFAULTS: bool = KIND.is_defaults();
+        const KIND_IS_ENV: bool = KIND.is_env();
+        assert!(IS_DEFAULTS);
+        assert!(!IS_ENV);
+        assert!(!IS_FILE);
+        assert!(matches!(KIND, ConfigSourceKind::Defaults));
+        assert!(KIND_IS_DEFAULTS);
+        assert!(!KIND_IS_ENV);
     }
 
     #[test]
