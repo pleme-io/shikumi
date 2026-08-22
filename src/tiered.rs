@@ -1656,6 +1656,110 @@ impl ProvenanceMap {
         }
     }
 
+    /// Sorted iterator over just the leaf [`ConfigTierKind`] precedence
+    /// ordinal — the ordinal-projection walker of [`Self::tiers`], one
+    /// step further inland from the [`ConfigTierKind`] scalar to the
+    /// [`crate::ClosedAxis`] precedence position ([`usize`]) every leaf
+    /// carries. Yields owned [`usize`] items ([`Copy`], no borrow) in the
+    /// same lex order on the (hidden) leaf path as [`Self::entries`]
+    /// emits the `(path, provenance)` pairs — the same element count and
+    /// same element identity as
+    /// `self.tiers().map(ConfigTierKind::ordinal)`, at zero allocation
+    /// and pinned by
+    /// [`tests::provenance_map_tier_ordinals_agrees_with_tiers_ordinal_projection`].
+    ///
+    /// The ordinal-altitude peer of [`Self::source_kind_ordinals`] on the
+    /// same primitive: the two walkers project the atomic `(tier,
+    /// source)` pair each leaf's [`Provenance`] carries to the scalar
+    /// precedence ordinal of its two closed-axis coordinates
+    /// ([`ConfigTierKind`] here, [`crate::ConfigSourceKind`] there),
+    /// matching by name, by return-type shape (a newtype iterator over
+    /// [`usize`]), by delegation seam ([`std::collections::btree_map::Values`]
+    /// on the underlying [`BTreeMap`]), and by ordering discipline (lex
+    /// on the hidden leaf path). One altitude further inland than
+    /// [`Self::tiers`] — where [`Self::tiers`] hands out the
+    /// [`ConfigTierKind`] scalar and every consumer opens
+    /// [`ConfigTierKind::ordinal`] at every leaf — this walker projects
+    /// the precedence coordinate directly. The [`ProvenanceMap`]-altitude
+    /// peer of the per-leaf [`Provenance::tier_ordinal`] const-fn
+    /// projection: that projection hands a single ordinal off one
+    /// [`Provenance`], this walker hands the full per-leaf stream off the
+    /// map.
+    ///
+    /// Before this seam, a caller wanting the per-leaf precedence stream
+    /// — a `ConfigPlane` broadcast surface tagging each leaf with its
+    /// tier precedence position, a `/healthz/provenance` dashboard
+    /// sorting leaves by precedence without carrying the [`ConfigTierKind`]
+    /// tag, an attestation manifest hashing the per-leaf ordinal
+    /// sequence for a compact provenance fingerprint — reached through
+    /// `self.tiers().map(ConfigTierKind::ordinal)` or the deeper
+    /// `self.provenances().map(Provenance::tier_ordinal)`, a two-hop
+    /// projection chain that projected the axis scalar at every step
+    /// just to project it again to the precedence coordinate. This
+    /// method routes the projection through the const-fold-friendly
+    /// [`std::collections::btree_map::Values`] walker directly.
+    ///
+    /// # Contrast with [`Self::tiers`]
+    ///
+    /// [`Self::tiers`] yields the [`ConfigTierKind`] scalar (the
+    /// closed-enum tag); this walker yields the precedence ordinal on
+    /// the same axis. A consumer asking "which tier produced this
+    /// leaf?" reaches for [`Self::tiers`]; a consumer asking "what
+    /// precedence position did this leaf's tier occupy?" reaches for
+    /// [`Self::tier_ordinals`]. The tag-side projection is recoverable
+    /// from the ordinal walk only via [`ConfigTierKind::ALL`] indexing
+    /// on `usize` — not pointwise-recoverable at the walker level like
+    /// [`Self::sources`] / [`Self::source_kinds`] are — so the two
+    /// walkers name genuinely distinct projections of the same axis.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapTierOrdinals`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapTiers`] carries on the tier walker, projected one
+    /// altitude further inland to the [`usize`] scalar. Pointwise-equal
+    /// to `self.tiers().map(ConfigTierKind::ordinal)` in element count,
+    /// order, and element identity by construction.
+    #[must_use]
+    pub fn tier_ordinals(&self) -> ProvenanceMapTierOrdinals<'_> {
+        ProvenanceMapTierOrdinals {
+            inner: self.inner.values(),
+        }
+    }
+
+    /// Sorted iterator over just the leaf [`crate::ConfigSourceKind`]
+    /// precedence ordinal — the ordinal-projection walker of
+    /// [`Self::source_kinds`], one step further inland from the
+    /// [`crate::ConfigSourceKind`] scalar to the [`crate::ClosedAxis`]
+    /// precedence position ([`usize`]) every leaf carries. Yields owned
+    /// [`usize`] items ([`Copy`], no borrow) in the same lex order on
+    /// the (hidden) leaf path as [`Self::entries`] emits the
+    /// `(path, provenance)` pairs — the same element count and same
+    /// element identity as
+    /// `self.source_kinds().map(crate::ConfigSourceKind::ordinal)`, at
+    /// zero allocation and pinned by
+    /// [`tests::provenance_map_source_kind_ordinals_agrees_with_source_kinds_ordinal_projection`].
+    ///
+    /// The source-kind-altitude peer of [`Self::tier_ordinals`] on the
+    /// same primitive: closes the ordinal-projection sibling gap on the
+    /// atomic `(tier, source)` pair the [`Provenance`] carries at one
+    /// seam each on the [`ProvenanceMap`] walker altitude. Peer of the
+    /// per-leaf [`Provenance::source_kind_ordinal`] const-fn projection
+    /// one altitude down: that projection hands a single ordinal off
+    /// one [`Provenance`], this walker hands the full per-leaf stream
+    /// off the map.
+    ///
+    /// See [`Self::tier_ordinals`] for the full contract (before-seam
+    /// caller shape, tag-vs-ordinal contrast, trait algebra).
+    #[must_use]
+    pub fn source_kind_ordinals(&self) -> ProvenanceMapSourceKindOrdinals<'_> {
+        ProvenanceMapSourceKindOrdinals {
+            inner: self.inner.values(),
+        }
+    }
+
     /// Per-tier leaf-count histogram — the shikumi cube-native
     /// [`AxisHistogram<ConfigTierKind>`][crate::AxisHistogram] view over
     /// the tier attribution of each resolved leaf. Every leaf's
@@ -18507,6 +18611,130 @@ impl ExactSizeIterator for ProvenanceMapSources<'_> {
 }
 
 impl std::iter::FusedIterator for ProvenanceMapSources<'_> {}
+
+/// Sorted iterator over just the leaf [`ConfigTierKind`] precedence
+/// ordinal of a [`ProvenanceMap`] — the concrete return type of
+/// [`ProvenanceMap::tier_ordinals`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that projects each
+/// `&Provenance` through [`Provenance::tier_ordinal`] to the owned
+/// [`usize`] precedence position ([`Copy`]).
+///
+/// Peer of [`ProvenanceMapTiers`] one altitude further inland: where
+/// [`ProvenanceMapTiers`] yields the [`ConfigTierKind`] scalar (the
+/// closed-enum tag) and every consumer opens
+/// [`ConfigTierKind::ordinal`] at every leaf, this iterator yields the
+/// [`usize`] precedence ordinal directly — the same elements, same
+/// order (lex on the hidden leaf path), same length, restricted to the
+/// tier-precedence coordinate of the atomic `(tier, source)` pair each
+/// [`Provenance`] carries. The tier-altitude peer of
+/// [`ProvenanceMapSourceKindOrdinals`] on the source-kind axis of the
+/// same primitive.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapTiers`] carries on the tier walker. [`Clone`] hands
+/// out an independent walk over the same underlying [`BTreeMap`] (a
+/// two-pass "any / all / count / sum" over the ordinal stream without a
+/// `.collect::<Vec<_>>()` intermediate).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapTierOrdinals<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl Iterator for ProvenanceMapTierOrdinals<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Provenance::tier_ordinal)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapTierOrdinals<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Provenance::tier_ordinal)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapTierOrdinals<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapTierOrdinals<'_> {}
+
+/// Sorted iterator over just the leaf [`crate::ConfigSourceKind`]
+/// precedence ordinal of a [`ProvenanceMap`] — the concrete return type
+/// of [`ProvenanceMap::source_kind_ordinals`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that projects each
+/// `&Provenance` through [`Provenance::source_kind_ordinal`] to the
+/// owned [`usize`] precedence position ([`Copy`]).
+///
+/// Peer of [`ProvenanceMapSourceKinds`] one altitude further inland:
+/// where [`ProvenanceMapSourceKinds`] yields the
+/// [`crate::ConfigSourceKind`] scalar (the closed-enum tag), this
+/// iterator yields the [`usize`] precedence ordinal directly — the
+/// same elements, same order (lex on the hidden leaf path), same
+/// length, restricted to the source-kind-precedence coordinate of the
+/// atomic `(tier, source)` pair each [`Provenance`] carries. The
+/// source-kind-altitude peer of [`ProvenanceMapTierOrdinals`] on the
+/// tier axis of the same primitive.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapSourceKinds`] carries on the source-kind walker.
+/// [`Clone`] hands out an independent walk over the same underlying
+/// [`BTreeMap`].
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapSourceKindOrdinals<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl Iterator for ProvenanceMapSourceKindOrdinals<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Provenance::source_kind_ordinal)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapSourceKindOrdinals<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Provenance::source_kind_ordinal)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapSourceKindOrdinals<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapSourceKindOrdinals<'_> {}
 
 /// Consuming iterator over the owned `(Vec<String>, Provenance)` pairs
 /// of a [`ProvenanceMap`], yielded in lex order on the path.
@@ -44235,6 +44463,357 @@ mod progressive_tests {
         assert_eq!(empty.sources().size_hint(), (0, Some(0)));
         assert!(empty.sources().next().is_none());
         assert!(empty.sources().next_back().is_none());
+    }
+
+    // -------- ProvenanceMap::tier_ordinals / ::source_kind_ordinals projection walkers --------
+
+    #[test]
+    fn provenance_map_tier_ordinals_agrees_with_tiers_ordinal_projection() {
+        // The tier-ordinal walker yields the same element stream, in
+        // the same order, as `tiers().map(ConfigTierKind::ordinal)`.
+        // Regression against a future edit that reroutes
+        // `tier_ordinals()` through a different projection accessor
+        // than the const-fn `Provenance::tier_ordinal` walker seam.
+        let r = Prog::resolve_progressive();
+        let via_ordinals: Vec<usize> = r.provenance().tier_ordinals().collect();
+        let via_tiers: Vec<usize> = r
+            .provenance()
+            .tiers()
+            .map(ConfigTierKind::ordinal)
+            .collect();
+        assert_eq!(via_ordinals, via_tiers);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_agrees_with_source_kinds_ordinal_projection() {
+        // Peer of the tier-ordinals agreement pin on the source-kind
+        // axis: pointwise-equal to
+        // `source_kinds().map(ConfigSourceKind::ordinal)`.
+        let r = Prog::resolve_progressive();
+        let via_ordinals: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        let via_kinds: Vec<usize> = r
+            .provenance()
+            .source_kinds()
+            .map(crate::ConfigSourceKind::ordinal)
+            .collect();
+        assert_eq!(via_ordinals, via_kinds);
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_agrees_with_provenances_tier_ordinal_projection() {
+        // Cross-altitude agreement: the tier-ordinal walker yields the
+        // same element stream as
+        // `provenances().map(Provenance::tier_ordinal)`. The two seams
+        // project the same `Provenance::tier_ordinal` const-fn through
+        // the same `std::collections::btree_map::Values` walker; the
+        // difference is whether the projection is inside the walker
+        // (tier_ordinals) or outside it (provenances().map(...)).
+        let r = Prog::resolve_progressive();
+        let via_walker: Vec<usize> = r.provenance().tier_ordinals().collect();
+        let via_provs: Vec<usize> = r
+            .provenance()
+            .provenances()
+            .map(Provenance::tier_ordinal)
+            .collect();
+        assert_eq!(via_walker, via_provs);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_agrees_with_provenances_source_kind_ordinal_projection()
+    {
+        // Peer of the tier-ordinal cross-altitude pin on the
+        // source-kind axis.
+        let r = Prog::resolve_progressive();
+        let via_walker: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        let via_provs: Vec<usize> = r
+            .provenance()
+            .provenances()
+            .map(Provenance::source_kind_ordinal)
+            .collect();
+        assert_eq!(via_walker, via_provs);
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_matches_prog_fixture_by_leaf_order() {
+        // Prog's per-leaf tier sequence in lex order (a, b, c, d) is
+        // [Discovered, Default, Bare, Default]; on the const-fn
+        // `ConfigTierKind::ordinal` axis (Bare=0, Discovered=1,
+        // Default=2, Custom=3) that projects to [1, 2, 0, 2]. A
+        // distinguishing-witness pin — the sequence carries per-leaf
+        // position, not recoverable from the histogram or a set-fold.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<usize> = r.provenance().tier_ordinals().collect();
+        assert_eq!(seq, vec![1_usize, 2_usize, 0_usize, 2_usize]);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_matches_prog_fixture_by_leaf_order() {
+        // Prog is a pure-progressive fixture (no overlays), so every
+        // leaf's `source_kind` is `Defaults` — ordinal 0. Peer of the
+        // tier-ordinals fixture pin on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let seq: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        assert_eq!(seq, vec![0_usize, 0_usize, 0_usize, 0_usize]);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_surfaces_env_and_file_ordinals_from_overlays() {
+        // Distinguishing witness on the source-kind ordinal axis: an
+        // Env("PROG_") overlay lands on ordinal 1 and a
+        // File("/etc/prog.yaml") overlay lands on ordinal 2, matching
+        // the const-fn `ConfigSourceKind::ordinal` axis
+        // (Defaults=0, Env=1, File=2). Complements the
+        // Prog-only fixture pin above, which only exercises the
+        // Defaults=0 arm.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let file_layer = ProgressiveLayer::file("/etc/prog.yaml", d);
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let env_layer = ProgressiveLayer::env("PROG_", env_dict);
+        let r = Prog::resolve_progressive_with(&[file_layer, env_layer]);
+        // Prog leaves in lex order: a=Defaults(0), b=File(2),
+        // c=Env(1), d=Defaults(0).
+        let seq: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        assert_eq!(seq, vec![0_usize, 2_usize, 1_usize, 0_usize]);
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_len_matches_map_len_pointwise() {
+        // ExactSizeIterator on the tier-ordinals walker reports the
+        // same remaining count as the pair walker on the same
+        // underlying BTreeMap — the projection is element-preserving,
+        // so `tier_ordinals().len() == entries().len() == map.len()`
+        // at every remaining cursor position.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().tier_ordinals();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_len_matches_map_len_pointwise() {
+        // Peer of the tier-ordinals len pin on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().source_kind_ordinals();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_next_back_walks_specific_to_coarse() {
+        // DoubleEndedIterator on the tier-ordinals walker: reversed
+        // stream equals the forward stream reversed via
+        // `.collect().rev()`.
+        let r = Prog::resolve_progressive();
+        let backward: Vec<usize> = r.provenance().tier_ordinals().rev().collect();
+        // Forward [1, 2, 0, 2] reversed is [2, 0, 2, 1].
+        assert_eq!(backward, vec![2_usize, 0_usize, 2_usize, 1_usize]);
+        let mut forward: Vec<usize> = r.provenance().tier_ordinals().collect();
+        forward.reverse();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_next_back_walks_specific_to_coarse() {
+        // Peer on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let mut forward: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        forward.reverse();
+        let backward: Vec<usize> = r.provenance().source_kind_ordinals().rev().collect();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_clone_hands_out_independent_walk() {
+        // Full trait algebra pin at compile time (Iterator +
+        // DoubleEndedIterator + ExactSizeIterator + FusedIterator +
+        // Clone), then a runtime cross-walk asserting the cloned
+        // walker yields the same ordinal stream as the original.
+        fn assert_algebra<I>(_: &I)
+        where
+            I: Iterator<Item = usize>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().tier_ordinals();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<usize> = it.collect();
+        let b: Vec<usize> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_clone_hands_out_independent_walk() {
+        // Peer of the tier-ordinals trait-algebra pin.
+        fn assert_algebra<I>(_: &I)
+        where
+            I: Iterator<Item = usize>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().source_kind_ordinals();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<usize> = it.collect();
+        let b: Vec<usize> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_return_type_is_nameable_provenance_map_tier_ordinals() {
+        // Concrete-return-type sharpen at the type-signature level: a
+        // struct field bound on `ProvenanceMapTierOrdinals<'a>` holds
+        // the handle across a return.
+        struct Held<'a> {
+            walker: ProvenanceMapTierOrdinals<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.tier_ordinals(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_return_type_is_nameable_provenance_map_source_kind_ordinals()
+     {
+        struct Held<'a> {
+            walker: ProvenanceMapSourceKindOrdinals<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.source_kind_ordinals(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().tier_ordinals();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapTierOrdinals"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().source_kind_ordinals();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapSourceKindOrdinals"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_and_paths_zip_recompose_leaf_to_tier_ordinal_pairs() {
+        // Composability: zipping `paths()` and `tier_ordinals()`
+        // yields the same `(path, ordinal)` stream as
+        // `entries().map(|(p, prov)| (p, prov.tier_ordinal()))`.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, usize)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().tier_ordinals())
+            .map(|(p, o)| (p.to_vec(), o))
+            .collect();
+        let from_entries: Vec<(Vec<String>, usize)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.tier_ordinal()))
+            .collect();
+        assert_eq!(zipped, from_entries);
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_and_paths_zip_recompose_leaf_to_source_kind_ordinal_pairs()
+     {
+        // Peer on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, usize)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().source_kind_ordinals())
+            .map(|(p, o)| (p.to_vec(), o))
+            .collect();
+        let from_entries: Vec<(Vec<String>, usize)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.source_kind_ordinal()))
+            .collect();
+        assert_eq!(zipped, from_entries);
+    }
+
+    #[test]
+    fn provenance_map_tier_and_source_kind_ordinals_empty_on_empty_map() {
+        // Empty-map degenerate on both ordinal walkers.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.tier_ordinals().len(), 0);
+        assert_eq!(empty.tier_ordinals().size_hint(), (0, Some(0)));
+        assert!(empty.tier_ordinals().next().is_none());
+        assert!(empty.tier_ordinals().next_back().is_none());
+        assert_eq!(empty.source_kind_ordinals().len(), 0);
+        assert_eq!(empty.source_kind_ordinals().size_hint(), (0, Some(0)));
+        assert!(empty.source_kind_ordinals().next().is_none());
+        assert!(empty.source_kind_ordinals().next_back().is_none());
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinals_all_in_closed_axis_range() {
+        // Every emitted tier ordinal is in the closed range
+        // `0..ConfigTierKind::ALL.len()` — a load-bearing invariant
+        // that `ClosedAxis::ALL`-indexing on the returned ordinal is
+        // always well-defined without a bounds check at the call site.
+        let r = Prog::resolve_progressive();
+        let bound = ConfigTierKind::ALL.len();
+        for o in r.provenance().tier_ordinals() {
+            assert!(o < bound, "tier ordinal {o} not in 0..{bound}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinals_all_in_closed_axis_range() {
+        // Peer of the tier-ordinals closed-range invariant on the
+        // source-kind axis.
+        let r = Prog::resolve_progressive();
+        let bound = crate::ConfigSourceKind::ALL.len();
+        for o in r.provenance().source_kind_ordinals() {
+            assert!(o < bound, "source-kind ordinal {o} not in 0..{bound}");
+        }
     }
 
     // -------- IntoIterator / FromIterator / Extend on ProvenanceMap --------
