@@ -282,6 +282,100 @@ pub enum ConfigShowError {
     Json(#[from] serde_json::Error),
 }
 
+impl ConfigShowError {
+    /// True iff this rejection is [`Self::CustomTierWithoutPath`] — the
+    /// operator asked for `tier custom` but supplied no `--path <FILE>`
+    /// to the [`ConfigShowCommand`]. The two payload-bearing
+    /// serialization variants ([`Self::Yaml`] and [`Self::Json`]) both
+    /// return `false`.
+    ///
+    /// **The tag-only classifier on the operator-input-versus-emission
+    /// polarity axis.** A consumer holding a borrowed
+    /// [`ConfigShowError`] previously had two paths for asking "is the
+    /// failure the missing `--path` argument, or a per-emitter
+    /// serialization failure?", each leaking work: (a)
+    /// `matches!(err, ConfigShowError::CustomTierWithoutPath)` inline
+    /// at every seam, a shape the exhaustiveness checker cannot help
+    /// keep in sync with a future variant addition (a hypothetical
+    /// fourth emitter variant would silently keep answering `false` at
+    /// every inline `matches!` site); or (b) an outer `match`
+    /// decomposing the whole three-arm sum at each classification
+    /// site, forcing a re-declaration of the arms a consumer that
+    /// only wants the polarity does not care about.
+    ///
+    /// The tag-only sibling here answers the same question through a
+    /// single welded [`matches!`]: adding a fourth variant fails to
+    /// compile at this method's pattern in lockstep with
+    /// [`Self::is_yaml`] and [`Self::is_json`] via the
+    /// ternary-partition pin
+    /// [`tests::config_show_error_predicates_are_a_closed_ternary_partition`],
+    /// which fires when a new variant collapses the partition sum to
+    /// zero at that variant. Operator-facing help-line dispatches that
+    /// surface "did you mean `--path <FILE>`?" only on the missing-
+    /// argument rejection split from the two serialization arms (which
+    /// name a backend rather than an operator input) reach the
+    /// polarity through one method call.
+    ///
+    /// **Idiom-peer of the tag-side sibling-predicate closures on
+    /// other closed-partition error primitives.** The direct
+    /// methodological analogue of
+    /// [`crate::discovery::ParseFormatCoordinatesError`]'s
+    /// `is_missing_separator`/`is_unknown_format`/`is_unknown_provenance`
+    /// trio (commit `dcc8cb3`), [`crate::ShikumiError`]'s
+    /// `is_watch`/`is_io`/`is_figment`/`is_extract`/`is_validation`
+    /// septet (commit `f881f6f`), and
+    /// [`crate::secret_client::SecretError`]'s
+    /// `is_not_found`/`is_unauthorized`/`is_unsupported`/`is_backend`/`is_shikumi`
+    /// quintet (commit `bc1db8f`): same routing shape, same closed-
+    /// partition contract on the CLI operator surface's payload-
+    /// bearing error enum with zero pre-existing tag-side siblings.
+    ///
+    /// `const`-callable — a compile-time-known [`ConfigShowError`]
+    /// projects its polarity at compile time too.
+    #[must_use]
+    pub const fn is_custom_tier_without_path(&self) -> bool {
+        matches!(self, Self::CustomTierWithoutPath)
+    }
+
+    /// True iff this rejection is [`Self::Yaml`] — a YAML serialization
+    /// failure surfaced from [`serde_yaml::to_string`] on the
+    /// materialized-config value. The operator-input variant
+    /// [`Self::CustomTierWithoutPath`] and the mirror emitter variant
+    /// [`Self::Json`] both return `false`.
+    ///
+    /// Sibling of [`Self::is_custom_tier_without_path`] and
+    /// [`Self::is_json`] on the same closed ternary partition; same
+    /// routing rationale (see [`Self::is_custom_tier_without_path`]
+    /// docs). A structured-log field that names the failing emission
+    /// backend without hand-copying the variant tag, or a
+    /// backend-selection retry (fall back to JSON when YAML rejects)
+    /// routes on this predicate at the borrowed error without matching
+    /// on the whole three-arm sum.
+    #[must_use]
+    pub const fn is_yaml(&self) -> bool {
+        matches!(self, Self::Yaml(_))
+    }
+
+    /// True iff this rejection is [`Self::Json`] — a JSON serialization
+    /// failure surfaced from [`serde_json::to_string_pretty`] on the
+    /// materialized-config value. The operator-input variant
+    /// [`Self::CustomTierWithoutPath`] and the mirror emitter variant
+    /// [`Self::Yaml`] both return `false`.
+    ///
+    /// Sibling of [`Self::is_custom_tier_without_path`] and
+    /// [`Self::is_yaml`] on the same closed ternary partition; same
+    /// routing rationale (see [`Self::is_custom_tier_without_path`]
+    /// docs). A structured-log field that names the failing emission
+    /// backend without hand-copying the variant tag, or a
+    /// backend-selection retry (fall back to YAML when JSON rejects)
+    /// routes on this predicate at the borrowed error without matching
+    /// on the whole three-arm sum.
+    #[must_use]
+    pub const fn is_json(&self) -> bool {
+        matches!(self, Self::Json(_))
+    }
+}
+
 impl ConfigShowCommand {
     /// Run the subcommand. `env_var` is the name your app reads
     /// (e.g. `MADO_TIER`, `TATARA_TIER`).
@@ -649,5 +743,153 @@ mod tests {
             assert_eq!(fmt.is_yaml(), fmt == OutputFormat::Yaml);
             assert_eq!(fmt.is_json(), fmt == OutputFormat::Json);
         }
+    }
+
+    // ─── ConfigShowError sibling predicates — ternary-partition arms
+    // ─── on the CLI-run rejection tag ──────────────────────────────
+
+    /// Helper: build a `serde_yaml::Error` by asking the YAML parser
+    /// to decode obviously malformed input, then converting into the
+    /// unit variant `bool`. The exact error message is not part of
+    /// the pin — only its type identity, so that the `#[from]`
+    /// promotion into [`ConfigShowError::Yaml`] fires the same
+    /// classifier a runtime `to_string` failure would.
+    fn synthetic_yaml_error() -> serde_yaml::Error {
+        serde_yaml::from_str::<bool>("[not a bool").expect_err("malformed YAML input must reject")
+    }
+
+    /// Helper: build a `serde_json::Error` by asking the JSON parser
+    /// to decode obviously malformed input, then converting into the
+    /// unit variant `bool`. Mirror of `synthetic_yaml_error` on the
+    /// JSON-side promotion.
+    fn synthetic_json_error() -> serde_json::Error {
+        serde_json::from_str::<bool>("[not a bool").expect_err("malformed JSON input must reject")
+    }
+
+    #[test]
+    fn config_show_error_is_custom_tier_without_path_true_only_for_missing_path_variant() {
+        // Per-variant polarity pin on the CustomTierWithoutPath corner
+        // of the `ConfigShowError` tag-side sibling-predicate trio. A
+        // future edit that flips the `matches!` arm on
+        // `ConfigShowError::is_custom_tier_without_path` fails here
+        // before the closed-partition pin below masks it. Direct
+        // methodological analogue of
+        // `parse_format_coordinates_error_is_missing_separator_true_only_for_missing_separator_variant`
+        // (`dcc8cb3`) on `ParseFormatCoordinatesError`, one crate
+        // module over — same shape on the operator-input polarity of
+        // the CLI rejection axis.
+        assert!(ConfigShowError::CustomTierWithoutPath.is_custom_tier_without_path());
+        assert!(!ConfigShowError::Yaml(synthetic_yaml_error()).is_custom_tier_without_path());
+        assert!(!ConfigShowError::Json(synthetic_json_error()).is_custom_tier_without_path());
+    }
+
+    #[test]
+    fn config_show_error_is_yaml_true_only_for_yaml_variant() {
+        // Mirror per-variant polarity pin on the Yaml corner. The
+        // payload is drawn from the `#[from] serde_yaml::Error` path
+        // so the pin also structurally binds the enum's `From`
+        // conversion to the sibling classifier: a future edit that
+        // switched the `#[from]` slot to a different variant would
+        // fail here before drifting through any consumer routing on
+        // the polarity trio.
+        assert!(!ConfigShowError::CustomTierWithoutPath.is_yaml());
+        assert!(ConfigShowError::Yaml(synthetic_yaml_error()).is_yaml());
+        assert!(!ConfigShowError::Json(synthetic_json_error()).is_yaml());
+    }
+
+    #[test]
+    fn config_show_error_is_json_true_only_for_json_variant() {
+        // Mirror per-variant polarity pin on the Json corner.
+        assert!(!ConfigShowError::CustomTierWithoutPath.is_json());
+        assert!(!ConfigShowError::Yaml(synthetic_yaml_error()).is_json());
+        assert!(ConfigShowError::Json(synthetic_json_error()).is_json());
+    }
+
+    #[test]
+    fn config_show_error_predicates_are_a_closed_ternary_partition() {
+        // Every `ConfigShowError` value in the canonical sample table
+        // satisfies exactly one of the three sibling predicates: none
+        // satisfies two, none satisfies zero. Ternary-partition
+        // analogue of the pin
+        // `parse_format_coordinates_error_predicates_are_a_closed_ternary_partition`
+        // (`dcc8cb3`) on `ParseFormatCoordinatesError`, lifted here
+        // onto the CLI-run rejection tag. A future fourth variant
+        // landing on `ConfigShowError` (a hypothetical `Toml(_)` /
+        // `Blue(_)` emitter arm, or a second operator-input rejection
+        // like `--diff` conflict with `--format`) without its own
+        // sibling predicate collapses the partition to zero on that
+        // variant, failing here before drifting through any
+        // structured-log field, retry-policy dispatch, or
+        // operator-facing suggestion engine that routes on the
+        // polarity trio.
+        let errors = [
+            ConfigShowError::CustomTierWithoutPath,
+            ConfigShowError::Yaml(synthetic_yaml_error()),
+            ConfigShowError::Json(synthetic_json_error()),
+        ];
+        for err in &errors {
+            let hits = usize::from(err.is_custom_tier_without_path())
+                + usize::from(err.is_yaml())
+                + usize::from(err.is_json());
+            assert_eq!(
+                hits, 1,
+                "ConfigShowError::{err:?} must satisfy exactly one of \
+                 is_custom_tier_without_path/is_yaml/is_json (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn config_show_error_predicates_agree_with_from_conversions_and_run_rejection() {
+        // Cross-cut structural pin between the enum's `#[from]`
+        // conversions (`serde_yaml::Error` → [`Self::Yaml`],
+        // `serde_json::Error` → [`Self::Json`]) and the
+        // `ConfigShowCommand::run` rejection path
+        // (`tier=Custom, path=None` → [`Self::CustomTierWithoutPath`])
+        // and the new sibling-predicate trio: each canonical
+        // rejection origin lands on the predicate that names its
+        // rejection mode. Sibling of the per-variant
+        // `parse_format_coordinates_error_predicates_agree_with_from_str_rejection_paths`
+        // pin (`dcc8cb3`), extended here to bridge the tag-side
+        // classifier surface with both the `#[from]` derives and the
+        // `run` control-flow contract. A future edit that swapped
+        // either `#[from]` slot or changed the `run` rejection path
+        // for the missing-`--path` case would fire here before
+        // drifting through any consumer routing on the polarity trio.
+
+        // ── operator-input rejection through `run` ────────────────
+        let cmd = ConfigShowCommand {
+            tier: TierArg::Custom,
+            path: None,
+            format: OutputFormat::Yaml,
+            diff: None,
+        };
+        let err = cmd
+            .run::<FixtureConfig>("FIXTURE_TIER")
+            .expect_err("tier=Custom with path=None must reject");
+        assert!(
+            err.is_custom_tier_without_path(),
+            "expected is_custom_tier_without_path for {err:?}",
+        );
+        assert!(!err.is_yaml());
+        assert!(!err.is_json());
+
+        // ── serde_yaml::Error promotion through `#[from]` ─────────
+        let promoted_yaml: ConfigShowError = synthetic_yaml_error().into();
+        assert!(!promoted_yaml.is_custom_tier_without_path());
+        assert!(
+            promoted_yaml.is_yaml(),
+            "expected is_yaml for {promoted_yaml:?}",
+        );
+        assert!(!promoted_yaml.is_json());
+
+        // ── serde_json::Error promotion through `#[from]` ─────────
+        let promoted_json: ConfigShowError = synthetic_json_error().into();
+        assert!(!promoted_json.is_custom_tier_without_path());
+        assert!(!promoted_json.is_yaml());
+        assert!(
+            promoted_json.is_json(),
+            "expected is_json for {promoted_json:?}",
+        );
     }
 }
