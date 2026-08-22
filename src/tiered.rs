@@ -815,14 +815,43 @@ impl Provenance {
     }
 
     /// The conceptual tier that produced the value.
+    ///
+    /// `const`-callable — the body is a `Copy`-out of the [`ConfigTierKind`]
+    /// field with no allocation, borrow, or non-const helper on the path, so
+    /// a compile-time-known [`Provenance`] projects its tier at compile time
+    /// too. Closes the const-callability parity gap between this projection
+    /// and the const-fn tier-axis predicate quartet [`Self::is_bare`] /
+    /// [`Self::is_discovered`] / [`Self::is_default`] / [`Self::is_custom`]
+    /// (`d586c87`) which delegates through this accessor via
+    /// [`ConfigTierKind`]'s auto-derived predicates. Before this seal, a
+    /// caller composing a compile-time projection out of `prov.tier()` had
+    /// to open-code the field access on a private field it could not name,
+    /// then re-mint the const-fn path by hand; after it, `const _:
+    /// ConfigTierKind = STATIC_PROV.tier();` composes with the const-fn
+    /// [`Self::computed`] constructor at the exact seam. Welded at compile
+    /// time by [`tests::provenance_projection_accessors_are_const_callable`],
+    /// mirroring the shape of
+    /// [`tests::provenance_tier_predicates_are_const_callable`] (`d586c87`)
+    /// on the sibling predicate axis of the same primitive.
     #[must_use]
-    pub fn tier(&self) -> ConfigTierKind {
+    pub const fn tier(&self) -> ConfigTierKind {
         self.tier
     }
 
     /// The provider source that produced the value.
+    ///
+    /// `const`-callable — the body is a `&`-borrow of the [`ConfigSource`]
+    /// field with no allocation, `Deref` chain, or non-const helper on the
+    /// path, so a compile-time-known [`Provenance`] projects its source
+    /// reference at compile time too. Closes the const-callability parity
+    /// gap between this projection and the const-fn source-axis predicate
+    /// triplet [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`]
+    /// (`84e8f9d`) which delegates through this accessor via
+    /// [`ConfigSource`]'s own const-fn predicates. See [`Self::tier`] for
+    /// the full contract shape and the compile-time weld
+    /// [`tests::provenance_projection_accessors_are_const_callable`].
     #[must_use]
-    pub fn source(&self) -> &ConfigSource {
+    pub const fn source(&self) -> &ConfigSource {
         &self.source
     }
 
@@ -972,8 +1001,20 @@ impl Provenance {
     /// `(tier, source)` pair name a single closed-enum tag without
     /// touching heap or lifetime, and together they name the pair's
     /// closed-axis coordinates on both altitudes at one seam each.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`ConfigSource::kind`] projection with no allocation or non-const
+    /// helper on the path, so a compile-time-known [`Provenance`] projects
+    /// its source-kind at compile time too. Closes the const-callability
+    /// parity gap between this projection and the const-fn source-axis
+    /// predicate triplet [`Self::is_defaults`] / [`Self::is_env`] /
+    /// [`Self::is_file`] (`84e8f9d`) which delegates through
+    /// [`ConfigSource`]'s const-fn predicates one altitude down, and closes
+    /// it symmetrically with the tier-altitude peer [`Self::tier`] on the
+    /// same primitive. Welded at compile time by
+    /// [`tests::provenance_projection_accessors_are_const_callable`].
     #[must_use]
-    pub fn source_kind(&self) -> crate::ConfigSourceKind {
+    pub const fn source_kind(&self) -> crate::ConfigSourceKind {
         self.source.kind()
     }
 
@@ -63631,6 +63672,49 @@ mod progressive_tests {
         assert!(COMPUTED_IS_DEFAULTS);
         assert!(!COMPUTED_IS_ENV);
         assert!(!COMPUTED_IS_FILE);
+    }
+
+    #[test]
+    fn provenance_projection_accessors_are_const_callable() {
+        // Weld the const-callability of the atomic-pair projection
+        // accessors (`Provenance::tier` / `source` / `source_kind`) with
+        // the const-callable `Provenance::computed` constructor at
+        // compile time. Closes the const-callability parity gap between
+        // the projections and the const-fn tier-axis / source-axis
+        // predicate quartet+triplet they delegate through
+        // (`d586c87` / `84e8f9d`). Mirrors the shape of
+        // `provenance_tier_predicates_are_const_callable` (`d586c87`)
+        // and `provenance_source_predicates_are_const_callable`
+        // (`84e8f9d`) on the projection axis of the same primitive —
+        // the crate's established idiom for pinning compile-time-
+        // callability at the exact line a future edit would drift it.
+        //
+        // The `source` accessor returns a borrow (`&ConfigSource`), so
+        // the const-init position below stores the borrow in a `const`
+        // reference at the same weld altitude that the `tier` /
+        // `source_kind` welds pin the `Copy`-out projections. Every
+        // hop `.tier()` / `.source()` / `.source_kind()` in the const-
+        // init positions below still routes through the const-fn
+        // `Provenance::computed` constructor and the const-fn
+        // accessor. The moment either half of the composition loses
+        // its const-ness (a future edit that reaches for a non-const
+        // helper — `.clone()`, `.to_owned()`, `.as_str()` — inside
+        // `computed` or any of the three projections) one of the
+        // three `const _: ... = ...` welds below fails to compile at
+        // THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the type.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Custom);
+
+        const COMPUTED_TIER: ConfigTierKind = COMPUTED_PROV.tier();
+        const COMPUTED_SOURCE: &ConfigSource = COMPUTED_PROV.source();
+        const COMPUTED_SOURCE_KIND: crate::ConfigSourceKind = COMPUTED_PROV.source_kind();
+
+        assert!(matches!(COMPUTED_TIER, ConfigTierKind::Custom));
+        assert!(matches!(COMPUTED_SOURCE, ConfigSource::Defaults));
+        assert!(matches!(
+            COMPUTED_SOURCE_KIND,
+            crate::ConfigSourceKind::Defaults
+        ));
     }
 
     // ── ProvenanceMap::source_kind_histogram — cube-native per-layer-kind
