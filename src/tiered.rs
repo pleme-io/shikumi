@@ -1418,6 +1418,91 @@ impl ProvenanceMap {
         self.entries()
     }
 
+    /// Sorted iterator over just the leaf `path` keys — the path-only
+    /// projection walker of [`Self::entries`], mirroring
+    /// [`std::collections::BTreeMap::keys`] on the underlying
+    /// [`BTreeMap`]. Yields `&[String]` items in the same lex order as
+    /// [`Self::entries`] emits the `(path, provenance)` pairs.
+    ///
+    /// Before this seam, a caller wanting just the resolved-config path
+    /// set — a `ConfigPlane` wire encoder emitting the leaf path list
+    /// separately from the per-leaf provenance envelope, a schema-driven
+    /// UI listing every resolved leaf without paying to render the
+    /// provenance detail, a per-path checklist walker cross-referencing
+    /// another map keyed on the same paths — reached through
+    /// `self.entries().map(|(p, _)| p)`, a two-hop iterator chain that
+    /// pulled the [`Provenance`] value at every step just to discard it.
+    /// This method routes the projection through the const-fold-friendly
+    /// [`std::collections::btree_map::Keys`] walker directly, preserving
+    /// [`ExactSizeIterator::len`] and [`DoubleEndedIterator`] parity with
+    /// [`Self::entries`] at zero allocation.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapPaths`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapEntries`] carries on the pair walker, restricted
+    /// to the path axis of the underlying [`BTreeMap`]. Pointwise-equal
+    /// to `self.entries().map(|(p, _)| p)` in element count, order, and
+    /// element identity by construction — pinned by
+    /// [`tests::provenance_map_paths_agrees_with_entries_fst_projection`].
+    /// The peer of [`Self::provenances`] on the value axis of the same
+    /// underlying [`BTreeMap`]: together they close both projection
+    /// walkers of the standard [`BTreeMap`]-idiom trio
+    /// (`iter` / `keys` / `values`) that [`Self::iter`] /
+    /// [`Self::provenances`] complete on the tiered algebra.
+    #[must_use]
+    pub fn paths(&self) -> ProvenanceMapPaths<'_> {
+        ProvenanceMapPaths {
+            inner: self.inner.keys(),
+        }
+    }
+
+    /// Sorted iterator over just the leaf [`Provenance`] values — the
+    /// provenance-only projection walker of [`Self::entries`],
+    /// mirroring [`std::collections::BTreeMap::values`] on the
+    /// underlying [`BTreeMap`]. Yields `&Provenance` items in the same
+    /// lex order on the (hidden) leaf path as [`Self::entries`] emits
+    /// the `(path, provenance)` pairs.
+    ///
+    /// Before this seam, a caller wanting just the provenance stream —
+    /// a `/healthz/provenance` dashboard summing an "any-custom" or
+    /// "all-bare" bit off the resolved provenances without needing the
+    /// paths, a per-tier telemetry counter feeding a downstream
+    /// histogram, an attestation manifest hashing just the provenance
+    /// values in order — reached through
+    /// `self.entries().map(|(_, prov)| prov)`, a two-hop iterator chain
+    /// that pulled the leaf path at every step just to discard it. This
+    /// method routes the projection through the const-fold-friendly
+    /// [`std::collections::btree_map::Values`] walker directly,
+    /// preserving [`ExactSizeIterator::len`] and
+    /// [`DoubleEndedIterator`] parity with [`Self::entries`] at zero
+    /// allocation.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapProvenances`] impls
+    /// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug] — the full trait shape
+    /// [`ProvenanceMapEntries`] carries on the pair walker, restricted
+    /// to the value axis of the underlying [`BTreeMap`]. Pointwise-equal
+    /// to `self.entries().map(|(_, prov)| prov)` in element count, order,
+    /// and element identity by construction — pinned by
+    /// [`tests::provenance_map_provenances_agrees_with_entries_snd_projection`].
+    /// The peer of [`Self::paths`] on the path axis of the same
+    /// underlying [`BTreeMap`]: together they close both projection
+    /// walkers of the standard [`BTreeMap`]-idiom trio
+    /// (`iter` / `keys` / `values`) on the tiered algebra.
+    #[must_use]
+    pub fn provenances(&self) -> ProvenanceMapProvenances<'_> {
+        ProvenanceMapProvenances {
+            inner: self.inner.values(),
+        }
+    }
+
     /// Per-tier leaf-count histogram — the shikumi cube-native
     /// [`AxisHistogram<ConfigTierKind>`][crate::AxisHistogram] view over
     /// the tier attribution of each resolved leaf. Every leaf's
@@ -17620,6 +17705,124 @@ impl<'a> IntoIterator for &'a ProvenanceMap {
         self.entries()
     }
 }
+
+/// Sorted iterator over just the leaf `path` keys of a [`ProvenanceMap`]
+/// — the concrete return type of [`ProvenanceMap::paths`], a thin newtype
+/// over [`std::collections::btree_map::Keys`] that projects `&Vec<String>
+/// → &[String]` at every seam.
+///
+/// Peer of [`ProvenanceMapEntries`] on the path axis: where
+/// [`ProvenanceMapEntries`] yields `(&[String], &Provenance)` pairs, this
+/// iterator yields just the `&[String]` path — the same elements, same
+/// order, same length, restricted to the key axis of the underlying
+/// [`BTreeMap`]. The seam every std keyed collection carries alongside
+/// its pair walker (`BTreeMap::keys` alongside `BTreeMap::iter`,
+/// `HashMap::keys` alongside `HashMap::iter`).
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapEntries`] carries on the pair walker. [`Clone`] hands
+/// out an independent walk over the same underlying [`BTreeMap`] (a
+/// two-pass "count then find" or "render then pick nth" over the path
+/// set without a `.collect::<Vec<_>>()` intermediate).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapPaths<'a> {
+    inner: std::collections::btree_map::Keys<'a, Vec<String>, Provenance>,
+}
+
+impl<'a> Iterator for ProvenanceMapPaths<'a> {
+    type Item = &'a [String];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Vec::as_slice)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapPaths<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Vec::as_slice)
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapPaths<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapPaths<'_> {}
+
+/// Sorted iterator over just the leaf [`Provenance`] values of a
+/// [`ProvenanceMap`] — the concrete return type of
+/// [`ProvenanceMap::provenances`], a thin newtype over
+/// [`std::collections::btree_map::Values`] that forwards element access
+/// straight through.
+///
+/// Peer of [`ProvenanceMapEntries`] on the value axis: where
+/// [`ProvenanceMapEntries`] yields `(&[String], &Provenance)` pairs, this
+/// iterator yields just the `&Provenance` — the same elements, same
+/// order (lex on the hidden leaf path), same length, restricted to the
+/// value axis of the underlying [`BTreeMap`]. The seam every std keyed
+/// collection carries alongside its pair walker (`BTreeMap::values`
+/// alongside `BTreeMap::iter`, `HashMap::values` alongside
+/// `HashMap::iter`).
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same trait shape
+/// [`ProvenanceMapEntries`] carries on the pair walker. [`Clone`] hands
+/// out an independent walk over the same underlying [`BTreeMap`] (a
+/// two-pass "any / all / count" over the provenance stream without a
+/// `.collect::<Vec<_>>()` intermediate).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait algebra
+/// above.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapProvenances<'a> {
+    inner: std::collections::btree_map::Values<'a, Vec<String>, Provenance>,
+}
+
+impl<'a> Iterator for ProvenanceMapProvenances<'a> {
+    type Item = &'a Provenance;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapProvenances<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapProvenances<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapProvenances<'_> {}
 
 /// Consuming iterator over the owned `(Vec<String>, Provenance)` pairs
 /// of a [`ProvenanceMap`], yielded in lex order on the path.
@@ -42528,6 +42731,247 @@ mod progressive_tests {
             prov.provenance_of(&["a"]).unwrap().tier(),
             ConfigTierKind::Discovered
         );
+    }
+
+    // -------- ProvenanceMap::paths / ::provenances projection walkers --------
+
+    #[test]
+    fn provenance_map_paths_agrees_with_entries_fst_projection() {
+        // The path-only walker yields the same element stream, in the
+        // same order, as `entries().map(|(p, _)| p)`. The pin catches a
+        // future edit that reroutes `paths()` through a different
+        // BTreeMap projection (`.iter().rev().map(|(k, _)| k)`, a
+        // `.into_keys()` consume by mistake) that would break the
+        // shared-order contract.
+        let r = Prog::resolve_progressive();
+        let via_paths: Vec<Vec<String>> = r.provenance().paths().map(<[String]>::to_vec).collect();
+        let via_entries: Vec<Vec<String>> =
+            r.provenance().entries().map(|(p, _)| p.to_vec()).collect();
+        assert_eq!(via_paths, via_entries);
+    }
+
+    #[test]
+    fn provenance_map_provenances_agrees_with_entries_snd_projection() {
+        // The provenance-only walker yields the same element stream, in
+        // the same order, as `entries().map(|(_, prov)| prov)`. Peer of
+        // the paths pin above on the value axis of the underlying
+        // BTreeMap.
+        let r = Prog::resolve_progressive();
+        let via_provs: Vec<Provenance> = r.provenance().provenances().cloned().collect();
+        let via_entries: Vec<Provenance> = r
+            .provenance()
+            .entries()
+            .map(|(_, prov)| prov.clone())
+            .collect();
+        assert_eq!(via_provs, via_entries);
+    }
+
+    #[test]
+    fn provenance_map_paths_len_matches_map_len_pointwise() {
+        // ExactSizeIterator on the paths walker reports the same
+        // remaining count as the pair walker on the same underlying
+        // BTreeMap. The projection is element-preserving, so
+        // `paths().len() == entries().len() == map.len()` at every
+        // remaining cursor position.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().paths();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_provenances_len_matches_map_len_pointwise() {
+        // ExactSizeIterator on the provenances walker: same shape as
+        // the paths pin, on the value axis.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().provenances();
+        assert_eq!(it.len(), r.provenance().len());
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_paths_next_back_walks_specific_to_coarse() {
+        // DoubleEndedIterator on the paths walker: the tail cursor
+        // walks the sorted BTreeMap keys in reverse, yielding leaves
+        // from lexicographically last to first. Mirror of
+        // `provenance_map_entries_next_back_walks_specific_to_coarse`.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().paths();
+        assert_eq!(it.next_back().unwrap(), &["d".to_string()][..]);
+        assert_eq!(it.next_back().unwrap(), &["c".to_string()][..]);
+        assert_eq!(it.next().unwrap(), &["a".to_string()][..]);
+        assert_eq!(it.next_back().unwrap(), &["b".to_string()][..]);
+        assert!(it.next().is_none());
+        assert!(it.next_back().is_none());
+    }
+
+    #[test]
+    fn provenance_map_provenances_next_back_walks_specific_to_coarse() {
+        // DoubleEndedIterator on the provenances walker. The value
+        // stream reversed matches the forward stream reversed via
+        // `.collect().rev()`.
+        let r = Prog::resolve_progressive();
+        let mut forward: Vec<Provenance> = r.provenance().provenances().cloned().collect();
+        forward.reverse();
+        let backward: Vec<Provenance> = r.provenance().provenances().rev().cloned().collect();
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn provenance_map_paths_clone_hands_out_independent_walk() {
+        // A static bound accepting Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone verifies the full
+        // trait algebra at compile time. Then a runtime cross-walk
+        // asserts the cloned walker yields the same path stream as the
+        // original — the two cursors are independent handles on the
+        // same underlying BTreeMap.
+        fn assert_algebra<'a, I>(_: &I)
+        where
+            I: Iterator<Item = &'a [String]>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().paths();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<Vec<String>> = it.map(<[String]>::to_vec).collect();
+        let b: Vec<Vec<String>> = cloned.map(<[String]>::to_vec).collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_provenances_clone_hands_out_independent_walk() {
+        // Peer of the paths trait-algebra pin above, on the value axis.
+        fn assert_algebra<'a, I>(_: &I)
+        where
+            I: Iterator<Item = &'a Provenance>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().provenances();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<Provenance> = it.cloned().collect();
+        let b: Vec<Provenance> = cloned.cloned().collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_paths_return_type_is_nameable_provenance_map_paths() {
+        // Pin the concrete-return-type sharpen at the type-signature
+        // level: a struct field bound on `ProvenanceMapPaths<'a>` holds
+        // the handle across a return. Same shape as the pre-existing
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`
+        // pin on the pair walker.
+        struct Held<'a> {
+            walker: ProvenanceMapPaths<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.paths(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_provenances_return_type_is_nameable_provenance_map_provenances() {
+        // Peer of the paths nameability pin, on the value axis.
+        struct Held<'a> {
+            walker: ProvenanceMapProvenances<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.provenances(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_paths_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().paths();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapPaths"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_provenances_debug_impl_names_the_struct() {
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().provenances();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapProvenances"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn provenance_map_paths_and_provenances_zip_recompose_entries() {
+        // The two projection walkers recompose the pair walker on the
+        // same underlying BTreeMap: zipping `paths()` and
+        // `provenances()` yields the same `(path, provenance)` stream
+        // as `entries()`, in the same lex order. This is the
+        // composability law: the two projections are lossless together.
+        let r = Prog::resolve_progressive();
+        let zipped: Vec<(Vec<String>, Provenance)> = r
+            .provenance()
+            .paths()
+            .zip(r.provenance().provenances())
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        let entries: Vec<(Vec<String>, Provenance)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        assert_eq!(zipped, entries);
+    }
+
+    #[test]
+    fn provenance_map_paths_and_provenances_empty_on_empty_map() {
+        // The empty case: an empty ProvenanceMap projects to two empty
+        // walkers, both reporting `len() == 0`, `size_hint() == (0,
+        // Some(0))`, and `None` on the first pull from either end.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.paths().len(), 0);
+        assert_eq!(empty.paths().size_hint(), (0, Some(0)));
+        assert!(empty.paths().next().is_none());
+        assert!(empty.paths().next_back().is_none());
+        assert_eq!(empty.provenances().len(), 0);
+        assert_eq!(empty.provenances().size_hint(), (0, Some(0)));
+        assert!(empty.provenances().next().is_none());
+        assert!(empty.provenances().next_back().is_none());
     }
 
     // -------- IntoIterator / FromIterator / Extend on ProvenanceMap --------
