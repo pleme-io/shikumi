@@ -568,6 +568,45 @@ impl ConfigSourceKind {
     pub const fn is_file(self) -> bool {
         matches!(self, Self::File)
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this source-kind
+    /// — `0` for [`Self::Defaults`], `1` for [`Self::Env`], `2` for
+    /// [`Self::File`]. The declaration order of [`Self::ALL`], which is
+    /// also the operator-facing [`crate::ProviderChain`] precedence
+    /// within the [`crate::ConfigTierKind::Custom`] row (layers
+    /// `Defaults → Env → File`, later overriding earlier). A higher
+    /// source-kind ordinal wins in the custom-tier fold.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both of which are non-`const` in stable Rust today), so
+    /// a caller wanting the source-kind ordinal in a `const` context
+    /// reached through a `let` binding at runtime instead of the
+    /// inherent seam. This `match`-based inherent, keyed on the three
+    /// closed variants directly, gives the same `usize` answer under
+    /// `const` — pinned pointwise across every variant by
+    /// [`tests::config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar, both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the source-kind's scalar label and scalar precedence position
+    /// under `const`. Peer of [`crate::ConfigTierKind::ordinal`] on
+    /// the sibling tier-kind axis of the atomic `(tier, source)` pair
+    /// one primitive over — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same const-
+    /// callability contract.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Defaults => 0,
+            Self::Env => 1,
+            Self::File => 2,
+        }
+    }
 }
 
 impl crate::ClosedAxis for ConfigSourceKind {
@@ -94960,6 +94999,65 @@ mod tests {
         assert_eq!(ConfigSourceKind::Defaults.as_str(), "defaults");
         assert_eq!(ConfigSourceKind::Env.as_str(), "env");
         assert_eq!(ConfigSourceKind::File.as_str(), "file");
+    }
+
+    #[test]
+    fn config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `ConfigSourceKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `ConfigSourceKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Peer of `config_tier_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling tier-kind axis.
+        for &kind in ConfigSourceKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the three
+        // declared positions verbatim, in strictly ascending provider-
+        // chain precedence (defaults → env → file). Guards against a
+        // swap in the match arms that would still pass
+        // `..._agrees_with_axis_ordinal_pointwise` if the
+        // `ConfigSourceKind::ALL` slice was edited in the same drift.
+        assert_eq!(ConfigSourceKind::Defaults.ordinal(), 0);
+        assert_eq!(ConfigSourceKind::Env.ordinal(), 1);
+        assert_eq!(ConfigSourceKind::File.ordinal(), 2);
+    }
+
+    #[test]
+    fn config_source_kind_ordinal_is_const_callable() {
+        // Weld the const-callability of the inherent `ordinal` at
+        // compile time: a runtime call would still compile if this
+        // method lost its `const` qualifier, but a `const _: usize
+        // = ConfigSourceKind::_.ordinal()` weld fails to compile at
+        // THAT line before the drift can reach downstream `const`
+        // consumers (a compile-time-selected chain-layer dispatch
+        // keyed on the source-kind ordinal, a `const` per-layer-kind
+        // bitset sized by `axis_cardinality::<ConfigSourceKind>()`,
+        // an attestation manifest whose per-layer-kind slots are
+        // initialized under `const`). Mirrors the shape of
+        // `config_tier_kind_ordinal_is_const_callable` on the sibling
+        // tier-kind axis.
+        const DEFAULTS_ORD: usize = ConfigSourceKind::Defaults.ordinal();
+        const ENV_ORD: usize = ConfigSourceKind::Env.ordinal();
+        const FILE_ORD: usize = ConfigSourceKind::File.ordinal();
+
+        assert_eq!(DEFAULTS_ORD, 0);
+        assert_eq!(ENV_ORD, 1);
+        assert_eq!(FILE_ORD, 2);
     }
 
     #[test]

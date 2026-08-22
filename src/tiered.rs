@@ -218,6 +218,46 @@ impl ConfigTierKind {
     pub fn from_str(s: &str) -> Option<Self> {
         <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this tier-kind —
+    /// `0` for [`Self::Bare`], `1` for [`Self::Discovered`], `2` for
+    /// [`Self::Default`], `3` for [`Self::Custom`]. The declaration
+    /// order of [`Self::ALL`], which is also the sealed-fold precedence
+    /// `bare → discovered → prescribed_default → custom` (per
+    /// `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5 — a higher
+    /// ordinal wins in the progressive fold).
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both of which are non-`const` in stable Rust today), so
+    /// a caller wanting the tier-kind ordinal in a `const` context
+    /// reached through a `let` binding at runtime instead of the
+    /// inherent seam. This `match`-based inherent, keyed on the four
+    /// closed variants directly, gives the same `usize` answer under
+    /// `const` — pinned pointwise across every variant by
+    /// [`tests::config_tier_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar, both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the tier-kind's scalar label and scalar precedence position
+    /// under `const`. Peer of [`crate::ConfigSourceKind::ordinal`] on
+    /// the sibling source-kind axis of the atomic `(tier, source)`
+    /// pair one primitive over — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same const-
+    /// callability contract.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Bare => 0,
+            Self::Discovered => 1,
+            Self::Default => 2,
+            Self::Custom => 3,
+        }
+    }
 }
 
 impl crate::ClosedAxis for ConfigTierKind {
@@ -859,9 +899,38 @@ impl Provenance {
     /// provenance's tier — the single source of truth for "which tier
     /// outranks which" (reused from [`ConfigTierKind`]'s declaration order,
     /// never re-minted). A higher ordinal wins in the progressive fold.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`ConfigTierKind::ordinal`] inherent with no allocation, borrow,
+    /// or non-const helper on the path, so a compile-time-known
+    /// [`Provenance`] projects its tier ordinal at compile time too.
+    /// Closes the const-callability parity gap between this ordinal-
+    /// projection accessor and the const-fn projection accessors on
+    /// the same primitive ([`Self::tier`] / [`Self::source`] /
+    /// [`Self::source_kind`], all `const fn` since `f7fb7af`), and
+    /// with the const-fn tier-axis predicate quartet [`Self::is_bare`]
+    /// / [`Self::is_discovered`] / [`Self::is_default`] /
+    /// [`Self::is_custom`] (`d586c87`) — the four projections and the
+    /// ordinal are now all callable from a `const` context that
+    /// composes with the const-fn [`Self::computed`] constructor.
+    /// Symmetrical with the source-altitude peer
+    /// [`Self::source_kind_ordinal`] on the same atomic pair. Welded
+    /// at compile time by
+    /// [`tests::provenance_ordinal_projections_are_const_callable`].
+    ///
+    /// Agreement with the free-function [`crate::axis_ordinal`]
+    /// projection is a structural law: `prov.tier_ordinal() ==
+    /// crate::axis_ordinal(prov.tier())` on every constructor row —
+    /// pinned pointwise by
+    /// [`tests::provenance_tier_ordinal_agrees_with_axis_ordinal_projection`],
+    /// the tier-altitude analogue of the pre-existing
+    /// `provenance_source_kind_ordinal_agrees_with_axis_ordinal_projection`
+    /// on the sibling source-kind axis. The inherent seam gives the
+    /// same `usize` answer as the free function; the difference is
+    /// pure const-callability.
     #[must_use]
-    pub fn tier_ordinal(&self) -> usize {
-        crate::axis_ordinal(self.tier)
+    pub const fn tier_ordinal(&self) -> usize {
+        self.tier.ordinal()
     }
 
     /// Returns `true` iff this provenance's tier is
@@ -1050,9 +1119,24 @@ impl Provenance {
     /// `crate::axis_ordinal(prov.source_kind())` — a two-hop chain that
     /// named the free function at the call site instead of the inherent
     /// seam.
+    ///
+    /// `const`-callable — the body is a two-hop chain of const-fn
+    /// projections ([`Self::source_kind`] into [`crate::ConfigSourceKind::ordinal`])
+    /// with no allocation, borrow, or non-const helper on the path,
+    /// so a compile-time-known [`Provenance`] projects its source-kind
+    /// ordinal at compile time too. Closes the const-callability
+    /// parity gap symmetrically with the tier-altitude peer
+    /// [`Self::tier_ordinal`] on the same atomic pair, and with the
+    /// const-fn source-axis predicate triplet [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] (`84e8f9d`) — the triplet
+    /// projects the axis to a scalar `bool` per cell, this method
+    /// projects it to a scalar `usize` precedence coordinate, and both
+    /// are now callable from a `const` context that composes with the
+    /// const-fn [`Self::computed`] constructor. Welded at compile time
+    /// by [`tests::provenance_ordinal_projections_are_const_callable`].
     #[must_use]
-    pub fn source_kind_ordinal(&self) -> usize {
-        crate::axis_ordinal(self.source_kind())
+    pub const fn source_kind_ordinal(&self) -> usize {
+        self.source_kind().ordinal()
     }
 
     /// Returns `true` iff this provenance's source is
@@ -26025,6 +26109,67 @@ mod tests {
         assert_eq!(ConfigTierKind::Discovered.as_str(), "discovered");
         assert_eq!(ConfigTierKind::Default.as_str(), "default");
         assert_eq!(ConfigTierKind::Custom.as_str(), "custom");
+    }
+
+    #[test]
+    fn config_tier_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `ConfigTierKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `ConfigTierKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Peer of `config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling source-kind axis.
+        for &kind in ConfigTierKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the four
+        // declared positions verbatim, in strictly ascending sealed-
+        // fold precedence (bare → discovered → default → custom).
+        // Guards against a swap in the match arms that would still
+        // pass `..._agrees_with_axis_ordinal_pointwise` if the
+        // `ConfigTierKind::ALL` slice was edited in the same drift.
+        assert_eq!(ConfigTierKind::Bare.ordinal(), 0);
+        assert_eq!(ConfigTierKind::Discovered.ordinal(), 1);
+        assert_eq!(ConfigTierKind::Default.ordinal(), 2);
+        assert_eq!(ConfigTierKind::Custom.ordinal(), 3);
+    }
+
+    #[test]
+    fn config_tier_kind_ordinal_is_const_callable() {
+        // Weld the const-callability of the inherent `ordinal` at
+        // compile time: a runtime call would still compile if this
+        // method lost its `const` qualifier, but a `const _: usize
+        // = ConfigTierKind::_.ordinal()` weld fails to compile at
+        // THAT line before the drift can reach downstream `const`
+        // consumers (a compile-time-selected reload dispatch keyed
+        // on the tier ordinal, a `const` per-tier bitset sized by
+        // `axis_cardinality::<ConfigTierKind>()`, an attestation
+        // manifest whose per-tier slots are initialized under
+        // `const`). Mirrors the shape of the `provenance_*_const_callable`
+        // welds one altitude up, applied to the primitive itself.
+        const BARE_ORD: usize = ConfigTierKind::Bare.ordinal();
+        const DISCOVERED_ORD: usize = ConfigTierKind::Discovered.ordinal();
+        const DEFAULT_ORD: usize = ConfigTierKind::Default.ordinal();
+        const CUSTOM_ORD: usize = ConfigTierKind::Custom.ordinal();
+
+        assert_eq!(BARE_ORD, 0);
+        assert_eq!(DISCOVERED_ORD, 1);
+        assert_eq!(DEFAULT_ORD, 2);
+        assert_eq!(CUSTOM_ORD, 3);
     }
 
     #[test]
@@ -63715,6 +63860,74 @@ mod progressive_tests {
             COMPUTED_SOURCE_KIND,
             crate::ConfigSourceKind::Defaults
         ));
+    }
+
+    #[test]
+    fn provenance_tier_ordinal_agrees_with_axis_ordinal_projection() {
+        // Equal to `crate::axis_ordinal(self.tier())` by construction
+        // across every shipped constructor row — the inherent seam is
+        // a one-hop wrapper around the const-fn `ConfigTierKind::ordinal`
+        // primitive, which is itself pinned pointwise-equal with
+        // `crate::axis_ordinal` via
+        // `config_tier_kind_ordinal_agrees_with_axis_ordinal_pointwise`.
+        // Peer of the pre-existing
+        // `provenance_source_kind_ordinal_agrees_with_axis_ordinal_projection`
+        // on the sibling source-kind axis of the atomic (tier, source)
+        // pair. Pins the two spellings pointwise at the Provenance
+        // altitude so a future edit to either surface can't drift them
+        // apart silently.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/tier_ordinal_projection.yaml"),
+            Provenance::env("SHIKUMI_TIER_ORDINAL_PROJECTION_"),
+        ] {
+            assert_eq!(prov.tier_ordinal(), crate::axis_ordinal(prov.tier()),);
+        }
+    }
+
+    #[test]
+    fn provenance_ordinal_projections_are_const_callable() {
+        // Weld the const-callability of the atomic-pair ordinal-
+        // projection accessors (`Provenance::tier_ordinal` /
+        // `source_kind_ordinal`) with the const-callable
+        // `Provenance::computed` constructor at compile time. Closes
+        // the const-callability parity gap between the ordinal
+        // projections and the const-fn projection accessors on the
+        // same primitive (`Provenance::tier` / `source` /
+        // `source_kind`, `f7fb7af`) which delegate through the same
+        // atomic pair; and with the const-fn tier-axis predicate
+        // quartet (`d586c87`) + source-axis predicate triplet
+        // (`84e8f9d`) that project the same axes to a scalar `bool`
+        // per cell. Mirrors the shape of
+        // `provenance_projection_accessors_are_const_callable`
+        // (`f7fb7af`) on the sibling projection axis.
+        //
+        // `Provenance` cannot be bound to a `const` item because its
+        // `source: ConfigSource` field carries a non-`const`-Drop
+        // payload (`PathBuf` / `String` in the non-`Defaults` arms),
+        // so we route through a `static` binding: statics never drop,
+        // so the drop-check that rejects a `const` Provenance does
+        // not apply, and every hop `.tier_ordinal()` /
+        // `.source_kind_ordinal()` in the const-init positions below
+        // still routes through the const-fn `Provenance::computed`
+        // constructor, the const-fn projection (`tier` /
+        // `source_kind`), and the const-fn primitive ordinal method
+        // (`ConfigTierKind::ordinal` / `ConfigSourceKind::ordinal`).
+        // The moment any hop of the composition loses its const-
+        // ness one of the `const _: usize = ...` welds below fails
+        // to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // type.
+        static CUSTOM_PROV: Provenance = Provenance::computed(ConfigTierKind::Custom);
+
+        const CUSTOM_TIER_ORD: usize = CUSTOM_PROV.tier_ordinal();
+        const CUSTOM_SOURCE_KIND_ORD: usize = CUSTOM_PROV.source_kind_ordinal();
+
+        assert_eq!(CUSTOM_TIER_ORD, 3); // ConfigTierKind::Custom
+        assert_eq!(CUSTOM_SOURCE_KIND_ORD, 0); // ConfigSource::Defaults (computed row)
     }
 
     // ── ProvenanceMap::source_kind_histogram — cube-native per-layer-kind
