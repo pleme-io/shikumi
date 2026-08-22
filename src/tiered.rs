@@ -19309,6 +19309,18 @@ impl<T> ProgressiveResolution<T> {
     /// Pointwise equal to `self.provenance().clone()` on every input
     /// — pinned by
     /// [`progressive_tests::progressive_resolution_into_provenance_agrees_with_accessor_clone`].
+    ///
+    /// The std-trait facade over this method is
+    /// [`From<ProgressiveResolution<T>> for ProvenanceMap`], spelled
+    /// `ProvenanceMap::from(res)` / `res.into()` for callers routing
+    /// through the [`From`] blanket. The two spellings are byte-identical
+    /// on every input — pinned by
+    /// [`progressive_tests::progressive_resolution_from_facade_agrees_with_into_provenance`].
+    /// Together they close the single-coordinate consuming projection on
+    /// the provenance coordinate on both the inherent and the std-trait
+    /// surface, matching the shape the pair-destructuring already carries
+    /// (inherent [`Self::into_parts`] plus the
+    /// [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] facade).
     #[must_use]
     pub fn into_provenance(self) -> ProvenanceMap {
         self.provenance
@@ -19361,6 +19373,48 @@ impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
 impl<T> From<ProgressiveResolution<T>> for (T, ProvenanceMap) {
     fn from(resolution: ProgressiveResolution<T>) -> Self {
         resolution.into_parts()
+    }
+}
+
+/// Std-trait facade over [`ProgressiveResolution::into_provenance`]: the same
+/// single-coordinate consuming projection onto the provenance coordinate of
+/// the atomic `(value, provenance)` pair, spelled
+/// `ProvenanceMap::from(resolution)` / `resolution.into()` for callers routing
+/// through the [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `R: Into<ProvenanceMap>`).
+///
+/// Pointwise equal to [`ProgressiveResolution::into_provenance`] on every
+/// input — pinned by
+/// [`progressive_tests::progressive_resolution_from_facade_agrees_with_into_provenance`].
+/// The single-coordinate peer of the pair-destructuring
+/// [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] facade above:
+/// both altitudes of the consuming projection on the resolution primitive
+/// (single-coordinate provenance projection + pair-destructuring) now expose
+/// both spellings — the inherent method and the std-trait [`From`] facade —
+/// matching the shape the pair-destructuring already carries.
+///
+/// The value coordinate's std-trait sibling
+/// (`From<ProgressiveResolution<T>> for T`) is unavailable by coherence
+/// (Rust's blanket `impl<T> From<T> for T` reflexive facade collides with
+/// any concrete-target impl at `T = ProgressiveResolution<U>`); the
+/// inherent [`ProgressiveResolution::into_value`] remains the canonical
+/// single-coordinate consuming projection onto the value coordinate.
+/// The provenance coordinate lands on the concrete [`ProvenanceMap`]
+/// target and so admits this std-trait spelling with no coherence clash.
+///
+/// Compounds:
+/// - An attestation-manifest renderer bounded on `R: Into<ProvenanceMap>`
+///   picks up a [`ProgressiveResolution<T>`] for free without naming the
+///   inherent projection method, matching the shape the
+///   [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] facade
+///   already gave `R: Into<(T, ProvenanceMap)>` bounds.
+/// - A `ConfigPlane` broadcast surface routing just the provenance
+///   envelope to a downstream consumer that owns its inputs writes
+///   `ProvenanceMap::from(res)` without paying the borrow-and-clone
+///   allocation the accessor form of the same projection carries.
+impl<T> From<ProgressiveResolution<T>> for ProvenanceMap {
+    fn from(resolution: ProgressiveResolution<T>) -> Self {
+        resolution.into_provenance()
     }
 }
 
@@ -65989,6 +66043,97 @@ mod progressive_tests {
         let prov_only = seed.clone().into_provenance();
         let rebuilt = ProgressiveResolution::<Prog>::new(value_only, prov_only);
         assert_eq!(rebuilt, seed);
+    }
+
+    #[test]
+    fn progressive_resolution_from_facade_agrees_with_into_provenance() {
+        // The load-bearing pointwise agreement between the std-trait
+        // facade `<ProvenanceMap>::from(res)` and the inherent
+        // `res.into_provenance()` method on the same fold output. The
+        // provenance-coordinate peer of
+        // progressive_resolution_from_tuple_agrees_with_into_parts one
+        // altitude up on the pair-destructuring; both facades hand out
+        // exactly what their inherent counterparts hand out, so a
+        // downstream generic bound `R: Into<ProvenanceMap>` picks up
+        // ProgressiveResolution for free — the same way
+        // `R: Into<(T, ProvenanceMap)>` already picks it up through the
+        // pair-destructuring facade. Without this pin, a future edit that
+        // reroutes the From impl through a stale field, a per-leaf clone,
+        // or a lossy conversion would silently drift the two spellings.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(105_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facade_prov.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_method = r.clone().into_provenance();
+        let via_from: ProvenanceMap = r.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn progressive_resolution_from_facade_agrees_with_accessor_clone() {
+        // The std-trait facade is byte-equal to the borrow-side
+        // accessor followed by a clone — the same equality shape
+        // progressive_resolution_into_provenance_agrees_with_accessor_clone
+        // pins on the inherent method, lifted onto the From std-trait
+        // surface. The load-bearing distinction is the same
+        // clone-avoidance: the facade moves the ProvenanceMap out at
+        // zero allocation, the accessor form pays a full BTreeMap
+        // clone with per-leaf Vec<String> + Provenance allocation, but
+        // the two paths hand out the same ProvenanceMap byte-image on
+        // every input.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(106_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facade_accessor.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_from: ProvenanceMap = r.clone().into();
+        let via_accessor_clone = r.provenance().clone();
+        assert_eq!(via_from, via_accessor_clone);
+    }
+
+    #[test]
+    fn progressive_resolution_from_facade_preserves_leaf_provenance_stamps() {
+        // End-to-end downstream pin: routing a ProgressiveResolution
+        // through the std-trait `ProvenanceMap::from(res)` facade
+        // retains every leaf's exact (tier, source) stamp on the same
+        // paths as the direct fold's provenance map. The std-trait
+        // sibling of
+        // progressive_resolution_into_provenance_preserves_leaf_provenance_stamps
+        // on the inherent method — together they pin BOTH spellings of
+        // the single-coordinate consuming projection against the same
+        // downstream observation on the same fold output.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(107_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facade_stamps.yaml", dict);
+        let direct = Prog::resolve_progressive_with(&[layer.clone()]);
+        let via_facade: ProvenanceMap = Prog::resolve_progressive_with(&[layer]).into();
+        assert_eq!(&via_facade, direct.provenance());
+        let prov = via_facade.provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(
+            prov.source(),
+            &ConfigSource::File(PathBuf::from("/etc/from_facade_stamps.yaml")),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_from_facades_are_consistent_across_altitudes() {
+        // Cross-altitude consistency: the single-coordinate provenance
+        // facade `<ProvenanceMap>::from(res)` and the pair-destructuring
+        // facade `<(T, ProvenanceMap)>::from(res)` project the same
+        // provenance coordinate on every input — the second field of the
+        // pair is byte-identical to the single-coordinate projection.
+        // Without this pin, a future edit that reroutes either facade
+        // through a stale field or a per-leaf clone would silently
+        // diverge the two altitudes and callers routing through one or
+        // the other would see mismatched provenance envelopes on the
+        // same fold output.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(108_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facades_cross.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_single: ProvenanceMap = r.clone().into();
+        let (_value, via_pair_snd): (Prog, ProvenanceMap) = r.into();
+        assert_eq!(via_single, via_pair_snd);
     }
 
     #[test]
