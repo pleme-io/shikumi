@@ -1939,6 +1939,89 @@ impl ProvenanceMap {
         self.source_kind_histogram().unobserved().next()
     }
 
+    /// The **last-absent source-kind** — the *latest*
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose overlay
+    /// produced **zero** surviving effective leaves on this resolved
+    /// fold, or [`None`] when every source-kind heard from at least
+    /// once (full cover).
+    ///
+    /// The **tail-projection peer** of [`Self::first_absent_source_kind`]
+    /// on the coverage-gap side of the source-kind altitude: where
+    /// [`Self::first_absent_source_kind`] reads the *head* of the
+    /// coverage-gap iterator (the minimum absent cell by
+    /// [`crate::axis_ordinal`]), this reads the *tail* (the maximum absent
+    /// cell). The two projections close the head/tail axis on the
+    /// same underlying [`crate::AxisHistogram::unobserved`] walker,
+    /// mirroring [`Iterator::next`] / [`DoubleEndedIterator::next_back`]
+    /// on any std [`DoubleEndedIterator`]. Source-altitude peer of
+    /// [`Self::last_absent_tier`] on the tier altitude.
+    ///
+    /// Routes through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] returns an
+    /// [`AxisHistogramUnobserved`][crate::AxisHistogramUnobserved]
+    /// walker that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order — the closed-axis
+    /// discipline provides deterministic last-cell selection
+    /// automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `crate::ConfigSourceKind::ALL.iter().copied().rev().find(|k|
+    /// self.source_kind_histogram().count(*k) == 0)` at every
+    /// operator-facing consumer asking *"which layer class is the
+    /// latest to have been silent on this fold?"*.
+    ///
+    /// **Empty-map convention** — returns
+    /// [`Some(crate::ConfigSourceKind::File)`][crate::ConfigSourceKind::File]
+    /// (not [`None`]), matching [`Self::first_absent_source_kind`]'s
+    /// full-axis empty-map convention read from the tail: every cell
+    /// absent, tail of [`crate::ConfigSourceKind::ALL`] is `File`. The
+    /// [`None`] boundary is *full cover*, not empty — the same
+    /// [`Self::first_absent_source_kind`] boundary read from the other
+    /// end of the same walker.
+    ///
+    /// # Invariants
+    ///
+    /// - `last_absent_source_kind() ==
+    ///   source_kind_histogram().unobserved().next_back()` — both
+    ///   project the same coverage-gap tail off the same primitive.
+    /// - `last_absent_source_kind() ==
+    ///   absent_source_kinds().last().copied()` — the tail-projection
+    ///   peer of the coverage-gap `Vec` peer; both name the same
+    ///   last-absent cell without materialising the full vector.
+    /// - `last_absent_source_kind().is_none() ==
+    ///   source_kind_histogram().is_full_cover()` — the [`None`]
+    ///   boundary is the full-cover boundary, matching
+    ///   [`Self::first_absent_source_kind`] pointwise (a
+    ///   [`DoubleEndedIterator`]'s head and tail agree on emptiness).
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::absent_source_kinds`] — the coverage-gap tail is by
+    ///   definition an absent cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::contributing_source_kinds`] — the observed /
+    ///   coverage-gap partition is disjoint at both ends.
+    /// - `last_absent_source_kind()` on an empty [`ProvenanceMap`]
+    ///   equals [`Some(crate::ConfigSourceKind::File)`][crate::ConfigSourceKind::File]
+    ///   — the empty-map tail convention (tail of the full axis).
+    /// - `last_absent_source_kind()` yields the **maximum** absent
+    ///   source-kind by [`crate::axis_ordinal`] on
+    ///   [`crate::ConfigSourceKind`] — dual of
+    ///   [`Self::first_absent_source_kind`]'s argmin.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the reverse coverage-gap scan, short-circuited on the first
+    /// zero cell from the tail). Elides the
+    /// `Vec<crate::ConfigSourceKind>` allocation the previous
+    /// `absent_source_kinds().last().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    pub fn last_absent_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.source_kind_histogram().unobserved().next_back()
+    }
+
     /// The **first-contributing source-kind** — the earliest
     /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
     /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
@@ -2066,6 +2149,97 @@ impl ProvenanceMap {
     #[must_use]
     pub fn first_contributing_source_kind(&self) -> Option<crate::ConfigSourceKind> {
         self.source_kind_histogram().observed().next()
+    }
+
+    /// The **last-contributing source-kind** — the *latest*
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
+    /// overlay produced ≥1 surviving effective leaf on this resolved
+    /// fold, or [`None`] on the empty map (no leaf contributed at
+    /// all).
+    ///
+    /// The **tail-projection peer** of
+    /// [`Self::first_contributing_source_kind`] on the observed side of
+    /// the source-kind altitude: where
+    /// [`Self::first_contributing_source_kind`] reads the *head* of the
+    /// observed iterator (the minimum contributing cell by
+    /// [`crate::axis_ordinal`]), this reads the *tail* (the maximum
+    /// contributing cell). The two projections close the head/tail
+    /// axis on the same underlying [`crate::AxisHistogram::observed`]
+    /// walker, mirroring [`Iterator::next`] /
+    /// [`DoubleEndedIterator::next_back`] on any std
+    /// [`DoubleEndedIterator`]. Source-altitude peer of
+    /// [`Self::last_contributing_tier`] on the tier altitude.
+    ///
+    /// **Distinct from [`crate::AxisHistogram::dominant_cell`]** on
+    /// the same primitive. `dominant_cell` selects by observation
+    /// *count* (argmax leaf-count); this selects by axis-declaration
+    /// *order* (the latest observed cell regardless of its
+    /// observation count). On the mixed-overlay fixture where
+    /// `Defaults = 2`, `Env = 1`, `File = 1`, `dominant_cell()` is
+    /// `Defaults` (argmax by count) while this method reports `File`
+    /// (the last observed cell in axis order).
+    ///
+    /// Routes through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] returns an
+    /// [`AxisHistogramObserved`][crate::AxisHistogramObserved] walker
+    /// that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order — the closed-axis
+    /// discipline provides deterministic last-cell selection
+    /// automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `crate::ConfigSourceKind::ALL.iter().copied().rev().find(|k|
+    /// self.source_kind_histogram().count(*k) > 0)` at every
+    /// operator-facing consumer asking *"which layer class is the
+    /// latest to have surfaced on this fold?"*.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching
+    /// [`Self::first_contributing_source_kind`]'s empty-support
+    /// convention read from the tail: an empty map has no observed
+    /// cell, so both ends of the observed iterator are [`None`].
+    ///
+    /// # Invariants
+    ///
+    /// - `last_contributing_source_kind() ==
+    ///   source_kind_histogram().observed().next_back()` — both
+    ///   project the same support tail off the same primitive.
+    /// - `last_contributing_source_kind() ==
+    ///   contributing_source_kinds().last().copied()` — the
+    ///   tail-projection peer of the observed-cells `Vec` peer.
+    /// - `last_contributing_source_kind().is_none() == is_empty()` —
+    ///   the [`None`] boundary is the empty-map boundary at both ends
+    ///   of the observed iterator.
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::contributing_source_kinds`] — the support tail is by
+    ///   definition an observed cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_source_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint at both ends.
+    /// - `last_contributing_source_kind()` on an empty
+    ///   [`ProvenanceMap`] equals [`None`] — the empty-map / empty-
+    ///   support tail convention.
+    /// - `last_contributing_source_kind()` yields the **maximum**
+    ///   contributing source-kind by [`crate::axis_ordinal`] on
+    ///   [`crate::ConfigSourceKind`] — dual of
+    ///   [`Self::first_contributing_source_kind`]'s argmin.
+    /// - On a singleton-support fold (`contributing_source_kinds().len()
+    ///   == 1`), `last_contributing_source_kind() ==
+    ///   first_contributing_source_kind()` — the head and tail of a
+    ///   one-element iterator agree.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the reverse support scan, short-circuited on the first
+    /// nonzero cell from the tail). Elides the
+    /// `Vec<crate::ConfigSourceKind>` allocation the previous
+    /// `contributing_source_kinds().last().copied()` idiom paid on
+    /// every call site.
+    #[must_use]
+    pub fn last_contributing_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.source_kind_histogram().observed().next_back()
     }
 
     /// The **support size** on the source-kind altitude — the number of
@@ -10203,6 +10377,88 @@ impl ProvenanceMap {
         self.tier_histogram().unobserved().next()
     }
 
+    /// The **last-absent tier** — the *latest* [`ConfigTierKind`] (in
+    /// [`ClosedAxis::ALL`] / [`ConfigTier`] precedence order) whose
+    /// overlay produced **zero** surviving effective leaves on this
+    /// resolved fold, or [`None`] when every tier heard from at least
+    /// once (full cover).
+    ///
+    /// The **tail-projection peer** of [`Self::first_absent_tier`] on
+    /// the coverage-gap side of the tier altitude: where
+    /// [`Self::first_absent_tier`] reads the *head* of the coverage-gap
+    /// iterator (the minimum absent cell by [`crate::axis_ordinal`]),
+    /// this reads the *tail* (the maximum absent cell). The two
+    /// projections close the head/tail axis on the same underlying
+    /// [`crate::AxisHistogram::unobserved`] walker, mirroring
+    /// [`Iterator::next`] / [`DoubleEndedIterator::next_back`] on any
+    /// std [`DoubleEndedIterator`]. Tier-altitude peer of
+    /// [`Self::last_absent_source_kind`] on the source-kind altitude:
+    /// the two altitudes now close the same coverage-gap tail-
+    /// projection shape on the two closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries.
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] returns an
+    /// [`AxisHistogramUnobserved`][crate::AxisHistogramUnobserved]
+    /// walker that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order (the [`ConfigTier`]
+    /// precedence order) — the closed-axis discipline provides
+    /// deterministic last-cell selection automatically, so this
+    /// method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `ConfigTierKind::ALL.iter().copied()
+    /// .rev().find(|t| self.tier_histogram().count(*t) == 0)` at every
+    /// operator-facing consumer asking *"which tier is the latest to
+    /// have been silent on this fold?"*.
+    ///
+    /// **Empty-map convention** — returns
+    /// [`Some(ConfigTierKind::Custom)`][ConfigTierKind::Custom] (not
+    /// [`None`]), matching [`Self::first_absent_tier`]'s full-axis
+    /// empty-map convention read from the tail: every cell absent,
+    /// tail of [`ConfigTierKind::ALL`] is
+    /// [`ConfigTierKind::Custom`]. The [`None`] boundary is *full
+    /// cover*, not empty — the same [`Self::first_absent_tier`]
+    /// boundary read from the other end of the same walker.
+    ///
+    /// # Invariants
+    ///
+    /// - `last_absent_tier() == tier_histogram().unobserved().next_back()`
+    ///   — both project the same coverage-gap tail off the same
+    ///   primitive.
+    /// - `last_absent_tier() == absent_tiers().last().copied()` — the
+    ///   tail-projection peer of the coverage-gap `Vec` peer; both
+    ///   name the same last-absent cell without materialising the
+    ///   full vector.
+    /// - `last_absent_tier().is_none() ==
+    ///   tier_histogram().is_full_cover()` — the [`None`] boundary is
+    ///   the full-cover boundary, matching [`Self::first_absent_tier`]
+    ///   pointwise (a [`DoubleEndedIterator`]'s head and tail agree on
+    ///   emptiness).
+    /// - When `Some(t)`, `t` is a member of [`Self::absent_tiers`] —
+    ///   the coverage-gap tail is by definition an absent cell.
+    /// - When `Some(t)`, `t` is **not** a member of
+    ///   [`Self::contributing_tiers`] — the observed / coverage-gap
+    ///   partition is disjoint at both ends.
+    /// - `last_absent_tier()` on an empty [`ProvenanceMap`] equals
+    ///   [`Some(ConfigTierKind::Custom)`][ConfigTierKind::Custom] —
+    ///   the empty-map tail convention (tail of the full axis).
+    /// - `last_absent_tier()` yields the **maximum** absent tier by
+    ///   [`crate::axis_ordinal`] on [`ConfigTierKind`] — dual of
+    ///   [`Self::first_absent_tier`]'s argmin.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// reverse coverage-gap scan, short-circuited on the first zero
+    /// cell from the tail). Elides the `Vec<ConfigTierKind>`
+    /// allocation the previous `absent_tiers().last().copied()` idiom
+    /// paid on every call site.
+    #[must_use]
+    pub fn last_absent_tier(&self) -> Option<ConfigTierKind> {
+        self.tier_histogram().unobserved().next_back()
+    }
+
     /// The **first-contributing tier** — the earliest [`ConfigTierKind`]
     /// (in [`ClosedAxis::ALL`] / [`ConfigTier`] precedence order) whose
     /// overlay produced ≥1 surviving effective leaf on this resolved
@@ -10336,6 +10592,95 @@ impl ProvenanceMap {
     #[must_use]
     pub fn first_contributing_tier(&self) -> Option<ConfigTierKind> {
         self.tier_histogram().observed().next()
+    }
+
+    /// The **last-contributing tier** — the *latest* [`ConfigTierKind`]
+    /// (in [`ClosedAxis::ALL`] / [`ConfigTier`] precedence order) whose
+    /// overlay produced ≥1 surviving effective leaf on this resolved
+    /// fold, or [`None`] on the empty map (no leaf contributed at
+    /// all).
+    ///
+    /// The **tail-projection peer** of [`Self::first_contributing_tier`]
+    /// on the observed side of the tier altitude: where
+    /// [`Self::first_contributing_tier`] reads the *head* of the
+    /// observed iterator (the minimum contributing cell by
+    /// [`crate::axis_ordinal`]), this reads the *tail* (the maximum
+    /// contributing cell). The two projections close the head/tail
+    /// axis on the same underlying [`crate::AxisHistogram::observed`]
+    /// walker, mirroring [`Iterator::next`] /
+    /// [`DoubleEndedIterator::next_back`] on any std
+    /// [`DoubleEndedIterator`]. Tier-altitude peer of
+    /// [`Self::last_contributing_source_kind`] on the source-kind
+    /// altitude: the two altitudes now close the same support tail-
+    /// projection shape on the two closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries.
+    ///
+    /// **Distinct from [`Self::dominant_tier`] and
+    /// [`Self::recessive_tier`].** [`Self::dominant_tier`] returns the
+    /// argmax by observation count; [`Self::recessive_tier`] returns
+    /// the argmin by observation count; this returns the argmax by
+    /// axis-declaration order (regardless of observation count). On a
+    /// fold where `Bare = 1`, `Discovered = 5`, `Default = 3`,
+    /// `Custom = 0`, [`Self::dominant_tier`] reports `Discovered`
+    /// (argmax = 5), [`Self::recessive_tier`] reports `Bare`
+    /// (argmin = 1), and `last_contributing_tier()` reports `Default`
+    /// (the latest observed cell in axis order — `Custom` is absent).
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::observed`] returns an
+    /// [`AxisHistogramObserved`][crate::AxisHistogramObserved] walker
+    /// that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order (the [`ConfigTier`]
+    /// precedence order) — the closed-axis discipline provides
+    /// deterministic last-cell selection automatically, so this
+    /// method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `ConfigTierKind::ALL.iter().copied()
+    /// .rev().find(|t| self.tier_histogram().count(*t) > 0)` at every
+    /// operator-facing consumer asking *"which tier is the latest to
+    /// have surfaced on this fold?"*.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching
+    /// [`Self::first_contributing_tier`]'s empty-support convention
+    /// read from the tail: an empty map has no observed cell, so both
+    /// ends of the observed iterator are [`None`].
+    ///
+    /// # Invariants
+    ///
+    /// - `last_contributing_tier() == tier_histogram().observed().next_back()`
+    ///   — both project the same support tail off the same primitive.
+    /// - `last_contributing_tier() == contributing_tiers().last().copied()`
+    ///   — the tail-projection peer of the observed-cells `Vec` peer.
+    /// - `last_contributing_tier().is_none() == is_empty()` — the
+    ///   [`None`] boundary is the empty-map boundary at both ends of
+    ///   the observed iterator.
+    /// - When `Some(t)`, `t` is a member of
+    ///   [`Self::contributing_tiers`] — the support tail is by
+    ///   definition an observed cell.
+    /// - When `Some(t)`, `t` is **not** a member of
+    ///   [`Self::absent_tiers`] — the observed / coverage-gap
+    ///   partition is disjoint at both ends.
+    /// - `last_contributing_tier()` on an empty [`ProvenanceMap`]
+    ///   equals [`None`] — the empty-map / empty-support tail
+    ///   convention.
+    /// - `last_contributing_tier()` yields the **maximum** contributing
+    ///   tier by [`crate::axis_ordinal`] on [`ConfigTierKind`] — dual of
+    ///   [`Self::first_contributing_tier`]'s argmin.
+    /// - On a singleton-support fold (`contributing_tiers().len() ==
+    ///   1`), `last_contributing_tier() == first_contributing_tier()`
+    ///   — the head and tail of a one-element iterator agree.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// reverse support scan, short-circuited on the first nonzero
+    /// cell from the tail). Elides the `Vec<ConfigTierKind>`
+    /// allocation the previous `contributing_tiers().last().copied()`
+    /// idiom paid on every call site.
+    #[must_use]
+    pub fn last_contributing_tier(&self) -> Option<ConfigTierKind> {
+        self.tier_histogram().observed().next_back()
     }
 
     /// The tier whose overlay produced the greatest number of surviving
@@ -44470,6 +44815,371 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::last_absent_tier / last_contributing_tier —
+    //    tail-projection peers of first_absent_tier /
+    //    first_contributing_tier on the tier altitude. Route through
+    //    tier_histogram().unobserved().next_back() /
+    //    tier_histogram().observed().next_back() — the
+    //    DoubleEndedIterator dual of the head-projection peers on the
+    //    same walker. ──
+
+    #[test]
+    fn last_absent_tier_matches_tier_histogram_unobserved_next_back() {
+        // The delegation pin: `last_absent_tier` routes through
+        // `tier_histogram().unobserved().next_back()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Tail-projection peer of
+        // `first_absent_tier_matches_tier_histogram_unobserved_next`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().unobserved().next_back();
+            assert_eq!(map.last_absent_tier(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_absent_tier_matches_absent_tiers_last_copied() {
+        // The tail-projection pin: `last_absent_tier` is the
+        // `Option`-shaped tail of the coverage-gap `Vec` — reading it
+        // through the named seam must return the same cell as
+        // `absent_tiers().last().copied()`, on every fixture. The
+        // Vec-last peer of the histogram-next-back delegation pin
+        // above.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.last_absent_tier(), map.absent_tiers().last().copied());
+        }
+    }
+
+    #[test]
+    fn last_absent_tier_is_none_iff_tier_histogram_is_full_cover() {
+        // The [`None`] boundary law read from the tail: a
+        // DoubleEndedIterator's head and tail agree on emptiness, so
+        // `last_absent_tier().is_none()` matches
+        // `first_absent_tier().is_none()` == full-cover pointwise.
+        // Same synthetic full-cover fixture as the head-side pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.last_absent_tier().is_none(),
+                map.tier_histogram().is_full_cover()
+            );
+        }
+
+        let mut full_cover = ProvenanceMap::default();
+        full_cover.extend([
+            (vec!["k1".to_string()], Provenance::bare()),
+            (vec!["k2".to_string()], Provenance::discovered()),
+            (vec!["k3".to_string()], Provenance::prescribed_default()),
+            (
+                vec!["k4".to_string()],
+                Provenance::new(ConfigTierKind::Custom, ConfigSource::Defaults),
+            ),
+        ]);
+        assert!(full_cover.tier_histogram().is_full_cover());
+        assert_eq!(full_cover.last_absent_tier(), None);
+    }
+
+    #[test]
+    fn last_absent_tier_empty_map_is_custom() {
+        // Empty-map tail convention: every cell absent, tail of
+        // `ConfigTierKind::ALL` is `Custom`. The tail-projection dual
+        // of `first_absent_tier_empty_map_is_bare` (head of the same
+        // full-axis coverage-gap read from the other end of the same
+        // `DoubleEndedIterator`).
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.last_absent_tier(), Some(ConfigTierKind::Custom));
+    }
+
+    #[test]
+    fn last_absent_tier_prog_fixture_is_custom() {
+        // Direct fixture pin: Prog absent = {Custom} (singleton), so
+        // the coverage-gap head and tail coincide at `Custom` — the
+        // singleton-gap corner where both projections agree by
+        // definition.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_absent_tier(),
+            Some(ConfigTierKind::Custom)
+        );
+    }
+
+    #[test]
+    fn last_absent_tier_nested_fixture_is_custom() {
+        // Direct fixture pin: Nested absent = {Bare, Custom} in
+        // declaration order, so the coverage-gap TAIL is `Custom` (the
+        // last absent tier in axis order). Distinguishes the
+        // tail-projection semantics from the head — Nested's
+        // `first_absent_tier` reports `Bare` on the same fixture.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_absent_tier(),
+            Some(ConfigTierKind::Custom)
+        );
+    }
+
+    #[test]
+    fn last_absent_tier_is_member_of_absent_tiers_when_some() {
+        // Membership pin: when the coverage-gap tail is present, it
+        // is definitionally a member of the coverage-gap vector.
+        // Tail-projection peer of
+        // `first_absent_tier_is_member_of_absent_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.last_absent_tier() {
+                assert!(
+                    map.absent_tiers().contains(&t),
+                    "last_absent_tier {t:?} not in absent_tiers {:?}",
+                    map.absent_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_absent_tier_is_not_member_of_contributing_tiers_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the tier axis, and the tail-projection peer of
+        // the coverage-gap side must not report a member of the
+        // observed side. Tail-projection peer of
+        // `first_absent_tier_is_not_member_of_contributing_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.last_absent_tier() {
+                assert!(
+                    !map.contributing_tiers().contains(&t),
+                    "last_absent_tier {t:?} appears in contributing_tiers {:?}",
+                    map.contributing_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_absent_tier_is_maximum_absent_tier_by_axis_ordinal() {
+        // The argmax pin (dual of `first_absent_tier`'s argmin): the
+        // returned tier (when Some) has the MAXIMUM `axis_ordinal`
+        // among all absent tiers. The unobserved-cells iterator's
+        // reverse walk in `ClosedAxis::ALL` declaration order (axis-
+        // ordinal order by construction) reads the argmax from the
+        // tail — a future drift where the reverse walk stopped
+        // yielding argmax (e.g. if the underlying walker lost
+        // `DoubleEndedIterator`) would light this.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let tail = map.last_absent_tier();
+            let max_by_ordinal = map
+                .absent_tiers()
+                .into_iter()
+                .max_by_key(|t| crate::axis_ordinal(*t));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_matches_tier_histogram_observed_next_back() {
+        // The delegation pin: `last_contributing_tier` routes through
+        // `tier_histogram().observed().next_back()`. Tail-projection
+        // peer of
+        // `first_contributing_tier_matches_tier_histogram_observed_next`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().observed().next_back();
+            assert_eq!(map.last_contributing_tier(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_matches_contributing_tiers_last_copied() {
+        // The tail-projection pin: `last_contributing_tier` is the
+        // `Option`-shaped tail of the observed-cells `Vec` — reading it
+        // through the named seam must return the same cell as
+        // `contributing_tiers().last().copied()`. Tail-projection
+        // peer of
+        // `first_contributing_tier_matches_contributing_tiers_first_copied`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.last_contributing_tier(),
+                map.contributing_tiers().last().copied()
+            );
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_empty_map_is_none() {
+        // Empty-map tail convention: no observed cell, so the support
+        // tail is [`None`] (matching the head — a
+        // `DoubleEndedIterator`'s head and tail agree on emptiness).
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.last_contributing_tier(), None);
+    }
+
+    #[test]
+    fn last_contributing_tier_prog_fixture_is_default() {
+        // Direct fixture pin: Prog observed = {Bare, Discovered,
+        // Default}, so the support TAIL is `Default` (the last
+        // observed cell in axis order). Distinguishes the
+        // tail-projection semantics from the head — Prog's
+        // `first_contributing_tier` reports `Bare` on the same
+        // fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_contributing_tier(),
+            Some(ConfigTierKind::Default)
+        );
+    }
+
+    #[test]
+    fn last_contributing_tier_nested_fixture_is_default() {
+        // Direct fixture pin: Nested observed = {Discovered, Default},
+        // so the support TAIL is `Default` — matches Prog's tail on
+        // the same axis despite a distinct observed set, since both
+        // fixtures observe `Default` and neither observes `Custom`.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_contributing_tier(),
+            Some(ConfigTierKind::Default)
+        );
+    }
+
+    #[test]
+    fn last_contributing_tier_is_member_of_contributing_tiers_when_some() {
+        // Membership pin: when the support tail is present, it is
+        // definitionally a member of the observed-cells vector.
+        // Tail-projection peer of
+        // `first_contributing_tier_is_member_of_contributing_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.last_contributing_tier() {
+                assert!(
+                    map.contributing_tiers().contains(&t),
+                    "last_contributing_tier {t:?} not in contributing_tiers {:?}",
+                    map.contributing_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_is_not_member_of_absent_tiers_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the tier axis, and the tail-projection peer of
+        // the observed side must not report a member of the
+        // coverage-gap side. Tail-projection peer of
+        // `first_contributing_tier_is_not_member_of_absent_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.last_contributing_tier() {
+                assert!(
+                    !map.absent_tiers().contains(&t),
+                    "last_contributing_tier {t:?} appears in absent_tiers {:?}",
+                    map.absent_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_is_maximum_contributing_tier_by_axis_ordinal() {
+        // The argmax pin (dual of `first_contributing_tier`'s argmin):
+        // the returned tier (when Some) has the MAXIMUM `axis_ordinal`
+        // among all observed tiers. The observed-cells iterator's
+        // reverse walk reads the argmax from the tail — a future
+        // drift where the reverse walk stopped yielding argmax would
+        // light this.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let tail = map.last_contributing_tier();
+            let max_by_ordinal = map
+                .contributing_tiers()
+                .into_iter()
+                .max_by_key(|t| crate::axis_ordinal(*t));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_contributing_tier_and_last_absent_tier_are_disjoint_on_nonempty_partial_cover() {
+        // The paired partition pin from the tail side: on a non-empty
+        // fold that is *not* full cover, both tail-projection peers
+        // are `Some`, and they must name distinct tiers — the
+        // observed / coverage-gap partition is disjoint at both ends.
+        // Prog: observed tail = Default, absent tail = Custom.
+        // Nested: observed tail = Default, absent tail = Custom.
+        // Tail-projection peer of
+        // `first_contributing_tier_and_first_absent_tier_are_disjoint_on_nonempty_partial_cover`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let last_c = map.last_contributing_tier();
+            let last_a = map.last_absent_tier();
+            assert!(last_c.is_some(), "non-empty map should have a support tail");
+            assert!(
+                last_a.is_some(),
+                "non-full-cover map should have a coverage-gap tail"
+            );
+            assert_ne!(
+                last_c, last_a,
+                "the two tail-projection peers must not name the same tier"
+            );
+        }
+    }
+
+    #[test]
+    fn first_and_last_contributing_tier_agree_on_singleton_support_tier() {
+        // Head-tail correspondence pin: on a singleton-support fold
+        // (`contributing_tiers().len() == 1`), the head and tail of
+        // the observed iterator are the same cell — the sole
+        // observed cell. Synthesised as a one-leaf ProvenanceMap
+        // whose sole leaf attributes to `Discovered`.
+        let mut singleton = ProvenanceMap::default();
+        singleton.extend([(vec!["only".to_string()], Provenance::discovered())]);
+        assert_eq!(singleton.contributing_tiers().len(), 1);
+        assert_eq!(
+            singleton.first_contributing_tier(),
+            singleton.last_contributing_tier(),
+        );
+        assert_eq!(
+            singleton.first_contributing_tier(),
+            Some(ConfigTierKind::Discovered),
+        );
+    }
+
     #[test]
     fn dominant_tier_matches_tier_histogram_dominant_cell_pointwise() {
         // The modal-cell pin: `dominant_tier` routes through
@@ -65287,6 +65997,322 @@ mod progressive_tests {
             assert!(gap_head.is_some());
             assert_ne!(obs_head, gap_head);
         }
+    }
+
+    // ── ProvenanceMap::last_absent_source_kind /
+    //    last_contributing_source_kind — tail-projection peers of
+    //    first_absent_source_kind / first_contributing_source_kind
+    //    on the source-kind altitude. Route through
+    //    source_kind_histogram().unobserved().next_back() /
+    //    source_kind_histogram().observed().next_back(). Source-
+    //    altitude peers of last_absent_tier /
+    //    last_contributing_tier on the tier altitude. ──
+
+    #[test]
+    fn last_absent_source_kind_matches_source_kind_histogram_unobserved_next_back() {
+        // The delegation pin: `last_absent_source_kind` routes through
+        // `source_kind_histogram().unobserved().next_back()`. Source-
+        // altitude peer of
+        // `last_absent_tier_matches_tier_histogram_unobserved_next_back`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().unobserved().next_back();
+            assert_eq!(map.last_absent_source_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_absent_source_kind_matches_absent_source_kinds_last_copied() {
+        // The tail-projection pin: `last_absent_source_kind` is the
+        // `Option`-shaped tail of the coverage-gap `Vec`. Source-
+        // altitude peer of
+        // `last_absent_tier_matches_absent_tiers_last_copied`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.last_absent_source_kind(),
+                map.absent_source_kinds().last().copied()
+            );
+        }
+    }
+
+    #[test]
+    fn last_absent_source_kind_is_none_iff_source_kind_histogram_is_full_cover() {
+        // The [`None`] boundary law read from the tail: a
+        // DoubleEndedIterator's head and tail agree on emptiness.
+        // Source-altitude peer of
+        // `last_absent_tier_is_none_iff_tier_histogram_is_full_cover`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.last_absent_source_kind().is_none(),
+                map.source_kind_histogram().is_full_cover()
+            );
+        }
+    }
+
+    #[test]
+    fn last_absent_source_kind_empty_map_is_file() {
+        // Empty-map tail convention: every cell absent, tail of
+        // `ConfigSourceKind::ALL` is `File`. Source-altitude peer of
+        // `last_absent_tier_empty_map_is_custom`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(
+            empty.last_absent_source_kind(),
+            Some(crate::ConfigSourceKind::File)
+        );
+    }
+
+    #[test]
+    fn last_absent_source_kind_prog_fixture_is_file() {
+        // Direct fixture pin: pure-progressive Prog collapses to
+        // `Defaults` only, so absent = {Env, File} in declaration
+        // order and the coverage-gap TAIL is `File`. Distinguishes
+        // the tail-projection semantics from the head — Prog's
+        // `first_absent_source_kind` reports `Env` on the same
+        // fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_absent_source_kind(),
+            Some(crate::ConfigSourceKind::File)
+        );
+    }
+
+    #[test]
+    fn last_absent_source_kind_mixed_fixture_is_none() {
+        // Full-cover boundary pin: the mixed-overlay fixture saturates
+        // every source-kind cell, so the coverage-gap tail is `None`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().last_absent_source_kind(), None);
+    }
+
+    #[test]
+    fn last_absent_source_kind_is_member_of_absent_source_kinds_when_some() {
+        // Membership pin. Source-altitude peer of
+        // `last_absent_tier_is_member_of_absent_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(k) = map.last_absent_source_kind() {
+                assert!(
+                    map.absent_source_kinds().contains(&k),
+                    "last_absent_source_kind {k:?} not in absent_source_kinds {:?}",
+                    map.absent_source_kinds()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_absent_source_kind_is_not_member_of_contributing_source_kinds_when_some() {
+        // Disjointness pin. Source-altitude peer of
+        // `last_absent_tier_is_not_member_of_contributing_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(k) = map.last_absent_source_kind() {
+                assert!(
+                    !map.contributing_source_kinds().contains(&k),
+                    "last_absent_source_kind {k:?} in contributing_source_kinds {:?}",
+                    map.contributing_source_kinds()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_absent_source_kind_is_maximum_absent_source_kind_by_axis_ordinal() {
+        // The argmax pin (dual of `first_absent_source_kind`'s
+        // argmin). Source-altitude peer of
+        // `last_absent_tier_is_maximum_absent_tier_by_axis_ordinal`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let tail = map.last_absent_source_kind();
+            let max_by_ordinal = map
+                .absent_source_kinds()
+                .into_iter()
+                .max_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_contributing_source_kind_matches_source_kind_histogram_observed_next_back() {
+        // The delegation pin: `last_contributing_source_kind` routes
+        // through `source_kind_histogram().observed().next_back()`.
+        // Source-altitude peer of
+        // `last_contributing_tier_matches_tier_histogram_observed_next_back`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().observed().next_back();
+            assert_eq!(map.last_contributing_source_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_contributing_source_kind_matches_contributing_source_kinds_last_copied() {
+        // The tail-projection pin. Source-altitude peer of
+        // `last_contributing_tier_matches_contributing_tiers_last_copied`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.last_contributing_source_kind(),
+                map.contributing_source_kinds().last().copied()
+            );
+        }
+    }
+
+    #[test]
+    fn last_contributing_source_kind_empty_map_is_none() {
+        // Empty-map tail convention: no observed cell, so the support
+        // tail is [`None`]. Source-altitude peer of
+        // `last_contributing_tier_empty_map_is_none`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.last_contributing_source_kind(), None);
+    }
+
+    #[test]
+    fn last_contributing_source_kind_prog_fixture_is_defaults() {
+        // Direct fixture pin: pure-progressive Prog observes only
+        // `Defaults` (singleton), so the observed head and tail
+        // coincide at `Defaults`. Singleton-support corner where both
+        // projections agree by definition.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_contributing_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults)
+        );
+    }
+
+    #[test]
+    fn last_contributing_source_kind_mixed_fixture_is_file() {
+        // Direct fixture pin: the mixed-overlay fixture observes the
+        // full axis `{Defaults, Env, File}`, so the observed TAIL is
+        // `File` — the last observed cell in declaration order.
+        // Distinguishes the tail-projection semantics from the head —
+        // mixed's `first_contributing_source_kind` reports `Defaults`
+        // on the same fixture.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().last_contributing_source_kind(),
+            Some(crate::ConfigSourceKind::File)
+        );
+    }
+
+    #[test]
+    fn last_contributing_source_kind_is_member_of_contributing_source_kinds_when_some() {
+        // Membership pin. Source-altitude peer of
+        // `last_contributing_tier_is_member_of_contributing_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(k) = map.last_contributing_source_kind() {
+                assert!(
+                    map.contributing_source_kinds().contains(&k),
+                    "last_contributing_source_kind {k:?} not in contributing_source_kinds {:?}",
+                    map.contributing_source_kinds()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_contributing_source_kind_is_not_member_of_absent_source_kinds_when_some() {
+        // Disjointness pin. Source-altitude peer of
+        // `last_contributing_tier_is_not_member_of_absent_tiers_when_some`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(k) = map.last_contributing_source_kind() {
+                assert!(
+                    !map.absent_source_kinds().contains(&k),
+                    "last_contributing_source_kind {k:?} in absent_source_kinds {:?}",
+                    map.absent_source_kinds()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_contributing_source_kind_is_maximum_contributing_source_kind_by_axis_ordinal() {
+        // The argmax pin (dual of `first_contributing_source_kind`'s
+        // argmin). Source-altitude peer of
+        // `last_contributing_tier_is_maximum_contributing_tier_by_axis_ordinal`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let tail = map.last_contributing_source_kind();
+            let max_by_ordinal = map
+                .contributing_source_kinds()
+                .into_iter()
+                .max_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_contributing_and_last_absent_source_kind_are_disjoint_on_nonempty_partial_cover() {
+        // The paired partition pin from the tail side. Source-altitude
+        // peer of
+        // `last_contributing_tier_and_last_absent_tier_are_disjoint_on_nonempty_partial_cover`.
+        // Prog is the non-empty non-full-cover fixture on the
+        // source-kind altitude (mixed is full-cover, so its
+        // coverage-gap tail is None).
+        for map in [Prog::resolve_progressive().provenance().clone()] {
+            let last_c = map.last_contributing_source_kind();
+            let last_a = map.last_absent_source_kind();
+            assert!(last_c.is_some());
+            assert!(last_a.is_some());
+            assert_ne!(last_c, last_a);
+        }
+    }
+
+    #[test]
+    fn first_and_last_contributing_source_kind_agree_on_singleton_support_source_kind() {
+        // Head-tail correspondence pin: on the pure-progressive Prog
+        // fold whose observed set is the singleton `{Defaults}`, the
+        // head and tail of the observed iterator are the same cell.
+        // Source-altitude peer of
+        // `first_and_last_contributing_tier_agree_on_singleton_support_tier`.
+        let r = Prog::resolve_progressive();
+        let map = r.provenance();
+        assert_eq!(map.contributing_source_kinds().len(), 1);
+        assert_eq!(
+            map.first_contributing_source_kind(),
+            map.last_contributing_source_kind(),
+        );
+        assert_eq!(
+            map.first_contributing_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
     }
 
     // ── ProvenanceMap::contributing_source_kinds_count — support-size
