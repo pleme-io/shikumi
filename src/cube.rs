@@ -14162,6 +14162,115 @@ pub enum ParsePartitionOrdinalError {
     },
 }
 
+impl ParsePartitionOrdinalError {
+    /// True iff this rejection is [`Self::MissingSeparator`] — the input
+    /// carried no `:` separator between the face-label half and the
+    /// ordinal half of the canonical `<face>:<face_ordinal>` scalar.
+    /// The two later-precedence variants ([`Self::UnknownFace`] and
+    /// [`Self::MalformedOrdinal`]) both return `false`.
+    ///
+    /// **The tag-only classifier on the structural-versus-half-check
+    /// polarity axis.** A consumer holding a freshly returned
+    /// [`ParsePartitionOrdinalError`] previously had two paths for
+    /// asking "is the failure the structural separator check, or a
+    /// per-half rejection?", each leaking work: (a)
+    /// `matches!(err, ParsePartitionOrdinalError::MissingSeparator { .. })`
+    /// inline at every seam, a shape the exhaustiveness checker cannot
+    /// help keep in sync with a future variant addition (a hypothetical
+    /// `LeadingSeparator { .. }` fourth variant would silently keep
+    /// answering `false` at every inline `matches!` site); or (b) an
+    /// outer `match` decomposing the whole three-arm sum at each
+    /// classification site, forcing a re-declaration of the arms a
+    /// consumer that only wants the polarity does not care about.
+    ///
+    /// The tag-only sibling here answers the same question through a
+    /// single welded [`matches!`]: adding a fourth variant fails to
+    /// compile at this method's pattern in lockstep with
+    /// [`Self::is_unknown_face`] and [`Self::is_malformed_ordinal`]
+    /// via the ternary-partition pin
+    /// [`tests::parse_partition_ordinal_error_predicates_are_a_closed_ternary_partition`],
+    /// which fires when a new variant collapses the partition sum to
+    /// zero at that variant. Retry-policy dispatches that treat
+    /// separator-missing inputs uniformly (never worth retrying — no
+    /// prompt-completion heuristic recovers a missing separator) split
+    /// from the two half-check arms (potentially recoverable through
+    /// operator suggestions of nearby canonical face labels, or a
+    /// re-emission of the ordinal half through a strict-numeric
+    /// pre-parse) reach the polarity through one method call.
+    ///
+    /// **Idiom-peer of the tag-side sibling-predicate closures on
+    /// other closed-partition parse-error primitives.** The direct
+    /// methodological analogue of
+    /// [`crate::discovery::ParseFormatCoordinatesError`]'s
+    /// `is_missing_separator`/`is_unknown_format`/`is_unknown_provenance`
+    /// trio (commit `dcc8cb3`) — the same
+    /// `MissingSeparator → per-half-check` precedence contract the
+    /// `<FormatCoordinates as FromStr>::from_str` docs already name as
+    /// mirroring this parser's own `MissingSeparator → UnknownFace →
+    /// MalformedOrdinal` precedence, now with symmetric tag-side
+    /// sibling-predicate coverage on both parsers. Also aligned with
+    /// [`crate::cli::ConfigShowError`]'s
+    /// `is_custom_tier_without_path`/`is_yaml`/`is_json` trio (commit
+    /// `07cc619`), [`crate::cube::ParseAxisHistogramError`]'s
+    /// `is_missing_equals`/`is_unknown_label`/`is_invalid_count`/`is_duplicate_label`
+    /// quartet (commit `20afa1e`), and
+    /// [`crate::secret_client::SecretError`]'s
+    /// `is_not_found`/`is_unauthorized`/`is_unsupported`/`is_backend`/`is_shikumi`
+    /// quintet (commit `bc1db8f`): same routing shape, same closed-
+    /// partition contract on a payload-bearing parse-error enum with
+    /// zero pre-existing tag-side siblings.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParsePartitionOrdinalError`] projects its polarity at compile
+    /// time too.
+    #[must_use]
+    pub const fn is_missing_separator(&self) -> bool {
+        matches!(self, Self::MissingSeparator { .. })
+    }
+
+    /// True iff this rejection is [`Self::UnknownFace`] — the input
+    /// carried a `:` separator, but the face half (before the `:`) did
+    /// not match any canonical [`PartitionFace`] label (`realizable` /
+    /// `unrealizable`, case-insensitive per
+    /// [`crate::ClosedAxisLabel::from_canonical_str`]). The structural-
+    /// check variant [`Self::MissingSeparator`] and the mirror ordinal-
+    /// half variant [`Self::MalformedOrdinal`] both return `false`.
+    ///
+    /// Sibling of [`Self::is_missing_separator`] and
+    /// [`Self::is_malformed_ordinal`] on the same closed ternary
+    /// partition; same routing rationale (see
+    /// [`Self::is_missing_separator`] docs). An operator-facing
+    /// suggestion engine ("did you mean `realizable`?") that wants to
+    /// fire only on the face-half rejection routes on this predicate
+    /// at the borrowed error without matching on the whole three-arm
+    /// sum.
+    #[must_use]
+    pub const fn is_unknown_face(&self) -> bool {
+        matches!(self, Self::UnknownFace { .. })
+    }
+
+    /// True iff this rejection is [`Self::MalformedOrdinal`] — the input
+    /// carried a `:` separator and a recognized face half, but the
+    /// ordinal half (after the `:`) did not parse as a `usize` through
+    /// [`<usize as std::str::FromStr>::from_str`]. The structural-check
+    /// variant [`Self::MissingSeparator`] and the mirror face-half
+    /// variant [`Self::UnknownFace`] both return `false`.
+    ///
+    /// Sibling of [`Self::is_missing_separator`] and
+    /// [`Self::is_unknown_face`] on the same closed ternary partition;
+    /// same routing rationale (see [`Self::is_missing_separator`] docs).
+    /// The ordinal-half rejection is the deepest of the three
+    /// precedence levels — reached only when both the separator check
+    /// and the face-label check passed — so a diagnostic layer that
+    /// wants to thread the underlying [`std::num::ParseIntError`]
+    /// through [`std::error::Error::source`] without re-classifying the
+    /// outer arm routes on this predicate.
+    #[must_use]
+    pub const fn is_malformed_ordinal(&self) -> bool {
+        matches!(self, Self::MalformedOrdinal { .. })
+    }
+}
+
 impl std::str::FromStr for PartitionOrdinal {
     type Err = ParsePartitionOrdinalError;
 
@@ -20146,6 +20255,228 @@ mod tests {
                 "leftmost-`:`-only split must forward the rest into the ordinal half, got {other:?}",
             ),
         }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_is_missing_separator_true_only_for_missing_separator_variant()
+    {
+        // Per-variant polarity pin on the MissingSeparator corner of
+        // the `ParsePartitionOrdinalError` tag-side sibling-predicate
+        // trio. A future edit that flips the `matches!` arm on
+        // `ParsePartitionOrdinalError::is_missing_separator` fails
+        // here before the closed-partition pin below masks it.
+        // Payload-independence sub-pin: the answer is the same for
+        // every `MissingSeparator { input }` regardless of the input
+        // content — empty, short, structured, whitespace-only,
+        // unicode. Direct methodological analogue of
+        // `parse_format_coordinates_error_is_missing_separator_true_only_for_missing_separator_variant`
+        // on the `ParseFormatCoordinatesError` trio (`dcc8cb3`).
+        for payload in ["", "x", "realizable42", "  leading spaces", "no:c\u{2028}"] {
+            assert!(
+                ParsePartitionOrdinalError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_missing_separator(),
+                "MissingSeparator {{ input: {payload:?} }} must satisfy is_missing_separator",
+            );
+            assert!(
+                !ParsePartitionOrdinalError::UnknownFace {
+                    label: payload.into(),
+                }
+                .is_missing_separator(),
+                "UnknownFace {{ label: {payload:?} }} must not satisfy is_missing_separator",
+            );
+            let ord_err = "nope".parse::<usize>().unwrap_err();
+            assert!(
+                !ParsePartitionOrdinalError::MalformedOrdinal {
+                    ordinal: payload.into(),
+                    source: ord_err,
+                }
+                .is_missing_separator(),
+                "MalformedOrdinal {{ ordinal: {payload:?} }} must not satisfy \
+                 is_missing_separator",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_is_unknown_face_true_only_for_unknown_face_variant() {
+        // Mirror per-variant polarity pin on the UnknownFace corner.
+        for payload in [
+            "",
+            "vault",
+            "REALIZABLE",
+            "  realizable  ",
+            "realizable-with-suffix",
+        ] {
+            assert!(
+                !ParsePartitionOrdinalError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_unknown_face(),
+                "MissingSeparator {{ input: {payload:?} }} must not satisfy is_unknown_face",
+            );
+            assert!(
+                ParsePartitionOrdinalError::UnknownFace {
+                    label: payload.into(),
+                }
+                .is_unknown_face(),
+                "UnknownFace {{ label: {payload:?} }} must satisfy is_unknown_face",
+            );
+            let ord_err = "nope".parse::<usize>().unwrap_err();
+            assert!(
+                !ParsePartitionOrdinalError::MalformedOrdinal {
+                    ordinal: payload.into(),
+                    source: ord_err,
+                }
+                .is_unknown_face(),
+                "MalformedOrdinal {{ ordinal: {payload:?} }} must not satisfy is_unknown_face",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_is_malformed_ordinal_true_only_for_malformed_ordinal_variant()
+    {
+        // Mirror per-variant polarity pin on the MalformedOrdinal
+        // corner — the deepest of the three precedence levels.
+        for payload in [
+            "",
+            "not_a_number",
+            "-1",
+            "18446744073709551616",
+            "unicode-仕組み-ordinal",
+        ] {
+            assert!(
+                !ParsePartitionOrdinalError::MissingSeparator {
+                    input: payload.into(),
+                }
+                .is_malformed_ordinal(),
+                "MissingSeparator {{ input: {payload:?} }} must not satisfy \
+                 is_malformed_ordinal",
+            );
+            assert!(
+                !ParsePartitionOrdinalError::UnknownFace {
+                    label: payload.into(),
+                }
+                .is_malformed_ordinal(),
+                "UnknownFace {{ label: {payload:?} }} must not satisfy is_malformed_ordinal",
+            );
+            let ord_err = "nope".parse::<usize>().unwrap_err();
+            assert!(
+                ParsePartitionOrdinalError::MalformedOrdinal {
+                    ordinal: payload.into(),
+                    source: ord_err,
+                }
+                .is_malformed_ordinal(),
+                "MalformedOrdinal {{ ordinal: {payload:?} }} must satisfy is_malformed_ordinal",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_predicates_are_a_closed_ternary_partition() {
+        // Every `ParsePartitionOrdinalError` value in the canonical
+        // sample table satisfies exactly one of the three sibling
+        // predicates: none satisfies two, none satisfies zero.
+        // Ternary-partition analogue of the pin
+        // `parse_format_coordinates_error_predicates_are_a_closed_ternary_partition`
+        // (`dcc8cb3`) on `ParseFormatCoordinatesError`, lifted here
+        // onto the sibling parse-error primitive whose precedence
+        // `<FormatCoordinates as FromStr>::from_str` already names as
+        // the model for its own precedence. A future fourth variant
+        // landing under `#[non_exhaustive]` without its own sibling
+        // predicate collapses the partition to zero on that variant,
+        // failing here before drifting through any retry-policy
+        // dispatch or operator-facing suggestion engine that routes
+        // on the polarity trio.
+        let bad_ordinal = || "nope".parse::<usize>().unwrap_err();
+        let errors = [
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: String::new(),
+            },
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: "no-colon-here-at-all".into(),
+            },
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: "unicode\u{2028}no colon 仕組み".into(),
+            },
+            ParsePartitionOrdinalError::UnknownFace {
+                label: String::new(),
+            },
+            ParsePartitionOrdinalError::UnknownFace {
+                label: "vault".into(),
+            },
+            ParsePartitionOrdinalError::UnknownFace {
+                label: "  realizable  ".into(),
+            },
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: String::new(),
+                source: bad_ordinal(),
+            },
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: "not_a_number".into(),
+                source: bad_ordinal(),
+            },
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: "-1".into(),
+                source: bad_ordinal(),
+            },
+        ];
+        for err in &errors {
+            let hits = usize::from(err.is_missing_separator())
+                + usize::from(err.is_unknown_face())
+                + usize::from(err.is_malformed_ordinal());
+            assert_eq!(
+                hits, 1,
+                "ParsePartitionOrdinalError::{err:?} must satisfy exactly one of \
+                 is_missing_separator/is_unknown_face/is_malformed_ordinal (satisfied {hits})",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_predicates_agree_with_from_str_rejection_paths() {
+        // The three canonical rejection paths through
+        // `<PartitionOrdinal as FromStr>::from_str` each land on the
+        // sibling predicate that names their rejection mode: an input
+        // with no `:` fires `is_missing_separator`; an input with a
+        // colon and an unrecognized face half fires `is_unknown_face`;
+        // an input with a colon, a recognized face half, and a
+        // non-numeric ordinal half fires `is_malformed_ordinal`.
+        // Cross-cuts the parser's precedence-order contract
+        // (`MissingSeparator → UnknownFace → MalformedOrdinal`) and
+        // pins that a future precedence swap between the two half-
+        // check arms would surface here before drifting through any
+        // consumer routing on the polarity trio. Sibling of the
+        // per-variant `partition_ordinal_from_str_rejects_*` pins
+        // above, extended to the tag-side classifier surface.
+        let missing_sep: Result<PartitionOrdinal, _> = "realizable42".parse();
+        let err = missing_sep.expect_err("input without `:` must reject");
+        assert!(
+            err.is_missing_separator(),
+            "expected is_missing_separator for {err:?}"
+        );
+        assert!(!err.is_unknown_face());
+        assert!(!err.is_malformed_ordinal());
+
+        let unknown_face: Result<PartitionOrdinal, _> = "__no_such_face__:42".parse();
+        let err = unknown_face.expect_err("input with unrecognized face half must reject");
+        assert!(!err.is_missing_separator());
+        assert!(
+            err.is_unknown_face(),
+            "expected is_unknown_face for {err:?}"
+        );
+        assert!(!err.is_malformed_ordinal());
+
+        let malformed_ord: Result<PartitionOrdinal, _> = "realizable:not_a_number".parse();
+        let err = malformed_ord.expect_err("input with malformed ordinal half must reject");
+        assert!(!err.is_missing_separator());
+        assert!(!err.is_unknown_face());
+        assert!(
+            err.is_malformed_ordinal(),
+            "expected is_malformed_ordinal for {err:?}"
+        );
     }
 
     #[test]
