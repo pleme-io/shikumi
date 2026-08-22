@@ -28741,8 +28741,19 @@ impl<'a> FigmentSourceTag<'a> {
     /// by [`tests::figment_source_tag_predicates_are_payload_independent`].
     /// Tag ↔ kind pointwise agreement is pinned by
     /// [`tests::figment_source_tag_predicates_agree_with_kind`].
+    ///
+    /// `const`-callable — the tag axis is `Copy` and the projection
+    /// through [`Self::kind`] is itself `const`, so the whole
+    /// tag-side sibling ternary is const-callable end-to-end. Peer to
+    /// the const-fication already carried on the [`ConfigSource`]
+    /// tag axis (commit `8db9806`) that closed its own tag/kind
+    /// const-callability seal; the two ternary shapes (shikumi-source
+    /// and figment-source) now match on const-callability as well as
+    /// on cardinality and closure discipline. See
+    /// [`tests::figment_source_tag_predicates_and_kind_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn is_file(self) -> bool {
+    pub const fn is_file(self) -> bool {
         matches!(self.kind(), FigmentSourceKind::File)
     }
 
@@ -28751,9 +28762,10 @@ impl<'a> FigmentSourceTag<'a> {
     /// [`Self::is_file`] / [`Self::is_custom`] on the
     /// [`FigmentSourceTag`] ternary partition. See [`Self::is_file`]
     /// for the full contract — same borrowed-tag axis, [`Self::Code`]
-    /// polarity.
+    /// polarity. Const-callable end-to-end for the same reason as
+    /// [`Self::is_file`].
     #[must_use]
-    pub fn is_code(self) -> bool {
+    pub const fn is_code(self) -> bool {
         matches!(self.kind(), FigmentSourceKind::Code)
     }
 
@@ -28770,9 +28782,10 @@ impl<'a> FigmentSourceTag<'a> {
     /// borrowed string payload; tag-side sibling of [`Self::is_file`] /
     /// [`Self::is_code`] on the [`FigmentSourceTag`] ternary
     /// partition. See [`Self::is_file`] for the full contract — same
-    /// borrowed-tag axis, [`Self::Custom`] polarity.
+    /// borrowed-tag axis, [`Self::Custom`] polarity. Const-callable
+    /// end-to-end for the same reason as [`Self::is_file`].
     #[must_use]
-    pub fn is_custom(self) -> bool {
+    pub const fn is_custom(self) -> bool {
         matches!(self.kind(), FigmentSourceKind::Custom)
     }
 
@@ -28809,8 +28822,19 @@ impl<'a> FigmentSourceTag<'a> {
     /// `Source::Url` shape if figment grows one) forces a
     /// [`FigmentSourceKind`] arm in lockstep at compile time, and the
     /// constant axis projection extends without per-site updates.
+    ///
+    /// `const`-callable — a compile-time-known [`FigmentSourceTag`]
+    /// projects its data-free kind at compile time too, matching the
+    /// `const`-ness of the sibling projection [`ConfigSource::kind`]
+    /// on the shikumi-source axis (commit `8db9806`). Composes with
+    /// the kind-side sibling predicates ([`FigmentSourceKind::is_file`]
+    /// / [`FigmentSourceKind::is_code`] / [`FigmentSourceKind::is_custom`],
+    /// all now `const`) in const positions so a
+    /// `tag.kind().is_code()` composition stays const-callable
+    /// end-to-end, and welded compile-time by
+    /// [`tests::figment_source_tag_predicates_and_kind_are_const_callable`].
     #[must_use]
-    pub fn kind(self) -> FigmentSourceKind {
+    pub const fn kind(self) -> FigmentSourceKind {
         match self {
             Self::File(_) => FigmentSourceKind::File,
             Self::Code(_) => FigmentSourceKind::Code,
@@ -28964,20 +28988,33 @@ impl FigmentSourceKind {
     /// matching the [`ConfigSource::is_file`] /
     /// [`ConfigSource::is_env`] / [`ConfigSource::is_defaults`]
     /// sibling pattern on the shikumi-source axis.
+    ///
+    /// `const`-callable — the data-free discriminant is `Copy` and
+    /// the body is a `matches!` pattern on `Self`, so the whole
+    /// kind-side sibling ternary is const-callable end-to-end. Peer
+    /// to [`ConfigSourceKind::is_file`] / [`ConfigSourceKind::is_env`]
+    /// / [`ConfigSourceKind::is_defaults`] (all `pub const fn` since
+    /// their own axis closed); the two ternary kind partitions
+    /// (shikumi-source and figment-source) now match on
+    /// const-callability as well as on cardinality and closure
+    /// discipline. Welded compile-time by
+    /// [`tests::figment_source_tag_predicates_and_kind_are_const_callable`].
     #[must_use]
-    pub fn is_file(self) -> bool {
+    pub const fn is_file(self) -> bool {
         matches!(self, Self::File)
     }
 
-    /// Returns `true` for [`Self::Code`].
+    /// Returns `true` for [`Self::Code`]. Const-callable for the same
+    /// reason as [`Self::is_file`].
     #[must_use]
-    pub fn is_code(self) -> bool {
+    pub const fn is_code(self) -> bool {
         matches!(self, Self::Code)
     }
 
-    /// Returns `true` for [`Self::Custom`].
+    /// Returns `true` for [`Self::Custom`]. Const-callable for the
+    /// same reason as [`Self::is_file`].
     #[must_use]
-    pub fn is_custom(self) -> bool {
+    pub const fn is_custom(self) -> bool {
         matches!(self, Self::Custom)
     }
 
@@ -96241,6 +96278,71 @@ mod tests {
                 tag.kind() == FigmentSourceKind::Custom,
             );
         }
+    }
+
+    #[test]
+    fn figment_source_tag_predicates_and_kind_are_const_callable() {
+        // Weld the const-callability of the tag-side sibling quartet
+        // (`FigmentSourceTag::is_file` / `is_code` / `is_custom` and
+        // the `kind()` projection they route around) at compile time
+        // — and its composition with the kind-side sibling ternary
+        // (`FigmentSourceKind::is_file` / `is_code` / `is_custom`,
+        // all now `const`).
+        //
+        // Assigning the results to `const` bindings pins the const-ness
+        // at THIS line so the moment any of the seven methods stops
+        // being `const`-callable (a future edit that reaches for a
+        // non-const std helper — `.to_owned()`, `.to_string()`, or
+        // `.into()` on a borrowed field payload — inside one of the
+        // bodies) the pin fails to compile before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // type. Direct peer of
+        // `config_source_predicates_and_kind_are_const_callable` on
+        // the shikumi-source axis (commit `8db9806`): the two ternary
+        // shapes now match on const-callability seal as well as on
+        // cardinality and closure discipline.
+        //
+        // Composes end-to-end with the kind-side siblings so the
+        // natural routing shape `tag.kind().is_code()` — the exact
+        // shape the `figment_source_kind_agrees_with_predicates_pointwise`
+        // pin above walks over its constructed tag table — stays
+        // const-callable end-to-end. The `File` variant needs a
+        // `&'static Path` whose public constructor `Path::new` is not
+        // stable-const on rust 1.89 (issue rust-lang/rust#143874),
+        // and `Code` needs a `&'static Location<'static>` whose only
+        // public constructor `Location::caller()` is const only inside
+        // `#[track_caller]` frames (not in a `const` initializer
+        // position). This pin therefore welds the `Custom` arm of
+        // every tag-side method — the one variant whose payload
+        // (`&'static str`) is trivially const-constructible — through
+        // const bindings; the compiler having accepted the four
+        // `pub const fn` declarations on `FigmentSourceTag` proves the
+        // `File` and `Code` arms of `kind()` compile under the same
+        // const-checker, so const-callability of the whole match is
+        // covered without a synthetic `Path` or `Location`. The
+        // kind-side ternary (`FigmentSourceKind::is_file` / `is_code` /
+        // `is_custom`) is data-free, so all three arms weld directly.
+        const CUSTOM: FigmentSourceTag<'static> = FigmentSourceTag::Custom("vault://kv/x");
+        const CUSTOM_IS_FILE: bool = CUSTOM.is_file();
+        const CUSTOM_IS_CODE: bool = CUSTOM.is_code();
+        const CUSTOM_IS_CUSTOM: bool = CUSTOM.is_custom();
+        const CUSTOM_KIND: FigmentSourceKind = CUSTOM.kind();
+        const KIND_FILE: FigmentSourceKind = FigmentSourceKind::File;
+        const KIND_CODE: FigmentSourceKind = FigmentSourceKind::Code;
+        const KIND_FILE_IS_FILE: bool = KIND_FILE.is_file();
+        const KIND_FILE_IS_CODE: bool = KIND_FILE.is_code();
+        const KIND_FILE_IS_CUSTOM: bool = KIND_FILE.is_custom();
+        const KIND_CODE_IS_CODE: bool = KIND_CODE.is_code();
+        const KIND_CUSTOM_IS_CUSTOM: bool = CUSTOM_KIND.is_custom();
+        assert!(!CUSTOM_IS_FILE);
+        assert!(!CUSTOM_IS_CODE);
+        assert!(CUSTOM_IS_CUSTOM);
+        assert!(matches!(CUSTOM_KIND, FigmentSourceKind::Custom));
+        assert!(KIND_FILE_IS_FILE);
+        assert!(!KIND_FILE_IS_CODE);
+        assert!(!KIND_FILE_IS_CUSTOM);
+        assert!(KIND_CODE_IS_CODE);
+        assert!(KIND_CUSTOM_IS_CUSTOM);
     }
 
     #[test]
