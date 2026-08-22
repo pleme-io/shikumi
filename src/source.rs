@@ -28318,8 +28318,19 @@ impl<'a> FigmentNameTag<'a> {
     /// [`tests::figment_name_tag_predicates_are_payload_independent`].
     /// Tag ↔ kind pointwise agreement is pinned by
     /// [`tests::figment_name_tag_predicates_agree_with_kind`].
+    ///
+    /// `const`-callable — the tag axis is `Copy` and the projection
+    /// through [`Self::kind`] is itself `const`, so the whole tag-side
+    /// sibling binary is const-callable end-to-end. Peer to the
+    /// const-fication already carried on the [`FigmentSourceTag`]
+    /// ternary axis (commit `22b705a`) and the [`ConfigSource`]
+    /// ternary axis (commit `8db9806`); the three borrowed
+    /// figment-metadata sub-axes now match on const-callability as
+    /// well as on cardinality and closure discipline. See
+    /// [`tests::figment_name_tag_predicates_and_kind_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn is_format(self) -> bool {
+    pub const fn is_format(self) -> bool {
         matches!(self.kind(), FigmentNameTagKind::Format)
     }
 
@@ -28345,8 +28356,11 @@ impl<'a> FigmentNameTag<'a> {
     /// consumer that needs the prefixed/bare distinction reads
     /// [`Self::as_env`] to recover the inner [`EnvMetadataTag`] and
     /// dispatches on [`EnvMetadataTagKind`] instead.
+    ///
+    /// Const-callable end-to-end for the same reason as
+    /// [`Self::is_format`].
     #[must_use]
-    pub fn is_env(self) -> bool {
+    pub const fn is_env(self) -> bool {
         matches!(self.kind(), FigmentNameTagKind::Env)
     }
 
@@ -28385,8 +28399,19 @@ impl<'a> FigmentNameTag<'a> {
     /// hypothetical `"http://… config endpoint"` name shape) forces a
     /// [`FigmentNameTagKind`] arm in lockstep at compile time, and the
     /// constant axis projection extends without per-site updates.
+    ///
+    /// `const`-callable — a compile-time-known [`FigmentNameTag`]
+    /// projects its data-free kind at compile time too, matching the
+    /// `const`-ness of the sibling projection [`FigmentSourceTag::kind`]
+    /// on the figment-Source axis (commit `22b705a`) and
+    /// [`ConfigSource::kind`] on the shikumi-source axis (commit
+    /// `8db9806`). Composes with the kind-side sibling predicates
+    /// ([`FigmentNameTagKind::is_format`] / [`FigmentNameTagKind::is_env`],
+    /// both now `const`) so a `tag.kind().is_env()` composition stays
+    /// const-callable end-to-end, welded compile-time by
+    /// [`tests::figment_name_tag_predicates_and_kind_are_const_callable`].
     #[must_use]
-    pub fn kind(self) -> FigmentNameTagKind {
+    pub const fn kind(self) -> FigmentNameTagKind {
         match self {
             Self::Format(_) => FigmentNameTagKind::Format,
             Self::Env(_) => FigmentNameTagKind::Env,
@@ -28523,14 +28548,27 @@ impl FigmentNameTagKind {
     /// matching the [`FigmentSourceKind::is_file`] /
     /// [`FigmentSourceKind::is_code`] / [`FigmentSourceKind::is_custom`]
     /// sibling pattern on the figment-Source axis.
+    ///
+    /// `const`-callable — the data-free discriminant is `Copy` and
+    /// the body is a `matches!` pattern on `Self`, so the whole
+    /// kind-side sibling binary is const-callable end-to-end. Peer
+    /// to [`FigmentSourceKind::is_file`] / [`FigmentSourceKind::is_code`]
+    /// / [`FigmentSourceKind::is_custom`] and [`ConfigSourceKind::is_file`]
+    /// / [`ConfigSourceKind::is_env`] / [`ConfigSourceKind::is_defaults`]
+    /// (all `pub const fn` since their own axes closed); the three
+    /// figment-metadata sub-axis kind partitions now match on
+    /// const-callability as well as on cardinality and closure
+    /// discipline. Welded compile-time by
+    /// [`tests::figment_name_tag_predicates_and_kind_are_const_callable`].
     #[must_use]
-    pub fn is_format(self) -> bool {
+    pub const fn is_format(self) -> bool {
         matches!(self, Self::Format)
     }
 
-    /// Returns `true` for [`Self::Env`].
+    /// Returns `true` for [`Self::Env`]. Const-callable for the same
+    /// reason as [`Self::is_format`].
     #[must_use]
-    pub fn is_env(self) -> bool {
+    pub const fn is_env(self) -> bool {
         matches!(self, Self::Env)
     }
 
@@ -97905,6 +97943,70 @@ mod tests {
                 "is_env must agree with kind() == Env for {tag:?}",
             );
         }
+    }
+
+    #[test]
+    fn figment_name_tag_predicates_and_kind_are_const_callable() {
+        // Weld the const-callability of the tag-side sibling triple
+        // (`FigmentNameTag::is_format` / `is_env` and the `kind()`
+        // projection they route around) at compile time — and its
+        // composition with the kind-side sibling binary
+        // (`FigmentNameTagKind::is_format` / `is_env`, both now
+        // `const`).
+        //
+        // Assigning the results to `const` bindings pins the
+        // const-ness at THIS line so the moment any of the five
+        // methods stops being `const`-callable (a future edit that
+        // reaches for a non-const std helper — `.to_owned()`,
+        // `.to_string()`, or `.into()` on a borrowed field payload —
+        // inside one of the bodies) the pin fails to compile before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the type. Direct peer of
+        // `figment_source_tag_predicates_and_kind_are_const_callable`
+        // (commit `22b705a`) on the figment-Source ternary axis and
+        // `config_source_predicates_and_kind_are_const_callable`
+        // (commit `8db9806`) on the shikumi-source ternary axis: the
+        // two ternary shapes and this binary shape now match on
+        // const-callability seal as well as on cardinality and
+        // closure discipline.
+        //
+        // Composes end-to-end with the kind-side siblings so the
+        // natural routing shape `tag.kind().is_env()` — the exact
+        // shape the `figment_name_tag_predicates_agree_with_kind`
+        // pin above walks over its constructed tag table — stays
+        // const-callable end-to-end. The `Format` arm needs a
+        // `FormatMetadataTag<'static>` whose inner `&'static Path`
+        // uses `Path::new`, which is not stable-const on rust 1.89
+        // (issue rust-lang/rust#143874). This pin therefore welds
+        // the `Env` arm through const bindings — its inner payload
+        // `EnvMetadataTag::Bare` carries no data and is trivially
+        // const-constructible — but the compiler having accepted the
+        // three `pub const fn` declarations on `FigmentNameTag`
+        // proves the `Format` arm of `kind()` compiles under the
+        // same const-checker, so const-callability of the whole
+        // match is covered without a synthetic `Path`. The kind-side
+        // binary (`FigmentNameTagKind::is_format` / `is_env`) is
+        // data-free, so both arms weld directly through
+        // `const KIND_FORMAT_IS_FORMAT` / `KIND_ENV_IS_ENV`.
+        const ENV_BARE: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
+        const ENV_BARE_IS_FORMAT: bool = ENV_BARE.is_format();
+        const ENV_BARE_IS_ENV: bool = ENV_BARE.is_env();
+        const ENV_BARE_KIND: FigmentNameTagKind = ENV_BARE.kind();
+        const KIND_FORMAT: FigmentNameTagKind = FigmentNameTagKind::Format;
+        const KIND_ENV: FigmentNameTagKind = FigmentNameTagKind::Env;
+        const KIND_FORMAT_IS_FORMAT: bool = KIND_FORMAT.is_format();
+        const KIND_FORMAT_IS_ENV: bool = KIND_FORMAT.is_env();
+        const KIND_ENV_IS_FORMAT: bool = KIND_ENV.is_format();
+        const KIND_ENV_IS_ENV: bool = KIND_ENV.is_env();
+        const ENV_BARE_KIND_IS_ENV: bool = ENV_BARE_KIND.is_env();
+        assert!(!ENV_BARE_IS_FORMAT);
+        assert!(ENV_BARE_IS_ENV);
+        assert!(matches!(ENV_BARE_KIND, FigmentNameTagKind::Env));
+        assert!(KIND_FORMAT_IS_FORMAT);
+        assert!(!KIND_FORMAT_IS_ENV);
+        assert!(!KIND_ENV_IS_FORMAT);
+        assert!(KIND_ENV_IS_ENV);
+        assert!(ENV_BARE_KIND_IS_ENV);
     }
 
     // ---- EnvMetadataTagKind / EnvMetadataTag::kind ----
