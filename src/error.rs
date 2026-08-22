@@ -1134,6 +1134,67 @@ impl AttributionRule {
         }
     }
 
+    /// Returns `true` if this rule attributes to a
+    /// [`ConfigSource::File`] layer; equivalent to
+    /// `self.layer_kind() == ConfigSourceKind::File`.
+    ///
+    /// Delegates to the sibling predicate [`ConfigSourceKind::is_file`]
+    /// on the resolved layer kind, so the polarity of the
+    /// (file × env × defaults) partition is defined in exactly one place
+    /// (the layer-kind altitude) and this rule-altitude convenience
+    /// follows automatically. The rule-altitude analogue of
+    /// [`Self::is_exact`] on the (exact × fallback) confidence axis:
+    /// same delegating shape, same "one source of truth" rationale.
+    ///
+    /// The two file-axis rules
+    /// ([`Self::FileBySource`] and [`Self::FileByMetadataName`]) are
+    /// the exact inhabitants of this predicate — pinned by
+    /// [`tests::attribution_rule_is_file_layer_agrees_with_layer_kind_is_file`]
+    /// against every rule in [`Self::ALL`]. Before this sibling the
+    /// question routed as the two-hop composition
+    /// `rule.layer_kind().is_file()` at every observer site (a
+    /// per-file-rule alerting bucket, a diagnostic renderer weighting
+    /// file-layer attributions differently, a captured-failure
+    /// telemetry counter keyed on the layer kind); this collapses that
+    /// to one method call at the rule altitude.
+    #[must_use]
+    pub fn is_file_layer(self) -> bool {
+        self.layer_kind().is_file()
+    }
+
+    /// Returns `true` if this rule attributes to a
+    /// [`ConfigSource::Env`] layer; equivalent to
+    /// `self.layer_kind() == ConfigSourceKind::Env`. Sibling of
+    /// [`Self::is_file_layer`]; see it for the delegation rationale.
+    ///
+    /// The two env-axis rules
+    /// ([`Self::EnvByPrefix`] and [`Self::EnvByUniqueness`]) are the
+    /// exact inhabitants of this predicate — pinned by
+    /// [`tests::attribution_rule_is_env_layer_agrees_with_layer_kind_is_env`].
+    #[must_use]
+    pub fn is_env_layer(self) -> bool {
+        self.layer_kind().is_env()
+    }
+
+    /// Returns `true` if this rule attributes to a
+    /// [`ConfigSource::Defaults`] layer; equivalent to
+    /// `self.layer_kind() == ConfigSourceKind::Defaults`. Sibling of
+    /// [`Self::is_file_layer`]; see it for the delegation rationale.
+    ///
+    /// The single defaults-axis rule
+    /// ([`Self::DefaultsByCodeUniqueness`]) is the exact inhabitant of
+    /// this predicate — pinned by
+    /// [`tests::attribution_rule_is_defaults_layer_agrees_with_layer_kind_is_defaults`].
+    /// The three layer-side siblings
+    /// ([`Self::is_file_layer`], [`Self::is_env_layer`],
+    /// [`Self::is_defaults_layer`]) form a closed ternary partition of
+    /// [`Self::ALL`] — pinned by
+    /// [`tests::attribution_rule_layer_predicates_are_a_closed_ternary_partition`].
+    #[must_use]
+    pub fn is_defaults_layer(self) -> bool {
+        self.layer_kind().is_defaults()
+    }
+
     /// [`AttributionAxis`] of this rule: which `figment::Metadata` field
     /// the resolver consulted to dispatch the attribution.
     /// [`AttributionAxis::MetadataSource`] for rules driven by figment's
@@ -1184,6 +1245,57 @@ impl AttributionRule {
                 AttributionAxis::MetadataName
             }
         }
+    }
+
+    /// Returns `true` if this rule was dispatched off
+    /// `figment::Metadata::source`; equivalent to
+    /// `self.metadata_axis() == AttributionAxis::MetadataSource`.
+    ///
+    /// Delegates to the sibling predicate
+    /// [`AttributionAxis::is_metadata_source`] on the resolved
+    /// metadata axis, so the polarity of the (metadata-source ×
+    /// metadata-name) partition is defined in exactly one place (the
+    /// axis altitude) and this rule-altitude convenience follows
+    /// automatically. The rule-altitude analogue of [`Self::is_exact`]
+    /// on the (exact × fallback) confidence axis and
+    /// [`Self::is_file_layer`] on the (file × env × defaults) layer
+    /// axis: same delegating shape, same "one source of truth"
+    /// rationale.
+    ///
+    /// The two source-dispatched rules
+    /// ([`Self::FileBySource`] and [`Self::DefaultsByCodeUniqueness`])
+    /// are the exact inhabitants of this predicate — pinned by
+    /// [`tests::attribution_rule_is_metadata_source_axis_agrees_with_metadata_axis_is_metadata_source`]
+    /// against every rule in [`Self::ALL`]. Before this sibling the
+    /// question routed as the two-hop composition
+    /// `rule.metadata_axis().is_metadata_source()` at every observer
+    /// site (a diagnostic renderer weighting source-axis attributions
+    /// visibly stronger than name-axis ones, an attestation manifest
+    /// recording the axis-partition histogram); this collapses that to
+    /// one method call at the rule altitude.
+    #[must_use]
+    pub fn is_metadata_source_axis(self) -> bool {
+        self.metadata_axis().is_metadata_source()
+    }
+
+    /// Returns `true` if this rule was dispatched off
+    /// `figment::Metadata::name`; equivalent to
+    /// `self.metadata_axis() == AttributionAxis::MetadataName`. Sibling
+    /// of [`Self::is_metadata_source_axis`]; see it for the delegation
+    /// rationale.
+    ///
+    /// The three name-dispatched rules ([`Self::FileByMetadataName`],
+    /// [`Self::EnvByPrefix`], [`Self::EnvByUniqueness`]) are the exact
+    /// inhabitants of this predicate — pinned by
+    /// [`tests::attribution_rule_is_metadata_name_axis_agrees_with_metadata_axis_is_metadata_name`].
+    /// The two axis-side siblings
+    /// ([`Self::is_metadata_source_axis`],
+    /// [`Self::is_metadata_name_axis`]) form a closed binary partition
+    /// of [`Self::ALL`] — pinned by
+    /// [`tests::attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition`].
+    #[must_use]
+    pub fn is_metadata_name_axis(self) -> bool {
+        self.metadata_axis().is_metadata_name()
     }
 
     /// [`FigmentSourceKind`] of the `figment::Source` shape this rule
@@ -5249,6 +5361,166 @@ mod tests {
                     || rule.is_env_by_prefix()
                     || rule.is_env_by_uniqueness(),
                 "the metadata-name axis cell must be exactly the three name-dispatched siblings on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_file_layer_agrees_with_layer_kind_is_file() {
+        // The rule-altitude predicate and the layer-kind-altitude
+        // predicate on the same corner (File) must agree pointwise
+        // across AttributionRule::ALL — the rule-altitude peer is a
+        // thin lift of self.layer_kind().is_file(), and the two entry
+        // points cannot drift. Mirror of the confidence-altitude
+        // attribution_rule_is_exact_agrees_with_confidence_is_exact
+        // pin on the coarser (exact × fallback) meta-axis. A future
+        // regression that re-inlined matches!(...) on the rule side
+        // would still pass today because the polarity still agrees;
+        // this pin is loud specifically when
+        // ConfigSourceKind::is_file's polarity flips — the rule-side
+        // must follow.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_file_layer(),
+                rule.layer_kind().is_file(),
+                "is_file_layer must route through layer_kind().is_file() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_file_layer(),
+                rule.layer_kind() == ConfigSourceKind::File,
+                "is_file_layer must agree with layer_kind == File on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_env_layer_agrees_with_layer_kind_is_env() {
+        // Mirror of the File-corner routing pin, on the Env corner.
+        // Same rationale (see the File pin's docs): the polarity of
+        // the (file × env × defaults) partition is defined once at
+        // the layer-kind altitude; the rule-altitude convenience
+        // follows.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_env_layer(),
+                rule.layer_kind().is_env(),
+                "is_env_layer must route through layer_kind().is_env() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_env_layer(),
+                rule.layer_kind() == ConfigSourceKind::Env,
+                "is_env_layer must agree with layer_kind == Env on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_defaults_layer_agrees_with_layer_kind_is_defaults() {
+        // Mirror of the File-corner routing pin, on the Defaults
+        // corner. Closes the ternary agreement grid — every layer
+        // kind's polarity now has a rule-altitude sibling routed
+        // through the layer-kind altitude.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_defaults_layer(),
+                rule.layer_kind().is_defaults(),
+                "is_defaults_layer must route through layer_kind().is_defaults() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_defaults_layer(),
+                rule.layer_kind() == ConfigSourceKind::Defaults,
+                "is_defaults_layer must agree with layer_kind == Defaults on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_predicates_are_a_closed_ternary_partition() {
+        // Every cell of AttributionRule::ALL satisfies exactly one of
+        // the three layer-kind sibling delegators — none two, none
+        // zero. The rule-altitude analogue of
+        // config_source_kind_predicates_are_a_closed_ternary_partition
+        // on the layer-kind altitude, and the ternary peer of
+        // attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition
+        // on the metadata-axis rule projection. A future sixth rule
+        // variant whose layer-kind assignment lands under a fourth
+        // (new) ConfigSourceKind cell would satisfy zero of the three
+        // delegators and fail here, before a consumer silently
+        // classified it under the negation of an existing arm.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_file_layer())
+                + usize::from(rule.is_env_layer())
+                + usize::from(rule.is_defaults_layer());
+            assert_eq!(
+                held, 1,
+                "exactly one layer-kind sibling delegator must hold on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_metadata_source_axis_agrees_with_metadata_axis_is_metadata_source() {
+        // The rule-altitude predicate and the axis-altitude predicate
+        // on the same corner (MetadataSource) must agree pointwise
+        // across AttributionRule::ALL — the rule-altitude peer is a
+        // thin lift of self.metadata_axis().is_metadata_source(), and
+        // the two entry points cannot drift. Mirror of the layer-kind
+        // altitude routing pins on the third orthogonal projection.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_metadata_source_axis(),
+                rule.metadata_axis().is_metadata_source(),
+                "is_metadata_source_axis must route through metadata_axis().is_metadata_source() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_metadata_source_axis(),
+                rule.metadata_axis() == AttributionAxis::MetadataSource,
+                "is_metadata_source_axis must agree with metadata_axis == MetadataSource on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_is_metadata_name_axis_agrees_with_metadata_axis_is_metadata_name() {
+        // Mirror of the MetadataSource-corner routing pin, on the
+        // MetadataName corner. Closes the binary agreement grid — every
+        // metadata-axis corner's polarity now has a rule-altitude
+        // sibling routed through the axis altitude.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_metadata_name_axis(),
+                rule.metadata_axis().is_metadata_name(),
+                "is_metadata_name_axis must route through metadata_axis().is_metadata_name() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_metadata_name_axis(),
+                rule.metadata_axis() == AttributionAxis::MetadataName,
+                "is_metadata_name_axis must agree with metadata_axis == MetadataName on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition() {
+        // Every cell of AttributionRule::ALL satisfies exactly one of
+        // the two metadata-axis sibling delegators — none two, none
+        // zero. The rule-altitude analogue of
+        // attribution_axis_predicates_are_a_closed_binary_partition
+        // on the axis altitude, and the binary peer of
+        // attribution_rule_layer_predicates_are_a_closed_ternary_partition
+        // on the layer-kind rule projection. A future tertiary
+        // AttributionAxis variant (the enum's doc names MetadataExtras
+        // as a future direction) that a new rule dispatched off would
+        // satisfy zero of the two delegators and fail here, forcing
+        // the new axis cell's declaration in lockstep at the rule
+        // altitude rather than silently landing under the negation of
+        // an existing arm.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let held = usize::from(rule.is_metadata_source_axis())
+                + usize::from(rule.is_metadata_name_axis());
+            assert_eq!(
+                held, 1,
+                "exactly one metadata-axis sibling delegator must hold on {rule:?}",
             );
         }
     }
