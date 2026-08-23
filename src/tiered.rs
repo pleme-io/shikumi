@@ -1451,6 +1451,58 @@ impl From<Provenance> for ConfigSource {
     }
 }
 
+/// Std-trait borrow-side facade over [`Provenance::source`]: the same
+/// borrow accessor onto the [`ConfigSource`] coordinate of the atomic
+/// `(tier, source)` pair, spelled `prov.as_ref()` for callers routing
+/// through the [`AsRef`] blanket ([`AsRef::as_ref`] chains, generic
+/// bounds `T: AsRef<ConfigSource>`).
+///
+/// Pointwise equal to [`Provenance::source`] on every input — pinned
+/// by
+/// [`progressive_tests::provenance_as_ref_configsource_agrees_with_source_accessor`].
+/// The borrow-side peer of the consuming-side
+/// [`From<Provenance> for ConfigSource`] facade (`4acf50d`): the two
+/// together close the std-trait facade closure on the [`ConfigSource`]
+/// coordinate across both ownership altitudes — consuming via [`From`],
+/// borrowing via [`AsRef`] — the same shape the inherent surface
+/// already carries via [`Self::into_source`] + [`Self::source`]. On
+/// every input, the [`AsRef::as_ref`] projection is byte-equal (via
+/// deref) to the value the consuming-side [`From`] facade would hand
+/// out on `self.clone()` — pinned by
+/// [`progressive_tests::provenance_as_ref_configsource_is_borrow_side_dual_of_from_facade`].
+///
+/// Only the source-coordinate [`AsRef`] facade is added, not a
+/// companion `AsRef<ConfigTierKind> for Provenance`, matching the
+/// asymmetry [`From<Provenance> for ConfigSource`] already carries on
+/// the consuming altitude: [`ConfigTierKind`] is [`Copy`], so a
+/// borrow-side [`AsRef`] onto the tier coordinate would be one
+/// indirection step past reading [`Self::tier`] on `self` — the
+/// tier-coordinate [`AsRef`] facade would not close a gap the inherent
+/// surface leaves open.
+///
+/// Compounds:
+/// - A downstream generic bound `T: AsRef<ConfigSource>` — a
+///   diagnostic renderer that borrows the layer identity of any
+///   provenance-carrying primitive through one `.as_ref()` call, a
+///   `ConfigPlane` broadcast surface routing just the borrowed layer
+///   identity through a sink expecting `&ConfigSource`, an attestation
+///   harness reading sources without ever consuming the provenance —
+///   picks up [`Provenance`] for free without naming the inherent
+///   borrow accessor.
+/// - Composes with `Provenance` on both ownership altitudes at zero
+///   allocation: consuming callers move the [`ConfigSource`] out via
+///   the [`From`] facade above (the payload's `PathBuf` / `String`
+///   allocation moves once, not clones), borrowing callers hand out a
+///   reference to the same underlying storage via this [`AsRef`]
+///   facade — the two spellings share their inherent primitives
+///   (`into_source` / `source`) with no divergence surface between
+///   them.
+impl AsRef<ConfigSource> for Provenance {
+    fn as_ref(&self) -> &ConfigSource {
+        &self.source
+    }
+}
+
 impl std::fmt::Display for Provenance {
     /// Typed emission: the tier label ([`ConfigTierKind::as_str`]) plus the
     /// source detail (env prefix / file path) rendered through the typed
@@ -66749,6 +66801,131 @@ mod progressive_tests {
         let source_only: ConfigSource = prov.clone().into();
         let pair: (ConfigTierKind, ConfigSource) = prov.into();
         assert_eq!(pair.1, source_only);
+    }
+
+    #[test]
+    fn provenance_as_ref_configsource_agrees_with_source_accessor() {
+        // The load-bearing pointwise agreement between the AsRef
+        // std-trait borrow-side facade `<Provenance as
+        // AsRef<ConfigSource>>::as_ref(&prov)` and the inherent
+        // `prov.source()` borrow accessor on the same Provenance
+        // input. Borrow-side peer of
+        // provenance_from_facade_agrees_with_into_source (4acf50d) one
+        // ownership altitude over on the consuming side — both facades
+        // hand out exactly what their inherent counterparts hand out on
+        // the ConfigSource coordinate of the atomic (tier, source) pair,
+        // so a downstream generic bound `T: AsRef<ConfigSource>` picks
+        // up Provenance for free — the same way `T: Into<ConfigSource>`
+        // already picks it up through the consuming-side From facade.
+        // Without this pin, a future edit that reroutes the AsRef impl
+        // through a stale field, a per-variant clone, or a lossy
+        // projection would silently drift the two spellings.
+        let prov = Provenance::file("/etc/as_ref_source_prim.yaml");
+        let via_method: &ConfigSource = prov.source();
+        let via_as_ref: &ConfigSource = <Provenance as AsRef<ConfigSource>>::as_ref(&prov);
+        assert_eq!(via_method, via_as_ref);
+        // Reference identity — the AsRef facade must hand out the SAME
+        // underlying storage as the inherent accessor, not a re-emitted
+        // clone. A future edit that returned a stashed copy from a
+        // hidden field would fail this pointer-equality pin while still
+        // agreeing on the value pin above.
+        assert!(std::ptr::eq(via_method, via_as_ref));
+    }
+
+    #[test]
+    fn provenance_as_ref_configsource_preserves_every_source_variant() {
+        // Coverage-shape pin: the AsRef std-trait borrow facade is a
+        // pure delegate through the inherent source() accessor on every
+        // ConfigSource variant the primitive carries — Defaults,
+        // Env(prefix), File(path). Guards against a future edit that
+        // reroutes the AsRef impl through a variant-shaped match (path
+        // canonicalization, prefix normalization, debug-field strip)
+        // that could silently mutate one arm and leave the others
+        // untouched. Iterating over the five named computed / operator
+        // constructors covers each of the three ConfigSource shapes at
+        // one seam — the same coverage shape
+        // provenance_from_facade_source_preserves_every_source_variant
+        // pins on the consuming-side From facade, lifted onto the AsRef
+        // std-trait borrow surface.
+        let cases: [(Provenance, ConfigSource); 5] = [
+            (Provenance::bare(), ConfigSource::Defaults),
+            (Provenance::discovered(), ConfigSource::Defaults),
+            (Provenance::prescribed_default(), ConfigSource::Defaults),
+            (
+                Provenance::file("/etc/as_ref_source_variant.yaml"),
+                ConfigSource::File(PathBuf::from("/etc/as_ref_source_variant.yaml")),
+            ),
+            (
+                Provenance::env("SHIKUMI_AS_REF_SOURCE_VARIANT_"),
+                ConfigSource::Env("SHIKUMI_AS_REF_SOURCE_VARIANT_".to_owned()),
+            ),
+        ];
+        for (prov, expected_source) in cases {
+            let out: &ConfigSource = prov.as_ref();
+            assert_eq!(out, &expected_source);
+        }
+    }
+
+    #[test]
+    fn provenance_as_ref_configsource_is_borrow_side_dual_of_from_facade() {
+        // Cross-altitude consistency: the borrow-side AsRef facade
+        // (`<Provenance as AsRef<ConfigSource>>::as_ref(&prov)`) and
+        // the consuming-side From facade
+        // (`<ConfigSource>::from(prov.clone())`) project the same
+        // ConfigSource coordinate on every input — the reference the
+        // borrow facade hands out is byte-equal to the owned value the
+        // consuming facade hands out on the cloned input. Together the
+        // two facades close the std-trait facade closure on the
+        // ConfigSource coordinate across both ownership altitudes:
+        // consuming via From, borrowing via AsRef. Without this pin,
+        // the two altitudes could silently disagree on the same input
+        // if a future edit reroutes one of the two through a different
+        // projection path than the other. Primitive-level peer of the
+        // cross-altitude consistency pin
+        // provenance_from_facades_are_consistent_across_altitudes just
+        // above, adapted for the borrow / consume duality across
+        // ownership altitudes on the same source coordinate.
+        let cases: [Provenance; 5] = [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::file("/etc/as_ref_dual_of_from.yaml"),
+            Provenance::env("SHIKUMI_AS_REF_DUAL_OF_FROM_"),
+        ];
+        for prov in cases {
+            let via_as_ref: &ConfigSource = prov.as_ref();
+            let via_from: ConfigSource = prov.clone().into();
+            assert_eq!(via_as_ref, &via_from);
+        }
+    }
+
+    #[test]
+    fn provenance_as_ref_configsource_composes_through_generic_bound() {
+        // Idiom-shape pin: the AsRef std-trait borrow facade composes
+        // through a generic bound `T: AsRef<ConfigSource>` — a call
+        // site that generic-borrows the ConfigSource coordinate of any
+        // AsRef<ConfigSource> input picks up Provenance without naming
+        // the inherent source() accessor. This is the load-bearing
+        // reason the AsRef facade exists on top of the inherent
+        // accessor: it welds Provenance onto the std generic-borrow
+        // idiom the same way the From<Provenance> for ConfigSource
+        // facade welds Provenance onto the std generic-consume idiom
+        // (Into<ConfigSource>). Without this pin, a future edit that
+        // silently narrowed the AsRef impl to a shape incompatible with
+        // the std blanket (e.g. specialization that hid it from generic
+        // dispatch) could break every downstream `T: AsRef<ConfigSource>`
+        // consumer without failing any of the three direct-projection
+        // pins above.
+        fn borrow_source<T: AsRef<ConfigSource>>(t: &T) -> &ConfigSource {
+            t.as_ref()
+        }
+        let prov = Provenance::file("/etc/as_ref_generic_bound.yaml");
+        let borrowed = borrow_source(&prov);
+        assert_eq!(borrowed, prov.source());
+        // Pointer equality — the generic bound must route to the same
+        // underlying storage the direct AsRef call does, not a re-emit
+        // through a hidden intermediate.
+        assert!(std::ptr::eq(borrowed, prov.source()));
     }
 
     #[test]
