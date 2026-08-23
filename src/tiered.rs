@@ -20734,6 +20734,197 @@ impl ConfigDiff {
         self.kind_histogram().observed().next()
     }
 
+    /// The **last-absent kind** — the *latest* [`DiffLineKind`] (in
+    /// [`ClosedAxis::ALL`] / [`DiffLineKind::ALL`] declaration order —
+    /// `Removed → Added → Context`) whose count is **zero** on this
+    /// diff, or [`None`] on the full-cover diff (every kind produced
+    /// at least one line).
+    ///
+    /// The **tail-projection peer** of [`Self::first_absent_kind`] on
+    /// the coverage-gap side of the diff altitude: where
+    /// [`Self::first_absent_kind`] reads the *head* of the coverage-gap
+    /// iterator (the minimum absent cell by [`crate::axis_ordinal`]),
+    /// this reads the *tail* (the maximum absent cell). The two
+    /// projections close the head/tail axis on the same underlying
+    /// [`crate::AxisHistogram::unobserved`] walker, mirroring
+    /// [`Iterator::next`] / [`DoubleEndedIterator::next_back`] on any
+    /// std [`DoubleEndedIterator`]. Diff-altitude peer of
+    /// [`crate::ProvenanceMap::last_absent_tier`] on the tier altitude
+    /// and [`crate::ProvenanceMap::last_absent_source_kind`] on the
+    /// source-kind altitude — the three altitudes now close the same
+    /// coverage-gap tail-projection shape on their local closed axes.
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] returns an
+    /// [`AxisHistogramUnobserved`][crate::AxisHistogramUnobserved]
+    /// walker that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order — the closed-axis
+    /// discipline provides deterministic last-cell selection
+    /// automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `DiffLineKind::ALL.iter().copied().rev().find(|k|
+    /// self.kind_histogram().count(*k) == 0)` at every operator-facing
+    /// consumer asking *"which diff kind is the latest to have been
+    /// silent on this render?"*.
+    ///
+    /// **Empty-diff convention** — returns
+    /// [`Some(DiffLineKind::Context)`][DiffLineKind::Context] (not
+    /// [`None`]), matching [`Self::first_absent_kind`]'s full-axis
+    /// empty-diff convention read from the tail: every cell absent,
+    /// tail of [`DiffLineKind::ALL`] is [`DiffLineKind::Context`]. The
+    /// [`None`] boundary is *full cover*, not empty — the same
+    /// [`Self::first_absent_kind`] boundary read from the other end of
+    /// the same walker.
+    ///
+    /// # Invariants
+    ///
+    /// - `last_absent_kind() == kind_histogram().unobserved().next_back()`
+    ///   — both project the same coverage-gap tail off the same
+    ///   primitive.
+    /// - `last_absent_kind() == absent_kinds().last().copied()` — the
+    ///   tail-projection peer of the coverage-gap `Vec` peer; both
+    ///   name the same last-absent cell without materialising the
+    ///   full vector.
+    /// - `last_absent_kind().is_none() ==
+    ///   kind_histogram().is_full_cover()` — the [`None`] boundary is
+    ///   the full-cover boundary, matching [`Self::first_absent_kind`]
+    ///   pointwise (a [`DoubleEndedIterator`]'s head and tail agree on
+    ///   emptiness).
+    /// - When `Some(k)`, `k` is a member of [`Self::absent_kinds`] —
+    ///   the coverage-gap tail is by definition an absent cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::present_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint at both ends.
+    /// - `last_absent_kind()` on an empty [`ConfigDiff`] equals
+    ///   [`Some(DiffLineKind::Context)`][DiffLineKind::Context] — the
+    ///   empty-diff tail convention (tail of the full axis).
+    /// - `last_absent_kind()` yields the **maximum** absent kind by
+    ///   [`crate::axis_ordinal`] on [`DiffLineKind`] — dual of
+    ///   [`Self::first_absent_kind`]'s argmin.
+    /// - On a singleton-absent diff (`absent_kinds().len() == 1`),
+    ///   `last_absent_kind() == first_absent_kind()` — the tail-
+    ///   projection collapses to the head-projection when the
+    ///   coverage-gap has exactly one cell.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// reverse coverage-gap scan, short-circuited on the first zero
+    /// cell from the tail). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned [`Option<DiffLineKind>`] reads one cell. Elides the
+    /// `Vec<DiffLineKind>` allocation the previous
+    /// `absent_kinds().last().copied()` idiom paid on every call
+    /// site.
+    #[must_use]
+    pub fn last_absent_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().unobserved().next_back()
+    }
+
+    /// The **last-present kind** — the *latest* [`DiffLineKind`] (in
+    /// [`ClosedAxis::ALL`] / [`DiffLineKind::ALL`] declaration order —
+    /// `Removed → Added → Context`) whose count is nonzero on this
+    /// diff, or [`None`] on the empty diff (no lines at all).
+    ///
+    /// The **tail-projection peer** of [`Self::first_present_kind`]
+    /// on the observed side of the diff altitude: where
+    /// [`Self::first_present_kind`] reads the *head* of the observed
+    /// iterator (the minimum observed cell by [`crate::axis_ordinal`]),
+    /// this reads the *tail* (the maximum observed cell). The two
+    /// projections close the head/tail axis on the same underlying
+    /// [`crate::AxisHistogram::observed`] walker, mirroring
+    /// [`Iterator::next`] / [`DoubleEndedIterator::next_back`] on any
+    /// std [`DoubleEndedIterator`]. Diff-altitude peer of
+    /// [`crate::ProvenanceMap::last_contributing_tier`] on the tier
+    /// altitude and
+    /// [`crate::ProvenanceMap::last_contributing_source_kind`] on the
+    /// source-kind altitude — the three altitudes now close the same
+    /// observed-side tail-projection shape on their local closed axes.
+    ///
+    /// **Distinct from [`Self::dominant_kind`] and
+    /// [`Self::recessive_kind`].** The two observed-side
+    /// [`Option`]-shaped peers select by observation *count* —
+    /// [`Self::dominant_kind`] returns the argmax (modal) cell and
+    /// [`Self::recessive_kind`] returns the argmin (anti-modal) cell.
+    /// This peer selects by axis-declaration *order* — the latest
+    /// observed cell regardless of its observation count. On a diff
+    /// where `Removed = 0`, `Added = 5`, `Context = 1`,
+    /// [`Self::dominant_kind`] reports
+    /// [`Some(DiffLineKind::Added)`][DiffLineKind::Added] (argmax = 5),
+    /// [`Self::recessive_kind`] reports
+    /// [`Some(DiffLineKind::Context)`][DiffLineKind::Context] (argmin = 1
+    /// among observed cells), and `last_present_kind()` reports
+    /// [`Some(DiffLineKind::Context)`][DiffLineKind::Context] (the axis
+    /// ends at `Context`, which is observed, so `Context` is the
+    /// support tail).
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] returns an
+    /// [`AxisHistogramObserved`][crate::AxisHistogramObserved] walker
+    /// that impls [`DoubleEndedIterator`], and
+    /// [`DoubleEndedIterator::next_back`] reads its tail in
+    /// [`crate::ClosedAxis::ALL`] declaration order — the closed-axis
+    /// discipline provides deterministic last-cell selection
+    /// automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `DiffLineKind::ALL.iter().copied().rev().find(|k|
+    /// self.kind_histogram().count(*k) > 0)` at every operator-facing
+    /// consumer asking *"which diff kind is the latest to have
+    /// surfaced on this render?"*.
+    ///
+    /// **Empty-diff convention** — returns [`None`], matching
+    /// [`Self::first_present_kind`]'s empty-support convention read
+    /// from the tail: no observed cell means the tail of the observed
+    /// iterator is [`None`].
+    ///
+    /// # Invariants
+    ///
+    /// - `last_present_kind() == kind_histogram().observed().next_back()`
+    ///   — both project the same support tail off the same primitive.
+    /// - `last_present_kind() == present_kinds().last().copied()` —
+    ///   the tail-projection peer of the observed-cells `Vec` peer;
+    ///   both name the same last-present cell without materialising
+    ///   the full vector.
+    /// - `last_present_kind().is_none() == self.lines.is_empty()` —
+    ///   the [`None`] boundary is the empty-diff boundary, matching
+    ///   [`Self::first_present_kind`] pointwise (a
+    ///   [`DoubleEndedIterator`]'s head and tail agree on emptiness).
+    /// - `last_present_kind().is_some() == !self.lines.is_empty()` —
+    ///   the [`Some`] boundary is the non-empty boundary; the
+    ///   contrapositive of the [`None`] boundary above.
+    /// - When `Some(k)`, `k` is a member of [`Self::present_kinds`]
+    ///   — the support tail is by definition an observed cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint at both ends.
+    /// - `last_present_kind()` on an empty [`ConfigDiff`] equals
+    ///   [`None`] — the empty-diff / empty-support tail boundary.
+    /// - `last_present_kind()` yields the **maximum** observed kind
+    ///   by [`crate::axis_ordinal`] on [`DiffLineKind`] — dual of
+    ///   [`Self::first_present_kind`]'s argmin.
+    /// - On a singleton-support diff (`present_kinds().len() == 1`),
+    ///   `last_present_kind() == first_present_kind()` — the tail-
+    ///   projection collapses to the head-projection when the
+    ///   support has exactly one cell.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// reverse support scan, short-circuited on the first nonzero
+    /// cell from the tail). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned [`Option<DiffLineKind>`] reads one cell. Elides the
+    /// `Vec<DiffLineKind>` allocation the previous
+    /// `present_kinds().last().copied()` idiom paid on every call
+    /// site.
+    #[must_use]
+    pub fn last_present_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().observed().next_back()
+    }
+
     /// The [`DiffLineKind`] whose lines dominate this diff by count —
     /// the modal cell of [`Self::kind_histogram`] on the diff altitude.
     /// `None` exactly when the diff is empty (no lines).
@@ -30157,6 +30348,308 @@ mod tests {
             assert_ne!(
                 first_p, first_a,
                 "the two head-projection peers must not name the same kind",
+            );
+        }
+    }
+
+    // ── ConfigDiff::last_absent_kind / last_present_kind — tail-projection
+    //    siblings of the two `first_*_kind` head projections on the diff
+    //    altitude, closing the head/tail axis on the observed / coverage-gap
+    //    walker peers. Tier-altitude peers: `last_absent_tier` /
+    //    `last_contributing_tier`. Source-kind peers:
+    //    `last_absent_source_kind` / `last_contributing_source_kind`. ──
+
+    #[test]
+    fn last_absent_kind_matches_kind_histogram_unobserved_next_back() {
+        // The delegation pin: `last_absent_kind` routes through
+        // `kind_histogram().unobserved().next_back()`, mirroring
+        // `first_absent_kind`'s `.next()` on the same walker.
+        for diff in first_absent_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().unobserved().next_back();
+            assert_eq!(diff.last_absent_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_absent_kind_matches_absent_kinds_last_copied() {
+        // Tail-projection peer of the coverage-gap `Vec`: the named
+        // seam reads the same cell as `absent_kinds().last().copied()`,
+        // without allocating the vector.
+        for diff in first_absent_kind_fixtures() {
+            assert_eq!(diff.last_absent_kind(), diff.absent_kinds().last().copied(),);
+        }
+    }
+
+    #[test]
+    fn last_absent_kind_is_none_iff_kind_histogram_is_full_cover() {
+        // The [`None`] boundary law: no coverage-gap tail means every
+        // cell was observed. Matches `first_absent_kind`'s boundary
+        // pointwise — a `DoubleEndedIterator`'s head and tail agree on
+        // emptiness.
+        for diff in first_absent_kind_fixtures() {
+            assert_eq!(
+                diff.last_absent_kind().is_none(),
+                diff.kind_histogram().is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn last_absent_kind_empty_diff_is_context() {
+        // Empty-diff convention: every cell absent, tail of the full
+        // axis is `Context`. Contrasts `first_absent_kind_empty_diff_is_removed`
+        // (head of the full axis) — the two projections pin the same
+        // empty diff from opposite ends of the same walker.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.last_absent_kind(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn last_absent_kind_removed_only_diff_is_context() {
+        // Removed-only diff: absent = {Added, Context}, tail is
+        // Context. Witnesses the tail-of-two-cells case.
+        let removed_only = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into())],
+        };
+        assert_eq!(removed_only.last_absent_kind(), Some(DiffLineKind::Context),);
+    }
+
+    #[test]
+    fn last_absent_kind_removed_and_added_diff_is_context() {
+        // Removed + Added diff: absent = {Context}, tail is Context
+        // (and equals head — singleton-absent collapse).
+        let changes_only = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(changes_only.last_absent_kind(), Some(DiffLineKind::Context),);
+        assert_eq!(
+            changes_only.last_absent_kind(),
+            changes_only.first_absent_kind()
+        );
+    }
+
+    #[test]
+    fn last_absent_kind_full_cover_diff_is_none() {
+        // Full-cover diff: no coverage-gap tail. Matches the
+        // `first_absent_kind` `None` boundary on the same fixture.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.last_absent_kind(), None);
+    }
+
+    #[test]
+    fn last_absent_kind_is_maximum_absent_kind_by_axis_ordinal() {
+        // Declaration-order tail pin: the returned kind (when Some)
+        // has the maximum `axis_ordinal` among absent kinds. Dual of
+        // `first_absent_kind_is_minimum_absent_kind_by_axis_ordinal`.
+        for diff in first_absent_kind_fixtures() {
+            let tail = diff.last_absent_kind();
+            let max_by_ordinal = diff
+                .absent_kinds()
+                .into_iter()
+                .max_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_absent_kind_is_member_of_absent_kinds_when_some() {
+        // Membership pin: the coverage-gap tail is by definition an
+        // absent cell.
+        for diff in first_absent_kind_fixtures() {
+            if let Some(k) = diff.last_absent_kind() {
+                assert!(
+                    diff.absent_kinds().contains(&k),
+                    "last_absent_kind {k:?} not in absent_kinds {:?}",
+                    diff.absent_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_absent_kind_is_not_member_of_present_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint at both ends.
+        for diff in first_absent_kind_fixtures() {
+            if let Some(k) = diff.last_absent_kind() {
+                assert!(
+                    !diff.present_kinds().contains(&k),
+                    "last_absent_kind {k:?} appears in present_kinds {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_present_kind_matches_kind_histogram_observed_next_back() {
+        // The delegation pin: `last_present_kind` routes through
+        // `kind_histogram().observed().next_back()`, mirroring
+        // `first_present_kind`'s `.next()` on the same walker.
+        for diff in first_present_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().observed().next_back();
+            assert_eq!(diff.last_present_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn last_present_kind_matches_present_kinds_last_copied() {
+        // Tail-projection peer of the observed-cells `Vec`: the named
+        // seam reads the same cell as `present_kinds().last().copied()`.
+        for diff in first_present_kind_fixtures() {
+            assert_eq!(
+                diff.last_present_kind(),
+                diff.present_kinds().last().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn last_present_kind_is_none_iff_lines_is_empty() {
+        // The [`None`] boundary law: no support tail means no line has
+        // been rendered. Matches `first_present_kind`'s boundary
+        // pointwise — head and tail agree on emptiness.
+        for diff in first_present_kind_fixtures() {
+            assert_eq!(diff.last_present_kind().is_none(), diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn last_present_kind_empty_diff_is_none() {
+        // Empty-diff convention: no observed cell, empty support tail.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.last_present_kind(), None);
+    }
+
+    #[test]
+    fn last_present_kind_removed_only_diff_is_removed() {
+        // Singleton-support diff: tail collapses to head (both are the
+        // sole observed cell).
+        let removed_only = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into())],
+        };
+        assert_eq!(
+            removed_only.last_present_kind(),
+            Some(DiffLineKind::Removed),
+        );
+        assert_eq!(
+            removed_only.last_present_kind(),
+            removed_only.first_present_kind(),
+        );
+    }
+
+    #[test]
+    fn last_present_kind_removed_and_added_diff_is_added() {
+        // Two-cell support {Removed, Added}: head is Removed, tail is
+        // Added — the two projections split on the same walker.
+        let changes_only = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(changes_only.last_present_kind(), Some(DiffLineKind::Added),);
+        assert_ne!(
+            changes_only.last_present_kind(),
+            changes_only.first_present_kind(),
+        );
+    }
+
+    #[test]
+    fn last_present_kind_full_cover_diff_is_context() {
+        // Full-cover diff: support = axis, tail is Context (axis tail).
+        // Dual of `first_present_kind_full_cover_diff_is_removed` on
+        // the tail side.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.last_present_kind(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn last_present_kind_is_maximum_present_kind_by_axis_ordinal() {
+        // Declaration-order tail pin: the returned kind (when Some)
+        // has the maximum `axis_ordinal` among observed kinds. Dual
+        // of `first_present_kind_is_minimum_present_kind_by_axis_ordinal`.
+        for diff in first_present_kind_fixtures() {
+            let tail = diff.last_present_kind();
+            let max_by_ordinal = diff
+                .present_kinds()
+                .into_iter()
+                .max_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(tail, max_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn last_present_kind_is_member_of_present_kinds_when_some() {
+        // Membership pin: the support tail is by definition an
+        // observed cell.
+        for diff in first_present_kind_fixtures() {
+            if let Some(k) = diff.last_present_kind() {
+                assert!(
+                    diff.present_kinds().contains(&k),
+                    "last_present_kind {k:?} not in present_kinds {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_present_kind_is_not_member_of_absent_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint at both ends.
+        for diff in first_present_kind_fixtures() {
+            if let Some(k) = diff.last_present_kind() {
+                assert!(
+                    !diff.absent_kinds().contains(&k),
+                    "last_present_kind {k:?} appears in absent_kinds {:?}",
+                    diff.absent_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn last_present_kind_and_last_absent_kind_are_disjoint_on_nonempty_partial_cover() {
+        // Paired partition pin from the tail side: on a non-empty,
+        // non-full-cover diff both tail projections are `Some`, and
+        // they must name distinct kinds — mirrors
+        // `first_present_kind_and_first_absent_kind_are_disjoint_on_nonempty_partial_cover`.
+        for diff in [
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+        ] {
+            let last_p = diff.last_present_kind();
+            let last_a = diff.last_absent_kind();
+            assert!(
+                last_p.is_some(),
+                "non-empty diff should have a support tail",
+            );
+            assert!(
+                last_a.is_some(),
+                "non-full-cover diff should have a coverage-gap tail",
+            );
+            assert_ne!(
+                last_p, last_a,
+                "the two tail-projection peers must not name the same kind",
             );
         }
     }
