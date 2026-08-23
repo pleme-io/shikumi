@@ -19274,6 +19274,104 @@ impl From<ProgressiveLayer> for (Provenance, Dict) {
     }
 }
 
+/// Std-trait facade over [`ProgressiveLayer::into_dict`]: the same
+/// single-coordinate consuming projection onto the payload [`Dict`]
+/// coordinate of the atomic `(provenance, dict)` pair, spelled
+/// `Dict::from(layer)` / `layer.into()` for callers routing through the
+/// [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `T: Into<Dict>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::into_dict`] on every input —
+/// pinned by
+/// [`tests::progressive_layer_from_facade_agrees_with_into_dict`]. The
+/// single-coordinate peer of the pair-destructuring
+/// [`From<ProgressiveLayer> for (Provenance, Dict)`] facade above: both
+/// altitudes of the consuming projection on the overlay primitive
+/// (single-coordinate payload projection + pair-destructuring) now
+/// expose both spellings — the inherent method and the std-trait
+/// [`From`] facade — matching the shape the pair-destructuring already
+/// carries.
+///
+/// Symmetric with the [`From<ProgressiveResolution<T>> for ProvenanceMap`]
+/// facade on the *output* side of the fold's atomic-pair ownership
+/// boundary: both hand out one coordinate of their atomic pair with the
+/// other discarded through the std-trait [`From`] surface, both delegate
+/// to their inherent consuming projection at zero allocation. Unlike the
+/// output side — where the value coordinate's std-trait sibling
+/// (`From<ProgressiveResolution<T>> for T`) is unavailable by coherence
+/// (Rust's blanket `impl<T> From<T> for T` reflexive facade collides
+/// with any concrete-target impl at `T = ProgressiveResolution<U>`) —
+/// the input side lands both coordinates on concrete [`Dict`] and
+/// [`Provenance`] targets and so admits both std-trait spellings with no
+/// coherence clash: the input side closes the std-trait facade set
+/// symmetrically on both single-coordinate consuming projections, while
+/// the output side carries only the provenance-coordinate facade.
+///
+/// Compounds:
+/// - A downstream generic bound `T: Into<Dict>` — a `ProviderChain`
+///   re-ingesting the overlay's payload through its own figment fold,
+///   a `ConfigPlane` broadcast surface routing just the operator-visible
+///   dict payload without the per-leaf stamp, an FFI boundary that owns
+///   the `(prefix / path)` side elsewhere — picks up a [`ProgressiveLayer`]
+///   for free without naming the inherent projection method.
+/// - `Dict::from(layer)` writes cleanly at the call site without the
+///   borrow-and-clone allocation the accessor form (`layer.dict().clone()`)
+///   carries.
+impl From<ProgressiveLayer> for Dict {
+    fn from(layer: ProgressiveLayer) -> Self {
+        layer.into_dict()
+    }
+}
+
+/// Std-trait facade over [`ProgressiveLayer::into_provenance`]: the same
+/// single-coordinate consuming projection onto the [`Provenance`] stamp
+/// coordinate of the atomic `(provenance, dict)` pair, spelled
+/// `Provenance::from(layer)` / `layer.into()` for callers routing through
+/// the [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `T: Into<Provenance>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::into_provenance`] on every input
+/// — pinned by
+/// [`tests::progressive_layer_from_facade_agrees_with_into_provenance`].
+/// The single-coordinate peer of the pair-destructuring
+/// [`From<ProgressiveLayer> for (Provenance, Dict)`] facade above and the
+/// stamp-coordinate sibling of the payload-coordinate
+/// [`From<ProgressiveLayer> for Dict`] facade above: all three altitudes
+/// of the consuming projection on the overlay primitive
+/// (single-coordinate payload projection + single-coordinate stamp
+/// projection + pair-destructuring) now expose both spellings — the
+/// inherent method and the std-trait [`From`] facade — matching the
+/// shape the pair-destructuring already carries.
+///
+/// Direct input-side mirror of the
+/// [`From<ProgressiveResolution<T>> for ProvenanceMap`] facade on the
+/// *output* side of the fold's atomic-pair ownership boundary: both hand
+/// out just the "stamp" coordinate of their atomic pair (the
+/// non-payload side — [`Provenance`] for the input overlay,
+/// [`ProvenanceMap`] for the output resolution) with the payload side
+/// discarded through the std-trait [`From`] surface, both delegate to
+/// their inherent consuming projection at zero allocation, both are
+/// pointwise-equal to the borrow-side accessor followed by a clone.
+///
+/// Compounds:
+/// - A downstream generic bound `T: Into<Provenance>` — an
+///   attestation-manifest builder threading per-overlay stamps through
+///   an `Into`-chain without paying to retain the payload dicts, a
+///   `ConfigPlane` broadcast surface routing just the per-overlay stamp
+///   to a downstream consumer that already owns its dict, a diagnostic
+///   `From` chain that composes overlays into a canonical `(tier, source)`
+///   fingerprint — picks up a [`ProgressiveLayer`] for free without
+///   naming the inherent projection method.
+/// - `Provenance::from(layer)` writes cleanly at the call site without
+///   the borrow-and-clone allocation the accessor form
+///   (`layer.provenance().clone()`) carries on the underlying
+///   [`ConfigSource`] payload.
+impl From<ProgressiveLayer> for Provenance {
+    fn from(layer: ProgressiveLayer) -> Self {
+        layer.into_provenance()
+    }
+}
+
 /// Std-trait facade over [`ProgressiveLayer::new`]: rebuild an overlay
 /// from an owned `(provenance, dict)` pair, spelled
 /// `ProgressiveLayer::from((p, d))` for callers routing through the
@@ -66097,6 +66195,163 @@ mod progressive_tests {
         // container altitude.
         let round_tripped: (Provenance, Dict) = via_from.into();
         assert_eq!(round_tripped, pair);
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_agrees_with_into_dict() {
+        // The load-bearing pointwise agreement between the std-trait
+        // facade `<Dict>::from(layer)` and the inherent
+        // `layer.into_dict()` method on the same overlay input. The
+        // payload-coordinate peer of
+        // progressive_layer_from_tuple_agrees_with_into_parts one
+        // altitude up on the pair-destructuring; both facades hand out
+        // exactly what their inherent counterparts hand out, so a
+        // downstream generic bound `T: Into<Dict>` picks up
+        // ProgressiveLayer for free — the same way
+        // `T: Into<(Provenance, Dict)>` already picks it up through
+        // the pair-destructuring facade. Without this pin, a future
+        // edit that reroutes the From impl through a stale field, a
+        // per-entry clone, or a lossy conversion would silently drift
+        // the two spellings.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(201_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facade_dict.yaml", dict);
+        let via_method = layer.clone().into_dict();
+        let via_from: Dict = layer.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_dict_agrees_with_accessor_clone() {
+        // The std-trait facade is byte-equal to the borrow-side
+        // accessor followed by a clone — the same equality shape
+        // progressive_layer_into_dict_agrees_with_accessor_clone
+        // pins on the inherent method, lifted onto the From std-trait
+        // surface. The load-bearing distinction is the same
+        // clone-avoidance: the facade moves the Dict out at zero
+        // allocation, the accessor form pays a full BTreeMap clone
+        // with per-entry Value re-allocation, but the two paths hand
+        // out the same Dict byte-image on every input.
+        let mut dict = Dict::new();
+        dict.insert("options.padding".to_owned(), Value::from(202_u32));
+        let layer = ProgressiveLayer::env("SHIKUMI_FROM_FACADE_DICT_ACCESSOR_", dict);
+        let via_from: Dict = layer.clone().into();
+        let via_accessor_clone = layer.dict().clone();
+        assert_eq!(via_from, via_accessor_clone);
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_dict_preserves_leaf_payload_through_fold() {
+        // End-to-end downstream pin: routing an overlay's dict
+        // through the std-trait `Dict::from(layer)` facade and
+        // rebuilding a fresh overlay under the same Provenance stamp
+        // produces a fold output byte-identical to the one the
+        // original overlay produced. The std-trait sibling of
+        // progressive_layer_into_dict_preserves_leaf_payload_through_fold
+        // on the inherent method — together they pin BOTH spellings
+        // of the single-coordinate payload projection against the
+        // same downstream observation on the same seed overlay.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(203_u32));
+        let stamp = Provenance::file("/etc/from_facade_dict_end_to_end.yaml");
+        let seed = ProgressiveLayer::new(stamp.clone(), dict);
+        let direct = Prog::resolve_progressive_with(&[seed.clone()]);
+        let via_facade_dict: Dict = seed.into();
+        let via_projection = ProgressiveLayer::new(stamp, via_facade_dict);
+        let via_projection_out = Prog::resolve_progressive_with(&[via_projection]);
+        assert_eq!(direct.value(), via_projection_out.value());
+        assert_eq!(direct.provenance(), via_projection_out.provenance());
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_agrees_with_into_provenance() {
+        // The load-bearing pointwise agreement between the std-trait
+        // facade `<Provenance>::from(layer)` and the inherent
+        // `layer.into_provenance()` method on the same overlay
+        // input. The stamp-coordinate peer of
+        // progressive_layer_from_facade_agrees_with_into_dict on the
+        // payload coordinate, and the input-side peer of
+        // progressive_resolution_from_facade_agrees_with_into_provenance
+        // one seam over on the output-side atomic-pair boundary — the
+        // ProgressiveLayer altitude of that shape. Without this pin,
+        // a future edit that reroutes the From impl through a stale
+        // field or a lossy conversion would silently drift the two
+        // spellings.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(211_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facade_prov.yaml", dict);
+        let via_method = layer.clone().into_provenance();
+        let via_from: Provenance = layer.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_provenance_agrees_with_accessor_clone() {
+        // The std-trait facade is byte-equal to the borrow-side
+        // accessor followed by a clone — the same equality shape
+        // progressive_layer_into_provenance_agrees_with_accessor_clone
+        // pins on the inherent method, lifted onto the From std-trait
+        // surface. The load-bearing distinction is the same
+        // clone-avoidance: the facade moves the Provenance out at
+        // zero allocation, the accessor form pays a full Provenance
+        // clone with underlying ConfigSource re-allocation, but the
+        // two paths hand out the same Provenance byte-image on every
+        // input.
+        let mut dict = Dict::new();
+        dict.insert("options.padding".to_owned(), Value::from(212_u32));
+        let layer = ProgressiveLayer::env("SHIKUMI_FROM_FACADE_PROV_ACCESSOR_", dict);
+        let via_from: Provenance = layer.clone().into();
+        let via_accessor_clone = layer.provenance().clone();
+        assert_eq!(via_from, via_accessor_clone);
+    }
+
+    #[test]
+    fn progressive_layer_from_facade_provenance_preserves_leaf_stamp_through_fold() {
+        // End-to-end downstream pin: routing an overlay's provenance
+        // stamp through the std-trait `Provenance::from(layer)`
+        // facade and rebuilding a fresh overlay under the same Dict
+        // payload produces a fold output byte-identical to the one
+        // the original overlay produced. The std-trait sibling of
+        // progressive_layer_into_provenance_preserves_leaf_provenance_stamps
+        // on the inherent method — together they pin BOTH spellings
+        // of the single-coordinate stamp projection against the same
+        // downstream observation on the same seed overlay.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(213_u32));
+        let stamp = Provenance::file("/etc/from_facade_prov_end_to_end.yaml");
+        let seed = ProgressiveLayer::new(stamp, dict.clone());
+        let direct = Prog::resolve_progressive_with(&[seed.clone()]);
+        let via_facade_stamp: Provenance = seed.into();
+        let via_projection = ProgressiveLayer::new(via_facade_stamp, dict);
+        let via_projection_out = Prog::resolve_progressive_with(&[via_projection]);
+        assert_eq!(direct.value(), via_projection_out.value());
+        assert_eq!(direct.provenance(), via_projection_out.provenance());
+    }
+
+    #[test]
+    fn progressive_layer_from_facades_are_consistent_across_altitudes() {
+        // Cross-altitude consistency: the two single-coordinate
+        // facades (`<Dict>::from(layer)`, `<Provenance>::from(layer)`)
+        // and the pair-destructuring facade
+        // `<(Provenance, Dict)>::from(layer)` project the same
+        // coordinates on every input — the first field of the pair is
+        // byte-identical to the single-coordinate provenance
+        // projection, and the second is byte-identical to the
+        // single-coordinate dict projection. The input-side peer of
+        // progressive_resolution_from_facades_are_consistent_across_altitudes
+        // on the output side, lifted onto the two-coordinate closure
+        // the input side carries (the output side's value-coordinate
+        // single-projection facade is unavailable by coherence, so its
+        // cross-altitude pin only names the provenance coordinate;
+        // this pin names both).
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(221_u32));
+        let layer = ProgressiveLayer::file("/etc/from_facades_cross_layer.yaml", dict);
+        let via_single_dict: Dict = layer.clone().into();
+        let via_single_prov: Provenance = layer.clone().into();
+        let (via_pair_fst, via_pair_snd): (Provenance, Dict) = layer.into();
+        assert_eq!(via_single_prov, via_pair_fst);
+        assert_eq!(via_single_dict, via_pair_snd);
     }
 
     #[test]
