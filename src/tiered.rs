@@ -1318,6 +1318,54 @@ impl Provenance {
     pub const fn as_parts(&self) -> (ConfigTierKind, &ConfigSource) {
         (self.tier, &self.source)
     }
+
+    /// Consume `self`, yielding just the [`ConfigSource`] payload the
+    /// provenance carries (dropping the [`ConfigTierKind`] tier field) —
+    /// the single-coordinate consuming projection sibling of
+    /// [`Self::into_parts`] on the SOURCE coordinate of the atomic
+    /// `(tier, source)` pair, and the consuming-side peer of the
+    /// borrow-side accessor [`Self::source`].
+    ///
+    /// [`Self::source`] hands out a borrowed [`&ConfigSource`] when the
+    /// caller only needs to read it; [`Self::into_source`] hands out the
+    /// OWNED [`ConfigSource`] without cloning when the caller needs to
+    /// move it — a `ConfigPlane` broadcast surface routing just the layer
+    /// identity to a downstream consumer that already owns its tier, an
+    /// FFI boundary that owns the tier side elsewhere, an attestation
+    /// harness storing the owned source in a per-provenance sink without
+    /// paying the [`ConfigSource`] clone the borrow-and-clone form would
+    /// incur.
+    ///
+    /// Before this seam, a caller wanting to move just the
+    /// [`ConfigSource`] out of a [`Provenance`] reached through
+    /// `prov.into_parts().1` (destructures both fields, discards the
+    /// tier at the call site) or `prov.source().clone()` (a borrow-and-
+    /// clone that duplicates the underlying [`PathBuf`] / [`String`]
+    /// allocation), both of which name the atomic pair or the borrow
+    /// accessor at the call site rather than the single-coordinate
+    /// consuming projection.
+    ///
+    /// Peer of [`ProgressiveLayer::into_dict`] /
+    /// [`ProgressiveLayer::into_provenance`] one seam up on the container
+    /// level: the container's two single-coordinate consuming
+    /// projections hand out one field of the atomic `(provenance, dict)`
+    /// pair each; this method extends the same single-coordinate
+    /// consuming closure to the primitive [`Provenance`] on the SOURCE
+    /// coordinate of its atomic `(tier, source)` pair. The tier
+    /// coordinate is [`Copy`], so its consuming projection is the same
+    /// as reading [`Self::tier`] on `self` — [`Self::into_source`] is
+    /// the only single-coordinate consuming projection on
+    /// [`Provenance`] that avoids a clone.
+    ///
+    /// Pointwise equal to `self.into_parts().1` on every input — pinned
+    /// by [`tests::provenance_into_source_agrees_with_into_parts_snd`].
+    /// Pointwise equal to `self.source().clone()` on every input —
+    /// pinned by
+    /// [`tests::provenance_into_source_agrees_with_accessor_clone`].
+    #[must_use]
+    pub fn into_source(self) -> ConfigSource {
+        self.source
+    }
 }
 
 /// Std-trait facade over [`Provenance::into_parts`]: the same consuming
@@ -66475,6 +66523,91 @@ mod progressive_tests {
         // proof the two From impls are inverses on the atomic pair.
         let round_tripped: (ConfigTierKind, ConfigSource) = via_from.into();
         assert_eq!(round_tripped, pair);
+    }
+
+    #[test]
+    fn provenance_into_source_agrees_with_into_parts_snd() {
+        // The load-bearing pointwise agreement between the
+        // single-coordinate consuming projection into_source and the
+        // second element of the pair-destructuring into_parts on the
+        // same Provenance input. Source-coordinate sibling of
+        // provenance_into_parts_matches_field_accessors on the
+        // pair-altitude, and the primitive-level peer of
+        // progressive_layer_into_dict_agrees_with_into_parts_snd one
+        // seam up on the container level's payload coordinate. Without
+        // this pin, a future edit that reroutes into_source through a
+        // computation other than the direct field move could silently
+        // drift from the pair-destructuring path on the same primitive.
+        let prov = Provenance::file("/etc/into_source_prim.yaml");
+        let via_into_source = prov.clone().into_source();
+        let via_into_parts = prov.into_parts().1;
+        assert_eq!(via_into_source, via_into_parts);
+    }
+
+    #[test]
+    fn provenance_into_source_agrees_with_accessor_clone() {
+        // The consuming projection is byte-equal to self.source().clone(),
+        // pinning the clone-avoidance path against the borrow-and-clone
+        // path on the same Provenance input. Primitive-level peer of
+        // progressive_layer_into_dict_agrees_with_accessor_clone one seam
+        // up on the container level. Guards against a future edit to
+        // Clone for ConfigSource growing an additional side effect that
+        // the consuming form would skip — the PathBuf / String allocation
+        // the borrow-and-clone form pays would then no longer be a pure
+        // duplicate of what into_source moves out.
+        let prov = Provenance::env("SHIKUMI_PROVENANCE_INTO_SOURCE_ACCESSOR_");
+        let via_into_source = prov.clone().into_source();
+        let via_accessor_clone = prov.source().clone();
+        assert_eq!(via_into_source, via_accessor_clone);
+    }
+
+    #[test]
+    fn provenance_into_source_and_new_are_separable_siblings() {
+        // Reassembling the two independently-projected coordinates via
+        // Provenance::new recovers a provenance byte-equal to the seed —
+        // proof the atomic pair splits losslessly through the
+        // single-coordinate consuming projection into_source (source
+        // side) plus the Copy self.tier() (tier side, no consuming
+        // projection needed because ConfigTierKind is Copy). The
+        // primitive-level peer of
+        // progressive_layer_into_dict_and_new_are_separable_siblings one
+        // seam up on the container level, adapted for the Provenance
+        // primitive whose tier coordinate is Copy.
+        let seed = Provenance::file("/etc/into_source_separable.yaml");
+        let tier = seed.tier();
+        let source_only = seed.clone().into_source();
+        let reassembled = Provenance::new(tier, source_only);
+        assert_eq!(reassembled, seed);
+    }
+
+    #[test]
+    fn provenance_into_source_preserves_every_source_variant() {
+        // Coverage-shape pin: the consuming projection is a pure field
+        // move on every ConfigSource variant the primitive carries —
+        // Defaults, Env(prefix), File(path). Without this pin, a future
+        // edit that reroutes into_source through a match on the source
+        // variant (e.g. to strip a debug field, or to canonicalize a
+        // path) could silently mutate one arm and leave the others
+        // untouched. Iterating over the three named computed / operator
+        // constructors covers each of the three ConfigSource shapes at
+        // one seam.
+        let cases: [(Provenance, ConfigSource); 5] = [
+            (Provenance::bare(), ConfigSource::Defaults),
+            (Provenance::discovered(), ConfigSource::Defaults),
+            (Provenance::prescribed_default(), ConfigSource::Defaults),
+            (
+                Provenance::file("/etc/into_source_variant.yaml"),
+                ConfigSource::File(PathBuf::from("/etc/into_source_variant.yaml")),
+            ),
+            (
+                Provenance::env("SHIKUMI_INTO_SOURCE_VARIANT_"),
+                ConfigSource::Env("SHIKUMI_INTO_SOURCE_VARIANT_".to_owned()),
+            ),
+        ];
+        for (prov, expected_source) in cases {
+            let out = prov.into_source();
+            assert_eq!(out, expected_source);
+        }
     }
 
     #[test]
