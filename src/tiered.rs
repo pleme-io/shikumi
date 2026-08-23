@@ -1272,6 +1272,52 @@ impl Provenance {
     pub fn into_parts(self) -> (ConfigTierKind, ConfigSource) {
         (self.tier, self.source)
     }
+
+    /// Borrow the `(tier, source)` pair the provenance carries — the
+    /// borrow-side pair-projection sibling of [`Self::into_parts`] on the
+    /// atomic-pair coordinate of the primitive, and the pair-altitude peer
+    /// of the two single-coordinate accessors [`Self::tier`] /
+    /// [`Self::source`].
+    ///
+    /// [`Self::tier`] / [`Self::source`] hand out one coordinate each when
+    /// the caller only needs that single field; [`Self::as_parts`] hands
+    /// out both coordinates as one borrowed pair when the caller needs to
+    /// route the atomic pair through a bound expecting
+    /// `(ConfigTierKind, &ConfigSource)` (a pair-shaped predicate, a
+    /// fold-fixture harness reading the provenance's fields without ever
+    /// consuming it, a `/healthz/provenance` renderer projecting both
+    /// coordinates at once without paying the per-field
+    /// [`ConfigSource`] clone [`Self::into_parts`] would incur on the
+    /// consuming side). The tier coordinate is returned by value because
+    /// [`ConfigTierKind`] is [`Copy`] — a reference would be one indirection
+    /// step past the direct scalar — and the source coordinate is returned
+    /// by reference because [`ConfigSource`] owns its payload
+    /// ([`PathBuf`] / [`String`]) and returning a value would force a
+    /// clone the borrow-side spelling exists to avoid.
+    ///
+    /// Peer of [`ProgressiveLayer::as_parts`] /
+    /// [`ProgressiveResolution::as_parts`] one seam up on the container
+    /// level: the two container types close their atomic-pair
+    /// borrow-side pair-projection by exposing an inherent `as_parts`
+    /// alongside the two single-coordinate accessors; this method extends
+    /// the same closure to the primitive [`Provenance`] their
+    /// `provenance` field carries. Before this seam, a caller wanting to
+    /// borrow both coordinates of a [`Provenance`] reached through
+    /// `(prov.tier(), prov.source())` at the call site (which names the
+    /// two single-coordinate accessors rather than the pair-altitude
+    /// projection) or cloned through `prov.clone().into_parts()` (which
+    /// pays the [`ConfigSource`] clone the borrow-side form exists to
+    /// avoid).
+    ///
+    /// Pointwise equal to `(self.tier(), self.source())` on every input —
+    /// pinned by [`tests::provenance_as_parts_matches_field_accessors`].
+    /// The cloned pair is byte-identical to [`Self::into_parts`] on the
+    /// cloned input — pinned by
+    /// [`tests::provenance_as_parts_agrees_with_into_parts_after_clone`].
+    #[must_use]
+    pub const fn as_parts(&self) -> (ConfigTierKind, &ConfigSource) {
+        (self.tier, &self.source)
+    }
 }
 
 /// Std-trait facade over [`Provenance::into_parts`]: the same consuming
@@ -65809,6 +65855,88 @@ mod progressive_tests {
         let via_into_parts = prov.clone().into_parts();
         let via_accessors = (prov.tier(), prov.source().clone());
         assert_eq!(via_into_parts, via_accessors);
+    }
+
+    #[test]
+    fn provenance_as_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant on the borrow-side
+        // pair-projection sibling of into_parts at the Provenance primitive
+        // level: as_parts hands out exactly the same tuple the two
+        // single-coordinate accessors self.tier() / self.source() name
+        // individually, so the pair-altitude borrow spelling and the two
+        // single-coordinate borrow spellings are one operation, not a facade
+        // with drift. Without this pin, a future edit that reroutes as_parts
+        // through anything other than the direct (self.tier, &self.source)
+        // tuple could silently return a different pair. The primitive-level
+        // peer of progressive_layer_as_parts_matches_field_accessors one
+        // seam up on the container level.
+        let prov = Provenance::file("/etc/as_parts_prim.yaml");
+        let (via_as_parts_tier, via_as_parts_source) = prov.as_parts();
+        assert_eq!(via_as_parts_tier, prov.tier());
+        assert_eq!(via_as_parts_source, prov.source());
+    }
+
+    #[test]
+    fn provenance_as_parts_agrees_with_into_parts_after_clone() {
+        // The cross-altitude pin welding the borrow-side pair-projection
+        // to the consuming-side pair-destructuring at the primitive level:
+        // cloning the borrowed pair as_parts hands out and consuming the
+        // same provenance through into_parts produce byte-identical owned
+        // pairs. Guards against a future edit that reroutes either seam
+        // through a computation other than the direct field move — a
+        // source-watermark field added between tier and source, a Clone
+        // impl that grows a side effect the borrow path would skip. The
+        // primitive-level peer of
+        // progressive_layer_as_parts_agrees_with_into_parts_after_clone one
+        // seam up on the container level.
+        let prov = Provenance::env("SHIKUMI_PROVENANCE_AS_PARTS_CLONE_");
+        let (borrow_tier, borrow_source) = prov.as_parts();
+        let via_borrow_clone = (borrow_tier, borrow_source.clone());
+        let via_into_parts = prov.clone().into_parts();
+        assert_eq!(via_borrow_clone, via_into_parts);
+    }
+
+    #[test]
+    fn provenance_as_parts_projects_each_coordinate_independently() {
+        // The borrowed pair-projection factors cleanly into the two
+        // single-coordinate accessors: destructuring the pair as_parts
+        // hands out into (tier, source) recovers exactly what self.tier() /
+        // self.source() name at the single-coordinate altitude. Together
+        // with the "matches field accessors" pin above, this triangulates
+        // the pair-altitude borrow against the single-coordinate altitude
+        // across both projection axes at once, matching the shape
+        // into_parts + tier() / source() carry on the container-level
+        // peers. The primitive-level peer of
+        // progressive_layer_as_parts_projects_each_coordinate_independently.
+        let prov = Provenance::bare();
+        let (tier, source) = prov.as_parts();
+        // ConfigTierKind is Copy — value-equal, not address-equal, on the
+        // tier coordinate — but source is borrowed at the same layout
+        // offset as the single-coordinate self.source() accessor.
+        assert_eq!(tier, prov.tier());
+        assert!(std::ptr::eq(source, prov.source()));
+    }
+
+    #[test]
+    fn provenance_as_parts_is_const_callable() {
+        // const-fn callability pin on the borrow-side pair-projection:
+        // as_parts is `pub const fn`, so it can appear in a const context
+        // (const eval, `static` initializers, associated `const`). Guards
+        // the const seal from a future edit that reaches for a non-const
+        // operation inside the accessor body — the natural drift risk
+        // whenever a field's projection grows from a direct move into a
+        // computed derivation. Direct primitive-level peer of the const-fn
+        // seal already carried by Self::tier and Self::source individually.
+        // Provenance::computed is the const-callable seam Provenance::bare()
+        // wraps (bare() is `pub fn`, not const, but the tier ↔ source
+        // pairing it names is a const move through computed). A `static`
+        // binding — not a `const` — is used so the borrowed source in the
+        // pair has a `'static` referent (ConfigSource holds a PathBuf and
+        // cannot be dropped in a const context).
+        static PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+        const PARTS: (ConfigTierKind, &ConfigSource) = PROV.as_parts();
+        assert_eq!(PARTS.0, ConfigTierKind::Bare);
+        assert!(matches!(PARTS.1, ConfigSource::Defaults));
     }
 
     #[test]
