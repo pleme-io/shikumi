@@ -1409,6 +1409,48 @@ impl From<(ConfigTierKind, ConfigSource)> for Provenance {
     }
 }
 
+/// Std-trait facade over [`Provenance::into_source`]: the same
+/// single-coordinate consuming projection onto the [`ConfigSource`]
+/// coordinate of the atomic `(tier, source)` pair, spelled
+/// `ConfigSource::from(prov)` / `prov.into()` for callers routing through
+/// the [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `T: Into<ConfigSource>`).
+///
+/// Pointwise equal to [`Provenance::into_source`] on every input — pinned
+/// by [`tests::provenance_from_facade_agrees_with_into_source`]. The
+/// primitive-level peer of [`From<ProgressiveLayer> for Dict`] and
+/// [`From<ProgressiveLayer> for Provenance`] one seam up on the container
+/// level — the two single-coordinate consuming projections on the fold's
+/// input overlay both expose the same `(inherent into_*, From std-trait
+/// facade)` closure, and this impl lifts that closure onto the
+/// [`Provenance`] primitive the containers hold at the source coordinate
+/// of its atomic pair. Only the source-coordinate facade is added, not a
+/// companion `From<Provenance> for ConfigTierKind`, matching the
+/// asymmetry [`Self::into_source`] already carries: [`ConfigTierKind`] is
+/// [`Copy`], so the consuming projection on the tier coordinate is the
+/// same as reading [`Self::tier`] on `self` — the tier-coordinate
+/// std-trait facade would not close a gap the inherent surface leaves
+/// open.
+///
+/// Compounds:
+/// - A downstream generic bound `T: Into<ConfigSource>` — a diagnostic
+///   renderer that generic-projects the layer identity of any
+///   provenance-carrying primitive through one `.into()` call, a
+///   `ConfigPlane` broadcast surface routing just the owned layer
+///   identity (env prefix / file path) to a downstream consumer that
+///   already owns its tier, an attestation harness storing owned
+///   sources in a per-provenance sink — picks up [`Provenance`] for
+///   free without naming the inherent projection method.
+/// - `ConfigSource::from(prov)` writes cleanly at the call site without
+///   the borrow-and-clone allocation the accessor form
+///   (`prov.source().clone()`) carries on the underlying `PathBuf` /
+///   `String` payload.
+impl From<Provenance> for ConfigSource {
+    fn from(prov: Provenance) -> Self {
+        prov.into_source()
+    }
+}
+
 impl std::fmt::Display for Provenance {
     /// Typed emission: the tier label ([`ConfigTierKind::as_str`]) plus the
     /// source detail (env prefix / file path) rendered through the typed
@@ -66608,6 +66650,105 @@ mod progressive_tests {
             let out = prov.into_source();
             assert_eq!(out, expected_source);
         }
+    }
+
+    #[test]
+    fn provenance_from_facade_agrees_with_into_source() {
+        // The load-bearing pointwise agreement between the std-trait
+        // facade `<ConfigSource>::from(prov)` and the inherent
+        // `prov.into_source()` method on the same Provenance input.
+        // The primitive-level peer of
+        // progressive_layer_from_facade_agrees_with_into_dict one seam
+        // up on the container's payload coordinate — both facades hand
+        // out exactly what their inherent counterparts hand out, so a
+        // downstream generic bound `T: Into<ConfigSource>` picks up
+        // Provenance for free — the same way
+        // `T: Into<(ConfigTierKind, ConfigSource)>` already picks it
+        // up through the pair-destructuring facade at the primitive
+        // altitude. Without this pin, a future edit that reroutes the
+        // From impl through a stale field, a per-variant clone, or a
+        // lossy conversion would silently drift the two spellings.
+        let prov = Provenance::file("/etc/from_facade_source_prim.yaml");
+        let via_method = prov.clone().into_source();
+        let via_from: ConfigSource = prov.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn provenance_from_facade_source_agrees_with_accessor_clone() {
+        // The std-trait facade is byte-equal to the borrow-side
+        // accessor followed by a clone — the same equality shape
+        // provenance_into_source_agrees_with_accessor_clone pins on
+        // the inherent method, lifted onto the From std-trait
+        // surface. The load-bearing distinction is the same
+        // clone-avoidance: the facade moves the ConfigSource out at
+        // zero allocation, the accessor form pays a PathBuf / String
+        // re-allocation, but the two paths hand out the same
+        // ConfigSource byte-image on every input. Primitive-level
+        // peer of
+        // progressive_layer_from_facade_dict_agrees_with_accessor_clone
+        // one seam up on the container's payload coordinate.
+        let prov = Provenance::env("SHIKUMI_FROM_FACADE_SOURCE_ACCESSOR_");
+        let via_from: ConfigSource = prov.clone().into();
+        let via_accessor_clone = prov.source().clone();
+        assert_eq!(via_from, via_accessor_clone);
+    }
+
+    #[test]
+    fn provenance_from_facade_source_preserves_every_source_variant() {
+        // Coverage-shape pin: the std-trait facade is a pure delegate
+        // through the inherent into_source method on every
+        // ConfigSource variant the primitive carries — Defaults,
+        // Env(prefix), File(path). Guards against a future edit that
+        // reroutes the From impl through a variant-shaped match (path
+        // canonicalization, prefix normalization, debug-field strip)
+        // that could silently mutate one arm and leave the others
+        // untouched. Iterating over the five named computed / operator
+        // constructors covers each of the three ConfigSource shapes at
+        // one seam — the same coverage shape
+        // provenance_into_source_preserves_every_source_variant pins
+        // on the inherent method, lifted onto the From std-trait
+        // surface.
+        let cases: [(Provenance, ConfigSource); 5] = [
+            (Provenance::bare(), ConfigSource::Defaults),
+            (Provenance::discovered(), ConfigSource::Defaults),
+            (Provenance::prescribed_default(), ConfigSource::Defaults),
+            (
+                Provenance::file("/etc/from_facade_source_variant.yaml"),
+                ConfigSource::File(PathBuf::from("/etc/from_facade_source_variant.yaml")),
+            ),
+            (
+                Provenance::env("SHIKUMI_FROM_FACADE_SOURCE_VARIANT_"),
+                ConfigSource::Env("SHIKUMI_FROM_FACADE_SOURCE_VARIANT_".to_owned()),
+            ),
+        ];
+        for (prov, expected_source) in cases {
+            let out: ConfigSource = prov.into();
+            assert_eq!(out, expected_source);
+        }
+    }
+
+    #[test]
+    fn provenance_from_facades_are_consistent_across_altitudes() {
+        // Cross-altitude consistency: the single-coordinate std-trait
+        // facade `<ConfigSource>::from(prov)` and the pair-destructuring
+        // facade `<(ConfigTierKind, ConfigSource)>::from(prov)` project
+        // the same source coordinate on every input — the second
+        // element of the pair is byte-identical to the single-coordinate
+        // source projection. Primitive-level peer of
+        // progressive_layer_from_facades_are_consistent_across_altitudes
+        // one seam up on the container, adapted for the Provenance
+        // primitive whose tier coordinate is Copy (so the tier-side
+        // std-trait facade is absent — see the From<Provenance> for
+        // ConfigSource docstring for the asymmetry rationale). Without
+        // this pin, the pair-destructuring facade and the source-only
+        // facade could silently disagree on the same input if a future
+        // edit reroutes one of the two through a different projection
+        // path than the other.
+        let prov = Provenance::file("/etc/from_facades_consistent_prim.yaml");
+        let source_only: ConfigSource = prov.clone().into();
+        let pair: (ConfigTierKind, ConfigSource) = prov.into();
+        assert_eq!(pair.1, source_only);
     }
 
     #[test]
