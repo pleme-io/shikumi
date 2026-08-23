@@ -19216,9 +19216,47 @@ impl ProgressiveLayer {
         self.provenance
     }
 
+    /// Borrow the `(provenance, dict)` pair the overlay carries — the
+    /// borrow-side pair-projection sibling of [`Self::into_parts`] on the
+    /// atomic-pair coordinate of the fold's input overlay, and the
+    /// pair-altitude peer of the two single-coordinate accessors
+    /// [`Self::provenance`] / [`Self::dict`].
+    ///
+    /// [`Self::provenance`] / [`Self::dict`] hand out one coordinate each
+    /// when the caller only needs that single field; [`Self::as_parts`]
+    /// hands out both coordinates as one borrowed pair when the caller
+    /// needs to route the atomic pair through a bound expecting
+    /// `(&Provenance, &Dict)` (a pair-shaped predicate, a fold-fixture
+    /// harness reading the overlay's fields without ever consuming it, a
+    /// diagnostic renderer projecting both coordinates at once without
+    /// paying a per-field allocation). The three inherent seams on the
+    /// borrow side — the two single-coordinate accessors and this
+    /// pair-projection — now match the three inherent seams on the
+    /// consuming side (single-coordinate [`Self::into_dict`] /
+    /// [`Self::into_provenance`] plus pair-destructuring
+    /// [`Self::into_parts`]) at every altitude of the atomic-pair
+    /// ownership boundary.
+    ///
+    /// Symmetric with [`ProgressiveResolution::as_parts`] one seam over
+    /// on the output side of the fold's atomic-pair ownership boundary:
+    /// both hand out the atomic pair as a borrowed tuple, both allocate
+    /// nothing (references are copies of the layout offsets), both are
+    /// `#[must_use]`. Pointwise equal to
+    /// `(self.provenance(), self.dict())` on every input — pinned by
+    /// [`tests::progressive_layer_as_parts_matches_field_accessors`]. The
+    /// cloned pair is byte-identical to [`Self::into_parts`] on the
+    /// cloned input — pinned by
+    /// [`tests::progressive_layer_as_parts_agrees_with_into_parts_after_clone`].
+    #[must_use]
+    pub fn as_parts(&self) -> (&Provenance, &Dict) {
+        (&self.provenance, &self.dict)
+    }
+
     /// Consume `self`, yielding the owned `(provenance, dict)` pair the
     /// overlay carries — the consuming destructuring dual of the borrow-side
-    /// [`Self::provenance`] / [`Self::dict`] accessor pair.
+    /// [`Self::provenance`] / [`Self::dict`] accessor pair, and the
+    /// consuming-side peer of the borrowed pair-projection
+    /// [`Self::as_parts`].
     ///
     /// Peer of [`ProgressiveResolution::into_parts`] on the atomic-pair
     /// ownership boundary: [`ProgressiveResolution::into_parts`] hands out
@@ -19518,9 +19556,41 @@ impl<T> ProgressiveResolution<T> {
         self.provenance
     }
 
+    /// Borrow the `(value, provenance)` pair the resolution carries —
+    /// the borrow-side pair-projection sibling of [`Self::into_parts`] on
+    /// the atomic-pair coordinate of the fold's output resolution, and
+    /// the pair-altitude peer of the two single-coordinate accessors
+    /// [`Self::value`] / [`Self::provenance`].
+    ///
+    /// [`Self::value`] / [`Self::provenance`] hand out one coordinate
+    /// each when the caller only needs that single field;
+    /// [`Self::as_parts`] hands out both coordinates as one borrowed
+    /// pair when the caller needs to route the atomic pair through a
+    /// bound expecting `(&T, &ProvenanceMap)` (a pair-shaped predicate,
+    /// a fold-fixture harness reading the resolution's fields without
+    /// ever consuming it, a `/healthz/provenance` renderer serializing
+    /// both coordinates side-by-side without paying the per-field
+    /// [`ProvenanceMap`] clone).
+    ///
+    /// Symmetric with [`ProgressiveLayer::as_parts`] one seam over on
+    /// the input side of the fold's atomic-pair ownership boundary: both
+    /// hand out the atomic pair as a borrowed tuple, both allocate
+    /// nothing (references are copies of the layout offsets), both are
+    /// `#[must_use]`. Pointwise equal to
+    /// `(self.value(), self.provenance())` on every input — pinned by
+    /// [`progressive_tests::progressive_resolution_as_parts_matches_field_accessors`].
+    /// The cloned pair is byte-identical to [`Self::into_parts`] on the
+    /// cloned input — pinned by
+    /// [`progressive_tests::progressive_resolution_as_parts_agrees_with_into_parts_after_clone`].
+    #[must_use]
+    pub fn as_parts(&self) -> (&T, &ProvenanceMap) {
+        (&self.value, &self.provenance)
+    }
+
     /// Consume, yielding both the value and its provenance map — the
     /// consuming destructuring dual of the borrow-side [`Self::value`] /
-    /// [`Self::provenance`] accessor pair.
+    /// [`Self::provenance`] accessor pair, and the consuming-side peer
+    /// of the borrowed pair-projection [`Self::as_parts`].
     ///
     /// Peer of [`ProgressiveLayer::into_parts`] on the atomic-pair
     /// ownership boundary: [`ProgressiveLayer::into_parts`] hands out
@@ -65979,6 +66049,69 @@ mod progressive_tests {
     }
 
     #[test]
+    fn progressive_layer_as_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant on the borrow-side
+        // pair-projection sibling of into_parts: as_parts hands out
+        // exactly the same borrowed pair the two single-coordinate
+        // accessors self.provenance() / self.dict() name individually,
+        // so the pair-altitude borrow spelling and the two
+        // single-coordinate borrow spellings are one operation, not a
+        // facade with drift. Without this pin, a future edit that
+        // reroutes as_parts through anything other than the direct
+        // (&self.provenance, &self.dict) tuple could silently return a
+        // different pair. The input-side peer of
+        // progressive_resolution_as_parts_matches_field_accessors on the
+        // output side.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(17_u32));
+        let layer = ProgressiveLayer::file("/etc/as_parts.yaml", dict);
+        let (via_as_parts_prov, via_as_parts_dict) = layer.as_parts();
+        assert_eq!(via_as_parts_prov, layer.provenance());
+        assert_eq!(via_as_parts_dict, layer.dict());
+    }
+
+    #[test]
+    fn progressive_layer_as_parts_agrees_with_into_parts_after_clone() {
+        // The cross-altitude pin welding the borrow-side pair-projection
+        // to the consuming-side pair-destructuring: cloning the borrowed
+        // pair as_parts hands out and consuming the same layer through
+        // into_parts produce byte-identical owned pairs. Guards against
+        // a future edit that reroutes either seam through a computation
+        // other than the direct field move — a fold-source watermark
+        // field added between provenance and dict, a Clone impl that
+        // grows a side effect the borrow path would skip. The input-side
+        // peer of progressive_resolution_as_parts_agrees_with_into_parts_after_clone.
+        let mut dict = Dict::new();
+        dict.insert("options.padding".to_owned(), Value::from(5_u32));
+        let layer = ProgressiveLayer::env("SHIKUMI_AS_PARTS_CLONE_", dict);
+        let (borrow_prov, borrow_dict) = layer.as_parts();
+        let via_borrow_clone = (borrow_prov.clone(), borrow_dict.clone());
+        let via_into_parts = layer.clone().into_parts();
+        assert_eq!(via_borrow_clone, via_into_parts);
+    }
+
+    #[test]
+    fn progressive_layer_as_parts_projects_each_coordinate_independently() {
+        // The borrowed pair-projection factors cleanly into the two
+        // single-coordinate borrow accessors: destructuring the pair
+        // as_parts hands out into (prov, dict) recovers exactly what
+        // self.provenance() / self.dict() name at the single-coordinate
+        // altitude. Together with the "matches field accessors" pin
+        // above, this triangulates the pair-altitude borrow against the
+        // single-coordinate altitude across both projection axes at
+        // once, matching the shape into_parts + into_dict / into_provenance
+        // carry on the consuming side.
+        let mut dict = Dict::new();
+        dict.insert("theme".to_owned(), Value::from("dark".to_owned()));
+        let layer = ProgressiveLayer::discovered(dict);
+        let (prov, d) = layer.as_parts();
+        // Same field-wise addresses as the single-coordinate accessors:
+        // as_parts is a borrow-projection over the same layout offsets.
+        assert!(std::ptr::eq(prov, layer.provenance()));
+        assert!(std::ptr::eq(d, layer.dict()));
+    }
+
+    #[test]
     fn progressive_layer_into_dict_agrees_with_into_parts_snd() {
         // The load-bearing pointwise agreement between the
         // single-coordinate consuming projection into_dict and the
@@ -66395,6 +66528,68 @@ mod progressive_tests {
         let via_into_parts = r.clone().into_parts();
         let via_accessors = (r.value().clone(), r.provenance().clone());
         assert_eq!(via_into_parts, via_accessors);
+    }
+
+    #[test]
+    fn progressive_resolution_as_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant on the borrow-side
+        // pair-projection sibling of into_parts on the OUTPUT side of
+        // the atomic-pair ownership boundary: as_parts hands out
+        // exactly the same borrowed pair the two single-coordinate
+        // accessors self.value() / self.provenance() name individually.
+        // The output-side peer of
+        // progressive_layer_as_parts_matches_field_accessors on the
+        // input side: both members of the fold's atomic-pair boundary
+        // (input ProgressiveLayer, output ProgressiveResolution) now
+        // expose the borrow-side pair-projection at a named seam.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(51_u32));
+        let layer = ProgressiveLayer::file("/etc/as_parts_res.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let (via_as_parts_val, via_as_parts_prov) = r.as_parts();
+        assert_eq!(via_as_parts_val, r.value());
+        assert_eq!(via_as_parts_prov, r.provenance());
+    }
+
+    #[test]
+    fn progressive_resolution_as_parts_agrees_with_into_parts_after_clone() {
+        // The cross-altitude pin welding the borrow-side pair-projection
+        // to the consuming-side pair-destructuring on the OUTPUT side:
+        // cloning the borrowed pair as_parts hands out and consuming
+        // the same resolution through into_parts produce byte-identical
+        // owned pairs. Output-side peer of
+        // progressive_layer_as_parts_agrees_with_into_parts_after_clone.
+        // Together with the analogous pins one seam over, both
+        // altitudes of the borrow surface (single-coordinate accessors +
+        // pair-projection) match both altitudes of the consuming surface
+        // (single-coordinate into_value / into_provenance +
+        // pair-destructuring into_parts) on the same fold-output atomic
+        // pair.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(73_u32));
+        let layer = ProgressiveLayer::file("/etc/as_parts_res_clone.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let (borrow_val, borrow_prov) = r.as_parts();
+        let via_borrow_clone = (borrow_val.clone(), borrow_prov.clone());
+        let via_into_parts = r.clone().into_parts();
+        assert_eq!(via_borrow_clone, via_into_parts);
+    }
+
+    #[test]
+    fn progressive_resolution_as_parts_projects_each_coordinate_independently() {
+        // The borrowed pair-projection factors cleanly into the two
+        // single-coordinate borrow accessors on the output side:
+        // destructuring the pair as_parts hands out into (value, prov)
+        // recovers exactly what self.value() / self.provenance() name
+        // at the single-coordinate altitude. Output-side peer of
+        // progressive_layer_as_parts_projects_each_coordinate_independently.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(23_u32));
+        let layer = ProgressiveLayer::file("/etc/as_parts_res_ptr.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let (val, prov) = r.as_parts();
+        assert!(std::ptr::eq(val, r.value()));
+        assert!(std::ptr::eq(prov, r.provenance()));
     }
 
     #[test]
