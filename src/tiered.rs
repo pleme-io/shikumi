@@ -19627,6 +19627,118 @@ impl From<(Provenance, Dict)> for ProgressiveLayer {
     }
 }
 
+/// Std-trait borrow-side facade over [`ProgressiveLayer::dict`]: the same
+/// borrow accessor onto the payload [`Dict`] coordinate of the atomic
+/// `(provenance, dict)` pair, spelled `layer.as_ref()` for callers
+/// routing through the [`AsRef`] blanket ([`AsRef::as_ref`] chains,
+/// generic bounds `T: AsRef<Dict>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::dict`] on every input — pinned
+/// by
+/// [`progressive_tests::progressive_layer_as_ref_dict_agrees_with_dict_accessor`].
+/// The borrow-side peer of the consuming-side
+/// [`From<ProgressiveLayer> for Dict`] facade above: the two together
+/// close the std-trait facade closure on the payload [`Dict`] coordinate
+/// across both ownership altitudes — consuming via [`From`], borrowing
+/// via [`AsRef`] — the same shape the inherent surface already carries
+/// via [`Self::into_dict`] + [`Self::dict`]. On every input, the
+/// [`AsRef::as_ref`] projection is byte-equal to the value the
+/// consuming-side [`From`] facade would hand out on `self.clone()` —
+/// pinned by
+/// [`progressive_tests::progressive_layer_as_ref_dict_is_borrow_side_dual_of_from_facade`].
+///
+/// Container-level lift of the primitive-level
+/// [`AsRef<ConfigSource> for Provenance`] facade one seam down at the
+/// [`Provenance`] primitive: both are the borrow-side std-trait facade
+/// over an inherent borrow accessor on one coordinate of an atomic pair,
+/// both are pointwise-equal to their inherent counterpart, both are the
+/// borrow-side peer of a matching consuming-side [`From`] facade on the
+/// same coordinate. Together with the stamp-coordinate
+/// [`AsRef<Provenance> for ProgressiveLayer`] facade below, this closes
+/// both single-coordinate borrow-side [`AsRef`] facades on the overlay,
+/// matching the shape the two single-coordinate consuming-side [`From`]
+/// facades on the overlay already carry: consuming callers move each
+/// coordinate out at zero allocation, borrowing callers hand out a
+/// reference to the same underlying storage — no divergence surface
+/// between the inherent and std-trait spellings on either altitude.
+///
+/// Compounds:
+/// - A downstream generic bound `T: AsRef<Dict>` — a `ProviderChain`
+///   figment-fold sink that borrow-reads the payload dict of any
+///   `AsRef<Dict>` input, a diagnostic renderer that walks the leaves of
+///   the overlay's payload without ever consuming it, a `ConfigPlane`
+///   broadcast surface routing just the borrowed payload through a sink
+///   expecting `&Dict` — picks up a [`ProgressiveLayer`] for free
+///   without naming the inherent [`Self::dict`] borrow accessor.
+/// - Composes with [`ProgressiveLayer`] on both ownership altitudes at
+///   zero allocation: consuming callers move the [`Dict`] out via the
+///   [`From`] facade above (the payload's underlying `BTreeMap` moves
+///   once, not clones), borrowing callers hand out a reference to the
+///   same underlying storage via this [`AsRef`] facade — the two
+///   spellings share their inherent primitives ([`Self::into_dict`] /
+///   [`Self::dict`]) with no divergence surface between them.
+impl AsRef<Dict> for ProgressiveLayer {
+    fn as_ref(&self) -> &Dict {
+        &self.dict
+    }
+}
+
+/// Std-trait borrow-side facade over [`ProgressiveLayer::provenance`]:
+/// the same borrow accessor onto the [`Provenance`] stamp coordinate of
+/// the atomic `(provenance, dict)` pair, spelled `layer.as_ref()` for
+/// callers routing through the [`AsRef`] blanket ([`AsRef::as_ref`]
+/// chains, generic bounds `T: AsRef<Provenance>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::provenance`] on every input —
+/// pinned by
+/// [`progressive_tests::progressive_layer_as_ref_provenance_agrees_with_provenance_accessor`].
+/// The borrow-side peer of the consuming-side
+/// [`From<ProgressiveLayer> for Provenance`] facade above: the two
+/// together close the std-trait facade closure on the [`Provenance`]
+/// stamp coordinate across both ownership altitudes — consuming via
+/// [`From`], borrowing via [`AsRef`] — the same shape the inherent
+/// surface already carries via [`Self::into_provenance`] +
+/// [`Self::provenance`]. On every input, the [`AsRef::as_ref`]
+/// projection is byte-equal to the value the consuming-side [`From`]
+/// facade would hand out on `self.clone()` — pinned by
+/// [`progressive_tests::progressive_layer_as_ref_provenance_is_borrow_side_dual_of_from_facade`].
+///
+/// Stamp-coordinate sibling of the payload-coordinate
+/// [`AsRef<Dict> for ProgressiveLayer`] facade above: together the two
+/// close BOTH single-coordinate borrow-side [`AsRef`] facades on the
+/// overlay, matching the shape the two single-coordinate consuming-side
+/// [`From`] facades on the overlay already carry. Input-side mirror of
+/// the primitive-level [`AsRef<ConfigSource> for Provenance`] facade one
+/// seam down at the [`Provenance`] primitive, adapted for the container
+/// altitude — the container carries both coordinates of the atomic pair
+/// on non-[`Copy`] targets, so BOTH single-coordinate [`AsRef`] facades
+/// land, not just the source-coordinate one the primitive-level facade
+/// carries (there the tier-coordinate [`AsRef`] would not close a gap
+/// because [`ConfigTierKind`] is [`Copy`]).
+///
+/// Compounds:
+/// - A downstream generic bound `T: AsRef<Provenance>` — an attestation
+///   harness reading the per-overlay stamp without ever consuming the
+///   layer, a diagnostic renderer that generic-borrows the layer
+///   identity of any provenance-carrying primitive through one
+///   `.as_ref()` call, a `ConfigPlane` broadcast surface routing just
+///   the borrowed per-overlay stamp through a sink expecting
+///   `&Provenance` — picks up a [`ProgressiveLayer`] for free without
+///   naming the inherent [`Self::provenance`] borrow accessor.
+/// - Composes with [`ProgressiveLayer`] on both ownership altitudes at
+///   zero allocation: consuming callers move the [`Provenance`] out via
+///   the [`From`] facade above (the stamp's underlying [`ConfigSource`]
+///   payload moves once, not clones), borrowing callers hand out a
+///   reference to the same underlying storage via this [`AsRef`]
+///   facade — the two spellings share their inherent primitives
+///   ([`Self::into_provenance`] / [`Self::provenance`]) with no
+///   divergence surface between them.
+impl AsRef<Provenance> for ProgressiveLayer {
+    fn as_ref(&self) -> &Provenance {
+        &self.provenance
+    }
+}
+
 // ── ProgressiveResolution — the (value, provenance) pair the fold returns ──
 
 /// The atomic result of [`TieredConfig::resolve_progressive`]: the resolved
@@ -66926,6 +67038,187 @@ mod progressive_tests {
         // underlying storage the direct AsRef call does, not a re-emit
         // through a hidden intermediate.
         assert!(std::ptr::eq(borrowed, prov.source()));
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_dict_agrees_with_dict_accessor() {
+        // The load-bearing pointwise agreement between the AsRef
+        // std-trait borrow-side facade `<ProgressiveLayer as
+        // AsRef<Dict>>::as_ref(&layer)` and the inherent `layer.dict()`
+        // borrow accessor on the same overlay input. Borrow-side peer of
+        // progressive_layer_from_facade_agrees_with_into_dict one
+        // ownership altitude over on the consuming side — both facades
+        // hand out exactly what their inherent counterparts hand out on
+        // the Dict payload coordinate of the atomic (provenance, dict)
+        // pair, so a downstream generic bound `T: AsRef<Dict>` picks up
+        // ProgressiveLayer for free — the same way `T: Into<Dict>`
+        // already picks it up through the consuming-side From facade.
+        // Without this pin, a future edit that reroutes the AsRef impl
+        // through a stale field, a per-entry clone, or a lossy projection
+        // would silently drift the two spellings.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(231_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_dict.yaml", dict);
+        let via_method: &Dict = layer.dict();
+        let via_as_ref: &Dict = <ProgressiveLayer as AsRef<Dict>>::as_ref(&layer);
+        assert_eq!(via_method, via_as_ref);
+        // Reference identity — the AsRef facade must hand out the SAME
+        // underlying storage as the inherent accessor, not a re-emitted
+        // clone.
+        assert!(std::ptr::eq(via_method, via_as_ref));
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_dict_is_borrow_side_dual_of_from_facade() {
+        // Cross-altitude consistency: the borrow-side AsRef facade
+        // (`<ProgressiveLayer as AsRef<Dict>>::as_ref(&layer)`) and the
+        // consuming-side From facade (`<Dict>::from(layer.clone())`)
+        // project the same Dict payload coordinate on every input — the
+        // reference the borrow facade hands out is byte-equal to the
+        // owned value the consuming facade hands out on the cloned input.
+        // Together the two facades close the std-trait facade closure on
+        // the Dict payload coordinate across both ownership altitudes:
+        // consuming via From, borrowing via AsRef. Container-level peer
+        // of provenance_as_ref_configsource_is_borrow_side_dual_of_from_facade
+        // one seam down at the Provenance primitive, adapted for the
+        // overlay's payload coordinate.
+        let cases: [(&str, u32); 3] = [
+            ("b", 241_u32),
+            ("options.padding", 242_u32),
+            ("nested.deep.leaf", 243_u32),
+        ];
+        for (key, val) in cases {
+            let mut dict = Dict::new();
+            dict.insert(key.to_owned(), Value::from(val));
+            let layer = ProgressiveLayer::env("SHIKUMI_AS_REF_DICT_DUAL_", dict);
+            let via_as_ref: &Dict = layer.as_ref();
+            let via_from: Dict = layer.clone().into();
+            assert_eq!(via_as_ref, &via_from);
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_dict_composes_through_generic_bound() {
+        // Idiom-shape pin: the AsRef std-trait borrow facade composes
+        // through a generic bound `T: AsRef<Dict>` — a call site that
+        // generic-borrows the Dict payload coordinate of any
+        // AsRef<Dict> input picks up ProgressiveLayer without naming the
+        // inherent dict() accessor. This is the load-bearing reason the
+        // AsRef facade exists on top of the inherent accessor: it welds
+        // ProgressiveLayer onto the std generic-borrow idiom the same way
+        // the From<ProgressiveLayer> for Dict facade welds it onto the
+        // std generic-consume idiom (Into<Dict>).
+        fn borrow_dict<T: AsRef<Dict>>(t: &T) -> &Dict {
+            t.as_ref()
+        }
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(251_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_dict_generic.yaml", dict);
+        let borrowed = borrow_dict(&layer);
+        assert_eq!(borrowed, layer.dict());
+        assert!(std::ptr::eq(borrowed, layer.dict()));
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_provenance_agrees_with_provenance_accessor() {
+        // The load-bearing pointwise agreement between the AsRef
+        // std-trait borrow-side facade `<ProgressiveLayer as
+        // AsRef<Provenance>>::as_ref(&layer)` and the inherent
+        // `layer.provenance()` borrow accessor on the same overlay
+        // input. Borrow-side peer of
+        // progressive_layer_from_facade_agrees_with_into_provenance one
+        // ownership altitude over on the consuming side — both facades
+        // hand out exactly what their inherent counterparts hand out on
+        // the Provenance stamp coordinate of the atomic (provenance,
+        // dict) pair, so a downstream generic bound `T: AsRef<Provenance>`
+        // picks up ProgressiveLayer for free — the same way
+        // `T: Into<Provenance>` already picks it up through the
+        // consuming-side From facade.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(261_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_prov.yaml", dict);
+        let via_method: &Provenance = layer.provenance();
+        let via_as_ref: &Provenance = <ProgressiveLayer as AsRef<Provenance>>::as_ref(&layer);
+        assert_eq!(via_method, via_as_ref);
+        // Reference identity — the AsRef facade must hand out the SAME
+        // underlying storage as the inherent accessor, not a re-emitted
+        // clone.
+        assert!(std::ptr::eq(via_method, via_as_ref));
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_provenance_is_borrow_side_dual_of_from_facade() {
+        // Cross-altitude consistency: the borrow-side AsRef facade
+        // (`<ProgressiveLayer as AsRef<Provenance>>::as_ref(&layer)`) and
+        // the consuming-side From facade
+        // (`<Provenance>::from(layer.clone())`) project the same
+        // Provenance stamp coordinate on every input — the reference the
+        // borrow facade hands out is byte-equal to the owned value the
+        // consuming facade hands out on the cloned input. Together the
+        // two facades close the std-trait facade closure on the
+        // Provenance stamp coordinate across both ownership altitudes:
+        // consuming via From, borrowing via AsRef. Exercised across the
+        // three overlay-stamp constructors (file / env / discovered) so
+        // each ConfigSource shape the stamp can carry is covered at one
+        // seam.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(271_u32));
+        let stamps: [Provenance; 3] = [
+            Provenance::file("/etc/as_ref_prov_dual.yaml"),
+            Provenance::env("SHIKUMI_AS_REF_PROV_DUAL_"),
+            Provenance::discovered(),
+        ];
+        for stamp in stamps {
+            let layer = ProgressiveLayer::new(stamp, dict.clone());
+            let via_as_ref: &Provenance = layer.as_ref();
+            let via_from: Provenance = layer.clone().into();
+            assert_eq!(via_as_ref, &via_from);
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_provenance_composes_through_generic_bound() {
+        // Idiom-shape pin: the AsRef std-trait borrow facade composes
+        // through a generic bound `T: AsRef<Provenance>` — a call site
+        // that generic-borrows the Provenance stamp coordinate of any
+        // AsRef<Provenance> input picks up ProgressiveLayer without
+        // naming the inherent provenance() accessor. This is the
+        // load-bearing reason the AsRef facade exists on top of the
+        // inherent accessor: it welds ProgressiveLayer onto the std
+        // generic-borrow idiom the same way the From<ProgressiveLayer>
+        // for Provenance facade welds it onto the std generic-consume
+        // idiom (Into<Provenance>).
+        fn borrow_prov<T: AsRef<Provenance>>(t: &T) -> &Provenance {
+            t.as_ref()
+        }
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(281_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_prov_generic.yaml", dict);
+        let borrowed = borrow_prov(&layer);
+        assert_eq!(borrowed, layer.provenance());
+        assert!(std::ptr::eq(borrowed, layer.provenance()));
+    }
+
+    #[test]
+    fn progressive_layer_as_ref_facades_are_consistent_across_coordinates() {
+        // Cross-coordinate consistency: the two borrow-side AsRef
+        // facades (`<ProgressiveLayer as AsRef<Dict>>::as_ref` and
+        // `<ProgressiveLayer as AsRef<Provenance>>::as_ref`) borrow the
+        // same two coordinates the pair-borrowing inherent
+        // ProgressiveLayer::as_parts hands out — the provenance
+        // reference is pointer-equal to as_parts().0, the dict reference
+        // pointer-equal to as_parts().1. Guards against a future edit
+        // that reroutes one AsRef impl to a different storage than the
+        // inherent pair-borrow, silently diverging the single-coordinate
+        // and pair-borrow spellings on the same overlay.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(291_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_cross_coord.yaml", dict);
+        let (pair_prov, pair_dict) = layer.as_parts();
+        let via_as_ref_prov: &Provenance = layer.as_ref();
+        let via_as_ref_dict: &Dict = layer.as_ref();
+        assert!(std::ptr::eq(via_as_ref_prov, pair_prov));
+        assert!(std::ptr::eq(via_as_ref_dict, pair_dict));
     }
 
     #[test]
