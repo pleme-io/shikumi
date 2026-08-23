@@ -19223,6 +19223,85 @@ impl ProgressiveLayer {
         Self::discovered(compose(layers))
     }
 
+    /// A zero-opinion floor overlay — [`Provenance::bare`].
+    ///
+    /// The tier-axis peer of [`Self::discovered`] / [`Self::prescribed_default`]
+    /// on the computed-defaults row of the stamp-side constructor grid: the
+    /// caller passes a partial dict, and the fold stamps [`Provenance::bare`]
+    /// on every leaf it wins. Closes the [`ConfigTierKind::Bare`] spot on the
+    /// tier-axis constructor grid so the whole computed-defaults row
+    /// ([`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`])
+    /// now reads through named stamp-side constructors uniformly — the same
+    /// shape [`Provenance::bare`] / [`Provenance::discovered`] /
+    /// [`Provenance::prescribed_default`] carries on the underlying
+    /// [`Provenance`] primitive.
+    ///
+    /// Before this constructor, a caller wanting to construct an overlay
+    /// carrying the [`ConfigTierKind::Bare`] stamp reached for
+    /// `ProgressiveLayer::new(Provenance::bare(), dict)` — the two-step
+    /// composition that mirrors what a computed-defaults-tier fold-fixture
+    /// harness or a test injecting a synthesized bare-tier overlay into
+    /// [`TieredConfig::resolve_progressive_with`] repeats at every call site.
+    /// Lifting the composition to a named constructor closes that spot at one
+    /// site.
+    ///
+    /// Load-bearing use: a fold-fixture harness or CLI subcommand that wants
+    /// to route a caller-supplied dict through the progressive fold at the
+    /// bare-tier stamp — e.g. a `config-diff` test comparing what the fold
+    /// resolves when a synthetic bare-tier overlay wins vs when it does not —
+    /// now writes `ProgressiveLayer::bare(dict)` rather than the two-step
+    /// composition through [`Provenance::bare`] + [`Self::new`].
+    #[must_use]
+    pub fn bare(dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::bare(),
+            dict,
+        }
+    }
+
+    /// A prescribed-default overlay — [`Provenance::prescribed_default`].
+    ///
+    /// The tier-axis peer of [`Self::bare`] / [`Self::discovered`] on the
+    /// computed-defaults row of the stamp-side constructor grid: the caller
+    /// passes a partial dict, and the fold stamps
+    /// [`Provenance::prescribed_default`] on every leaf it wins. Closes the
+    /// [`ConfigTierKind::Default`] spot on the tier-axis constructor grid, so
+    /// together with [`Self::bare`] and [`Self::discovered`] the whole
+    /// computed-defaults row now reads through named stamp-side constructors
+    /// uniformly — the same shape [`Provenance::bare`] /
+    /// [`Provenance::discovered`] / [`Provenance::prescribed_default`]
+    /// carries on the underlying [`Provenance`] primitive.
+    ///
+    /// Named after the trait method [`TieredConfig::prescribed_default`]
+    /// rather than the tier variant name (`Default`) to keep the identity
+    /// unambiguous vs the Rust [`std::default::Default`] convention, matching
+    /// the naming choice on [`Provenance::prescribed_default`]: this
+    /// constructor names the prescribed-default TIER's overlay, not a
+    /// [`ProgressiveLayer`] default value.
+    ///
+    /// Before this constructor, a caller wanting to construct an overlay
+    /// carrying the [`ConfigTierKind::Default`] stamp reached for
+    /// `ProgressiveLayer::new(Provenance::prescribed_default(), dict)` — the
+    /// same two-step composition [`Self::bare`] closes on the other end of
+    /// the computed-defaults row. Lifting the composition to a named
+    /// constructor closes that spot at one site.
+    ///
+    /// Load-bearing use: a fold-fixture harness or CLI subcommand that wants
+    /// to route a caller-supplied dict through the progressive fold at the
+    /// prescribed-default-tier stamp — e.g. a `config-diff` test comparing a
+    /// synthetic prescribed-default overlay vs the trait's own
+    /// [`TieredConfig::prescribed_default`] contribution, or a fixture pinning
+    /// the recessive-tier attribution shape — now writes
+    /// `ProgressiveLayer::prescribed_default(dict)` rather than the two-step
+    /// composition through [`Provenance::prescribed_default`] + [`Self::new`].
+    #[must_use]
+    pub fn prescribed_default(dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::prescribed_default(),
+            dict,
+        }
+    }
+
     /// Read an operator FILE overlay from a path — the single-call fusion
     /// of the file-parsing side of the [`ProviderChain`] figment fold with
     /// the [`TieredConfig::resolve_progressive_with`] tier fold.
@@ -67483,6 +67562,92 @@ mod progressive_tests {
         assert_eq!(overlay.provenance().tier(), ConfigTierKind::Discovered);
         assert_eq!(overlay.provenance().source(), &ConfigSource::Defaults);
         assert_eq!(overlay.dict(), &dict);
+    }
+
+    #[test]
+    fn progressive_layer_bare_stamps_bare_provenance() {
+        // Structural mirror of progressive_layer_discovered_stamps_discovered_provenance
+        // on the other end of the computed-defaults tier row: provenance is
+        // Provenance::bare() (tier Bare, source Defaults), and the overlay's
+        // dict is the caller's Dict verbatim. Closes the tier-axis stamp-side
+        // constructor identity on the Bare spot the discovered / prescribed
+        // constructors already close for their tiers.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(11_u32));
+        let overlay = ProgressiveLayer::bare(dict.clone());
+        assert_eq!(overlay.provenance(), &Provenance::bare());
+        assert_eq!(overlay.provenance().tier(), ConfigTierKind::Bare);
+        assert_eq!(overlay.provenance().source(), &ConfigSource::Defaults);
+        assert_eq!(overlay.dict(), &dict);
+    }
+
+    #[test]
+    fn progressive_layer_bare_matches_new_with_bare_provenance() {
+        // Pointwise equality vs the two-step composition the constructor
+        // replaces: ProgressiveLayer::bare(dict) is byte-identical to
+        // ProgressiveLayer::new(Provenance::bare(), dict). A caller writing
+        // either form gets the same overlay, so switching to the named
+        // constructor is a mechanical rename with no behavioural drift.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(1_u32));
+        let sugared = ProgressiveLayer::bare(dict.clone());
+        let hand_built = ProgressiveLayer::new(Provenance::bare(), dict);
+        assert_eq!(sugared, hand_built);
+    }
+
+    #[test]
+    fn progressive_layer_prescribed_default_stamps_default_provenance() {
+        // Structural mirror of progressive_layer_discovered_stamps_discovered_provenance
+        // on the middle-to-recessive end of the computed-defaults tier row:
+        // provenance is Provenance::prescribed_default() (tier Default,
+        // source Defaults), and the overlay's dict is the caller's Dict
+        // verbatim. Closes the tier-axis stamp-side constructor identity on
+        // the Default spot, so the whole computed-defaults row (bare /
+        // discovered / prescribed_default) now has matching named
+        // ProgressiveLayer constructors.
+        let mut dict = Dict::new();
+        dict.insert("p".to_owned(), Value::from(33_u32));
+        let overlay = ProgressiveLayer::prescribed_default(dict.clone());
+        assert_eq!(overlay.provenance(), &Provenance::prescribed_default());
+        assert_eq!(overlay.provenance().tier(), ConfigTierKind::Default);
+        assert_eq!(overlay.provenance().source(), &ConfigSource::Defaults);
+        assert_eq!(overlay.dict(), &dict);
+    }
+
+    #[test]
+    fn progressive_layer_prescribed_default_matches_new_with_default_provenance() {
+        // Pointwise equality vs the two-step composition the constructor
+        // replaces: ProgressiveLayer::prescribed_default(dict) is
+        // byte-identical to ProgressiveLayer::new(Provenance::prescribed_default(), dict).
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(2_u32));
+        let sugared = ProgressiveLayer::prescribed_default(dict.clone());
+        let hand_built = ProgressiveLayer::new(Provenance::prescribed_default(), dict);
+        assert_eq!(sugared, hand_built);
+    }
+
+    #[test]
+    fn progressive_layer_computed_defaults_row_constructors_are_distinct() {
+        // The three computed-defaults tier constructors — bare, discovered,
+        // prescribed_default — stamp distinct Provenance values on the same
+        // dict payload. The overlay dicts agree (constructor payload is the
+        // caller's Dict verbatim), but the provenance stamps partition into
+        // three distinct tiers. Pins the tier-axis discriminator on the
+        // stamp-side constructor grid.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(42_u32));
+        let bare = ProgressiveLayer::bare(dict.clone());
+        let discovered = ProgressiveLayer::discovered(dict.clone());
+        let prescribed = ProgressiveLayer::prescribed_default(dict.clone());
+        assert_eq!(bare.dict(), &dict);
+        assert_eq!(discovered.dict(), &dict);
+        assert_eq!(prescribed.dict(), &dict);
+        assert_ne!(bare.provenance(), discovered.provenance());
+        assert_ne!(discovered.provenance(), prescribed.provenance());
+        assert_ne!(bare.provenance(), prescribed.provenance());
+        assert_eq!(bare.provenance().tier(), ConfigTierKind::Bare);
+        assert_eq!(discovered.provenance().tier(), ConfigTierKind::Discovered);
+        assert_eq!(prescribed.provenance().tier(), ConfigTierKind::Default);
     }
 
     #[test]
