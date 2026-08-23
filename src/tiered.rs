@@ -20016,6 +20016,71 @@ impl<T> From<(T, ProvenanceMap)> for ProgressiveResolution<T> {
     }
 }
 
+/// Std-trait borrow-side facade over [`ProgressiveResolution::provenance`]:
+/// the same borrow accessor onto the [`ProvenanceMap`] coordinate of the
+/// atomic `(value, provenance)` pair, spelled `res.as_ref()` for callers
+/// routing through the [`AsRef`] blanket ([`AsRef::as_ref`] chains,
+/// generic bounds `R: AsRef<ProvenanceMap>`).
+///
+/// Pointwise equal to [`ProgressiveResolution::provenance`] on every input —
+/// pinned by
+/// [`progressive_tests::progressive_resolution_as_ref_provenance_map_agrees_with_provenance_accessor`].
+/// The borrow-side peer of the consuming-side
+/// [`From<ProgressiveResolution<T>> for ProvenanceMap`] facade above: the
+/// two together close the std-trait facade closure on the [`ProvenanceMap`]
+/// coordinate across both ownership altitudes — consuming via [`From`],
+/// borrowing via [`AsRef`] — the same shape the inherent surface already
+/// carries via [`Self::into_provenance`] + [`Self::provenance`]. On every
+/// input, the [`AsRef::as_ref`] projection is byte-equal to the value the
+/// consuming-side [`From`] facade would hand out on `self.clone()` — pinned
+/// by
+/// [`progressive_tests::progressive_resolution_as_ref_provenance_map_is_borrow_side_dual_of_from_facade`].
+///
+/// Peer of the container-level [`AsRef<Provenance> for ProgressiveLayer`]
+/// facade one seam back on the *input* side of the fold's atomic-pair
+/// boundary: both members of that boundary (input [`ProgressiveLayer`],
+/// output [`ProgressiveResolution<T>`]) now expose a borrow-side [`AsRef`]
+/// std-trait facade on their provenance-side coordinate — one seam earlier
+/// on the per-overlay stamp ([`Provenance`]), one seam later on the
+/// per-leaf attribution map ([`ProvenanceMap`]) — so a downstream generic
+/// bound `R: AsRef<ProvenanceMap>` picks up [`ProgressiveResolution<T>`]
+/// the same way `T: AsRef<Provenance>` picks up [`ProgressiveLayer`] on
+/// the input side.
+///
+/// The value coordinate's borrow-side sibling
+/// (`AsRef<T> for ProgressiveResolution<T>`) is unavailable by coherence:
+/// it would collide with this concrete-target impl at
+/// `T = ProvenanceMap`. Symmetric with the coherence-blocked consuming-side
+/// sibling (`From<ProgressiveResolution<T>> for T`, blocked by the
+/// reflexive `From<T> for T` blanket at `T = ProgressiveResolution<U>`) —
+/// on both ownership altitudes, only the concrete-target coordinate admits
+/// its std-trait facade; the inherent [`Self::value`] / [`Self::into_value`]
+/// remain the canonical single-coordinate projections onto the value
+/// coordinate.
+///
+/// Compounds:
+/// - A downstream generic bound `R: AsRef<ProvenanceMap>` — an attestation
+///   harness that borrow-reads the per-leaf provenance map of any
+///   `AsRef<ProvenanceMap>` input without ever consuming it, a
+///   `/healthz/provenance` renderer that generic-borrows the attribution
+///   envelope through one `.as_ref()` call, a `ConfigPlane` broadcast
+///   surface routing just the borrowed provenance map through a sink
+///   expecting `&ProvenanceMap` — picks up a [`ProgressiveResolution<T>`]
+///   for free without naming the inherent [`Self::provenance`] borrow
+///   accessor.
+/// - Composes with [`ProgressiveResolution<T>`] on both ownership altitudes
+///   at zero allocation: consuming callers move the [`ProvenanceMap`] out
+///   via the [`From`] facade above (the map's underlying `BTreeMap` moves
+///   once, not clones), borrowing callers hand out a reference to the same
+///   underlying storage via this [`AsRef`] facade — the two spellings share
+///   their inherent primitives ([`Self::into_provenance`] /
+///   [`Self::provenance`]) with no divergence surface between them.
+impl<T> AsRef<ProvenanceMap> for ProgressiveResolution<T> {
+    fn as_ref(&self) -> &ProvenanceMap {
+        &self.provenance
+    }
+}
+
 /// Line-oriented diff between two YAML serializations of a
 /// `TieredConfig` value. Designed for operator-facing CLI output
 /// (`<app> config-diff <from> <to>`); not a structural patch.
@@ -67219,6 +67284,119 @@ mod progressive_tests {
         let via_as_ref_dict: &Dict = layer.as_ref();
         assert!(std::ptr::eq(via_as_ref_prov, pair_prov));
         assert!(std::ptr::eq(via_as_ref_dict, pair_dict));
+    }
+
+    #[test]
+    fn progressive_resolution_as_ref_provenance_map_agrees_with_provenance_accessor() {
+        // The load-bearing pointwise agreement between the AsRef
+        // std-trait borrow-side facade `<ProgressiveResolution<Prog> as
+        // AsRef<ProvenanceMap>>::as_ref(&res)` and the inherent
+        // `res.provenance()` borrow accessor on the same fold output.
+        // Borrow-side peer of
+        // progressive_resolution_from_facade_agrees_with_into_provenance
+        // one ownership altitude over on the consuming side — both
+        // facades hand out exactly what their inherent counterparts hand
+        // out on the ProvenanceMap coordinate of the atomic
+        // (value, provenance) pair, so a downstream generic bound
+        // `R: AsRef<ProvenanceMap>` picks up ProgressiveResolution for
+        // free — the same way `R: Into<ProvenanceMap>` already picks it
+        // up through the consuming-side From facade. Without this pin, a
+        // future edit that reroutes the AsRef impl through a stale
+        // field, a per-leaf clone, or a lossy projection would silently
+        // drift the two spellings.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(311_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_provmap.yaml", dict);
+        let res = Prog::resolve_progressive_with(&[layer]);
+        let via_method: &ProvenanceMap = res.provenance();
+        let via_as_ref: &ProvenanceMap =
+            <ProgressiveResolution<Prog> as AsRef<ProvenanceMap>>::as_ref(&res);
+        assert_eq!(via_method, via_as_ref);
+        // Reference identity — the AsRef facade must hand out the SAME
+        // underlying storage as the inherent accessor, not a re-emitted
+        // clone.
+        assert!(std::ptr::eq(via_method, via_as_ref));
+    }
+
+    #[test]
+    fn progressive_resolution_as_ref_provenance_map_is_borrow_side_dual_of_from_facade() {
+        // Cross-altitude consistency: the borrow-side AsRef facade
+        // (`<ProgressiveResolution<Prog> as AsRef<ProvenanceMap>>::as_ref(&res)`)
+        // and the consuming-side From facade
+        // (`<ProvenanceMap>::from(res.clone())`) project the same
+        // ProvenanceMap coordinate on every input — the reference the
+        // borrow facade hands out is byte-equal to the owned value the
+        // consuming facade hands out on the cloned input. Together the
+        // two facades close the std-trait facade closure on the
+        // ProvenanceMap coordinate across both ownership altitudes:
+        // consuming via From, borrowing via AsRef. Exercised across
+        // three fold inputs (file / env / discovered stamp on the
+        // seeded layer) so each Provenance ConfigSource shape the map
+        // can carry is covered at one seam.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(321_u32));
+        let stamps: [Provenance; 3] = [
+            Provenance::file("/etc/as_ref_provmap_dual.yaml"),
+            Provenance::env("SHIKUMI_AS_REF_PROVMAP_DUAL_"),
+            Provenance::discovered(),
+        ];
+        for stamp in stamps {
+            let layer = ProgressiveLayer::new(stamp, dict.clone());
+            let res = Prog::resolve_progressive_with(&[layer]);
+            let via_as_ref: &ProvenanceMap = res.as_ref();
+            let via_from: ProvenanceMap = res.clone().into();
+            assert_eq!(via_as_ref, &via_from);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_as_ref_provenance_map_composes_through_generic_bound() {
+        // Idiom-shape pin: the AsRef std-trait borrow facade composes
+        // through a generic bound `R: AsRef<ProvenanceMap>` — a call
+        // site that generic-borrows the ProvenanceMap coordinate of any
+        // AsRef<ProvenanceMap> input picks up ProgressiveResolution
+        // without naming the inherent provenance() accessor. This is
+        // the load-bearing reason the AsRef facade exists on top of the
+        // inherent accessor: it welds ProgressiveResolution onto the
+        // std generic-borrow idiom the same way the
+        // From<ProgressiveResolution<T>> for ProvenanceMap facade welds
+        // it onto the std generic-consume idiom (Into<ProvenanceMap>).
+        fn borrow_prov_map<R: AsRef<ProvenanceMap>>(r: &R) -> &ProvenanceMap {
+            r.as_ref()
+        }
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(331_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_provmap_generic.yaml", dict);
+        let res = Prog::resolve_progressive_with(&[layer]);
+        let borrowed = borrow_prov_map(&res);
+        assert_eq!(borrowed, res.provenance());
+        assert!(std::ptr::eq(borrowed, res.provenance()));
+    }
+
+    #[test]
+    fn progressive_resolution_as_ref_provenance_map_matches_as_parts_snd() {
+        // Cross-projection consistency: the borrow-side AsRef facade
+        // (`<ProgressiveResolution<Prog> as AsRef<ProvenanceMap>>::as_ref`)
+        // borrows the same ProvenanceMap coordinate the pair-borrowing
+        // inherent ProgressiveResolution::as_parts hands out — the
+        // AsRef reference is pointer-equal to as_parts().1 on the same
+        // fold output. Guards against a future edit that reroutes the
+        // AsRef impl to a different storage than the inherent
+        // pair-borrow, silently diverging the single-coordinate and
+        // pair-borrow spellings on the same resolution. Peer of
+        // progressive_layer_as_ref_facades_are_consistent_across_coordinates
+        // one seam back on the input overlay, restricted here to the
+        // one concrete-target coordinate the resolution admits (the
+        // value coordinate's AsRef sibling is unavailable by coherence
+        // — see the impl-site doc for
+        // `AsRef<ProvenanceMap> for ProgressiveResolution<T>`).
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(341_u32));
+        let layer = ProgressiveLayer::file("/etc/as_ref_provmap_cross.yaml", dict);
+        let res = Prog::resolve_progressive_with(&[layer]);
+        let (_value, pair_prov): (&Prog, &ProvenanceMap) = res.as_parts();
+        let via_as_ref: &ProvenanceMap = res.as_ref();
+        assert!(std::ptr::eq(via_as_ref, pair_prov));
     }
 
     #[test]
