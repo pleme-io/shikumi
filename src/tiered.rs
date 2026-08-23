@@ -19167,6 +19167,55 @@ impl ProgressiveLayer {
         self.dict
     }
 
+    /// Consume, yielding the [`Provenance`] stamp (dropping the partial
+    /// config [`Dict`]) — the single-coordinate consuming projection
+    /// sibling of [`Self::into_dict`] on the other coordinate of the
+    /// atomic `(provenance, dict)` pair, and the input-side peer of
+    /// [`ProgressiveResolution::into_provenance`] one seam over on the
+    /// *output* side.
+    ///
+    /// [`Self::into_dict`] hands out just the [`Dict`] payload when the
+    /// caller no longer needs the stamp; [`Self::into_provenance`]
+    /// hands out just the [`Provenance`] when the caller no longer
+    /// needs the dict — an attestation harness hashing the
+    /// operator-visible `(tier, source)` stream across a stack of
+    /// overlays without paying to retain their payload dicts, a
+    /// `ConfigPlane` broadcast surface routing just the per-overlay
+    /// stamp to a downstream consumer that already owns its dict, an
+    /// FFI boundary that owns the payload side elsewhere.
+    ///
+    /// Before this seam, a caller wanting to move just the
+    /// [`Provenance`] out of a [`ProgressiveLayer`] reached through
+    /// `layer.into_parts().0` (destructures both fields, discards the
+    /// [`Dict`] at the call site) or `layer.provenance().clone()` (a
+    /// [`Provenance`] borrow-and-clone that duplicates the underlying
+    /// [`ConfigSource`] allocation), both of which name the atomic
+    /// pair or the borrow accessor at the call site rather than the
+    /// single-coordinate consuming projection.
+    ///
+    /// Symmetric with [`ProgressiveResolution::into_provenance`] on
+    /// the output side of the atomic-pair ownership boundary: both
+    /// hand out the "stamp" coordinate of their atomic pair (the
+    /// provenance side — [`Provenance`] for the input overlay,
+    /// [`ProvenanceMap`] for the output resolution) with the payload
+    /// side discarded, both are `#[must_use]`, both consume `self`
+    /// without allocation. Together with [`Self::into_dict`] on the
+    /// payload coordinate they close BOTH single-coordinate consuming
+    /// projections on the [`ProgressiveLayer`] atomic pair, matching
+    /// the shape the [`ProgressiveResolution`] output side already
+    /// carries via [`ProgressiveResolution::into_value`] +
+    /// [`ProgressiveResolution::into_provenance`].
+    ///
+    /// Pointwise equal to `self.into_parts().0` on every input — pinned
+    /// by [`tests::progressive_layer_into_provenance_agrees_with_into_parts_fst`].
+    /// Pointwise equal to `self.provenance().clone()` on every input —
+    /// pinned by
+    /// [`tests::progressive_layer_into_provenance_agrees_with_accessor_clone`].
+    #[must_use]
+    pub fn into_provenance(self) -> Provenance {
+        self.provenance
+    }
+
     /// Consume `self`, yielding the owned `(provenance, dict)` pair the
     /// overlay carries — the consuming destructuring dual of the borrow-side
     /// [`Self::provenance`] / [`Self::dict`] accessor pair.
@@ -65879,9 +65928,10 @@ mod progressive_tests {
         // side). The input-side peer of
         // progressive_resolution_into_value_and_into_provenance_are_separable_siblings
         // one seam over: on the output side both coordinates have a
-        // consuming projection; on the input side the payload side has
-        // one (into_dict, this commit) and the stamp side remains the
-        // borrow-side accessor + clone until its consuming peer lands.
+        // consuming projection, and now on the input side both do too
+        // — the stamp-side peer landed as
+        // ProgressiveLayer::into_provenance, pinned by
+        // progressive_layer_into_dict_and_into_provenance_are_separable_siblings.
         let mut dict = Dict::new();
         dict.insert("m".to_owned(), Value::from(55_u32));
         let seed = ProgressiveLayer::file("/etc/separable.yaml", dict);
@@ -65907,6 +65957,97 @@ mod progressive_tests {
         let seed = ProgressiveLayer::new(stamp.clone(), dict);
         let direct = Prog::resolve_progressive_with(&[seed.clone()]);
         let via_projection = ProgressiveLayer::new(stamp, seed.into_dict());
+        let via_projection_out = Prog::resolve_progressive_with(&[via_projection]);
+        assert_eq!(direct.value(), via_projection_out.value());
+        assert_eq!(direct.provenance(), via_projection_out.provenance());
+    }
+
+    #[test]
+    fn progressive_layer_into_provenance_agrees_with_into_parts_fst() {
+        // The load-bearing pointwise agreement between the
+        // single-coordinate consuming projection into_provenance and
+        // the first element of the pair-destructuring into_parts on
+        // the same overlay input. Stamp-coordinate peer of
+        // progressive_layer_into_dict_agrees_with_into_parts_snd on
+        // the payload coordinate, and the input-side peer of
+        // progressive_resolution_into_provenance_agrees_with_into_parts_snd
+        // one seam over on the output-side atomic-pair boundary — the
+        // ProgressiveLayer altitude of that shape. Without this pin, a
+        // future edit that reroutes into_provenance through a
+        // computation other than the direct field move could silently
+        // drift from the pair-destructuring path on the same
+        // container.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(17_u32));
+        let layer = ProgressiveLayer::file("/etc/into_provenance.yaml", dict);
+        let via_into_provenance = layer.clone().into_provenance();
+        let via_into_parts = layer.into_parts().0;
+        assert_eq!(via_into_provenance, via_into_parts);
+    }
+
+    #[test]
+    fn progressive_layer_into_provenance_agrees_with_accessor_clone() {
+        // The consuming projection is byte-equal to
+        // self.provenance().clone(), pinning the clone-avoidance path
+        // against the borrow-and-clone path on the same input.
+        // Stamp-coordinate peer of
+        // progressive_layer_into_dict_agrees_with_accessor_clone on
+        // the payload coordinate, and the input-side peer of
+        // progressive_resolution_into_provenance_agrees_with_accessor_clone
+        // one seam over on the output-side atomic-pair boundary.
+        // Guards against a future edit to Clone for Provenance growing
+        // an additional side-effect that the consuming form would
+        // skip.
+        let mut dict = Dict::new();
+        dict.insert("options.padding".to_owned(), Value::from(4_u32));
+        let layer = ProgressiveLayer::env("SHIKUMI_INTO_PROVENANCE_ACCESSOR_", dict);
+        let via_into_provenance = layer.clone().into_provenance();
+        let via_accessor_clone = layer.provenance().clone();
+        assert_eq!(via_into_provenance, via_accessor_clone);
+    }
+
+    #[test]
+    fn progressive_layer_into_dict_and_into_provenance_are_separable_siblings() {
+        // Reassembling the two independently-projected coordinates
+        // (payload via into_dict + stamp via into_provenance) via
+        // ProgressiveLayer::new recovers a layer byte-equal to the
+        // seed — proof the atomic pair splits losslessly through the
+        // two single-coordinate consuming projections without either
+        // touching the other's coordinate. The input-side peer of
+        // progressive_resolution_into_value_and_into_provenance_are_separable_siblings
+        // one seam over, closing the "both consuming projections
+        // separable" contract on both altitudes of the fold's atomic-
+        // pair ownership boundary — before this commit the stamp side
+        // still required the borrow-side accessor + clone, so the
+        // separability could only be half-stated on the input side.
+        let mut dict = Dict::new();
+        dict.insert("m".to_owned(), Value::from(59_u32));
+        let seed = ProgressiveLayer::file("/etc/separable_stamp.yaml", dict);
+        let payload_only = seed.clone().into_dict();
+        let stamp_only = seed.clone().into_provenance();
+        let reassembled = ProgressiveLayer::new(stamp_only, payload_only);
+        assert_eq!(reassembled, seed);
+    }
+
+    #[test]
+    fn progressive_layer_into_provenance_preserves_leaf_provenance_stamps() {
+        // End-to-end downstream pin: routing an overlay's provenance
+        // stamp through into_provenance and rebuilding a fresh overlay
+        // under the same Dict payload produces a fold output byte-
+        // identical to the one the original overlay produced. Proof
+        // the stamp coordinate survives the single-coordinate
+        // consuming projection with no loss of provenance detail,
+        // matching the shape
+        // progressive_layer_into_dict_preserves_leaf_payload_through_fold
+        // carries on the payload coordinate and
+        // progressive_resolution_into_provenance_preserves_leaf_provenance_stamps
+        // carries one seam over on the output side.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(131_u32));
+        let stamp = Provenance::file("/etc/into_provenance_end_to_end.yaml");
+        let seed = ProgressiveLayer::new(stamp, dict.clone());
+        let direct = Prog::resolve_progressive_with(&[seed.clone()]);
+        let via_projection = ProgressiveLayer::new(seed.into_provenance(), dict);
         let via_projection_out = Prog::resolve_progressive_with(&[via_projection]);
         assert_eq!(direct.value(), via_projection_out.value());
         assert_eq!(direct.provenance(), via_projection_out.provenance());
