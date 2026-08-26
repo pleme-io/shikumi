@@ -139,12 +139,38 @@ use std::path::{Path, PathBuf};
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     gen_platform::TypedDispatcher,
     gen_platform::Discriminant,
     gen_platform::IsVariant,
     gen_platform::FromStrKind,
 )]
 #[discriminant(also_display)]
+// `PartialOrd`/`Ord` are declaration-order lex over [`Self::ALL`]
+// (`Bare < Discovered < Default < Custom`), matching the sealed-fold
+// precedence [`Self::ordinal`] returns and the const [`crate::ClosedAxis`]
+// declaration `Bare, Discovered, Default, Custom`. A `BTreeMap<ConfigTierKind, T>`
+// keyed on the tier axis (per-tier attribution histograms, per-tier
+// reload-summary counters, attestation manifests recording the tier
+// cardinality mix of a recorded chain, structured-diagnostic legends
+// bucketing per-tier counters in declaration order) emits rows in
+// sealed-fold precedence deterministically without a hand-rolled
+// comparator at the renderer. Idiom-peer of the same derive on
+// [`crate::ConfigSourceKind`] (the sibling source-kind axis of the
+// atomic `(tier, source)` pair one primitive over — see
+// `config_source_kind_ord_matches_all_declaration_order`) and on
+// [`crate::DiffLineKind`] one seam up: every closed-enum kind
+// primitive on the typescape carries the same `Copy + Eq + Hash
+// + PartialOrd + Ord + #[non_exhaustive]` shape, so a downstream
+// generic bound `K: Ord` picks up [`ConfigTierKind`] the same way
+// it picks up the source-kind and diff-line-kind axes without
+// re-attesting totality at the call site. The `ClosedAxis`
+// declaration order that [`Self::ordinal`] projects to `usize` is
+// what the derived `cmp` compares directly on `Self`, so the two
+// projections agree pointwise — pinned by
+// [`tests::config_tier_kind_ord_matches_all_declaration_order`] and
+// [`tests::config_tier_kind_ord_agrees_with_ordinal_lex`].
 pub enum ConfigTierKind {
     /// Zero-opinion floor.
     Bare,
@@ -28459,6 +28485,104 @@ mod tests {
                 "round-trip failed for kind {kind:?}",
             );
         }
+    }
+
+    #[test]
+    fn config_tier_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on ConfigTierKind is declaration-order lex
+        // over ALL: `Bare < Discovered < Default < Custom` — the
+        // sealed-fold precedence per theory/CONFIGURATION-MANAGEMENT.md
+        // Primitive 5. A BTreeMap keyed on the tier axis (per-tier
+        // attribution histograms, per-tier reload-summary counters,
+        // attestation manifests recording the tier cardinality mix of a
+        // recorded chain, structured-diagnostic legends bucketing per-
+        // tier counters in sealed-fold precedence) emits rows in that
+        // order deterministically without a hand-rolled comparator at
+        // the renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under Ord,
+        // (2) cmp/partial_cmp agree with the array-index lex over ALL on
+        // every pair (and reflexivity holds). Peer of
+        // `config_source_kind_ord_matches_all_declaration_order` one
+        // primitive over on the sibling source-kind axis of the atomic
+        // `(tier, source)` pair — same two-leg discipline, same pointwise
+        // pin, applied to the tier axis so a downstream generic bound
+        // `K: Ord` picks up ConfigTierKind and ConfigSourceKind the same
+        // way.
+        use std::cmp::Ordering;
+        for window in ConfigTierKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "ConfigTierKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in ConfigTierKind::ALL.iter().enumerate() {
+            for (j, &b) in ConfigTierKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "ConfigTierKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "ConfigTierKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_ord_agrees_with_ordinal_lex() {
+        // Cross-projection agreement: the derived `Ord::cmp` on the
+        // closed variant tag and the inherent `Self::ordinal` -> usize
+        // projection compared under `usize::cmp` are two spellings of
+        // the same declaration-order lex — pinned pointwise across every
+        // pair. The derived `cmp` compares the discriminant directly on
+        // `Self`; the `ordinal` projection maps the same declaration
+        // order to a scalar. A future edit that swapped an `ordinal`
+        // arm without moving its `ALL` slot (or the reverse) would
+        // pass `config_tier_kind_ord_matches_all_declaration_order` on
+        // its own but fail here.
+        for &a in ConfigTierKind::ALL {
+            for &b in ConfigTierKind::ALL {
+                assert_eq!(
+                    a.cmp(&b),
+                    a.ordinal().cmp(&b.ordinal()),
+                    "ConfigTierKind::cmp must agree with ordinal-lex for ({a:?}, {b:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed consumer
+        // site: a BTreeMap<ConfigTierKind, _> emits keys in declaration
+        // order on `iter()` / `into_iter()` regardless of insertion order,
+        // matching `ConfigTierKind::ALL` (sealed-fold precedence
+        // `Bare -> Discovered -> Default -> Custom`). Idiom-peer of
+        // `config_source_kind_btreemap_emits_in_declaration_order` on the
+        // sibling source-kind axis.
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<ConfigTierKind, u32> = BTreeMap::new();
+        counts.insert(ConfigTierKind::Custom, 4);
+        counts.insert(ConfigTierKind::Bare, 1);
+        counts.insert(ConfigTierKind::Default, 3);
+        counts.insert(ConfigTierKind::Discovered, 2);
+        let observed: Vec<ConfigTierKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            ConfigTierKind::ALL.to_vec(),
+            "BTreeMap<ConfigTierKind, _> must emit keys in ConfigTierKind::ALL order",
+        );
     }
 
     #[test]
