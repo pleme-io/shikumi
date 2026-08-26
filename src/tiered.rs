@@ -20787,6 +20787,139 @@ impl<T> ProgressiveResolution<T> {
     pub fn absent_source_kinds_count(&self) -> usize {
         self.provenance.absent_source_kinds_count()
     }
+
+    /// The **first-contributing tier** — the earliest [`ConfigTierKind`]
+    /// (in [`crate::ClosedAxis::ALL`] / [`ConfigTier`] precedence order)
+    /// whose overlay produced ≥1 surviving effective leaf on this
+    /// resolved fold, or [`None`] on the empty map (no leaf contributed
+    /// at all). Container-altitude peer of
+    /// [`ProvenanceMap::first_contributing_tier`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.first_contributing_tier()`.
+    ///
+    /// The **[`Option`]-shaped head-projection peer** of
+    /// [`Self::contributing_tiers`] (the observed-cells `Vec` peer) and
+    /// [`Self::contributing_tiers_count`] (the observed-cells scalar-
+    /// count peer) on the tier altitude — the head of the same support
+    /// the two sibling peers materialise / count in full. Together with
+    /// [`Self::first_absent_tier`], [`Self::first_contributing_source_kind`],
+    /// and [`Self::first_absent_source_kind`], this seam closes the
+    /// **[`Option`]-shaped head-projection corner** of the
+    /// container-altitude `(observed, unobserved) × (Vec, count,
+    /// head)` 3-corner support / coverage-gap grid — matching the
+    /// same 3-corner grid the primitive altitude already carries on
+    /// [`ProvenanceMap`].
+    ///
+    /// Before this seam, a consumer wanting *"which is the earliest
+    /// tier that heard from at least one leaf?"* — an operator
+    /// dashboard headline *"first tier heard from: Bare"*, an
+    /// attestation manifest recording the head of the observed-cells
+    /// support, a `/healthz/config` renderer reporting per-tier
+    /// support head — reached through either the two-hop borrow
+    /// `res.provenance().first_contributing_tier()` or the
+    /// allocate-then-index idiom `res.contributing_tiers().first().copied()`
+    /// (which pays the whole [`Vec<ConfigTierKind>`] allocation to
+    /// read one cell). This seam collapses both to one call on the
+    /// resolution container itself, elides the [`Vec`] allocation
+    /// entirely, and reads at the same closed-axis-ordered precedence
+    /// the primitive-altitude peer carries.
+    #[must_use]
+    pub fn first_contributing_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.first_contributing_tier()
+    }
+
+    /// The **first-absent tier** — the earliest [`ConfigTierKind`]
+    /// (in [`crate::ClosedAxis::ALL`] / [`ConfigTier`] precedence order)
+    /// whose overlay produced **zero** surviving effective leaves on
+    /// this resolved fold, or [`None`] when every tier heard from at
+    /// least once (full cover). Container-altitude peer of
+    /// [`ProvenanceMap::first_absent_tier`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_absent_tier()`.
+    ///
+    /// The **coverage-gap head-projection peer** of
+    /// [`Self::first_contributing_tier`] on the same container: the two
+    /// [`Option`]-shaped head projections split the closed-axis head
+    /// between the observed and coverage-gap sides of the tier
+    /// altitude, matching the observed / coverage-gap partition the
+    /// [`Self::contributing_tiers`] / [`Self::absent_tiers`] pair and
+    /// the [`Self::contributing_tiers_count`] / [`Self::absent_tiers_count`]
+    /// pair carry on the same seam at the [`Vec`] and scalar altitudes.
+    /// The [`None`] boundary here is **full cover**, not empty — the
+    /// same [`Self::first_contributing_tier`]-side [`None`] boundary
+    /// on the coverage-gap side of the partition.
+    ///
+    /// Before this seam, a consumer wanting *"which is the earliest
+    /// tier that heard from zero leaves?"* — an alerting policy
+    /// reading *"first tier with zero leaves = Env"*, an operator
+    /// dashboard listing the coverage-gap head, a `/healthz/config`
+    /// renderer reporting per-tier coverage-gap head — reached through
+    /// either the two-hop borrow `res.provenance().first_absent_tier()`
+    /// or the allocate-then-index idiom
+    /// `res.absent_tiers().first().copied()` (paying the
+    /// [`Vec<ConfigTierKind>`] allocation to read one cell). This
+    /// seam collapses both to one call on the resolution container
+    /// itself.
+    #[must_use]
+    pub fn first_absent_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.first_absent_tier()
+    }
+
+    /// The **first-contributing source-kind** — the earliest
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
+    /// overlay produced ≥1 surviving effective leaf on this resolved
+    /// fold, or [`None`] on the empty map. Container-altitude peer of
+    /// [`ProvenanceMap::first_contributing_source_kind`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into
+    /// `self.provenance.first_contributing_source_kind()`.
+    ///
+    /// The **source-kind-axis sibling** of
+    /// [`Self::first_contributing_tier`] on the same container: the
+    /// two head projections name the observed-cells head on the two
+    /// closed-axis coordinates of the atomic `(tier, source)` pair
+    /// each leaf's [`Provenance`] carries — the [`ConfigTierKind`]
+    /// axis on one side and the [`crate::ConfigSourceKind`] axis on
+    /// the other. Together with [`Self::first_absent_tier`] and
+    /// [`Self::first_absent_source_kind`], this seam closes the
+    /// [`Option`]-shaped head-projection corner of the container-
+    /// altitude observed / coverage-gap partition on both axes — see
+    /// [`Self::first_contributing_tier`] for the full contract on the
+    /// head-projection surface at the container altitude.
+    #[must_use]
+    pub fn first_contributing_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.first_contributing_source_kind()
+    }
+
+    /// The **first-absent source-kind** — the earliest
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
+    /// overlay produced **zero** surviving effective leaves on this
+    /// resolved fold, or [`None`] when every source-kind heard from at
+    /// least once (full cover). Container-altitude peer of
+    /// [`ProvenanceMap::first_absent_source_kind`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into `self.provenance.first_absent_source_kind()`.
+    ///
+    /// The **coverage-gap peer** of
+    /// [`Self::first_contributing_source_kind`] on the same container
+    /// and the **source-kind-axis sibling** of [`Self::first_absent_tier`]
+    /// on the tier altitude: the two altitudes now close the same
+    /// coverage-gap head-projection shape on the two closed coordinates
+    /// of the atomic `(tier, source)` pair. Together with the three
+    /// sibling head-projections
+    /// ([`Self::first_contributing_tier`] / [`Self::first_absent_tier`]
+    /// / [`Self::first_contributing_source_kind`]), this closes the
+    /// container-altitude [`Option`]-shaped head-projection quartet
+    /// — the [`Option`]-shape corner of the `(observed, unobserved)
+    /// × (Vec, count, head)` 3-corner grid on both axes. The [`None`]
+    /// boundary here is **full cover**, not empty — see
+    /// [`Self::first_contributing_tier`] for the full contract.
+    #[must_use]
+    pub fn first_absent_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.first_absent_source_kind()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -89649,5 +89782,216 @@ mod progressive_tests {
             r.contributing_source_kinds_count() + r.absent_source_kinds_count(),
             crate::axis_cardinality::<crate::ConfigSourceKind>()
         );
+    }
+
+    // -------- ProgressiveResolution Option-shaped head-projection
+    // -------- quartet (container-altitude peer of ProvenanceMap
+    // -------- first_contributing_* / first_absent_* Option pairs;
+    // -------- the Option-shape corner of the 3-corner
+    // -------- (observed, unobserved) × (Vec, count, head) grid
+    // -------- whose Vec + count corners the observed / coverage-gap
+    // -------- partition pins one seam back)
+
+    #[test]
+    fn progressive_resolution_first_contributing_tier_agrees_with_provenance_first_contributing_tier()
+     {
+        // The load-bearing structural law on the container-altitude
+        // first_contributing_tier delegate: the container-altitude
+        // Option scalar equals the two-hop
+        // `res.provenance().first_contributing_tier()` pointwise.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::first_contributing_tier` through a
+        // different fold (a `contributing_tiers().first().copied()`
+        // that pays the Vec allocation the Option head exists to
+        // elide, a mis-projected `Provenance` accessor) before the
+        // drift can reach any consumer that reads
+        // `res.first_contributing_tier()` and expects it to match
+        // `res.provenance().first_contributing_tier()`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_tier(),
+            r.provenance().first_contributing_tier()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_tier_agrees_with_provenance_first_absent_tier() {
+        // Coverage-gap sibling of the first_contributing_tier pin
+        // above on the same container-altitude delegation — the
+        // closed-axis peer of the observed-cells head Option.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_absent_tier(), r.provenance().first_absent_tier());
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_source_kind_agrees_with_provenance_first_contributing_source_kind()
+     {
+        // Source-kind-axis peer of the first_contributing_tier pin
+        // above on the same container-altitude delegation — closes
+        // the observed-cells head Option on both axes of the atomic
+        // `(tier, source)` pair, matching the closure the Vec-shape
+        // observed-cells walker + scalar-count carry on the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_source_kind(),
+            r.provenance().first_contributing_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_source_kind_agrees_with_provenance_first_absent_source_kind()
+     {
+        // Source-kind-axis peer of the first_absent_tier pin above
+        // on the same container-altitude delegation — closes the
+        // coverage-gap head Option on both axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_absent_source_kind(),
+            r.provenance().first_absent_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_tier_equals_contributing_tiers_first_copied() {
+        // Option/Vec parity law on the container: the Option head
+        // seam names the same first-cell as
+        // `.contributing_tiers().first().copied()` — the whole point
+        // of the Option head is to return that cell without
+        // materialising the Vec. Catches a future edit that reroutes
+        // the Option head through a different projection (a histogram
+        // observed() cursor that mis-orders the closed axis, a walker
+        // cursor that skips a leaf) that would silently disagree with
+        // the Vec peer while still typechecking.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_tier(),
+            r.contributing_tiers().first().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_tier_equals_absent_tiers_first_copied() {
+        // Coverage-gap peer of the Option/Vec parity pin above on the
+        // tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_absent_tier(), r.absent_tiers().first().copied());
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_source_kind_equals_contributing_source_kinds_first_copied()
+     {
+        // Source-kind-axis peer of the Option/Vec parity pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_source_kind(),
+            r.contributing_source_kinds().first().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_source_kind_equals_absent_source_kinds_first_copied() {
+        // Coverage-gap peer of the Option/Vec parity pin above on the
+        // source-kind altitude — closes the `first_X() == vec.first().copied()`
+        // parity on all four cells of the 2×2 support / coverage-gap
+        // head-projection grid at the container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_absent_source_kind(),
+            r.absent_source_kinds().first().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_tier_agrees_with_tier_histogram_observed_next() {
+        // Cross-projection law between the head-Option and the
+        // histogram-observed seam on the same container: the
+        // observed-cells head Option equals
+        // `tier_histogram().observed().next()` pointwise. Catches a
+        // future edit that reorders one seam without the other (a
+        // head-Option cursor that skips a cell, a histogram observed()
+        // projection that mis-orders the closed axis) before the
+        // drift can reach any consumer that keys the two seams
+        // against each other on the container.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_tier(),
+            r.tier_histogram().observed().next()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_tier_agrees_with_tier_histogram_unobserved_next() {
+        // Coverage-gap peer of the head-Option/histogram-observed
+        // cross-projection pin above — pins the unobserved-cells head
+        // agreement on the same container seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_absent_tier(),
+            r.tier_histogram().unobserved().next()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_source_kind_agrees_with_source_kind_histogram_observed_next()
+     {
+        // Source-kind-axis peer of the head-Option/histogram-observed
+        // cross-projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_contributing_source_kind(),
+            r.source_kind_histogram().observed().next()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_absent_source_kind_agrees_with_source_kind_histogram_unobserved_next()
+     {
+        // Source-kind-axis peer of the head-Option/histogram-unobserved
+        // cross-projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_absent_source_kind(),
+            r.source_kind_histogram().unobserved().next()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_and_first_absent_tiers_are_disjoint_when_both_some()
+     {
+        // The container-altitude head-Option partition invariant on
+        // the tier altitude: when both head Options are `Some(t)`
+        // (partial-cover fold, neither empty nor full), the two head
+        // cells are distinct — a cell cannot simultaneously be the
+        // head of the observed subset and the head of its
+        // complement. Fully-Option dual of the Vec-shape partition
+        // pin two seams back
+        // (`progressive_resolution_contributing_and_absent_tiers_partition_closed_axis`)
+        // — both sides now Option, no `.contains(..)` on either side
+        // of the disjointness. Holds the two head-Option delegates
+        // jointly to the same partition shape the primitive-altitude
+        // peer carries.
+        let r = Prog::resolve_progressive();
+        if let (Some(head_contrib), Some(head_absent)) =
+            (r.first_contributing_tier(), r.first_absent_tier())
+        {
+            assert_ne!(head_contrib, head_absent);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_first_contributing_and_first_absent_source_kinds_are_disjoint_when_both_some()
+     {
+        // Source-kind-axis peer of the tier-altitude head-Option
+        // disjointness invariant pin above — closes the fully-Option
+        // support / coverage-gap disjointness on both axes of the
+        // atomic `(tier, source)` pair at the container altitude.
+        let r = Prog::resolve_progressive();
+        if let (Some(head_contrib), Some(head_absent)) = (
+            r.first_contributing_source_kind(),
+            r.first_absent_source_kind(),
+        ) {
+            assert_ne!(head_contrib, head_absent);
+        }
     }
 }
