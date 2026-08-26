@@ -20598,6 +20598,106 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_histogram(&self) -> crate::AxisHistogram<crate::ConfigSourceKind> {
         self.provenance.source_kind_histogram()
     }
+
+    /// The distinct tiers that produced ≥1 surviving effective leaf on
+    /// this resolved fold, in [`ConfigTier`] precedence order — the
+    /// container-altitude peer of [`ProvenanceMap::contributing_tiers`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.contributing_tiers()`.
+    ///
+    /// The histogram-derived observed-cells sibling of the histogram
+    /// pair ([`Self::tier_histogram`] / [`Self::source_kind_histogram`])
+    /// closed on the same container one seam back: the histogram folds
+    /// the per-leaf `(tier, source)` stream to a fixed-cardinality
+    /// bucket vector, and this walker projects that bucket vector to
+    /// the *observed-cells* subset — the tiers with count ≥1 — in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigTier`] precedence order by construction. Peer of
+    /// [`Self::absent_tiers`] on the same container: the two form the
+    /// **support / coverage-gap partition** on the tier altitude — every
+    /// cell of [`ConfigTierKind::ALL`] lies in exactly one of the two,
+    /// and the two `Vec<ConfigTierKind>` lengths sum to
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality].
+    ///
+    /// Before this seam, a consumer wanting the tier support of a
+    /// resolved fold (an operator dashboard listing *"tiers heard from:
+    /// [Bare, Discovered, Default]"*, an attestation manifest recording
+    /// the tier support of a rebuild window, a `/healthz/config` renderer
+    /// reporting per-tier presence) reached through the two-hop borrow
+    /// `res.provenance().contributing_tiers()`; this method collapses it
+    /// to one seam on the resolution container itself.
+    #[must_use]
+    pub fn contributing_tiers(&self) -> Vec<ConfigTierKind> {
+        self.provenance.contributing_tiers()
+    }
+
+    /// The distinct tiers that produced **zero** surviving effective
+    /// leaves on this resolved fold, in [`ConfigTier`] precedence order
+    /// — the container-altitude peer of [`ProvenanceMap::absent_tiers`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.absent_tiers()`.
+    ///
+    /// The coverage-gap peer of [`Self::contributing_tiers`] on the
+    /// same container: the two form the **support / coverage-gap
+    /// partition** on the tier altitude — every cell of
+    /// [`ConfigTierKind::ALL`] lies in exactly one of the two, disjoint
+    /// and complementary, and the two `Vec<ConfigTierKind>` lengths sum
+    /// to [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality].
+    /// See [`Self::contributing_tiers`] for the full contract on the
+    /// observed-cells / coverage-gap partition on the container altitude.
+    #[must_use]
+    pub fn absent_tiers(&self) -> Vec<ConfigTierKind> {
+        self.provenance.absent_tiers()
+    }
+
+    /// The distinct [`crate::ConfigSourceKind`]s that produced ≥1
+    /// surviving effective leaf on this resolved fold, in
+    /// [`crate::ConfigSourceKind::ALL`] declaration order — the
+    /// container-altitude peer of
+    /// [`ProvenanceMap::contributing_source_kinds`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into `self.provenance.contributing_source_kinds()`.
+    ///
+    /// The source-kind-axis sibling of [`Self::contributing_tiers`] on
+    /// the same container: the two walkers project the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries to the
+    /// observed-cells subset on the two closed-axis coordinates —
+    /// the [`ConfigTierKind`] axis on one side and the
+    /// [`crate::ConfigSourceKind`] axis on the other. Together with
+    /// [`Self::contributing_tiers`], this closes the observed-cells
+    /// support projection on both axes of the atomic pair at the
+    /// container altitude, matching the closure the histogram pair
+    /// carries on the same seam one altitude back. Peer of
+    /// [`Self::absent_source_kinds`] on the same container: the two
+    /// form the **support / coverage-gap partition** on the source-kind
+    /// altitude.
+    #[must_use]
+    pub fn contributing_source_kinds(&self) -> Vec<crate::ConfigSourceKind> {
+        self.provenance.contributing_source_kinds()
+    }
+
+    /// The distinct [`crate::ConfigSourceKind`]s that produced **zero**
+    /// surviving effective leaves on this resolved fold, in
+    /// [`crate::ConfigSourceKind::ALL`] declaration order — the
+    /// container-altitude peer of [`ProvenanceMap::absent_source_kinds`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.absent_source_kinds()`.
+    ///
+    /// The coverage-gap peer of [`Self::contributing_source_kinds`] on
+    /// the same container and the source-kind-axis sibling of
+    /// [`Self::absent_tiers`] on the tier altitude: the two altitudes
+    /// close the same observed / coverage-gap partition shape on the
+    /// two closed coordinates of the atomic `(tier, source)` pair each
+    /// leaf's [`Provenance`] carries. See [`Self::contributing_tiers`]
+    /// for the full contract on the observed-cells / coverage-gap
+    /// partition on the container altitude.
+    #[must_use]
+    pub fn absent_source_kinds(&self) -> Vec<crate::ConfigSourceKind> {
+        self.provenance.absent_source_kinds()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -89171,6 +89271,155 @@ mod progressive_tests {
         for kind in crate::ConfigSourceKind::ALL {
             let via_walker = r.source_kinds().filter(|x| x == kind).count();
             assert_eq!(hist.count(*kind), via_walker);
+        }
+    }
+
+    // -------- ProgressiveResolution observed / coverage-gap partition
+    // -------- (container-altitude peer of ProvenanceMap
+    // -------- contributing_* / absent_* pairs)
+
+    #[test]
+    fn progressive_resolution_contributing_tiers_agrees_with_provenance_contributing_tiers() {
+        // The load-bearing structural law on the container-altitude
+        // contributing_tiers delegate: the container-altitude walker
+        // equals the two-hop `res.provenance().contributing_tiers()`
+        // pointwise (same tier set, same ClosedAxis::ALL declaration
+        // order). Catches a future edit that reroutes
+        // `ProgressiveResolution::contributing_tiers` through a
+        // different fold (a bespoke `tiers().collect().dedup()` that
+        // loses the closed-axis order, an `.filter(..)` prefix on the
+        // histogram, a mis-projected `Provenance` accessor) before
+        // the drift can reach any consumer that reads
+        // `res.contributing_tiers()` and expects it to match
+        // `res.provenance().contributing_tiers()`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.contributing_tiers(), r.provenance().contributing_tiers());
+    }
+
+    #[test]
+    fn progressive_resolution_absent_tiers_agrees_with_provenance_absent_tiers() {
+        // Coverage-gap sibling of the contributing_tiers pin above on
+        // the same container-altitude delegation — the closed-axis
+        // peer of the observed-cells walker.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.absent_tiers(), r.provenance().absent_tiers());
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_source_kinds_agrees_with_provenance_contributing_source_kinds()
+     {
+        // Source-kind-axis peer of the contributing_tiers pin above
+        // on the same container-altitude delegation — closes the
+        // observed-cells walker on both axes of the atomic
+        // `(tier, source)` pair at the container altitude, matching
+        // the closure the histogram pair carries on the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_source_kinds(),
+            r.provenance().contributing_source_kinds()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_absent_source_kinds_agrees_with_provenance_absent_source_kinds() {
+        // Source-kind-axis peer of the absent_tiers pin above on the
+        // same container-altitude delegation — closes the coverage-gap
+        // walker on both axes of the atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.absent_source_kinds(),
+            r.provenance().absent_source_kinds()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_tiers_agrees_with_tier_histogram_observed() {
+        // Cross-projection law between the observed-cells walker and
+        // the histogram seam on the same container: the observed-cells
+        // walker equals `tier_histogram().observed().collect()`
+        // pointwise. Catches a future edit that reorders one seam
+        // without the other (a walker cursor that skips a leaf, a
+        // histogram observed() projection that mis-orders the closed
+        // axis) before the drift can reach any consumer that keys the
+        // two seams against each other on the container.
+        let r = Prog::resolve_progressive();
+        let via_walker = r.contributing_tiers();
+        let via_hist: Vec<ConfigTierKind> = r.tier_histogram().observed().collect();
+        assert_eq!(via_walker, via_hist);
+    }
+
+    #[test]
+    fn progressive_resolution_absent_tiers_agrees_with_tier_histogram_unobserved() {
+        // Coverage-gap peer of the contributing_tiers/observed
+        // cross-projection pin above — pins the unobserved-cells
+        // agreement on the same container seam.
+        let r = Prog::resolve_progressive();
+        let via_walker = r.absent_tiers();
+        let via_hist: Vec<ConfigTierKind> = r.tier_histogram().unobserved().collect();
+        assert_eq!(via_walker, via_hist);
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_source_kinds_agrees_with_source_kind_histogram_observed()
+    {
+        // Source-kind-axis peer of the contributing_tiers/observed
+        // cross-projection pin above.
+        let r = Prog::resolve_progressive();
+        let via_walker = r.contributing_source_kinds();
+        let via_hist: Vec<crate::ConfigSourceKind> = r.source_kind_histogram().observed().collect();
+        assert_eq!(via_walker, via_hist);
+    }
+
+    #[test]
+    fn progressive_resolution_absent_source_kinds_agrees_with_source_kind_histogram_unobserved() {
+        // Source-kind-axis peer of the absent_tiers/unobserved
+        // cross-projection pin above.
+        let r = Prog::resolve_progressive();
+        let via_walker = r.absent_source_kinds();
+        let via_hist: Vec<crate::ConfigSourceKind> =
+            r.source_kind_histogram().unobserved().collect();
+        assert_eq!(via_walker, via_hist);
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_and_absent_tiers_partition_closed_axis() {
+        // The container-altitude observed / coverage-gap partition
+        // invariant: the two walkers cover the closed axis without
+        // remainder (every ConfigTierKind cell lies in exactly one,
+        // never both), and their lengths sum to
+        // axis_cardinality::<ConfigTierKind>(). Peer of the
+        // partition invariant that ProvenanceMap already carries on
+        // the primitive altitude — this pin holds the two container-
+        // altitude delegates jointly to the same shape a consumer
+        // routing through `res.contributing_tiers()` /
+        // `res.absent_tiers()` reads them as.
+        let r = Prog::resolve_progressive();
+        let contributing = r.contributing_tiers();
+        let absent = r.absent_tiers();
+        assert_eq!(
+            contributing.len() + absent.len(),
+            crate::axis_cardinality::<ConfigTierKind>()
+        );
+        for tier in ConfigTierKind::ALL {
+            assert_ne!(contributing.contains(tier), absent.contains(tier));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_and_absent_source_kinds_partition_closed_axis() {
+        // Source-kind-axis peer of the tier-altitude partition
+        // invariant pin above — closes the observed / coverage-gap
+        // partition invariant on both axes of the atomic
+        // `(tier, source)` pair at the container altitude.
+        let r = Prog::resolve_progressive();
+        let contributing = r.contributing_source_kinds();
+        let absent = r.absent_source_kinds();
+        assert_eq!(
+            contributing.len() + absent.len(),
+            crate::axis_cardinality::<crate::ConfigSourceKind>()
+        );
+        for kind in crate::ConfigSourceKind::ALL {
+            assert_ne!(contributing.contains(kind), absent.contains(kind));
         }
     }
 }
