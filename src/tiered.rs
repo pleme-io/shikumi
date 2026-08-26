@@ -21693,6 +21693,110 @@ impl<T> ProgressiveResolution<T> {
     )> {
         self.provenance.extremal_source_kind_observations()
     }
+
+    /// The **extremal tiers pair** on this resolved fold's per-leaf
+    /// [`ConfigTierKind`] histogram — the fused-pair
+    /// `Option<(ConfigTierKind, ConfigTierKind)>` packing the modal
+    /// (argmax) cell and the antimodal (argmin) cell into one scalar.
+    /// Returns [`None`] exactly on the empty resolution; otherwise
+    /// returns `Some((self.dominant_tier().unwrap(),
+    /// self.recessive_tier().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant so the
+    /// outer [`Option`] fuses both empty gates into a single check.
+    ///
+    /// Container-altitude peer of [`ProvenanceMap::extremal_tiers`] on
+    /// the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.extremal_tiers()`.
+    /// The **cells-only projection** of
+    /// [`Self::extremal_tier_observations`] on the same container: the
+    /// fused-quadruple pair one seam over carries the tie-broken
+    /// representative *and* its count *and* its tie cardinality on
+    /// both sides; this method carries only the two representative
+    /// cells, dropping the count + multiplicity halves. The projection
+    /// law `self.extremal_tier_observations().map(|((mk, _, _),
+    /// (ak, _, _))| (mk, ak))` recovers this fused pair pointwise. The
+    /// scalar-half modal cell projects out by `.map(|(m, _)| m)` and
+    /// recovers [`Self::dominant_tier`] pointwise; the scalar-half
+    /// antimodal cell projects out by `.map(|(_, a)| a)` and recovers
+    /// [`Self::recessive_tier`] pointwise.
+    ///
+    /// The **source-kind-axis sibling** of
+    /// [`Self::extremal_source_kinds`] on the source-kind altitude of
+    /// the same [`ProgressiveResolution`] — together the two methods
+    /// close the **container-altitude cells-only fused-pair pair** on
+    /// both closed coordinates of the atomic `(tier, source)` pair
+    /// each leaf's [`Provenance`] carries, matching the shape
+    /// [`ProvenanceMap::extremal_tiers`] already carries at the
+    /// primitive altitude one seam down and
+    /// [`ConfigDiff::extremal_kinds`] carries on the cardinality-`3`
+    /// [`DiffLineKind`] axis at the diff altitude one altitude over.
+    ///
+    /// The natural typed primitive for reading *"what are the modal
+    /// and antimodal tiers on this resolved fold?"* at one method
+    /// call on a `ProgressiveResolution<T>` directly — an
+    /// operator-facing attribution summary reading both endpoints of
+    /// the tier histogram simultaneously (the `configplane inspect`
+    /// per-slice tier-attribution line reading off a resolved
+    /// `ProgressiveResolution`, a `ConfigStore` audit hook logging
+    /// both extremes of a hot-reload's post-fold per-slice tier
+    /// attribution, a rebuild attestation manifest recording per-tick
+    /// tier extremal pairs off the fold's own return value). Before
+    /// this seam, a consumer answering that on a
+    /// `ProgressiveResolution<T>` reached through the two-hop borrow
+    /// `res.provenance().extremal_tiers()` or open-coded the fused
+    /// pair as `res.dominant_tier().zip(res.recessive_tier())`; this
+    /// method collapses both spellings to one seam on the resolution
+    /// container itself, matching the container-altitude fused-
+    /// quadruple peer [`Self::extremal_tier_observations`] one shape
+    /// over.
+    #[must_use]
+    pub fn extremal_tiers(&self) -> Option<(ConfigTierKind, ConfigTierKind)> {
+        self.provenance.extremal_tiers()
+    }
+
+    /// The **extremal source-kinds pair** on this resolved fold's
+    /// per-leaf [`crate::ConfigSourceKind`] histogram — the fused-pair
+    /// `Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)>`
+    /// packing the modal (argmax) cell and the antimodal (argmin)
+    /// cell into one scalar. Returns [`None`] exactly on the empty
+    /// resolution; otherwise returns
+    /// `Some((self.dominant_source_kind().unwrap(),
+    /// self.recessive_source_kind().unwrap()))` where the two
+    /// component [`Option`]s share the same non-emptiness discriminant
+    /// so the outer [`Option`] fuses both empty gates into a single
+    /// check.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::extremal_source_kinds`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.extremal_source_kinds()`. The
+    /// **cells-only projection** of
+    /// [`Self::extremal_source_kind_observations`] on the same
+    /// container: the fused-quadruple pair one seam over carries the
+    /// tie-broken representative *and* its count *and* its tie
+    /// cardinality on both sides; this method carries only the two
+    /// representative cells, dropping the count + multiplicity halves.
+    /// The projection law
+    /// `self.extremal_source_kind_observations().map(|((mk, _, _),
+    /// (ak, _, _))| (mk, ak))` recovers this fused pair pointwise.
+    /// The scalar-half modal cell projects out by `.map(|(m, _)| m)`
+    /// and recovers [`Self::dominant_source_kind`] pointwise; the
+    /// scalar-half antimodal cell projects out by `.map(|(_, a)| a)`
+    /// and recovers [`Self::recessive_source_kind`] pointwise.
+    ///
+    /// The **tier-axis sibling** of [`Self::extremal_tiers`] on the
+    /// tier altitude of the same [`ProgressiveResolution`] — together
+    /// the two methods close the **container-altitude cells-only
+    /// fused-pair pair** on both closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries,
+    /// matching the shape [`ProvenanceMap::extremal_source_kinds`]
+    /// already carries at the primitive altitude one seam down.
+    #[must_use]
+    pub fn extremal_source_kinds(
+        &self,
+    ) -> Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)> {
+        self.provenance.extremal_source_kinds()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -93122,6 +93226,191 @@ mod progressive_tests {
         assert_eq!(
             r.extremal_source_kind_observations().is_some(),
             r.modal_source_kind_observation().is_some()
+        );
+    }
+
+    // ── ProgressiveResolution::extremal_tiers / extremal_source_kinds —
+    //    cells-only fused-pair container-altitude siblings of the
+    //    fused-quadruple pair `extremal_tier_observations` /
+    //    `extremal_source_kind_observations` on the same container.
+    //    Drop the count + multiplicity halves and carry only the two
+    //    representative cells. Container-altitude peers of the shipped
+    //    primitive-altitude `ProvenanceMap::extremal_tiers` /
+    //    `ProvenanceMap::extremal_source_kinds`, one seam down; together
+    //    the two methods close the container-altitude cells-only fused-
+    //    pair pair on both closed coordinates of the atomic
+    //    (tier, source) pair each leaf's `Provenance` carries, matching
+    //    `ConfigDiff::extremal_kinds` on the cardinality-`3`
+    //    `DiffLineKind` axis at the diff altitude one altitude over. ──
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_agrees_with_provenance_extremal_tiers() {
+        // Delegation pin on the container-altitude cells-only fused
+        // pair: `res.extremal_tiers()` must route one-hop to the
+        // shipped primitive-altitude seam on the same underlying
+        // histogram, so a future edit rerouting the container through
+        // a rebuilt histogram or the fused-quadruple projection is
+        // caught structurally.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_tiers(), r.provenance().extremal_tiers());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_agrees_with_provenance_extremal_source_kinds() {
+        // Source-kind-axis peer of the delegation pin above — closes
+        // the container-altitude cells-only fused-pair delegation on
+        // both closed axes of the atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds(),
+            r.provenance().extremal_source_kinds()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_equals_dominant_recessive_option_zip() {
+        // Structural-form pin: the fused pair equals
+        // `dominant_tier().zip(recessive_tier())` on the same container
+        // pointwise. Catches any future edit that drifts the fused pair
+        // away from the two component scalars on the same resolution.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers(),
+            r.dominant_tier().zip(r.recessive_tier())
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_equals_dominant_recessive_option_zip() {
+        // Source-kind-axis peer of the structural-form pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds(),
+            r.dominant_source_kind().zip(r.recessive_source_kind())
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_modal_projection_recovers_dominant_tier() {
+        // Modal-half projection law between the cells-only fused pair
+        // and the scalar-half modal-cell sibling on the same container:
+        // `res.extremal_tiers().map(|(m, _)| m)` equals
+        // `res.dominant_tier()` pointwise.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_tiers().map(|(m, _)| m), r.dominant_tier());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_antimodal_projection_recovers_recessive_tier() {
+        // Antimodal peer of the modal-projection pin above on the tier
+        // altitude — the antimodal cell is recoverable by
+        // `.map(|(_, a)| a)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_tiers().map(|(_, a)| a), r.recessive_tier());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_modal_projection_recovers_dominant_source_kind()
+    {
+        // Source-kind-axis peer of the modal-projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds().map(|(m, _)| m),
+            r.dominant_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_antimodal_projection_recovers_recessive_source_kind()
+     {
+        // Source-kind-axis peer of the antimodal-projection pin above —
+        // closes the container-altitude cells-only projection law on
+        // all four cells of the modal × antimodal × (tier, source) grid:
+        // every cells-only fused pair recovers its scalar-half modal
+        // sibling by `.map(|(m, _)| m)` and its scalar-half antimodal
+        // sibling by `.map(|(_, a)| a)` on the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds().map(|(_, a)| a),
+            r.recessive_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_matches_extremal_tier_observations_cells_projection() {
+        // Cross-shape projection pin: the cells-only fused pair equals
+        // the cells-only projection
+        // `.map(|((mk, _, _), (ak, _, _))| (mk, ak))` of the fused-
+        // quadruple pair `extremal_tier_observations` on the same
+        // container. Both routes read the same two representative cells
+        // off the same underlying tier histogram; a future edit that
+        // drifts one representative away from the other on any fixture
+        // is caught here.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers(),
+            r.extremal_tier_observations()
+                .map(|((mk, _, _), (ak, _, _))| (mk, ak))
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_matches_extremal_source_kind_observations_cells_projection()
+     {
+        // Source-kind-axis peer of the cross-shape projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds(),
+            r.extremal_source_kind_observations()
+                .map(|((mk, _, _), (ak, _, _))| (mk, ak))
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_presence_matches_dominant_tier() {
+        // Presence-parity between the cells-only fused pair and its
+        // modal-half component on the tier altitude — both project to
+        // `None` on the empty resolution and to `Some(_)` on the
+        // non-empty resolution, so consumers may branch on either
+        // discriminant interchangeably.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_tiers().is_some(), r.dominant_tier().is_some());
+        assert_eq!(r.extremal_tiers().is_some(), r.recessive_tier().is_some());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_presence_matches_dominant_source_kind() {
+        // Source-kind-axis peer of the presence-parity pin above —
+        // closes the container-altitude cells-only fused-pair presence-
+        // parity closure on both closed axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds().is_some(),
+            r.dominant_source_kind().is_some()
+        );
+        assert_eq!(
+            r.extremal_source_kinds().is_some(),
+            r.recessive_source_kind().is_some()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_prog_fixture_is_default_bare() {
+        // Prog fixture: tier histogram counts read
+        // {Bare:1, Default:2, Discovered:1}. Modal side: `Default`
+        // uniquely peaks at count `2` — modal cell reads `Default`.
+        // Antimodal side: trough count reads `1`, cells at the trough
+        // are `{Bare, Discovered}`; declaration-order tie-break on
+        // `Bare → Default → Custom → Discovered` picks `Bare`. Fused
+        // pair reads `Some((Default, Bare))` — the strictly-unimodal
+        // witness the primitive-altitude sibling pin covers on the
+        // same underlying histogram; the container carries the same
+        // pair through the one-hop delegation.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers(),
+            Some((ConfigTierKind::Default, ConfigTierKind::Bare)),
         );
     }
 }
