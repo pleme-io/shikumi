@@ -29613,6 +29613,92 @@ impl ConfigDiff {
     pub fn recessive_kind_observation(&self) -> Option<(DiffLineKind, usize)> {
         self.kind_histogram().recessive_observation()
     }
+
+    /// The **modal kind observation** — the fused
+    /// `(cell, count, multiplicity)` triple on the modal side of this
+    /// diff's kind histogram: the modal [`DiffLineKind`] with its peak
+    /// line count and how many kind cells tied at that peak. Returns
+    /// [`None`] exactly on the empty diff; otherwise returns
+    /// `Some((k, n, m))` where `k == self.dominant_kind().unwrap()`,
+    /// `n == self.peak_kind_count() >= 1`, and
+    /// `m == self.peak_kind_multiplicity() >= 1`.
+    ///
+    /// Diff-altitude peer of
+    /// [`crate::AxisHistogram::modal_observation`] one seam down,
+    /// delegating one seam down into
+    /// `self.kind_histogram().modal_observation()`. Extends the
+    /// diff-altitude modal-observation *pair*
+    /// [`Self::dominant_kind_observation`] already shipped on the same
+    /// container with the tie-count multiplicity component in the same
+    /// one-hop shape: the `(cell, count)` pair projects out of this
+    /// triple by `.map(|(k, n, _)| (k, n))` and recovers
+    /// [`Self::dominant_kind_observation`] pointwise; the scalar-half
+    /// cell alone projects by `.map(|(k, _, _)| k)` and recovers
+    /// [`Self::dominant_kind`] pointwise; the scalar-half count alone
+    /// projects by `.map_or(0, |(_, n, _)| n)` and recovers
+    /// [`Self::peak_kind_count`] pointwise; the scalar-half
+    /// multiplicity alone projects by `.map_or(0, |(_, _, m)| m)` and
+    /// recovers [`Self::peak_kind_multiplicity`] pointwise. Halves the
+    /// cost of the previous inline `(diff.dominant_kind(),
+    /// diff.peak_kind_count(), diff.peak_kind_multiplicity())` idiom
+    /// — three coordinated walks over the counts vector fused into
+    /// one via [`crate::AxisHistogram::modal_observation`] one
+    /// altitude down.
+    ///
+    /// **Antimodal peer** [`Self::antimodal_kind_observation`] closes
+    /// the diff-altitude modal-triple pair on the kind altitude —
+    /// together they fuse the `(modal, antimodal)` fused-triple pair
+    /// on the diff-cell axis, matching the diff-altitude
+    /// modal-observation *pair* pair
+    /// ([`Self::dominant_kind_observation`] /
+    /// [`Self::recessive_kind_observation`]) one seam over on the same
+    /// shape, and matching the container-altitude modal-triple quartet
+    /// on the (tier, source) axes carried by
+    /// [`ProgressiveResolution::modal_tier_observation`] et al. one
+    /// altitude up.
+    #[must_use]
+    pub fn modal_kind_observation(&self) -> Option<(DiffLineKind, usize, usize)> {
+        self.kind_histogram().modal_observation()
+    }
+
+    /// The **antimodal kind observation** — the fused
+    /// `(cell, count, multiplicity)` triple on the antimodal side of
+    /// this diff's kind histogram: the recessive [`DiffLineKind`] with
+    /// its trough line count and how many kind cells tied at that
+    /// trough. Returns [`None`] exactly on the empty diff; otherwise
+    /// returns `Some((k, n, m))` where
+    /// `k == self.recessive_kind().unwrap()`,
+    /// `n == self.trough_kind_count() >= 1`, and
+    /// `m == self.trough_kind_multiplicity() >= 1`.
+    ///
+    /// Diff-altitude peer of
+    /// [`crate::AxisHistogram::antimodal_observation`] one seam down,
+    /// delegating one seam down into
+    /// `self.kind_histogram().antimodal_observation()`. Antimodal peer
+    /// of [`Self::modal_kind_observation`] on the same container —
+    /// together they fuse the `(modal, antimodal)` fused-triple pair
+    /// on the kind altitude, matching the modal-observation *pair*
+    /// pair ([`Self::dominant_kind_observation`] /
+    /// [`Self::recessive_kind_observation`]) one seam over. Coincides
+    /// with [`Self::modal_kind_observation`] on every uniform-count
+    /// diff (peak-count == trough-count with all cells at the shared
+    /// count) and on singleton-support diffs (a sole observed cell
+    /// that is simultaneously the modal and antimodal cell at
+    /// `(cell, len(), 1)`).
+    ///
+    /// The `(cell, count)` pair projects out of this triple by
+    /// `.map(|(k, n, _)| (k, n))` and recovers
+    /// [`Self::recessive_kind_observation`] pointwise; the scalar-half
+    /// cell alone projects by `.map(|(k, _, _)| k)` and recovers
+    /// [`Self::recessive_kind`] pointwise; the scalar-half count alone
+    /// projects by `.map_or(0, |(_, n, _)| n)` and recovers
+    /// [`Self::trough_kind_count`] pointwise; the scalar-half
+    /// multiplicity alone projects by `.map_or(0, |(_, _, m)| m)` and
+    /// recovers [`Self::trough_kind_multiplicity`] pointwise.
+    #[must_use]
+    pub fn antimodal_kind_observation(&self) -> Option<(DiffLineKind, usize, usize)> {
+        self.kind_histogram().antimodal_observation()
+    }
 }
 
 #[cfg(test)]
@@ -46010,6 +46096,368 @@ mod tests {
                 let trough = diff.recessive_kind_observation();
                 let peak_count = peak.map_or(0, |(_, n)| n);
                 let trough_count = trough.map_or(0, |(_, n)| n);
+                assert!(
+                    peak_count > trough_count,
+                    "peak count ({peak_count}) must strictly exceed \
+                     trough count ({trough_count}) on strictly-unimodal \
+                     support",
+                );
+            }
+        }
+    }
+
+    // ── modal_kind_observation / antimodal_kind_observation —
+    //    diff-altitude closure of the fused-triple
+    //    `(cell, count, multiplicity)` pair on the kind axis, mirroring
+    //    the container-altitude quartet on (tier, source) at the
+    //    ProgressiveResolution altitude (commit `916ecb4`). ─────────
+
+    #[test]
+    fn modal_kind_observation_agrees_with_kind_histogram_modal_observation_pointwise() {
+        // Delegation pin: `modal_kind_observation` routes through
+        // `kind_histogram().modal_observation()` on every fixture.
+        // Catches a future edit that reroutes the diff-altitude
+        // triple through a rebuilt fold instead of one-hop
+        // delegating to the primitive-altitude fused triple.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().modal_observation();
+            assert_eq!(diff.modal_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_agrees_with_kind_histogram_antimodal_observation_pointwise() {
+        // Delegation pin: `antimodal_kind_observation` routes
+        // through `kind_histogram().antimodal_observation()` on every
+        // fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().antimodal_observation();
+            assert_eq!(diff.antimodal_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_pair_projection_recovers_dominant_kind_observation_pointwise() {
+        // Fused-triple → fused-pair projection law:
+        // `.map(|(k, n, _)| (k, n))` on the triple recovers the
+        // shipped `dominant_kind_observation` fused pair pointwise —
+        // the diff-altitude modal-triple extends the shipped modal
+        // pair with the tie-count component in the same one-hop
+        // shape.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.modal_kind_observation().map(|(k, n, _)| (k, n));
+            assert_eq!(via_map, diff.dominant_kind_observation());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_pair_projection_recovers_recessive_kind_observation_pointwise() {
+        // Fused-triple → fused-pair projection law:
+        // `.map(|(k, n, _)| (k, n))` on the antimodal triple recovers
+        // the shipped `recessive_kind_observation` fused pair
+        // pointwise.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.antimodal_kind_observation().map(|(k, n, _)| (k, n));
+            assert_eq!(via_map, diff.recessive_kind_observation());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_cell_projection_recovers_dominant_kind_pointwise() {
+        // Cell-side scalar projection: `.map(|(k, _, _)| k) ==
+        // dominant_kind()`. Direct pin of the fused-triple upstream
+        // over the modal-cell scalar.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.modal_kind_observation().map(|(k, _, _)| k);
+            assert_eq!(via_map, diff.dominant_kind());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_cell_projection_recovers_recessive_kind_pointwise() {
+        // Cell-side scalar projection: `.map(|(k, _, _)| k) ==
+        // recessive_kind()`. Direct pin of the fused-triple upstream
+        // over the antimodal-cell scalar.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.antimodal_kind_observation().map(|(k, _, _)| k);
+            assert_eq!(via_map, diff.recessive_kind());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_count_projection_recovers_peak_kind_count_pointwise() {
+        // Count-side scalar projection: `.map_or(0, |(_, n, _)| n) ==
+        // peak_kind_count()`. Direct pin over the peak-count scalar.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.modal_kind_observation().map_or(0, |(_, n, _)| n);
+            assert_eq!(via_map, diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_count_projection_recovers_trough_kind_count_pointwise() {
+        // Count-side scalar projection: `.map_or(0, |(_, n, _)| n) ==
+        // trough_kind_count()`. Direct pin over the trough-count
+        // scalar.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.antimodal_kind_observation().map_or(0, |(_, n, _)| n);
+            assert_eq!(via_map, diff.trough_kind_count());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_multiplicity_projection_recovers_peak_kind_multiplicity_pointwise() {
+        // Multiplicity-side scalar projection: `.map_or(0, |(_, _, m)| m)
+        // == peak_kind_multiplicity()`. Direct pin over the peak-tie-
+        // count scalar — the new component the fused triple carries
+        // beyond the shipped fused pair.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.modal_kind_observation().map_or(0, |(_, _, m)| m);
+            assert_eq!(via_map, diff.peak_kind_multiplicity());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_multiplicity_projection_recovers_trough_kind_multiplicity_pointwise()
+     {
+        // Multiplicity-side scalar projection: `.map_or(0, |(_, _, m)| m)
+        // == trough_kind_multiplicity()`. Direct pin over the trough-
+        // tie-count scalar.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.antimodal_kind_observation().map_or(0, |(_, _, m)| m);
+            assert_eq!(via_map, diff.trough_kind_multiplicity());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin — matches the shipped
+        // `dominant_kind_observation` boundary on the same fixtures.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.modal_kind_observation().is_none();
+            assert_eq!(is_none, !diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin — matches the shipped
+        // `recessive_kind_observation` boundary on the same fixtures.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.antimodal_kind_observation().is_none();
+            assert_eq!(is_none, !diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_empty_diff_is_none() {
+        // Empty-diff polarity pin: the empty diff has no observed
+        // cell, so the fused triple reads `None`.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.modal_kind_observation(), None);
+    }
+
+    #[test]
+    fn antimodal_kind_observation_empty_diff_is_none() {
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.antimodal_kind_observation(), None);
+    }
+
+    #[test]
+    fn modal_kind_observation_singleton_support_is_some_singleton_triple() {
+        // Singleton-support polarity pin: two `Added` lines carry
+        // every observation on `Added` with multiplicity `1` at the
+        // peak — the sole observed cell paired with the total line
+        // count and a tie-count of `1`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.modal_kind_observation(),
+            Some((DiffLineKind::Added, 2, 1)),
+        );
+    }
+
+    #[test]
+    fn antimodal_kind_observation_singleton_support_coincides_with_modal_pointwise() {
+        // Coincidence-boundary pin on singleton-support: peak and
+        // trough coincide at `(cell, len(), 1)` — the sole observed
+        // cell is simultaneously the modal and antimodal cell, at
+        // the shared count and shared tie-count `1`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(
+            diff.antimodal_kind_observation(),
+            diff.modal_kind_observation(),
+        );
+        assert_eq!(
+            diff.antimodal_kind_observation(),
+            Some((DiffLineKind::Added, 2, 1)),
+        );
+    }
+
+    #[test]
+    fn modal_kind_observation_uniform_three_kind_cover_is_removed_at_one_multiplicity_three() {
+        // Uniform full-cover polarity pin: one line per kind gives
+        // peak count `1` tied across all three cells; declaration-
+        // order picks `Removed` as `.0`, with multiplicity `3`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.modal_kind_observation(),
+            Some((DiffLineKind::Removed, 1, 3)),
+        );
+    }
+
+    #[test]
+    fn antimodal_kind_observation_uniform_three_kind_cover_coincides_with_modal_pointwise() {
+        // On uniform-count histograms, peak and trough coincide with
+        // the same declaration-order tie-break: `(Removed, 1, 3)`
+        // reads on both sides.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.antimodal_kind_observation(),
+            diff.modal_kind_observation(),
+        );
+        assert_eq!(
+            diff.antimodal_kind_observation(),
+            Some((DiffLineKind::Removed, 1, 3)),
+        );
+    }
+
+    #[test]
+    fn modal_kind_observation_context_dominated_fixture_is_context_at_three_multiplicity_one() {
+        // Strictly-unimodal polarity pin: three `Context` + one
+        // `Removed` puts `Context` uniquely at the peak count `3`
+        // with tie-count `1`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.modal_kind_observation(),
+            Some((DiffLineKind::Context, 3, 1)),
+        );
+    }
+
+    #[test]
+    fn antimodal_kind_observation_context_dominated_fixture_is_removed_at_one_multiplicity_one() {
+        // Strictly-unimodal polarity pin (antimodal side): the
+        // context-dominated fixture has `Removed` uniquely at the
+        // trough count `1` with tie-count `1`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.antimodal_kind_observation(),
+            Some((DiffLineKind::Removed, 1, 1)),
+        );
+    }
+
+    #[test]
+    fn modal_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Positivity pin: `n >= 1` on every non-empty diff — every
+        // non-empty support has at least one line at the modal cell.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n, _)) = diff.modal_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Positivity pin: `n >= 1` on every non-empty diff.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n, _)) = diff.antimodal_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_multiplicity_component_bounded_by_axis_cardinality_pointwise() {
+        // Bounded-multiplicity pin: `1 <= m <=
+        // axis_cardinality::<DiffLineKind>()` (= 3) on every non-
+        // empty diff.
+        let axis_card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, _, m)) = diff.modal_kind_observation() {
+                assert!(m >= 1);
+                assert!(m <= axis_card);
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_multiplicity_component_bounded_by_axis_cardinality_pointwise() {
+        let axis_card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, _, m)) = diff.antimodal_kind_observation() {
+                assert!(m >= 1);
+                assert!(m <= axis_card);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_coincide_on_uniform_or_empty_pointwise() {
+        // Coincidence-boundary law: the modal and antimodal fused
+        // triples coincide pointwise on every uniform-count diff
+        // (peak == trough with the same declaration-order tie-break)
+        // and on the empty diff (both `None`). Antimodal-peer of the
+        // shipped coincidence law on the fused pair
+        // `recessive_kind_observation_coincides_with_dominant_kind_observation_on_uniform_count_or_empty_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let empty_or_uniform =
+                diff.lines.is_empty() || diff.kind_histogram().is_uniform_count();
+            if empty_or_uniform {
+                assert_eq!(
+                    diff.modal_kind_observation(),
+                    diff.antimodal_kind_observation(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_diverge_on_strictly_unimodal_count_pointwise() {
+        // Peak/trough count divergence on strictly-unimodal support:
+        // the modal-side and antimodal-side count components read
+        // OPPOSITE ends of the observation interval when the
+        // histogram is not uniform-count. Contrapositive of the
+        // coincidence law above.
+        for diff in dominant_kind_fixtures() {
+            let strictly_unimodal =
+                !diff.lines.is_empty() && !diff.kind_histogram().is_uniform_count();
+            if strictly_unimodal {
+                let peak_count = diff.modal_kind_observation().map_or(0, |(_, n, _)| n);
+                let trough_count = diff.antimodal_kind_observation().map_or(0, |(_, n, _)| n);
                 assert!(
                     peak_count > trough_count,
                     "peak count ({peak_count}) must strictly exceed \
