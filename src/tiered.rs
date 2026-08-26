@@ -6618,6 +6618,126 @@ impl ProvenanceMap {
         self.source_kind_histogram().extremal_observations()
     }
 
+    /// The **extremal source-kinds pair** on this fold's per-leaf
+    /// [`crate::ConfigSourceKind`] histogram — the fused-pair
+    /// `Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)>`
+    /// packing the modal (argmax) cell and the antimodal (argmin) cell
+    /// into one scalar. Returns [`None`] exactly on the empty map;
+    /// otherwise returns `Some((self.dominant_source_kind().unwrap(),
+    /// self.recessive_source_kind().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant so the
+    /// outer [`Option`] fuses both empty gates into a single check.
+    ///
+    /// Source-kind-altitude **cells-only projection** of
+    /// [`Self::extremal_source_kind_observations`] — the fused-quadruple
+    /// pair one seam over carries the tie-broken representative *and*
+    /// its count *and* its tie cardinality on both sides; this method
+    /// carries only the two representative cells, dropping the count +
+    /// multiplicity halves. The projection law
+    /// `self.extremal_source_kind_observations().map(|((mk, _, _),
+    /// (ak, _, _))| (mk, ak))` recovers this fused pair pointwise. The
+    /// scalar-half modal cell projects out by `.map(|(m, _)| m)` and
+    /// recovers [`Self::dominant_source_kind`] pointwise; the scalar-
+    /// half antimodal cell projects out by `.map(|(_, a)| a)` and
+    /// recovers [`Self::recessive_source_kind`] pointwise.
+    ///
+    /// Fused-pair peer of
+    /// `self.dominant_source_kind().zip(self.recessive_source_kind())`
+    /// — the two half-[`Option`]s share the empty / non-empty
+    /// discriminant (both [`Some`] on every non-empty map, both
+    /// [`None`] on the empty map), so the fused pair carries the same
+    /// non-emptiness discriminant as either component. Consumers
+    /// matching on `Some((modal_source_kind, antimodal_source_kind))`
+    /// never see one side present with the other absent — the
+    /// structural invariant [`Option::zip`] itself upholds on any two
+    /// shared-discriminant options, verified here on the specific
+    /// ([`Self::dominant_source_kind`], [`Self::recessive_source_kind`])
+    /// pair by the delegation implementation.
+    ///
+    /// Source-kind-altitude peer of
+    /// [`crate::AxisHistogram::dominant_cell`].[`Option::zip`]([`crate::AxisHistogram::recessive_cell`])
+    /// one seam down on the source-kind axis — the shipped primitive-
+    /// altitude modal-cell and antimodal-cell scalars fuse into an
+    /// `Option<(A, A)>` pair by [`Option::zip`], and this source-kind-
+    /// altitude method carries that same shape on the source-kind
+    /// histogram surface at one method call.
+    ///
+    /// **Sibling closure at the primitive altitude.** The
+    /// **tier-axis sibling** of [`Self::extremal_tiers`] on the tier
+    /// altitude of the same [`ProvenanceMap`] — together the two
+    /// methods close the **primitive-altitude cells-only fused-pair
+    /// quartet** on both closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries,
+    /// matching the shape [`ConfigDiff::extremal_kinds`] already
+    /// carried on the cardinality-`3` [`DiffLineKind`] axis at the
+    /// diff altitude one altitude over.
+    ///
+    /// The natural typed primitive for reading *"what are the modal
+    /// and antimodal source-kinds on this resolved fold?"* at one
+    /// method call — an operator-facing attribution summary reading
+    /// both endpoints of the source-kind histogram simultaneously (the
+    /// `configplane inspect` per-slice attribution line, a `ConfigStore`
+    /// audit hook logging both extremes of a hot-reload's post-fold
+    /// per-slice source-kind attribution, a rebuild attestation
+    /// manifest recording per-tick source-kind extremal pairs). Before
+    /// this seam, the projection was open-coded as
+    /// `map.dominant_source_kind().zip(map.recessive_source_kind())`
+    /// at every call site — the named method closes the fused-pair
+    /// projection at the source-kind-altitude surface without the
+    /// primitive-altitude fused-quadruple weight consumers pay through
+    /// [`Self::extremal_source_kind_observations`] when they only need
+    /// the two cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_source_kinds() ==
+    ///   dominant_source_kind().zip(recessive_source_kind())` — the
+    ///   fused pair equals the [`Option::zip`] of its two component
+    ///   scalars pointwise; the delegation implementation upholds
+    ///   this by construction on every fixture.
+    /// - `extremal_source_kinds().is_none() == is_empty()` — the fused
+    ///   pair is [`None`] exactly on the empty map, matching the
+    ///   empty-histogram boundary the two component scalars share.
+    /// - `extremal_source_kinds().map(|(m, _)| m) ==
+    ///   dominant_source_kind()` pointwise — the modal-half projection
+    ///   recovers the modal scalar on every fixture.
+    /// - `extremal_source_kinds().map(|(_, a)| a) ==
+    ///   recessive_source_kind()` pointwise — the antimodal-half
+    ///   projection recovers the antimodal scalar on every fixture.
+    /// - `extremal_source_kinds().map(|(m, a)| (m, a)) ==
+    ///   extremal_source_kind_observations().map(|((mk, _, _),
+    ///   (ak, _, _))| (mk, ak))` — the cells-only projection of the
+    ///   fused quadruple pair equals this cells-only fused pair
+    ///   pointwise; both routes read the same two representative cells
+    ///   off the same underlying histogram.
+    /// - Coincidence on uniform-count or empty: on every uniform-count
+    ///   map (peak count == trough count with all observed cells
+    ///   sharing the same count, including singleton-support folds)
+    ///   the modal and antimodal cells coincide via declaration-order
+    ///   tie-break, so `extremal_source_kinds().map(|(m, a)| m == a)`
+    ///   reads [`Some`]`(true)`; on the empty map the fused pair is
+    ///   [`None`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the paired argmax + argmin scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `Option<(crate::ConfigSourceKind,
+    /// crate::ConfigSourceKind)>` fits in one discriminant + two
+    /// enum-typed cells with no heap allocation. Strictly tighter than
+    /// [`Self::extremal_source_kind_observations`] when the caller
+    /// only needs the two cells (skips the two count + two
+    /// multiplicity components of the fused quadruple pair).
+    #[must_use]
+    pub fn extremal_source_kinds(
+        &self,
+    ) -> Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)> {
+        self.dominant_source_kind()
+            .zip(self.recessive_source_kind())
+    }
+
     /// Returns `true` exactly when this fold's observed
     /// [`crate::ConfigSourceKind`] histogram has two or more cells tied at
     /// the peak leaf count — the **modally-tied-source-kind-counts
@@ -14776,6 +14896,127 @@ impl ProvenanceMap {
         (ConfigTierKind, usize, usize),
     )> {
         self.tier_histogram().extremal_observations()
+    }
+
+    /// The **extremal tiers pair** on this fold's per-leaf
+    /// [`ConfigTierKind`] histogram — the fused-pair
+    /// `Option<(ConfigTierKind, ConfigTierKind)>` packing the modal
+    /// (argmax) cell and the antimodal (argmin) cell into one scalar.
+    /// Returns [`None`] exactly on the empty map; otherwise returns
+    /// `Some((self.dominant_tier().unwrap(),
+    /// self.recessive_tier().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant so the
+    /// outer [`Option`] fuses both empty gates into a single check.
+    ///
+    /// Tier-altitude **cells-only projection** of
+    /// [`Self::extremal_tier_observations`] — the fused-quadruple pair
+    /// one seam over carries the tie-broken representative *and* its
+    /// count *and* its tie cardinality on both sides; this method
+    /// carries only the two representative cells, dropping the count +
+    /// multiplicity halves. The projection law
+    /// `self.extremal_tier_observations().map(|((mk, _, _),
+    /// (ak, _, _))| (mk, ak))` recovers this fused pair pointwise. The
+    /// scalar-half modal cell projects out by `.map(|(m, _)| m)` and
+    /// recovers [`Self::dominant_tier`] pointwise; the scalar-half
+    /// antimodal cell projects out by `.map(|(_, a)| a)` and recovers
+    /// [`Self::recessive_tier`] pointwise.
+    ///
+    /// Fused-pair peer of
+    /// `self.dominant_tier().zip(self.recessive_tier())` — the two
+    /// half-[`Option`]s share the empty / non-empty discriminant
+    /// (both [`Some`] on every non-empty map, both [`None`] on the
+    /// empty map), so the fused pair carries the same non-emptiness
+    /// discriminant as either component. Consumers matching on
+    /// `Some((modal_tier, antimodal_tier))` never see one side
+    /// present with the other absent — the structural invariant
+    /// [`Option::zip`] itself upholds on any two shared-discriminant
+    /// options, verified here on the specific ([`Self::dominant_tier`],
+    /// [`Self::recessive_tier`]) pair by the delegation implementation.
+    ///
+    /// Tier-altitude peer of
+    /// [`crate::AxisHistogram::dominant_cell`].[`Option::zip`]([`crate::AxisHistogram::recessive_cell`])
+    /// one seam down on the tier axis — the shipped primitive-
+    /// altitude modal-cell and antimodal-cell scalars fuse into an
+    /// `Option<(A, A)>` pair by [`Option::zip`], and this tier-
+    /// altitude method carries that same shape on the tier histogram
+    /// surface at one method call.
+    ///
+    /// **Sibling closure at the primitive altitude.** The
+    /// **source-kind-axis sibling** of [`Self::extremal_source_kinds`]
+    /// on the source-kind altitude of the same [`ProvenanceMap`] —
+    /// together the two methods close the **primitive-altitude cells-
+    /// only fused-pair quartet** on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries,
+    /// matching the shape [`ConfigDiff::extremal_kinds`] already
+    /// carried on the cardinality-`3` [`DiffLineKind`] axis at the
+    /// diff altitude one altitude over. The cardinality-`4`
+    /// [`ConfigTierKind`] axis carries a strict advance over the
+    /// cardinality-`3` diff-cell axis: the fused pair reaches the
+    /// four-cell uniform-full-cover corner and the two-tier tied-at-
+    /// count-`1` corner along with every strictly-unimodal witness the
+    /// diff altitude already covered.
+    ///
+    /// The natural typed primitive for reading *"what are the modal
+    /// and antimodal tiers on this resolved fold?"* at one method call
+    /// — an operator-facing attribution summary reading both endpoints
+    /// of the tier histogram simultaneously (the `configplane inspect`
+    /// per-slice tier-attribution line, a `ConfigStore` audit hook
+    /// logging both extremes of a hot-reload's post-fold per-slice
+    /// tier attribution, a rebuild attestation manifest recording
+    /// per-tick tier extremal pairs). Before this seam, the
+    /// projection was open-coded as
+    /// `map.dominant_tier().zip(map.recessive_tier())` at every call
+    /// site — the named method closes the fused-pair projection at
+    /// the tier-altitude surface without the primitive-altitude
+    /// fused-quadruple weight consumers pay through
+    /// [`Self::extremal_tier_observations`] when they only need the
+    /// two cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_tiers() == dominant_tier().zip(recessive_tier())`
+    ///   — the fused pair equals the [`Option::zip`] of its two
+    ///   component scalars pointwise; the delegation implementation
+    ///   upholds this by construction on every fixture.
+    /// - `extremal_tiers().is_none() == is_empty()` — the fused pair
+    ///   is [`None`] exactly on the empty map, matching the empty-
+    ///   histogram boundary the two component scalars share.
+    /// - `extremal_tiers().map(|(m, _)| m) == dominant_tier()`
+    ///   pointwise — the modal-half projection recovers the modal
+    ///   scalar on every fixture.
+    /// - `extremal_tiers().map(|(_, a)| a) == recessive_tier()`
+    ///   pointwise — the antimodal-half projection recovers the
+    ///   antimodal scalar on every fixture.
+    /// - `extremal_tiers().map(|(m, a)| (m, a)) ==
+    ///   extremal_tier_observations().map(|((mk, _, _), (ak, _, _))|
+    ///   (mk, ak))` — the cells-only projection of the fused
+    ///   quadruple pair equals this cells-only fused pair pointwise;
+    ///   both routes read the same two representative cells off the
+    ///   same underlying histogram.
+    /// - Coincidence on uniform-count or empty: on every uniform-
+    ///   count map (peak count == trough count with all observed
+    ///   cells sharing the same count, including singleton-support
+    ///   folds) the modal and antimodal cells coincide via
+    ///   declaration-order tie-break, so
+    ///   `extremal_tiers().map(|(m, a)| m == a)` reads
+    ///   [`Some`]`(true)`; on the empty map the fused pair is
+    ///   [`None`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// paired argmax + argmin scan). Both are `O(n)` in practice
+    /// since the tier axis carries a fixed four-cell cardinality; the
+    /// returned `Option<(ConfigTierKind, ConfigTierKind)>` fits in
+    /// one discriminant + two enum-typed cells with no heap
+    /// allocation. Strictly tighter than
+    /// [`Self::extremal_tier_observations`] when the caller only
+    /// needs the two cells (skips the two count + two multiplicity
+    /// components of the fused quadruple pair).
+    #[must_use]
+    pub fn extremal_tiers(&self) -> Option<(ConfigTierKind, ConfigTierKind)> {
+        self.dominant_tier().zip(self.recessive_tier())
     }
 
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
@@ -64840,6 +65081,250 @@ mod progressive_tests {
         assert_ne!(obs.0.2, obs.1.2);
     }
 
+    // ── ProvenanceMap::extremal_tiers — cells-only fused-pair primitive-
+    //    altitude sibling of the fused-quadruple pair
+    //    `extremal_tier_observations` above. Drops the count +
+    //    multiplicity halves and carries only the two representative
+    //    `ConfigTierKind` cells. Sibling of
+    //    `ProvenanceMap::extremal_source_kinds` on the source-kind axis;
+    //    together the two methods close the primitive-altitude cells-
+    //    only fused-pair quartet on both closed coordinates of the
+    //    atomic (tier, source) pair each leaf's `Provenance` carries,
+    //    matching the shape `ConfigDiff::extremal_kinds` already carried
+    //    at the diff altitude one altitude over. ──
+
+    #[test]
+    fn extremal_tiers_equals_dominant_recessive_option_zip_pointwise() {
+        // Delegation pin: `extremal_tiers` is defined as
+        // `dominant_tier().zip(recessive_tier())`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // a future edit that reroutes the tier altitude through a
+        // rebuilt histogram (or a different fused primitive) instead
+        // of the shipped Option::zip delegation.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map.dominant_tier().zip(map.recessive_tier());
+            assert_eq!(map.extremal_tiers(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_modal_projection_recovers_dominant_tier_pointwise() {
+        // Projection-law pin: `.map(|(m, _)| m)` on the fused pair
+        // recovers `dominant_tier()` pointwise on every fixture. The
+        // modal-half component of the pair is exactly the modal cell.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tiers().map(|(m, _)| m);
+            assert_eq!(via_map, map.dominant_tier());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_antimodal_projection_recovers_recessive_tier_pointwise() {
+        // Projection-law pin: `.map(|(_, a)| a)` on the fused pair
+        // recovers `recessive_tier()` pointwise on every fixture. The
+        // antimodal-half component of the pair is exactly the
+        // antimodal cell.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tiers().map(|(_, a)| a);
+            assert_eq!(via_map, map.recessive_tier());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_matches_extremal_tier_observations_cells_projection_pointwise() {
+        // Cross-altitude projection pin: the cells-only fused pair
+        // this method returns is exactly the cells-only projection
+        // `.map(|((mk, _, _), (ak, _, _))| (mk, ak))` of the fused-
+        // quadruple pair `extremal_tier_observations` above. Both
+        // routes read the same two representative cells off the same
+        // underlying tier histogram; a future edit that drifts one
+        // representative away from the other on any fixture is caught
+        // here.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_quadruple = map
+                .extremal_tier_observations()
+                .map(|((mk, _, _), (ak, _, _))| (mk, ak));
+            assert_eq!(map.extremal_tiers(), via_quadruple);
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_none_iff_empty_pointwise() {
+        // Empty-map boundary pin: `extremal_tiers()` is `None`
+        // exactly when the map is empty — the empty-histogram
+        // boundary the two component scalars `dominant_tier` /
+        // `recessive_tier` share. Cross-pins with the parallel
+        // sibling boundaries on `dominant_tier` (`.is_none() ⇔
+        // is_empty`) and `recessive_tier` (`.is_none() ⇔ is_empty`)
+        // one seam down, and with the fused-quadruple pair
+        // `extremal_tier_observations` on the same underlying
+        // primitive-altitude empty-histogram boundary one shape over.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.extremal_tiers().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_presence_matches_dominant_tier_pointwise() {
+        // Presence-parity pin: the fused pair carries the same
+        // non-emptiness discriminant as its modal-half component,
+        // and — by the empty-map boundary — the same discriminant
+        // as its antimodal-half component. A consumer matching on
+        // `Some((modal, antimodal))` never sees one side present
+        // with the other absent — the structural invariant
+        // `Option::zip` upholds on any two shared-discriminant
+        // options.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.extremal_tiers().is_some(),
+                map.dominant_tier().is_some()
+            );
+            assert_eq!(
+                map.extremal_tiers().is_some(),
+                map.recessive_tier().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_prog_fixture_is_default_bare() {
+        // Prog: 4 leaves attributed as `a→Discovered, b→Default,
+        // c→Bare, d→Default` — counts {Bare:1, Default:2,
+        // Discovered:1}. Modal side: `Default` uniquely peaks at
+        // count `2` — modal cell reads `Default`. Antimodal side:
+        // trough count reads `1`, cells at the trough are
+        // `{Bare, Discovered}`; declaration-order tie-break on
+        // `Bare → Default → Custom → Discovered` picks `Bare`.
+        // Fused pair reads `Some((Default, Bare))` — the strictly-
+        // unimodal witness where the modal and antimodal cells
+        // diverge on the cardinality-`4` tier axis. Cells-only
+        // projection of the fused-quadruple `(Default, 2, 1),
+        // (Bare, 1, 2)` covered by
+        // `extremal_tier_observations_prog_fixture_is_default_two_one_bare_one_two`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().extremal_tiers(),
+            Some((ConfigTierKind::Default, ConfigTierKind::Bare)),
+        );
+    }
+
+    #[test]
+    fn extremal_tiers_singleton_support_is_default_default() {
+        // Singleton-support polarity pin: every leaf lands on
+        // `Default`, so `Default` is the sole observed cell — modal
+        // and antimodal cells coincide. Fused pair reads
+        // `Some((Default, Default))` — the peak/trough coincidence
+        // corner where the two representative cells agree.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.len(), 4);
+        assert_eq!(
+            m.extremal_tiers(),
+            Some((ConfigTierKind::Default, ConfigTierKind::Default)),
+        );
+    }
+
+    #[test]
+    fn extremal_tiers_uniform_full_cover_is_bare_bare() {
+        // Uniform four-tier cover polarity pin: one leaf per
+        // `ConfigTierKind` cell (Bare + Discovered + Default +
+        // Custom), all at count `1`. All four cells tie at peak and
+        // trough — declaration-order tie-break picks `Bare` on both
+        // sides. Fused pair reads `Some((Bare, Bare))`, the top-
+        // corner witness of the tie-breaking policy on the uniform
+        // full-cover shape at the cardinality-`4` tier altitude
+        // (cells-only projection of the fused-quadruple
+        // `((Bare, 1, 4), (Bare, 1, 4))` covered one shape over).
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(
+            m.extremal_tiers(),
+            Some((ConfigTierKind::Bare, ConfigTierKind::Bare)),
+        );
+    }
+
+    #[test]
+    fn extremal_tiers_sides_agree_on_uniform_count_or_singleton_pointwise() {
+        // Peak-trough coincidence law lifted to the cells-only fused
+        // pair: on every singleton-support fold and every uniform-
+        // count fold the modal and antimodal cells of the pair read
+        // the same value pointwise — `.0 == .1`. Peer of the fused-
+        // quadruple coincidence law
+        // `extremal_tier_observations_sides_agree_on_uniform_count_or_singleton_pointwise`
+        // on the same underlying primitive-altitude tie-break rule.
+        let singleton: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        let (sm, sa) = singleton.extremal_tiers().unwrap();
+        assert_eq!(sm, sa);
+
+        let uniform_cover: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        let (um, ua) = uniform_cover.extremal_tiers().unwrap();
+        assert_eq!(um, ua);
+    }
+
+    #[test]
+    fn extremal_tiers_sides_diverge_on_strictly_unimodal_pointwise() {
+        // Complement of the coincidence law lifted to the cells-
+        // only pair: on every strictly-unimodal fold where peak and
+        // trough diverge, the modal and antimodal cells of the pair
+        // read DIFFERENT values. Prog is a strictly-unimodal
+        // witness: modal reads `Default`, antimodal reads `Bare`.
+        // Peer of the fused-quadruple divergence law
+        // `extremal_tier_observations_sides_diverge_on_strictly_unimodal_pointwise`
+        // on the same underlying primitive-altitude histogram.
+        let r = Prog::resolve_progressive();
+        let (m, a) = r.provenance().extremal_tiers().unwrap();
+        assert_ne!(m, a);
+    }
+
     // ── ProvenanceMap::tiers_modally_tied — modally-tied-tier-counts
     //    boolean predicate on the tier altitude, climbing
     //    is_modally_tied from the histogram surface and lifting the
@@ -77252,6 +77737,237 @@ mod progressive_tests {
         assert_ne!(obs.0.0, obs.1.0);
         assert!(obs.0.1 > obs.1.1);
         assert_ne!(obs.0.2, obs.1.2);
+    }
+
+    // ── ProvenanceMap::extremal_source_kinds — cells-only fused-pair
+    //    primitive-altitude sibling of the fused-quadruple pair
+    //    `extremal_source_kind_observations` above. Drops the count +
+    //    multiplicity halves and carries only the two representative
+    //    `ConfigSourceKind` cells. Sibling of
+    //    `ProvenanceMap::extremal_tiers` on the tier axis; together the
+    //    two methods close the primitive-altitude cells-only fused-
+    //    pair quartet on both closed coordinates of the atomic (tier,
+    //    source) pair each leaf's `Provenance` carries, matching the
+    //    shape `ConfigDiff::extremal_kinds` already carried at the
+    //    diff altitude one altitude over. ──
+
+    #[test]
+    fn extremal_source_kinds_equals_dominant_recessive_option_zip_pointwise() {
+        // Delegation pin: `extremal_source_kinds` is defined as
+        // `dominant_source_kind().zip(recessive_source_kind())`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches a future edit that reroutes the source-
+        // kind altitude through a rebuilt histogram (or a different
+        // fused primitive) instead of the shipped Option::zip
+        // delegation.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map.dominant_source_kind().zip(map.recessive_source_kind());
+            assert_eq!(map.extremal_source_kinds(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_modal_projection_recovers_dominant_source_kind_pointwise() {
+        // Projection-law pin: `.map(|(m, _)| m)` on the fused pair
+        // recovers `dominant_source_kind()` pointwise on every
+        // fixture. The modal-half component of the pair is exactly
+        // the modal cell.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_source_kinds().map(|(m, _)| m);
+            assert_eq!(via_map, map.dominant_source_kind());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_antimodal_projection_recovers_recessive_source_kind_pointwise() {
+        // Projection-law pin: `.map(|(_, a)| a)` on the fused pair
+        // recovers `recessive_source_kind()` pointwise on every
+        // fixture. The antimodal-half component of the pair is
+        // exactly the antimodal cell.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_source_kinds().map(|(_, a)| a);
+            assert_eq!(via_map, map.recessive_source_kind());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_matches_extremal_source_kind_observations_cells_projection_pointwise()
+    {
+        // Cross-altitude projection pin: the cells-only fused pair
+        // this method returns is exactly the cells-only projection
+        // `.map(|((mk, _, _), (ak, _, _))| (mk, ak))` of the fused-
+        // quadruple pair `extremal_source_kind_observations` above.
+        // Both routes read the same two representative cells off the
+        // same underlying source-kind histogram; a future edit that
+        // drifts one representative away from the other on any
+        // fixture is caught here.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_quadruple = map
+                .extremal_source_kind_observations()
+                .map(|((mk, _, _), (ak, _, _))| (mk, ak));
+            assert_eq!(map.extremal_source_kinds(), via_quadruple);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_none_iff_empty_pointwise() {
+        // Empty-map boundary pin: `extremal_source_kinds()` is
+        // `None` exactly when the map is empty — the empty-histogram
+        // boundary the two component scalars `dominant_source_kind`
+        // / `recessive_source_kind` share. Cross-pins with the
+        // parallel sibling boundaries on `dominant_source_kind`
+        // (`.is_none() ⇔ is_empty`) and `recessive_source_kind`
+        // (`.is_none() ⇔ is_empty`) one seam down, and with the
+        // fused-quadruple pair `extremal_source_kind_observations`
+        // on the same underlying primitive-altitude empty-histogram
+        // boundary one shape over.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.extremal_source_kinds().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_presence_matches_dominant_source_kind_pointwise() {
+        // Presence-parity pin: the fused pair carries the same
+        // non-emptiness discriminant as its modal-half component,
+        // and — by the empty-map boundary — the same discriminant
+        // as its antimodal-half component. A consumer matching on
+        // `Some((modal, antimodal))` never sees one side present
+        // with the other absent — the structural invariant
+        // `Option::zip` upholds on any two shared-discriminant
+        // options.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.extremal_source_kinds().is_some(),
+                map.dominant_source_kind().is_some(),
+            );
+            assert_eq!(
+                map.extremal_source_kinds().is_some(),
+                map.recessive_source_kind().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_prog_fixture_is_defaults_defaults() {
+        // Prog: 4 leaves all attributed to `ConfigSource::Defaults`
+        // (the pure-progressive fold uses only the three computed-
+        // tier constructors, each of which pins `Defaults`). So
+        // `Defaults` is the sole observed source-kind cell — modal
+        // and antimodal cells coincide at `Defaults`. Fused pair
+        // reads `Some((Defaults, Defaults))` — the singleton-support
+        // corner on the source-kind altitude, matching the cells-
+        // only projection of the fused-quadruple
+        // `((Defaults, 4, 1), (Defaults, 4, 1))` covered by
+        // `extremal_source_kind_observations_prog_fixture_is_defaults_four_one_defaults_four_one`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().extremal_source_kinds(),
+            Some((
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Defaults,
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_source_kinds_mixed_fixture_is_defaults_env() {
+        // The mixed-overlay fixture layers one env overlay (touching
+        // `c`) and one file overlay (touching `b`) onto Prog's four
+        // leaves. Counts read Defaults=2 (a, d), Env=1 (c), File=1
+        // (b). Modal side: `Defaults` uniquely peaks at count `2` —
+        // modal cell reads `Defaults`. Antimodal side: trough count
+        // reads `1`, cells at the trough are `{Env, File}`;
+        // declaration-order tie-break on `Defaults → Env → File`
+        // picks `Env`. Fused pair reads `Some((Defaults, Env))` —
+        // the strictly-unimodal witness where the modal and
+        // antimodal cells diverge, matching the cells-only
+        // projection of the fused-quadruple `((Defaults, 2, 1),
+        // (Env, 1, 2))` covered by
+        // `extremal_source_kind_observations_mixed_fixture_is_defaults_two_one_env_one_two`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().extremal_source_kinds(),
+            Some((
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Env,
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_source_kinds_sides_agree_on_uniform_count_or_singleton_pointwise() {
+        // Peak-trough coincidence law lifted to the cells-only fused
+        // pair: on every singleton-support fold and every uniform-
+        // count fold the modal and antimodal cells of the pair read
+        // the same value pointwise — `.0 == .1`. Peer of the fused-
+        // quadruple coincidence law
+        // `extremal_source_kind_observations_sides_agree_on_uniform_count_or_singleton_pointwise`
+        // on the same underlying primitive-altitude tie-break rule.
+        // Prog is a singleton-support witness on the source-kind
+        // altitude (all leaves attributed to `Defaults`), and a
+        // one-leaf-per-source-kind uniform full-cover map is the
+        // uniform-count witness.
+        let singleton = Prog::resolve_progressive().provenance().clone();
+        let (sm, sa) = singleton.extremal_source_kinds().unwrap();
+        assert_eq!(sm, sa);
+
+        let uniform_cover: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let prov = match k {
+                    crate::ConfigSourceKind::Defaults => {
+                        Provenance::computed(ConfigTierKind::Default)
+                    }
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], prov)
+            })
+            .collect();
+        let (um, ua) = uniform_cover.extremal_source_kinds().unwrap();
+        assert_eq!(um, ua);
+    }
+
+    #[test]
+    fn extremal_source_kinds_sides_diverge_on_strictly_unimodal_pointwise() {
+        // Complement of the coincidence law lifted to the cells-
+        // only pair: on every strictly-unimodal fold where peak and
+        // trough diverge, the modal and antimodal cells of the pair
+        // read DIFFERENT values. The mixed fixture is a strictly-
+        // unimodal witness: modal reads `Defaults`, antimodal reads
+        // `Env`. Peer of the fused-quadruple divergence law
+        // `extremal_source_kind_observations_sides_diverge_on_strictly_unimodal_pointwise`
+        // on the same underlying primitive-altitude histogram.
+        let r = source_kind_histogram_mixed_fixture();
+        let (m, a) = r.provenance().extremal_source_kinds().unwrap();
+        assert_ne!(m, a);
     }
 
     // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
