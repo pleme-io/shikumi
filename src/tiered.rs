@@ -19608,6 +19608,181 @@ impl ProgressiveLayer {
         (self.provenance, self.dict)
     }
 
+    /// The [`ConfigTierKind`] this overlay's stamp is in — the
+    /// container-altitude lift of [`Provenance::tier`] onto
+    /// [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and the
+    /// projection-axis peer of the container-altitude tier-axis
+    /// predicate quartet [`Self::is_bare`] / [`Self::is_discovered`] /
+    /// [`Self::is_default`] / [`Self::is_custom`] (`b9474c1`) one axis
+    /// over on the atomic `(tier, source)` pair the stamp carries.
+    ///
+    /// Equal to `self.provenance().tier()` by construction — one method
+    /// call names the scalar-tier projection on the overlay itself,
+    /// without borrowing through the [`Self::provenance`] accessor at
+    /// the call site. Container-altitude analogue of the one-hop
+    /// delegation the predicate quartet already carries: the
+    /// constructors ([`Self::bare`] / [`Self::discovered`] /
+    /// [`Self::prescribed_default`] / [`Self::file`] / [`Self::env`])
+    /// write the stamp on the stamp-side altitude, this projection
+    /// reads the tier coordinate back on the borrow-side altitude, so
+    /// the round-trip `ProgressiveLayer::bare(dict).tier()` writes and
+    /// reads the same tier cell at one seam each rather than through
+    /// the two-hop borrow `layer.provenance().tier()`.
+    ///
+    /// Before this seam, a caller wanting just the scalar tier
+    /// identity (a `ConfigPlane` broadcast surface routing each
+    /// overlay to a per-tier sink, a diagnostic renderer keying
+    /// per-overlay dashboards on the tier without paying for the four-
+    /// cell histogram walk, a fold-fixture harness bucketing overlays
+    /// by tier in one pass over an input slice) reached through
+    /// `layer.provenance().tier()`, a two-hop copy-and-project chain
+    /// that named the [`Self::provenance`] borrow accessor at the call
+    /// site instead of the inherent seam.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`Provenance::tier`] accessor via a direct field access that
+    /// never borrows the heavier [`Dict`] payload, so the
+    /// `pub const fn` declaration itself is the compile-time weld:
+    /// the moment [`Provenance::tier`] loses its const-ness one seam
+    /// down, this declaration fails to compile at THAT line before
+    /// the drift can reach downstream consumers that assumed
+    /// const-ness through the type. ([`ProgressiveLayer`] cannot be
+    /// bound to a `const` or `static` item because both its fields
+    /// carry non-`const`-`Drop` payloads ([`Dict`] and
+    /// [`ConfigSource`]), so no call-site weld pins the round-trip
+    /// through a const overlay; the `pub const fn` declaration is
+    /// stricter than any call-site weld the container altitude admits.)
+    ///
+    /// Pointwise agreement `layer.tier() == layer.provenance().tier()`
+    /// on every shipped constructor row is pinned by
+    /// [`tests::progressive_layer_tier_agrees_with_provenance_tier_pointwise`],
+    /// the projection-axis analogue of the predicate-axis agreement pin
+    /// `progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise`
+    /// (`b9474c1`); catches a future edit that drifts one altitude's
+    /// projection without the other.
+    #[must_use]
+    pub const fn tier(&self) -> ConfigTierKind {
+        self.provenance.tier()
+    }
+
+    /// The [`ConfigSource`] this overlay's stamp records — the
+    /// container-altitude lift of [`Provenance::source`] onto
+    /// [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and the
+    /// source-axis peer of the container-altitude [`Self::tier`]
+    /// projection on the atomic `(tier, source)` pair the stamp
+    /// carries.
+    ///
+    /// Equal to `self.provenance().source()` by construction — one
+    /// method call names the scalar-source projection on the overlay
+    /// itself, without borrowing through the [`Self::provenance`]
+    /// accessor at the call site. Returns a borrow rather than a copy
+    /// because [`ConfigSource`] carries a heap payload
+    /// ([`std::path::PathBuf`] in [`ConfigSource::File`], [`String`]
+    /// in [`ConfigSource::Env`]) — the same shape
+    /// [`Provenance::source`] carries one seam down.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`Provenance::source`] accessor via a direct field access; see
+    /// [`Self::tier`] for the full compile-time weld contract.
+    /// Pointwise agreement pinned by
+    /// [`tests::progressive_layer_source_agrees_with_provenance_source_pointwise`].
+    #[must_use]
+    pub const fn source(&self) -> &ConfigSource {
+        self.provenance.source()
+    }
+
+    /// The [`crate::ConfigSourceKind`] this overlay's source belongs
+    /// to — the container-altitude lift of [`Provenance::source_kind`]
+    /// onto [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and
+    /// the kind-projection peer of the container-altitude source-axis
+    /// predicate triplet [`Self::is_defaults`] / [`Self::is_env`] /
+    /// [`Self::is_file`] (`f2682e3`) on the same axis of the atomic
+    /// `(tier, source)` pair — just as [`Self::tier`] is the peer of
+    /// the tier-axis predicate quartet on its axis.
+    ///
+    /// Equal to `self.provenance().source_kind()` by construction —
+    /// one method call answers "what source-kind produced this
+    /// overlay?" without borrowing through the [`Self::provenance`]
+    /// accessor or the heavier [`ConfigSource`] payload (which carries
+    /// the full path or prefix). [`crate::ConfigSourceKind::Defaults`]
+    /// for every computed-defaults-row constructor ([`Self::bare`] /
+    /// [`Self::discovered`] / [`Self::prescribed_default`]);
+    /// [`crate::ConfigSourceKind::File`] for [`Self::file`];
+    /// [`crate::ConfigSourceKind::Env`] for [`Self::env`].
+    ///
+    /// Copy-return over [`crate::ConfigSourceKind`] (allocation-free,
+    /// [`Copy`]), symmetric with [`Self::tier`]'s copy-return over
+    /// [`ConfigTierKind`] — both scalar projections of the underlying
+    /// `(tier, source)` pair name a single closed-enum tag without
+    /// touching heap or lifetime at the container altitude.
+    ///
+    /// `const`-callable — see [`Self::tier`] for the full compile-time
+    /// weld contract. Pointwise agreement pinned by
+    /// [`tests::progressive_layer_source_kind_agrees_with_provenance_source_kind_pointwise`].
+    #[must_use]
+    pub const fn source_kind(&self) -> crate::ConfigSourceKind {
+        self.provenance.source_kind()
+    }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this overlay's
+    /// tier — the container-altitude lift of [`Provenance::tier_ordinal`]
+    /// onto [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and
+    /// the ordinal-projection peer of the container-altitude
+    /// [`Self::tier`] scalar projection on the same axis.
+    ///
+    /// Equal to `self.provenance().tier_ordinal()` by construction —
+    /// one method call names the scalar-ordinal projection on the
+    /// overlay itself, without borrowing through the
+    /// [`Self::provenance`] accessor at the call site. `0` for
+    /// [`Self::bare`], `1` for [`Self::discovered`], `2` for
+    /// [`Self::prescribed_default`], `3` for [`Self::file`] /
+    /// [`Self::env`] / any [`Self::new`] over a `Custom`-tier
+    /// [`Provenance`] — the declaration order of [`ConfigTierKind`]'s
+    /// [`crate::ClosedAxis`] variants, the sealed-fold precedence.
+    ///
+    /// A downstream generic bound routing per-overlay tier bits into
+    /// an ordinal-keyed container (a per-tier histogram
+    /// `[usize; 4]` indexed on the tier ordinal, a per-tier
+    /// broadcast-priority sink keyed on the ordinal instead of the
+    /// variant, an attestation-manifest builder bucketing overlays by
+    /// tier ordinal for compact wire-encoding) now reaches the ordinal
+    /// through one seam on the overlay itself rather than through
+    /// `layer.provenance().tier_ordinal()`.
+    ///
+    /// `const`-callable — see [`Self::tier`] for the full compile-time
+    /// weld contract. Pointwise agreement pinned by
+    /// [`tests::progressive_layer_tier_ordinal_agrees_with_provenance_tier_ordinal_pointwise`].
+    #[must_use]
+    pub const fn tier_ordinal(&self) -> usize {
+        self.provenance.tier_ordinal()
+    }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this overlay's
+    /// source-kind — the container-altitude lift of
+    /// [`Provenance::source_kind_ordinal`] onto [`ProgressiveLayer`]'s
+    /// [`Provenance`] stamp coordinate, and the ordinal-projection peer
+    /// of the container-altitude [`Self::source_kind`] scalar
+    /// projection on the same axis. Sibling of [`Self::tier_ordinal`]
+    /// on the source-kind coordinate of the atomic `(tier, source)`
+    /// pair.
+    ///
+    /// Equal to `self.provenance().source_kind_ordinal()` by
+    /// construction — one method call names the scalar-ordinal
+    /// projection on the overlay itself. `0` for
+    /// [`crate::ConfigSourceKind::Defaults`] (every computed-defaults-
+    /// row constructor), `1` for [`crate::ConfigSourceKind::Env`]
+    /// ([`Self::env`]), `2` for [`crate::ConfigSourceKind::File`]
+    /// ([`Self::file`]) — the declaration order of the source-kind
+    /// axis.
+    ///
+    /// `const`-callable — see [`Self::tier`] for the full compile-time
+    /// weld contract. Pointwise agreement pinned by
+    /// [`tests::progressive_layer_source_kind_ordinal_agrees_with_provenance_source_kind_ordinal_pointwise`].
+    #[must_use]
+    pub const fn source_kind_ordinal(&self) -> usize {
+        self.provenance.source_kind_ordinal()
+    }
+
     /// Returns `true` iff this overlay's stamp is in the
     /// [`ConfigTierKind::Bare`] tier — the container-altitude lift of
     /// [`Provenance::is_bare`] onto [`ProgressiveLayer`]'s
@@ -68422,6 +68597,195 @@ mod progressive_tests {
                 hits, 1,
                 "ProgressiveLayer {layer:?} must satisfy exactly one of \
                  is_defaults/is_env/is_file (satisfied {hits})",
+            );
+        }
+    }
+
+    // ── ProgressiveLayer::tier / source / source_kind / tier_ordinal /
+    //    source_kind_ordinal — container-altitude lift of the
+    //    primitive-altitude projection quintet on `Provenance`
+    //    (`f7fb7af` / ordinal siblings); reads back the atomic
+    //    `(tier, source)` pair the tier-axis constructor grid on this
+    //    container wrote, on the projection axis of each coordinate ──
+
+    #[test]
+    fn progressive_layer_tier_agrees_with_provenance_tier_pointwise() {
+        // Structural law: for every shipped constructor row on the
+        // container-altitude stamp-side,
+        // `layer.tier() == layer.provenance().tier()`. Container-altitude
+        // analogue of the predicate-axis agreement pin
+        // `progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise`
+        // (`b9474c1`) on the projection axis of the same atomic pair;
+        // catches a future edit that drifts one altitude's projection
+        // without the other, and pins the payload-independence
+        // contract on the container-altitude projection (the primitive-
+        // side has no `Dict` visibility, so the container-side is
+        // forbidden from consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/tier_projection_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_TIER_PROJECTION_AGREEMENT_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(layer.tier(), prov.tier(), "tier drift on {layer:?}",);
+        }
+    }
+
+    #[test]
+    fn progressive_layer_source_agrees_with_provenance_source_pointwise() {
+        // Structural law on the source coordinate of the atomic
+        // `(tier, source)` pair: for every shipped constructor row,
+        // `layer.source() == layer.provenance().source()`. Peer of
+        // `progressive_layer_tier_agrees_with_provenance_tier_pointwise`
+        // one axis over on the same atomic pair. The `&ConfigSource`
+        // return keeps the borrow-shape identical between the container
+        // and primitive altitudes — the pin catches a future edit that
+        // silently converts one altitude to a copy while leaving the
+        // other as a borrow (which would still compile at the call
+        // site through auto-deref chains) at the exact seam it happens.
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/source_projection_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_SOURCE_PROJECTION_AGREEMENT_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(layer.source(), prov.source(), "source drift on {layer:?}",);
+        }
+    }
+
+    #[test]
+    fn progressive_layer_source_kind_agrees_with_provenance_source_kind_pointwise() {
+        // Structural law on the scalar-kind projection of the source
+        // coordinate: for every shipped constructor row,
+        // `layer.source_kind() == layer.provenance().source_kind()`.
+        // Peer of `progressive_layer_tier_agrees_with_provenance_tier_pointwise`
+        // on the source-kind projection axis. Pins prefix-independence
+        // (env prefix invisible to the kind projection) and path-
+        // independence (file path invisible), mirroring the same
+        // contracts the source-axis predicate triplet pins one axis
+        // over on the same atomic pair.
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/source_kind_projection_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_SOURCE_KIND_PROJECTION_AGREEMENT_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(
+                layer.source_kind(),
+                prov.source_kind(),
+                "source_kind drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_tier_ordinal_agrees_with_provenance_tier_ordinal_pointwise() {
+        // Structural law on the ordinal projection of the tier
+        // coordinate: for every shipped constructor row,
+        // `layer.tier_ordinal() == layer.provenance().tier_ordinal()`.
+        // Peer of the scalar-tier projection agreement pin on the
+        // ordinal projection axis; pins per-tier declaration-order
+        // integer emission across the container-altitude surface so a
+        // downstream generic bound `Ord`-keyed container (a
+        // `BTreeMap<usize, _>` per-tier bucket, an `[usize; 4]` per-tier
+        // histogram indexed on the ordinal) sees the same integer key
+        // on the container as on the primitive.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/tier_ordinal_projection.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_TIER_ORDINAL_PROJECTION_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(
+                layer.tier_ordinal(),
+                prov.tier_ordinal(),
+                "tier_ordinal drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_source_kind_ordinal_agrees_with_provenance_source_kind_ordinal_pointwise()
+    {
+        // Structural law on the ordinal projection of the source-kind
+        // coordinate: for every shipped constructor row,
+        // `layer.source_kind_ordinal() ==
+        //  layer.provenance().source_kind_ordinal()`. Peer of
+        // `progressive_layer_tier_ordinal_agrees_with_provenance_tier_ordinal_pointwise`
+        // one axis over on the same atomic pair.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/source_kind_ordinal_projection.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_SOURCE_KIND_ORDINAL_PROJECTION_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(
+                layer.source_kind_ordinal(),
+                prov.source_kind_ordinal(),
+                "source_kind_ordinal drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_projection_accessors_are_ordinal_consistent_with_axis_ordinal() {
+        // Cross-projection law: the scalar-tag projection composed
+        // through `crate::axis_ordinal` equals the ordinal projection
+        // for every shipped constructor row, on both axes. Container-
+        // altitude peer of the primitive-altitude pin
+        // `provenance_tier_ordinal_agrees_with_axis_ordinal_projection`
+        // (and its source-kind sibling) — pins that the container's
+        // two projections on each axis (`tier` + `tier_ordinal`,
+        // `source_kind` + `source_kind_ordinal`) name the same
+        // sealed-fold precedence rank the primitive names one seam
+        // down, so a future edit to either altitude that reordered
+        // the ordinal without reordering the tag (or vice versa)
+        // fails here before drifting through any ordinal-keyed
+        // consumer.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/projection_axis_ordinal_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_PROJECTION_AXIS_ORDINAL_AGREEMENT_", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.tier_ordinal(),
+                crate::axis_ordinal(layer.tier()),
+                "tier_ordinal ≠ axis_ordinal(tier) on {layer:?}",
+            );
+            assert_eq!(
+                layer.source_kind_ordinal(),
+                crate::axis_ordinal(layer.source_kind()),
+                "source_kind_ordinal ≠ axis_ordinal(source_kind) on {layer:?}",
             );
         }
     }
