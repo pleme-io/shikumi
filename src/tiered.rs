@@ -29748,6 +29748,107 @@ impl ConfigDiff {
     ) -> Option<((DiffLineKind, usize, usize), (DiffLineKind, usize, usize))> {
         self.kind_histogram().extremal_observations()
     }
+
+    /// The **extremal kinds pair** on this diff's per-line
+    /// [`DiffLineKind`] histogram — the fused-pair
+    /// `Option<(DiffLineKind, DiffLineKind)>` packing the modal
+    /// (argmax) cell and the antimodal (argmin) cell into one scalar.
+    /// Returns [`None`] exactly on the empty diff; otherwise returns
+    /// `Some((self.dominant_kind().unwrap(),
+    /// self.recessive_kind().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant so the
+    /// outer [`Option`] fuses both empty gates into a single check.
+    ///
+    /// Diff-altitude **cells-only projection** of
+    /// [`Self::extremal_kind_observations`] — the fused-quadruple pair
+    /// [`Self::extremal_kind_observations`] carries the tie-broken
+    /// representative *and* its count *and* its tie cardinality on
+    /// both sides; this method carries only the two representative
+    /// cells, dropping the count + multiplicity halves. The projection
+    /// law `self.extremal_kind_observations().map(|((mk, _, _),
+    /// (ak, _, _))| (mk, ak))` recovers this fused pair pointwise.
+    /// The scalar-half modal cell projects out by `.map(|(m, _)| m)`
+    /// and recovers [`Self::dominant_kind`] pointwise; the scalar-half
+    /// antimodal cell projects out by `.map(|(_, a)| a)` and recovers
+    /// [`Self::recessive_kind`] pointwise.
+    ///
+    /// Fused-pair peer of
+    /// `self.dominant_kind().zip(self.recessive_kind())` — the two
+    /// half-[`Option`]s share the empty / non-empty discriminant
+    /// (both [`Some`] on every non-empty diff, both [`None`] on the
+    /// empty diff), so the fused pair carries the same non-emptiness
+    /// discriminant as either component. Consumers matching on
+    /// `Some((modal_kind, antimodal_kind))` never see one side
+    /// present with the other absent — the structural invariant
+    /// [`Option::zip`] itself upholds on any two shared-discriminant
+    /// options, verified here on the specific
+    /// ([`Self::dominant_kind`], [`Self::recessive_kind`]) pair by
+    /// the delegation implementation.
+    ///
+    /// Diff-altitude peer of
+    /// [`crate::AxisHistogram::dominant_cell`].[`Option::zip`]([`crate::AxisHistogram::recessive_cell`])
+    /// one seam down — the shipped primitive-altitude modal-cell and
+    /// antimodal-cell scalars fuse into an `Option<(A, A)>` pair by
+    /// [`Option::zip`], and this diff-altitude method carries that
+    /// same shape on the diff's kind histogram surface at one method
+    /// call.
+    ///
+    /// The natural typed primitive for reading *"what are the modal
+    /// and antimodal diff-kinds on this rebuild summary?"* at one
+    /// method call — the CLI `config-diff` summary line, the
+    /// attestation manifest recording per-tick diff-kind extremal
+    /// pairs, the rebuild-window alerting rule reading both endpoints
+    /// of the diff-kind histogram simultaneously to gate on peak /
+    /// trough balance. Before this seam, the projection was
+    /// open-coded as `diff.dominant_kind().zip(diff.recessive_kind())`
+    /// at every call site — the named method closes the fused-pair
+    /// projection at the diff-altitude surface without the
+    /// primitive-altitude
+    /// [`crate::AxisHistogram::extremal_observations`] fused-quadruple
+    /// weight consumers pay when they only need the two cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_kinds() ==
+    ///   dominant_kind().zip(recessive_kind())` — the fused pair
+    ///   equals the [`Option::zip`] of its two component scalars
+    ///   pointwise; the delegation implementation upholds this by
+    ///   construction on every fixture.
+    /// - `extremal_kinds().is_none() == self.is_empty_diff()` — the
+    ///   fused pair is [`None`] exactly on the empty diff, matching
+    ///   the empty-diff / empty-histogram boundary the two component
+    ///   scalars share.
+    /// - `extremal_kinds().map(|(m, _)| m) == self.dominant_kind()`
+    ///   pointwise — the modal-half projection recovers the modal
+    ///   scalar on every fixture.
+    /// - `extremal_kinds().map(|(_, a)| a) == self.recessive_kind()`
+    ///   pointwise — the antimodal-half projection recovers the
+    ///   antimodal scalar on every fixture.
+    /// - `extremal_kinds().map(|(m, a)| (m, a)) ==
+    ///   extremal_kind_observations().map(|((mk, _, _), (ak, _, _))|
+    ///   (mk, ak))` — the cells-only projection of the fused
+    ///   quadruple pair equals this cells-only fused pair pointwise;
+    ///   both routes read the same two representative cells off the
+    ///   same underlying histogram.
+    /// - Coincidence on uniform-count or empty: on every uniform-count
+    ///   diff (peak count == trough count with all observed cells
+    ///   sharing the same count) the modal and antimodal cells
+    ///   coincide via declaration-order tie-break, so
+    ///   `extremal_kinds().map(|(m, a)| m == a)` reads [`Some`]`(true)`;
+    ///   on the empty diff the fused pair is [`None`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the paired
+    /// argmax + argmin scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned `Option<(DiffLineKind, DiffLineKind)>` fits in one
+    /// discriminant + two enum-typed cells with no heap allocation.
+    #[must_use]
+    pub fn extremal_kinds(&self) -> Option<(DiffLineKind, DiffLineKind)> {
+        self.dominant_kind().zip(self.recessive_kind())
+    }
 }
 
 #[cfg(test)]
@@ -46639,6 +46740,155 @@ mod tests {
                 assert!(mm <= axis_card);
                 assert!(am >= 1);
                 assert!(am <= axis_card);
+            }
+        }
+    }
+
+    // ── extremal_kinds — cells-only fused-pair diff-altitude sibling of
+    //    the fused-quadruple pair `extremal_kind_observations` above.
+    //    Drops the count + multiplicity halves and carries only the two
+    //    representative `DiffLineKind` cells; a diff-altitude peer of
+    //    `dominant_cell().zip(recessive_cell())` on the primitive
+    //    `AxisHistogram` one seam down, and of the container-altitude
+    //    peer the same shape would take on `ProgressiveResolution` for
+    //    the (tier, source) axes one altitude up.
+
+    #[test]
+    fn extremal_kinds_equals_dominant_recessive_option_zip_pointwise() {
+        // Delegation pin: `extremal_kinds` is defined as
+        // `dominant_kind().zip(recessive_kind())`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // a future edit that reroutes the diff altitude through a
+        // rebuilt histogram (or a different fused primitive) instead
+        // of the shipped Option::zip delegation.
+        for diff in dominant_kind_fixtures() {
+            let via_zip = diff.dominant_kind().zip(diff.recessive_kind());
+            assert_eq!(diff.extremal_kinds(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_modal_projection_recovers_dominant_kind_pointwise() {
+        // Projection-law pin: `.map(|(m, _)| m)` on the fused pair
+        // recovers `dominant_kind()` pointwise on every fixture. The
+        // modal-half component of the pair is exactly the modal cell.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kinds().map(|(m, _)| m);
+            assert_eq!(via_map, diff.dominant_kind());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_antimodal_projection_recovers_recessive_kind_pointwise() {
+        // Projection-law pin: `.map(|(_, a)| a)` on the fused pair
+        // recovers `recessive_kind()` pointwise on every fixture. The
+        // antimodal-half component of the pair is exactly the
+        // antimodal cell.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kinds().map(|(_, a)| a);
+            assert_eq!(via_map, diff.recessive_kind());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_matches_extremal_kind_observations_cells_projection_pointwise() {
+        // Cross-altitude projection pin: the cells-only fused pair
+        // this method returns is exactly the cells-only projection
+        // `.map(|((mk, _, _), (ak, _, _))| (mk, ak))` of the
+        // fused-quadruple pair `extremal_kind_observations` above.
+        // Both routes read the same two representative cells off the
+        // same underlying kind histogram; a future edit that drifts
+        // one representative away from the other on any fixture is
+        // caught here.
+        for diff in dominant_kind_fixtures() {
+            let via_quadruple = diff
+                .extremal_kind_observations()
+                .map(|((mk, _, _), (ak, _, _))| (mk, ak));
+            assert_eq!(diff.extremal_kinds(), via_quadruple);
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_none_iff_empty_pointwise() {
+        // Empty-histogram boundary pin: `extremal_kinds()` is `None`
+        // exactly when `self.lines` is empty (the empty-histogram
+        // boundary the two component scalars `dominant_kind` /
+        // `recessive_kind` share). Matches the empty-diff convention
+        // the sibling fused-quadruple pair
+        // `extremal_kind_observations` reads through the same
+        // primitive-altitude empty-histogram boundary one shape over.
+        // Uses `self.lines.is_empty()` (the empty-histogram boundary,
+        // where every histogram cell reads zero) rather than
+        // `self.is_empty_diff()` (which counts only *changed* lines
+        // and reads `true` on the context-only diff — the histogram
+        // there still has `Context` observed at count `>= 1`, so the
+        // fused pair reads `Some((Context, Context))`).
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.extremal_kinds().is_none();
+            assert_eq!(is_none, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_presence_matches_dominant_kind_pointwise() {
+        // Presence-parity pin: the fused pair carries the same
+        // non-emptiness discriminant as its modal-half component,
+        // and — by the empty-diff boundary — the same discriminant
+        // as its antimodal-half component. A consumer matching on
+        // `Some((modal, antimodal))` never sees one side present with
+        // the other absent — the structural invariant `Option::zip`
+        // upholds on any two shared-discriminant options.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.extremal_kinds().is_some(),
+                diff.dominant_kind().is_some(),
+            );
+            assert_eq!(
+                diff.extremal_kinds().is_some(),
+                diff.recessive_kind().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_coincide_on_uniform_or_empty_pointwise() {
+        // Coincidence-boundary law: on every uniform-count diff
+        // whose kind histogram carries at least one observation
+        // (peak count == trough count with all observed cells sharing
+        // the same count, and singleton-support diffs) the modal and
+        // antimodal cells coincide via declaration-order tie-break,
+        // so `extremal_kinds().map(|(m, a)| m == a)` reads
+        // `Some(true)`; on the lines-empty diff the fused pair is
+        // `None`. Diff-altitude peer of the coincidence law
+        // `extremal_kind_observations_coincide_on_uniform_or_empty_pointwise`
+        // on the fused-quadruple sibling one shape over. The
+        // `is_uniform_count` predicate reads `true` on the empty
+        // histogram too (vacuously — no observed cells to disagree),
+        // so guard against the empty branch first to keep the two
+        // halves of the boundary law strictly disjoint.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                assert_eq!(diff.extremal_kinds(), None);
+            } else if diff.kind_histogram().is_uniform_count() {
+                let (m, a) = diff.extremal_kinds().unwrap();
+                assert_eq!(m, a);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_components_are_observed_on_non_empty_pointwise() {
+        // Observed-support pin: on every non-empty diff both
+        // components of the fused pair carry a `DiffLineKind` that
+        // has been observed at least once by the diff — i.e.
+        // `kind_histogram().count(k) >= 1` on both halves. Every
+        // non-empty support has at least one line at both the modal
+        // and antimodal cells, so both cells are observed.
+        for diff in dominant_kind_fixtures() {
+            if let Some((m, a)) = diff.extremal_kinds() {
+                let hist = diff.kind_histogram();
+                assert!(hist.count(m) >= 1);
+                assert!(hist.count(a) >= 1);
             }
         }
     }
