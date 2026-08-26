@@ -20920,6 +20920,125 @@ impl<T> ProgressiveResolution<T> {
     pub fn first_absent_source_kind(&self) -> Option<crate::ConfigSourceKind> {
         self.provenance.first_absent_source_kind()
     }
+
+    /// The **last-contributing tier** — the latest [`ConfigTierKind`]
+    /// (in [`crate::ClosedAxis::ALL`] / [`ConfigTier`] precedence order)
+    /// whose overlay produced ≥1 surviving effective leaf on this
+    /// resolved fold, or [`None`] on the empty map (no leaf contributed
+    /// at all). Container-altitude peer of
+    /// [`ProvenanceMap::last_contributing_tier`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.last_contributing_tier()`.
+    ///
+    /// The **tail-projection peer** of [`Self::first_contributing_tier`]
+    /// (the observed-cells head Option) on the same container: the two
+    /// [`Option`]-shaped projections name the head and tail of the same
+    /// observed-cells support at the container altitude, in
+    /// [`crate::ClosedAxis::ALL`] / [`ConfigTier`] precedence order. The
+    /// two together close the **head/tail closure** on the observed-cells
+    /// support at the container altitude, matching the same head/tail
+    /// closure the primitive-altitude peer carries one seam down at
+    /// [`ProvenanceMap::last_contributing_tier`] / [`:first_contributing_tier`].
+    ///
+    /// Before this seam, a consumer wanting *"which is the latest tier
+    /// that heard from at least one leaf?"* — an operator dashboard
+    /// headline *"last tier heard from: Custom"*, an attestation
+    /// manifest recording the tail of the observed-cells support, a
+    /// `/healthz/config` renderer reporting per-tier support tail —
+    /// reached through either the two-hop borrow
+    /// `res.provenance().last_contributing_tier()` or the
+    /// allocate-then-index idiom
+    /// `res.contributing_tiers().last().copied()` (which pays the whole
+    /// [`Vec<ConfigTierKind>`] allocation to read one cell). This seam
+    /// collapses both to one call on the resolution container itself,
+    /// elides the [`Vec`] allocation entirely, and reads at the same
+    /// closed-axis-ordered precedence the primitive-altitude peer carries.
+    #[must_use]
+    pub fn last_contributing_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.last_contributing_tier()
+    }
+
+    /// The **last-absent tier** — the latest [`ConfigTierKind`] (in
+    /// [`crate::ClosedAxis::ALL`] / [`ConfigTier`] precedence order)
+    /// whose overlay produced **zero** surviving effective leaves on
+    /// this resolved fold, or [`None`] when every tier heard from at
+    /// least once (full cover). Container-altitude peer of
+    /// [`ProvenanceMap::last_absent_tier`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_absent_tier()`.
+    ///
+    /// The **coverage-gap tail-projection peer** of
+    /// [`Self::last_contributing_tier`] on the same container: the two
+    /// [`Option`]-shaped tail projections split the closed-axis tail
+    /// between the observed and coverage-gap sides of the tier
+    /// altitude, matching the observed / coverage-gap partition the
+    /// head-Option pair
+    /// ([`Self::first_contributing_tier`] / [`Self::first_absent_tier`])
+    /// closes at the head altitude and the [`Vec`]-shape / scalar-count
+    /// peers close on the full support. The [`None`] boundary here is
+    /// **full cover**, not empty — the same
+    /// [`Self::first_absent_tier`]-side [`None`] boundary on the
+    /// coverage-gap side of the partition.
+    #[must_use]
+    pub fn last_absent_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.last_absent_tier()
+    }
+
+    /// The **last-contributing source-kind** — the latest
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
+    /// overlay produced ≥1 surviving effective leaf on this resolved
+    /// fold, or [`None`] on the empty map. Container-altitude peer of
+    /// [`ProvenanceMap::last_contributing_source_kind`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into
+    /// `self.provenance.last_contributing_source_kind()`.
+    ///
+    /// The **source-kind-axis sibling** of
+    /// [`Self::last_contributing_tier`] on the same container: the two
+    /// tail projections name the observed-cells tail on the two
+    /// closed-axis coordinates of the atomic `(tier, source)` pair each
+    /// leaf's [`Provenance`] carries. Together with
+    /// [`Self::last_absent_tier`] and [`Self::last_absent_source_kind`],
+    /// this seam closes the [`Option`]-shaped tail-projection corner of
+    /// the container-altitude observed / coverage-gap partition on both
+    /// axes — see [`Self::last_contributing_tier`] for the full contract
+    /// on the tail-projection surface at the container altitude.
+    #[must_use]
+    pub fn last_contributing_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.last_contributing_source_kind()
+    }
+
+    /// The **last-absent source-kind** — the latest
+    /// [`crate::ConfigSourceKind`] (in [`crate::ClosedAxis::ALL`] /
+    /// [`crate::ConfigSourceKind::ALL`] declaration order) whose
+    /// overlay produced **zero** surviving effective leaves on this
+    /// resolved fold, or [`None`] when every source-kind heard from at
+    /// least once (full cover). Container-altitude peer of
+    /// [`ProvenanceMap::last_absent_source_kind`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.last_absent_source_kind()`.
+    ///
+    /// The **coverage-gap peer** of
+    /// [`Self::last_contributing_source_kind`] on the same container
+    /// and the **source-kind-axis sibling** of [`Self::last_absent_tier`]
+    /// on the tier altitude: the two altitudes now close the same
+    /// coverage-gap tail-projection shape on the two closed coordinates
+    /// of the atomic `(tier, source)` pair. Together with the three
+    /// sibling tail-projections
+    /// ([`Self::last_contributing_tier`] / [`Self::last_absent_tier`]
+    /// / [`Self::last_contributing_source_kind`]), this closes the
+    /// **container-altitude [`Option`]-shaped tail-projection quartet**
+    /// — the tail-Option sibling of the head-Option quartet
+    /// ([`Self::first_contributing_tier`] et al.), closing the
+    /// head/tail closure on all four cells of the observed /
+    /// coverage-gap × (tier, source) grid at the container altitude.
+    /// The [`None`] boundary here is **full cover**, not empty — see
+    /// [`Self::last_contributing_tier`] for the full contract.
+    #[must_use]
+    pub fn last_absent_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.last_absent_source_kind()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -89992,6 +90111,214 @@ mod progressive_tests {
             r.first_absent_source_kind(),
         ) {
             assert_ne!(head_contrib, head_absent);
+        }
+    }
+
+    // -------- ProgressiveResolution Option-shaped tail-projection
+    // -------- quartet (container-altitude tail sibling of the
+    // -------- Option-shaped head-projection quartet; closes the
+    // -------- head/tail closure on the container-altitude
+    // -------- (observed, unobserved) × (tier, source-kind) grid,
+    // -------- matching the head/tail closure the primitive-altitude
+    // -------- peer already carries at ProvenanceMap::last_X /
+    // -------- first_X)
+
+    #[test]
+    fn progressive_resolution_last_contributing_tier_agrees_with_provenance_last_contributing_tier()
+    {
+        // Structural agreement law on the container-altitude
+        // last_contributing_tier delegate: the container-altitude
+        // Option scalar equals the two-hop
+        // `res.provenance().last_contributing_tier()` pointwise.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::last_contributing_tier` through a
+        // different fold (a `contributing_tiers().last().copied()`
+        // that pays the Vec allocation the Option tail exists to
+        // elide, a mis-projected `Provenance` accessor) before the
+        // drift can reach any consumer that reads
+        // `res.last_contributing_tier()` and expects it to match
+        // `res.provenance().last_contributing_tier()`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_tier(),
+            r.provenance().last_contributing_tier()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_tier_agrees_with_provenance_last_absent_tier() {
+        // Coverage-gap sibling of the last_contributing_tier pin
+        // above on the same container-altitude delegation — the
+        // closed-axis peer of the observed-cells tail Option.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.last_absent_tier(), r.provenance().last_absent_tier());
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_source_kind_agrees_with_provenance_last_contributing_source_kind()
+     {
+        // Source-kind-axis peer of the last_contributing_tier pin
+        // above on the same container-altitude delegation — closes
+        // the observed-cells tail Option on both axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_source_kind(),
+            r.provenance().last_contributing_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_source_kind_agrees_with_provenance_last_absent_source_kind()
+     {
+        // Source-kind-axis peer of the last_absent_tier pin above
+        // on the same container-altitude delegation — closes the
+        // coverage-gap tail Option on both axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_absent_source_kind(),
+            r.provenance().last_absent_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_tier_equals_contributing_tiers_last_copied() {
+        // Option/Vec parity law on the container tail: the Option
+        // tail seam names the same last-cell as
+        // `.contributing_tiers().last().copied()` — the whole point
+        // of the Option tail is to return that cell without
+        // materialising the Vec. Catches a future edit that reroutes
+        // the Option tail through a different projection that would
+        // silently disagree with the Vec peer while still
+        // typechecking.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_tier(),
+            r.contributing_tiers().last().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_tier_equals_absent_tiers_last_copied() {
+        // Coverage-gap peer of the Option/Vec tail parity pin above
+        // on the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.last_absent_tier(), r.absent_tiers().last().copied());
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_source_kind_equals_contributing_source_kinds_last_copied()
+     {
+        // Source-kind-axis peer of the Option/Vec tail parity pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_source_kind(),
+            r.contributing_source_kinds().last().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_source_kind_equals_absent_source_kinds_last_copied() {
+        // Coverage-gap peer of the Option/Vec tail parity pin above
+        // on the source-kind altitude — closes the
+        // `last_X() == vec.last().copied()` parity on all four cells
+        // of the 2×2 support / coverage-gap tail-projection grid at
+        // the container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_absent_source_kind(),
+            r.absent_source_kinds().last().copied()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_tier_agrees_with_tier_histogram_observed_next_back()
+    {
+        // Cross-projection law between the tail-Option and the
+        // histogram-observed seam on the same container: the
+        // observed-cells tail Option equals
+        // `tier_histogram().observed().next_back()` pointwise. Catches
+        // a future edit that reorders one seam without the other
+        // before the drift can reach any consumer that keys the two
+        // seams against each other on the container.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_tier(),
+            r.tier_histogram().observed().next_back()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_tier_agrees_with_tier_histogram_unobserved_next_back() {
+        // Coverage-gap peer of the tail-Option/histogram-observed
+        // cross-projection pin above — pins the unobserved-cells tail
+        // agreement on the same container seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_absent_tier(),
+            r.tier_histogram().unobserved().next_back()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_source_kind_agrees_with_source_kind_histogram_observed_next_back()
+     {
+        // Source-kind-axis peer of the tail-Option/histogram-observed
+        // cross-projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_contributing_source_kind(),
+            r.source_kind_histogram().observed().next_back()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_absent_source_kind_agrees_with_source_kind_histogram_unobserved_next_back()
+     {
+        // Source-kind-axis peer of the tail-Option/histogram-unobserved
+        // cross-projection pin above — closes the container-altitude
+        // tail-Option/histogram cross-projection surface on all four
+        // cells of the 2×2 grid.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.last_absent_source_kind(),
+            r.source_kind_histogram().unobserved().next_back()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_and_last_absent_tiers_are_disjoint_when_both_some()
+    {
+        // The container-altitude tail-Option partition invariant on
+        // the tier altitude: when both tail Options are `Some(t)`
+        // (partial-cover fold, neither empty nor full), the two tail
+        // cells are distinct — a cell cannot simultaneously be the
+        // tail of the observed subset and the tail of its complement.
+        // Fully-Option dual on the tail side of the head-Option
+        // disjointness invariant one seam back.
+        let r = Prog::resolve_progressive();
+        if let (Some(tail_contrib), Some(tail_absent)) =
+            (r.last_contributing_tier(), r.last_absent_tier())
+        {
+            assert_ne!(tail_contrib, tail_absent);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_last_contributing_and_last_absent_source_kinds_are_disjoint_when_both_some()
+     {
+        // Source-kind-axis peer of the tier-altitude tail-Option
+        // disjointness invariant pin above — closes the fully-Option
+        // support / coverage-gap disjointness on the tail side on
+        // both axes of the atomic `(tier, source)` pair at the
+        // container altitude.
+        let r = Prog::resolve_progressive();
+        if let (Some(tail_contrib), Some(tail_absent)) = (
+            r.last_contributing_source_kind(),
+            r.last_absent_source_kind(),
+        ) {
+            assert_ne!(tail_contrib, tail_absent);
         }
     }
 }
