@@ -19713,6 +19713,107 @@ impl ProgressiveLayer {
     pub const fn is_custom(&self) -> bool {
         self.provenance.is_custom()
     }
+
+    /// Returns `true` iff this overlay's stamp carries the
+    /// [`ConfigSource::Defaults`] source; source-axis peer of the
+    /// tier-axis predicate quartet [`Self::is_bare`] /
+    /// [`Self::is_discovered`] / [`Self::is_default`] / [`Self::is_custom`]
+    /// (`b9474c1`) one axis over on the atomic `(tier, source)` pair the
+    /// overlay's [`Provenance`] carries.
+    ///
+    /// True for exactly the three computed-defaults-row constructors on
+    /// this container ([`Self::bare`] / [`Self::discovered`] /
+    /// [`Self::prescribed_default`], which all stamp
+    /// [`ConfigSource::Defaults`] on the source coordinate regardless of
+    /// their tier stamp); false for the two operator-overlay constructors
+    /// ([`Self::file`] / [`Self::env`], which stamp [`ConfigSource::File`]
+    /// / [`ConfigSource::Env`]). Pointwise per-constructor polarity
+    /// pinned by [`tests::progressive_layer_is_defaults_true_only_for_defaults_source`].
+    ///
+    /// Delegates one-hop into the primitive-altitude
+    /// [`Provenance::is_defaults`] (`84e8f9d`) via a direct
+    /// `self.provenance.is_defaults()` field access that never borrows the
+    /// heavier [`Dict`] payload, so the round-trip
+    /// `ProgressiveLayer::bare(dict).is_defaults()` writes and reads the
+    /// same source cell at one seam each rather than through the two-hop
+    /// borrow `layer.provenance().is_defaults()`. Container-altitude
+    /// analogue of the same one-hop delegation the tier-axis quartet
+    /// carries.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`Provenance::is_defaults`] predicate. The `pub const fn`
+    /// declaration itself is the compile-time weld: the moment
+    /// [`Provenance::is_defaults`] loses its const-ness one seam down,
+    /// this declaration fails to compile at THAT line before the drift
+    /// can reach downstream consumers that assumed const-ness through the
+    /// type. (Unlike the primitive-altitude weld, no `static` binding
+    /// pins it at the call site — [`ProgressiveLayer`] cannot be bound to
+    /// a `const` or `static` item because both its fields carry
+    /// non-`const`-`Drop` payloads ([`Dict`] and [`ConfigSource`]) — but
+    /// the `pub const fn` declaration is stricter than any call-site
+    /// weld.)
+    ///
+    /// Pointwise agreement `layer.is_defaults() == layer.provenance().is_defaults()`
+    /// on every shipped constructor row is pinned by
+    /// [`tests::progressive_layer_source_predicates_agree_with_provenance_predicates_pointwise`],
+    /// the source-altitude analogue of the tier-altitude agreement pin
+    /// `progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise`
+    /// (`b9474c1`); catches a future edit that drifts one altitude's
+    /// polarity without the other, and pins the payload-independence
+    /// contract on the container-altitude predicates (the primitive-side
+    /// has no [`Dict`] visibility, so the container-side is forbidden
+    /// from consulting it).
+    ///
+    /// The three sibling predicates form a closed disjoint partition of
+    /// the source-axis variant space — every [`ProgressiveLayer`] value
+    /// from the shipped stamp-side constructor surface satisfies exactly
+    /// one — pinned by
+    /// [`tests::progressive_layer_source_predicates_are_a_closed_ternary_partition`],
+    /// the container-altitude analogue of the primitive-altitude
+    /// ternary-partition pin `provenance_source_predicates_are_a_closed_ternary_partition`
+    /// (`84e8f9d`).
+    #[must_use]
+    pub const fn is_defaults(&self) -> bool {
+        self.provenance.is_defaults()
+    }
+
+    /// Returns `true` iff this overlay's stamp carries the
+    /// [`ConfigSource::Env`] source regardless of the inner prefix
+    /// payload; source-axis sibling of [`Self::is_defaults`]. See
+    /// [`Self::is_defaults`] for the full contract (const-callability,
+    /// agreement pin, ternary-partition pin).
+    ///
+    /// Prefix-independence — the answer is the same for every
+    /// `Env(prefix)` regardless of the prefix string — mirrors the
+    /// payload-independence contract on [`Provenance::is_env`] (which
+    /// cannot see the [`String`] inside its `Env(prefix)` arm) and is
+    /// pinned by the same pointwise-agreement law
+    /// [`tests::progressive_layer_source_predicates_agree_with_provenance_predicates_pointwise`]:
+    /// the primitive-side predicate has no prefix visibility, so a
+    /// future edit that made this arm inspect the prefix would diverge
+    /// from the primitive-side and fail the pin.
+    #[must_use]
+    pub const fn is_env(&self) -> bool {
+        self.provenance.is_env()
+    }
+
+    /// Returns `true` iff this overlay's stamp carries the
+    /// [`ConfigSource::File`] source regardless of the inner path
+    /// payload; source-axis sibling of [`Self::is_defaults`]. See
+    /// [`Self::is_defaults`] for the full contract.
+    ///
+    /// Path-independence — the answer is the same for every
+    /// `File(path)` regardless of the [`std::path::PathBuf`] value —
+    /// mirrors the payload-independence contract on
+    /// [`Provenance::is_file`] (which cannot see the [`PathBuf`] inside
+    /// its `File(path)` arm) and is pinned by the same pointwise-
+    /// agreement law: a future edit that made this arm inspect the path
+    /// (a canonicalization check, an extension-shape check) would
+    /// diverge from the primitive-side and fail the pin.
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
+        self.provenance.is_file()
+    }
 }
 
 /// Std-trait facade over [`ProgressiveLayer::into_parts`]: the same
@@ -68189,6 +68290,138 @@ mod progressive_tests {
                 hits, 1,
                 "ProgressiveLayer {layer:?} must satisfy exactly one of \
                  is_bare/is_discovered/is_default/is_custom (satisfied {hits})",
+            );
+        }
+    }
+
+    // ── ProgressiveLayer::is_defaults / is_env / is_file —
+    //    container-altitude lift of the primitive-altitude source-axis
+    //    predicate triplet on `Provenance` (`84e8f9d`); reads back the
+    //    stamp the tier-axis constructor grid on this container wrote
+    //    on the source coordinate of the atomic `(tier, source)` pair ──
+
+    #[test]
+    fn progressive_layer_is_defaults_true_only_for_defaults_source() {
+        // Polarity pin per constructor row on the source axis: exactly
+        // the three computed-defaults-row constructors (`bare` /
+        // `discovered` / `prescribed_default`) answer `true` here,
+        // regardless of their tier stamp; the two operator-overlay
+        // constructors (`file` / `env`) answer `false`. Container-altitude
+        // mirror of `provenance_is_defaults_true_only_for_defaults_source`
+        // one seam down on the underlying `Provenance`.
+        let dict = Dict::new();
+        assert!(ProgressiveLayer::bare(dict.clone()).is_defaults());
+        assert!(ProgressiveLayer::discovered(dict.clone()).is_defaults());
+        assert!(ProgressiveLayer::prescribed_default(dict.clone()).is_defaults());
+        assert!(
+            !ProgressiveLayer::file("/etc/is_defaults_polarity.yaml", dict.clone()).is_defaults()
+        );
+        assert!(!ProgressiveLayer::env("SHIKUMI_IS_DEFAULTS_POLARITY_", dict).is_defaults());
+    }
+
+    #[test]
+    fn progressive_layer_is_env_true_only_for_env_source() {
+        // Polarity pin on the env cell of the source axis; peer of
+        // `progressive_layer_is_defaults_true_only_for_defaults_source`.
+        // Prefix-independent: every `env(prefix, _)` overlay answers
+        // `true` regardless of the prefix string.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_env());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_env());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_env());
+        assert!(!ProgressiveLayer::file("/etc/is_env_polarity.yaml", dict.clone()).is_env());
+        assert!(ProgressiveLayer::env("SHIKUMI_IS_ENV_POLARITY_", dict.clone()).is_env());
+        assert!(ProgressiveLayer::env("", dict).is_env());
+    }
+
+    #[test]
+    fn progressive_layer_is_file_true_only_for_file_source() {
+        // Polarity pin on the file cell of the source axis; peer of
+        // `progressive_layer_is_defaults_true_only_for_defaults_source`.
+        // Path-independent: every `file(path, _)` overlay answers `true`
+        // regardless of the PathBuf value.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_file());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_file());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_file());
+        assert!(ProgressiveLayer::file("/etc/is_file_polarity.yaml", dict.clone()).is_file());
+        assert!(ProgressiveLayer::file("relative/is_file_polarity.toml", dict.clone()).is_file());
+        assert!(!ProgressiveLayer::env("SHIKUMI_IS_FILE_POLARITY_", dict).is_file());
+    }
+
+    #[test]
+    fn progressive_layer_source_predicates_agree_with_provenance_predicates_pointwise() {
+        // Structural law: for every shipped constructor row on the
+        // container-altitude stamp-side, `layer.is_X() == layer.provenance().is_X()`
+        // for X in {defaults, env, file}. Container-altitude analogue of
+        // `provenance_source_predicates_agree_with_source_predicates_pointwise`
+        // (`84e8f9d`) one seam down on `Provenance` ↔ `ConfigSource`;
+        // catches a future edit that drifts one altitude's polarity
+        // without the other, and pins the payload-independence contract
+        // on the container-altitude predicates (the primitive-side has
+        // no `Dict` visibility, so the container-side is forbidden from
+        // consulting it; the primitive-side has no path/prefix
+        // visibility either, so this container-side is forbidden from
+        // reaching for those payloads too).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/source_predicate_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_SOURCE_PREDICATE_AGREEMENT_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(
+                layer.is_defaults(),
+                prov.is_defaults(),
+                "is_defaults drift on {layer:?}",
+            );
+            assert_eq!(layer.is_env(), prov.is_env(), "is_env drift on {layer:?}",);
+            assert_eq!(
+                layer.is_file(),
+                prov.is_file(),
+                "is_file drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_source_predicates_are_a_closed_ternary_partition() {
+        // Every ProgressiveLayer value from the shipped stamp-side
+        // constructor surface satisfies exactly one of the three sibling
+        // predicates: none satisfies two, none satisfies zero.
+        // Container-altitude analogue of the primitive-altitude
+        // partition pin
+        // `provenance_source_predicates_are_a_closed_ternary_partition`
+        // (`84e8f9d`); ties the container-altitude closure to the same
+        // closed-partition discipline the three cells of
+        // `ConfigSourceKind::ALL` carry.
+        //
+        // A future fourth `ConfigSourceKind` variant landing without its
+        // own sibling predicate on `ProgressiveLayer` (a `ConfigMap` tier,
+        // a `Secret` source, etc.) collapses the partition to zero on
+        // that variant, failing here before drifting through any consumer
+        // site keying on the three inherent predicates.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/source_predicate_partition.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_SOURCE_PREDICATE_PARTITION_", dict.clone()),
+        ] {
+            let hits = usize::from(layer.is_defaults())
+                + usize::from(layer.is_env())
+                + usize::from(layer.is_file());
+            assert_eq!(
+                hits, 1,
+                "ProgressiveLayer {layer:?} must satisfy exactly one of \
+                 is_defaults/is_env/is_file (satisfied {hits})",
             );
         }
     }
