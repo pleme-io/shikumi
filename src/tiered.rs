@@ -1534,7 +1534,27 @@ impl std::fmt::Display for Provenance {
 /// [`TieredConfig::resolve_progressive_with`]; seeded from `bare()` (which
 /// enumerates every field), so every leaf of the resolved config has a
 /// provenance entry by construction.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// The `Hash` marker closes the standard equality-trio (`PartialEq` +
+/// `Eq` + `Hash`) sibling gap on this primitive: the trio the
+/// [`Provenance`] primitive one seam down already carries via its own
+/// `#[derive]`, and the shape a downstream `H: Hash + Eq`-bounded
+/// consumer routes through (a `HashSet<ProvenanceMap>` cataloguing
+/// distinct per-tick attribution shapes, a `HashMap` keying rollups by
+/// the effective provenance shape, a fingerprint hasher stamping the
+/// resolution's attribution slice). The derive is coherence-honest at
+/// this altitude because [`std::collections::BTreeMap<K, V>`] carries a
+/// `Hash` blanket when both `K` and `V` do, and the inner
+/// `Vec<String>` key + [`Provenance`] value both do — so the derived
+/// `Hash` folds every attributed leaf into the digest in the same
+/// lexicographic key order the derived `PartialEq` compares them, and
+/// the trio's `a == b ⇒ hash(a) == hash(b)` contract holds by
+/// construction. The sibling marker on the [`ProgressiveResolution<T>`]
+/// container up one altitude does not land — its manual `PartialEq`
+/// impl blocks the auto-derive of `Hash`, mirroring the same asymmetry
+/// the [`ProgressiveResolution<T>`] `Eq` marker already carries — but
+/// this primitive's own trio is now closed at one site.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ProvenanceMap {
     inner: BTreeMap<Vec<String>, Provenance>,
 }
@@ -87391,5 +87411,151 @@ mod progressive_tests {
         let items = [&r_1, &r_2, &r_other];
         assert_eq!(count_matching(&items, &r_1), 2);
         assert_eq!(count_matching(&items, &r_other), 1);
+    }
+
+    // Helper for the `Hash` marker pins below: drives a per-value
+    // `std::collections::hash_map::DefaultHasher` digest and returns
+    // its `finish()`. Kept local so the marker pins do not depend on
+    // any hasher choice a downstream `HashSet<ProvenanceMap>` /
+    // `HashMap` consumer might pick.
+    fn digest_of<H: std::hash::Hash + ?Sized>(value: &H) -> u64 {
+        use std::hash::Hasher;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn provenance_map_hash_marker_is_present() {
+        // The load-bearing compile-time attestation for the
+        // `#[derive(Hash)]` on `ProvenanceMap`: a generic `H: Hash`
+        // bound picks up `&ProvenanceMap` without special-casing at
+        // the call site. Without this pin, a future edit that
+        // dropped `Hash` from the derive (or added a manual
+        // `PartialEq` impl blocking auto-derive, mirroring the
+        // asymmetry `ProgressiveResolution<T>` carries one altitude
+        // up) would silently break every downstream `Hash`-bounded
+        // consumer of the attribution primitive — this test would
+        // fail to compile at the `takes_hash` call rather than at
+        // some distant `HashSet<ProvenanceMap>` insertion site.
+        // Matches the shape used by
+        // `progressive_resolution_eq_marker_is_present` one seam up
+        // on the resolution container's `Eq` marker.
+        fn takes_hash<H: std::hash::Hash>(_: &H) {}
+        let r = Prog::resolve_progressive();
+        takes_hash(r.provenance());
+    }
+
+    #[test]
+    fn provenance_map_hash_agrees_with_eq_across_fixtures() {
+        // Runtime dual of `provenance_map_hash_marker_is_present`:
+        // the `Hash` derive is a pure attestation over the same
+        // `inner: BTreeMap<Vec<String>, Provenance>` coordinate the
+        // `PartialEq` + `Eq` derives read, so the trio's
+        // `a == b ⇒ hash(a) == hash(b)` contract must hold pointwise.
+        // A future edit could silently break this invariant only by
+        // adding a manual `Hash` impl reading different state from
+        // the manual `PartialEq` impl — again mirroring the
+        // asymmetry `ProgressiveResolution<T>` carries — but this
+        // primitive derives both, so the invariant is by
+        // construction; the pin guards against a future drift shift.
+        // Walks the reflexive + distinct-provenance-source +
+        // reconstructed-through-`resolve_progressive_with` fixtures
+        // and asserts the contract on every `Eq`-equal pair.
+        let r_bare = Prog::resolve_progressive();
+        let r_bare_dup = Prog::resolve_progressive();
+        // Two resolutions produced by the same tier fold — same
+        // dict, same source stamps everywhere — must be `Eq`-equal
+        // and hash-equal.
+        assert_eq!(r_bare.provenance(), r_bare_dup.provenance());
+        assert_eq!(
+            digest_of(r_bare.provenance()),
+            digest_of(r_bare_dup.provenance()),
+        );
+        // A resolution folded with an operator FILE overlay carries
+        // a per-leaf `Provenance::file(path)` on every leaf the
+        // overlay wins — its inner map differs from the pure
+        // `resolve_progressive` fold at those keys, so `Eq` must
+        // report unequal (and `Hash` is not required to differ, but
+        // the assertion asserts what the trio actually requires).
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(99_u32));
+        let r_file = Prog::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_agree.yaml",
+            dict.clone(),
+        )]);
+        let r_file_dup =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/hash_agree.yaml", dict)]);
+        // Identical layer stack ⇒ Eq-equal provenance maps ⇒
+        // hash-equal by the trio contract.
+        assert_eq!(r_file.provenance(), r_file_dup.provenance());
+        assert_eq!(
+            digest_of(r_file.provenance()),
+            digest_of(r_file_dup.provenance()),
+        );
+        // Walk the full pair matrix and pin the contract pointwise:
+        // whenever `Eq` reports `true`, `Hash` must agree.
+        let maps = [
+            r_bare.provenance(),
+            r_bare_dup.provenance(),
+            r_file.provenance(),
+            r_file_dup.provenance(),
+        ];
+        for lhs in maps.iter() {
+            for rhs in maps.iter() {
+                if lhs == rhs {
+                    assert_eq!(digest_of(*lhs), digest_of(*rhs));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_map_composes_through_hashset_shape_bound() {
+        // The load-bearing bound-composition pin: a container
+        // generic over `H: Hash + Eq` — here a `HashSet<&H>`
+        // deduplicating by hash-defined identity, the exact shape a
+        // downstream cataloguer of distinct per-tick attribution
+        // shapes routes through — picks up `&ProvenanceMap` for
+        // free. Without the `Hash` derive on the primitive, this
+        // generic body would not even compile against
+        // `&ProvenanceMap`, forcing every downstream `Hash + Eq`-
+        // bounded consumer to open-code a per-type hasher wrapper.
+        // Sibling of
+        // `progressive_resolution_eq_composes_through_hashset_shape_bound`
+        // one seam up on the resolution container's `Eq` bound.
+        fn distinct_count<H: std::hash::Hash + Eq>(items: &[&H]) -> usize {
+            let mut set: std::collections::HashSet<&H> = std::collections::HashSet::new();
+            for item in items {
+                set.insert(*item);
+            }
+            set.len()
+        }
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(3_u32));
+        let r_1 = Prog::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_a.yaml",
+            dict.clone(),
+        )]);
+        let r_2 = Prog::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_a.yaml",
+            dict,
+        )]);
+        // Distinct-source fixture — the layer file path stamps a
+        // different `Provenance::file(path)` on every leaf the
+        // overlay wins, so the resolved `ProvenanceMap` inner shape
+        // differs at those keys and the two maps hash-partition.
+        let mut other_dict = Dict::new();
+        other_dict.insert("a".to_owned(), Value::from(3_u32));
+        let r_other = Prog::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_b.yaml",
+            other_dict,
+        )]);
+        let items = [r_1.provenance(), r_2.provenance(), r_other.provenance()];
+        // r_1 and r_2 collapse to the same hash bucket (same file
+        // path stamp on every winning leaf); r_other partitions
+        // into its own bucket (distinct file path). Distinct count
+        // is 2.
+        assert_eq!(distinct_count(&items), 2);
     }
 }
