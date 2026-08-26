@@ -20416,6 +20416,118 @@ impl<T> ProgressiveResolution<T> {
     pub fn into_parts(self) -> (T, ProvenanceMap) {
         (self.value, self.provenance)
     }
+
+    /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
+    /// container-altitude peer of [`ProvenanceMap::tiers`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.tiers()`.
+    ///
+    /// Lifts the two-hop borrow chain
+    /// `resolution.provenance().tiers()` to a one-hop inherent seam on
+    /// the resolution itself, matching the shape the projection quintet
+    /// [`ProgressiveLayer::tier`] / [`ProgressiveLayer::source`] /
+    /// [`ProgressiveLayer::source_kind`] /
+    /// [`ProgressiveLayer::tier_ordinal`] /
+    /// [`ProgressiveLayer::source_kind_ordinal`] carries on the *input*
+    /// side of the same boundary (each a one-hop delegation into
+    /// [`Provenance`] on that seam) — closes the projection surface on
+    /// the output side to match the input side, at the walker altitude
+    /// the per-leaf provenance map admits.
+    ///
+    /// Peer of [`Self::sources`] / [`Self::source_kinds`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`] on the
+    /// same container: the five walkers project the atomic `(tier,
+    /// source)` pair each leaf's [`Provenance`] carries — through the
+    /// [`ProvenanceMap`] primitive the resolution owns — to the five
+    /// scalar coordinates the primitive-altitude quintet on
+    /// [`Provenance`] projects a single stamp to. Every one of the five
+    /// yields the same element count, order, and element identity as
+    /// its `self.provenance().X()` two-hop peer by construction, pinned
+    /// pointwise by
+    /// [`progressive_tests::progressive_resolution_tiers_agrees_with_provenance_tiers_pointwise`]
+    /// and its four sibling walker-axis tests.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapTiers`] impls the full
+    /// walker trait shape ([`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`]
+    /// + [`Debug`][std::fmt::Debug]) — routed through this seam
+    /// unchanged.
+    #[must_use]
+    pub fn tiers(&self) -> ProvenanceMapTiers<'_> {
+        self.provenance.tiers()
+    }
+
+    /// Sorted iterator over just the per-leaf [`crate::ConfigSourceKind`]
+    /// — the container-altitude peer of [`ProvenanceMap::source_kinds`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.source_kinds()`.
+    ///
+    /// The source-kind-axis sibling of [`Self::tiers`] on the same
+    /// container: the two walkers project the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries to its two closed-axis
+    /// coordinates through the [`ProvenanceMap`] primitive the
+    /// resolution owns. See [`Self::tiers`] for the full contract
+    /// (lift-vs-borrow shape, closure of the projection quintet on the
+    /// output side, walker trait algebra).
+    #[must_use]
+    pub fn source_kinds(&self) -> ProvenanceMapSourceKinds<'_> {
+        self.provenance.source_kinds()
+    }
+
+    /// Sorted iterator over just the per-leaf [`ConfigSource`] — the
+    /// container-altitude peer of [`ProvenanceMap::sources`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.sources()`.
+    ///
+    /// The full-source-altitude peer of [`Self::source_kinds`] on the
+    /// same container: [`Self::source_kinds`] drops the
+    /// [`ConfigSource::Env`] prefix / [`ConfigSource::File`] path
+    /// payload down to the [`crate::ConfigSourceKind`] scalar; this
+    /// walker keeps the whole [`ConfigSource`] borrow. See
+    /// [`Self::tiers`] for the full contract on the projection quintet.
+    #[must_use]
+    pub fn sources(&self) -> ProvenanceMapSources<'_> {
+        self.provenance.sources()
+    }
+
+    /// Sorted iterator over just the per-leaf [`ConfigTierKind`]
+    /// precedence ordinal — the container-altitude peer of
+    /// [`ProvenanceMap::tier_ordinals`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.tier_ordinals()`.
+    ///
+    /// The ordinal-altitude peer of [`Self::source_kind_ordinals`] on
+    /// the same container: the two walkers project the atomic `(tier,
+    /// source)` pair each leaf's [`Provenance`] carries to the scalar
+    /// precedence ordinal of its two closed-axis coordinates, one
+    /// altitude further inland than [`Self::tiers`] /
+    /// [`Self::source_kinds`] on the same container. See [`Self::tiers`]
+    /// for the full contract on the projection quintet.
+    #[must_use]
+    pub fn tier_ordinals(&self) -> ProvenanceMapTierOrdinals<'_> {
+        self.provenance.tier_ordinals()
+    }
+
+    /// Sorted iterator over just the per-leaf [`crate::ConfigSourceKind`]
+    /// precedence ordinal — the container-altitude peer of
+    /// [`ProvenanceMap::source_kind_ordinals`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.source_kind_ordinals()`.
+    ///
+    /// The source-kind-altitude peer of [`Self::tier_ordinals`] on the
+    /// same container: closes the ordinal-projection sibling gap on the
+    /// atomic `(tier, source)` pair on the output side, matching the
+    /// closure the input-side [`ProgressiveLayer::tier_ordinal`] /
+    /// [`ProgressiveLayer::source_kind_ordinal`] pair carries on the
+    /// primitive-altitude single-stamp peer one seam down. See
+    /// [`Self::tiers`] for the full contract on the projection quintet.
+    #[must_use]
+    pub fn source_kind_ordinals(&self) -> ProvenanceMapSourceKindOrdinals<'_> {
+        self.provenance.source_kind_ordinals()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -88758,5 +88870,149 @@ mod progressive_tests {
         // path stamps the provenance coordinate). Distinct count
         // is 2.
         assert_eq!(distinct_count(&items), 2);
+    }
+
+    // -------- ProgressiveResolution walker-projection quintet
+    // -------- (container-altitude peer of the ProvenanceMap walkers)
+
+    #[test]
+    fn progressive_resolution_tiers_agrees_with_provenance_tiers_pointwise() {
+        // The load-bearing structural law on the container-altitude
+        // tier-walker delegate: the container-altitude walker yields
+        // the same element stream, in the same order, as
+        // `res.provenance().tiers()`. Catches a future edit that
+        // routes `ProgressiveResolution::tiers` through a different
+        // BTreeMap projection than the primitive-altitude walker it
+        // delegates to (a `.iter().rev()` cursor, an `.into_values()`
+        // consume by mistake, a projection through a different
+        // Provenance accessor) that would break the shared-order
+        // contract, before the drift can reach any consumer that
+        // reads `res.tiers()` and expects it to match
+        // `res.provenance().tiers()`.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<ConfigTierKind> = r.tiers().collect();
+        let via_prov: Vec<ConfigTierKind> = r.provenance().tiers().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_source_kinds_agrees_with_provenance_source_kinds_pointwise() {
+        // Peer of the tiers pin above on the source-kind axis of the
+        // same container-altitude delegation.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<crate::ConfigSourceKind> = r.source_kinds().collect();
+        let via_prov: Vec<crate::ConfigSourceKind> = r.provenance().source_kinds().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_sources_agrees_with_provenance_sources_pointwise() {
+        // Full-source-altitude peer of the source_kinds pin above:
+        // the container-altitude `sources` walker yields the same
+        // `&ConfigSource` stream as `res.provenance().sources()`,
+        // borrow-side (both hand out `&ConfigSource`, not owned
+        // clones, so the pointwise cloned equality also witnesses
+        // that no allocation happens in the delegation).
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<ConfigSource> = r.sources().cloned().collect();
+        let via_prov: Vec<ConfigSource> = r.provenance().sources().cloned().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinals_agrees_with_provenance_tier_ordinals_pointwise() {
+        // Ordinal-altitude peer of the tiers pin above on the same
+        // container-altitude delegation.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<usize> = r.tier_ordinals().collect();
+        let via_prov: Vec<usize> = r.provenance().tier_ordinals().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinals_agrees_with_provenance_source_kind_ordinals_pointwise()
+     {
+        // Ordinal-altitude peer of the source_kinds pin above on the
+        // same container-altitude delegation — closes the four
+        // scalar-projection walker delegates (tiers / source_kinds /
+        // tier_ordinals / source_kind_ordinals) plus the
+        // full-source-altitude sources() delegate at one seam each on
+        // the container's inherent surface.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<usize> = r.source_kind_ordinals().collect();
+        let via_prov: Vec<usize> = r.provenance().source_kind_ordinals().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinals_agree_with_tiers_ordinal_projection() {
+        // Cross-projection law on the container-altitude walker
+        // delegates: the tier-ordinal walker equals the scalar-tag
+        // walker composed with `ConfigTierKind::ordinal` pointwise.
+        // Container-altitude peer of the primitive-altitude pin
+        // `provenance_map_tier_ordinals_agrees_with_tiers_ordinal_projection`
+        // one seam down — a future edit reordering the ordinal
+        // relative to the tag on either altitude fails HERE before
+        // drifting through any ordinal-keyed consumer that reads the
+        // container-altitude walker.
+        let r = Prog::resolve_progressive();
+        let via_ordinals: Vec<usize> = r.tier_ordinals().collect();
+        let via_tag_then_ordinal: Vec<usize> = r.tiers().map(ConfigTierKind::ordinal).collect();
+        assert_eq!(via_ordinals, via_tag_then_ordinal);
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinals_agree_with_source_kinds_ordinal_projection() {
+        // Source-kind-axis peer of the tier-ordinal cross-projection
+        // pin above — closes the cross-projection axis-ordinal
+        // agreement pin on both axes of the atomic `(tier, source)`
+        // pair at the container-altitude walker seam, matching the
+        // shape the primitive-altitude single-stamp projection
+        // quintet on `ProgressiveLayer` (5f716bf) carries one seam
+        // over on the input side of the fold's atomic-pair ownership
+        // boundary.
+        let r = Prog::resolve_progressive();
+        let via_ordinals: Vec<usize> = r.source_kind_ordinals().collect();
+        let via_tag_then_ordinal: Vec<usize> = r
+            .source_kinds()
+            .map(crate::ConfigSourceKind::ordinal)
+            .collect();
+        assert_eq!(via_ordinals, via_tag_then_ordinal);
+    }
+
+    #[test]
+    fn progressive_resolution_sources_folded_to_source_kinds_equals_source_kinds_walker() {
+        // Kind-side-vs-source-side recoverability pin at the
+        // container-altitude walker seam: the source-side walker
+        // folded through `ConfigSource::kind` yields the same stream
+        // as the kind-side walker, so the two projection walkers
+        // remain the same pointwise witness of the same axis. Peer
+        // of the primitive-altitude pin
+        // `provenance_map_sources_folded_to_source_kinds_equals_source_kinds_walker`
+        // one seam down.
+        let r = Prog::resolve_progressive();
+        let via_sources_folded: Vec<crate::ConfigSourceKind> =
+            r.sources().map(ConfigSource::kind).collect();
+        let via_kinds: Vec<crate::ConfigSourceKind> = r.source_kinds().collect();
+        assert_eq!(via_sources_folded, via_kinds);
+    }
+
+    #[test]
+    fn progressive_resolution_walker_quintet_length_matches_provenance_len() {
+        // Every walker in the container-altitude quintet visits every
+        // leaf in the underlying provenance map exactly once — the
+        // `ExactSizeIterator` bound on each walker gets pinned
+        // against the map's own `len()`. Catches a future edit that
+        // reroutes any one walker through a partial cursor (a
+        // `.filter(..)` step, a `.take(..)` prefix) that would break
+        // the total-visitation contract on that walker without
+        // touching the others.
+        let r = Prog::resolve_progressive();
+        let n = r.provenance().len();
+        assert_eq!(r.tiers().count(), n);
+        assert_eq!(r.source_kinds().count(), n);
+        assert_eq!(r.sources().count(), n);
+        assert_eq!(r.tier_ordinals().count(), n);
+        assert_eq!(r.source_kind_ordinals().count(), n);
     }
 }
