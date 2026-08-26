@@ -20528,6 +20528,76 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_ordinals(&self) -> ProvenanceMapSourceKindOrdinals<'_> {
         self.provenance.source_kind_ordinals()
     }
+
+    /// Per-tier leaf-count histogram over the per-leaf `(tier, source)`
+    /// stream the fold's output resolution carries — the container-altitude
+    /// peer of [`ProvenanceMap::tier_histogram`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.tier_histogram()`.
+    ///
+    /// The histogram-altitude peer of the projection walker quintet
+    /// ([`Self::tiers`] / [`Self::source_kinds`] / [`Self::sources`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`]) closed on
+    /// the same container one seam back: the walker quintet streams the
+    /// per-leaf `(tier, source)` projection one element at a time; this
+    /// method folds the tier-axis projection into a fixed-cardinality
+    /// [`crate::AxisHistogram<ConfigTierKind>`] bucket vector, so the
+    /// round-trip
+    /// `res.tier_histogram().count(t) ==
+    /// res.tiers().filter(|x| *x == t).count()`
+    /// on every `t: ConfigTierKind` closes without the caller reaching
+    /// through `.provenance()`.
+    ///
+    /// Before this seam, a consumer wanting a per-tier leaf-count summary
+    /// (an operator dashboard bucketing surviving leaves by tier, an
+    /// attestation manifest hashing the tier-count vector, a `/healthz`
+    /// payload reporting per-tier support) reached through the two-hop
+    /// borrow `res.provenance().tier_histogram()`; this method collapses
+    /// it to one seam on the resolution container itself.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`crate::AxisHistogram<ConfigTierKind>`]
+    /// impls the full histogram surface at trait-uniform altitude
+    /// ([`count`][crate::AxisHistogram::count] /
+    /// [`total`][crate::AxisHistogram::total] /
+    /// [`distinct_cells`][crate::AxisHistogram::distinct_cells] /
+    /// [`is_full_cover`][crate::AxisHistogram::is_full_cover] /
+    /// [`dominant_cell`][crate::AxisHistogram::dominant_cell] /
+    /// [`recessive_cell`][crate::AxisHistogram::recessive_cell] /
+    /// [`observed`][crate::AxisHistogram::observed] /
+    /// [`unobserved`][crate::AxisHistogram::unobserved] /
+    /// [`modality_class`][crate::AxisHistogram::modality_class]) — routed
+    /// through this seam unchanged.
+    #[must_use]
+    pub fn tier_histogram(&self) -> crate::AxisHistogram<ConfigTierKind> {
+        self.provenance.tier_histogram()
+    }
+
+    /// Per-source-kind leaf-count histogram over the per-leaf
+    /// `(tier, source)` stream the fold's output resolution carries — the
+    /// container-altitude peer of [`ProvenanceMap::source_kind_histogram`]
+    /// on the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.source_kind_histogram()`.
+    ///
+    /// The source-kind-axis sibling of [`Self::tier_histogram`] on the
+    /// same container: the two histograms bucketize the same per-leaf
+    /// stream on the two closed-axis coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries — the
+    /// [`ConfigTierKind`] axis on one side and the
+    /// [`crate::ConfigSourceKind`] axis on the other. Together with
+    /// [`Self::tier_histogram`], this closes the histogram surface on the
+    /// container-altitude output side to match the walker surface the
+    /// projection quintet closed one seam back.
+    ///
+    /// See [`Self::tier_histogram`] for the full contract on the histogram
+    /// pair (lift-vs-borrow shape, cross-projection agreement with the
+    /// walker quintet, [`crate::AxisHistogram`] trait algebra).
+    #[must_use]
+    pub fn source_kind_histogram(&self) -> crate::AxisHistogram<crate::ConfigSourceKind> {
+        self.provenance.source_kind_histogram()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -89014,5 +89084,93 @@ mod progressive_tests {
         assert_eq!(r.sources().count(), n);
         assert_eq!(r.tier_ordinals().count(), n);
         assert_eq!(r.source_kind_ordinals().count(), n);
+    }
+
+    // -------- ProgressiveResolution histogram pair
+    // -------- (container-altitude peer of the ProvenanceMap histograms)
+
+    #[test]
+    fn progressive_resolution_tier_histogram_agrees_with_provenance_tier_histogram() {
+        // The load-bearing structural law on the container-altitude
+        // tier-histogram delegate: the container-altitude histogram
+        // equals the two-hop `res.provenance().tier_histogram()`
+        // pointwise (per-cell counts, total, distinct-cell support).
+        // Catches a future edit that routes
+        // `ProgressiveResolution::tier_histogram` through a different
+        // fold than the primitive-altitude histogram it delegates to
+        // (a `.filter(..)` prefix that drops some tier, an `Extend`
+        // reuse that starts from a non-empty seed, a mis-projected
+        // Provenance accessor) that would break the shared-bucket
+        // contract before the drift can reach any consumer that reads
+        // `res.tier_histogram()` and expects it to match
+        // `res.provenance().tier_histogram()`.
+        let r = Prog::resolve_progressive();
+        let via_res = r.tier_histogram();
+        let via_prov = r.provenance().tier_histogram();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_histogram_agrees_with_provenance_source_kind_histogram() {
+        // Source-kind-axis peer of the tier_histogram pin above on the
+        // same container-altitude delegation — closes the histogram
+        // pair on both axes of the atomic `(tier, source)` pair at
+        // the container altitude, matching the closure the walker
+        // quintet carries on the same seam.
+        let r = Prog::resolve_progressive();
+        let via_res = r.source_kind_histogram();
+        let via_prov = r.provenance().source_kind_histogram();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_tier_histogram_total_matches_provenance_len() {
+        // Every leaf projects to exactly one tier, so summing the
+        // histogram cells recovers the total leaf count. Pins the
+        // per-leaf full-visitation contract at the container-altitude
+        // histogram seam, peer of the walker-quintet length pin one
+        // seam back on the same container.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.tier_histogram().total(), r.provenance().len());
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_histogram_total_matches_provenance_len() {
+        // Source-kind-axis peer of the tier_histogram total pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.source_kind_histogram().total(), r.provenance().len());
+    }
+
+    #[test]
+    fn progressive_resolution_tier_histogram_agrees_with_tiers_walker_filter() {
+        // Cross-projection law between the histogram bucket and the
+        // walker seam on the same container: for every closed-axis
+        // tier cell `t`, `tier_histogram().count(t)` equals the
+        // walker-filter fold `tiers().filter(|x| *x == t).count()`.
+        // A future edit reordering one seam without the other (a
+        // walker cursor that skips a leaf, a histogram fold that
+        // double-counts on a variant) fails HERE before drifting
+        // through any consumer that keys the two seams against each
+        // other on the container.
+        let r = Prog::resolve_progressive();
+        let hist = r.tier_histogram();
+        for tier in ConfigTierKind::ALL {
+            let via_walker = r.tiers().filter(|x| x == tier).count();
+            assert_eq!(hist.count(*tier), via_walker);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_histogram_agrees_with_source_kinds_walker_filter() {
+        // Source-kind-axis peer of the tier_histogram cross-projection
+        // pin above — closes the histogram-vs-walker agreement on
+        // both axes of the atomic `(tier, source)` pair at the
+        // container-altitude seam.
+        let r = Prog::resolve_progressive();
+        let hist = r.source_kind_histogram();
+        for kind in crate::ConfigSourceKind::ALL {
+            let via_walker = r.source_kinds().filter(|x| x == kind).count();
+            assert_eq!(hist.count(*kind), via_walker);
+        }
     }
 }
