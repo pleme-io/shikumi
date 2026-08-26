@@ -29699,6 +29699,55 @@ impl ConfigDiff {
     pub fn antimodal_kind_observation(&self) -> Option<(DiffLineKind, usize, usize)> {
         self.kind_histogram().antimodal_observation()
     }
+
+    /// The **extremal kind observations** on this diff's per-line
+    /// [`DiffLineKind`] histogram — the fused-quadruple pair
+    /// `Option<((DiffLineKind, usize, usize), (DiffLineKind, usize,
+    /// usize))>` packing the modal `(cell, count, multiplicity)` triple
+    /// and the antimodal `(cell, count, multiplicity)` triple into one
+    /// scalar. Returns [`None`] exactly on the empty diff; otherwise
+    /// returns `Some((modal_kind_observation().unwrap(),
+    /// antimodal_kind_observation().unwrap()))` where the two triples
+    /// share the same non-emptiness discriminant so the outer [`Option`]
+    /// fuses both empty gates into a single check.
+    ///
+    /// Diff-altitude peer of
+    /// [`crate::AxisHistogram::extremal_observations`] one seam down,
+    /// delegating one hop into `self.kind_histogram().extremal_observations()`.
+    /// The **closing joint** of the diff-altitude modal/antimodal fusion
+    /// family — the modal fused triple [`Self::modal_kind_observation`]
+    /// and the antimodal fused triple [`Self::antimodal_kind_observation`]
+    /// packed into a single fused-quadruple pair that reports both
+    /// tie-broken representatives and both tie cardinalities at one
+    /// method call, collapsing the six coordinated reads
+    /// `(dominant_kind(), peak_kind_count(), peak_kind_multiplicity(),
+    /// recessive_kind(), trough_kind_count(),
+    /// trough_kind_multiplicity())` — or equivalently the two
+    /// three-scalar folds `modal_kind_observation()` and
+    /// `antimodal_kind_observation()` — into one walk.
+    ///
+    /// The modal-triple pair projects out of this quadruple pair by
+    /// `.map(|(m, _)| m)` and recovers [`Self::modal_kind_observation`]
+    /// pointwise; the antimodal-triple pair projects out by
+    /// `.map(|(_, a)| a)` and recovers [`Self::antimodal_kind_observation`]
+    /// pointwise. Both halves share the outer [`Option`]'s single
+    /// non-emptiness discriminant so a consumer matching on
+    /// `Some((modal, antimodal))` never sees one side present with the
+    /// other absent.
+    ///
+    /// Diff-altitude peer of the container-altitude fused-quadruple pair
+    /// [`ProgressiveResolution::extremal_tier_observations`] /
+    /// [`ProgressiveResolution::extremal_source_kind_observations`] one
+    /// altitude up on the atomic `(tier, source)` pair — the same shape
+    /// lifted from the primitive-altitude [`crate::AxisHistogram`]
+    /// closes at every altitude of the fold.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn extremal_kind_observations(
+        &self,
+    ) -> Option<((DiffLineKind, usize, usize), (DiffLineKind, usize, usize))> {
+        self.kind_histogram().extremal_observations()
+    }
 }
 
 #[cfg(test)]
@@ -46464,6 +46513,132 @@ mod tests {
                      trough count ({trough_count}) on strictly-unimodal \
                      support",
                 );
+            }
+        }
+    }
+
+    // ── extremal_kind_observations — fused-quadruple pair closing joint on
+    //    the diff altitude, delegating to
+    //    `AxisHistogram::extremal_observations` one seam down. Diff-
+    //    altitude peer of `ProgressiveResolution::extremal_tier_observations`
+    //    / `extremal_source_kind_observations` one altitude up on the
+    //    atomic `(tier, source)` pair.
+
+    #[test]
+    fn extremal_kind_observations_agrees_with_kind_histogram_extremal_observations_pointwise() {
+        // Delegation pin: `extremal_kind_observations` routes through
+        // `kind_histogram().extremal_observations()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches a
+        // future edit that reroutes the diff altitude through a rebuilt
+        // histogram instead of one-hop delegating.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().extremal_observations();
+            assert_eq!(diff.extremal_kind_observations(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_modal_projection_recovers_modal_kind_observation_pointwise() {
+        // Projection-law pin: `.map(|(m, _)| m)` on the fused-quadruple
+        // pair recovers the modal fused triple pointwise on every
+        // fixture. The modal component of the pair is exactly
+        // `modal_kind_observation()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kind_observations().map(|(m, _)| m);
+            assert_eq!(via_map, diff.modal_kind_observation());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_antimodal_projection_recovers_antimodal_kind_observation_pointwise()
+     {
+        // Projection-law pin: `.map(|(_, a)| a)` on the fused-quadruple
+        // pair recovers the antimodal fused triple pointwise on every
+        // fixture. The antimodal component of the pair is exactly
+        // `antimodal_kind_observation()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kind_observations().map(|(_, a)| a);
+            assert_eq!(via_map, diff.antimodal_kind_observation());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_equals_modal_antimodal_option_zip_pointwise() {
+        // Option-zip law pin: `extremal_kind_observations()` equals
+        // `modal_kind_observation().zip(antimodal_kind_observation())`
+        // pointwise on every fixture — both sides share the same
+        // non-emptiness discriminant so the zip never drops
+        // information. Structural invariant that the fused quadruple
+        // pair is exactly the `Option::zip` of its two triple
+        // components on the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_zip = diff
+                .modal_kind_observation()
+                .zip(diff.antimodal_kind_observation());
+            assert_eq!(diff.extremal_kind_observations(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_presence_matches_modal_kind_observation_pointwise() {
+        // Presence-parity pin: the fused-quadruple pair carries the
+        // same non-emptiness discriminant as its modal-triple
+        // component, and — by the coincidence law above — the same
+        // discriminant as its antimodal-triple component. A consumer
+        // matching on `Some((modal, antimodal))` never sees one side
+        // present with the other absent.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.extremal_kind_observations().is_some(),
+                diff.modal_kind_observation().is_some(),
+            );
+            assert_eq!(
+                diff.extremal_kind_observations().is_some(),
+                diff.antimodal_kind_observation().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_none_iff_empty_pointwise() {
+        // Empty-diff boundary pin: `extremal_kind_observations()` is
+        // `None` exactly on the empty diff, matching the
+        // `modal_kind_observation` / `antimodal_kind_observation`
+        // empty-diff boundary and the underlying
+        // `AxisHistogram::extremal_observations` empty convention.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.extremal_kind_observations().is_none();
+            assert_eq!(is_none, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_component_counts_at_least_one_on_non_empty_pointwise() {
+        // Positivity pin: on every non-empty diff both component
+        // triples carry `n >= 1` — every non-empty support has at
+        // least one line at both the modal and antimodal cells.
+        for diff in dominant_kind_fixtures() {
+            if let Some(((_, mn, _), (_, an, _))) = diff.extremal_kind_observations() {
+                assert!(mn >= 1);
+                assert!(an >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kind_observations_component_multiplicities_bounded_by_axis_cardinality_pointwise() {
+        // Bounded-multiplicity pin: on every non-empty diff both
+        // component triples carry `1 <= m <=
+        // axis_cardinality::<DiffLineKind>()` (= 3). Mirrors the
+        // bounded-multiplicity pins on the modal / antimodal
+        // components one seam down.
+        let axis_card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some(((_, _, mm), (_, _, am))) = diff.extremal_kind_observations() {
+                assert!(mm >= 1);
+                assert!(mm <= axis_card);
+                assert!(am >= 1);
+                assert!(am <= axis_card);
             }
         }
     }
