@@ -2113,7 +2113,7 @@ rec {
           }
           {
             name = "cpufeatures";
-            packageId = "cpufeatures 0.3.1";
+            packageId = "cpufeatures 0.3.0";
             target = { target, features }: (("x86" == target."arch" or null) || ("x86_64" == target."arch" or null));
           }
         ];
@@ -2380,7 +2380,7 @@ rec {
           }
           {
             name = "cpufeatures";
-            packageId = "cpufeatures 0.3.1";
+            packageId = "cpufeatures 0.3.0";
             target = { target, features }: (("x86_64" == target."arch" or null) || ("x86" == target."arch" or null));
           }
           {
@@ -2702,11 +2702,11 @@ rec {
         ];
 
       };
-      "cpufeatures 0.3.1" = rec {
+      "cpufeatures 0.3.0" = rec {
         crateName = "cpufeatures";
-        version = "0.3.1";
+        version = "0.3.0";
         edition = "2024";
-        sha256 = "0rkm1l35jy1z1yfg723fddsxc7vr0gc1hhfvc138hnqiwc58p8jw";
+        sha256 = "00fjhygsqmh4kbxxlb99mcsbspxcai6hjydv4c46pwb67wwl2alb";
         authors = [
           "RustCrypto Developers"
         ];
@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.698";
+        version = "0.1.699";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
