@@ -20698,6 +20698,95 @@ impl<T> ProgressiveResolution<T> {
     pub fn absent_source_kinds(&self) -> Vec<crate::ConfigSourceKind> {
         self.provenance.absent_source_kinds()
     }
+
+    /// The **support size** — how many distinct [`ConfigTierKind`] cells
+    /// produced ≥1 surviving effective leaf on this resolved fold — as
+    /// one `usize` scalar. Container-altitude peer of
+    /// [`ProvenanceMap::contributing_tiers_count`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.contributing_tiers_count()`.
+    ///
+    /// The **scalar-count peer** of [`Self::contributing_tiers`] on the
+    /// same container: [`Self::contributing_tiers`] materialises the
+    /// observed-cells `Vec<ConfigTierKind>`, this method returns its
+    /// cardinality as a `usize` scalar without paying the
+    /// `Vec<ConfigTierKind>` allocation the observed-cells collect
+    /// would. Together with [`Self::contributing_tiers`],
+    /// [`Self::absent_tiers`], and [`Self::absent_tiers_count`], this
+    /// seam closes the `(observed, unobserved) × (cells, count)` 2×2
+    /// support / coverage-gap grid on the tier altitude of the
+    /// container itself — matching the same 2×2 grid the primitive
+    /// altitude already carries on [`ProvenanceMap`].
+    #[must_use]
+    pub fn contributing_tiers_count(&self) -> usize {
+        self.provenance.contributing_tiers_count()
+    }
+
+    /// The **coverage-gap size** — how many distinct [`ConfigTierKind`]
+    /// cells produced **zero** surviving effective leaves on this
+    /// resolved fold — as one `usize` scalar. Container-altitude peer
+    /// of [`ProvenanceMap::absent_tiers_count`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.absent_tiers_count()`.
+    ///
+    /// The **scalar-count peer** of [`Self::absent_tiers`] on the same
+    /// container: [`Self::absent_tiers`] materialises the unobserved-
+    /// cells `Vec<ConfigTierKind>`, this method returns its
+    /// cardinality as a `usize` scalar without paying the
+    /// `Vec<ConfigTierKind>` allocation the coverage-gap collect
+    /// would. Closes the coverage-gap corner of the container-altitude
+    /// 2×2 support / coverage-gap grid on the tier altitude (see
+    /// [`Self::contributing_tiers_count`] for the grid contract).
+    #[must_use]
+    pub fn absent_tiers_count(&self) -> usize {
+        self.provenance.absent_tiers_count()
+    }
+
+    /// The **support size** on the source-kind altitude — how many
+    /// distinct [`crate::ConfigSourceKind`] cells produced ≥1
+    /// surviving effective leaf on this resolved fold — as one `usize`
+    /// scalar. Container-altitude peer of
+    /// [`ProvenanceMap::contributing_source_kinds_count`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.contributing_source_kinds_count()`.
+    ///
+    /// The source-kind-axis sibling of [`Self::contributing_tiers_count`]
+    /// on the same container: the two scalars project the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries to the
+    /// observed-cells cardinality on the two closed-axis coordinates.
+    /// Together with [`Self::contributing_source_kinds`],
+    /// [`Self::absent_source_kinds`], and
+    /// [`Self::absent_source_kinds_count`], this seam closes the
+    /// `(observed, unobserved) × (cells, count)` 2×2 support /
+    /// coverage-gap grid on the source-kind altitude of the container.
+    #[must_use]
+    pub fn contributing_source_kinds_count(&self) -> usize {
+        self.provenance.contributing_source_kinds_count()
+    }
+
+    /// The **coverage-gap size** on the source-kind altitude — how many
+    /// distinct [`crate::ConfigSourceKind`] cells produced **zero**
+    /// surviving effective leaves on this resolved fold — as one
+    /// `usize` scalar. Container-altitude peer of
+    /// [`ProvenanceMap::absent_source_kinds_count`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into
+    /// `self.provenance.absent_source_kinds_count()`.
+    ///
+    /// The coverage-gap peer of [`Self::contributing_source_kinds_count`]
+    /// on the same container and the source-kind-axis sibling of
+    /// [`Self::absent_tiers_count`] on the tier altitude: the two
+    /// altitudes now close the same scalar-count coverage-gap
+    /// projection on the two closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries. Closes
+    /// the coverage-gap corner of the container-altitude 2×2 support /
+    /// coverage-gap grid on the source-kind altitude (see
+    /// [`Self::contributing_tiers_count`] for the grid contract).
+    #[must_use]
+    pub fn absent_source_kinds_count(&self) -> usize {
+        self.provenance.absent_source_kinds_count()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -89421,5 +89510,144 @@ mod progressive_tests {
         for kind in crate::ConfigSourceKind::ALL {
             assert_ne!(contributing.contains(kind), absent.contains(kind));
         }
+    }
+
+    // -------- ProgressiveResolution scalar-count support / coverage-gap
+    // -------- (container-altitude peer of ProvenanceMap
+    // -------- contributing_*_count / absent_*_count scalar pairs;
+    // -------- the count corner of the 2×2 grid whose Vec corner the
+    // -------- observed / coverage-gap partition pins one seam back)
+
+    #[test]
+    fn progressive_resolution_contributing_tiers_count_agrees_with_provenance_contributing_tiers_count()
+     {
+        // The load-bearing structural law on the container-altitude
+        // contributing_tiers_count delegate: the container-altitude
+        // scalar equals the two-hop `res.provenance().contributing_tiers_count()`
+        // pointwise. Catches a future edit that reroutes
+        // `ProgressiveResolution::contributing_tiers_count` through a
+        // different fold (a bespoke `contributing_tiers().len()` that
+        // pays the Vec allocation the scalar exists to elide, a
+        // mis-projected `Provenance` accessor) before the drift can
+        // reach any consumer that reads `res.contributing_tiers_count()`
+        // and expects it to match `res.provenance().contributing_tiers_count()`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_tiers_count(),
+            r.provenance().contributing_tiers_count()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_absent_tiers_count_agrees_with_provenance_absent_tiers_count() {
+        // Coverage-gap sibling of the contributing_tiers_count pin
+        // above on the same container-altitude delegation — the
+        // closed-axis peer of the observed-cells scalar-count.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.absent_tiers_count(), r.provenance().absent_tiers_count());
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_source_kinds_count_agrees_with_provenance_contributing_source_kinds_count()
+     {
+        // Source-kind-axis peer of the contributing_tiers_count pin
+        // above on the same container-altitude delegation — closes the
+        // observed-cells scalar-count on both axes of the atomic
+        // `(tier, source)` pair at the container altitude, matching
+        // the closure the Vec-shape observed-cells walker carries on
+        // the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_source_kinds_count(),
+            r.provenance().contributing_source_kinds_count()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_absent_source_kinds_count_agrees_with_provenance_absent_source_kinds_count()
+     {
+        // Source-kind-axis peer of the absent_tiers_count pin above
+        // on the same container-altitude delegation — closes the
+        // coverage-gap scalar-count on both axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.absent_source_kinds_count(),
+            r.provenance().absent_source_kinds_count()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_tiers_count_equals_contributing_tiers_len() {
+        // Scalar/Vec parity law on the container: the scalar-count
+        // seam names the same cardinality as `.contributing_tiers().len()`
+        // — the whole point of the scalar is to return that number
+        // without materialising the Vec. Catches a future edit that
+        // reroutes the scalar through a different projection (a
+        // histogram cell that double-counts a tier, a walker cursor
+        // that skips a leaf) that would silently disagree with the
+        // Vec peer while still typechecking.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.contributing_tiers_count(), r.contributing_tiers().len());
+    }
+
+    #[test]
+    fn progressive_resolution_absent_tiers_count_equals_absent_tiers_len() {
+        // Coverage-gap peer of the scalar/Vec parity pin above on the
+        // tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.absent_tiers_count(), r.absent_tiers().len());
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_source_kinds_count_equals_contributing_source_kinds_len()
+    {
+        // Source-kind-axis peer of the scalar/Vec parity pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_source_kinds_count(),
+            r.contributing_source_kinds().len()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_absent_source_kinds_count_equals_absent_source_kinds_len() {
+        // Coverage-gap peer of the scalar/Vec parity pin above on the
+        // source-kind altitude — closes the `_count == vec.len()`
+        // parity on all four cells of the 2×2 support / coverage-gap
+        // grid at the container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.absent_source_kinds_count(), r.absent_source_kinds().len());
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_and_absent_tiers_count_partition_axis_cardinality() {
+        // The container-altitude scalar-count partition invariant:
+        // the two counts sum to `axis_cardinality::<ConfigTierKind>()`
+        // without remainder. Fully-scalar dual of the Vec-shape
+        // partition pin one seam back
+        // (`progressive_resolution_contributing_and_absent_tiers_partition_closed_axis`)
+        // — both sides now scalar, no `.len()` on either side of the
+        // sum. Holds the two scalar-count delegates jointly to the
+        // same shape the primitive-altitude peer carries.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_tiers_count() + r.absent_tiers_count(),
+            crate::axis_cardinality::<ConfigTierKind>()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contributing_and_absent_source_kinds_count_partition_axis_cardinality()
+     {
+        // Source-kind-axis peer of the tier-altitude scalar-count
+        // partition invariant pin above — closes the fully-scalar
+        // support / coverage-gap partition on both axes of the atomic
+        // `(tier, source)` pair at the container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.contributing_source_kinds_count() + r.absent_source_kinds_count(),
+            crate::axis_cardinality::<crate::ConfigSourceKind>()
+        );
     }
 }
