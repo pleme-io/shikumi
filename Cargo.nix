@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.699";
+        version = "0.1.700";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -11190,9 +11190,9 @@ rec {
       };
       "uuid" = rec {
         crateName = "uuid";
-        version = "1.25.0";
+        version = "1.26.0";
         edition = "2021";
-        sha256 = "1k5y394cmcrpl038i5szyxk96pa27nzgn89480d7cnph6ilmflzh";
+        sha256 = "04kqmzwdqbh1lgci3dhv4ir1nk12bff98z8iq9m8m2myr5qjsxxm";
         authors = [
           "Ashley Mannix<ashleymannix@live.com.au>"
           "Dylan DPC<dylan.dpc@gmail.com>"
