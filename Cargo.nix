@@ -327,7 +327,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "full" "parsing" "printing" "proc-macro" "visit-mut" ];
           }
@@ -1429,7 +1429,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.18";
+            packageId = "h2 0.4.19";
             usesDefaultFeatures = false;
           }
           {
@@ -2569,7 +2569,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
             features = [ "full" ];
           }
         ];
@@ -3050,7 +3050,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
           }
         ];
         features = {
@@ -3793,11 +3793,11 @@ rec {
         features = {
         };
       };
-      "h2 0.4.18" = rec {
+      "h2 0.4.19" = rec {
         crateName = "h2";
-        version = "0.4.18";
+        version = "0.4.19";
         edition = "2021";
-        sha256 = "0a52hs8cakvg7xi3pxqi83vganyaasxn545ya8v74f8j3250x743";
+        sha256 = "05mw60jmsq97vjgj607nxjkx8dl6rxv6jj9i4r2z92056id5x3pg";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Sean McArthur <sean@seanmonstar.com>"
@@ -4254,7 +4254,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.18";
+            packageId = "h2 0.4.19";
             optional = true;
           }
           {
@@ -7987,7 +7987,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
           }
         ];
 
@@ -9087,7 +9087,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "derive" "parsing" "printing" "proc-macro" ];
           }
@@ -9167,7 +9167,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
           }
         ];
 
@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.680";
+        version = "0.1.681";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9829,11 +9829,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "fold" "full" "parsing" "printing" "proc-macro" "visit" "visit-mut" ];
       };
-      "syn 3.0.3" = rec {
+      "syn 3.0.4" = rec {
         crateName = "syn";
-        version = "3.0.3";
+        version = "3.0.4";
         edition = "2021";
-        sha256 = "18srnql3cd39j9q6hf1az02p67rlr1rf6njx9zx4vxj9i3jvmsak";
+        sha256 = "17v4ac61x0hvj1879ywqzlwhyzg7n9lr9zniwrsif3b1ykfmq9z6";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -10115,7 +10115,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
           }
         ];
 
@@ -10437,7 +10437,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
             features = [ "full" ];
           }
         ];
@@ -13504,7 +13504,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.3";
+            packageId = "syn 3.0.4";
             features = [ "extra-traits" ];
           }
         ];
