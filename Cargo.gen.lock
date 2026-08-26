@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "cc4933142c06465c17944f13567917fd19c0e6ff1cee2d2df4e52d985de278dd",
+  "cargo_lock_sha256": "f19cffb2375418763f8a60973be98dc685f633ba9ba1d67bdcd53a076a90a3bf",
   "manifest_sha256": {
-    "Cargo.toml": "f6e17d0ff67b44c695eeef4c1d69674f72cb6ab8073596625a278fe44a31c12c"
+    "Cargo.toml": "b2c966c4f22c9aaf2e4b60232170ff317fbc060c2ad45f5ce6b3e37e2334373c"
   },
   "target_resolves": {
     "base": {
@@ -51,7 +51,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1027,7 +1027,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.679": {
+      "shikumi-0.1.680": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1361,7 +1361,7 @@
           "visit-mut"
         ]
       },
-      "syn-3.0.3": {
+      "syn-3.0.4": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1502,7 +1502,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1569,7 +1569,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "full"
@@ -3991,7 +3991,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.679": {
+    "shikumi-0.1.680": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4004,7 +4004,7 @@
     "syn-2.0.119": {
       "edition": "2021"
     },
-    "syn-3.0.3": {
+    "syn-3.0.4": {
       "edition": "2021"
     },
     "tempfile-3.27.0": {
