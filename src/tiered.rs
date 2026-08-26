@@ -19607,6 +19607,112 @@ impl ProgressiveLayer {
     pub fn into_parts(self) -> (Provenance, Dict) {
         (self.provenance, self.dict)
     }
+
+    /// Returns `true` iff this overlay's stamp is in the
+    /// [`ConfigTierKind::Bare`] tier — the container-altitude lift of
+    /// [`Provenance::is_bare`] onto [`ProgressiveLayer`]'s
+    /// [`Provenance`] stamp coordinate.
+    ///
+    /// Equal to `self.provenance().is_bare()` by construction — one
+    /// method call answers "is this overlay stamped bare?" without
+    /// naming the [`Self::provenance`] borrow accessor at the call site.
+    /// The container-altitude peer of the tier-axis stamp-side
+    /// constructor grid this overlay already carries
+    /// ([`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`]
+    /// / [`Self::file`] / [`Self::env`], the [`ConfigTierKind::Bare`] spot
+    /// closed by `cd12def`): the constructors write the stamp on the
+    /// stamp-side altitude, this predicate reads it back on the
+    /// borrow-side altitude, so the round-trip
+    /// `ProgressiveLayer::bare(dict).is_bare()` writes and reads the
+    /// same tier cell at one seam each — pinned pointwise by
+    /// [`tests::progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise`].
+    ///
+    /// Before this seam, a caller wanting the yes/no answer for an
+    /// overlay's tier cell — a `ConfigPlane` broadcast surface tagging
+    /// each broadcast overlay with the `Bare` tier bit, a diagnostic
+    /// renderer keying per-overlay dashboards on tier without paying for
+    /// the full tier histogram, an attestation manifest sorting overlays
+    /// by tier — reached through `layer.provenance().is_bare()`, a
+    /// two-hop borrow-and-predicate chain that named the
+    /// [`Self::provenance`] projection at the call site instead of the
+    /// inherent seam.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`Provenance::is_bare`] predicate (welded at compile time by
+    /// [`tests::provenance_tier_predicates_are_const_callable`]) via a
+    /// direct `self.provenance.is_bare()` field access that never
+    /// borrows the heavier [`Dict`] payload, so the `pub const fn`
+    /// declaration itself is the compile-time weld: the moment
+    /// [`Provenance::is_bare`] loses its const-ness one seam down, this
+    /// declaration fails to compile at THAT line before the drift can
+    /// reach downstream consumers that assumed const-ness through the
+    /// type. (Unlike the primitive-altitude weld
+    /// `provenance_tier_predicates_are_const_callable`, no `static`
+    /// binding pins it at the call site — [`ProgressiveLayer`] cannot be
+    /// bound to a `const` or `static` item because both its fields carry
+    /// non-`const`-`Drop` payloads ([`Dict`] and [`ConfigSource`]) — but
+    /// the `pub const fn` declaration is stricter than any call-site
+    /// weld: it rejects the drift at the declaration itself.)
+    ///
+    /// The four sibling predicates form a closed disjoint partition of
+    /// the tier-axis variant space — every [`ProgressiveLayer`] value
+    /// satisfies exactly one — pinned by
+    /// [`tests::progressive_layer_tier_predicates_are_a_closed_quaternary_partition`],
+    /// the container-altitude analogue of the primitive-altitude
+    /// quaternary-partition pin
+    /// `provenance_tier_predicates_are_a_closed_quaternary_partition`
+    /// (`d586c87`).
+    #[must_use]
+    pub const fn is_bare(&self) -> bool {
+        self.provenance.is_bare()
+    }
+
+    /// Returns `true` iff this overlay's stamp is in the
+    /// [`ConfigTierKind::Discovered`] tier; tier-axis sibling of
+    /// [`Self::is_bare`]. See [`Self::is_bare`] for the full contract
+    /// (const-callability, agreement pin, quaternary-partition pin).
+    #[must_use]
+    pub const fn is_discovered(&self) -> bool {
+        self.provenance.is_discovered()
+    }
+
+    /// Returns `true` iff this overlay's stamp is in the
+    /// [`ConfigTierKind::Default`] tier; tier-axis sibling of
+    /// [`Self::is_bare`]. See [`Self::is_bare`] for the full contract.
+    ///
+    /// The prescribed-default constructor [`Self::prescribed_default`]
+    /// pins this tier on the container-altitude stamp-side, and every
+    /// overlay it produces answers `true` here — the yes/no cell of the
+    /// tier axis's third position, exact container-altitude peer of
+    /// [`Provenance::is_default`] one seam down.
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        self.provenance.is_default()
+    }
+
+    /// Returns `true` iff this overlay's stamp is in the
+    /// [`ConfigTierKind::Custom`] tier regardless of the source payload
+    /// ([`ConfigSource::File`] path from [`Self::file`],
+    /// [`ConfigSource::Env`] prefix from [`Self::env`], or a
+    /// [`ConfigSource::Defaults`] slot carrying the `Custom` tier via
+    /// [`Provenance::computed`] threaded through [`Self::new`] — the
+    /// same yes/no answer holds on every one). Tier-axis sibling of
+    /// [`Self::is_bare`]; see [`Self::is_bare`] for the full contract.
+    ///
+    /// Payload-independence — the answer is the same whether the
+    /// underlying source is `Defaults`, `Env`, or `File` — mirrors the
+    /// payload-independence contract on [`Provenance::is_custom`]
+    /// (which cannot see the [`ConfigSource`] payload) and is pinned by
+    /// the same pointwise-agreement law
+    /// [`tests::progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise`]:
+    /// the primitive-side predicate has no [`Dict`] visibility either,
+    /// so a future edit that made this arm inspect the [`Dict`] payload
+    /// (a leaf count, a key-shape check) would diverge from the
+    /// primitive-side and fail the pin.
+    #[must_use]
+    pub const fn is_custom(&self) -> bool {
+        self.provenance.is_custom()
+    }
 }
 
 /// Std-trait facade over [`ProgressiveLayer::into_parts`]: the same
@@ -67935,6 +68041,156 @@ mod progressive_tests {
         assert_eq!(bare.provenance().tier(), ConfigTierKind::Bare);
         assert_eq!(discovered.provenance().tier(), ConfigTierKind::Discovered);
         assert_eq!(prescribed.provenance().tier(), ConfigTierKind::Default);
+    }
+
+    // ── ProgressiveLayer::is_bare / is_discovered / is_default / is_custom —
+    //    container-altitude lift of the primitive-altitude tier-axis
+    //    predicate quartet on `Provenance` (`d586c87`); reads back the
+    //    stamp the tier-axis constructor grid on this container wrote ──
+
+    #[test]
+    fn progressive_layer_is_bare_true_only_for_bare_stamp() {
+        // Polarity pin per constructor row on the tier axis: exactly
+        // the `bare()` constructor answers `true`; every other shipped
+        // stamp-side constructor on the container answers `false`.
+        // Container-altitude mirror of `provenance_is_bare_true_only_for_bare_tier`
+        // (`d586c87`) one seam down on the underlying `Provenance`.
+        let dict = Dict::new();
+        assert!(ProgressiveLayer::bare(dict.clone()).is_bare());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_bare());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_bare());
+        assert!(!ProgressiveLayer::file("/etc/is_bare_polarity.yaml", dict.clone()).is_bare());
+        assert!(!ProgressiveLayer::env("SHIKUMI_IS_BARE_POLARITY_", dict).is_bare());
+    }
+
+    #[test]
+    fn progressive_layer_is_discovered_true_only_for_discovered_stamp() {
+        // Polarity pin on the discovered cell of the tier axis; peer of
+        // `progressive_layer_is_bare_true_only_for_bare_stamp`.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_discovered());
+        assert!(ProgressiveLayer::discovered(dict.clone()).is_discovered());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_discovered());
+        assert!(
+            !ProgressiveLayer::file("/etc/is_discovered_polarity.yaml", dict.clone())
+                .is_discovered()
+        );
+        assert!(!ProgressiveLayer::env("SHIKUMI_IS_DISCOVERED_POLARITY_", dict).is_discovered());
+    }
+
+    #[test]
+    fn progressive_layer_is_default_true_only_for_default_stamp() {
+        // Polarity pin on the default cell of the tier axis; peer of
+        // `progressive_layer_is_bare_true_only_for_bare_stamp`.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_default());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_default());
+        assert!(ProgressiveLayer::prescribed_default(dict.clone()).is_default());
+        assert!(
+            !ProgressiveLayer::file("/etc/is_default_polarity.yaml", dict.clone()).is_default()
+        );
+        assert!(!ProgressiveLayer::env("SHIKUMI_IS_DEFAULT_POLARITY_", dict).is_default());
+    }
+
+    #[test]
+    fn progressive_layer_is_custom_true_only_for_custom_stamp() {
+        // Polarity pin on the custom cell of the tier axis; peer of
+        // `progressive_layer_is_bare_true_only_for_bare_stamp`. The
+        // `file` / `env` operator-overlay constructors both stamp
+        // `ConfigTierKind::Custom`, so both answer `true` here — the
+        // payload-independence contract on `Provenance::is_custom` (which
+        // has no `ConfigSource` visibility) lifted to the container.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_custom());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_custom());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_custom());
+        assert!(ProgressiveLayer::file("/etc/is_custom_polarity.yaml", dict.clone()).is_custom());
+        assert!(ProgressiveLayer::env("SHIKUMI_IS_CUSTOM_POLARITY_", dict).is_custom());
+    }
+
+    #[test]
+    fn progressive_layer_tier_predicates_agree_with_provenance_predicates_pointwise() {
+        // Structural law: for every shipped constructor row on the
+        // container-altitude stamp-side, `layer.is_X() == layer.provenance().is_X()`
+        // for X in {bare, discovered, default, custom}. Container-altitude
+        // analogue of `provenance_tier_predicates_agree_with_tier_kind_predicates_pointwise`
+        // (`d586c87`) one seam down on `Provenance` ↔ `ConfigTierKind`;
+        // catches a future edit that drifts one altitude's polarity
+        // without the other, and pins the payload-independence contract
+        // on the container-altitude predicates (the primitive-side has no
+        // `Dict` visibility, so the container-side is forbidden from
+        // consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/tier_predicate_agreement.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_TIER_PREDICATE_AGREEMENT_", dict.clone()),
+        ] {
+            let prov = layer.provenance().clone();
+            assert_eq!(
+                layer.is_bare(),
+                prov.is_bare(),
+                "is_bare drift on {layer:?}",
+            );
+            assert_eq!(
+                layer.is_discovered(),
+                prov.is_discovered(),
+                "is_discovered drift on {layer:?}",
+            );
+            assert_eq!(
+                layer.is_default(),
+                prov.is_default(),
+                "is_default drift on {layer:?}",
+            );
+            assert_eq!(
+                layer.is_custom(),
+                prov.is_custom(),
+                "is_custom drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_tier_predicates_are_a_closed_quaternary_partition() {
+        // Every ProgressiveLayer value from the shipped stamp-side
+        // constructor surface satisfies exactly one of the four sibling
+        // predicates: none satisfies two, none satisfies zero.
+        // Container-altitude analogue of the primitive-altitude
+        // partition pin
+        // `provenance_tier_predicates_are_a_closed_quaternary_partition`
+        // (`d586c87`); ties the container-altitude closure to the same
+        // closed-partition discipline the four cells of `ConfigTierKind::ALL`
+        // carry.
+        //
+        // A future fifth `ConfigTierKind` variant landing without its
+        // own sibling predicate on `ProgressiveLayer` (a `KubeCluster`
+        // tier, a `Signed` tier, etc.) collapses the partition to zero
+        // on that variant, failing here before drifting through any
+        // consumer site keying on the four inherent predicates.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::file("/etc/tier_predicate_partition.yaml", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_TIER_PREDICATE_PARTITION_", dict.clone()),
+        ] {
+            let hits = usize::from(layer.is_bare())
+                + usize::from(layer.is_discovered())
+                + usize::from(layer.is_default())
+                + usize::from(layer.is_custom());
+            assert_eq!(
+                hits, 1,
+                "ProgressiveLayer {layer:?} must satisfy exactly one of \
+                 is_bare/is_discovered/is_default/is_custom (satisfied {hits})",
+            );
+        }
     }
 
     #[test]
