@@ -21368,6 +21368,90 @@ impl<T> ProgressiveResolution<T> {
     ) -> Option<(crate::ConfigSourceKind, usize, usize)> {
         self.provenance.antimodal_source_kind_observation()
     }
+
+    /// The **extremal tier observations** on this resolved fold's tier
+    /// histogram — the fused-quadruple pair
+    /// `Option<((ConfigTierKind, usize, usize), (ConfigTierKind, usize,
+    /// usize))>` packing the modal `(cell, count, multiplicity)` triple
+    /// and the antimodal `(cell, count, multiplicity)` triple into one
+    /// scalar. Returns [`None`] exactly on the empty resolution;
+    /// otherwise returns `Some((modal_tier_observation().unwrap(),
+    /// antimodal_tier_observation().unwrap()))` where the two triples
+    /// share the same non-emptiness discriminant so the outer [`Option`]
+    /// fuses both empty gates into a single check.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::extremal_tier_observations`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.extremal_tier_observations()`. The
+    /// **closing joint** of the container-altitude tier modal/antimodal
+    /// fusion family — the modal fused triple
+    /// [`Self::modal_tier_observation`] and the antimodal fused triple
+    /// [`Self::antimodal_tier_observation`] packed into a single
+    /// fused-quadruple pair that reports both tie-broken representatives
+    /// and both tie cardinalities at one method call, collapsing the six
+    /// coordinated reads `(dominant_tier(), peak_tier_count(),
+    /// peak_tier_multiplicity(), recessive_tier(), trough_tier_count(),
+    /// trough_tier_multiplicity())` — or equivalently the two three-
+    /// scalar folds `modal_tier_observation()` and
+    /// `antimodal_tier_observation()` — into one walk.
+    ///
+    /// The modal-triple pair projects out of this quadruple pair by
+    /// `.map(|(m, _)| m)` and recovers [`Self::modal_tier_observation`]
+    /// pointwise; the antimodal-triple pair projects out by
+    /// `.map(|(_, a)| a)` and recovers [`Self::antimodal_tier_observation`]
+    /// pointwise. Both halves share the outer `Option`'s single
+    /// non-emptiness discriminant so a consumer matching on
+    /// `Some((modal, antimodal))` never sees one side present with the
+    /// other absent.
+    ///
+    /// Sibling of [`Self::extremal_source_kind_observations`] on the
+    /// source-kind axis; together the container-altitude extremal-pair
+    /// closes the fused-quadruple pair on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn extremal_tier_observations(
+        &self,
+    ) -> Option<(
+        (ConfigTierKind, usize, usize),
+        (ConfigTierKind, usize, usize),
+    )> {
+        self.provenance.extremal_tier_observations()
+    }
+
+    /// The **extremal source-kind observations** on this resolved fold's
+    /// source-kind histogram — the fused-quadruple pair
+    /// `Option<((ConfigSourceKind, usize, usize), (ConfigSourceKind,
+    /// usize, usize))>` packing the modal `(cell, count, multiplicity)`
+    /// triple and the antimodal `(cell, count, multiplicity)` triple
+    /// into one scalar. Returns [`None`] exactly on the empty
+    /// resolution; otherwise returns
+    /// `Some((modal_source_kind_observation().unwrap(),
+    /// antimodal_source_kind_observation().unwrap()))` where the two
+    /// triples share the same non-emptiness discriminant so the outer
+    /// [`Option`] fuses both empty gates into a single check.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::extremal_source_kind_observations`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.extremal_source_kind_observations()`. The
+    /// **source-kind-axis sibling** of [`Self::extremal_tier_observations`]
+    /// on the tier altitude — together the container-altitude
+    /// extremal-pair closes the fused-quadruple pair on both closed
+    /// coordinates of the atomic `(tier, source)` pair, matching the
+    /// primitive-altitude extremal-pair peer on the same shape.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn extremal_source_kind_observations(
+        &self,
+    ) -> Option<(
+        (crate::ConfigSourceKind, usize, usize),
+        (crate::ConfigSourceKind, usize, usize),
+    )> {
+        self.provenance.extremal_source_kind_observations()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -91309,6 +91393,146 @@ mod progressive_tests {
         assert_eq!(
             r.modal_source_kind_observation().is_some(),
             r.antimodal_source_kind_observation().is_some()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tier_observations_agrees_with_provenance_extremal_tier_observations()
+     {
+        // Delegation pin on the container-altitude extremal-pair fused
+        // quadruple: `res.extremal_tier_observations()` must route
+        // one-hop to the same seam on the primitive so a future edit
+        // rerouting the container through a rebuilt histogram or a
+        // mis-projected cursor is caught structurally.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tier_observations(),
+            r.provenance().extremal_tier_observations()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kind_observations_agrees_with_provenance_extremal_source_kind_observations()
+     {
+        // Source-kind-axis peer of the delegation pin above — closes
+        // the container-altitude extremal-pair delegation on both
+        // closed axes of the atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kind_observations(),
+            r.provenance().extremal_source_kind_observations()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tier_observations_modal_projection_recovers_modal_tier_observation()
+     {
+        // Modal-projection law between the fused quadruple pair and
+        // the modal-triple sibling on the same container:
+        // `res.extremal_tier_observations().map(|(m, _)| m)` equals
+        // `res.modal_tier_observation()` pointwise.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tier_observations().map(|(m, _)| m),
+            r.modal_tier_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tier_observations_antimodal_projection_recovers_antimodal_tier_observation()
+     {
+        // Antimodal peer of the modal-projection pin above on the tier
+        // altitude — the antimodal triple is recoverable by
+        // `.map(|(_, a)| a)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tier_observations().map(|(_, a)| a),
+            r.antimodal_tier_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kind_observations_modal_projection_recovers_modal_source_kind_observation()
+     {
+        // Source-kind-axis peer of the modal-projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kind_observations().map(|(m, _)| m),
+            r.modal_source_kind_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kind_observations_antimodal_projection_recovers_antimodal_source_kind_observation()
+     {
+        // Source-kind-axis peer of the antimodal-projection pin above
+        // — closes the container-altitude projection law on all four
+        // cells of the modal × antimodal × (tier, source) grid: every
+        // fused quadruple pair recovers its modal-triple sibling by
+        // `.map(|(m, _)| m)` and its antimodal-triple sibling by
+        // `.map(|(_, a)| a)` on the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kind_observations().map(|(_, a)| a),
+            r.antimodal_source_kind_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tier_observations_equals_modal_antimodal_option_zip() {
+        // Option-zip law between the fused quadruple pair and its two
+        // component triples on the same container: the quadruple pair
+        // is the `Option::zip` of `modal_tier_observation()` and
+        // `antimodal_tier_observation()`, and both sides share the same
+        // non-emptiness discriminant so the zip never drops
+        // information.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tier_observations(),
+            r.modal_tier_observation()
+                .zip(r.antimodal_tier_observation())
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kind_observations_equals_modal_antimodal_option_zip()
+    {
+        // Source-kind-axis peer of the Option-zip law above — closes
+        // the container-altitude Option-zip closure on both axes of
+        // the atomic `(tier, source)` pair, matching the primitive-
+        // altitude Option-zip peer one seam down.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kind_observations(),
+            r.modal_source_kind_observation()
+                .zip(r.antimodal_source_kind_observation())
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tier_observations_presence_matches_modal_tier_observation() {
+        // Presence-parity between the fused quadruple pair and its
+        // modal-triple component on the tier altitude — both project
+        // to `None` on the empty resolution and to `Some(_)` on the
+        // non-empty resolution, so consumers may branch on either
+        // discriminant interchangeably.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tier_observations().is_some(),
+            r.modal_tier_observation().is_some()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kind_observations_presence_matches_modal_source_kind_observation()
+     {
+        // Source-kind-axis peer of the presence-parity pin above —
+        // closes the container-altitude presence-parity closure on
+        // both closed axes of the atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kind_observations().is_some(),
+            r.modal_source_kind_observation().is_some()
         );
     }
 }
