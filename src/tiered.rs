@@ -21135,6 +21135,114 @@ impl<T> ProgressiveResolution<T> {
     pub fn recessive_source_kind(&self) -> Option<crate::ConfigSourceKind> {
         self.provenance.recessive_source_kind()
     }
+
+    /// The **dominant tier observation** — the fused `(cell, count)` pair
+    /// on the modal side of this resolved fold's tier histogram: the
+    /// [`ConfigTierKind`] whose overlay produced the greatest number of
+    /// surviving effective leaves and the leaf count it collected.
+    /// Returns [`None`] exactly on the empty resolution; otherwise returns
+    /// `Some((t, n))` where `t == self.dominant_tier().unwrap()` and
+    /// `n == self.provenance().peak_tier_count() >= 1`.
+    ///
+    /// Container-altitude peer of [`ProvenanceMap::dominant_tier_observation`]
+    /// on the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.dominant_tier_observation()`. The **fused-pair peer**
+    /// of the two scalar-half seams already shipped on the same container:
+    /// [`Self::dominant_tier`] carries the *cell* alone as
+    /// `Option<ConfigTierKind>` and the peak count alone reaches through
+    /// `self.provenance().peak_tier_count()`; both scalar halves project
+    /// through this fused pair via `.map(|(t, _)| t)` and
+    /// `.map_or(0, |(_, n)| n)` respectively. Halves the cost of the previous
+    /// inline `(res.dominant_tier(), res.provenance().peak_tier_count())`
+    /// idiom the container had to spell before this seam — two coordinated
+    /// walks over the counts vector fused into one via
+    /// [`crate::AxisHistogram::dominant_observation`] one altitude down.
+    ///
+    /// Sibling of [`Self::dominant_source_kind_observation`] on the
+    /// source-kind axis; argmin peer [`Self::recessive_tier_observation`]
+    /// closes the modal-observation pair on the tier altitude. Together the
+    /// container-altitude modal-observation quartet fuses the `(cell, count)`
+    /// pair on both axes and both sides (argmax + argmin) of the histogram
+    /// surface at the same one-hop shape as the container-altitude modal-cell
+    /// quartet ([`Self::dominant_tier`] et al.).
+    #[must_use]
+    pub fn dominant_tier_observation(&self) -> Option<(ConfigTierKind, usize)> {
+        self.provenance.dominant_tier_observation()
+    }
+
+    /// The **recessive tier observation** — the fused `(cell, count)` pair
+    /// on the anti-modal side of this resolved fold's tier histogram: the
+    /// [`ConfigTierKind`] whose overlay produced the fewest (but still ≥1)
+    /// surviving effective leaves and the trough leaf count it collected.
+    /// Returns [`None`] exactly on the empty resolution; otherwise returns
+    /// `Some((t, n))` where `t == self.recessive_tier().unwrap()` and
+    /// `n == self.provenance().trough_tier_count() >= 1`.
+    ///
+    /// Container-altitude peer of [`ProvenanceMap::recessive_tier_observation`]
+    /// on the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.recessive_tier_observation()`. Argmin peer of
+    /// [`Self::dominant_tier_observation`] on the same container — together
+    /// they fuse the `(dominant_observation, recessive_observation)`
+    /// modal-observation pair on the tier altitude, matching the
+    /// modal-cell pair shape ([`Self::dominant_tier`] / [`Self::recessive_tier`])
+    /// on the same seam. Coincides with [`Self::dominant_tier_observation`]
+    /// on singleton-support folds (both `Some((t, len()))` at the sole
+    /// observed cell) and on every uniform per-tier fold (both
+    /// `Some((k, shared_count))` at the first cell in declaration order).
+    #[must_use]
+    pub fn recessive_tier_observation(&self) -> Option<(ConfigTierKind, usize)> {
+        self.provenance.recessive_tier_observation()
+    }
+
+    /// The **dominant source-kind observation** — the fused `(cell, count)`
+    /// pair on the modal side of this resolved fold's source-kind histogram:
+    /// the [`crate::ConfigSourceKind`] whose layer class produced the
+    /// greatest number of surviving effective leaves and the leaf count it
+    /// collected. Returns [`None`] exactly on the empty resolution;
+    /// otherwise returns `Some((k, n))` where `k ==
+    /// self.dominant_source_kind().unwrap()` and `n ==
+    /// self.provenance().peak_source_kind_count() >= 1`.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::dominant_source_kind_observation`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.dominant_source_kind_observation()`.
+    /// The **source-kind-axis sibling** of [`Self::dominant_tier_observation`]
+    /// on the tier altitude: the two altitudes now name the fused
+    /// modal-observation `(cell, count)` pair on both closed coordinates
+    /// of the atomic `(tier, source)` pair each leaf's [`Provenance`]
+    /// carries.
+    #[must_use]
+    pub fn dominant_source_kind_observation(&self) -> Option<(crate::ConfigSourceKind, usize)> {
+        self.provenance.dominant_source_kind_observation()
+    }
+
+    /// The **recessive source-kind observation** — the fused `(cell, count)`
+    /// pair on the anti-modal side of this resolved fold's source-kind
+    /// histogram: the [`crate::ConfigSourceKind`] whose layer class
+    /// produced the fewest (but still ≥1) surviving effective leaves and
+    /// the trough leaf count it collected. Returns [`None`] exactly on the
+    /// empty resolution; otherwise returns `Some((k, n))` where `k ==
+    /// self.recessive_source_kind().unwrap()` and `n ==
+    /// self.provenance().trough_source_kind_count() >= 1`.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::recessive_source_kind_observation`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.recessive_source_kind_observation()`.
+    /// The **coverage-gap peer** of [`Self::dominant_source_kind_observation`]
+    /// on the source-kind altitude and the **source-kind-axis sibling** of
+    /// [`Self::recessive_tier_observation`] on the tier altitude — closing
+    /// the container-altitude modal-observation quartet on both axes and
+    /// both sides (argmax + argmin) of the histogram surface, matching the
+    /// container-altitude modal-cell quartet ([`Self::dominant_tier`] et
+    /// al.) one seam over on the same shape.
+    #[must_use]
+    pub fn recessive_source_kind_observation(&self) -> Option<(crate::ConfigSourceKind, usize)> {
+        self.provenance.recessive_source_kind_observation()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -90598,6 +90706,216 @@ mod progressive_tests {
         assert_eq!(
             r.dominant_source_kind().is_some(),
             r.recessive_source_kind().is_some()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_agrees_with_provenance_dominant_tier_observation()
+     {
+        // Structural-agreement pin on the argmax modal-observation
+        // delegate at the container altitude: `res.dominant_tier_observation()`
+        // routes through `res.provenance().dominant_tier_observation()`, so
+        // the two seams must stay pointwise equivalent on the canonical
+        // fixture. Catches a future edit that reroutes the container seam
+        // through a different projection (a bespoke
+        // `tier_histogram().dominant_observation()` at the container that
+        // rebuilds the histogram instead of one-hop delegating, an argmax
+        // cursor that mis-ranks the closed axis) while still typechecking.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation(),
+            r.provenance().dominant_tier_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_tier_observation_agrees_with_provenance_recessive_tier_observation()
+     {
+        // Argmin peer of the dominant-tier-observation structural-agreement
+        // pin above on the same container-altitude delegation — the two
+        // modal-observation endpoints of the tier histogram now route
+        // through the container itself with the same one-hop shape as the
+        // modal-cell quartet.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_tier_observation(),
+            r.provenance().recessive_tier_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_observation_agrees_with_provenance_dominant_source_kind_observation()
+     {
+        // Source-kind-axis peer of the dominant-tier-observation
+        // structural-agreement pin above — closes the argmax
+        // modal-observation on both axes of the atomic `(tier, source)`
+        // pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation(),
+            r.provenance().dominant_source_kind_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_source_kind_observation_agrees_with_provenance_recessive_source_kind_observation()
+     {
+        // Source-kind-axis peer of the recessive-tier-observation
+        // structural-agreement pin above — closes the container-altitude
+        // modal-observation quartet against the primitive-altitude
+        // delegation target on all four cells of the argmax × argmin ×
+        // (tier, source) grid.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_source_kind_observation(),
+            r.provenance().recessive_source_kind_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_agrees_with_tier_histogram_dominant_observation()
+     {
+        // Cross-projection law between the modal-observation delegate
+        // and the histogram-dominant-observation seam on the same
+        // container: `res.dominant_tier_observation()` equals
+        // `res.tier_histogram().dominant_observation()` pointwise.
+        // Catches a future edit that reorders one seam without the
+        // other (an argmax cursor that mis-ranks the closed axis, a
+        // histogram build that drops a cell) before the drift can
+        // reach any consumer that keys the two seams against each
+        // other on the container.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation(),
+            r.tier_histogram().dominant_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_tier_observation_agrees_with_tier_histogram_recessive_observation()
+     {
+        // Argmin peer of the modal-observation/histogram
+        // cross-projection pin above on the tier altitude — pins the
+        // argmin-observation agreement on the same container seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_tier_observation(),
+            r.tier_histogram().recessive_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_observation_agrees_with_source_kind_histogram_dominant_observation()
+     {
+        // Source-kind-axis peer of the modal-observation/histogram
+        // cross-projection pin above on the argmax side.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation(),
+            r.source_kind_histogram().dominant_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_source_kind_observation_agrees_with_source_kind_histogram_recessive_observation()
+     {
+        // Source-kind-axis peer of the modal-observation/histogram
+        // cross-projection pin above on the argmin side — closes the
+        // container-altitude modal-observation/histogram
+        // cross-projection surface on all four cells of the argmax ×
+        // argmin × (tier, source) 2×2 grid.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_source_kind_observation(),
+            r.source_kind_histogram().recessive_observation()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_cell_projection_recovers_dominant_tier() {
+        // Cell-projection law between the fused modal-observation
+        // pair and the scalar-half modal-cell seam on the same
+        // container: `res.dominant_tier_observation().map(|(t, _)| t)`
+        // equals `res.dominant_tier()` pointwise. The scalar-half
+        // modal-cell projection is recoverable from the fused pair by
+        // dropping the count component — the natural cell-projection
+        // law between the two overlapping seams on the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation().map(|(t, _)| t),
+            r.dominant_tier()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_tier_observation_cell_projection_recovers_recessive_tier() {
+        // Argmin peer of the cell-projection pin above on the tier
+        // altitude — the anti-modal cell is recoverable from the
+        // recessive fused pair the same way, closing the tier-altitude
+        // cell-projection pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_tier_observation().map(|(t, _)| t),
+            r.recessive_tier()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_observation_cell_projection_recovers_dominant_source_kind()
+     {
+        // Source-kind-axis peer of the cell-projection pin above on
+        // the argmax side.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation().map(|(k, _)| k),
+            r.dominant_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_recessive_source_kind_observation_cell_projection_recovers_recessive_source_kind()
+     {
+        // Source-kind-axis peer of the cell-projection pin above on
+        // the argmin side — closes the container-altitude
+        // cell-projection law on all four cells of the argmax ×
+        // argmin × (tier, source) grid: every fused modal-observation
+        // pair recovers its scalar-half modal-cell sibling by
+        // `.map(|(cell, _)| cell)` on the same seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.recessive_source_kind_observation().map(|(k, _)| k),
+            r.recessive_source_kind()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_and_recessive_tier_observation_presence_are_parity() {
+        // Presence-parity invariant on the tier-altitude
+        // modal-observation pair:
+        // `dominant_tier_observation().is_some() ==
+        // recessive_tier_observation().is_some()` — both project to
+        // `None` exactly on the empty resolution (no observed cells
+        // to argmax/argmin over) and both to `Some(_)` exactly on
+        // the non-empty resolution. Fully-Option parity dual of the
+        // modal-cell presence-parity pin one seam over.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation().is_some(),
+            r.recessive_tier_observation().is_some()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_and_recessive_source_kind_observation_presence_are_parity() {
+        // Source-kind-axis peer of the presence-parity pin above —
+        // closes the container-altitude fully-Option
+        // modal-observation presence-parity on both axes of the
+        // atomic `(tier, source)` pair, matching the modal-cell
+        // presence-parity closure one seam over.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation().is_some(),
+            r.recessive_source_kind_observation().is_some()
         );
     }
 }
