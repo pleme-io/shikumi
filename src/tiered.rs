@@ -20080,6 +20080,85 @@ impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
 /// any input pair).
 impl<T: Eq> Eq for ProgressiveResolution<T> {}
 
+/// Structural [`Hash`] impl for [`ProgressiveResolution<T>`] — the
+/// [`Hash`] sibling of the manual [`PartialEq`] impl and the
+/// [`Eq`] marker above; the trio-closer on the resolution container
+/// that matches the [`ProvenanceMap`] `#[derive(Hash)]` one seam
+/// down at the tiered attribution primitive.
+///
+/// Folds the same two coordinates the manual [`PartialEq`] impl reads
+/// — `self.value` then `self.provenance` — in the same order, so the
+/// standard equality trio's `a == b ⇒ hash(a) == hash(b)` contract
+/// holds by construction: whenever [`PartialEq::eq`] returns `true`,
+/// both `value` fields are `T: Eq`-equal (hence hash to the same
+/// digest by the `T: Hash` contract) and both `provenance` fields are
+/// [`ProvenanceMap: Eq`]-equal (hence hash to the same digest by the
+/// primitive `Hash` derive one seam down). A `#[derive(Hash)]` cannot
+/// land here for the same coherence reason `#[derive(Eq)]` cannot:
+/// the manual [`PartialEq`] impl above blocks the compiler's derive
+/// machinery — `derive` requires that every field's type be [`Hash`],
+/// but with a generic `T` bounded only on [`PartialEq`] the derive
+/// would need to write the bound itself and cannot. This manual impl
+/// carries the pair-fold at the same seam the manual [`PartialEq`]
+/// uses, spelled with the tighter `T: Hash` bound the marker's
+/// contract requires; when the bound does not hold, the impl is
+/// simply absent and the container remains [`PartialEq`]-only.
+///
+/// Sibling of the [`ProvenanceMap`] `#[derive(Hash)]` one seam down
+/// at the tiered attribution primitive — where the primitive's inner
+/// [`BTreeMap<Vec<String>, Provenance>`] coordinate is fully
+/// [`Hash`]-composable (both [`Vec<String>`] and the inner
+/// [`Provenance`] value already carry [`Hash`] via their own primitive
+/// derives), so the auto-derived impl suffices. The container
+/// altitude carries a generic `T` on the value coordinate that the
+/// auto-derive cannot bound, so the impl is hand-fold at the same
+/// seam the manual [`PartialEq`] uses. On the input side of the
+/// fold's atomic-pair ownership boundary, [`ProgressiveLayer`]
+/// carries a [`Dict`] coordinate whose element values
+/// ([`figment::value::Value`]) are not [`Hash`] (they carry `f64`
+/// floats which are not [`Hash`]), so the [`Hash`] impl cannot land
+/// there — a coherence-honest asymmetry: only the output resolution's
+/// `(value, provenance)` pair admits the full equality trio, mirroring
+/// the same coherence-honest asymmetry the [`Eq`] marker above and the
+/// two [`From<ProgressiveResolution<T>>`] facades on the value
+/// coordinate carry.
+///
+/// Compounds:
+/// - A downstream generic bound `R: Hash + Eq` — a `ConfigPlane`
+///   fixture cataloguer storing resolutions in a
+///   `HashSet<ProgressiveResolution<T>>` deduplicating by hash-defined
+///   identity, an attestation harness that fingerprint-hashes a
+///   resolution's identity through a `Hash + Eq` bound, a diagnostic
+///   renderer bucketing two per-tick resolutions collapsed to the
+///   same fold output — picks up [`ProgressiveResolution<T>`] for
+///   free without re-attesting the trio contract at the call site,
+///   given `T: Hash + Eq`.
+/// - Closes the standard equality trio (`PartialEq`, `Eq`, `Hash`) on
+///   the resolution container to match the trio the [`ProvenanceMap`]
+///   primitive one seam down and the [`Provenance`] primitive two
+///   seams down already carry: one trait spelling composes with all
+///   three altitudes of the tiered algebra.
+///
+/// Pinned by
+/// [`progressive_tests::progressive_resolution_hash_marker_is_present`]
+/// (compile-time attestation via a generic
+/// `fn takes_hash<H: Hash>(_: &H)` bound applied to a
+/// [`ProgressiveResolution<T>`] where `T: Hash`),
+/// [`progressive_tests::progressive_resolution_hash_agrees_with_eq_across_fixtures`]
+/// (runtime dual: the trio's `a == b ⇒ hash(a) == hash(b)` contract
+/// holds pointwise), and
+/// [`progressive_tests::progressive_resolution_hash_composes_through_hashset_shape_bound`]
+/// (bound-composition pin: a generic `H: Hash + Eq` body
+/// deduplicating through a `HashSet<&H>` accepts
+/// `&ProgressiveResolution<T>` and correctly reports the
+/// hash-partition count).
+impl<T: std::hash::Hash> std::hash::Hash for ProgressiveResolution<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+        self.provenance.hash(state);
+    }
+}
+
 /// Std-trait facade over [`ProgressiveResolution::into_parts`]: the same
 /// consuming destructuring, spelled `<(T, ProvenanceMap)>::from(resolution)`
 /// for callers routing through the [`From`] blanket ([`Into::into`]
@@ -87285,13 +87364,16 @@ mod progressive_tests {
         }
     }
 
-    // A `TieredConfig` that additionally derives `Eq` — needed to
-    // exercise the `impl<T: Eq> Eq for ProgressiveResolution<T>` marker
-    // impl, since the canonical `Prog` fixture derives only `PartialEq`.
-    // Fields are all `u32` so `Eq` is trivially total on the payload
-    // side; the resolution's `Eq` marker then reduces to the shared
-    // `ProvenanceMap: Eq` from the primitive derive plus this bound.
-    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    // A `TieredConfig` that additionally derives `Eq` and `Hash` —
+    // needed to exercise the `impl<T: Eq> Eq for
+    // ProgressiveResolution<T>` marker impl and the manual
+    // `impl<T: Hash> Hash for ProgressiveResolution<T>` trio-closer,
+    // since the canonical `Prog` fixture derives only `PartialEq`.
+    // Fields are all `u32` so both `Eq` and `Hash` are trivially total
+    // on the payload side; the resolution's `Eq` marker and `Hash`
+    // impl then reduce to the shared `ProvenanceMap: Eq + Hash` from
+    // the primitive derives plus these bounds.
+    #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Serialize, Deserialize)]
     struct EqProg {
         a: u32,
         b: u32,
@@ -87555,6 +87637,148 @@ mod progressive_tests {
         // r_1 and r_2 collapse to the same hash bucket (same file
         // path stamp on every winning leaf); r_other partitions
         // into its own bucket (distinct file path). Distinct count
+        // is 2.
+        assert_eq!(distinct_count(&items), 2);
+    }
+
+    #[test]
+    fn progressive_resolution_hash_marker_is_present() {
+        // The load-bearing compile-time attestation for the
+        // `impl<T: Hash> Hash for ProgressiveResolution<T>`
+        // trio-closer: a generic `H: Hash` bound picks up
+        // `ProgressiveResolution<EqProg>` without special-casing at
+        // the call site. Without this pin, a future edit that
+        // dropped the manual `Hash` impl (or tightened its bound
+        // beyond `T: Hash`) would silently break every downstream
+        // `Hash`-bounded consumer of the resolution container —
+        // this test would fail to compile at the `takes_hash` call
+        // rather than at some distant
+        // `HashSet<ProgressiveResolution<_>>` insertion site.
+        // Sibling shape of
+        // `progressive_resolution_eq_marker_is_present` on the
+        // resolution container's `Eq` marker (prior commit c60b789)
+        // and `provenance_map_hash_marker_is_present` one seam down
+        // on the tiered attribution primitive's derived `Hash`
+        // (prior commit 9deca83).
+        fn takes_hash<H: std::hash::Hash>(_: &H) {}
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(9_u32));
+        let layer = ProgressiveLayer::file("/etc/hash_marker.yaml", dict);
+        let r = EqProg::resolve_progressive_with(&[layer]);
+        takes_hash(&r);
+    }
+
+    #[test]
+    fn progressive_resolution_hash_agrees_with_eq_across_fixtures() {
+        // Runtime dual of `progressive_resolution_hash_marker_is_present`:
+        // the manual `Hash` impl folds the same two coordinates the
+        // manual `PartialEq` impl reads — `self.value` and
+        // `self.provenance` — in the same order, so the trio's
+        // `a == b ⇒ hash(a) == hash(b)` contract must hold pointwise.
+        // A future edit could silently break this invariant only by
+        // adding fields to one impl and not the other (or hashing in
+        // a different order than equality reads); the pin guards
+        // against that drift. Walks the reflexive + distinct-value
+        // + distinct-provenance-source + reconstructed-through-`From`
+        // fixtures and asserts the contract on every `Eq`-equal
+        // pair. Sibling shape of
+        // `provenance_map_hash_agrees_with_eq_across_fixtures` one
+        // seam down on the tiered attribution primitive.
+        let mut dict_a = Dict::new();
+        dict_a.insert("a".to_owned(), Value::from(11_u32));
+        let mut dict_b = Dict::new();
+        dict_b.insert("b".to_owned(), Value::from(22_u32));
+        let r_a = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_container_a.yaml",
+            dict_a.clone(),
+        )]);
+        let r_a_dup = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_container_a.yaml",
+            dict_a,
+        )]);
+        let r_b = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_container_b.yaml",
+            dict_b,
+        )]);
+        // Identical layer stack ⇒ Eq-equal resolutions ⇒ hash-equal
+        // by the trio contract.
+        assert_eq!(r_a, r_a_dup);
+        assert_eq!(digest_of(&r_a), digest_of(&r_a_dup));
+        // Walk the full pair matrix and pin the contract pointwise:
+        // whenever `Eq` reports `true`, `Hash` must agree.
+        let resolutions = [&r_a, &r_a_dup, &r_b];
+        for lhs in resolutions.iter() {
+            for rhs in resolutions.iter() {
+                if lhs == rhs {
+                    assert_eq!(digest_of(*lhs), digest_of(*rhs));
+                }
+            }
+        }
+        // Reconstruction dual: rebuilding through
+        // `From<(T, ProvenanceMap)>` produces a resolution that is
+        // Eq-equal to its source and — by the trio contract — hashes
+        // to the same digest. Matches the shape the
+        // `progressive_resolution_eq_agrees_with_partial_eq_across_fixtures`
+        // sibling pins on the `Eq` marker.
+        let pair = r_a.clone().into_parts();
+        let rebuilt: ProgressiveResolution<EqProg> = pair.into();
+        assert_eq!(rebuilt, r_a);
+        assert_eq!(digest_of(&rebuilt), digest_of(&r_a));
+    }
+
+    #[test]
+    fn progressive_resolution_hash_composes_through_hashset_shape_bound() {
+        // The load-bearing bound-composition pin: a container
+        // generic over `H: Hash + Eq` — here a `HashSet<&H>`
+        // deduplicating by hash-defined identity, the exact shape a
+        // downstream cataloguer of distinct per-tick fold outputs
+        // routes through — picks up `&ProgressiveResolution<EqProg>`
+        // for free. Without the manual `Hash` impl on the container,
+        // this generic body would not even compile against the
+        // resolution container, forcing every downstream
+        // `Hash + Eq`-bounded consumer to open-code a per-type
+        // hasher wrapper reading `.value()` + `.provenance()` by
+        // hand. Sibling shape of
+        // `progressive_resolution_eq_composes_through_hashset_shape_bound`
+        // one facade over on the `Eq` bound and
+        // `provenance_map_composes_through_hashset_shape_bound` one
+        // seam down on the tiered attribution primitive.
+        fn distinct_count<H: std::hash::Hash + Eq>(items: &[&H]) -> usize {
+            let mut set: std::collections::HashSet<&H> = std::collections::HashSet::new();
+            for item in items {
+                set.insert(*item);
+            }
+            set.len()
+        }
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(3_u32));
+        let r_1 = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_res_a.yaml",
+            dict.clone(),
+        )]);
+        let r_2 = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_res_a.yaml",
+            dict,
+        )]);
+        // Distinct-source fixture — the layer file path stamps a
+        // different `Provenance::file(path)` on every leaf the
+        // overlay wins, so the resolved `ProvenanceMap` inner shape
+        // differs at those keys and the two resolutions
+        // hash-partition (both the `value` payload and the
+        // `provenance` map coordinate contribute to the container
+        // fold, so `Eq`-unequal implies distinct hash buckets by
+        // construction on distinct inputs like these).
+        let mut other_dict = Dict::new();
+        other_dict.insert("a".to_owned(), Value::from(3_u32));
+        let r_other = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/hash_bound_res_b.yaml",
+            other_dict,
+        )]);
+        let items = [&r_1, &r_2, &r_other];
+        // r_1 and r_2 collapse to the same hash bucket (same layer
+        // stack ⇒ Eq-equal ⇒ hash-equal by the trio contract);
+        // r_other partitions into its own bucket (distinct file
+        // path stamps the provenance coordinate). Distinct count
         // is 2.
         assert_eq!(distinct_count(&items), 2);
     }
