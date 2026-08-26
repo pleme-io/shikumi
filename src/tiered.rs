@@ -19996,6 +19996,70 @@ impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
     }
 }
 
+/// Total-equality marker for [`ProgressiveResolution<T>`] — the `Eq`
+/// sibling of the manual [`PartialEq`] impl above.
+///
+/// The pointwise `PartialEq` impl compares both coordinates of the atomic
+/// `(value, provenance)` pair: `self.value == other.value &&
+/// self.provenance == other.provenance`. On both coordinates equality is
+/// already total when the bounds hold — [`ProvenanceMap`] is
+/// `#[derive(Eq)]` on the provenance side, and `T: Eq` covers the value
+/// side by bound — so the conjunction is total by construction:
+/// reflexive, symmetric, and transitive from its two [`Eq`] operands.
+/// The marker attests that structural fact so a caller with `T: Eq` can
+/// route [`ProgressiveResolution<T>`] through a generic `R: Eq` bound
+/// without re-attesting totality at the call site.
+///
+/// A manual [`PartialEq`] impl (the one above) blocks the compiler's
+/// `#[derive(Eq)]` machinery — `derive` requires that every field's type
+/// be `Eq`, but with a generic `T` bounded only on [`PartialEq`] the
+/// derive would need to write the bound itself and cannot. This manual
+/// marker with the tighter `T: Eq` bound is the shape the derive would
+/// have produced when `T: Eq` holds; when it does not, the marker is
+/// simply absent and the container remains `PartialEq`-only.
+///
+/// Sibling of the [`ProvenanceMap`] `#[derive(Eq)]` one seam down at the
+/// provenance-map primitive — where the primitive's every field
+/// ([`BTreeMap<Vec<String>, Provenance>`] with [`Vec<String>: Eq`] and
+/// [`Provenance: Eq`]) is `Eq` on its own, so the auto-derived marker
+/// suffices. The container altitude carries a generic `T` on the value
+/// coordinate that the auto-derive cannot bound, so the marker is
+/// hand-attested at the same seam the manual `PartialEq` uses. On the
+/// input side of the fold's atomic-pair ownership boundary,
+/// [`ProgressiveLayer`] carries a [`Dict`] coordinate whose element
+/// values ([`figment::value::Value`]) are `PartialEq`-only (they carry
+/// `f64` floats which are not `Eq`), so the `Eq` marker cannot land
+/// there — a coherence-honest asymmetry: only the output resolution's
+/// (value, provenance) pair admits total equality, mirroring the same
+/// coherence-honest asymmetry the two [`From<ProgressiveResolution<T>>`]
+/// facades carry on the value coordinate (`From<..> for T` is blocked by
+/// the reflexive [`From<T> for T`] blanket).
+///
+/// Compounds:
+/// - A downstream generic bound `R: Eq` — a `ConfigPlane` fixture
+///   comparator storing resolutions in a `HashSet<ProgressiveResolution<T>>`
+///   or matching on `Eq`-bounded pattern equality, an attestation
+///   harness that hashes a resolution's identity through an
+///   `Eq + Hash` bound, a diagnostic renderer that uses [`Eq`] to check
+///   two per-tick resolutions collapsed to the same fold output — picks
+///   up [`ProgressiveResolution<T>`] for free without re-attesting
+///   totality at the call site, given `T: Eq`.
+/// - Symmetric with what `ProvenanceMap`'s derived [`Eq`] already gives
+///   `ProvenanceMap`-bounded call sites at the primitive altitude:
+///   `R: Eq` picks up both the primitive and the resolution container
+///   through the same trait spelling, so a bound written once composes
+///   with both altitudes of the tiered algebra.
+///
+/// Pinned by
+/// [`progressive_tests::progressive_resolution_eq_marker_is_present`]
+/// (compile-time attestation via a generic `fn takes_eq<E: Eq>(_: &E)`
+/// bound applied to a `ProgressiveResolution<T>` where `T: Eq`) and
+/// [`progressive_tests::progressive_resolution_eq_agrees_with_partial_eq_across_fixtures`]
+/// (runtime dual: the `Eq` marker is a pure attestation — it must never
+/// diverge in observable equality from the manual `PartialEq` impl on
+/// any input pair).
+impl<T: Eq> Eq for ProgressiveResolution<T> {}
+
 /// Std-trait facade over [`ProgressiveResolution::into_parts`]: the same
 /// consuming destructuring, spelled `<(T, ProvenanceMap)>::from(resolution)`
 /// for callers routing through the [`From`] blanket ([`Into::into`]
@@ -87199,5 +87263,133 @@ mod progressive_tests {
             let hand_rolled = zero_count == 0 || positive_count == 0;
             assert_eq!(via_seam, hand_rolled);
         }
+    }
+
+    // A `TieredConfig` that additionally derives `Eq` — needed to
+    // exercise the `impl<T: Eq> Eq for ProgressiveResolution<T>` marker
+    // impl, since the canonical `Prog` fixture derives only `PartialEq`.
+    // Fields are all `u32` so `Eq` is trivially total on the payload
+    // side; the resolution's `Eq` marker then reduces to the shared
+    // `ProvenanceMap: Eq` from the primitive derive plus this bound.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    struct EqProg {
+        a: u32,
+        b: u32,
+        c: u32,
+    }
+
+    impl TieredConfig for EqProg {
+        fn bare() -> Self {
+            Self { a: 0, b: 0, c: 0 }
+        }
+        fn discovered() -> Self {
+            Self { a: 1, b: 0, c: 0 }
+        }
+        fn prescribed_default() -> Self {
+            Self { a: 1, b: 2, c: 0 }
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_eq_marker_is_present() {
+        // The load-bearing compile-time attestation for the
+        // `impl<T: Eq> Eq for ProgressiveResolution<T>` marker: a
+        // generic `E: Eq` bound picks up
+        // `ProgressiveResolution<EqProg>` without special-casing at
+        // the call site. Without this pin, a future edit that
+        // accidentally tightened the marker's bound (or dropped the
+        // impl outright) would silently break every downstream
+        // `Eq`-bounded consumer of the resolution container — this
+        // test would fail to compile at the `takes_eq` call rather
+        // than at some distant `HashSet<ProgressiveResolution<_>>`
+        // insertion site. Matches the shape used by
+        // `progressive_resolution_as_ref_provenance_map_composes_through_generic_bound`
+        // one seam earlier on the borrow-side `AsRef` facade.
+        fn takes_eq<E: Eq>(_: &E) {}
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(9_u32));
+        let layer = ProgressiveLayer::file("/etc/eq_marker.yaml", dict);
+        let r = EqProg::resolve_progressive_with(&[layer]);
+        takes_eq(&r);
+    }
+
+    #[test]
+    fn progressive_resolution_eq_agrees_with_partial_eq_across_fixtures() {
+        // Runtime dual of `progressive_resolution_eq_marker_is_present`:
+        // the `Eq` marker is a pure attestation of totality — it must
+        // never diverge in *observable* equality from the manual
+        // `PartialEq` impl. A future edit could silently break this
+        // invariant only by adding a second `PartialEq` impl visible
+        // through a specialisation (Rust does not allow this today,
+        // but the pin is cheap and guards against a future coherence
+        // shift). Walks the reflexive + distinct-tier + distinct-source
+        // + reconstructed fixtures and asserts `Eq`'s `==` operator
+        // (via the `PartialEq` supertrait) agrees with the direct
+        // `PartialEq::eq` call on every pair.
+        let mut dict_a = Dict::new();
+        dict_a.insert("a".to_owned(), Value::from(11_u32));
+        let mut dict_b = Dict::new();
+        dict_b.insert("b".to_owned(), Value::from(22_u32));
+        let mut dict_c = Dict::new();
+        dict_c.insert("a".to_owned(), Value::from(11_u32));
+        let r_a = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/eq_reflexive_a.yaml",
+            dict_a.clone(),
+        )]);
+        let r_b = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/eq_distinct_b.yaml",
+            dict_b,
+        )]);
+        // Same payload, distinct provenance source — the resolution's
+        // per-leaf provenance stamp differs (different file path), so
+        // both `Eq` and `PartialEq` must agree the pair is not equal.
+        let r_c = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/eq_distinct_c.yaml",
+            dict_c,
+        )]);
+        for (lhs, rhs) in [(&r_a, &r_a), (&r_a, &r_b), (&r_a, &r_c), (&r_b, &r_c)] {
+            let via_eq_operator = lhs == rhs;
+            let via_partial_eq = PartialEq::eq(lhs, rhs);
+            assert_eq!(via_eq_operator, via_partial_eq);
+        }
+        // Reflexive on the reconstructed-from-pair path: rebuilding
+        // through `From<(T, ProvenanceMap)>` produces a resolution
+        // that is `Eq`-equal to its source, matching the pointwise
+        // `PartialEq` round-trip pinned by
+        // `progressive_resolution_from_pair_agrees_with_new`.
+        let pair = r_a.clone().into_parts();
+        let rebuilt: ProgressiveResolution<EqProg> = pair.into();
+        assert!(rebuilt == r_a);
+    }
+
+    #[test]
+    fn progressive_resolution_eq_composes_through_hashset_shape_bound() {
+        // The load-bearing bound-composition pin: a container generic
+        // over `E: Eq` — here a `Vec<&E>` filtered on `Eq`-defined
+        // equality, the same shape a HashSet insertion or a BTreeSet
+        // key lookup routes through — picks up
+        // `ProgressiveResolution<EqProg>` for free. Without the `Eq`
+        // marker, this generic body would not even compile against the
+        // resolution container, forcing every downstream `Eq`-bounded
+        // consumer to open-code a per-type equality wrapper. Sibling
+        // of the `AsRef<ProvenanceMap>` generic-bound composition test
+        // one facade over on the borrow-side altitude.
+        fn count_matching<E: Eq>(items: &[&E], target: &E) -> usize {
+            items.iter().filter(|item| **item == target).count()
+        }
+        let mut dict = Dict::new();
+        dict.insert("a".to_owned(), Value::from(7_u32));
+        let layer = ProgressiveLayer::file("/etc/eq_bound_compose.yaml", dict);
+        let r_1 = EqProg::resolve_progressive_with(std::slice::from_ref(&layer));
+        let r_2 = EqProg::resolve_progressive_with(std::slice::from_ref(&layer));
+        let mut other_dict = Dict::new();
+        other_dict.insert("b".to_owned(), Value::from(7_u32));
+        let r_other = EqProg::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/eq_bound_other.yaml",
+            other_dict,
+        )]);
+        let items = [&r_1, &r_2, &r_other];
+        assert_eq!(count_matching(&items, &r_1), 2);
+        assert_eq!(count_matching(&items, &r_other), 1);
     }
 }
