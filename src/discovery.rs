@@ -977,15 +977,27 @@ impl FormatProvenance {
     /// [`crate::AttributionConfidence`]: typescape primitives expose a
     /// per-variant predicate alongside the closed-enum dispatch so the
     /// common "is it this one?" question stays one method call.
+    ///
+    /// `const`-callable — matching the `const`-ness of the peer per-variant
+    /// predicates on the [`Format`] axis ([`Format::is_yaml`], …,
+    /// [`Format::is_blue`]) and on the [`crate::AttributionRule`] axis
+    /// ([`crate::AttributionRule::is_exact`] /
+    /// [`crate::AttributionRule::is_fallback`]). Pinned by
+    /// [`tests::format_provenance_predicates_are_const_callable`]. A drop
+    /// of `const` at either sibling on this pair fails that test to
+    /// compile.
     #[must_use]
-    pub fn is_shikumi_built(self) -> bool {
+    pub const fn is_shikumi_built(self) -> bool {
         matches!(self, Self::ShikumiBuilt)
     }
 
     /// Returns `true` for [`Self::FigmentBuiltin`]; equivalent to
-    /// `self == FormatProvenance::FigmentBuiltin`.
+    /// `self == FormatProvenance::FigmentBuiltin`. Sibling of
+    /// [`Self::is_shikumi_built`]; `const`-callable at the same altitude,
+    /// pinned by
+    /// [`tests::format_provenance_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_builtin(self) -> bool {
+    pub const fn is_figment_builtin(self) -> bool {
         matches!(self, Self::FigmentBuiltin)
     }
 
@@ -6585,6 +6597,35 @@ mod tests {
                 "provenance {p:?} must be exactly one of figment-builtin / shikumi-built",
             );
         }
+    }
+
+    #[test]
+    fn format_provenance_predicates_are_const_callable() {
+        // Compile-time weld: the two sibling per-variant predicates on
+        // `FormatProvenance` are `const`-callable, matching the
+        // `const`-ness of the peer per-variant predicates on the
+        // `Format` axis (`Format::is_yaml`, …, `Format::is_blue`,
+        // `Format::is_feature_gated`, `Format::is_always_available`)
+        // and on the `AttributionRule` / `AttributionConfidence` /
+        // `AttributionAxis` axes (`is_exact`, `is_fallback`,
+        // `is_file_by_source`, …). A drop of `const` at either sibling
+        // fails this test to compile. Peer of
+        // `format_is_feature_gated_is_const_callable`.
+        const fn call_figment_builtin(p: FormatProvenance) -> bool {
+            p.is_figment_builtin()
+        }
+        const fn call_shikumi_built(p: FormatProvenance) -> bool {
+            p.is_shikumi_built()
+        }
+        // Const-evaluated at compile time on both variants.
+        const FB_FB: bool = call_figment_builtin(FormatProvenance::FigmentBuiltin);
+        const FB_SB: bool = call_figment_builtin(FormatProvenance::ShikumiBuilt);
+        const SB_FB: bool = call_shikumi_built(FormatProvenance::FigmentBuiltin);
+        const SB_SB: bool = call_shikumi_built(FormatProvenance::ShikumiBuilt);
+        assert!(FB_FB);
+        assert!(!FB_SB);
+        assert!(!SB_FB);
+        assert!(SB_SB);
     }
 
     #[test]
