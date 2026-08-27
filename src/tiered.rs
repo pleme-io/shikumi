@@ -284,6 +284,69 @@ impl ConfigTierKind {
             Self::Custom => 3,
         }
     }
+
+    /// Returns `true` for the three built-in computed-defaults tier kinds
+    /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]), `false`
+    /// for the operator-supplied overlay tier kind [`Self::Custom`] —
+    /// the compound-polarity complement of [`Self::is_custom`] on the
+    /// tier-kind axis.
+    ///
+    /// Names the *computed-defaults* pole of the
+    /// (computed × custom) polarity axis at the type level, so
+    /// operator-facing consumers reading *"did this value come from a
+    /// developer-prescribed tier row (bare / discovered /
+    /// prescribed-default), or from an operator-supplied `Custom` YAML
+    /// overlay?"* — a `config-show` diagnostic coloring rows by "did the
+    /// operator supply this?", an attestation manifest counting the
+    /// operator-supplied `Custom` payloads on a resolved chain, a
+    /// startup log branch summarizing the tier under one of two poles,
+    /// a per-tier telemetry counter bucketed by the compound cell — spell
+    /// the *positive* form of the query at the call site instead of the
+    /// double-negative `!kind.is_custom()` or the three-arm disjunction
+    /// `kind.is_bare() || kind.is_discovered() || kind.is_default()`.
+    /// Tier-axis analogue of the source-axis compound-polarity sibling
+    /// [`crate::ConfigSourceKind::is_overlay`] (commit `48c625b`) at
+    /// this altitude — the atomic `(tier, source)` pair the crate
+    /// resolves through carries a paired (computed × custom) tier-side
+    /// polarity axis and a (baseline × overlay) source-side polarity
+    /// axis, and this landing closes the sibling on the tier side to
+    /// match the source side.
+    ///
+    /// The naming coincides with the fleet's sealed-fold vocabulary in
+    /// `theory/CONFIGURATION-MANAGEMENT.md`: `bare()` → `discovered()`
+    /// → `prescribed_default()` are the three tier constructors the
+    /// `TieredConfig` trait names computed, and `Custom` is the sole
+    /// operator-supplied tier — so a consumer reading
+    /// `kind.is_computed()` speaks the same word the theory doc uses to
+    /// group the same three rows.
+    ///
+    /// `const`-callable — matching the `const`-ness of the sibling
+    /// predicates auto-derived by [`gen_platform::IsVariant`]
+    /// ([`Self::is_bare`], [`Self::is_discovered`], [`Self::is_default`],
+    /// [`Self::is_custom`]) and of the tag-side compound-polarity
+    /// sibling [`ConfigTier::is_computed`], so a `tier.kind().is_computed()`
+    /// composition stays const-callable end-to-end.
+    ///
+    /// The modal-pair complement law `is_computed() == !is_custom()`
+    /// holds pointwise on every closed-axis cell, pinned by
+    /// [`tests::config_tier_kind_is_computed_is_complement_of_is_custom`].
+    /// Agreement with the tag-side predicate is a structural law:
+    /// `tier.is_computed() == tier.kind().is_computed()` for every
+    /// [`ConfigTier`], pinned pointwise by
+    /// [`tests::config_tier_is_computed_agrees_with_kind_pointwise`]
+    /// against the canonical sample table.
+    ///
+    /// A future fifth [`Self`] variant landing without explicit polarity
+    /// assignment (a hypothetical `Runtime` tier kind, or a tier kind
+    /// carrying its own overlay semantics) collapses the modal-pair
+    /// complement law immediately — the new variant is either `true` on
+    /// both `is_computed` and `is_custom` (impossible) or `false` on both
+    /// (the polarity axis has no answer for it), failing the complement
+    /// pin before drifting through any per-polarity consumer.
+    #[must_use]
+    pub const fn is_computed(self) -> bool {
+        matches!(self, Self::Bare | Self::Discovered | Self::Default)
+    }
 }
 
 impl crate::ClosedAxis for ConfigTierKind {
@@ -459,6 +522,57 @@ impl ConfigTier {
     #[must_use]
     pub const fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))
+    }
+
+    /// Returns `true` for the three built-in computed-defaults tiers
+    /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]),
+    /// `false` for the operator-supplied overlay tier
+    /// [`Self::Custom`] regardless of the inner [`std::path::PathBuf`]
+    /// payload — the compound-polarity complement of [`Self::is_custom`]
+    /// on the tier axis, tag-side lift of [`ConfigTierKind::is_computed`].
+    ///
+    /// Names the *computed-defaults* pole at the payload-carrying
+    /// [`ConfigTier`] altitude, so operator-facing consumers holding a
+    /// full [`ConfigTier`] value (a `resolve_tier` call site branching
+    /// on "the operator supplied a YAML overlay vs. we're using a
+    /// developer-prescribed tier row", a startup log emitter summarizing
+    /// the tier under one of two poles, a diagnostic collecting the tier
+    /// bin of every failing config load) spell the *positive* form of the
+    /// query at the call site instead of the double-negative
+    /// `!tier.is_custom()` or the three-arm disjunction
+    /// `tier.is_bare() || tier.is_discovered() || tier.is_default()`.
+    /// Idiom-peer of the compound-polarity source-axis sibling
+    /// [`crate::ConfigSource::is_overlay`] (commit `48c625b`) at this
+    /// altitude — the atomic `(tier, source)` pair carries a paired
+    /// (computed × custom) tier-side polarity axis and a
+    /// (baseline × overlay) source-side polarity axis, and this landing
+    /// closes the sibling on the tier side to match the source side.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Custom(path)` regardless of whether the path is absolute,
+    /// relative, or empty — is what the pointwise-agreement pin locks
+    /// in: the kind-side predicate cannot see the [`PathBuf`], and a
+    /// future edit that changed this arm to inspect the path would
+    /// diverge from the kind-side and fail
+    /// [`tests::config_tier_is_computed_agrees_with_kind_pointwise`].
+    ///
+    /// `const`-callable — matching the `const`-ness of the sibling
+    /// tier-axis predicate quartet ([`Self::is_bare`] /
+    /// [`Self::is_discovered`] / [`Self::is_default`] / [`Self::is_custom`])
+    /// and of the kind-side compound-polarity sibling
+    /// [`ConfigTierKind::is_computed`].
+    ///
+    /// The modal-pair complement law
+    /// `tier.is_computed() == !tier.is_custom()` holds pointwise on the
+    /// canonical sample table, pinned by
+    /// [`tests::config_tier_is_computed_is_complement_of_is_custom_on_tag_side`].
+    /// The tag ↔ kind agreement law
+    /// `tier.is_computed() == tier.kind().is_computed()` holds pointwise
+    /// on the same table, pinned by
+    /// [`tests::config_tier_is_computed_agrees_with_kind_pointwise`].
+    #[must_use]
+    pub const fn is_computed(&self) -> bool {
+        matches!(self, Self::Bare | Self::Discovered | Self::Default)
     }
 }
 
@@ -1063,6 +1177,61 @@ impl Provenance {
     #[must_use]
     pub const fn is_custom(&self) -> bool {
         self.tier.is_custom()
+    }
+
+    /// Returns `true` iff this provenance's tier is one of the three
+    /// built-in computed-defaults tier kinds ([`ConfigTierKind::Bare`],
+    /// [`ConfigTierKind::Discovered`], [`ConfigTierKind::Default`]) —
+    /// the compound-polarity complement of [`Self::is_custom`] on the
+    /// tier axis, [`Provenance`]-altitude lift of
+    /// [`ConfigTier::is_computed`] / [`ConfigTierKind::is_computed`] one
+    /// seam down on the atomic `(tier, source)` primitive.
+    ///
+    /// Names the *computed-defaults* pole at the [`Provenance`]
+    /// altitude: exactly the three computed-defaults-row constructors
+    /// [`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`]
+    /// (and [`Self::computed`] over any of those three kinds) answer
+    /// `true` here; every operator-supplied provenance
+    /// ([`Self::file`] / [`Self::env`] / [`Self::computed`] over
+    /// [`ConfigTierKind::Custom`]) answers `false`, regardless of the
+    /// inner path / prefix payload. Tier-axis peer of the source-axis
+    /// compound-polarity sibling [`Self::is_overlay`] (commit `93c21cb`)
+    /// on the same primitive — the atomic `(tier, source)` pair carries
+    /// a paired (computed × custom) tier-side polarity axis and a
+    /// (baseline × overlay) source-side polarity axis, and this landing
+    /// closes the sibling on the tier side to match the source side.
+    ///
+    /// Delegates one-hop through the const-fn kind-side predicate
+    /// [`ConfigTierKind::is_computed`] via the const-fn field access on
+    /// `self.tier`; the primitive-side has no [`ConfigSource`]
+    /// visibility, so this arm is forbidden from consulting the source
+    /// coordinate. Together with the source-axis compound-polarity
+    /// sibling [`Self::is_overlay`], the atomic `(tier, source)` pair
+    /// on this altitude carries one compound-polarity predicate per
+    /// axis, matching the sibling triple/quartet the individual axis
+    /// coordinates already carry.
+    ///
+    /// `const`-callable — one-hop delegation through the const-fn
+    /// [`ConfigTierKind::is_computed`] preserves compile-time
+    /// callability end-to-end, matching the const-ness of the sibling
+    /// tier-axis predicate quartet
+    /// ([`Self::is_bare`] / [`Self::is_discovered`] /
+    /// [`Self::is_default`] / [`Self::is_custom`]) and of
+    /// [`Self::is_overlay`] one polarity-axis over.
+    ///
+    /// The modal-pair complement law
+    /// `prov.is_computed() == !prov.is_custom()` holds pointwise on
+    /// the shipped constructor surface, pinned by
+    /// [`tests::provenance_is_computed_is_complement_of_is_custom`], the
+    /// [`Provenance`]-altitude analogue of the primitive-side pin
+    /// [`tests::config_tier_kind_is_computed_is_complement_of_is_custom`].
+    /// Agreement with the kind-side predicate is a structural law:
+    /// `prov.is_computed() == prov.tier().is_computed()` on every
+    /// constructor row, pinned by
+    /// [`tests::provenance_is_computed_agrees_with_tier_pointwise`].
+    #[must_use]
+    pub const fn is_computed(&self) -> bool {
+        self.tier.is_computed()
     }
 
     /// The [`crate::ConfigSourceKind`] this provenance's source belongs
@@ -20320,6 +20489,61 @@ impl ProgressiveLayer {
     pub const fn is_overlay(&self) -> bool {
         self.provenance.is_overlay()
     }
+
+    /// Returns `true` iff this overlay's stamp is in one of the three
+    /// built-in computed-defaults tier kinds ([`ConfigTierKind::Bare`],
+    /// [`ConfigTierKind::Discovered`], [`ConfigTierKind::Default`]) —
+    /// the compound-polarity complement of [`Self::is_custom`] on the
+    /// tier axis, container-altitude lift of [`Provenance::is_computed`]
+    /// one seam down on the atomic `(tier, source)` primitive.
+    ///
+    /// Names the *computed-defaults* pole at the [`ProgressiveLayer`]
+    /// altitude: exactly the three computed-defaults-row constructors
+    /// [`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`]
+    /// answer `true` here; the two operator-supplied stamp-side
+    /// constructors [`Self::file`] / [`Self::env`] answer `false`,
+    /// regardless of the inner path / prefix / [`Dict`] payload. Peer
+    /// of the source-axis compound-polarity sibling [`Self::is_overlay`]
+    /// (commit `93c21cb`) on the same container — the atomic
+    /// `(tier, source)` pair the layer's [`Provenance`] carries names
+    /// a compound-polarity predicate per axis, and this landing closes
+    /// the sibling on the tier side to match the source side at every
+    /// altitude on the sealed-fold ladder.
+    ///
+    /// Delegates one-hop through the const-fn primitive-altitude
+    /// predicate [`Provenance::is_computed`] via a direct
+    /// `self.provenance.is_computed()` field access that never borrows
+    /// the heavier [`Dict`] payload — the primitive-side has no
+    /// [`Dict`] visibility either, so this container-side is forbidden
+    /// from consulting the [`Dict`]. Payload-independence — the answer
+    /// is the same for every [`Dict`] payload — is what the
+    /// pointwise-agreement pin locks in on the primitive-side and this
+    /// altitude both.
+    ///
+    /// `const`-callable — one-hop delegation through the const-fn
+    /// [`Provenance::is_computed`] preserves compile-time callability
+    /// end-to-end, matching the const-ness of the sibling tier-axis
+    /// predicate quartet ([`Self::is_bare`] / [`Self::is_discovered`] /
+    /// [`Self::is_default`] / [`Self::is_custom`]) and of
+    /// [`Self::is_overlay`] one polarity-axis over.
+    ///
+    /// Pointwise agreement
+    /// `layer.is_computed() == layer.provenance().is_computed()` holds
+    /// on every shipped stamp-side constructor row — pinned by
+    /// [`tests::progressive_layer_is_computed_agrees_with_provenance_pointwise`],
+    /// the container-altitude analogue of the primitive-altitude pin
+    /// [`tests::provenance_is_computed_agrees_with_tier_pointwise`].
+    /// The modal-pair complement law
+    /// `layer.is_computed() == !layer.is_custom()` holds pointwise on
+    /// the same constructor surface — pinned by
+    /// [`tests::progressive_layer_is_computed_is_complement_of_is_custom`],
+    /// the container-altitude analogue of
+    /// [`tests::provenance_is_computed_is_complement_of_is_custom`] one
+    /// seam down on [`Provenance`].
+    #[must_use]
+    pub const fn is_computed(&self) -> bool {
+        self.provenance.is_computed()
+    }
 }
 
 /// Std-trait facade over [`ProgressiveLayer::into_parts`]: the same
@@ -30929,6 +31153,142 @@ mod tests {
                 "is_custom must agree tag ↔ kind for {tier:?}",
             );
         }
+    }
+
+    #[test]
+    fn config_tier_kind_is_computed_partitions_custom_from_computed_defaults() {
+        // Concrete-position kind-side pin for the compound-polarity
+        // sibling on the tier axis. `Bare`, `Discovered`, `Default` are
+        // the built-in computed-defaults pole (true); `Custom` is the
+        // operator-supplied overlay pole (false). Direct peer of
+        // `config_source_kind_is_overlay_partitions_defaults_from_overlays`
+        // one axis over on the atomic `(tier, source)` pair. A future
+        // edit that flipped one arm's polarity fails at THIS site
+        // before drifting through any consumer that read the
+        // (computed × custom) axis.
+        assert!(ConfigTierKind::Bare.is_computed());
+        assert!(ConfigTierKind::Discovered.is_computed());
+        assert!(ConfigTierKind::Default.is_computed());
+        assert!(!ConfigTierKind::Custom.is_computed());
+    }
+
+    #[test]
+    fn config_tier_kind_is_computed_is_complement_of_is_custom() {
+        // Modal-pair complement law on the tier-kind axis:
+        // `is_computed() == !is_custom()` pointwise on every closed-axis
+        // cell — the two poles of the (computed × custom) polarity axis
+        // partition ConfigTierKind::ALL without remainder. Tier-axis
+        // analogue of the source-axis complement pin
+        // `config_source_kind_is_overlay_is_complement_of_is_defaults`
+        // (`48c625b`) on the sibling axis of the same `(tier, source)`
+        // atomic pair. A future fifth variant landing without explicit
+        // polarity assignment fails this pin (it would be false on both
+        // sides, breaking the complement law) before drifting through
+        // any per-polarity consumer.
+        for k in ConfigTierKind::ALL.iter().copied() {
+            assert_eq!(
+                k.is_computed(),
+                !k.is_custom(),
+                "ConfigTierKind::{k:?}: is_computed() must be the complement of \
+                 is_custom() on the tier-kind axis",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_is_computed_true_for_bare_discovered_default_only() {
+        // Per-variant polarity pin at the tag-side altitude with
+        // payload-independence sub-pin: the answer is the same for
+        // every `Custom(path)` regardless of whether the path is
+        // absolute, relative, or empty. Direct peer of
+        // `config_tier_kind_is_computed_partitions_custom_from_computed_defaults`
+        // at the tag-side altitude.
+        assert!(ConfigTier::Bare.is_computed());
+        assert!(ConfigTier::Discovered.is_computed());
+        assert!(ConfigTier::Default.is_computed());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")).is_computed());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::from("rel.toml")).is_computed());
+        assert!(!ConfigTier::Custom(std::path::PathBuf::new()).is_computed());
+    }
+
+    #[test]
+    fn config_tier_is_computed_is_complement_of_is_custom_on_tag_side() {
+        // Modal-pair complement law at the tag-side altitude:
+        // `tier.is_computed() == !tier.is_custom()` pointwise on the
+        // canonical sample table, mirror of the kind-side pin
+        // `config_tier_kind_is_computed_is_complement_of_is_custom`.
+        // Catches a future edit that drifts the tag-side polarity
+        // without the kind-side (or vice-versa) — the two altitudes
+        // must stay complementary in lockstep. Also pins the
+        // payload-independence contract on the Custom arm: every
+        // `Custom(path)` payload (absolute, relative, empty) answers
+        // `false` uniformly.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("rel.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.is_computed(),
+                !tier.is_custom(),
+                "ConfigTier {tier:?}: is_computed() must be the complement of \
+                 is_custom() on the tag-side altitude",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_is_computed_agrees_with_kind_pointwise() {
+        // Tag ↔ kind agreement law for the compound-polarity sibling:
+        // `tier.is_computed() == tier.kind().is_computed()` for every
+        // ConfigTier in the canonical sample table. Idiom-peer of the
+        // per-cell agreement pin
+        // `config_tier_agrees_with_kind_predicates_pointwise` on the
+        // sibling quartet, extended to the compound-polarity cell.
+        // Catches a future edit that drifts the tag-side compound
+        // polarity without the kind-side (or vice-versa) — the two
+        // altitudes must stay in lockstep. Also pins the payload-
+        // independence contract: the kind-side has no PathBuf
+        // visibility, so the tag-side is forbidden from consulting it.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("rel.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.is_computed(),
+                tier.kind().is_computed(),
+                "is_computed must agree tag ↔ kind for {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_is_computed_is_const_callable() {
+        // Weld the const-callability of the compound-polarity sibling
+        // (`ConfigTierKind::is_computed`) at compile time via a `const`
+        // binding in const-init position. Mirror of the shape used for
+        // the source-axis compound-polarity sibling
+        // (`provenance_is_overlay_is_const_callable`, `93c21cb`), scaled
+        // to the tier-kind primitive which is `Copy` and admits a
+        // direct `const` binding without the `static` workaround the
+        // Provenance altitude needs.
+        const BARE_IS_COMPUTED: bool = ConfigTierKind::Bare.is_computed();
+        const DISCOVERED_IS_COMPUTED: bool = ConfigTierKind::Discovered.is_computed();
+        const DEFAULT_IS_COMPUTED: bool = ConfigTierKind::Default.is_computed();
+        const CUSTOM_IS_COMPUTED: bool = ConfigTierKind::Custom.is_computed();
+        assert!(BARE_IS_COMPUTED);
+        assert!(DISCOVERED_IS_COMPUTED);
+        assert!(DEFAULT_IS_COMPUTED);
+        assert!(!CUSTOM_IS_COMPUTED);
     }
 
     #[test]
@@ -71490,6 +71850,76 @@ mod progressive_tests {
         }
     }
 
+    #[test]
+    fn progressive_layer_is_computed_agrees_with_provenance_pointwise() {
+        // Agreement law at the container altitude on the tier-axis
+        // compound-polarity sibling: for every shipped stamp-side
+        // constructor row,
+        // `layer.is_computed() == layer.provenance().is_computed()`.
+        // Container-altitude analogue of the primitive-altitude pin
+        // `provenance_is_computed_agrees_with_tier_pointwise` and
+        // peer of `progressive_layer_is_overlay_agrees_with_provenance_pointwise`
+        // (`93c21cb`) one polarity-axis over on the same container.
+        // Catches a future edit that drifts the container-side compound
+        // polarity away from the underlying primitive-side predicate,
+        // and pins the payload-independence contract on this altitude:
+        // the primitive-side has no `Dict` visibility either, so the
+        // container-side is forbidden from consulting it.
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_IS_COMPUTED_AGREEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/is_computed_agreement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/is_computed_agreement.toml", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.is_computed(),
+                layer.provenance().is_computed(),
+                "is_computed drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_is_computed_is_complement_of_is_custom() {
+        // Modal-pair complement law at the container altitude on the
+        // tier-axis compound-polarity sibling:
+        // `layer.is_computed() == !layer.is_custom()` pointwise on the
+        // shipped stamp-side constructor surface. Container-altitude
+        // analogue of `provenance_is_computed_is_complement_of_is_custom`
+        // one seam down on `Provenance` and one polarity-axis over from
+        // `progressive_layer_is_overlay_is_complement_of_is_defaults`
+        // (`93c21cb`) on the same container. Catches a future edit that
+        // drifts one pole's polarity away from the other on this
+        // altitude — the (computed × custom) polarity pair must
+        // partition the shipped constructor surface without remainder
+        // at every altitude on the sealed-fold ladder.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_IS_COMPUTED_COMPLEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/is_computed_complement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/is_computed_complement.toml", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.is_computed(),
+                !layer.is_custom(),
+                "ProgressiveLayer {layer:?}: is_computed() must be the complement of \
+                 is_custom() on the tier-axis polarity pair",
+            );
+        }
+    }
+
     // ── ProgressiveLayer::tier / source / source_kind / tier_ordinal /
     //    source_kind_ordinal — container-altitude lift of the
     //    primitive-altitude projection quintet on `Provenance`
@@ -73317,6 +73747,93 @@ mod progressive_tests {
         const COMPUTED_IS_OVERLAY: bool = COMPUTED_PROV.is_overlay();
 
         assert!(!COMPUTED_IS_OVERLAY);
+    }
+
+    #[test]
+    fn provenance_is_computed_agrees_with_tier_pointwise() {
+        // Agreement law at the Provenance altitude on the tier-axis
+        // compound-polarity sibling: for every shipped constructor row,
+        // `prov.is_computed() == prov.tier().is_computed()`. Peer of
+        // `provenance_is_overlay_agrees_with_source_pointwise`
+        // (`93c21cb`) one polarity-axis over on the same primitive —
+        // the atomic `(tier, source)` pair carries a compound-polarity
+        // predicate per axis, and each altitude's compound sibling
+        // agrees with the paired axis-coordinate projection pointwise.
+        // Catches a future edit that drifts the Provenance-side
+        // sibling's polarity away from the underlying [`ConfigTierKind`]
+        // predicate; also pins the payload-independence contract on the
+        // compound-polarity arm (the primitive-side has no source /
+        // dict visibility, so the one-hop `prov.is_computed()` seam is
+        // forbidden from consulting the source or the payload either).
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_IS_COMPUTED_AGREEMENT_"),
+            Provenance::file("/etc/is_computed_agreement.yaml"),
+            Provenance::file("relative/is_computed_agreement.toml"),
+        ] {
+            assert_eq!(
+                prov.is_computed(),
+                prov.tier().is_computed(),
+                "is_computed drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_is_computed_is_complement_of_is_custom() {
+        // Modal-pair complement law at the Provenance altitude on the
+        // tier-axis compound-polarity sibling:
+        // `prov.is_computed() == !prov.is_custom()` pointwise on the
+        // shipped constructor surface. Provenance-altitude analogue of
+        // the primitive-side pin
+        // `config_tier_kind_is_computed_is_complement_of_is_custom` and
+        // one polarity-axis over from
+        // `provenance_is_overlay_is_complement_of_is_defaults`
+        // (`93c21cb`). Catches a future edit that drifts one pole's
+        // polarity away from the other on this altitude — the
+        // (computed × custom) polarity pair must partition the shipped
+        // constructor surface without remainder.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_IS_COMPUTED_COMPLEMENT_"),
+            Provenance::file("/etc/is_computed_complement.yaml"),
+            Provenance::file("relative/is_computed_complement.toml"),
+        ] {
+            assert_eq!(
+                prov.is_computed(),
+                !prov.is_custom(),
+                "Provenance {prov:?}: is_computed() must be the complement of \
+                 is_custom() on the tier-axis polarity pair",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_is_computed_is_const_callable() {
+        // Weld the const-callability of the tier-axis compound-polarity
+        // sibling (`Provenance::is_computed`) with the const-callable
+        // `Provenance::computed` constructor at compile time. Mirror of
+        // `provenance_is_overlay_is_const_callable` one polarity-axis
+        // over on the same primitive — the same `static` binding
+        // workaround is needed because `Provenance` cannot be bound to
+        // a `const` item (its `source: ConfigSource` field carries
+        // non-const-Drop variants), so a `static` binding routes the
+        // `.is_computed()` hop through the const-fn `Provenance::computed`
+        // constructor and the const-fn `Provenance::is_computed`
+        // predicate end-to-end.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_IS_COMPUTED: bool = COMPUTED_PROV.is_computed();
+
+        assert!(COMPUTED_IS_COMPUTED);
     }
 
     #[test]
