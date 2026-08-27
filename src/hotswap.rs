@@ -15908,6 +15908,116 @@ impl ProofRelationWire {
     pub const fn cross_store(&self) -> bool {
         matches!(self, Self::CrossStore { .. })
     }
+
+    /// True iff this wire classification witnesses a legitimate publish
+    /// — the two consistent-half corners [`Self::IdentityRepublish`]
+    /// (watermark stationary, generation counter advanced) and
+    /// [`Self::Progression`] (watermark moved, generation counter
+    /// advanced). `false` on the null-hypothesis polling corner
+    /// [`Self::Stationary`] and on BOTH same-store impossibility corners
+    /// [`Self::CrossStore`] and [`Self::Regressed`].
+    ///
+    /// **The wire-side lift of [`ProofRelation::is_generation_advanced`]
+    /// (commit `85ac063`), closing the compound-polarity
+    /// publish-observing predicate at the third and final altitude of
+    /// the (delta / value / wire) × (fused-kind / value-carrier /
+    /// wire-carrier) grid.** The same "did we observe a publish?"
+    /// question the value-side receiver answers on the payload-carrying
+    /// enum, now reachable one altitude down at the wire carrier
+    /// without a value-side round-trip through
+    /// [`ProofRelation::try_from_wire`]. Direct peer of
+    /// [`Self::same_store_consistent`] / [`Self::same_store_inconsistent`]
+    /// on the compound-predicate receiver family at the wire altitude,
+    /// and the compound-polarity mirror at the wire altitude of the
+    /// modal-pair receiver ladder every classification sum in the crate
+    /// carries at both altitudes.
+    ///
+    /// **Delegation ladder — the tag-alone answer at the wire altitude.**
+    /// A wire consumer holding a freshly deserialized
+    /// [`ProofRelationWire`] answering "did we observe a publish?"
+    /// previously had four inline paths, each leaking work: (a)
+    /// `ProofRelation::try_from_wire(&wire).map(|r|
+    /// r.is_generation_advanced())` — chaining a
+    /// [`MovedWatermarkDelta::try_from_wire`] weld on the two
+    /// payload-carrying corners AND a [`std::num::NonZeroU64::new`]
+    /// weld on the three generation-carrying corners, none of which
+    /// the tag-only answer needs, plus a [`Result`]-fold on top since
+    /// the parse can fail; (b) `wire.kind().is_generation_advanced()`
+    /// — a two-hop composition through the fused-kind projection whose
+    /// [`Self::kind`] call carries the same exhaustive `match` this
+    /// predicate would; (c) `wire.identity_republish() ||
+    /// wire.progression()` — a two-hop composition through two
+    /// single-variant tag-only classifiers whose disjunction the
+    /// exhaustiveness checker cannot help keep in sync with a future
+    /// publish-observing corner (a hypothetical sixth variant added to
+    /// the consistent half that also witnessed a publish would silently
+    /// escape the two-arm disjunction without turning the callsite
+    /// red); or (d) `matches!(wire, ProofRelationWire::IdentityRepublish
+    /// { .. } | ProofRelationWire::Progression { .. })` inline at every
+    /// seam, a shape the exhaustiveness checker cannot help keep in
+    /// sync with a future variant addition either. The receiver-sibling
+    /// here answers the same question through a single welded
+    /// [`matches!`]: adding a sixth variant to [`ProofRelationWire`]
+    /// fails to compile at this method's pattern in lockstep with
+    /// [`Self::stationary`], [`Self::identity_republish`],
+    /// [`Self::same_store_consistent`], and every other classification
+    /// receiver in this impl.
+    ///
+    /// **Cross-altitude same-answer invariants.** The wire is a
+    /// lossless channel for the publish-observing question the
+    /// value-side sibling answers. For every legitimate value/wire pair:
+    ///
+    /// * `relation.is_generation_advanced() ==
+    ///   relation.to_wire().is_generation_advanced()` (value ↔ wire),
+    /// * `wire.is_generation_advanced() ==
+    ///   wire.kind().is_generation_advanced()` (wire ↔ fused-kind), and
+    /// * `wire.is_generation_advanced() ==
+    ///   wire.consistency_kind().is_some_and(|c|
+    ///   c.is_generation_advanced())` (wire ↔ half-side kind).
+    ///
+    /// The three routes pin the delegation ladder — a future edit that
+    /// drifted any two of them fails at the pointwise agreement pin
+    /// before drifting through any consumer.
+    ///
+    /// **Compound-polarity fold across the wire enum.** Exactly two of
+    /// the five variants satisfy the predicate, three do not; the
+    /// two-vs-three partition welds the compound-polarity sibling on
+    /// [`ProofRelationKind`] (two publish-observing corners out of
+    /// five) to the wire altitude without opening a new impossibility-
+    /// side polarity. A future edit that added a sixth consistent
+    /// corner or a third impossibility corner without extending this
+    /// predicate's arms fails at the cardinality-invariant partition
+    /// pin before drifting through any consumer that groups on the
+    /// publish-observing pole.
+    ///
+    /// **Refinement — publish-observing implies same-store-consistent.**
+    /// At this altitude, `wire.is_generation_advanced() ⇒
+    /// wire.same_store_consistent()` pointwise on every variant — both
+    /// publish-observing corners lie in the same-store-consistent half.
+    /// The converse does NOT hold: [`Self::Stationary`] is also
+    /// same-store-consistent without witnessing a publish, so
+    /// `wire.same_store_consistent()` covers three DISTINCT corners
+    /// while `wire.is_generation_advanced()` covers only the two
+    /// publish-observing ones.
+    ///
+    /// **The tag alone is sufficient.** No payload field participates
+    /// in the answer, so no parse-time weld is even conceptually
+    /// involved — a wire consumer routing on the internally-tagged
+    /// `kind` field alone reaches the verdict without deserializing any
+    /// payload portion, matching the low-cost seam
+    /// [`ProofRelationWire`]'s serde encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its generation-advanced verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate, payload, or kind projection) in this impl.
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        matches!(
+            self,
+            Self::IdentityRepublish { .. } | Self::Progression { .. }
+        )
+    }
 }
 
 impl TryFrom<&ProofRelationWire> for ProofRelation {
@@ -28920,6 +29030,299 @@ mod proof_relation_is_generation_advanced_tests {
                 via_half,
                 "{name}: is_generation_advanced must equal \
                  consistency_kind().is_some_and(c.is_generation_advanced())",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_wire_is_generation_advanced_tests {
+    //! Weld the compound-polarity publish-observing predicate at the
+    //! wire altitude — [`ProofRelationWire::is_generation_advanced`] —
+    //! the wire-side lift of [`ProofRelation::is_generation_advanced`]
+    //! (commit `85ac063`), closing the (value, wire) × (compound-
+    //! polarity) grid at the third and final altitude the
+    //! [`ProofRelation`] / [`ProofRelationWire`] receiver ladder carries.
+    //!
+    //! The value-altitude module `proof_relation_is_generation_advanced_tests`
+    //! pins the value-side truth table, the fused-kind delegation
+    //! ladder, and the half-side projection. This module pins the wire
+    //! altitude's cross-altitude same-answer with the value side and
+    //! with the fused-kind projection through the wire's own
+    //! [`ProofRelationWire::kind`] and [`ProofRelationWire::consistency_kind`]
+    //! receivers, so a future edit that drifted any leg of the ladder
+    //! fails at the pointwise agreement pin before drifting through any
+    //! wire consumer.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Truth table pinned by variant identity at the wire altitude —
+    //!    only the two publish-observing corners
+    //!    ([`ProofRelationWire::IdentityRepublish`] and
+    //!    [`ProofRelationWire::Progression`]) return `true`; the three
+    //!    other variants return `false`.
+    //! 2. Pointwise value/wire agreement across every variant — for
+    //!    every [`ProofRelation`] value the value-side accessor and the
+    //!    wire-side sibling agree pointwise. The wire is a lossless
+    //!    channel for the publish-observing question the value-side
+    //!    receiver answers.
+    //! 3. Wire-altitude cross-altitude same-answer with the fused kind
+    //!    — for every wire variant, `wire.is_generation_advanced() ==
+    //!    wire.kind().is_generation_advanced()`, pinning the wire-side
+    //!    delegation ladder against the fused-kind receiver at the same
+    //!    altitude.
+    //! 4. Wire-altitude cross-altitude same-answer with the disjunction
+    //!    of the two single-variant tag-only classifiers — for every
+    //!    wire variant, `wire.is_generation_advanced() ==
+    //!    wire.identity_republish() || wire.progression()`.
+    //! 5. Refinement — publish-observing implies same-store-consistent
+    //!    at the wire altitude, and excludes same-store-inconsistency.
+    //! 6. Cardinality partition — exactly two of the five wire fixture
+    //!    variants satisfy the predicate, three do not.
+    //! 7. `const`-callable — a compile-time-known [`ProofRelationWire`]
+    //!    projects its generation-advanced verdict at compile time too,
+    //!    matching the `const`-ness of every other classification
+    //!    receiver at the wire altitude.
+    //! 8. Wire-altitude cross-altitude same-answer with the half-side
+    //!    projection — for every wire variant,
+    //!    `wire.is_generation_advanced() ==
+    //!    wire.consistency_kind().is_some_and(|c|
+    //!    c.is_generation_advanced())`, pinning the two-hop
+    //!    Option-composition path a consumer routing through the
+    //!    half-side receiver would take.
+    //! 9. Round-trip through [`ProofRelation::try_from_wire`] preserves
+    //!    the publish-observing verdict — a wire consumer that follows
+    //!    the standard parse seam surfaces the same verdict the
+    //!    receiver-sibling reaches directly.
+    //!
+    //! Same test idiom as the sibling
+    //! `proof_relation_wire_same_store_consistent_tests` module.
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    fn all_five_wire_variants() -> Vec<(&'static str, ProofRelationWire)> {
+        all_five_relations()
+            .into_iter()
+            .map(|(name, relation)| (name, relation.to_wire()))
+            .collect()
+    }
+
+    // ---------- (1) Truth table pinned by variant identity at the wire altitude
+
+    #[test]
+    fn wire_truth_table_reads_the_two_publish_observing_corners_alone() {
+        for (name, wire) in all_five_wire_variants() {
+            let expected = matches!(
+                wire,
+                ProofRelationWire::IdentityRepublish { .. } | ProofRelationWire::Progression { .. }
+            );
+            assert_eq!(
+                wire.is_generation_advanced(),
+                expected,
+                "{name}: wire is_generation_advanced() diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise value/wire agreement
+
+    #[test]
+    fn value_and_wire_predicates_agree_pointwise_on_every_variant() {
+        for (name, relation) in all_five_relations() {
+            let value = relation.is_generation_advanced();
+            let wire = relation.to_wire().is_generation_advanced();
+            assert_eq!(
+                value, wire,
+                "{name}: wire is_generation_advanced must equal value \
+                 is_generation_advanced pointwise",
+            );
+        }
+    }
+
+    // ---------- (3) Wire-altitude same-answer with the fused kind
+
+    #[test]
+    fn wire_cross_altitude_same_answer_with_kind_projection() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_generation_advanced(),
+                wire.kind().is_generation_advanced(),
+                "{name}: wire is_generation_advanced must equal \
+                 wire.kind().is_generation_advanced()",
+            );
+        }
+    }
+
+    // ---------- (4) Wire-altitude same-answer with the disjunction of siblings
+
+    #[test]
+    fn wire_compound_predicate_matches_disjunction_of_single_variant_siblings() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_generation_advanced(),
+                wire.identity_republish() || wire.progression(),
+                "{name}: wire is_generation_advanced() must equal \
+                 identity_republish() || progression()",
+            );
+        }
+    }
+
+    // ---------- (5) Refinement — publish-observing implies same-store-consistent
+
+    #[test]
+    fn wire_is_generation_advanced_implies_same_store_consistent() {
+        for (name, wire) in all_five_wire_variants() {
+            if wire.is_generation_advanced() {
+                assert!(
+                    wire.same_store_consistent(),
+                    "{name}: wire publish-observing corners must lie in the \
+                     same-store-consistent half",
+                );
+                assert!(
+                    !wire.same_store_inconsistent(),
+                    "{name}: wire publish-observing corners cannot lie in the \
+                     same-store-inconsistent half",
+                );
+            }
+        }
+    }
+
+    // ---------- (6) Cardinality partition — exactly two of five satisfy
+
+    #[test]
+    fn wire_cardinality_partition_is_two_from_three() {
+        let (advanced, rest): (Vec<_>, Vec<_>) = all_five_wire_variants()
+            .into_iter()
+            .partition(|(_, w)| w.is_generation_advanced());
+        assert_eq!(
+            advanced.len(),
+            2,
+            "exactly two ProofRelationWire fixture variants must satisfy \
+             is_generation_advanced (IdentityRepublish + Progression); got {}",
+            advanced.len(),
+        );
+        assert_eq!(
+            rest.len(),
+            3,
+            "exactly three ProofRelationWire fixture variants must NOT satisfy \
+             is_generation_advanced (Stationary + CrossStore + Regressed); got {}",
+            rest.len(),
+        );
+        assert_eq!(
+            advanced.len() + rest.len(),
+            5,
+            "the compound-polarity binary partition must cover the fixture",
+        );
+    }
+
+    // ---------- (7) `const`-callable at compile time
+
+    #[test]
+    fn wire_is_generation_advanced_is_const_callable() {
+        const STATIONARY: bool = ProofRelationWire::Stationary.is_generation_advanced();
+        const IDENTITY_REPUBLISH: bool =
+            ProofRelationWire::IdentityRepublish { generations: 1 }.is_generation_advanced();
+        const PROGRESSION: bool = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            generations: 2,
+        }
+        .is_generation_advanced();
+        const CROSS_STORE: bool = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        }
+        .is_generation_advanced();
+        const REGRESSED: bool = ProofRelationWire::Regressed { by: 3 }.is_generation_advanced();
+        assert!(!STATIONARY);
+        assert!(IDENTITY_REPUBLISH);
+        assert!(PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(!REGRESSED);
+    }
+
+    // ---------- (8) Wire-altitude same-answer with the half-side projection
+
+    #[test]
+    fn wire_compound_predicate_agrees_with_consistency_kind_projection() {
+        for (name, wire) in all_five_wire_variants() {
+            let via_half = wire
+                .consistency_kind()
+                .is_some_and(|c| c.is_generation_advanced());
+            assert_eq!(
+                wire.is_generation_advanced(),
+                via_half,
+                "{name}: wire is_generation_advanced must equal \
+                 consistency_kind().is_some_and(c.is_generation_advanced())",
+            );
+        }
+    }
+
+    // ---------- (9) Round-trip through try_from_wire preserves the verdict
+
+    #[test]
+    fn try_from_wire_round_trip_preserves_the_verdict() {
+        for (name, wire) in all_five_wire_variants() {
+            let wire_verdict = wire.is_generation_advanced();
+            let reconstructed =
+                ProofRelation::try_from_wire(&wire).expect("legitimate wire parses back");
+            assert_eq!(
+                wire_verdict,
+                reconstructed.is_generation_advanced(),
+                "{name}: try_from_wire round-trip must preserve the \
+                 publish-observing verdict",
             );
         }
     }
