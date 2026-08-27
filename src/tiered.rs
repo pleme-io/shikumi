@@ -1266,6 +1266,53 @@ impl Provenance {
         self.source.is_file()
     }
 
+    /// Returns `true` iff this provenance's source is one of the
+    /// operator-supplied overlay kinds ([`ConfigSource::Env`] or
+    /// [`ConfigSource::File`]) — the compound-polarity complement of
+    /// [`Self::is_defaults`] on the source axis of the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// Names the *overlay* pole at the [`Provenance`] altitude, so a
+    /// caller reading *"did this leaf come from an operator-supplied
+    /// layer, or from the developer-prescribed baseline?"* — a
+    /// `ConfigPlane` broadcast surface tagging each broadcast leaf as
+    /// `overlay` vs `defaults`, an attestation-manifest counter over
+    /// per-leaf provenances, an operator-facing `/healthz/provenance`
+    /// row coloring overlay-sourced leaves separately from the baseline
+    /// — spells the *positive* form of the query at the call site
+    /// instead of the double-negative `!prov.is_defaults()` or the
+    /// two-arm disjunction `prov.is_env() || prov.is_file()`. Direct
+    /// [`Provenance`]-altitude lift of the primitive-altitude
+    /// [`ConfigSource::is_overlay`] / [`crate::ConfigSourceKind::is_overlay`]
+    /// pair (`48c625b`) — same *the substrate now knows the compound
+    /// pole* pattern lifted one seam up onto the atomic `(tier, source)`
+    /// primitive that carries the source coordinate.
+    ///
+    /// `const`-callable — the body is a one-hop call into the
+    /// `const fn` [`ConfigSource::is_overlay`] on `self.source`, so a
+    /// compile-time-known [`Provenance`] projects its overlay-source
+    /// polarity at compile time too. Composes with the const-callable
+    /// [`Self::computed`] constructor at the const-callability weld
+    /// [`tests::provenance_is_overlay_is_const_callable`].
+    ///
+    /// The modal-pair complement law
+    /// `prov.is_overlay() == !prov.is_defaults()` holds pointwise on
+    /// the shipped constructor surface — pinned by
+    /// [`tests::provenance_is_overlay_is_complement_of_is_defaults`],
+    /// the [`Provenance`]-altitude analogue of the primitive-altitude
+    /// pin `config_source_is_overlay_is_complement_of_is_defaults_on_tag_side`
+    /// (`48c625b`). Agreement with the primitive-side is a structural
+    /// law: `prov.is_overlay() == prov.source().is_overlay()` on every
+    /// constructor row — pinned pointwise by
+    /// [`tests::provenance_is_overlay_agrees_with_source_pointwise`],
+    /// the source-altitude analogue of the per-cell agreement pin
+    /// `provenance_source_predicates_agree_with_source_predicates_pointwise`
+    /// (`84e8f9d`) extended to the (baseline × overlay) polarity axis.
+    #[must_use]
+    pub const fn is_overlay(&self) -> bool {
+        self.source.is_overlay()
+    }
+
     /// Consume `self`, yielding the owned `(tier, source)` pair the
     /// provenance carries — the consuming destructuring dual of the
     /// borrow-side [`Self::tier`] / [`Self::source`] accessor pair.
@@ -20229,6 +20276,49 @@ impl ProgressiveLayer {
     #[must_use]
     pub const fn is_file(&self) -> bool {
         self.provenance.is_file()
+    }
+
+    /// Returns `true` iff this overlay's stamp carries one of the
+    /// operator-supplied overlay sources ([`ConfigSource::Env`] or
+    /// [`ConfigSource::File`]) — the compound-polarity complement of
+    /// [`Self::is_defaults`] on the source axis, container-altitude lift
+    /// of [`Provenance::is_overlay`] one seam down on the atomic
+    /// `(tier, source)` primitive.
+    ///
+    /// Names the *overlay* pole at the [`ProgressiveLayer`] altitude:
+    /// exactly the two operator-overlay constructors
+    /// ([`Self::env`] / [`Self::file`]) answer `true` here, regardless
+    /// of the inner prefix / path payload; the three computed-defaults-
+    /// row constructors ([`Self::bare`] / [`Self::discovered`] /
+    /// [`Self::prescribed_default`]) answer `false`. Idiom-peer of the
+    /// container-altitude source-axis predicate triplet
+    /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`]
+    /// (`f2682e3`) already carried on this container — same shape,
+    /// same delegation pattern (single field access into the const-fn
+    /// [`Provenance::is_overlay`]), same payload-independence contract
+    /// (the primitive-side has no `Dict` visibility either, so this
+    /// container-side is forbidden from consulting it).
+    ///
+    /// `const`-callable — one-hop delegation through the const-fn
+    /// [`Provenance::is_overlay`] preserves compile-time callability
+    /// end-to-end, matching the const-ness of the sibling predicates
+    /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`].
+    ///
+    /// Pointwise agreement `layer.is_overlay() == layer.provenance().is_overlay()`
+    /// holds on every shipped constructor row — pinned by
+    /// [`tests::progressive_layer_is_overlay_agrees_with_provenance_pointwise`],
+    /// the container-altitude analogue of the primitive-altitude pin
+    /// `provenance_is_overlay_agrees_with_source_pointwise`. The
+    /// modal-pair complement law
+    /// `layer.is_overlay() == !layer.is_defaults()` holds pointwise on
+    /// the same constructor surface — pinned by
+    /// [`tests::progressive_layer_is_overlay_is_complement_of_is_defaults`],
+    /// the container-altitude analogue of
+    /// `provenance_is_overlay_is_complement_of_is_defaults` one seam
+    /// down on [`Provenance`].
+    #[must_use]
+    pub const fn is_overlay(&self) -> bool {
+        self.provenance.is_overlay()
     }
 }
 
@@ -71300,6 +71390,106 @@ mod progressive_tests {
         }
     }
 
+    // ── ProgressiveLayer::is_overlay — container-altitude lift of the
+    //    primitive-altitude compound-polarity sibling on `Provenance`
+    //    (introduced with this container-altitude lift), which itself
+    //    delegates through `ConfigSource::is_overlay` /
+    //    `ConfigSourceKind::is_overlay` (`48c625b`) ──
+
+    #[test]
+    fn progressive_layer_is_overlay_true_for_env_and_file_only() {
+        // Polarity pin per constructor row for the compound-polarity
+        // sibling on the source axis of the atomic `(tier, source)` pair:
+        // exactly the two operator-overlay constructors (`file` / `env`)
+        // answer `true` here, regardless of tier stamp and payload; the
+        // three computed-defaults-row constructors (`bare` / `discovered`
+        // / `prescribed_default`) answer `false`. Prefix-independent and
+        // path-independent: every `env(prefix, _)` and `file(path, _)`
+        // overlay answers `true` regardless of the prefix / PathBuf value
+        // — the arm delegates through `Provenance::is_overlay`, which
+        // has no prefix / path visibility. Container-altitude mirror of
+        // `provenance_is_overlay_true_for_env_and_file_only` one seam
+        // down.
+        let dict = Dict::new();
+        assert!(!ProgressiveLayer::bare(dict.clone()).is_overlay());
+        assert!(!ProgressiveLayer::discovered(dict.clone()).is_overlay());
+        assert!(!ProgressiveLayer::prescribed_default(dict.clone()).is_overlay());
+        assert!(ProgressiveLayer::env("", dict.clone()).is_overlay());
+        assert!(ProgressiveLayer::env("SHIKUMI_IS_OVERLAY_POLARITY_", dict.clone()).is_overlay());
+        assert!(ProgressiveLayer::file("/etc/is_overlay_polarity.yaml", dict.clone()).is_overlay());
+        assert!(ProgressiveLayer::file("relative/is_overlay_polarity.toml", dict).is_overlay());
+    }
+
+    #[test]
+    fn progressive_layer_is_overlay_agrees_with_provenance_pointwise() {
+        // Structural law: for every shipped constructor row on the
+        // container-altitude stamp-side,
+        // `layer.is_overlay() == layer.provenance().is_overlay()`.
+        // Container-altitude analogue of the per-cell agreement pin
+        // `progressive_layer_source_predicates_agree_with_provenance_predicates_pointwise`
+        // (`f2682e3`) extended to the (baseline × overlay) polarity
+        // axis; catches a future edit that drifts one altitude's
+        // compound polarity without the other. Pins the payload-
+        // independence contract on the container-altitude compound-
+        // polarity sibling (the primitive-side has no `Dict` visibility,
+        // so the container-side is forbidden from consulting it; the
+        // primitive-side has no prefix / path visibility either, so
+        // this container-side is forbidden from reaching for those
+        // payloads too).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_IS_OVERLAY_AGREEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/is_overlay_agreement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/is_overlay_agreement.toml", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.is_overlay(),
+                layer.provenance().is_overlay(),
+                "is_overlay drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_is_overlay_is_complement_of_is_defaults() {
+        // Modal-pair complement law at the container altitude:
+        // `layer.is_overlay() == !layer.is_defaults()` pointwise on the
+        // shipped stamp-side constructor surface. Container-altitude
+        // analogue of `provenance_is_overlay_is_complement_of_is_defaults`
+        // one seam down on `Provenance` and of the primitive-side
+        // `config_source_is_overlay_is_complement_of_is_defaults_on_tag_side`
+        // (`48c625b`); catches a future edit that drifts one pole's
+        // polarity away from the other on this altitude — the (baseline
+        // × overlay) polarity pair must partition the shipped
+        // constructor surface without remainder at every altitude on
+        // the source axis.
+        let dict = Dict::new();
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_IS_OVERLAY_COMPLEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/is_overlay_complement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/is_overlay_complement.toml", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.is_overlay(),
+                !layer.is_defaults(),
+                "ProgressiveLayer {layer:?}: is_overlay() must be the complement of \
+                 is_defaults() on the source-axis polarity pair",
+            );
+        }
+    }
+
     // ── ProgressiveLayer::tier / source / source_kind / tier_ordinal /
     //    source_kind_ordinal — container-altitude lift of the
     //    primitive-altitude projection quintet on `Provenance`
@@ -73016,6 +73206,117 @@ mod progressive_tests {
         assert!(COMPUTED_IS_DEFAULTS);
         assert!(!COMPUTED_IS_ENV);
         assert!(!COMPUTED_IS_FILE);
+    }
+
+    #[test]
+    fn provenance_is_overlay_true_for_env_and_file_only() {
+        // Per-constructor polarity pin at the Provenance altitude for
+        // the compound-polarity sibling: exactly the two operator-
+        // overlay constructors (`file` / `env`) answer `true`, the
+        // three computed-defaults-row constructors (`bare` /
+        // `discovered` / `prescribed_default`) and every `computed(_)`
+        // row answer `false`. Payload-independence sub-pin: the answer
+        // is the same for a short env prefix, a long env prefix, an
+        // absolute file path, or a relative file path — the arm
+        // delegates through `ConfigSource::is_overlay`, which cannot
+        // see the `String` / `PathBuf` payload.
+        assert!(!Provenance::bare().is_overlay());
+        assert!(!Provenance::discovered().is_overlay());
+        assert!(!Provenance::prescribed_default().is_overlay());
+        assert!(!Provenance::computed(ConfigTierKind::Custom).is_overlay());
+        assert!(Provenance::env("").is_overlay());
+        assert!(Provenance::env("SHIKUMI_IS_OVERLAY_POLARITY_LONG_PREFIX_").is_overlay());
+        assert!(Provenance::file("/etc/is_overlay_polarity.yaml").is_overlay());
+        assert!(Provenance::file("relative/is_overlay_polarity.toml").is_overlay());
+    }
+
+    #[test]
+    fn provenance_is_overlay_agrees_with_source_pointwise() {
+        // Structural law: for every shipped constructor row,
+        // `prov.is_overlay() == prov.source().is_overlay()`. The
+        // Provenance-altitude analogue of the per-cell agreement pin
+        // `provenance_source_predicates_agree_with_source_predicates_pointwise`
+        // (`84e8f9d`) extended to the (baseline × overlay) polarity
+        // axis. Catches a future edit that drifts the Provenance-side
+        // sibling's polarity away from the underlying `ConfigSource`
+        // predicate; also pins the payload-independence contract on
+        // the compound-polarity arm (the primitive-side has no prefix
+        // / path visibility, so the one-hop `prov.is_overlay()` seam
+        // is forbidden from consulting the payload either).
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_IS_OVERLAY_AGREEMENT_"),
+            Provenance::file("/etc/is_overlay_agreement.yaml"),
+            Provenance::file("relative/is_overlay_agreement.toml"),
+        ] {
+            assert_eq!(
+                prov.is_overlay(),
+                prov.source().is_overlay(),
+                "is_overlay drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_is_overlay_is_complement_of_is_defaults() {
+        // Modal-pair complement law at the Provenance altitude:
+        // `prov.is_overlay() == !prov.is_defaults()` pointwise on the
+        // shipped constructor surface. Provenance-altitude analogue of
+        // the primitive-side pin
+        // `config_source_is_overlay_is_complement_of_is_defaults_on_tag_side`
+        // (`48c625b`). Catches a future edit that drifts one pole's
+        // polarity away from the other on this altitude — the (baseline
+        // × overlay) polarity pair must partition the shipped
+        // constructor surface without remainder.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_IS_OVERLAY_COMPLEMENT_"),
+            Provenance::file("/etc/is_overlay_complement.yaml"),
+            Provenance::file("relative/is_overlay_complement.toml"),
+        ] {
+            assert_eq!(
+                prov.is_overlay(),
+                !prov.is_defaults(),
+                "Provenance {prov:?}: is_overlay() must be the complement of \
+                 is_defaults() on the source-axis polarity pair",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_is_overlay_is_const_callable() {
+        // Weld the const-callability of the compound-polarity sibling
+        // (`Provenance::is_overlay`) with the const-callable
+        // `Provenance::computed` constructor at compile time. Mirrors
+        // the shape of `provenance_source_predicates_are_const_callable`
+        // one polarity-axis cell over on the same primitive — the
+        // crate's established idiom for pinning compile-time-
+        // callability at the exact line a future edit would drift it.
+        //
+        // Every `Provenance::computed(_)` carries `ConfigSource::Defaults`,
+        // which has no non-const-Drop payload — but `Provenance` still
+        // cannot be bound to a `const` item because the
+        // `source: ConfigSource` field type carries non-const-Drop
+        // variants (`PathBuf` / `String` in the other arms), so we
+        // route through a `static` binding the same way the sibling
+        // welds do: statics never drop, so the drop-check that rejects
+        // a `const` Provenance does not apply, and the `.is_overlay()`
+        // hop in the const-init position below still routes through
+        // the const-fn `Provenance::computed` constructor and the
+        // const-fn `Provenance::is_overlay` predicate.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_IS_OVERLAY: bool = COMPUTED_PROV.is_overlay();
+
+        assert!(!COMPUTED_IS_OVERLAY);
     }
 
     #[test]
