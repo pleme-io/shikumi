@@ -1217,6 +1217,113 @@ impl HintSurface {
     pub const fn is_env_var(self) -> bool {
         matches!(self, Self::EnvVar)
     }
+
+    /// Returns `true` for the *coverage sub-report* pole of the
+    /// [`HintSurface`] axis — [`Self::DeadKnob`] and [`Self::StaleEntry`],
+    /// the two directions of the bidirectional schema-vs-consumer
+    /// coverage diff produced by [`HintedCoverageReport::hint_iter`] —
+    /// `false` for the two typo-audit surfaces ([`Self::ValueKey`],
+    /// [`Self::EnvVar`]).
+    ///
+    /// Names the *hint from the coverage sub-report* pole of the
+    /// (coverage-sub-report × typo-audit-sub-reports) polarity axis at
+    /// the type level, so consumers reading *"is this hint from the
+    /// bidirectional schema-vs-consumer coverage diff, or from an
+    /// unknown-key typo audit of operator input?"* — a diagnostics
+    /// endpoint filtering `HealthReport::hint_iter` down to the
+    /// developer-facing coverage half, a per-pole dashboard column
+    /// grouping the two coverage hints under one heading and the two
+    /// typo-audit hints under another, a per-consumer telemetry
+    /// counter bucketing coverage hints separately from operator-
+    /// input typos, a structured-log legend routing on the
+    /// coverage-hint pole at the surface-tagged altitude — spell the
+    /// *positive* form of the query at the call site instead of the
+    /// two-arm disjunction `s.is_dead_knob() || s.is_stale_entry()`
+    /// or the two-step composition through the
+    /// [`HintedCoverageReport::hint_iter`] enumeration.
+    ///
+    /// HintSurface-axis compound-polarity sibling of
+    /// [`crate::discovery::Format::is_feature_gated`] (commit `006e0a7`)
+    /// on the file-format axis,
+    /// [`crate::SecretBackendKind::is_cloud_secret_manager`] (commit
+    /// `3553207`) on the secret-backend axis,
+    /// [`crate::tiered::ConfigTierKind::is_computed`] (commit `7d2825d`)
+    /// on the tier axis, and
+    /// [`crate::tiered::ConfigSourceKind::is_overlay`] (commit
+    /// `48c625b`) on the source axis — same *the substrate now names
+    /// the compound pole* discipline, applied here to the four-way
+    /// coverage-hint surface axis. The natural next classifier axis
+    /// [`WatchEventClass::is_file_mutation`] (commit `8d55ddf`) flagged
+    /// as still holding a singleton trio without a two-cell compound
+    /// pole above them: [`HintSurface`] groups its four cells 2+2 by
+    /// sub-report of origin (coverage vs. typo-audit), which is the
+    /// exact partition this predicate lifts.
+    ///
+    /// The compound ↔ two-arm disjunction law
+    /// (`s.is_coverage_hint() == s.is_dead_knob() || s.is_stale_entry()`)
+    /// is a structural invariant pinned by
+    /// [`tests::hint_surface_is_coverage_hint_agrees_with_or_of_individual_siblings`].
+    /// It collapses the disjunction on the tag axis onto ONE named
+    /// predicate at the type level.
+    ///
+    /// `const`-callable — matching the `const`-ness of the sibling
+    /// per-variant predicates ([`Self::is_dead_knob`], …,
+    /// [`Self::is_env_var`]), so a `s.is_coverage_hint()` composition
+    /// stays const-callable end-to-end. The compile-time weld is
+    /// pinned by
+    /// [`tests::hint_surface_compound_polarity_predicates_are_const_callable`].
+    ///
+    /// A future fifth [`HintSurface`] variant landing on the
+    /// coverage-sub-report side (a hypothetical third direction of the
+    /// bidirectional coverage diff, a new coverage-only surface tag)
+    /// must extend the `matches!` arm here in lockstep with the
+    /// quaternary partition — otherwise the compound ↔ disjunction
+    /// law fails on the new variant, catching the drift before it
+    /// reaches any per-polarity consumer site. Symmetrically, a
+    /// future fifth variant landing on the typo-audit-sub-report side
+    /// (a hypothetical CLI-flag typo-audit) fails at the complementary
+    /// pole [`Self::is_typo_audit_hint`] rather than being masked by a
+    /// bare `!is_coverage_hint` reading — the exact polarity-drift
+    /// trap the compound-polarity sibling ladder was named to defeat.
+    #[must_use]
+    pub const fn is_coverage_hint(self) -> bool {
+        matches!(self, Self::DeadKnob | Self::StaleEntry)
+    }
+
+    /// Returns `true` for the *typo-audit sub-reports* pole of the
+    /// [`HintSurface`] axis — [`Self::ValueKey`] and [`Self::EnvVar`],
+    /// the two unknown-to-schema surface tags produced by
+    /// [`ValueAudit::hint_iter`] and [`EnvVarAudit::hint_iter`] —
+    /// `false` for the two coverage-sub-report surfaces
+    /// ([`Self::DeadKnob`], [`Self::StaleEntry`]).
+    ///
+    /// Complementary pole of [`Self::is_coverage_hint`] on the same
+    /// (coverage-sub-report × typo-audit-sub-reports) polarity axis;
+    /// equivalent to `!self.is_coverage_hint()` and to
+    /// `self.is_value_key() || self.is_env_var()`. Named separately
+    /// (rather than left as a negation) so consumers reading the
+    /// typo-audit half of the axis no longer negate
+    /// [`Self::is_coverage_hint`] — a shape whose polarity a future
+    /// tertiary sub-report (e.g. a *CLI-argument* typo-audit surface
+    /// that's neither coverage nor operator-file-or-env input) would
+    /// silently flip: `!is_coverage_hint` would then include the
+    /// tertiary alongside the typo-audit half, whereas the direct
+    /// predicate stays true only for the two operator-input typo-
+    /// audit cells and forces the tertiary class to declare its own
+    /// predicate.
+    ///
+    /// The compound ↔ two-arm disjunction law on the complementary
+    /// pole (`s.is_typo_audit_hint() == s.is_value_key() || s.is_env_var()`)
+    /// is pinned by
+    /// [`tests::hint_surface_is_typo_audit_hint_agrees_with_or_of_individual_siblings`],
+    /// and the modal-pair complement law (`is_coverage_hint() ==
+    /// !is_typo_audit_hint()`) plus the closed binary partition pin
+    /// [`tests::hint_surface_compound_polarity_predicates_are_a_closed_binary_partition`]
+    /// weld the two poles into one axis.
+    #[must_use]
+    pub const fn is_typo_audit_hint(self) -> bool {
+        matches!(self, Self::ValueKey | Self::EnvVar)
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -7121,6 +7228,267 @@ tags: []
             assert_eq!(s.is_value_key(), s == HintSurface::ValueKey);
             assert_eq!(s.is_env_var(), s == HintSurface::EnvVar);
         }
+    }
+
+    // ─── HintSurface compound-polarity sibling pair
+    // ─── (is_coverage_hint / is_typo_audit_hint) ────────────────────
+    //
+    // HintSurface-axis compound-polarity sibling of
+    // `Format::is_feature_gated`/`is_always_available` (file-format
+    // axis, commit `006e0a7`), `SecretBackendKind::is_cloud_secret_manager`
+    // (secret-backend axis, commit `3553207`), `ConfigTierKind::is_computed`
+    // (tier axis, commit `7d2825d`), and `ConfigSourceKind::is_overlay`
+    // (source axis, commit `48c625b`) lifted onto the coverage-hint
+    // surface axis. Every `HintSurface` value satisfies exactly one of
+    // the two compound-polarity predicates, and each predicate collapses
+    // the two-arm disjunction on the tag axis onto one named type-level
+    // predicate.
+    //
+    // The 2+2 partition is intrinsic to HintSurface: DeadKnob + StaleEntry
+    // come from the `HintedCoverageReport` (coverage) sub-report;
+    // ValueKey + EnvVar come from the `ValueAudit` + `EnvVarAudit`
+    // (typo-audit) sub-reports. The compound-polarity pair names both
+    // halves of that partition at the type level.
+
+    #[test]
+    fn hint_surface_is_coverage_hint_partitions_coverage_from_typo_audit() {
+        // Per-variant polarity pin on the compound-polarity axis; the
+        // pointwise contract mirroring
+        // `format_is_feature_gated_partitions_gated_from_always_available`
+        // on the file-format axis. Both coverage-sub-report corners
+        // (DeadKnob, StaleEntry) must resolve `true`; both typo-audit-
+        // sub-report corners (ValueKey, EnvVar) must resolve `false`. A
+        // future edit that silently narrowed the compound arm from
+        // `DeadKnob | StaleEntry` to `DeadKnob` alone (dropping
+        // StaleEntry from the compound pole) fails here before drifting
+        // through the disjunction agreement law.
+        assert!(HintSurface::DeadKnob.is_coverage_hint());
+        assert!(HintSurface::StaleEntry.is_coverage_hint());
+        assert!(!HintSurface::ValueKey.is_coverage_hint());
+        assert!(!HintSurface::EnvVar.is_coverage_hint());
+    }
+
+    #[test]
+    fn hint_surface_is_typo_audit_hint_partitions_typo_audit_from_coverage() {
+        // The typo-audit pole: the direct predicate on the
+        // (coverage-sub-report × typo-audit-sub-reports) polarity axis,
+        // not `!s.is_coverage_hint()`. ValueKey, EnvVar must resolve
+        // `true`; DeadKnob, StaleEntry must resolve `false`. Named
+        // separately so the typo-audit half of the axis carries its own
+        // failure site — a future edit that silently added a tertiary
+        // sub-report (a CLI-argument typo-audit) trips this pin on the
+        // offending variant rather than being masked by a bare negation.
+        assert!(!HintSurface::DeadKnob.is_typo_audit_hint());
+        assert!(!HintSurface::StaleEntry.is_typo_audit_hint());
+        assert!(HintSurface::ValueKey.is_typo_audit_hint());
+        assert!(HintSurface::EnvVar.is_typo_audit_hint());
+    }
+
+    #[test]
+    fn hint_surface_is_coverage_hint_agrees_with_or_of_individual_siblings() {
+        // Compound ↔ two-arm disjunction law: the compound predicate on
+        // the coverage-hint axis equals the disjunction of the two
+        // tag-side predicates naming the compound pole
+        // (`is_dead_knob() || is_stale_entry()`). Peer of
+        // `format_is_feature_gated_agrees_with_or_of_individual_siblings`
+        // on the file-format axis. A future edit that changed the
+        // compound arm without updating the tag-side siblings (or vice
+        // versa) fails here on the drifted variant.
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(
+                s.is_coverage_hint(),
+                s.is_dead_knob() || s.is_stale_entry(),
+                "{s:?}: is_coverage_hint must equal is_dead_knob() || is_stale_entry() — \
+                 the compound pole names exactly the two coverage-sub-report surfaces",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_is_typo_audit_hint_agrees_with_or_of_individual_siblings() {
+        // Complementary pole of the same tag-side disjunction law: the
+        // typo-audit predicate agrees pointwise with `is_value_key() ||
+        // is_env_var()`. Named separately from the negation of the
+        // coverage-hint law so a future tertiary axis landing (a CLI-
+        // argument typo-audit sub-report) fails HERE at the typo-audit
+        // pole rather than being masked by the negation reading of the
+        // coverage-hint pole.
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(
+                s.is_typo_audit_hint(),
+                s.is_value_key() || s.is_env_var(),
+                "{s:?}: is_typo_audit_hint must equal is_value_key() || is_env_var() — \
+                 the typo-audit pole names exactly the two operator-input audit surfaces",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_compound_polarity_predicates_are_complement() {
+        // Modal-pair complement law over HintSurface::ALL:
+        // `is_coverage_hint() == !is_typo_audit_hint()` pointwise. A
+        // future edit that drifted one arm's polarity from the other
+        // (a hypothetical hint tagged BOTH coverage and typo-audit, or
+        // NEITHER) fails here before drifting through the closed-
+        // partition pin or any per-polarity consumer site.
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(
+                s.is_coverage_hint(),
+                !s.is_typo_audit_hint(),
+                "{s:?}: is_coverage_hint must equal !is_typo_audit_hint — \
+                 the two poles form a modal-pair complement on the same axis",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_compound_polarity_predicates_are_a_closed_binary_partition() {
+        // Every HintSurface::ALL cell satisfies exactly one of the two
+        // compound-polarity predicates (`is_coverage_hint`,
+        // `is_typo_audit_hint`): none satisfies both, none satisfies
+        // zero. Binary-partition analogue of the quaternary-partition
+        // pin `hint_surface_predicates_are_a_closed_quaternary_partition`
+        // on the singleton siblings, and idiom-peer of
+        // `format_feature_gating_predicates_are_a_closed_binary_partition`
+        // on the (`is_feature_gated`, `is_always_available`) pair. A
+        // future fifth HintSurface variant landing without its own
+        // compound-axis polarity assignment collapses the partition on
+        // that variant, failing here before drifting through any
+        // consumer site.
+        for s in HintSurface::ALL.iter().copied() {
+            let hits = usize::from(s.is_coverage_hint()) + usize::from(s.is_typo_audit_hint());
+            assert_eq!(
+                hits, 1,
+                "HintSurface::{s:?} must satisfy exactly one compound-polarity predicate, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_compound_polarity_predicates_cardinality_matches_all_len() {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly two coverage-hint cells + exactly two typo-audit cells
+        // = HintSurface::ALL.len() total. Peer of the same
+        // cardinality-side pin on the file-format compound-polarity
+        // axis. A future fifth variant that did not extend exactly one
+        // compound arm flips one of the two counts, failing here before
+        // drifting through the partition pin's per-variant hits check.
+        let coverage_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_coverage_hint())
+            .count();
+        let typo_audit_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_typo_audit_hint())
+            .count();
+        assert_eq!(coverage_count, 2);
+        assert_eq!(typo_audit_count, 2);
+        assert_eq!(coverage_count + typo_audit_count, HintSurface::ALL.len());
+    }
+
+    #[test]
+    fn hint_surface_compound_polarity_predicates_are_const_callable() {
+        // Compile-time weld: the two compound-polarity predicates are
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant predicates (`is_dead_knob`, …, `is_env_var`).
+        // A drop of the `const` qualifier at either altitude fails this
+        // test to compile. Peer of
+        // `format_is_feature_gated_is_const_callable` on the file-format
+        // axis.
+        const fn call_coverage(s: HintSurface) -> bool {
+            s.is_coverage_hint()
+        }
+        const fn call_typo_audit(s: HintSurface) -> bool {
+            s.is_typo_audit_hint()
+        }
+        const DK_COV: bool = call_coverage(HintSurface::DeadKnob);
+        const SE_COV: bool = call_coverage(HintSurface::StaleEntry);
+        const VK_TA: bool = call_typo_audit(HintSurface::ValueKey);
+        const EV_TA: bool = call_typo_audit(HintSurface::EnvVar);
+        const _: () = assert!(DK_COV);
+        const _: () = assert!(SE_COV);
+        const _: () = assert!(VK_TA);
+        const _: () = assert!(EV_TA);
+        // Runtime dual-check the negative poles too so a future flip of
+        // the compound arm cannot slip past the const-eval alone.
+        assert!(!call_coverage(HintSurface::ValueKey));
+        assert!(!call_coverage(HintSurface::EnvVar));
+        assert!(!call_typo_audit(HintSurface::DeadKnob));
+        assert!(!call_typo_audit(HintSurface::StaleEntry));
+    }
+
+    #[test]
+    fn hint_surface_is_coverage_hint_matches_hinted_coverage_report_hint_iter_surfaces() {
+        // Cross-axis witness at the sub-report boundary: every surface
+        // that a dirty `HintedCoverageReport::hint_iter` can yield
+        // satisfies `is_coverage_hint`, and no surface that only the
+        // `ValueAudit` / `EnvVarAudit` sub-reports emit does. Ties the
+        // compound polarity to the sub-report enumeration surface it
+        // names — a future refactor that reassigned a surface tag
+        // between sub-reports (say moving `EnvVar` under the coverage
+        // sub-report) without updating the compound arm here fails at
+        // this cross-axis boundary rather than at a per-polarity
+        // consumer site.
+        let consumed = &["kept"]; // one entry the schema will not have
+        let yaml = "unknown_key_that_is_a_typo: 1\n";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ALSO_UNKNOWN".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+
+        // The coverage sub-report's own iter must only ever yield the
+        // coverage-hint pole.
+        let mut coverage_surfaces: std::collections::HashSet<HintSurface> =
+            std::collections::HashSet::new();
+        for hint in health.coverage.hint_iter() {
+            coverage_surfaces.insert(hint.surface);
+            assert!(
+                hint.surface.is_coverage_hint(),
+                "coverage.hint_iter yielded a surface tag ({:?}) that fails is_coverage_hint",
+                hint.surface,
+            );
+            assert!(
+                !hint.surface.is_typo_audit_hint(),
+                "coverage.hint_iter yielded a surface tag ({:?}) that satisfies is_typo_audit_hint",
+                hint.surface,
+            );
+        }
+        // The typo-audit sub-reports' own iters must only ever yield
+        // the typo-audit pole.
+        for hint in health.value.hint_iter() {
+            assert!(
+                hint.surface.is_typo_audit_hint(),
+                "value.hint_iter yielded a surface tag ({:?}) that fails is_typo_audit_hint",
+                hint.surface,
+            );
+            assert!(
+                !hint.surface.is_coverage_hint(),
+                "value.hint_iter yielded a surface tag ({:?}) that satisfies is_coverage_hint",
+                hint.surface,
+            );
+        }
+        for hint in health.env.hint_iter() {
+            assert!(
+                hint.surface.is_typo_audit_hint(),
+                "env.hint_iter yielded a surface tag ({:?}) that fails is_typo_audit_hint",
+                hint.surface,
+            );
+            assert!(
+                !hint.surface.is_coverage_hint(),
+                "env.hint_iter yielded a surface tag ({:?}) that satisfies is_coverage_hint",
+                hint.surface,
+            );
+        }
+        // Sanity: at least one dead knob and one stale entry actually
+        // fired, so the coverage-sub-report iter was not silently
+        // empty in the sample data.
+        assert!(
+            coverage_surfaces.contains(&HintSurface::DeadKnob)
+                || coverage_surfaces.contains(&HintSurface::StaleEntry),
+            "sample data must exercise at least one coverage-sub-report surface, \
+             got {coverage_surfaces:?}",
+        );
     }
 
     // ─── dirty_surfaces — filter-projection peer of
