@@ -10999,6 +10999,128 @@ impl ProofRelationKind {
         )
     }
 
+    /// Whether this fused corner witnessed the class-scoped watermark
+    /// stay stationary — `true` on the three stationary-watermark
+    /// corners
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Stationary`]`)`
+    /// (both axes at rest — the `/healthz/config` polling case),
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::IdentityRepublish`]`)`
+    /// (a re-publish of the same value: watermark stationary, generation
+    /// advanced), and
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::Regressed`]`)`
+    /// (generation counter went backwards — the class-scoped watermark
+    /// is treated as stationary at this altitude by definition of the
+    /// `Regressed` arm carrying no [`MovedWatermarkDelta`] payload);
+    /// `false` on the two moved-watermark corners
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Progression`]`)`
+    /// (watermark moved AND generation counter advanced by one or more)
+    /// and [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::CrossStore`]`)`
+    /// (watermark moved AT the same generation counter).
+    ///
+    /// **The modal-pair polarity sibling of [`Self::is_watermark_moved`]
+    /// at the fused-sum altitude.** The two compound-polarity
+    /// predicates cover the SAME watermark-move axis from the two
+    /// opposite poles — the 3/5 vs 2/5 halves of [`Self::VARIANTS`]. A
+    /// consumer holding a [`ProofRelationKind`] at the fused altitude
+    /// answering *"did the class-scoped watermark stay put on this
+    /// proof pair?"* — a bucket that groups idle-poll ticks
+    /// (`Stationary`), same-value republishes (`IdentityRepublish`),
+    /// and regressed-generation observations (`Regressed`) under one
+    /// heading; a
+    /// deployment-metric attester filter routing on
+    /// `--only=watermark-stationary`; a dashboard row folding the three
+    /// stationary-watermark corners behind ONE tile — previously had
+    /// three inline paths, each leaking work: (a) `matches!(k,
+    /// Self::Consistent(SameStoreConsistencyKind::Stationary |
+    /// SameStoreConsistencyKind::IdentityRepublish) |
+    /// Self::Impossible(SameStoreImpossibilityKind::Regressed))` — an
+    /// inline three-arm pattern the exhaustiveness checker cannot help
+    /// keep in sync with a future stationary-watermark corner (a
+    /// hypothetical third impossibility variant that carries no moved
+    /// watermark, say) silently escapes the three-arm disjunction; (b)
+    /// `k.consistency().is_some_and(|c| c.is_watermark_stationary()) ||
+    /// k.impossibility().is_some_and(|c| c.is_regressed())` — a two-hop
+    /// composition through both half-side [`Option<SameStoreConsistencyKind>`] /
+    /// [`Option<SameStoreImpossibilityKind>`] shapes whose two unwraps
+    /// the tag-only question doesn't need; or (c) `!k.is_watermark_moved()`
+    /// — the modal-pair negation whose polarity a future sixth
+    /// legitimate corner (a hypothetical `Impossible(SchemaMismatch)`,
+    /// say, carrying no watermark axis at all) would flip silently.
+    /// This receiver spells the positive form of the query at ONE
+    /// canonical site.
+    ///
+    /// **Cross-half compound, matching the peer.** Like
+    /// [`Self::is_watermark_moved`], this predicate crosses both halves
+    /// of the classification: two of its true-cells lie in the
+    /// consistent half ([`SameStoreConsistencyKind::Stationary`],
+    /// [`SameStoreConsistencyKind::IdentityRepublish`]) and one in the
+    /// impossibility half ([`SameStoreImpossibilityKind::Regressed`]).
+    /// Neither half-Kind can name this compound on its own — on
+    /// [`SameStoreConsistencyKind`] the answer is the two-arm sibling
+    /// [`SameStoreConsistencyKind::is_watermark_stationary`], and on
+    /// [`SameStoreImpossibilityKind`] it collapses to the singleton
+    /// [`SameStoreImpossibilityKind::is_regressed`]. The fused-sum
+    /// altitude is the FIRST altitude at which the class-scoped
+    /// watermark-stationary question becomes a three-corner cross-half
+    /// compound.
+    ///
+    /// **The two 3/5-vs-2/5 modal-pair partitions on this altitude.**
+    /// The predicate cuts [`Self::VARIANTS`] into a `{Stationary,
+    /// IdentityRepublish, Regressed}` half (stationary watermark, 3 of
+    /// 5) and a `{Progression, CrossStore}` half (moved watermark, 2 of
+    /// 5) — the exact complement of the [`Self::is_watermark_moved`]
+    /// partition. Together the two predicates form the modal-pair on
+    /// the watermark axis at the fused altitude, mirroring the
+    /// half-side modal-pair
+    /// ([`SameStoreConsistencyKind::is_watermark_stationary`] vs.
+    /// [`SameStoreConsistencyKind::is_progression`]) that groups the
+    /// same three-cell ternary space at one altitude down. The two
+    /// halves cover [`Self::VARIANTS`] exhaustively and disjointly,
+    /// pinned by
+    /// [`variants_tests::proof_relation_kind_is_watermark_stationary_is_complement_of_is_watermark_moved`].
+    ///
+    /// **Cross-axis meet with [`Self::is_generation_advanced`].** The
+    /// two compound-polarity axes carried at the fused altitude
+    /// (`watermark_stationary` on the watermark axis and
+    /// `generation_advanced` on the generation axis) meet at exactly
+    /// ONE cell — [`Self::Consistent`]`(`[`SameStoreConsistencyKind::IdentityRepublish`]`)`,
+    /// the sole fused corner witnessing BOTH a publish AND a stationary
+    /// watermark, which is precisely the class of
+    /// [`arc_swap::ArcSwap`] re-publish-of-same-value the classification
+    /// family exists to distinguish from a real content edit. The meet
+    /// is pinned by
+    /// [`variants_tests::proof_relation_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish`],
+    /// mirroring the same-named meet-pin already carried on the half
+    /// altitude by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish`].
+    ///
+    /// **Cross-altitude same-answer with the half-side receivers.** For
+    /// every `k` in [`Self::VARIANTS`], `k.is_watermark_stationary()`
+    /// equals `k.consistency().is_some_and(|c|
+    /// c.is_watermark_stationary()) || k.impossibility().is_some_and(|c|
+    /// c.is_regressed())` — the fused-altitude verdict agrees pointwise
+    /// with the projection through both half-side `Option<Kind>` shapes,
+    /// matching the same-answer identities the pair-side receivers
+    /// already carry on [`Self::is_watermark_moved`].
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its watermark-stationary verdict at compile time too,
+    /// matching the `const`-ness of every other receiver on this enum.
+    /// Idiom-mirror of
+    /// [`SameStoreConsistencyKind::is_watermark_stationary`] (commit
+    /// `4393bd9`) on the consistency-half ternary axis one altitude
+    /// down, lifted here to the fused-sum altitude that first admits
+    /// the cross-half three-corner compound.
+    #[must_use]
+    pub const fn is_watermark_stationary(&self) -> bool {
+        matches!(
+            *self,
+            Self::Consistent(
+                SameStoreConsistencyKind::Stationary | SameStoreConsistencyKind::IdentityRepublish,
+            ) | Self::Impossible(SameStoreImpossibilityKind::Regressed)
+        )
+    }
+
     /// The stable operational identifier of this fused corner — the
     /// SAME snake-case name the two half-side
     /// [`SameStoreConsistencyKind::name`] and
@@ -36546,6 +36668,301 @@ mod variants_tests {
         const _: () = assert!(
             !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
                 .is_watermark_moved()
+        );
+    }
+
+    // ---------- ProofRelationKind::is_watermark_stationary —
+    // modal-pair polarity sibling of is_watermark_moved on the fused-sum
+    // altitude, grouping the three stationary-watermark cells across
+    // both halves.
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_partitions_stationary_watermark_cells() {
+        // Per-variant polarity table on the modal-pair sibling of
+        // `is_watermark_moved` at the fused-sum altitude: exactly the
+        // three stationary-watermark corners (Consistent(Stationary) —
+        // both axes at rest; Consistent(IdentityRepublish) — watermark
+        // stationary, generation advanced; Impossible(Regressed) —
+        // generation regressed, class-scoped watermark treated as
+        // stationary) return true; the two moved-watermark corners
+        // (Consistent(Progression) — legitimate progression;
+        // Impossible(CrossStore) — watermark moved at same generation)
+        // return false. Fused-altitude peer of
+        // `same_store_consistency_kind_is_watermark_stationary_partitions_progression_from_stationary_arms`.
+        assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_watermark_stationary()
+        );
+        assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_watermark_stationary()
+        );
+        assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_watermark_stationary()
+        );
+        assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_watermark_stationary()
+        );
+        assert!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_watermark_stationary()
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_matches_cross_half_disjunction() {
+        // Delegation ladder pin at the fused-sum altitude: for every
+        // ProofRelationKind::VARIANTS cell, `k.is_watermark_stationary()`
+        // equals the cross-half three-arm disjunction
+        // `matches!(k, Consistent(Stationary | IdentityRepublish) |
+        // Impossible(Regressed))`. The pattern crosses both halves — no
+        // half-side receiver can spell it on its own, since the three
+        // stationary-watermark cells live across both SameStore*Kind
+        // enums. Same-answer through projection via both
+        // Option<Kind> shapes is checked too, matching the same-answer
+        // identities `is_watermark_moved` carries at this altitude.
+        for k in ProofRelationKind::VARIANTS {
+            let via_pattern = matches!(
+                k,
+                ProofRelationKind::Consistent(
+                    SameStoreConsistencyKind::Stationary
+                        | SameStoreConsistencyKind::IdentityRepublish,
+                ) | ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            );
+            assert_eq!(
+                k.is_watermark_stationary(),
+                via_pattern,
+                "ProofRelationKind::{k:?} — fused-altitude is_watermark_stationary must equal the cross-half three-arm disjunction",
+            );
+            let via_projection = k.consistency().is_some_and(|c| c.is_watermark_stationary())
+                || k.impossibility().is_some_and(|c| c.is_regressed());
+            assert_eq!(
+                k.is_watermark_stationary(),
+                via_projection,
+                "ProofRelationKind::{k:?} — fused-altitude is_watermark_stationary must equal projection through both half-side Option<Kind> shapes",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_partitions_variants_three_from_two() {
+        // Cardinality-side invariant at the modal-pair compound-polarity
+        // altitude: exactly three ProofRelationKind::VARIANTS cells
+        // satisfy is_watermark_stationary (Stationary + IdentityRepublish
+        // + Regressed), exactly two do not (Progression + CrossStore),
+        // and the two counts sum to ProofRelationKind::VARIANTS.len().
+        // Exact numeric complement of the `is_watermark_moved` 2-of-5
+        // partition, welding the modal-pair to the fused sum's total
+        // cardinality by construction. A future edit that added a sixth
+        // variant carrying a stationary watermark without extending the
+        // compound arm fails at this cardinality invariant before
+        // drifting through any consumer site.
+        let stationary_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_watermark_stationary)
+            .count();
+        let moved_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| !k.is_watermark_stationary())
+            .count();
+        assert_eq!(
+            stationary_cells, 3,
+            "exactly three ProofRelationKind::VARIANTS cells must satisfy is_watermark_stationary (Stationary + IdentityRepublish + Regressed)",
+        );
+        assert_eq!(
+            moved_cells, 2,
+            "exactly two ProofRelationKind::VARIANTS cells must NOT satisfy is_watermark_stationary (Progression + CrossStore)",
+        );
+        assert_eq!(
+            stationary_cells + moved_cells,
+            ProofRelationKind::VARIANTS.len(),
+            "the modal-pair compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_is_complement_of_is_watermark_moved() {
+        // Modal-pair complement law at the fused-sum altitude: for
+        // every ProofRelationKind::VARIANTS cell,
+        // `k.is_watermark_stationary() == !k.is_watermark_moved()`
+        // pointwise. The two compound predicates together partition
+        // the fused sum into exactly two halves on the SAME
+        // watermark-move axis — the load-bearing invariant that makes
+        // them a modal pair rather than two independent compound-
+        // polarity siblings on orthogonal axes (like
+        // `is_generation_advanced` / `is_watermark_moved`, which are
+        // independent, not complementary). A future edit that drifted
+        // one polarity from the other fails here at the modal-pair
+        // boundary before drifting through any consumer that groups on
+        // the stationary-watermark pole, mirroring the same-named
+        // half-side complement law
+        // `same_store_consistency_kind_is_watermark_stationary_is_complement_of_is_progression`
+        // one altitude down.
+        for k in ProofRelationKind::VARIANTS {
+            assert_eq!(
+                k.is_watermark_stationary(),
+                !k.is_watermark_moved(),
+                "ProofRelationKind::{k:?} — is_watermark_stationary must equal !is_watermark_moved pointwise (modal-pair)",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish()
+     {
+        // Cross-axis meet pin at the fused-sum altitude: the two
+        // compound-polarity axes carried at this altitude
+        // (`is_watermark_stationary` on the watermark axis and
+        // `is_generation_advanced` on the generation axis) overlap at
+        // exactly ONE ProofRelationKind::VARIANTS cell —
+        // Consistent(IdentityRepublish), the sole fused corner
+        // witnessing BOTH a publish AND a stationary watermark, which
+        // is precisely the class of `arc_swap::ArcSwap` re-publish-of-
+        // same-value the classification family exists to distinguish
+        // from a real content edit. Fused-altitude mirror of the
+        // half-side meet-pin
+        // `same_store_consistency_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish`,
+        // and the two-axis dual of
+        // `proof_relation_kind_is_watermark_moved_and_is_generation_advanced_intersect_only_at_progression`
+        // which pins the OTHER (moved-side) intersection at
+        // Consistent(Progression). Together the two meet-pins weld the
+        // (watermark, generation) grid the ProofDelta three-field shape
+        // carries at the delta altitude into two receiver-family
+        // compound predicates at the fused-sum altitude, each with a
+        // singleton meet identifying its distinguished corner.
+        let meet: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| k.is_watermark_stationary() && k.is_generation_advanced())
+            .collect();
+        assert_eq!(
+            meet,
+            vec![ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::IdentityRepublish
+            )],
+            "is_watermark_stationary AND is_generation_advanced must meet at Consistent(IdentityRepublish) alone",
+        );
+        // The structurally-impossible corner
+        // (`!is_generation_advanced && !is_watermark_stationary`) is
+        // NOT empty at the fused altitude — it is the singleton
+        // Impossible(CrossStore) cell (watermark moved AT unchanged
+        // generation counter — moved-watermark, no publish observed).
+        // This distinguishes the fused-altitude two-axis grid from the
+        // half-side consistency-only grid, where that corner IS empty
+        // (no consistent cell can carry a moved watermark without a
+        // publish, since a moved watermark structurally implies a
+        // publish on the consistent half).
+        let neither: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| !k.is_watermark_stationary() && !k.is_generation_advanced())
+            .collect();
+        assert_eq!(
+            neither,
+            vec![ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::CrossStore
+            )],
+            "(!is_watermark_stationary AND !is_generation_advanced) must be exactly {{Impossible(CrossStore)}} at the fused altitude",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_refines_no_outer_half() {
+        // Refinement pin: like is_watermark_moved (which cross-halves at
+        // this altitude), is_watermark_stationary is a CROSS-HALF
+        // compound that lands in BOTH outer halves. The predicate fires
+        // on two consistent corners (Stationary + IdentityRepublish)
+        // AND on one impossibility corner (Regressed), so no
+        // single-arm outer-tag implication holds. This test pins the
+        // cross-half nature explicitly: each outer half contains at
+        // least one stationary-watermark corner, so is_watermark_stationary
+        // implies neither is_consistent nor is_impossible. Idiom-mirror
+        // of `proof_relation_kind_is_watermark_moved_refines_no_outer_half`
+        // on the modal-pair peer.
+        let consistent_stationary = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .any(|k| k.is_watermark_stationary() && k.is_consistent());
+        let impossible_stationary = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .any(|k| k.is_watermark_stationary() && k.is_impossible());
+        assert!(
+            consistent_stationary,
+            "is_watermark_stationary must fire on at least one consistent corner (Stationary or IdentityRepublish)",
+        );
+        assert!(
+            impossible_stationary,
+            "is_watermark_stationary must fire on at least one impossibility corner (Regressed)",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_agrees_with_half_side_receiver_pointwise() {
+        // Cross-altitude same-answer pin: the fused-altitude receiver
+        // agrees pointwise with the half-side receivers it lifts:
+        // - Consistent(k) → k.is_watermark_stationary() (on
+        //   SameStoreConsistencyKind, the two-arm sibling introduced
+        //   in commit 4393bd9)
+        // - Impossible(k) → k.is_regressed() (on
+        //   SameStoreImpossibilityKind, the per-variant sibling that
+        //   groups the single impossibility corner carrying no
+        //   watermark axis)
+        // A future edit that drifted the fused-arm lift from either
+        // half-side compound polarity fails here before drifting
+        // through any consumer that reasons about the stationary-
+        // watermark cells as one group at the fused altitude.
+        // Idiom-peer of
+        // `proof_relation_kind_is_generation_advanced_matches_disjunction_of_consistency_advanced_arms`.
+        for k in ProofRelationKind::VARIANTS {
+            let expected = match k {
+                ProofRelationKind::Consistent(c) => c.is_watermark_stationary(),
+                ProofRelationKind::Impossible(i) => i.is_regressed(),
+            };
+            assert_eq!(
+                k.is_watermark_stationary(),
+                expected,
+                "ProofRelationKind::{k:?} — fused-altitude is_watermark_stationary must agree with the per-half receiver it lifts",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_stationary_is_const_callable() {
+        // The modal-pair polarity sibling at the fused altitude is
+        // `const`-callable, so a compile-time consumer (a `const`
+        // predicate table, a `const`-evaluated switch over a
+        // ProofRelationKind singleton, a `const`-eval-based
+        // static-assert on a classifier arm) resolves the polarity at
+        // compile time. Idiom-peer of
+        // `proof_relation_kind_is_watermark_moved_is_const_callable`.
+        // The const-block asserts below make the weld load-bearing at
+        // crate compile time: a future edit that flipped a polarity on
+        // this predicate fails at `cargo build`, not just at this
+        // test's runtime assertion.
+        const _: () = assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_watermark_stationary()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_watermark_stationary()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_watermark_stationary()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_watermark_stationary()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_watermark_stationary()
         );
     }
 }
