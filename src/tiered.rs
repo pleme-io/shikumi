@@ -22252,6 +22252,42 @@ impl DiffLine {
     pub const fn is_changed(&self) -> bool {
         matches!(self, Self::Added(_) | Self::Removed(_))
     }
+
+    /// Returns `true` when this line represents a non-changing
+    /// (context) line between the two sides (`true` for
+    /// [`Self::Context`], `false` for [`Self::Added`] or
+    /// [`Self::Removed`]); tag-side sibling of
+    /// [`DiffLineKind::is_unchanged`] and the modal-pair polarity
+    /// complement of [`Self::is_changed`] at the tag-side level.
+    ///
+    /// Names the *positive* form of the unchanged-line query at the
+    /// call site so consumers filtering the context stream of a
+    /// [`ConfigDiff`] (per-hunk quiet-line dividers, per-line
+    /// coverage-collapse "no-op" summaries, structured-log routing
+    /// unchanged rows to a lower-severity channel) spell
+    /// `line.is_unchanged()` instead of the double-negative
+    /// `!line.is_changed()` or the base-partition-corner alias
+    /// `line.is_context()`. Behavior on the ternary [`DiffLine`]
+    /// partition is identical to [`Self::is_context`] (both are true
+    /// exactly on the [`Self::Context`] arm); the two names differ
+    /// only in the polarity axis they name at the call site.
+    ///
+    /// Tag ↔ kind agreement `line.is_unchanged() ==
+    /// line.kind().is_unchanged()` holds pointwise; the modal-pair
+    /// complement law `line.is_unchanged() == !line.is_changed()`
+    /// holds pointwise; and the alias law `line.is_unchanged() ==
+    /// line.is_context()` holds pointwise. All three are pinned:
+    /// [`tests::diff_line_agrees_with_kind_predicates_pointwise`]
+    /// (extended in the same commit to cover the fifth predicate),
+    /// [`tests::diff_line_is_unchanged_is_complement_of_is_changed_on_tag_side`],
+    /// and [`tests::diff_line_is_unchanged_agrees_with_is_context_on_tag_side`].
+    /// Payload-independence — the answer is the same for every
+    /// `Context(text)` regardless of text content — is what the
+    /// pointwise-agreement pin locks in.
+    #[must_use]
+    pub const fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Context(_))
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -22385,6 +22421,50 @@ impl DiffLineKind {
     #[must_use]
     pub const fn is_changed(self) -> bool {
         matches!(self, Self::Added | Self::Removed)
+    }
+
+    /// Whether this kind represents a non-changing (context) line
+    /// between the two sides (`true` for [`Self::Context`], `false`
+    /// for [`Self::Added`] or [`Self::Removed`]) — the modal-pair
+    /// polarity complement of [`Self::is_changed`] on the diff-cell
+    /// kind axis.
+    ///
+    /// Idiom-peer of the change-polarity siblings already carried
+    /// (`is_changed`, the compound-changed predicate), but named on
+    /// the *unchanged* pole so operator-facing consumers reading
+    /// *"treat this line as a quiet, background context row"* — the
+    /// unified-diff renderer skipping color for context, the diff-
+    /// summary alerter suppressing counters that only fired on
+    /// context lines, the structured-log emitter tagging the line
+    /// with a `context` classification instead of a `changed` one —
+    /// spell the *positive* form of the query at the call site
+    /// instead of the double-negative `!kind.is_changed()`.
+    /// Behavior on the ternary [`DiffLineKind`] partition is
+    /// identical to [`Self::is_context`] (both are true exactly on
+    /// [`Self::Context`]); the two names differ only in the polarity
+    /// axis they name at the call site — [`Self::is_context`] is
+    /// the base per-variant sibling of
+    /// [`Self::is_removed`]/[`Self::is_added`], while [`Self::is_unchanged`]
+    /// is the compound-polarity sibling of [`Self::is_changed`].
+    ///
+    /// The modal-pair complement law
+    /// `is_unchanged() == !is_changed()` holds pointwise on every
+    /// closed-axis cell, pinned by
+    /// [`tests::diff_line_kind_is_unchanged_is_complement_of_is_changed`].
+    /// The alias law `is_unchanged() == is_context()` holds pointwise
+    /// on every closed-axis cell — the two spellings converge on the
+    /// [`Self::Context`] variant, pinned by
+    /// [`tests::diff_line_kind_is_unchanged_agrees_with_is_context_pointwise`].
+    ///
+    /// A future fourth [`DiffLineKind`] variant landing without
+    /// explicit polarity assignment (a hypothetical `Header` for hunk
+    /// headers, `Sep` for inter-hunk separators) collapses the modal-
+    /// pair complement law immediately — the new variant is `false`
+    /// on both `is_changed` and `is_unchanged`, failing the
+    /// complement pin before drifting through any consumer.
+    #[must_use]
+    pub const fn is_unchanged(self) -> bool {
+        matches!(self, Self::Context)
     }
 
     /// Returns `true` for [`Self::Removed`]; equivalent to
@@ -30872,6 +30952,56 @@ mod tests {
     }
 
     #[test]
+    fn diff_line_kind_is_unchanged_partitions_context_from_changed() {
+        // is_unchanged() is the modal-pair polarity complement of
+        // is_changed(): true exactly on the one non-changing kind
+        // (Context), false on the two changed kinds (Added, Removed).
+        // Concrete-position pin on the kind-side sibling; the
+        // complement pin and alias pin below lock the algebraic
+        // laws separately.
+        assert!(!DiffLineKind::Removed.is_unchanged());
+        assert!(!DiffLineKind::Added.is_unchanged());
+        assert!(DiffLineKind::Context.is_unchanged());
+    }
+
+    #[test]
+    fn diff_line_kind_is_unchanged_is_complement_of_is_changed() {
+        // Modal-pair complement law: `is_unchanged() == !is_changed()`
+        // holds pointwise on every closed-axis cell. Locks in the
+        // (changed × unchanged) polarity pair as a coherent
+        // partition of the kind axis. A future fourth variant
+        // landing without polarity assignment (both `is_changed` and
+        // `is_unchanged` false on it) fails here before drifting
+        // through any consumer of either polarity.
+        for &k in DiffLineKind::ALL {
+            assert_eq!(
+                k.is_unchanged(),
+                !k.is_changed(),
+                "is_unchanged must equal !is_changed for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_is_unchanged_agrees_with_is_context_pointwise() {
+        // Alias law on the ternary partition: `is_unchanged()` and
+        // `is_context()` converge on the [`Self::Context`] variant
+        // and disagree on none. The two spellings differ only in the
+        // polarity axis they name at the call site — `is_context` is
+        // the base per-variant sibling of `is_removed`/`is_added`;
+        // `is_unchanged` is the compound-polarity sibling of
+        // `is_changed`. Catches a future edit that flips the
+        // `matches!` arm on either side of the alias.
+        for &k in DiffLineKind::ALL {
+            assert_eq!(
+                k.is_unchanged(),
+                k.is_context(),
+                "is_unchanged must equal is_context for {k:?}",
+            );
+        }
+    }
+
+    #[test]
     fn diff_line_kind_is_static_and_copy_and_hashable() {
         // The discriminant is `'static` (no lifetime parameter) and
         // Copy + Hash + Eq, so it can be hashed in a `'static` map and
@@ -31071,8 +31201,8 @@ mod tests {
         // Structural law: for every DiffLine variant, the tag-side
         // predicate and the kind-side sibling predicate agree.
         // `line.is_X() == line.kind().is_X()` for X in
-        // {removed, added, context, changed}. Mirror of the tag ↔ kind
-        // pin `config_tier_agrees_with_kind_predicates_pointwise`
+        // {removed, added, context, changed, unchanged}. Mirror of the
+        // tag ↔ kind pin `config_tier_agrees_with_kind_predicates_pointwise`
         // (`aefc87a`); catches a future edit that drifts one side's
         // polarity without the other, and pins the payload-
         // independence contract on every arm — the kind-side has no
@@ -31111,6 +31241,77 @@ mod tests {
                 k.is_changed(),
                 "is_changed must agree tag ↔ kind for {line:?}",
             );
+            assert_eq!(
+                line.is_unchanged(),
+                k.is_unchanged(),
+                "is_unchanged must agree tag ↔ kind for {line:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_is_unchanged_true_only_for_context_variant() {
+        // Per-variant polarity pin on the modal-pair-complement
+        // sibling at the tag-side level: `is_unchanged()` is true
+        // exactly on the payload-bearing `Context(_)` arm and false
+        // on the `Added(_)` / `Removed(_)` arms, regardless of the
+        // inner String payload. Payload-independence sub-pin:
+        // empty, short, long, whitespace-only text all answer the
+        // same way. Mirror of `diff_line_is_context_true_only_for_context_variant`
+        // but named on the compound-polarity axis.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert!(!DiffLine::Removed(payload.into()).is_unchanged());
+            assert!(!DiffLine::Added(payload.into()).is_unchanged());
+            assert!(DiffLine::Context(payload.into()).is_unchanged());
+        }
+    }
+
+    #[test]
+    fn diff_line_is_unchanged_is_complement_of_is_changed_on_tag_side() {
+        // Modal-pair complement law at the tag-side level:
+        // `line.is_unchanged() == !line.is_changed()` holds pointwise
+        // on every canonical sample. Locks in the (changed × unchanged)
+        // polarity pair as a coherent partition of the DiffLine value
+        // space at the tag-side altitude. A future edit that flips
+        // either side's polarity without the other fails here before
+        // drifting through the pointwise-agreement pin.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            for line in [
+                DiffLine::Removed(payload.into()),
+                DiffLine::Added(payload.into()),
+                DiffLine::Context(payload.into()),
+            ] {
+                assert_eq!(
+                    line.is_unchanged(),
+                    !line.is_changed(),
+                    "is_unchanged must equal !is_changed for {line:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn diff_line_is_unchanged_agrees_with_is_context_on_tag_side() {
+        // Alias law at the tag-side level: `line.is_unchanged()` and
+        // `line.is_context()` converge on the `Context(_)` variant
+        // and disagree on none. Mirror of the kind-side alias pin
+        // `diff_line_kind_is_unchanged_agrees_with_is_context_pointwise`.
+        // The two spellings differ only in the polarity axis they
+        // name at the call site — `is_context` is the base per-
+        // variant sibling of `is_removed`/`is_added`; `is_unchanged`
+        // is the compound-polarity sibling of `is_changed`.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            for line in [
+                DiffLine::Removed(payload.into()),
+                DiffLine::Added(payload.into()),
+                DiffLine::Context(payload.into()),
+            ] {
+                assert_eq!(
+                    line.is_unchanged(),
+                    line.is_context(),
+                    "is_unchanged must equal is_context for {line:?}",
+                );
+            }
         }
     }
 
