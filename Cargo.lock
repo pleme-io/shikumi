@@ -1018,9 +1018,9 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.46"
+version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe1a0715fd6da0bc01bb550690d144066cf02924f0fe76ea53d0e1be1e9b1ac6"
+checksum = "76f569af73a982a3f3617448e3116235692b635e7ff40dcdfbb4b1c0ccd07faf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1029,9 +1029,9 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.46"
+version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b1b8a59c6b345927b7ee13a9b11ab2b78f4fb460874d348034a540d009bb14"
+checksum = "5d2e881d0fe7758fa3f66ee7c5e34b6d1f3c0394bce214e4c620534e6c65e29f"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -1043,9 +1043,9 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.46"
+version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "364d82f3b231e0e2f3f93c694fa4adc2bf5e970fb5b1e7998edf7611186e80e9"
+checksum = "9afe68a5ea6c3a74e4ed718b6a3cf8139bb19251a2772ece13b5689f13b1d9e5"
 dependencies = [
  "blake3",
  "chrono",
@@ -2583,7 +2583,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.714"
+version = "0.1.715"
 dependencies = [
  "akeyless-api",
  "arc-swap",
