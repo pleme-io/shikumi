@@ -743,6 +743,109 @@ impl Format {
     pub const fn is_blue(self) -> bool {
         matches!(self, Self::Blue)
     }
+
+    /// Returns `true` for the feature-gated pole of the [`Format`] axis —
+    /// [`Self::Lisp`] (gated by the `lisp` cargo feature) and
+    /// [`Self::Blue`] (gated by the `blue` cargo feature) — `false` for
+    /// [`Self::Yaml`], [`Self::Toml`], and [`Self::Nix`].
+    ///
+    /// Names the *format whose provider is behind an optional cargo
+    /// feature* pole of the (feature-gated × always-available) polarity
+    /// axis at the type level, so consumers reading *"is loading this
+    /// format only possible in a build that opted into an optional
+    /// feature, or does it work in every build?"* — a per-format
+    /// discovery-cost telemetry counter bucketing feature-gated formats
+    /// separately, an attestation manifest recording whether a resolved
+    /// config depended on an optional cargo feature, a structured-log
+    /// legend routing on the feature-gated pole at the parsed-source
+    /// altitude, an operator-facing dashboard row grouping the two
+    /// feature-gated formats under one heading — spell the *positive*
+    /// form of the query at the call site instead of the two-arm
+    /// disjunction `f.is_lisp() || f.is_blue()` or the two-step
+    /// composition `f.required_feature().is_some()`.
+    ///
+    /// Format-axis compound-polarity sibling of
+    /// [`crate::SecretBackendKind::is_cloud_secret_manager`] (commit
+    /// `3553207`) / [`crate::SecretSource::is_cloud_secret_manager`]
+    /// (commit `dc2ee39`) on the secret-backend axis,
+    /// [`crate::ConfigTierKind::is_computed`] (commit `7d2825d`) on the
+    /// tier axis, and [`crate::ConfigSourceKind::is_overlay`] (commit
+    /// `48c625b`) on the source axis — same *the substrate now names
+    /// the compound pole* discipline, applied here to the five-way
+    /// config-file-format axis. The next-tick candidate the
+    /// `SecretSource::is_cloud_secret_manager` commit body (`dc2ee39`)
+    /// explicitly flagged.
+    ///
+    /// The compound ↔ two-arm disjunction law
+    /// (`f.is_feature_gated() == f.is_lisp() || f.is_blue()`) and the
+    /// compound ↔ [`Self::required_feature`] `is_some` law
+    /// (`f.is_feature_gated() == f.required_feature().is_some()`) are
+    /// structural invariants pinned by
+    /// [`tests::format_is_feature_gated_agrees_with_or_of_individual_siblings`]
+    /// and
+    /// [`tests::format_is_feature_gated_agrees_with_required_feature_is_some`].
+    /// Together they collapse the two composition paths — the two-arm
+    /// disjunction on the tag axis and the two-step composition through
+    /// the [`Option<&'static str>`] projection — onto ONE named
+    /// predicate at the type level.
+    ///
+    /// The (subset) invariant `f.is_feature_gated()` implies
+    /// [`Self::has_shikumi_provider`] — every feature-gated format is
+    /// shikumi-built (the figment-builtin providers ship unconditionally
+    /// per [`tests::format_required_feature_some_implies_shikumi_built`])
+    /// — is pinned by
+    /// [`tests::format_is_feature_gated_implies_shikumi_built`], stating
+    /// the subset law at the type-level compound predicate rather than
+    /// through the [`Option`] projection.
+    ///
+    /// `const`-callable — matching the `const`-ness of the sibling
+    /// per-variant predicates ([`Self::is_yaml`], …, [`Self::is_blue`])
+    /// and of [`Self::required_feature`], so a
+    /// `f.is_feature_gated()` composition stays const-callable
+    /// end-to-end. The compile-time weld is pinned by
+    /// [`tests::format_is_feature_gated_is_const_callable`].
+    ///
+    /// A future sixth [`Format`] variant landing behind an optional
+    /// feature (a hypothetical `Cue` behind `cue`, a `Jsonnet` behind
+    /// `jsonnet`) must extend the `matches!` arm here in lockstep with
+    /// the five-way partition — otherwise the compound ↔ disjunction
+    /// law fails on the new variant, catching the drift before it
+    /// reaches any per-polarity consumer site.
+    #[must_use]
+    pub const fn is_feature_gated(self) -> bool {
+        matches!(self, Self::Lisp | Self::Blue)
+    }
+
+    /// Returns `true` for the always-available pole of the [`Format`]
+    /// axis — [`Self::Yaml`], [`Self::Toml`], and [`Self::Nix`] — `false`
+    /// for the two feature-gated variants ([`Self::Lisp`], [`Self::Blue`]).
+    ///
+    /// Complementary pole of [`Self::is_feature_gated`] on the same
+    /// (feature-gated × always-available) polarity axis; equivalent to
+    /// `!self.is_feature_gated()` and to
+    /// `self.required_feature().is_none()`. Named separately (rather
+    /// than left as a negation) so consumers reading the
+    /// always-available half of the axis no longer negate
+    /// [`Self::is_feature_gated`] — a shape whose polarity a future
+    /// tertiary axis (e.g. a *runtime-only* provider class that's
+    /// neither compile-time feature-gated nor unconditionally
+    /// available, like a hypothetical HTTP-config provider requiring
+    /// a live network probe) would silently flip: `!is_feature_gated`
+    /// would then include the tertiary alongside the always-available
+    /// half, whereas the direct predicate stays true only for the
+    /// unconditional cells and forces the tertiary class to declare
+    /// its own predicate.
+    ///
+    /// Peer of the (`has_figment_builtin_provider`,
+    /// `has_shikumi_provider`) closed binary partition on the same
+    /// [`Format`] altitude: both name each pole directly rather than
+    /// through the other's negation. Pinned as a closed disjoint
+    /// binary partition of [`Format::ALL`] pointwise by
+    /// [`tests::format_feature_gating_predicates_are_a_closed_binary_partition`].
+    #[must_use]
+    pub const fn is_always_available(self) -> bool {
+        matches!(self, Self::Yaml | Self::Toml | Self::Nix)
+    }
 }
 
 /// Closed binary partition over the [`Format`] variant space along the
@@ -4794,6 +4897,214 @@ mod tests {
             assert_eq!(f.is_nix(), f == Format::Nix);
             assert_eq!(f.is_blue(), f == Format::Blue);
         }
+    }
+
+    // ---- Format compound-polarity sibling pair
+    // ---- (is_feature_gated / is_always_available) ----
+    //
+    // Format-axis compound-polarity sibling of
+    // `SecretBackendKind::is_cloud_secret_manager` (secret-backend axis,
+    // commit `3553207`), `ConfigTierKind::is_computed` (tier axis, commit
+    // `7d2825d`), and `ConfigSourceKind::is_overlay` (source axis, commit
+    // `48c625b`) lifted onto the config-file-format axis. Every `Format`
+    // value satisfies exactly one of the two compound-polarity predicates,
+    // and each predicate collapses two composition paths — the two-arm
+    // disjunction on the tag axis and the `Option<&'static str>::is_some()`
+    // projection through `required_feature()` — onto one named type-level
+    // predicate.
+
+    #[test]
+    fn format_is_feature_gated_partitions_gated_from_always_available() {
+        // Per-variant polarity pin on the compound-polarity axis; the
+        // pointwise contract mirroring
+        // `secret_backend_kind_is_cloud_secret_manager_partitions_cloud_from_non_cloud`
+        // on the secret-backend axis. Both feature-gated corners must
+        // resolve `true`; all three always-available corners must resolve
+        // `false`. A future edit that silently narrowed the compound arm
+        // from `Lisp | Blue` to `Lisp` alone (dropping Blue from the
+        // compound pole) fails here before drifting through the
+        // disjunction / `Option`-polarity agreement laws.
+        assert!(!Format::Yaml.is_feature_gated());
+        assert!(!Format::Toml.is_feature_gated());
+        assert!(Format::Lisp.is_feature_gated());
+        assert!(!Format::Nix.is_feature_gated());
+        assert!(Format::Blue.is_feature_gated());
+    }
+
+    #[test]
+    fn format_is_always_available_partitions_always_from_feature_gated() {
+        // The always-available pole: the direct predicate on the
+        // (feature-gated × always-available) polarity axis, not
+        // `!f.is_feature_gated()`. `Yaml`, `Toml`, `Nix` must resolve
+        // `true`; `Lisp`, `Blue` must resolve `false`. Named separately
+        // so the always-available half of the axis carries its own
+        // failure site — a future edit that silently added a tertiary
+        // (runtime-only) pole trips this pin on the offending variant
+        // rather than being masked by a bare negation.
+        assert!(Format::Yaml.is_always_available());
+        assert!(Format::Toml.is_always_available());
+        assert!(!Format::Lisp.is_always_available());
+        assert!(Format::Nix.is_always_available());
+        assert!(!Format::Blue.is_always_available());
+    }
+
+    #[test]
+    fn format_is_feature_gated_agrees_with_or_of_individual_siblings() {
+        // Compound ↔ two-arm disjunction law: the compound predicate on
+        // the feature-gating axis equals the disjunction of the two
+        // tag-side predicates naming the compound pole
+        // (`is_lisp() || is_blue()`). Peer of
+        // `secret_backend_kind_is_cloud_secret_manager_agrees_with_or_of_individual_siblings`
+        // (`is_aws_secret() || is_gcp_secret()`) on the secret-backend
+        // axis. A future edit that changed the compound arm without
+        // updating the tag-side siblings (or vice versa) fails here on
+        // the drifted variant.
+        for &f in Format::ALL {
+            assert_eq!(
+                f.is_feature_gated(),
+                f.is_lisp() || f.is_blue(),
+                "{f:?}: is_feature_gated must equal is_lisp() || is_blue() — \
+                 the compound pole names exactly the two feature-gated formats",
+            );
+        }
+    }
+
+    #[test]
+    fn format_is_feature_gated_agrees_with_required_feature_is_some() {
+        // Compound ↔ `Option<&'static str>::is_some()` law: the compound
+        // predicate agrees pointwise with the two-step composition
+        // `required_feature().is_some()`. The (format, required_feature)
+        // projection is the underlying `Option<&'static str>` map;
+        // this pin routes the "is this format gated on an optional
+        // feature?" question through ONE named predicate at the type
+        // level rather than the two-step compose at every call site.
+        // Catches a future drift where `required_feature()` gained (or
+        // dropped) an arm without a paired update to the compound
+        // predicate.
+        for &f in Format::ALL {
+            assert_eq!(
+                f.is_feature_gated(),
+                f.required_feature().is_some(),
+                "{f:?}: is_feature_gated must agree with \
+                 required_feature().is_some() — the compound predicate is \
+                 the type-level lift of the Option polarity",
+            );
+        }
+    }
+
+    #[test]
+    fn format_is_always_available_agrees_with_required_feature_is_none() {
+        // Complementary pole of the same Option-polarity law: the
+        // always-available predicate agrees pointwise with
+        // `required_feature().is_none()`. Named separately from the
+        // negation of the feature-gated law so a future tertiary axis
+        // landing (a runtime-only provider class) fails HERE at the
+        // always-available pole rather than being masked by the
+        // negation reading of the feature-gated pole.
+        for &f in Format::ALL {
+            assert_eq!(
+                f.is_always_available(),
+                f.required_feature().is_none(),
+                "{f:?}: is_always_available must agree with \
+                 required_feature().is_none() — the always-available \
+                 pole names the unconditional-load half at the type level",
+            );
+        }
+    }
+
+    #[test]
+    fn format_feature_gating_predicates_are_a_closed_binary_partition() {
+        // Every `Format::ALL` cell satisfies exactly one of the two
+        // compound-polarity predicates (`is_feature_gated`,
+        // `is_always_available`): none satisfies both, none satisfies
+        // zero. Binary-partition analogue of the quinary-partition pin
+        // `format_predicates_are_a_closed_quinary_partition` on the
+        // tag-side siblings, and idiom-peer of
+        // `format_provider_class_predicates_are_a_closed_binary_partition`
+        // on the (`has_shikumi_provider`, `has_figment_builtin_provider`)
+        // pair at the same altitude. A future sixth format landing without
+        // its own compound-axis polarity assignment collapses the
+        // partition on that variant, failing here before drifting through
+        // any consumer site.
+        for &f in Format::ALL {
+            let hits = usize::from(f.is_feature_gated()) + usize::from(f.is_always_available());
+            assert_eq!(
+                hits, 1,
+                "format {f:?} must satisfy exactly one compound-polarity predicate, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_is_feature_gated_implies_shikumi_built() {
+        // Subset law at the compound-predicate altitude: every
+        // feature-gated format is shikumi-built. The type-level
+        // restatement of
+        // `format_required_feature_some_implies_shikumi_built` (which
+        // states the same invariant through the `Option` projection)
+        // routed through the compound predicate — pins the invariant
+        // at the compound-polarity altitude rather than the projection
+        // altitude, so a future edit that broke the subset relation on
+        // a specific cell fires with the offending variant named at
+        // this altitude too.
+        for &f in Format::ALL {
+            if f.is_feature_gated() {
+                assert!(
+                    f.has_shikumi_provider(),
+                    "{f:?}: is_feature_gated but has_shikumi_provider is false — \
+                     a figment-builtin format cannot be feature-gated \
+                     (its provider ships unconditionally)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_is_always_available_covers_every_figment_builtin_format() {
+        // Superset law: every figment-builtin format is always-available.
+        // Contrapositive of the subset law at the always-available pole:
+        // a figment-builtin format cannot be feature-gated (its provider
+        // ships unconditionally), so it must sit in the always-available
+        // half. Pins the invariant at the always-available pole so a
+        // future tertiary provider class (that happened to also be
+        // feature-gated) fails HERE rather than being masked by the
+        // subset-law reading at the feature-gated pole.
+        for &f in Format::ALL {
+            if f.has_figment_builtin_provider() {
+                assert!(
+                    f.is_always_available(),
+                    "{f:?}: has_figment_builtin_provider but is_always_available is false — \
+                     figment-builtin providers ship unconditionally",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_is_feature_gated_is_const_callable() {
+        // Compile-time weld: the compound-polarity predicate is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant predicates (`is_yaml`, …, `is_blue`) and of
+        // `required_feature()`. A drop of the `const` qualifier at
+        // either altitude fails this test to compile. Peer of
+        // `secret_backend_kind_is_cloud_secret_manager_is_const_callable`.
+        const fn call_feature_gated(f: Format) -> bool {
+            f.is_feature_gated()
+        }
+        const fn call_always_available(f: Format) -> bool {
+            f.is_always_available()
+        }
+        // Const-evaluated at compile time on the known five variants.
+        const LISP_GATED: bool = call_feature_gated(Format::Lisp);
+        const BLUE_GATED: bool = call_feature_gated(Format::Blue);
+        const YAML_ALWAYS: bool = call_always_available(Format::Yaml);
+        const TOML_ALWAYS: bool = call_always_available(Format::Toml);
+        const NIX_ALWAYS: bool = call_always_available(Format::Nix);
+        assert!(LISP_GATED);
+        assert!(BLUE_GATED);
+        assert!(YAML_ALWAYS);
+        assert!(TOML_ALWAYS);
+        assert!(NIX_ALWAYS);
     }
 
     // ---- required_feature (the format → optional-cargo-feature axis) ----
