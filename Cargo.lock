@@ -2583,7 +2583,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.708"
+version = "0.1.709"
 dependencies = [
  "akeyless-api",
  "arc-swap",
