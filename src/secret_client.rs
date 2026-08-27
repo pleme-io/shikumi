@@ -1321,6 +1321,99 @@ impl SecretClientKind {
     pub const fn is_gcp_secret_manager(self) -> bool {
         matches!(self, Self::GcpSecretManager)
     }
+
+    /// Returns `true` for the hyperscaler-managed Secret Manager pole
+    /// of the seven-way [`SecretClientKind`] axis —
+    /// [`Self::AwsSecretsManager`] (AWS Secrets Manager SDK) and
+    /// [`Self::GcpSecretManager`] (GCP Secret Manager SDK) — `false`
+    /// for the other five ([`Self::Mem`], [`Self::Command`],
+    /// [`Self::Akeyless`], [`Self::OpConnect`], [`Self::Vault`]).
+    ///
+    /// The runtime-client altitude sibling of
+    /// [`crate::secret::SecretBackendKind::is_cloud_secret_manager`]
+    /// (commit `3553207`) on the config-author backend-kind axis,
+    /// [`crate::secret::SecretBackend::is_cloud_secret_manager`] on
+    /// the payload-carrying backend value, and
+    /// [`crate::secret::SecretSource::is_cloud_secret_manager`]
+    /// (commit `dc2ee39`) on the source-wrapping altitude. Closes
+    /// the compound-polarity cloud-Secret-Manager ladder at the
+    /// FOURTH and last altitude the axis is expressible on — the
+    /// runtime `SecretClient` implementor axis, whose two
+    /// hyperscaler cells ([`Self::AwsSecretsManager`],
+    /// [`Self::GcpSecretManager`]) are the transport-side face of
+    /// the two config-author cells
+    /// ([`crate::secret::SecretBackendKind::AwsSecret`],
+    /// [`crate::secret::SecretBackendKind::GcpSecret`]) the
+    /// backend-side sibling already groups.
+    ///
+    /// Names the *cloud-provider Secret Manager* pole of the
+    /// (cloud-Secret-Manager × everything-else) polarity axis at
+    /// the runtime-client altitude, so a monitoring consumer
+    /// holding a captured [`SecretClientKind`] and asking *"did
+    /// this transport talk to a hyperscaler-managed Secret Manager
+    /// API (AWS SDK / GCP SDK), or to any of the five other
+    /// transports (in-memory scaffold, shell subprocess, Akeyless,
+    /// 1Password Connect, `HashiCorp` Vault)?"* — a per-transport
+    /// telemetry counter bucketing hyperscaler-Secret-Manager
+    /// calls separately from the rest, an attestation manifest
+    /// weighing hyperscaler-Secret-Manager provenance differently,
+    /// a structured-log filter alerting on hyperscaler-resolved
+    /// cells, a dashboard row grouping AWS + GCP under one heading
+    /// — spells the *positive* form of the query at the call site
+    /// instead of the two-arm disjunction
+    /// `kind.is_aws_secrets_manager() || kind.is_gcp_secret_manager()`.
+    ///
+    /// **The transport-side face of the config-author compound.**
+    /// The runtime-client altitude names the *transport* class
+    /// (`"aws-secrets-manager"`, `"gcp-secret-manager"` — the
+    /// [`SecretClient::backend_name`] labels) while the config-
+    /// author backend-kind altitude names the *YAML-key* class
+    /// (`"aws_secret"`, `"gcp_secret"` — the
+    /// `#[serde(rename_all = "snake_case")]` tags). The two labels
+    /// diverge by typescape design (transport vs. YAML key), but
+    /// the two compound predicates classify the SAME two upstream
+    /// vaults — the cross-altitude two-cell partition is welded by
+    /// [`tests::secret_client_kind_is_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms`],
+    /// so a future edit that re-scoped the compound at either
+    /// altitude without extending the other diverges here before
+    /// drifting through any consumer that reasons about the two
+    /// altitudes as one pole.
+    ///
+    /// The predicate excludes [`Self::OpConnect`] and
+    /// [`Self::Vault`] for the same reason the backend-kind
+    /// sibling excludes [`crate::secret::SecretBackendKind::Op`]
+    /// and [`crate::secret::SecretBackendKind::Vault`]: those
+    /// transports talk to hosted 1Password vaults and Vault
+    /// clusters (Cloud or self-hosted) through their own
+    /// protocols rather than a hyperscaler Secret Manager API.
+    /// [`Self::Akeyless`] is excluded on the same
+    /// hosted-secrets-platform-vs-hyperscaler-Secret-Manager
+    /// distinction the backend-kind sibling draws.
+    ///
+    /// The compound ↔ two-arm disjunction law
+    /// (`kind.is_cloud_secret_manager() ==
+    /// kind.is_aws_secrets_manager() || kind.is_gcp_secret_manager()`)
+    /// is pinned by
+    /// [`tests::secret_client_kind_is_cloud_secret_manager_agrees_with_or_of_individual_siblings`].
+    ///
+    /// `const`-callable — matching the `const`-ness of the
+    /// per-variant siblings, so a
+    /// `kind.is_cloud_secret_manager()` composition stays const-
+    /// callable end-to-end. The compile-time weld is pinned by
+    /// [`tests::secret_client_kind_is_cloud_secret_manager_is_const_callable`].
+    ///
+    /// A future eighth [`Self`] variant landing under the compound
+    /// pole (a hypothetical `AzureKeyVault` transport, say) must
+    /// extend the `matches!` arm here in lockstep with the
+    /// seven-way partition — otherwise the disjunction law fails
+    /// on the new variant, catching the drift before it reaches
+    /// any per-polarity consumer site.
+    ///
+    /// [`SecretClient::backend_name`]: crate::secret_client::SecretClient::backend_name
+    #[must_use]
+    pub const fn is_cloud_secret_manager(self) -> bool {
+        matches!(self, Self::AwsSecretsManager | Self::GcpSecretManager)
+    }
 }
 
 impl crate::ClosedAxis for SecretClientKind {
@@ -5109,6 +5202,123 @@ mod tests {
                 k == SecretClientKind::GcpSecretManager,
             );
         }
+    }
+
+    #[test]
+    fn secret_client_kind_is_cloud_secret_manager_partitions_cloud_from_non_cloud() {
+        // Concrete-position polarity pin at the runtime-client altitude
+        // for the compound-polarity cloud-Secret-Manager sibling:
+        // exactly {AwsSecretsManager, GcpSecretManager} satisfy
+        // is_cloud_secret_manager, and the other five kinds do not.
+        // Peer of
+        // `secret_backend_kind_is_cloud_secret_manager_partitions_cloud_from_non_cloud`
+        // (commit `3553207`) on the config-author backend axis — same
+        // compound-polarity discipline, scaled to a 2-of-7 pole on the
+        // runtime-client axis.
+        for &kind in SecretClientKind::ALL {
+            let expected = matches!(
+                kind,
+                SecretClientKind::AwsSecretsManager | SecretClientKind::GcpSecretManager,
+            );
+            assert_eq!(
+                kind.is_cloud_secret_manager(),
+                expected,
+                "is_cloud_secret_manager returned {} on {kind:?} (expected {expected})",
+                kind.is_cloud_secret_manager(),
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_is_cloud_secret_manager_agrees_with_or_of_individual_siblings() {
+        // Compound-polarity ↔ two-arm disjunction pointwise law:
+        // `kind.is_cloud_secret_manager() ==
+        //     (kind.is_aws_secrets_manager() || kind.is_gcp_secret_manager())`
+        // for every kind in ALL. Locks the (compound = disjunction)
+        // invariant so any future edit that peeked past the two
+        // AWS / GCP arms (widening the compound to accept Vault or
+        // OpConnect, or adding a third cloud arm without extending
+        // the two individual siblings in lockstep) diverges here
+        // before drifting through the partition-integrity pins on
+        // either side. Peer of
+        // `secret_backend_kind_is_cloud_secret_manager_agrees_with_or_of_individual_siblings`
+        // one altitude down.
+        for &kind in SecretClientKind::ALL {
+            assert_eq!(
+                kind.is_cloud_secret_manager(),
+                kind.is_aws_secrets_manager() || kind.is_gcp_secret_manager(),
+                "compound-polarity ↔ (is_aws_secrets_manager || is_gcp_secret_manager) drift on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_is_cloud_secret_manager_is_const_callable() {
+        // Compile-time weld between the const-fn constructors on
+        // `SecretClientKind::ALL` and the const-fn
+        // `is_cloud_secret_manager` predicate: a direct `const`
+        // binding fires on the two cloud-Secret-Manager cells and
+        // only those. Matches the same const-callability weld the
+        // peer compound-polarity siblings
+        // `SecretBackendKind::is_cloud_secret_manager` (commit
+        // `3553207`) and `SecretSource::is_cloud_secret_manager`
+        // (commit `dc2ee39`) carry at their altitudes — no
+        // `static` workaround needed here because
+        // `SecretClientKind` is `Copy` and admits a direct `const`
+        // binding.
+        const MEM_IS_CLOUD: bool = SecretClientKind::Mem.is_cloud_secret_manager();
+        const COMMAND_IS_CLOUD: bool = SecretClientKind::Command.is_cloud_secret_manager();
+        const AKEYLESS_IS_CLOUD: bool = SecretClientKind::Akeyless.is_cloud_secret_manager();
+        const AWS_IS_CLOUD: bool = SecretClientKind::AwsSecretsManager.is_cloud_secret_manager();
+        const OP_CONNECT_IS_CLOUD: bool = SecretClientKind::OpConnect.is_cloud_secret_manager();
+        const VAULT_IS_CLOUD: bool = SecretClientKind::Vault.is_cloud_secret_manager();
+        const GCP_IS_CLOUD: bool = SecretClientKind::GcpSecretManager.is_cloud_secret_manager();
+        assert!(!MEM_IS_CLOUD);
+        assert!(!COMMAND_IS_CLOUD);
+        assert!(!AKEYLESS_IS_CLOUD);
+        assert!(AWS_IS_CLOUD);
+        assert!(!OP_CONNECT_IS_CLOUD);
+        assert!(!VAULT_IS_CLOUD);
+        assert!(GCP_IS_CLOUD);
+    }
+
+    #[test]
+    fn secret_client_kind_is_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms()
+     {
+        // Cross-altitude two-cell partition weld: the runtime-client
+        // altitude and the config-author backend-kind altitude both
+        // group the SAME two upstream vaults (AWS Secrets Manager,
+        // GCP Secret Manager) under the compound pole, even though
+        // their per-variant labels diverge by typescape design
+        // (transport `"aws-secrets-manager"` / `"gcp-secret-manager"`
+        // vs. YAML-key `"aws_secret"` / `"gcp_secret"`). The
+        // agreement on the two shared arms:
+        //
+        //   client.is_cloud_secret_manager() ==
+        //     backend.is_cloud_secret_manager()
+        //
+        // where (client, backend) is the natural pairing
+        // (AwsSecretsManager, AwsSecret) and
+        // (GcpSecretManager, GcpSecret). A future edit that
+        // re-scoped the compound at either altitude without
+        // extending the other (adding Akeyless to one side alone,
+        // say) diverges here before drifting through any consumer
+        // that reasons about the two altitudes as one pole.
+        use crate::secret::SecretBackendKind;
+        assert_eq!(
+            SecretClientKind::AwsSecretsManager.is_cloud_secret_manager(),
+            SecretBackendKind::AwsSecret.is_cloud_secret_manager(),
+            "runtime-client / config-author cloud-Secret-Manager agreement drifted on the AWS arm",
+        );
+        assert_eq!(
+            SecretClientKind::GcpSecretManager.is_cloud_secret_manager(),
+            SecretBackendKind::GcpSecret.is_cloud_secret_manager(),
+            "runtime-client / config-author cloud-Secret-Manager agreement drifted on the GCP arm",
+        );
+        // Both must be true — the pin above is not vacuous only
+        // if the compound fires on both altitudes for both arms.
+        assert!(SecretClientKind::AwsSecretsManager.is_cloud_secret_manager());
+        assert!(SecretClientKind::GcpSecretManager.is_cloud_secret_manager());
     }
 
     #[test]
