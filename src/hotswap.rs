@@ -1937,6 +1937,119 @@ impl ProofDelta {
         matches!(self.generations_advanced, Some(n) if n > 0)
     }
 
+    /// True iff this delta observed the class-scoped watermark move —
+    /// the compound-polarity watermark-move pole at the delta altitude.
+    /// Returns `true` on the two moved-watermark corners
+    /// [`Self::progression`] (watermark moved AND generation counter
+    /// advanced by one or more) and [`Self::cross_store_signal`]
+    /// (watermark moved AT the same generation counter); `false` on the
+    /// three stationary-watermark corners [`Self::stationary`],
+    /// [`Self::identity_republish`], and — on the fixture where the
+    /// regressed corner's underlying watermarks are bit-identical — on
+    /// [`Self::generations_regressed`].
+    ///
+    /// **The delta-altitude lift of
+    /// [`ProofRelation::is_watermark_moved`],
+    /// [`ProofRelationWire::is_watermark_moved`], and
+    /// [`ProofRelationKind::is_watermark_moved`].** Closes the
+    /// compound-polarity watermark-move ladder across all FOUR altitudes
+    /// the crate's `ProofRelation` classification family carries this
+    /// cross-half pole at — the fourth and final altitude at which the
+    /// "did the watermark move on this proof pair?" question is answered
+    /// by a single welded receiver, reaching the classification axis
+    /// directly from the `watermark: WatermarkDelta` field the delta shape
+    /// carries without projecting through any classification altitude
+    /// first. The two half-side altitudes ([`SameStoreConsistencyKind`],
+    /// [`SameStoreImpossibilityKind`]) cannot carry this compound on
+    /// their own — the cross-half grouping is only nameable from the
+    /// fused-sum altitude up, and the delta altitude reaches it through
+    /// the axis-direct read the delta shape already carries.
+    ///
+    /// **Delegation ladder — the axis-direct answer at the delta
+    /// altitude.** A consumer holding a freshly computed
+    /// [`ProofDelta`] answering "did the watermark move on this proof
+    /// pair?" previously had four inline paths, each leaking work: (a)
+    /// `self.watermark.any_moved()` inline at every seam — the axis-
+    /// direct shape whose one-hop projection each consumer has to
+    /// hand-write once per seam, without any receiver-family sibling to
+    /// bind it against the three classification altitudes; (b)
+    /// `self.progression() || self.cross_store_signal()` — a two-hop
+    /// composition through two atomic classifiers whose disjunction the
+    /// exhaustiveness checker cannot help keep in sync with a future
+    /// moved-watermark corner, and whose two bodies each re-read the
+    /// generation axis the tag-only watermark-move question doesn't
+    /// need; (c) `self.relation().is_some_and(|r|
+    /// r.is_watermark_moved())` — a fold through the classification seam
+    /// whose [`Option`] unwrapping AND the [`MovedWatermarkDelta`] /
+    /// [`std::num::NonZeroU64`] payload welds [`Self::relation`] carries
+    /// the tag-only question doesn't need (and which on the regressed
+    /// corner folds [`Self::generations_advanced`] to [`None`] and
+    /// short-circuits to `None` before the classification predicate sees
+    /// it, agreeing with this receiver only on the fixture where the
+    /// regressed corner's underlying watermarks are stationary); or (d)
+    /// `self.kind().is_watermark_moved()` — a two-hop composition
+    /// through the fused-kind projection whose [`Self::kind`] call
+    /// carries the five-arm classifying `match` the tag-only question
+    /// doesn't need. The receiver-sibling here answers the same
+    /// question through a single welded delegation to
+    /// [`WatermarkDelta::any_moved`], at ONE canonical site.
+    ///
+    /// **Cross-altitude same-answer with the three classification
+    /// receivers on the delta-reachable corners.** For every
+    /// [`ProofDelta`] value that [`Self::relation`] classifies as
+    /// `Some(r)`, `self.is_watermark_moved() == r.is_watermark_moved()`
+    /// — the delta-altitude verdict agrees pointwise with the value-
+    /// classification-altitude verdict on the four delta-reachable
+    /// corners. On the regressed corner where [`Self::relation`] returns
+    /// [`None`], the classification-altitude answer is only reachable
+    /// through [`ConfigSyncProof::relation_since`], whose
+    /// [`ProofRelation::Regressed`] payload carries no watermark and
+    /// reads as `false` by construction; the delta-altitude answer here
+    /// is the field-direct read [`WatermarkDelta::any_moved`] and
+    /// coincides with the classification answer exactly when the two
+    /// underlying watermarks were bit-identical (the fixture case). The
+    /// same identity holds through [`Self::relation_wire`] on the same
+    /// four delta-reachable corners and through [`Self::kind`] on all
+    /// delta-reachable corners.
+    ///
+    /// **Field-direct identity.** At the delta altitude the receiver
+    /// reads the axis field directly:
+    /// `self.is_watermark_moved() == self.watermark.any_moved()`
+    /// pointwise, with no generation component involved. This is the
+    /// compound-polarity axis-direct shape at the delta altitude —
+    /// mirroring the sibling [`Self::is_generation_advanced`], which
+    /// reads the [`Option<u64>`] `generations_advanced` axis field
+    /// directly. Together the two receivers project the two-axis
+    /// (watermark, generation) grid the [`ProofDelta`] shape carries
+    /// into a pair of receiver-family compound predicates at the delta
+    /// altitude — welding the same (moved, advanced) grid the three
+    /// classification altitudes reach through their variant
+    /// discriminators.
+    ///
+    /// **The two 2/5 compound-polarity partitions on this altitude.**
+    /// The predicate cuts the five delta-reachable corners into a
+    /// {`progression`, `cross_store_signal`} half (moved watermark, 2
+    /// of 5 on the fixture where the regressed corner's watermarks are
+    /// stationary) and a {`stationary`, `identity_republish`,
+    /// `generations_regressed`} half (stationary watermark, 3 of 5).
+    /// The overlap with [`Self::is_generation_advanced`] is exactly one
+    /// corner: [`Self::progression`] — the ONE corner that witnessed
+    /// both a class-scoped watermark move AND a generation-counter
+    /// advance, i.e. the legitimate progression corner. Their union
+    /// spans the three activity-observing corners {[`Self::identity_republish`],
+    /// [`Self::progression`], [`Self::cross_store_signal`]} — the three
+    /// corners that observed at least one axis of activity between the
+    /// two proofs.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its watermark-moved verdict at compile time too, matching the
+    /// `const`-ness of every other classification accessor at every
+    /// altitude.
+    #[must_use]
+    pub const fn is_watermark_moved(&self) -> bool {
+        self.watermark.any_moved()
+    }
+
     /// The impossibility-corner tag iff this delta lands in one of the
     /// two same-store impossibilities — [`Self::generations_regressed`]
     /// maps to `Some(SameStoreImpossibilityKind::Regressed)`,
@@ -31682,6 +31795,478 @@ mod proof_delta_is_generation_advanced_tests {
             observed_at_elapsed: None,
         };
         assert!(!d_stationary.is_generation_advanced());
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_is_watermark_moved_tests {
+    //! Weld the compound-polarity watermark-move predicate at the
+    //! DELTA altitude — [`ProofDelta::is_watermark_moved`], the
+    //! delta-altitude receiver-sibling of the three classification-
+    //! altitude receivers already carrying this cross-half pole:
+    //! [`ProofRelationKind::is_watermark_moved`] (fused-sum altitude),
+    //! [`ProofRelation::is_watermark_moved`] (payload-carrying value
+    //! altitude), and [`ProofRelationWire::is_watermark_moved`] (wire
+    //! altitude).
+    //!
+    //! This is the FOURTH and CLOSING altitude of the compound-polarity
+    //! watermark-move ladder in the crate. The two half-side altitudes
+    //! ([`SameStoreConsistencyKind`], [`SameStoreImpossibilityKind`])
+    //! cannot carry this compound on their own — the cross-half grouping
+    //! of `Progression` (consistent half) and `CrossStore` (impossibility
+    //! half) is only nameable from the fused-sum altitude up. The three
+    //! classification altitudes reach the "did the watermark move on
+    //! this proof pair?" verdict through a welded two-variant
+    //! [`matches!`] on the sum-type tag; the delta altitude reaches the
+    //! same verdict by reading the `watermark: WatermarkDelta` field
+    //! directly through [`WatermarkDelta::any_moved`], with no variant
+    //! to match against. On the four delta-reachable corners both routes
+    //! agree pointwise — that agreement is the load-bearing cross-
+    //! altitude weld this module pins.
+    //!
+    //! The tests below cover:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners
+    //!    of the (watermark moved?, generation delta) grid: the two
+    //!    moved-watermark corners (`progression`, `cross_store_signal`)
+    //!    return `true`; the three stationary-watermark corners
+    //!    (`stationary`, `identity_republish`, `generations_regressed`)
+    //!    return `false` on the fixture where the regressed corner's
+    //!    underlying watermarks are bit-identical.
+    //! 2. Field-direct identity:
+    //!    `d.is_watermark_moved() == d.watermark.any_moved()` on every
+    //!    corner — the receiver reads the axis field directly, with no
+    //!    generation component involved.
+    //! 3. Cross-altitude same-answer with the fused-kind receiver:
+    //!    `d.is_watermark_moved() == d.kind().is_watermark_moved()`
+    //!    pointwise on the fixture, welding the delta-altitude verdict
+    //!    against the always-[`Some`] fused-kind altitude.
+    //! 4. Cross-altitude same-answer with [`ProofRelation`]: for every
+    //!    delta whose [`ProofDelta::relation`] classifies as `Some(r)`,
+    //!    `d.is_watermark_moved() == r.is_watermark_moved()`. On the
+    //!    regressed corner where [`ProofDelta::relation`] returns
+    //!    [`None`], the delta-altitude verdict must be `false` on the
+    //!    fixture (the underlying watermarks are bit-identical, so the
+    //!    field-direct read agrees with the classification altitude's
+    //!    tag-only `false`).
+    //! 5. Cross-altitude same-answer with [`ProofRelationWire`] via
+    //!    [`ProofDelta::relation_wire`], mirroring test 4.
+    //! 6. Full-classification same-answer via
+    //!    [`ConfigSyncProof::relation_since`]: on every legitimate
+    //!    corner AND on the regressed corner (where
+    //!    [`ProofDelta::relation`] folds the count away and returns
+    //!    [`None`]), the delta-altitude verdict equals the
+    //!    classification-altitude verdict reached through the lossless
+    //!    proof-pair path. On the fixture, agreement holds pointwise
+    //!    because the regressed corner carries bit-identical watermarks.
+    //! 7. Cross-axis intersection with
+    //!    [`ProofDelta::is_generation_advanced`]: the two 2/5 compound-
+    //!    polarity partitions overlap at exactly `progression` — the ONE
+    //!    corner that witnessed both a class-scoped watermark move AND
+    //!    a generation-counter advance. Their union spans the three
+    //!    activity-observing corners {`identity_republish`,
+    //!    `progression`, `cross_store_signal`}, pinning the two-axis
+    //!    (watermark, generation) (moved, advanced) grid the delta
+    //!    shape carries.
+    //! 8. Cardinality-side invariant: exactly 2 of 5 corners return
+    //!    `true` on the fixture, 3 of 5 return `false`, sum == 5.
+    //! 9. `const`-callable on hand-constructed deltas at every corner.
+    //! 10. `#[must_use]`-attributed on the receiver, matching the
+    //!     every-classification-accessor discipline the crate carries.
+    //!
+    //! Same test idiom as the sibling
+    //! `proof_delta_is_generation_advanced_tests` module (commit
+    //! `c9036f4`) and as the value-side sibling
+    //! `proof_relation_is_watermark_moved_tests` module (commit
+    //! `1e1e4eb`).
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners of the (watermark moved?,
+    /// generation delta) grid, one row per corner. Each row carries a
+    /// label, the prior/current proofs to fold into a delta, and the
+    /// pinned truth-table verdict for `is_watermark_moved()`. The
+    /// regressed corner uses bit-identical watermarks so its field-
+    /// direct answer at the delta altitude agrees with the tag-only
+    /// answer at the classification altitude.
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof, bool)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                false,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                true,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                true,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned across the delta-reachable grid
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_moved(),
+                want,
+                "{name}: is_watermark_moved diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Field-direct identity
+
+    #[test]
+    fn field_direct_identity_reads_the_watermark_axis_alone() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_moved(),
+                d.watermark.any_moved(),
+                "{name}: the delta-altitude receiver must read the \
+                 watermark axis field directly via WatermarkDelta::any_moved, \
+                 with no generation component involved",
+            );
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer with the fused-kind receiver
+
+    #[test]
+    fn cross_altitude_agrees_with_fused_kind_receiver() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_moved(),
+                d.kind().is_watermark_moved(),
+                "{name}: delta-altitude verdict must equal fused-kind \
+                 verdict projected through ProofDelta::kind on the fixture \
+                 where the regressed corner's watermarks are bit-identical",
+            );
+        }
+    }
+
+    // ---------- (4) Cross-altitude same-answer with ProofRelation
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.is_watermark_moved(),
+                    relation.is_watermark_moved(),
+                    "{name}: delta and classification verdicts must agree \
+                     on the four delta-reachable corners",
+                );
+            } else {
+                // Only the regressed corner (or the class-partition
+                // impossibility, unreachable via between()) folds the
+                // count away. On the fixture's regressed corner the
+                // underlying watermarks are bit-identical, so the field-
+                // direct verdict at the delta altitude must be false —
+                // matching the classification altitude's tag-only false
+                // on the ProofRelation::Regressed payload-less arm.
+                assert!(
+                    !d.is_watermark_moved(),
+                    "{name}: delta.relation() == None implies the \
+                     regressed corner, where the fixture's underlying \
+                     watermarks are bit-identical, so is_watermark_moved \
+                     must be false via the field-direct read",
+                );
+                assert!(
+                    d.generations_regressed(),
+                    "{name}: the None branch of delta.relation() is only \
+                     reached on the regressed corner (or the class-partition \
+                     impossibility corner, unreachable via between())",
+                );
+            }
+        }
+    }
+
+    // ---------- (5) Cross-altitude same-answer with ProofRelationWire
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_wire_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(wire) = d.relation_wire() {
+                assert_eq!(
+                    d.is_watermark_moved(),
+                    wire.is_watermark_moved(),
+                    "{name}: delta and wire-classification verdicts must \
+                     agree on the four delta-reachable corners",
+                );
+            }
+        }
+    }
+
+    // ---------- (6) Full-classification same-answer via
+    //                ConfigSyncProof::relation_since
+
+    #[test]
+    fn full_classification_agrees_on_every_corner_including_regressed() {
+        // ConfigSyncProof::relation_since preserves the regression count
+        // through the lossless proof-pair path — where ProofDelta::relation
+        // returns None on the regressed corner (the count was folded away),
+        // relation_since fills in the ProofRelation::Regressed variant
+        // (which carries no watermark payload and reads as false). On the
+        // fixture where the regressed corner's underlying watermarks are
+        // bit-identical, the delta-altitude field-direct verdict must
+        // equal the classification-altitude tag-only verdict on all five
+        // corners including regressed.
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.is_watermark_moved(),
+                r.is_watermark_moved(),
+                "{name}: delta and full-classification verdicts must agree \
+                 on every corner on the fixture (the regressed corner has \
+                 bit-identical watermarks so the field-direct answer agrees \
+                 with the classification tag-only answer)",
+            );
+            assert_eq!(
+                r.is_watermark_moved(),
+                want,
+                "{name}: full classification must also match the pinned \
+                 truth table",
+            );
+        }
+    }
+
+    // ---------- (7) Cross-axis intersection with is_generation_advanced
+
+    #[test]
+    fn cross_axis_intersect_only_at_progression_union_spans_three_activity_corners() {
+        // The two 2/5 compound-polarity partitions at the delta altitude
+        // (is_watermark_moved on the watermark axis and
+        // is_generation_advanced on the generation axis) overlap at
+        // exactly Progression — the ONE corner that witnessed both a
+        // class-scoped watermark move AND a generation-counter advance.
+        // Their union spans the three activity-observing corners
+        // {IdentityRepublish, Progression, CrossStore} — the three corners
+        // that observed at least one axis of activity between the two
+        // proofs. Pins the two-axis (watermark, generation) (moved,
+        // advanced) grid the ProofDelta's field-direct shape carries.
+        let deltas: Vec<(&'static str, ProofDelta)> = corners()
+            .into_iter()
+            .map(|(name, prior, current, _)| (name, ProofDelta::between(&prior, &current)))
+            .collect();
+        let intersect: Vec<&'static str> = deltas
+            .iter()
+            .filter(|(_, d)| d.is_watermark_moved() && d.is_generation_advanced())
+            .map(|(name, _)| *name)
+            .collect();
+        assert_eq!(
+            intersect,
+            vec!["Progression"],
+            "is_watermark_moved AND is_generation_advanced must intersect at Progression alone",
+        );
+        let union: Vec<&'static str> = deltas
+            .iter()
+            .filter(|(_, d)| d.is_watermark_moved() || d.is_generation_advanced())
+            .map(|(name, _)| *name)
+            .collect();
+        assert_eq!(
+            union,
+            vec!["IdentityRepublish", "Progression", "CrossStore"],
+            "is_watermark_moved OR is_generation_advanced must span exactly the three activity-observing corners",
+        );
+    }
+
+    // ---------- (8) Cardinality-side invariant
+
+    #[test]
+    fn cardinality_partition_is_two_from_three() {
+        let all: Vec<ProofDelta> = corners()
+            .into_iter()
+            .map(|(_, prior, current, _)| ProofDelta::between(&prior, &current))
+            .collect();
+        let (moved, rest): (Vec<&ProofDelta>, Vec<&ProofDelta>) =
+            all.iter().partition(|d| d.is_watermark_moved());
+        assert_eq!(
+            moved.len(),
+            2,
+            "moved-watermark corners cardinality must be exactly 2 out of 5",
+        );
+        assert_eq!(
+            rest.len(),
+            3,
+            "stationary-watermark corners cardinality must be exactly 3 out of 5",
+        );
+        assert_eq!(
+            moved.len() + rest.len(),
+            all.len(),
+            "partition must be total across the five delta-reachable corners",
+        );
+    }
+
+    // ---------- (9) const-callable on hand-constructed deltas
+
+    #[test]
+    fn const_callable_on_hand_constructed_deltas_at_every_corner() {
+        // A compile-time-known ProofDelta must project its verdict at
+        // compile time too. Five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const STATIONARY: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_moved();
+        const IDENTITY_REPUBLISH: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_moved();
+        const PROGRESSION: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_moved();
+        const CROSS_STORE: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_moved();
+        const REGRESSED: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .is_watermark_moved();
+        assert!(!STATIONARY);
+        assert!(!IDENTITY_REPUBLISH);
+        assert!(PROGRESSION);
+        assert!(CROSS_STORE);
+        assert!(!REGRESSED);
+    }
+
+    // ---------- (10) #[must_use] attribute on the receiver
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use, clippy::let_underscore_untyped)]
+    fn receiver_is_annotated_must_use() {
+        // If #[must_use] is dropped from the receiver, a lint on the
+        // clippy::let_underscore_must_use side would go silent, and the
+        // must_use signal on the compound-polarity family would drop.
+        // A positive assertion that at least one corner returns each
+        // polarity is the reachability weld that proves the receiver
+        // is called through the `_ =` binding at all, so a future
+        // must_use-dropping edit is caught by the compile-time
+        // let_underscore lint on the pedantic clippy pass tracked at
+        // pending-shikumi-clippy.
+        let d_progression = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        };
+        let _: bool = d_progression.is_watermark_moved();
+        assert!(d_progression.is_watermark_moved());
+        let d_stationary = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        };
+        assert!(!d_stationary.is_watermark_moved());
     }
 }
 
