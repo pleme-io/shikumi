@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "33d37bb2758726f5c72127a3dda7c2e69f184e481774bf90c761d32150d11dfe",
+  "cargo_lock_sha256": "017297036169ef1cbeff3e4944d3a8958dd82b83a1574d54b809d863c8592157",
   "manifest_sha256": {
-    "Cargo.toml": "0deb90cadccbbe2667314ab7c94e71ebc6bb50b13a511e17e48c00abec5fbba3"
+    "Cargo.toml": "3c90282867e7645d40f0b2a24f8fc7735fe982ef3e9314f9b42ed4f5668470a1"
   },
   "target_resolves": {
     "base": {
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.719": {
+      "shikumi-0.1.720": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -2873,7 +2873,7 @@
               },
               {
                 "name": "cpufeatures",
-                "package_key": "cpufeatures-0.3.0",
+                "package_key": "cpufeatures-0.3.1",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2907,7 +2907,7 @@
               "link"
             ]
           },
-          "cpufeatures-0.3.0": {
+          "cpufeatures-0.3.1": {
             "runtime_dependencies": [],
             "build_dependencies": [],
             "features": []
@@ -3124,7 +3124,7 @@
               },
               {
                 "name": "cpufeatures",
-                "package_key": "cpufeatures-0.3.0",
+                "package_key": "cpufeatures-0.3.1",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3150,7 +3150,7 @@
               "std"
             ]
           },
-          "cpufeatures-0.3.0": {
+          "cpufeatures-0.3.1": {
             "runtime_dependencies": [],
             "build_dependencies": [],
             "features": []
@@ -3480,7 +3480,7 @@
               },
               {
                 "name": "cpufeatures",
-                "package_key": "cpufeatures-0.3.0",
+                "package_key": "cpufeatures-0.3.1",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3506,7 +3506,7 @@
               "std"
             ]
           },
-          "cpufeatures-0.3.0": {
+          "cpufeatures-0.3.1": {
             "runtime_dependencies": [],
             "build_dependencies": [],
             "features": []
@@ -3838,7 +3838,7 @@
     "core-foundation-sys-0.8.7": {
       "edition": "2018"
     },
-    "cpufeatures-0.3.0": {
+    "cpufeatures-0.3.1": {
       "edition": "2024"
     },
     "equivalent-1.0.2": {
@@ -3991,7 +3991,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.719": {
+    "shikumi-0.1.720": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
