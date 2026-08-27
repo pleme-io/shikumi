@@ -10483,6 +10483,80 @@ impl ProofRelationKind {
         matches!(self, Self::Impossible(_))
     }
 
+    /// Whether this fused corner witnessed the generation counter
+    /// advance — `true` on the two publish-observing corners
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::IdentityRepublish`]`)`
+    /// and [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Progression`]`)`,
+    /// `false` on the null-hypothesis polling corner
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Stationary`]`)`
+    /// and on BOTH impossibility corners
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::CrossStore`]`)`
+    /// (`generations_advanced == Some(0)`) and
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::Regressed`]`)`
+    /// (`generations_advanced == None`).
+    ///
+    /// The fused-sum lift of
+    /// [`SameStoreConsistencyKind::is_generation_advanced`] (commit
+    /// `346c3cc`) onto the fused kind altitude — the same "did we
+    /// observe a publish?" question the half-side predicate answers on
+    /// the consistent half, now reachable one altitude up without
+    /// projecting through [`Self::consistency`] first. Direct peer of
+    /// [`Self::is_consistent`] / [`Self::is_impossible`] on the outer-
+    /// arm-tag receiver family, and the compound-polarity mirror on
+    /// this altitude of the modal-pair receiver ladder every fused
+    /// classification sum in the crate now carries.
+    ///
+    /// **Delegation ladder — consistent-arm projection, impossibility-
+    /// arm zero.** A consumer holding a [`ProofRelationKind`] at the
+    /// fused altitude answering "did we observe a publish?" previously
+    /// had two inline paths, each leaking work: (a)
+    /// `matches!(k, Self::Consistent(SameStoreConsistencyKind::IdentityRepublish
+    /// | SameStoreConsistencyKind::Progression))` — an inline three-arm
+    /// pattern the exhaustiveness checker cannot help keep in sync with
+    /// a future fourth consistent corner, silently missing any new
+    /// publish-observing arm; or (b) `k.consistency().is_some_and(|c|
+    /// c.is_generation_advanced())` — a two-hop composition through the
+    /// `Option<SameStoreConsistencyKind>` shape whose `Option`
+    /// unwrapping the tag-only question doesn't need. The lifted
+    /// receiver here answers the same question through a single welded
+    /// `match` (`Self::Consistent(k) => k.is_generation_advanced(),
+    /// Self::Impossible(_) => false`), pinned once at the fused-sum
+    /// altitude that already carries the classification shape.
+    ///
+    /// **Cross-altitude same-answer with the half-side receiver.** For
+    /// every `k` in [`Self::VARIANTS`], `k.is_generation_advanced()`
+    /// equals `k.consistency().is_some_and(|c|
+    /// c.is_generation_advanced())` — the fused-altitude verdict agrees
+    /// pointwise with the half-side verdict projected through
+    /// [`Self::consistency`], matching the same-answer identities the
+    /// pair-side receivers already carry ([`Self::name`] against the
+    /// two half-side names, [`Self::is_consistent`] against
+    /// [`Self::consistency`]`.is_some()`, and [`Self::is_impossible`]
+    /// against [`Self::impossibility`]`.is_some()`).
+    ///
+    /// **Compound-polarity fold across the fused sum.** Exactly two of
+    /// the five [`Self::VARIANTS`] cells satisfy the predicate, three
+    /// do not; the two-vs-three partition welds the compound-polarity
+    /// sibling on [`SameStoreConsistencyKind`] (two publish-observing
+    /// arms out of three) to the fused sum without opening a new
+    /// impossibility-side polarity. A future edit that added a fourth
+    /// consistent corner or a third impossibility corner without
+    /// extending the compound arm on the corresponding half fails at
+    /// [`variants_tests::proof_relation_kind_is_generation_advanced_matches_disjunction_of_consistency_advanced_arms`]
+    /// before drifting through any consumer that groups on this pole.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its generation-advanced verdict at compile time too,
+    /// matching the `const`-ness of every other receiver on this enum
+    /// and its two half-side peers.
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        match *self {
+            Self::Consistent(k) => k.is_generation_advanced(),
+            Self::Impossible(_) => false,
+        }
+    }
+
     /// The stable operational identifier of this fused corner — the
     /// SAME snake-case name the two half-side
     /// [`SameStoreConsistencyKind::name`] and
@@ -32838,6 +32912,177 @@ mod variants_tests {
                 }
             }
         }
+    }
+
+    // ---------- ProofRelationKind::is_generation_advanced —
+    // fused-sum lift of SameStoreConsistencyKind::is_generation_advanced.
+
+    #[test]
+    fn proof_relation_kind_is_generation_advanced_partitions_publish_observing_from_rest() {
+        // Per-variant polarity table on the compound-polarity sibling of
+        // the fused-sum receiver family: exactly the two publish-observing
+        // consistent corners (IdentityRepublish, Progression) return true;
+        // the null-hypothesis polling corner (Stationary) and BOTH
+        // impossibility corners (CrossStore, Regressed) return false.
+        // Fused-altitude peer of the per-variant polarity pin on
+        // `same_store_consistency_kind_is_generation_advanced_partitions_stationary_from_advanced_arms`.
+        assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_generation_advanced()
+        );
+        assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_generation_advanced()
+        );
+        assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_generation_advanced()
+        );
+        assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_generation_advanced()
+        );
+        assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_generation_advanced()
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_generation_advanced_matches_disjunction_of_consistency_advanced_arms()
+    {
+        // Delegation ladder pin at the fused-sum altitude: for every
+        // ProofRelationKind::VARIANTS cell, `k.is_generation_advanced()`
+        // equals the two-arm disjunction
+        // `matches!(k, Consistent(IdentityRepublish) |
+        // Consistent(Progression))`, and the impossibility half
+        // uniformly returns false. A future edit that drifted the
+        // fused-sum lift from the half-side compound polarity fails
+        // here before drifting through any consumer that reasons about
+        // the publish-observing arms as one group at the fused
+        // altitude. Idiom-peer of
+        // `proof_relation_kind_consistency_projection_refines_consistency_kind_is_generation_advanced`
+        // on the projection-side, but the fused-altitude receiver is
+        // the direct one-hop answer this consumer reaches without
+        // routing through `.consistency()` first.
+        for k in ProofRelationKind::VARIANTS {
+            let via_projection = k.consistency().is_some_and(|c| c.is_generation_advanced());
+            assert_eq!(
+                k.is_generation_advanced(),
+                via_projection,
+                "ProofRelationKind::{k:?} — fused-altitude is_generation_advanced must equal projection through .consistency()",
+            );
+            let via_pattern = matches!(
+                k,
+                ProofRelationKind::Consistent(
+                    SameStoreConsistencyKind::IdentityRepublish
+                        | SameStoreConsistencyKind::Progression,
+                ),
+            );
+            assert_eq!(
+                k.is_generation_advanced(),
+                via_pattern,
+                "ProofRelationKind::{k:?} — fused-altitude is_generation_advanced must equal the fused-arm disjunction",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_generation_advanced_partitions_variants_two_from_three() {
+        // Cardinality-side invariant at the compound-polarity fused
+        // altitude: exactly two ProofRelationKind::VARIANTS cells
+        // satisfy is_generation_advanced (the two publish-observing
+        // consistent corners), exactly three do not (Stationary +
+        // CrossStore + Regressed), and the two counts sum to
+        // ProofRelationKind::VARIANTS.len(). A future edit that added
+        // a fourth consistent corner or a third impossibility corner
+        // without extending the compound arm on the appropriate half
+        // fails at this cardinality invariant before drifting through
+        // any consumer site.
+        let advanced_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_generation_advanced)
+            .count();
+        let rest_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| !k.is_generation_advanced())
+            .count();
+        assert_eq!(
+            advanced_cells, 2,
+            "exactly two ProofRelationKind::VARIANTS cells must satisfy is_generation_advanced",
+        );
+        assert_eq!(
+            rest_cells, 3,
+            "exactly three ProofRelationKind::VARIANTS cells must NOT satisfy is_generation_advanced (Stationary + CrossStore + Regressed)",
+        );
+        assert_eq!(
+            advanced_cells + rest_cells,
+            ProofRelationKind::VARIANTS.len(),
+            "the compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_generation_advanced_implies_is_consistent() {
+        // Refinement pin: every publish-observing corner is in the
+        // consistent half — `is_generation_advanced() ⇒ is_consistent()`
+        // pointwise on VARIANTS. The impossibility half uniformly
+        // returns false, so the implication holds vacuously on the
+        // two impossibility cells. A future edit that lifted the
+        // predicate to the impossibility arm (which cannot witness a
+        // publish — CrossStore has generations_advanced == Some(0),
+        // Regressed has generations_advanced == None) fails here
+        // before drifting through any consumer routing on the outer
+        // classification tag.
+        for k in ProofRelationKind::VARIANTS {
+            if k.is_generation_advanced() {
+                assert!(
+                    k.is_consistent(),
+                    "ProofRelationKind::{k:?} — publish-observing corners must lie in the consistent half",
+                );
+                assert!(
+                    !k.is_impossible(),
+                    "ProofRelationKind::{k:?} — publish-observing corners cannot lie in the impossibility half",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_generation_advanced_is_const_callable() {
+        // The compound-polarity sibling at the fused altitude is
+        // `const`-callable, so a compile-time consumer (a `const`
+        // predicate table, a `const`-evaluated switch over a
+        // ProofRelationKind singleton, a `const`-eval-based
+        // static-assert on a classifier arm) resolves the polarity at
+        // compile time. Idiom-peer of
+        // `same_store_consistency_kind_is_generation_advanced_is_const_callable`.
+        // The const-block asserts below make the weld load-bearing at
+        // crate compile time: a future edit that flipped a polarity
+        // on this predicate fails at `cargo build`, not just at this
+        // test's runtime assertion.
+        const _: () = assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_generation_advanced()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_generation_advanced()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_generation_advanced()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_generation_advanced()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_generation_advanced()
+        );
     }
 }
 
