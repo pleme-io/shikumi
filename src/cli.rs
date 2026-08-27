@@ -166,6 +166,86 @@ impl TierArg {
     pub const fn is_env(self) -> bool {
         matches!(self, Self::Env)
     }
+
+    /// Returns `true` for the four computed-defaults arms
+    /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`],
+    /// [`Self::Env`]), `false` for the operator-supplied overlay arm
+    /// [`Self::Custom`] — the CLI-side lift of the compound-polarity
+    /// sibling [`crate::ConfigTierKind::is_computed`] (commit `7d2825d`)
+    /// onto the CLI operator-facing tier tag at this altitude.
+    ///
+    /// **Names the *computed-defaults* pole on the CLI tag.** A consumer
+    /// answering *"does this operator-selected tier resolve WITHOUT the
+    /// `--path <FILE>` flag on [`ConfigShowCommand`]?"* previously routed
+    /// either through the double-negative `!arg.is_custom()` on the tag
+    /// axis or through the four-arm disjunction `arg.is_bare() ||
+    /// arg.is_discovered() || arg.is_default() || arg.is_env()` at the
+    /// call site — a `--tier` documentation renderer coloring the one
+    /// path-requiring arm distinctly from the four path-optional arms, a
+    /// shell-completion helper filtering the arms whose `--path` value
+    /// is inert, a per-tier telemetry counter bucketing custom overlays
+    /// separately from every computed dispatch, a startup-log line
+    /// naming which pole the operator's `--tier` selection sits at. The
+    /// compound predicate answers the same query at one canonical site
+    /// now, matching the vocabulary the sibling ladder for `is_computed`
+    /// already carries at the [`crate::ConfigTierKind`] (commit
+    /// `7d2825d`), [`crate::ConfigTier`], [`crate::Provenance`], and
+    /// [`crate::ProgressiveLayer`] altitudes.
+    ///
+    /// The dispatch table [`ConfigShowCommand::run`] pointwise witnesses
+    /// this polarity: exactly the [`Self::Custom`] arm returns
+    /// [`ConfigShowError::CustomTierWithoutPath`] when
+    /// [`ConfigShowCommand::path`] is [`None`]; every other arm
+    /// (`Bare`/`Discovered`/`Default`/`Env`) resolves without inspecting
+    /// `path`. The `is_computed` predicate names that "path-independent"
+    /// pole at the type level so a future refactor threading the
+    /// path-inspection surface cannot silently widen the arm set that
+    /// needs a `--path <FILE>` companion.
+    ///
+    /// The [`Self::Env`] arm is the CLI-only cell — no
+    /// [`crate::ConfigTierKind`] peer — and sits under the *computed*
+    /// pole here because the `<APP>_TIER` env-var read is a runtime
+    /// dispatch to *another* [`crate::ConfigTier`] rather than a
+    /// direct operator-supplied overlay: `TierArg::Env` never carries a
+    /// path in its own dispatch (see
+    /// [`ConfigShowCommand::tier_arg_to_tier`]), even though the env-var
+    /// contents may resolve to a [`crate::ConfigTier::Custom`] downstream
+    /// via [`crate::ConfigTier::from_env`]. That distinction — polarity
+    /// classified on the *CLI-supplied artifact* axis, not the eventual
+    /// resolved-`ConfigTier` — matches the design choice
+    /// [`Self::is_custom`]'s docs already flag: on the CLI axis the
+    /// `Custom` arm carries no payload here, and the compound-polarity
+    /// sibling on this axis lifts the same authored-artifact discipline.
+    ///
+    /// The modal-pair complement law `is_computed() == !is_custom()`
+    /// holds pointwise on every [`Self::ALL`] cell, pinned by
+    /// [`tests::tier_arg_is_computed_is_complement_of_is_custom`]. The
+    /// compound ↔ four-arm disjunction law
+    /// `arg.is_computed() == arg.is_bare() || arg.is_discovered() ||
+    /// arg.is_default() || arg.is_env()` is pinned pointwise by
+    /// [`tests::tier_arg_is_computed_agrees_with_disjunction_of_computed_siblings`],
+    /// and cross-axis agreement with
+    /// [`crate::ConfigTierKind::is_computed`] on the four
+    /// [`crate::ConfigTierKind`]-peer cells (`Bare`/`Discovered`/
+    /// `Default`/`Custom`) is pinned by
+    /// [`tests::tier_arg_is_computed_agrees_with_config_tier_kind_on_shared_cells`],
+    /// so a future drift of either compound-polarity arm from the shared
+    /// semantic fails at the cross-axis boundary rather than at a
+    /// per-polarity consumer site.
+    ///
+    /// A future sixth [`Self`] variant landing without explicit polarity
+    /// assignment collapses the complement law immediately — the new
+    /// variant is either `true` on both `is_computed` and `is_custom`
+    /// (impossible) or `false` on both (the polarity axis has no answer
+    /// for it), failing the complement pin before drifting through any
+    /// per-polarity CLI consumer.
+    #[must_use]
+    pub const fn is_computed(self) -> bool {
+        matches!(
+            self,
+            Self::Bare | Self::Discovered | Self::Default | Self::Env
+        )
+    }
 }
 
 /// Emission format for `config-show` output.
@@ -651,6 +731,151 @@ mod tests {
             assert_eq!(arg.is_custom(), arg == TierArg::Custom);
             assert_eq!(arg.is_env(), arg == TierArg::Env);
         }
+    }
+
+    // ─── TierArg::is_computed — compound-polarity sibling on the
+    // ─── CLI operator-facing tier tag ──────────────────────────────
+
+    #[test]
+    fn tier_arg_is_computed_partitions_custom_from_computed_arms() {
+        // Per-variant polarity table on the compound-polarity sibling
+        // over TierArg::ALL: the four computed-defaults arms answer
+        // `true`, the operator-supplied-overlay arm answers `false`.
+        // Direct CLI-side lift of the
+        // `config_tier_kind_is_computed_partitions_custom_from_computed_defaults`
+        // pin on the crate-side [`ConfigTierKind`] compound-polarity
+        // sibling (commit `7d2825d`); one cell wider (the CLI-only Env
+        // arm sits under the computed pole because the `<APP>_TIER`
+        // env-var read is a runtime dispatch, not an operator-supplied
+        // overlay artifact — see `TierArg::is_computed` docs). A future
+        // sixth TierArg variant landing without explicit polarity
+        // assignment breaks the partition here before drifting through
+        // any per-polarity CLI consumer.
+        assert!(TierArg::Bare.is_computed());
+        assert!(TierArg::Discovered.is_computed());
+        assert!(TierArg::Default.is_computed());
+        assert!(!TierArg::Custom.is_computed());
+        assert!(TierArg::Env.is_computed());
+    }
+
+    #[test]
+    fn tier_arg_is_computed_is_complement_of_is_custom() {
+        // The modal-pair complement law
+        // `arg.is_computed() == !arg.is_custom()` pointwise on
+        // TierArg::ALL. Direct CLI-side analogue of
+        // `config_tier_kind_is_computed_is_complement_of_is_custom` on
+        // the crate-side [`ConfigTierKind`] axis. A future variant
+        // landing without explicit polarity assignment fails here
+        // (either it satisfies both is_computed and is_custom —
+        // impossible — or neither — the polarity axis has no answer).
+        for arg in TierArg::ALL.iter().copied() {
+            assert_eq!(
+                arg.is_computed(),
+                !arg.is_custom(),
+                "TierArg::{arg:?}: is_computed() must be the complement of \
+                 is_custom()",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_is_computed_agrees_with_disjunction_of_computed_siblings() {
+        // The compound ↔ four-arm disjunction law
+        // `arg.is_computed() == arg.is_bare() || arg.is_discovered() ||
+        // arg.is_default() || arg.is_env()` pointwise on TierArg::ALL.
+        // A future edit that widened one primitive-arm predicate would
+        // drift the compound at that cell, failing here before drifting
+        // through any per-polarity consumer site.
+        for arg in TierArg::ALL.iter().copied() {
+            let disjunction =
+                arg.is_bare() || arg.is_discovered() || arg.is_default() || arg.is_env();
+            assert_eq!(
+                arg.is_computed(),
+                disjunction,
+                "TierArg::{arg:?}: is_computed() must agree with the four-arm \
+                 disjunction is_bare || is_discovered || is_default || is_env",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_is_computed_agrees_with_config_tier_kind_on_shared_cells() {
+        // Cross-axis agreement law
+        // `arg.is_computed() == kind.is_computed()` pointwise on the
+        // four cells that TierArg shares with
+        // [`crate::ConfigTierKind`] (`Bare`/`Discovered`/`Default`/
+        // `Custom`). The CLI-only [`TierArg::Env`] arm has no
+        // ConfigTierKind peer to compare against — it's classified
+        // separately by
+        // `tier_arg_is_computed_partitions_custom_from_computed_arms`.
+        // A future drift of either compound-polarity arm from the
+        // shared semantic fails here before drifting through the
+        // crate-side / CLI-side seam.
+        use crate::tiered::ConfigTierKind;
+        for (arg, kind) in [
+            (TierArg::Bare, ConfigTierKind::Bare),
+            (TierArg::Discovered, ConfigTierKind::Discovered),
+            (TierArg::Default, ConfigTierKind::Default),
+            (TierArg::Custom, ConfigTierKind::Custom),
+        ] {
+            assert_eq!(
+                arg.is_computed(),
+                kind.is_computed(),
+                "TierArg::{arg:?} and ConfigTierKind::{kind:?} must agree on \
+                 is_computed()",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_is_computed_is_const_callable() {
+        // Compile-time weld: the compound-polarity sibling
+        // (`TierArg::is_computed`) is const-callable in every
+        // TierArg::ALL cell, matching the const-callability of the
+        // primitive-arm siblings (`is_bare`/`is_discovered`/`is_default`/
+        // `is_custom`/`is_env`) and of the crate-side compound-polarity
+        // siblings [`ConfigTierKind::is_computed`] and
+        // [`ConfigTier::is_computed`]. Dropping the `const` qualifier
+        // fails the test to compile.
+        const BARE_IS_COMPUTED: bool = TierArg::Bare.is_computed();
+        const DISCOVERED_IS_COMPUTED: bool = TierArg::Discovered.is_computed();
+        const DEFAULT_IS_COMPUTED: bool = TierArg::Default.is_computed();
+        const CUSTOM_IS_COMPUTED: bool = TierArg::Custom.is_computed();
+        const ENV_IS_COMPUTED: bool = TierArg::Env.is_computed();
+        assert!(BARE_IS_COMPUTED);
+        assert!(DISCOVERED_IS_COMPUTED);
+        assert!(DEFAULT_IS_COMPUTED);
+        assert!(!CUSTOM_IS_COMPUTED);
+        assert!(ENV_IS_COMPUTED);
+    }
+
+    #[test]
+    fn tier_arg_is_computed_partition_and_complement_hold_over_all() {
+        // Load-bearing invariant on the CLI operator-facing tier tag:
+        // `TierArg::ALL` splits into exactly one Custom cell and four
+        // computed cells under the compound-polarity sibling. A future
+        // rearrangement of TierArg::ALL that dropped an arm or added a
+        // sixth without extending the compound arm here fails the
+        // cardinality pin before drifting through the dispatch table
+        // in [`ConfigShowCommand::tier_arg_to_tier`], where exactly
+        // one arm (Custom) returns [`ConfigShowError::CustomTierWithoutPath`]
+        // when [`ConfigShowCommand::path`] is [`None`]. The pin ties
+        // the polarity to the dispatch surface it names.
+        let computed_count = TierArg::ALL.iter().filter(|a| a.is_computed()).count();
+        let custom_count = TierArg::ALL.iter().filter(|a| a.is_custom()).count();
+        assert_eq!(
+            computed_count, 4,
+            "exactly four TierArg cells must be is_computed()",
+        );
+        assert_eq!(
+            custom_count, 1,
+            "exactly one TierArg cell must be is_custom()",
+        );
+        assert_eq!(
+            computed_count + custom_count,
+            TierArg::ALL.len(),
+            "compound-polarity partition must cover TierArg::ALL exhaustively",
+        );
     }
 
     // ─── OutputFormat sibling predicates — binary-partition arms
