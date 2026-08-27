@@ -7989,6 +7989,89 @@ impl SameStoreConsistencyKind {
         matches!(*self, Self::Progression)
     }
 
+    /// Whether this consistency corner witnessed the generation counter
+    /// advance — `true` on [`Self::IdentityRepublish`] (watermark
+    /// stationary, generation advanced by one or more: a re-publish of
+    /// the same value) and on [`Self::Progression`] (watermark moved
+    /// AND generation advanced: a routine config-file edit), `false`
+    /// on [`Self::Stationary`] (same observation twice, both watermark
+    /// and generation unchanged — the `/healthz/config` polling case).
+    ///
+    /// The compound-polarity sibling on the consistency-half ternary
+    /// axis — the two-cell disjunction pole every ternary axis in the
+    /// crate now carries a name for. The single-cell complement is the
+    /// long-standing [`Self::is_stationary`]; the two predicates form a
+    /// closed binary partition of [`Self::VARIANTS`] at the compound-
+    /// polarity altitude on top of the closed ternary partition
+    /// [`Self::is_stationary`] / [`Self::is_identity_republish`] /
+    /// [`Self::is_progression`] already resolves at the singleton
+    /// altitude. Direct peer of
+    /// [`crate::WatchEventClass::is_file_mutation`] (commit `8d55ddf`)
+    /// on the reload-relevance ternary axis, and idiom-mirror of the
+    /// compound-polarity pairs the fleet-idiom sibling ladders carry —
+    /// [`crate::ConfigTierKind::is_computed`] on the tier axis (four
+    /// crate-side altitudes plus [`crate::cli::TierArg::is_computed`]
+    /// on the CLI operator-facing surface),
+    /// [`crate::secret::SecretBackendKind::is_cloud_secret_manager`] on
+    /// the secret-backend axis (three altitudes),
+    /// [`crate::source::ConfigSourceKind::is_overlay`] on the source-
+    /// layer axis (four altitudes),
+    /// [`crate::discovery::Format::is_feature_gated`] on the file-
+    /// format axis, and [`crate::coverage::HintSurface::is_coverage_hint`]
+    /// (commit `029e877`) on the coverage-hint surface axis.
+    ///
+    /// One canonical name for the "did we observe a publish?" question
+    /// over [`SameStoreConsistencyKind`] — a per-corner metrics counter
+    /// bucketing witnessed-publish observations distinctly from the
+    /// null-hypothesis polling case (a
+    /// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// broadcast-reload counter separating polling ticks from
+    /// publish-observing ticks; a debounce-window guard grouping the
+    /// two publish-observing arms before the guard's window opens; a
+    /// dashboard tile histogramming the polling-quiet rate against the
+    /// publish-observing rate; an attester filter routing on
+    /// `--only=publish-observing` that groups identity-republish and
+    /// progression together) matches this predicate at ONE site instead
+    /// of open-coding `k.is_identity_republish() || k.is_progression()`
+    /// (or the equivalent `!k.is_stationary()`) and re-doing the
+    /// closed-partition bookkeeping at every consumer that reasons
+    /// about the two publish-observing arms as one group.
+    ///
+    /// The classifier side pointwise witnesses the polarity: exactly
+    /// the (`watermark_stationary`, `generations_advanced = 1+`) and
+    /// (`watermark_moved`, `generations_advanced = 1+`) delta cells
+    /// land on [`Self::IdentityRepublish`] and [`Self::Progression`]
+    /// respectively, and the (`watermark_stationary`,
+    /// `generations_advanced = 0`) cell lands on [`Self::Stationary`]
+    /// — the two publish-observing corners are exactly the corners
+    /// whose delta carries `matches!(generations_advanced, Some(n) if n > 0)`.
+    /// A future edit that added a fourth legitimate corner without
+    /// its own [`SameStoreConsistencyKind`] variant would collapse the
+    /// polarity silently, but the compound-polarity partition pin below
+    /// catches the dual failure: a future fourth variant that did not
+    /// extend one of the compound arms (or extended both) fails at
+    /// [`variants_tests::same_store_consistency_kind_is_generation_advanced_and_is_stationary_are_a_closed_binary_partition`]
+    /// before drifting through any consumer that groups on this pole.
+    ///
+    /// The compound is pointwise the complement of [`Self::is_stationary`]
+    /// — pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_generation_advanced_is_complement_of_is_stationary`]
+    /// — and equal to the two-arm disjunction
+    /// `k.is_identity_republish() || k.is_progression()` — pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_generation_advanced_agrees_with_disjunction_of_advanced_siblings`].
+    /// A future edit that drifted either polarity from the other fails
+    /// at the cross-axis boundary rather than at a per-polarity
+    /// consumer site.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreConsistencyKind`] projects its generation-advanced
+    /// verdict at compile time too, matching the `const`-ness the rest
+    /// of the receiver-family already carries.
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        matches!(*self, Self::IdentityRepublish | Self::Progression)
+    }
+
     /// The closed set of variant values in declaration order — the
     /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
     /// consistent half of the classification. An ordered slice of
@@ -32525,6 +32608,169 @@ mod variants_tests {
                     assert!(k.is_progression());
                 }
                 other => panic!("unrecognized SameStoreConsistencyKind name: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_generation_advanced_partitions_stationary_from_advanced_arms()
+    {
+        // Per-variant polarity table on the compound-polarity sibling of
+        // the consistency ternary axis: exactly the two publish-observing
+        // arms (IdentityRepublish — watermark stationary, generation
+        // advanced; Progression — watermark moved AND generation advanced)
+        // return true; the null-hypothesis arm (Stationary — watermark and
+        // generation both unchanged, the `/healthz/config` polling case)
+        // returns false. Idiom-peer of the per-variant polarity pin on
+        // `watch_event_class_is_file_mutation_partitions_ignored_from_mutation_arms`
+        // (commit `8d55ddf`).
+        assert!(!SameStoreConsistencyKind::Stationary.is_generation_advanced());
+        assert!(SameStoreConsistencyKind::IdentityRepublish.is_generation_advanced());
+        assert!(SameStoreConsistencyKind::Progression.is_generation_advanced());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_generation_advanced_is_complement_of_is_stationary() {
+        // The modal-pair complement law at the compound-polarity altitude:
+        // `is_generation_advanced() == !is_stationary()` pointwise on
+        // SameStoreConsistencyKind::VARIANTS. The two predicates partition
+        // VARIANTS into the compound pole (IdentityRepublish | Progression
+        // — two publish-observing arms) and its single-cell complement
+        // (Stationary — the null-hypothesis polling arm). A future edit
+        // that drifted one polarity from the other fails here before any
+        // consumer of either surface can observe the divergence.
+        // Idiom-peer of `watch_event_class_is_file_mutation_is_complement_of_is_ignored`
+        // (commit `8d55ddf`), of `TierArg::is_computed_is_complement_of_is_custom`
+        // (commit `3f3f482`), and of the pair-complement laws on the
+        // `is_overlay` (commit `93c21cb`), `is_cloud_secret_manager`
+        // (commits `dc2ee39` / `3553207`), and `is_feature_gated` /
+        // `is_always_available` (commit `006e0a7`) compound siblings.
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_generation_advanced(),
+                !k.is_stationary(),
+                "is_generation_advanced and !is_stationary must agree pointwise on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_generation_advanced_agrees_with_disjunction_of_advanced_siblings()
+     {
+        // The compound ↔ two-arm disjunction law at the compound-polarity
+        // altitude: `is_generation_advanced() == is_identity_republish() ||
+        // is_progression()` pointwise on SameStoreConsistencyKind::VARIANTS
+        // — the compound-polarity sibling is exactly the disjunction of the
+        // two singleton predicates naming the publish-observing arms. A
+        // future edit that flipped one arm of the `matches!` in
+        // `is_generation_advanced` without flipping the corresponding
+        // singleton sibling fails here before drifting through any consumer
+        // that reasons about the two publish-observing arms as one group.
+        // Idiom-peer of
+        // `watch_event_class_is_file_mutation_agrees_with_disjunction_of_mutation_siblings`
+        // (commit `8d55ddf`).
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_generation_advanced(),
+                k.is_identity_republish() || k.is_progression(),
+                "is_generation_advanced must equal is_identity_republish || is_progression on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_generation_advanced_and_is_stationary_are_a_closed_binary_partition()
+     {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly two `SameStoreConsistencyKind::VARIANTS` cells satisfy
+        // `is_generation_advanced`, exactly one satisfies `is_stationary`,
+        // and the two counts sum to `SameStoreConsistencyKind::VARIANTS
+        // .len()`. Binary-partition analogue of the closed-ternary-
+        // partition pin on the singleton predicates. A future fourth
+        // `SameStoreConsistencyKind` variant that did not extend one of
+        // the compound arms (or extended both) fails at this cardinality
+        // invariant before drifting through any consumer site — the
+        // compound-polarity ladder's own load-bearing pin. Idiom-peer of
+        // `watch_event_class_is_file_mutation_and_is_ignored_are_a_closed_binary_partition`
+        // (commit `8d55ddf`).
+        let advanced_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_generation_advanced)
+            .count();
+        let stationary_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_stationary)
+            .count();
+        assert_eq!(
+            advanced_cells, 2,
+            "exactly two SameStoreConsistencyKind::VARIANTS cells must satisfy is_generation_advanced",
+        );
+        assert_eq!(
+            stationary_cells, 1,
+            "exactly one SameStoreConsistencyKind::VARIANTS cell must satisfy is_stationary",
+        );
+        assert_eq!(
+            advanced_cells + stationary_cells,
+            SameStoreConsistencyKind::VARIANTS.len(),
+            "the compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_generation_advanced_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `SameStoreConsistencyKind` singleton, a `const`-
+        // eval-based static-assert on a classifier arm) resolves the
+        // polarity at compile time. Idiom-peer of
+        // `watch_event_class_is_file_mutation_is_const_callable` (commit
+        // `8d55ddf`). The const-block asserts below make the weld
+        // load-bearing at crate compile time: a future edit that flipped
+        // a polarity on this predicate fails at `cargo build`, not just
+        // at this test's runtime assertion.
+        const _: () = assert!(!SameStoreConsistencyKind::Stationary.is_generation_advanced());
+        const _: () = assert!(SameStoreConsistencyKind::IdentityRepublish.is_generation_advanced());
+        const _: () = assert!(SameStoreConsistencyKind::Progression.is_generation_advanced());
+    }
+
+    #[test]
+    fn proof_relation_kind_consistency_projection_refines_consistency_kind_is_generation_advanced()
+    {
+        // Cross-projection refinement pin at the compound-polarity
+        // altitude: for every `Consistent(k)` cell of
+        // ProofRelationKind::VARIANTS, `.consistency()` returns `Some(k)`
+        // whose compound `is_generation_advanced` agrees with the
+        // disjunction of the two per-variant singleton siblings; for every
+        // `Impossible(_)` cell, `.consistency()` returns `None`. Welds
+        // the compound-polarity sibling on `SameStoreConsistencyKind` to
+        // the fused `ProofRelationKind` sum: a hypothetical fourth
+        // legitimate corner landing without extending the compound arm
+        // fails this pin's exhaustive same-answer match rather than
+        // silently sitting in the singleton-partition negation. Compound-
+        // polarity analogue of
+        // `proof_relation_kind_consistency_projection_refines_consistency_kind_per_variant_predicates`
+        // above.
+        for k in ProofRelationKind::VARIANTS {
+            match k.consistency() {
+                Some(c) => {
+                    assert_eq!(
+                        c.is_generation_advanced(),
+                        c.is_identity_republish() || c.is_progression(),
+                        "ProofRelationKind::{k:?}.consistency() == Some({c:?}) — compound must equal disjunction of advanced siblings",
+                    );
+                    assert_eq!(
+                        c.is_generation_advanced(),
+                        !c.is_stationary(),
+                        "ProofRelationKind::{k:?}.consistency() == Some({c:?}) — compound must equal complement of is_stationary",
+                    );
+                }
+                None => {
+                    // Impossibility half has no consistency payload.
+                    assert!(k.is_impossible());
+                    assert!(!k.is_consistent());
+                }
             }
         }
     }
