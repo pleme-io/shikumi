@@ -15530,6 +15530,138 @@ impl ProofRelation {
     pub const fn is_watermark_moved(&self) -> bool {
         matches!(self, Self::Progression { .. } | Self::CrossStore { .. })
     }
+
+    /// True iff this classification witnesses NO class-scoped watermark
+    /// move — the three stationary-watermark corners [`Self::Stationary`]
+    /// (both axes at rest: the `/healthz/config` polling case),
+    /// [`Self::IdentityRepublish`] (watermark stationary, generation
+    /// advanced: a re-publish of the same value), and [`Self::Regressed`]
+    /// (the generation counter went backwards — by definition of the arm
+    /// the observation was made at strictly-less generation, so the
+    /// class-scoped watermark is folded away entirely at this altitude
+    /// and the tag alone reads as stationary). `false` on the two
+    /// moved-watermark corners [`Self::Progression`] (watermark moved
+    /// AND generation counter advanced: the legitimate progression
+    /// corner) and [`Self::CrossStore`] (watermark moved at an unchanged
+    /// generation counter: the same-store impossibility corner).
+    ///
+    /// **The payload-carrying-altitude lift of
+    /// [`ProofRelationKind::is_watermark_stationary`] (commit `e8518a2`).**
+    /// The same "did the class-scoped watermark stay put on this proof
+    /// pair?" question the fused-kind receiver answers on the tag alone,
+    /// now reachable one altitude up at the payload-carrying enum without
+    /// projecting through [`Self::kind`] first. Modal-pair polarity
+    /// sibling of [`Self::is_watermark_moved`] (commit `1e1e4eb`) at
+    /// this altitude — the two compound-polarity predicates cover the
+    /// SAME class-scoped watermark axis from the two opposite poles,
+    /// forming the value-altitude modal pair (3/5 vs 2/5 halves of
+    /// [`ProofRelation`]'s five-way sum), mirroring the fused-altitude
+    /// modal pair [`ProofRelationKind::is_watermark_moved`] vs.
+    /// [`ProofRelationKind::is_watermark_stationary`] one altitude down.
+    ///
+    /// **Delegation ladder — the tag-alone answer at the value altitude.**
+    /// A consumer holding a [`ProofRelation`] value answering "did the
+    /// watermark stay put?" previously had three inline paths, each
+    /// leaking work: (a) `self.kind().is_watermark_stationary()` — a
+    /// two-hop composition through the fused-kind projection whose
+    /// [`Self::kind`] call carries the same exhaustive `match` this
+    /// predicate would; (b) `self.stationary() ||
+    /// self.identity_republish() || self.regressed()` — a three-hop
+    /// composition through three single-variant tag-only classifiers
+    /// whose disjunction the exhaustiveness checker cannot help keep in
+    /// sync with a future stationary-watermark corner (a hypothetical
+    /// third impossibility variant carrying no moved watermark, say,
+    /// would silently escape the three-arm disjunction without turning
+    /// the callsite red); or (c) `!self.is_watermark_moved()` — the
+    /// modal-pair negation whose polarity a future sixth legitimate
+    /// corner (a hypothetical `SchemaMismatch` variant carrying no
+    /// watermark axis at all) would flip silently. The receiver-sibling
+    /// here answers the same question through a single welded
+    /// [`matches!`]: adding a sixth variant to [`ProofRelation`] fails
+    /// to compile at this method's pattern in lockstep with
+    /// [`Self::stationary`], [`Self::identity_republish`],
+    /// [`Self::regressed`], and every other classification receiver in
+    /// this impl.
+    ///
+    /// **Cross-altitude same-answer with the fused kind.** For every
+    /// [`ProofRelation`] value, `self.is_watermark_stationary() ==
+    /// self.kind().is_watermark_stationary()` — the value-altitude
+    /// verdict agrees pointwise with the fused-kind verdict projected
+    /// through [`Self::kind`], matching the same-answer identity the
+    /// compound sibling [`Self::is_watermark_moved`] already carries
+    /// against its fused-kind peer.
+    ///
+    /// **Cross-altitude same-answer with the payload accessor.** For
+    /// every [`ProofRelation`] value, `self.is_watermark_stationary() ==
+    /// self.watermark().is_none()` — the class-scoped
+    /// watermark-stationary predicate agrees pointwise with the
+    /// `None`/`Some` shape of [`Self::watermark`], the payload-accessor
+    /// sibling: both project the exact same 3/5 partition of the fused
+    /// sum, one as a `bool` and the other as the ABSENCE side of an
+    /// `Option<&MovedWatermarkDelta>`. This is the modal-pair
+    /// complement of the identity [`Self::is_watermark_moved`] carries
+    /// against [`Self::watermark`]`.is_some()`.
+    ///
+    /// **Modal-pair complement law with [`Self::is_watermark_moved`].**
+    /// For every [`ProofRelation`] value,
+    /// `self.is_watermark_stationary() == !self.is_watermark_moved()` —
+    /// the two receivers exactly complement each other on the fixture,
+    /// forming the value-altitude modal pair on the class-scoped
+    /// watermark axis. A future edit that drifted either polarity
+    /// without moving the other fails at the modal-pair boundary rather
+    /// than at a per-polarity consumer site.
+    ///
+    /// **Compound-polarity fold across the payload-carrying enum.**
+    /// Exactly three of the five variants satisfy the predicate, two do
+    /// not; the three-vs-two partition welds the compound-polarity
+    /// sibling on [`ProofRelationKind`] (three stationary-watermark
+    /// corners out of five) to the payload-carrying altitude. A future
+    /// edit that added a sixth non-watermark-carrying variant without
+    /// extending this predicate's arms fails at the cardinality-invariant
+    /// partition pin before drifting through any consumer that groups
+    /// on the stationary-watermark pole.
+    ///
+    /// **Cross-half — no outer-tag implication in EITHER direction.**
+    /// Like [`Self::is_watermark_moved`], [`Self::is_watermark_stationary`]
+    /// is a CROSS-HALF compound that lands in BOTH outer halves
+    /// ([`Self::Stationary`] and [`Self::IdentityRepublish`] on the
+    /// consistent half, [`Self::Regressed`] on the impossibility half).
+    /// Neither [`Self::same_store_consistent`] nor
+    /// [`Self::same_store_inconsistent`] implies (or is implied by)
+    /// [`Self::is_watermark_stationary`] at this altitude.
+    ///
+    /// **Cross-axis meet with [`Self::is_generation_advanced`].** The
+    /// two compound-polarity axes carried at this altitude
+    /// (`watermark_stationary` on the watermark axis and
+    /// `generation_advanced` on the generation axis) meet at exactly
+    /// ONE cell — [`Self::IdentityRepublish`], the sole value corner
+    /// witnessing BOTH a publish AND a stationary watermark, which is
+    /// precisely the class of [`arc_swap::ArcSwap`] re-publish-of-same-
+    /// value the classification family exists to distinguish from a
+    /// real content edit. The meet mirrors the fused-altitude meet-pin
+    /// already carried by
+    /// [`variants_tests::proof_relation_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish`].
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`]
+    /// projects its watermark-stationary verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate, payload, or kind projection) in this impl.
+    ///
+    /// The wire-side sibling on [`ProofRelationWire`] and the delta-side
+    /// sibling on [`ProofDelta`] remain to be surfaced at the next two
+    /// altitudes; the cross-altitude same-answer with
+    /// [`Self::kind`]`.is_watermark_stationary()` pins the fused-kind
+    /// projection today, and the wire and delta receivers will pin the
+    /// wire and delta projections when they land, mirroring the
+    /// five-altitude closure the [`Self::is_watermark_moved`] ladder
+    /// already carries.
+    #[must_use]
+    pub const fn is_watermark_stationary(&self) -> bool {
+        matches!(
+            self,
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. }
+        )
+    }
 }
 
 /// The **wire projection** of a [`ProofRelation`] — the sum-type peer of
@@ -30128,6 +30260,327 @@ mod proof_relation_is_watermark_moved_tests {
                 panic!("nonzero literal")
             };
             assert!(!ProofRelation::Regressed { by }.is_watermark_moved());
+        };
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_is_watermark_stationary_tests {
+    //! Weld the compound-polarity watermark-stationary predicate at the
+    //! payload-carrying altitude — [`ProofRelation::is_watermark_stationary`]
+    //! — the value-side lift of
+    //! [`ProofRelationKind::is_watermark_stationary`] (commit `e8518a2`),
+    //! and the modal-pair polarity sibling of the value-altitude
+    //! [`ProofRelation::is_watermark_moved`] (commit `1e1e4eb`).
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Truth table pinned by variant identity — only the three
+    //!    stationary-watermark corners ([`ProofRelation::Stationary`],
+    //!    [`ProofRelation::IdentityRepublish`],
+    //!    [`ProofRelation::Regressed`]) return `true`; the two
+    //!    moved-watermark corners ([`ProofRelation::Progression`],
+    //!    [`ProofRelation::CrossStore`]) return `false`.
+    //! 2. Cross-altitude same-answer with the fused kind — for every
+    //!    value, `self.is_watermark_stationary() ==
+    //!    self.kind().is_watermark_stationary()` pointwise, welding the
+    //!    delegation ladder without projecting through
+    //!    [`ProofRelation::kind`] at the consumer.
+    //! 3. Cross-altitude same-answer with the fused-arm disjunction —
+    //!    `self.is_watermark_stationary() == self.stationary() ||
+    //!    self.identity_republish() || self.regressed()`, pinning that
+    //!    the compound-polarity receiver equals the disjunction of the
+    //!    three single-variant tag-only classifiers whose variants it
+    //!    welds.
+    //! 4. Cross-altitude same-answer with the payload accessor — for
+    //!    every value, `self.is_watermark_stationary() ==
+    //!    self.watermark().is_none()`, pinning the exact same 3/5
+    //!    partition the payload accessor already carries as the
+    //!    ABSENCE side of an `Option<&MovedWatermarkDelta>` shape.
+    //! 5. Modal-pair complement law with [`ProofRelation::is_watermark_moved`]
+    //!    — for every value, `self.is_watermark_stationary() ==
+    //!    !self.is_watermark_moved()`, pinning the two receivers as the
+    //!    exact complements they are meant to be.
+    //! 6. Cross-half nature — the predicate fires on at least one
+    //!    same-store-consistent corner ([`ProofRelation::Stationary`],
+    //!    [`ProofRelation::IdentityRepublish`]) AND on at least one
+    //!    same-store-inconsistent corner ([`ProofRelation::Regressed`]),
+    //!    so no single outer-half predicate implies (or is implied by)
+    //!    it, matching the cross-half nature its modal-pair sibling
+    //!    [`ProofRelation::is_watermark_moved`] already carries.
+    //! 7. Cross-axis meet with [`ProofRelation::is_generation_advanced`]
+    //!    — the two 3/5 vs 2/5 compound-polarity partitions intersect
+    //!    at exactly [`ProofRelation::IdentityRepublish`], the sole
+    //!    value corner witnessing BOTH a publish AND a stationary
+    //!    watermark, mirroring the fused-altitude meet-pin.
+    //! 8. Cardinality partition — exactly three of the five fixture
+    //!    variants satisfy the predicate, two do not. A future edit
+    //!    that added a sixth non-watermark-carrying corner without
+    //!    extending this predicate's arms fails here before drifting
+    //!    through any consumer.
+    //! 9. `const`-callable on every non-payload variant — a
+    //!    compile-time-known [`ProofRelation`] projects its
+    //!    watermark-stationary verdict at compile time too, matching
+    //!    the `const`-ness idiom every prior classification predicate
+    //!    on this type already carries.
+    //!
+    //! Same test idiom as the sibling
+    //! `proof_relation_is_watermark_moved_tests` module (commit `1e1e4eb`).
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned by variant identity
+
+    #[test]
+    fn value_truth_table_reads_the_three_stationary_watermark_corners_alone() {
+        for (name, relation) in all_five_relations() {
+            let expected = matches!(
+                relation,
+                ProofRelation::Stationary
+                    | ProofRelation::IdentityRepublish { .. }
+                    | ProofRelation::Regressed { .. }
+            );
+            assert_eq!(
+                relation.is_watermark_stationary(),
+                expected,
+                "{name}: is_watermark_stationary() diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer with the fused kind
+
+    #[test]
+    fn cross_altitude_same_answer_with_kind_projection() {
+        // For every ProofRelation value, the value-altitude verdict
+        // agrees pointwise with the fused-kind verdict projected
+        // through .kind() — the delegation ladder to the fused sum is
+        // load-bearing, not decorative.
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_watermark_stationary(),
+                relation.kind().is_watermark_stationary(),
+                "{name}: value-altitude is_watermark_stationary must equal \
+                 kind().is_watermark_stationary()",
+            );
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer with the fused-arm disjunction
+
+    #[test]
+    fn compound_predicate_matches_disjunction_of_single_variant_siblings() {
+        // The compound-polarity receiver equals the disjunction of the
+        // three single-variant tag-only classifiers whose variants it
+        // welds — pinning the equivalence at the receiver family
+        // altitude even though only the compound receiver carries the
+        // exhaustiveness weld against a future stationary-watermark
+        // corner. A hypothetical sixth stationary-watermark variant
+        // added to ProofRelation without extending this predicate's
+        // matches!() arm silently escapes the three-arm disjunction
+        // (stationary() || identity_republish() || regressed()), but
+        // the compound predicate stays exhaustively welded — this test
+        // then fails.
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_watermark_stationary(),
+                relation.stationary() || relation.identity_republish() || relation.regressed(),
+                "{name}: is_watermark_stationary() must equal \
+                 stationary() || identity_republish() || regressed()",
+            );
+        }
+    }
+
+    // ---------- (4) Cross-altitude same-answer with the payload accessor
+
+    #[test]
+    fn compound_predicate_agrees_with_watermark_payload_option_absence() {
+        // The class-scoped watermark-stationary predicate agrees
+        // pointwise with the None shape of Self::watermark, the
+        // payload accessor sibling: both project the exact same 3/5
+        // partition of the fused sum, one as a bool and the other as
+        // the ABSENCE side of an Option<&MovedWatermarkDelta>. The
+        // modal-pair complement of the identity is_watermark_moved
+        // carries against Self::watermark.is_some().
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_watermark_stationary(),
+                relation.watermark().is_none(),
+                "{name}: is_watermark_stationary() must equal watermark().is_none()",
+            );
+        }
+    }
+
+    // ---------- (5) Modal-pair complement law
+
+    #[test]
+    fn is_complement_of_is_watermark_moved() {
+        // The modal-pair complement law at the value altitude — the
+        // two receivers form an exact binary partition on the fixture,
+        // mirroring the same law the fused-altitude modal pair
+        // ProofRelationKind::is_watermark_stationary vs.
+        // is_watermark_moved already carries. A future edit that
+        // drifted either polarity without moving the other fails at
+        // this boundary rather than at a per-polarity consumer site.
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_watermark_stationary(),
+                !relation.is_watermark_moved(),
+                "{name}: is_watermark_stationary() must equal !is_watermark_moved()",
+            );
+        }
+    }
+
+    // ---------- (6) Cross-half — no outer-tag implication either way
+
+    #[test]
+    fn cross_half_predicate_lands_in_both_outer_halves() {
+        // Like is_watermark_moved, is_watermark_stationary is a
+        // CROSS-HALF compound that lands in BOTH outer halves —
+        // Stationary and IdentityRepublish on the consistent half AND
+        // Regressed on the impossibility half. Neither
+        // same_store_consistent nor same_store_inconsistent implies
+        // (or is implied by) is_watermark_stationary.
+        let consistent_hit = all_five_relations()
+            .into_iter()
+            .any(|(_, r)| r.is_watermark_stationary() && r.same_store_consistent());
+        let inconsistent_hit = all_five_relations()
+            .into_iter()
+            .any(|(_, r)| r.is_watermark_stationary() && r.same_store_inconsistent());
+        assert!(
+            consistent_hit,
+            "is_watermark_stationary must fire on at least one same-store-consistent corner \
+             (Stationary or IdentityRepublish)",
+        );
+        assert!(
+            inconsistent_hit,
+            "is_watermark_stationary must fire on at least one same-store-inconsistent corner \
+             (Regressed)",
+        );
+    }
+
+    // ---------- (7) Cross-axis meet at IdentityRepublish
+
+    #[test]
+    fn cross_axis_meet_with_is_generation_advanced_at_identity_republish() {
+        // The two compound-polarity axes at the value altitude
+        // (watermark_stationary on the watermark axis and
+        // generation_advanced on the generation axis) intersect at
+        // exactly ONE cell — IdentityRepublish, the sole value corner
+        // witnessing BOTH a publish AND a stationary watermark, which
+        // is precisely the ArcSwap re-publish-of-same-value class the
+        // classification family exists to distinguish from a real
+        // content edit. Mirrors the fused-altitude meet-pin on
+        // ProofRelationKind.
+        let intersect: Vec<&'static str> = all_five_relations()
+            .into_iter()
+            .filter(|(_, r)| r.is_watermark_stationary() && r.is_generation_advanced())
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            intersect,
+            vec!["IdentityRepublish"],
+            "is_watermark_stationary AND is_generation_advanced must intersect at \
+             IdentityRepublish alone",
+        );
+    }
+
+    // ---------- (8) Cardinality partition — exactly three of five satisfy
+
+    #[test]
+    fn cardinality_partition_is_three_from_two() {
+        let (stationary, rest): (Vec<_>, Vec<_>) = all_five_relations()
+            .into_iter()
+            .partition(|(_, r)| r.is_watermark_stationary());
+        assert_eq!(
+            stationary.len(),
+            3,
+            "exactly three ProofRelation fixture variants must satisfy \
+             is_watermark_stationary (Stationary + IdentityRepublish + Regressed); got {}",
+            stationary.len(),
+        );
+        assert_eq!(
+            rest.len(),
+            2,
+            "exactly two ProofRelation fixture variants must NOT satisfy \
+             is_watermark_stationary (Progression + CrossStore); got {}",
+            rest.len(),
+        );
+        assert_eq!(
+            stationary.len() + rest.len(),
+            5,
+            "the compound-polarity binary partition must cover the fixture",
+        );
+    }
+
+    // ---------- (9) `const`-callable at compile time
+
+    #[test]
+    fn is_watermark_stationary_is_const_callable() {
+        // A compile-time-known ProofRelation projects its
+        // watermark-stationary verdict at compile time. The
+        // const-block asserts below make the weld load-bearing at
+        // crate compile time: a future edit that flipped a polarity
+        // on this predicate fails at `cargo build`, not just at this
+        // test's runtime assertion.
+        const _: () = assert!(ProofRelation::Stationary.is_watermark_stationary());
+        const _: () = {
+            let Some(generations) = std::num::NonZeroU64::new(1) else {
+                panic!("nonzero literal")
+            };
+            assert!(ProofRelation::IdentityRepublish { generations }.is_watermark_stationary());
+        };
+        const _: () = {
+            let Some(by) = std::num::NonZeroU64::new(1) else {
+                panic!("nonzero literal")
+            };
+            assert!(ProofRelation::Regressed { by }.is_watermark_stationary());
         };
     }
 }
