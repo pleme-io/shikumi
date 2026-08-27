@@ -14755,6 +14755,100 @@ impl ProofRelation {
             | Self::CrossStore { .. } => None,
         }
     }
+
+    /// True iff this classification witnesses a legitimate publish — the
+    /// two consistent-half corners [`Self::IdentityRepublish`] (watermark
+    /// stationary, generation counter advanced) and [`Self::Progression`]
+    /// (watermark moved, generation counter advanced). `false` on the
+    /// null-hypothesis polling corner [`Self::Stationary`] and on BOTH
+    /// same-store impossibility corners [`Self::CrossStore`]
+    /// (`generations_advanced == Some(0)`) and [`Self::Regressed`]
+    /// (`generations_advanced == None`).
+    ///
+    /// **The payload-carrying-altitude lift of
+    /// [`ProofRelationKind::is_generation_advanced`] (commit `9000d28`).**
+    /// The same "did we observe a publish?" question the fused-kind
+    /// receiver answers on the tag alone, now reachable one altitude up
+    /// at the payload-carrying enum without projecting through
+    /// [`Self::kind`] first. Direct peer of [`Self::same_store_consistent`]
+    /// / [`Self::same_store_inconsistent`] on the compound-predicate
+    /// receiver family at this altitude, and the compound-polarity
+    /// mirror on this altitude of the modal-pair receiver ladder every
+    /// classification sum in the crate now carries at both altitudes.
+    ///
+    /// **Delegation ladder — the tag-alone answer at the value altitude.**
+    /// A consumer holding a [`ProofRelation`] value answering "did we
+    /// observe a publish?" previously had three inline paths, each
+    /// leaking work: (a) `self.kind().is_generation_advanced()` — a
+    /// two-hop composition through the fused-kind projection whose
+    /// [`Self::kind`] call carries the same exhaustive `match` this
+    /// predicate would; (b) `self.identity_republish() || self.progression()`
+    /// — a two-hop composition through two single-variant tag-only
+    /// classifiers whose disjunction the exhaustiveness checker cannot
+    /// help keep in sync with a future publish-observing corner
+    /// (a hypothetical sixth variant added to the consistent half that
+    /// also witnesses a publish would silently escape the two-arm
+    /// disjunction without turning the callsite red); or (c)
+    /// `matches!(relation, ProofRelation::IdentityRepublish { .. } |
+    /// ProofRelation::Progression { .. })` inline at every seam, a shape
+    /// the exhaustiveness checker cannot help keep in sync with a future
+    /// variant addition either. The receiver-sibling here answers the
+    /// same question through a single welded [`matches!`]: adding a sixth
+    /// variant to [`ProofRelation`] fails to compile at this method's
+    /// pattern in lockstep with [`Self::stationary`],
+    /// [`Self::identity_republish`], [`Self::same_store_consistent`], and
+    /// every other classification receiver in this impl.
+    ///
+    /// **Cross-altitude same-answer with the fused kind.** For every
+    /// [`ProofRelation`] value, `self.is_generation_advanced() ==
+    /// self.kind().is_generation_advanced()` — the value-altitude
+    /// verdict agrees pointwise with the fused-kind verdict projected
+    /// through [`Self::kind`], matching the same-answer identities the
+    /// prior receivers already carry ([`Self::same_store_consistent`]
+    /// against `self.kind().is_consistent()`,
+    /// [`Self::same_store_inconsistent`] against
+    /// `self.kind().is_impossible()`, and the five single-variant
+    /// tag-only predicates against the fused-kind tag).
+    ///
+    /// **Compound-polarity fold across the payload-carrying enum.**
+    /// Exactly two of the five variants satisfy the predicate, three do
+    /// not; the two-vs-three partition welds the compound-polarity
+    /// sibling on [`ProofRelationKind`] (two publish-observing corners
+    /// out of five) to the payload-carrying altitude without opening a
+    /// new impossibility-side polarity. A future edit that added a sixth
+    /// consistent corner or a third impossibility corner without
+    /// extending this predicate's arms fails at the cardinality-
+    /// invariant partition pin before drifting through any consumer that
+    /// groups on the publish-observing pole.
+    ///
+    /// **Refinement — publish-observing implies same-store-consistent.**
+    /// At this altitude, `self.is_generation_advanced() ⇒
+    /// self.same_store_consistent()` pointwise on every variant — both
+    /// publish-observing corners lie in the same-store-consistent half.
+    /// The converse does NOT hold: the same-store-consistent half also
+    /// carries [`Self::Stationary`] (a legitimate null-hypothesis corner
+    /// that does not witness a publish), so
+    /// `self.same_store_consistent()` covers three DISTINCT corners
+    /// while `self.is_generation_advanced()` covers only the two
+    /// publish-observing ones.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelation`] projects
+    /// its generation-advanced verdict at compile time too, matching the
+    /// `const`-ness of every other classification accessor (predicate,
+    /// payload, or kind projection) in this impl.
+    ///
+    /// The wire-side sibling on [`ProofRelationWire`] remains to be
+    /// surfaced at the next altitude; the cross-altitude same-answer
+    /// with [`Self::kind`]`.is_generation_advanced()` pins the fused-
+    /// kind projection today, and the wire receiver will pin the
+    /// wire-side projection when it lands.
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        matches!(
+            self,
+            Self::IdentityRepublish { .. } | Self::Progression { .. }
+        )
+    }
 }
 
 /// The **wire projection** of a [`ProofRelation`] — the sum-type peer of
@@ -28567,6 +28661,266 @@ mod proof_relation_same_store_inconsistent_tests {
                      same_store_inconsistent()",
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_is_generation_advanced_tests {
+    //! Weld the compound-polarity publish-observing predicate at the
+    //! payload-carrying altitude — [`ProofRelation::is_generation_advanced`]
+    //! — the value-side lift of
+    //! [`ProofRelationKind::is_generation_advanced`] (commit `9000d28`),
+    //! itself the fused-sum lift of
+    //! [`SameStoreConsistencyKind::is_generation_advanced`] (commit
+    //! `346c3cc`).
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Truth table pinned by variant identity: only the two
+    //!    publish-observing corners ([`ProofRelation::IdentityRepublish`]
+    //!    and [`ProofRelation::Progression`]) return `true`; the three
+    //!    other variants ([`Stationary`][ProofRelation::Stationary],
+    //!    [`CrossStore`][ProofRelation::CrossStore],
+    //!    [`Regressed`][ProofRelation::Regressed]) return `false`.
+    //! 2. Cross-altitude same-answer with the fused kind — for every
+    //!    value, `self.is_generation_advanced() ==
+    //!    self.kind().is_generation_advanced()` pointwise, welding the
+    //!    delegation ladder without projecting through
+    //!    [`ProofRelation::kind`] at the consumer.
+    //! 3. Cross-altitude same-answer with the fused-arm disjunction —
+    //!    `self.is_generation_advanced() == self.identity_republish() ||
+    //!    self.progression()`, pinning that the compound-polarity
+    //!    receiver equals the disjunction of the two single-variant
+    //!    tag-only classifiers whose variants it welds.
+    //! 4. Refinement — publish-observing implies same-store-consistent
+    //!    (`is_generation_advanced() ⇒ same_store_consistent()`) and
+    //!    excludes same-store-inconsistency
+    //!    (`is_generation_advanced() ⇒ !same_store_inconsistent()`)
+    //!    pointwise on every variant.
+    //! 5. Cardinality partition — exactly two of the five fixture
+    //!    variants satisfy the predicate, three do not. A future edit
+    //!    that added a sixth consistent corner or a third impossibility
+    //!    corner without extending this predicate's arms fails here
+    //!    before drifting through any consumer.
+    //! 6. `const`-callable on every variant — a compile-time-known
+    //!    [`ProofRelation`] projects its generation-advanced verdict at
+    //!    compile time too, matching the `const`-ness idiom every prior
+    //!    classification predicate on this type already carries.
+    //! 7. Compatibility with the `ProofRelationKind` projection — for
+    //!    every value, `self.is_generation_advanced() ==
+    //!    self.consistency_kind().is_some_and(|c|
+    //!    c.is_generation_advanced())`, pinning the two-hop
+    //!    Option-composition path a consumer routing through the
+    //!    half-side receiver would take.
+    //!
+    //! Same test idiom as the sibling
+    //! `proof_relation_same_store_inconsistent_tests` module.
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned by variant identity
+
+    #[test]
+    fn value_truth_table_reads_the_two_publish_observing_corners_alone() {
+        for (name, relation) in all_five_relations() {
+            let expected = matches!(
+                relation,
+                ProofRelation::IdentityRepublish { .. } | ProofRelation::Progression { .. }
+            );
+            assert_eq!(
+                relation.is_generation_advanced(),
+                expected,
+                "{name}: is_generation_advanced() diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Cross-altitude same-answer with the fused kind
+
+    #[test]
+    fn cross_altitude_same_answer_with_kind_projection() {
+        // For every ProofRelation value, the value-altitude verdict
+        // agrees pointwise with the fused-kind verdict projected
+        // through .kind() — the delegation ladder to the fused sum is
+        // load-bearing, not decorative.
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_generation_advanced(),
+                relation.kind().is_generation_advanced(),
+                "{name}: value-altitude is_generation_advanced must equal \
+                 kind().is_generation_advanced()",
+            );
+        }
+    }
+
+    // ---------- (3) Cross-altitude same-answer with the fused-arm disjunction
+
+    #[test]
+    fn compound_predicate_matches_disjunction_of_single_variant_siblings() {
+        // The compound-polarity receiver equals the disjunction of the
+        // two single-variant tag-only classifiers whose variants it
+        // welds — pinning the equivalence at the receiver family
+        // altitude even though only the compound receiver carries the
+        // exhaustiveness weld against a future publish-observing
+        // corner. A hypothetical sixth publish-observing variant added
+        // to ProofRelation without extending this predicate's
+        // matches!() arm silently escapes the two-arm disjunction
+        // (identity_republish() || progression()) but the compound
+        // predicate stays exhaustively welded — this test then fails.
+        for (name, relation) in all_five_relations() {
+            assert_eq!(
+                relation.is_generation_advanced(),
+                relation.identity_republish() || relation.progression(),
+                "{name}: is_generation_advanced() must equal \
+                 identity_republish() || progression()",
+            );
+        }
+    }
+
+    // ---------- (4) Refinement — publish-observing implies
+    //                same-store-consistent, and excludes same-store-
+    //                inconsistency.
+
+    #[test]
+    fn is_generation_advanced_implies_same_store_consistent() {
+        for (name, relation) in all_five_relations() {
+            if relation.is_generation_advanced() {
+                assert!(
+                    relation.same_store_consistent(),
+                    "{name}: publish-observing corners must lie in the \
+                     same-store-consistent half",
+                );
+                assert!(
+                    !relation.same_store_inconsistent(),
+                    "{name}: publish-observing corners cannot lie in the \
+                     same-store-inconsistent half",
+                );
+            }
+        }
+    }
+
+    // ---------- (5) Cardinality partition — exactly two of five satisfy
+
+    #[test]
+    fn cardinality_partition_is_two_from_three() {
+        let (advanced, rest): (Vec<_>, Vec<_>) = all_five_relations()
+            .into_iter()
+            .partition(|(_, r)| r.is_generation_advanced());
+        assert_eq!(
+            advanced.len(),
+            2,
+            "exactly two ProofRelation fixture variants must satisfy \
+             is_generation_advanced (IdentityRepublish + Progression); got {}",
+            advanced.len(),
+        );
+        assert_eq!(
+            rest.len(),
+            3,
+            "exactly three ProofRelation fixture variants must NOT satisfy \
+             is_generation_advanced (Stationary + CrossStore + Regressed); got {}",
+            rest.len(),
+        );
+        assert_eq!(
+            advanced.len() + rest.len(),
+            5,
+            "the compound-polarity binary partition must cover the fixture",
+        );
+    }
+
+    // ---------- (6) `const`-callable at compile time
+
+    #[test]
+    fn is_generation_advanced_is_const_callable() {
+        // A compile-time-known ProofRelation projects its
+        // generation-advanced verdict at compile time. The const-block
+        // asserts below make the weld load-bearing at crate compile
+        // time: a future edit that flipped a polarity on this predicate
+        // fails at `cargo build`, not just at this test's runtime
+        // assertion.
+        const _: () = assert!(!ProofRelation::Stationary.is_generation_advanced());
+        const _: () = {
+            let Some(generations) = std::num::NonZeroU64::new(1) else {
+                panic!("nonzero literal")
+            };
+            assert!(ProofRelation::IdentityRepublish { generations }.is_generation_advanced());
+        };
+        const _: () = {
+            let Some(by) = std::num::NonZeroU64::new(1) else {
+                panic!("nonzero literal")
+            };
+            assert!(!ProofRelation::Regressed { by }.is_generation_advanced());
+        };
+    }
+
+    // ---------- (7) Compatibility with the consistency_kind projection
+
+    #[test]
+    fn compound_predicate_agrees_with_consistency_kind_projection() {
+        // A consumer routing through the half-side receiver via the
+        // Option<SameStoreConsistencyKind> shape reaches the same
+        // answer through the two-hop composition: for every value,
+        // is_generation_advanced() ==
+        // consistency_kind().is_some_and(|c| c.is_generation_advanced()).
+        // Pins the delegation-ladder path through the half-side
+        // altitude on top of the direct fused-kind path pinned in test
+        // (2).
+        for (name, relation) in all_five_relations() {
+            let via_half = relation
+                .consistency_kind()
+                .is_some_and(|c| c.is_generation_advanced());
+            assert_eq!(
+                relation.is_generation_advanced(),
+                via_half,
+                "{name}: is_generation_advanced must equal \
+                 consistency_kind().is_some_and(c.is_generation_advanced())",
+            );
         }
     }
 }
