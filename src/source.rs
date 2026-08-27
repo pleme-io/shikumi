@@ -87,6 +87,44 @@ impl ConfigSource {
         matches!(self, Self::Defaults)
     }
 
+    /// Returns `true` for the operator-supplied overlay layers
+    /// ([`Self::Env`] or [`Self::File`]), `false` for the developer-
+    /// prescribed [`Self::Defaults`] baseline — the compound-polarity
+    /// complement of [`Self::is_defaults`] on the layer-kind axis.
+    ///
+    /// Names the *overlay* pole of the (baseline × overlay) polarity axis
+    /// at the type level, so operator-facing consumers reading *"did
+    /// this value come from an operator-supplied layer, or from the
+    /// struct-embedded defaults?"* — the CLI `config-show` diagnostic
+    /// coloring rows by "was this actually overridden by the operator",
+    /// the attestation manifest counting the operator-supplied overlays
+    /// on a chain, the structured-log emitter tagging a failing layer
+    /// as `overlay` vs `defaults` — spell the *positive* form of the
+    /// query at the call site instead of the double-negative
+    /// `!source.is_defaults()` or the two-arm disjunction
+    /// `source.is_env() || source.is_file()`. Idiom-peer of the compound-
+    /// polarity siblings already carried on the diff-cell change axis
+    /// ([`crate::DiffLineKind::is_changed`] on Added|Removed): same *the
+    /// substrate now knows the compound pole* pattern lifted onto the
+    /// layer-kind axis.
+    ///
+    /// `const`-callable — matching the `const`-ness of the sibling
+    /// predicates and the kind-side [`ConfigSourceKind::is_overlay`],
+    /// so a `source.kind().is_overlay()` composition stays const-
+    /// callable end-to-end.
+    ///
+    /// The modal-pair complement law `is_overlay() == !is_defaults()`
+    /// holds pointwise on the canonical sample table, pinned by
+    /// [`tests::config_source_is_overlay_is_complement_of_is_defaults_on_tag_side`].
+    /// The tag ↔ kind agreement law
+    /// `source.is_overlay() == source.kind().is_overlay()` holds
+    /// pointwise on the canonical sample table, pinned by
+    /// [`tests::config_source_is_overlay_agrees_with_kind_pointwise`].
+    #[must_use]
+    pub const fn is_overlay(&self) -> bool {
+        matches!(self, Self::Env(_) | Self::File(_))
+    }
+
     /// Data-free discriminant of this [`ConfigSource`]: the kind of
     /// layer ([`ConfigSourceKind::Defaults`] / [`ConfigSourceKind::Env`]
     /// / [`ConfigSourceKind::File`]) independent of its specific path
@@ -567,6 +605,46 @@ impl ConfigSourceKind {
     #[must_use]
     pub const fn is_file(self) -> bool {
         matches!(self, Self::File)
+    }
+
+    /// Returns `true` for the operator-supplied overlay layer kinds
+    /// ([`Self::Env`] or [`Self::File`]), `false` for the developer-
+    /// prescribed [`Self::Defaults`] baseline — the compound-polarity
+    /// complement of [`Self::is_defaults`] on the layer-kind axis.
+    ///
+    /// Kind-side sibling of [`ConfigSource::is_overlay`]: the tag-side
+    /// predicate over the data-carrying [`ConfigSource`] enum lifts here
+    /// to a `Copy`-taking `const fn` on the data-free discriminant, so a
+    /// consumer holding only the layer kind (a `HashMap`/`HashSet` key,
+    /// a `BTreeMap` bucket, an [`crate::AttributionRule::layer_kind`]
+    /// projection) can classify the overlay-vs-baseline polarity
+    /// without materialising a synthetic [`ConfigSource`] first.
+    /// Idiom-peer of the compound-polarity siblings already carried on
+    /// the diff-cell change axis ([`crate::DiffLineKind::is_changed`] on
+    /// Added|Removed) and the tag-side [`ConfigSource::is_overlay`]:
+    /// same *the substrate now knows the compound pole* pattern lifted
+    /// onto the kind-side altitude of the layer-kind axis.
+    ///
+    /// The modal-pair complement law `is_overlay() == !is_defaults()`
+    /// holds pointwise on every closed-axis cell, pinned by
+    /// [`tests::config_source_kind_is_overlay_is_complement_of_is_defaults`].
+    /// Agreement with the tag-side predicate is a structural law:
+    /// `source.is_overlay() == source.kind().is_overlay()` for every
+    /// [`ConfigSource`], pinned pointwise by
+    /// [`tests::config_source_is_overlay_agrees_with_kind_pointwise`]
+    /// against the canonical sample table.
+    ///
+    /// A future fourth [`Self`] variant landing without explicit
+    /// polarity assignment (a hypothetical `Http`, `Vault`, or
+    /// `ConfigMap` layer kind paired with a new [`ConfigSource`]
+    /// variant) collapses the modal-pair complement law immediately —
+    /// the new variant is either `true` on both `is_overlay` and
+    /// `is_defaults` (impossible) or `false` on both (the polarity
+    /// axis has no answer for it), failing the complement pin before
+    /// drifting through any per-polarity consumer.
+    #[must_use]
+    pub const fn is_overlay(self) -> bool {
+        matches!(self, Self::Env | Self::File)
     }
 
     /// The [`crate::ClosedAxis`] precedence ordinal of this source-kind
@@ -95255,6 +95333,107 @@ mod tests {
             assert_eq!(k.is_defaults(), k == ConfigSourceKind::Defaults);
             assert_eq!(k.is_env(), k == ConfigSourceKind::Env);
             assert_eq!(k.is_file(), k == ConfigSourceKind::File);
+        }
+    }
+
+    #[test]
+    fn config_source_kind_is_overlay_partitions_defaults_from_overlays() {
+        // Concrete-position kind-side pin for the compound-polarity
+        // sibling on the layer-kind axis. `Defaults` is the baseline
+        // pole (false); `Env` and `File` are the operator-supplied
+        // overlay pole (true). A future edit that flipped one arm's
+        // polarity fails at THIS site before drifting through any
+        // consumer that read the (baseline × overlay) axis.
+        assert!(!ConfigSourceKind::Defaults.is_overlay());
+        assert!(ConfigSourceKind::Env.is_overlay());
+        assert!(ConfigSourceKind::File.is_overlay());
+    }
+
+    #[test]
+    fn config_source_kind_is_overlay_is_complement_of_is_defaults() {
+        // Modal-pair complement law on the layer-kind axis:
+        // `is_overlay() == !is_defaults()` pointwise on every
+        // closed-axis cell — the two poles of the (baseline × overlay)
+        // polarity axis partition ConfigSourceKind::ALL without
+        // remainder. A future fourth variant landing without explicit
+        // polarity assignment fails this pin (it would be false on
+        // both sides, breaking the complement law) before drifting
+        // through any per-polarity consumer.
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                k.is_overlay(),
+                !k.is_defaults(),
+                "ConfigSourceKind::{k:?}: is_overlay() must be the complement of \
+                 is_defaults() on the layer-kind axis",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_is_overlay_true_for_env_and_file_only() {
+        // Per-variant polarity pin at the tag-side altitude with
+        // payload-independence sub-pin: the answer is the same for
+        // every `Env(prefix)` regardless of prefix content and every
+        // `File(path)` regardless of path content. Direct peer of
+        // `config_source_kind_is_overlay_partitions_defaults_from_overlays`
+        // at the tag-side altitude.
+        assert!(!ConfigSource::Defaults.is_overlay());
+        assert!(ConfigSource::Env(String::new()).is_overlay());
+        assert!(ConfigSource::Env("MYAPP_".to_owned()).is_overlay());
+        assert!(ConfigSource::File(PathBuf::from("/x.yaml")).is_overlay());
+        assert!(ConfigSource::File(PathBuf::from("rel.toml")).is_overlay());
+    }
+
+    #[test]
+    fn config_source_is_overlay_is_complement_of_is_defaults_on_tag_side() {
+        // Modal-pair complement law at the tag-side altitude:
+        // `source.is_overlay() == !source.is_defaults()` pointwise on
+        // the canonical sample table, mirror of the kind-side pin
+        // `config_source_kind_is_overlay_is_complement_of_is_defaults`.
+        // Catches a future edit that drifts the tag-side polarity
+        // without the kind-side (or vice-versa) — the two altitudes
+        // must stay complementary in lockstep.
+        let sources = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("MYAPP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+            ConfigSource::File(PathBuf::from("rel.toml")),
+        ];
+        for src in &sources {
+            assert_eq!(
+                src.is_overlay(),
+                !src.is_defaults(),
+                "ConfigSource {src:?}: is_overlay() must be the complement of \
+                 is_defaults() on the tag-side altitude",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_is_overlay_agrees_with_kind_pointwise() {
+        // Tag ↔ kind agreement law for the compound-polarity sibling:
+        // `source.is_overlay() == source.kind().is_overlay()` for every
+        // ConfigSource in the canonical sample table. Idiom-peer of the
+        // per-cell agreement pin
+        // `config_source_kind_agrees_with_source_predicates_pointwise`
+        // extended to the (baseline × overlay) polarity axis. A future
+        // edit that drifts one altitude's compound polarity without the
+        // other fails here first.
+        let sources = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("MYAPP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+            ConfigSource::File(PathBuf::from("rel.toml")),
+        ];
+        for src in &sources {
+            let k = src.kind();
+            assert_eq!(
+                src.is_overlay(),
+                k.is_overlay(),
+                "is_overlay must agree tag ↔ kind for {src:?}",
+            );
         }
     }
 
