@@ -10688,6 +10688,122 @@ impl ProofRelationKind {
         }
     }
 
+    /// Whether this fused corner witnessed the class-scoped watermark
+    /// move — `true` on the two moved-watermark corners
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Progression`]`)`
+    /// (watermark moved AND generation counter advanced by one or more)
+    /// and [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::CrossStore`]`)`
+    /// (watermark moved AT the same generation counter), `false` on the
+    /// three stationary-watermark corners
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Stationary`]`)`
+    /// (both axes at rest — the `/healthz/config` polling case),
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::IdentityRepublish`]`)`
+    /// (a re-publish of the same value: watermark stationary, generation
+    /// advanced), and
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::Regressed`]`)`
+    /// (generation counter went backwards — the watermark is folded
+    /// through [`MovedWatermarkDelta`] on the payload-carrying altitude,
+    /// but by definition of the `Regressed` arm the observation was made
+    /// at strictly-less generation, so the class-scoped watermark is
+    /// treated as stationary at this altitude).
+    ///
+    /// **The CROSS-HALF compound-polarity sibling on the fused-sum
+    /// altitude.** Whereas [`Self::is_generation_advanced`] groups the
+    /// two publish-observing corners on the CONSISTENT half
+    /// (`IdentityRepublish` + `Progression`) — a compound-polarity fold
+    /// the same-named half-side receiver
+    /// [`SameStoreConsistencyKind::is_generation_advanced`] already
+    /// spells at the half altitude — this predicate groups the two
+    /// moved-watermark corners ACROSS BOTH HALVES (`Consistent(Progression)`
+    /// from the consistent half and `Impossible(CrossStore)` from the
+    /// impossibility half). Neither half-Kind can name this compound on
+    /// its own: on [`SameStoreConsistencyKind`] the answer collapses to
+    /// the singleton [`SameStoreConsistencyKind::is_progression`], and
+    /// on [`SameStoreImpossibilityKind`] it collapses to the singleton
+    /// [`SameStoreImpossibilityKind::is_cross_store`]. The fused-sum
+    /// altitude is the FIRST altitude at which the class-scoped
+    /// watermark-move question becomes a two-corner compound.
+    ///
+    /// **Delegation ladder — direct fused-arm disjunction.** A consumer
+    /// holding a [`ProofRelationKind`] at the fused altitude answering
+    /// "did the watermark move on this proof pair?" previously had three
+    /// inline paths, each leaking work: (a) `matches!(k,
+    /// Self::Consistent(SameStoreConsistencyKind::Progression) |
+    /// Self::Impossible(SameStoreImpossibilityKind::CrossStore))` — an
+    /// inline two-arm pattern the exhaustiveness checker cannot help
+    /// keep in sync with a future moved-watermark corner (a hypothetical
+    /// third impossibility variant carrying a moved watermark, say)
+    /// silently escapes the two-arm disjunction; (b)
+    /// `k.consistency().is_some_and(|c| c.is_progression()) ||
+    /// k.impossibility().is_some_and(|c| c.is_cross_store())` — a
+    /// two-hop composition through both half-side `Option<Kind>` shapes
+    /// whose two unwraps the tag-only question doesn't need; or (c)
+    /// `matches!(k.name(), "progression" | "cross_store")` — a routing
+    /// switch through the stable-name projection whose two string
+    /// literals the consumer must remember to keep snake-case in
+    /// lockstep with the classification's own naming. The lifted
+    /// receiver here answers the same question through a single welded
+    /// `match` pinned once at the fused-sum altitude that already
+    /// carries the classification shape.
+    ///
+    /// **The two 2/5 compound-polarity partitions on this altitude.**
+    /// The predicate cuts [`Self::VARIANTS`] into a `{Progression,
+    /// CrossStore}` half (moved watermark, 2 of 5) and a `{Stationary,
+    /// IdentityRepublish, Regressed}` half (stationary watermark, 3 of
+    /// 5). This is the sibling to [`Self::is_generation_advanced`],
+    /// which cuts the same [`Self::VARIANTS`] into a `{IdentityRepublish,
+    /// Progression}` half (generation advanced, 2 of 5) and a
+    /// `{Stationary, Regressed, CrossStore}` half (generation stationary
+    /// or regressed, 3 of 5). The two 2/5 partitions overlap at exactly
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Progression`]`)`
+    /// — the ONE corner that witnessed both a watermark move AND a
+    /// generation advance, i.e. the legitimate progression corner. The
+    /// two predicates together weld the two-axis (watermark, generation)
+    /// (moved, advanced) grid the [`ProofDelta`]'s three-field shape
+    /// carries down at the delta altitude into a pair of receiver-family
+    /// compound predicates at the fused-sum altitude.
+    ///
+    /// **Cross-altitude same-answer with the watermark-delta receiver.**
+    /// For every [`ProofDelta`] `d` whose [`ProofDelta::relation`]
+    /// classifies as `Some(r)`, `r.kind().is_watermark_moved()` equals
+    /// `d.watermark.any_moved()` — the fused-Kind verdict agrees
+    /// pointwise with the watermark-delta altitude's verdict on the four
+    /// delta-reachable corners. On the regressed corner where
+    /// [`ProofDelta::relation`] returns `None`, the delta-side answer
+    /// (`d.watermark.any_moved()`) coincides with the fused-Kind answer
+    /// only when the two proofs' watermarks were bit-identical; the
+    /// classification-altitude answer at
+    /// [`ConfigSyncProof::relation_since`]'s `Regressed { by }` payload
+    /// carries NO watermark, so the fused-Kind altitude reads `false` on
+    /// the regressed corner by construction — matching the
+    /// [`SameStoreImpossibilityKind::Regressed`] arm's tag-only classification.
+    ///
+    /// **Compound-polarity fold across the fused sum.** Exactly two of
+    /// the five [`Self::VARIANTS`] cells satisfy the predicate, three
+    /// do not; the two-vs-three partition welds the cross-half
+    /// compound-polarity sibling of [`Self::is_generation_advanced`]
+    /// without opening a new half-side partition on either
+    /// [`SameStoreConsistencyKind`] or [`SameStoreImpossibilityKind`].
+    /// A future edit that added a sixth [`ProofRelationKind`] variant
+    /// carrying a moved-watermark payload without extending this
+    /// predicate would collapse the polarity silently, but the
+    /// cardinality-invariant partition pin
+    /// [`variants_tests::proof_relation_kind_is_watermark_moved_partitions_variants_two_from_three`]
+    /// catches the drift before it reaches any consumer that groups on
+    /// this pole.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationKind`]
+    /// projects its watermark-moved verdict at compile time too,
+    /// matching the `const`-ness of every other receiver on this enum.
+    #[must_use]
+    pub const fn is_watermark_moved(&self) -> bool {
+        matches!(
+            *self,
+            Self::Consistent(SameStoreConsistencyKind::Progression)
+                | Self::Impossible(SameStoreImpossibilityKind::CrossStore)
+        )
+    }
+
     /// The stable operational identifier of this fused corner — the
     /// SAME snake-case name the two half-side
     /// [`SameStoreConsistencyKind::name`] and
@@ -34471,6 +34587,225 @@ mod variants_tests {
         const _: () = assert!(
             !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
                 .is_generation_advanced()
+        );
+    }
+
+    // ---------- ProofRelationKind::is_watermark_moved —
+    // cross-half compound-polarity sibling on the fused-sum altitude,
+    // grouping Consistent(Progression) and Impossible(CrossStore).
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_partitions_moved_watermark_cells() {
+        // Per-variant polarity table on the cross-half compound-polarity
+        // sibling of the fused-sum receiver family: exactly the two
+        // moved-watermark corners (Consistent(Progression) — legitimate
+        // progression, Impossible(CrossStore) — watermark moved at same
+        // generation) return true; the null-hypothesis polling corner
+        // (Consistent(Stationary)), the identity-republish corner
+        // (Consistent(IdentityRepublish), watermark stationary), and the
+        // regressed impossibility corner (Impossible(Regressed)) return
+        // false.
+        assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_watermark_moved()
+        );
+        assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_watermark_moved()
+        );
+        assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_watermark_moved()
+        );
+        assert!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_watermark_moved()
+        );
+        assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_watermark_moved()
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_matches_cross_half_disjunction() {
+        // Delegation ladder pin at the fused-sum altitude: for every
+        // ProofRelationKind::VARIANTS cell, `k.is_watermark_moved()`
+        // equals the cross-half two-arm disjunction
+        // `matches!(k, Consistent(Progression) | Impossible(CrossStore))`.
+        // The pattern crosses both halves — no half-side receiver can
+        // spell it on its own, since Consistent(Progression) and
+        // Impossible(CrossStore) live in different SameStore*Kind
+        // enums. A future edit that drifted the fused-arm disjunction
+        // from the direct pattern fails here before drifting through
+        // any consumer that groups on the moved-watermark pole.
+        for k in ProofRelationKind::VARIANTS {
+            let via_pattern = matches!(
+                k,
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                    | ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            );
+            assert_eq!(
+                k.is_watermark_moved(),
+                via_pattern,
+                "ProofRelationKind::{k:?} — fused-altitude is_watermark_moved must equal the cross-half disjunction",
+            );
+            let via_projection = k.consistency().is_some_and(|c| c.is_progression())
+                || k.impossibility().is_some_and(|c| c.is_cross_store());
+            assert_eq!(
+                k.is_watermark_moved(),
+                via_projection,
+                "ProofRelationKind::{k:?} — fused-altitude is_watermark_moved must equal projection through both half-side Option<Kind> shapes",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_partitions_variants_two_from_three() {
+        // Cardinality-side invariant at the cross-half compound-polarity
+        // altitude: exactly two ProofRelationKind::VARIANTS cells satisfy
+        // is_watermark_moved (the two moved-watermark corners across
+        // both halves), exactly three do not (Consistent(Stationary) +
+        // Consistent(IdentityRepublish) + Impossible(Regressed)), and
+        // the two counts sum to ProofRelationKind::VARIANTS.len(). A
+        // future edit that added a sixth variant carrying a moved
+        // watermark without extending the compound arm fails at this
+        // cardinality invariant before drifting through any consumer
+        // site.
+        let moved_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_watermark_moved)
+            .count();
+        let stationary_cells = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| !k.is_watermark_moved())
+            .count();
+        assert_eq!(
+            moved_cells, 2,
+            "exactly two ProofRelationKind::VARIANTS cells must satisfy is_watermark_moved",
+        );
+        assert_eq!(
+            stationary_cells, 3,
+            "exactly three ProofRelationKind::VARIANTS cells must NOT satisfy is_watermark_moved (Stationary + IdentityRepublish + Regressed)",
+        );
+        assert_eq!(
+            moved_cells + stationary_cells,
+            ProofRelationKind::VARIANTS.len(),
+            "the cross-half compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_and_is_generation_advanced_intersect_only_at_progression()
+     {
+        // Cross-axis pin: the two 2/5 compound-polarity partitions
+        // (`is_watermark_moved` on the watermark axis and
+        // `is_generation_advanced` on the generation axis) overlap at
+        // exactly ONE ProofRelationKind::VARIANTS cell — the legitimate
+        // progression corner Consistent(Progression), the only corner
+        // that witnessed both a class-scoped watermark move AND a
+        // generation-counter advance. Every other cell satisfies at
+        // most one of the two predicates (Consistent(Stationary) —
+        // neither; Consistent(IdentityRepublish) — advanced only;
+        // Impossible(CrossStore) — moved only; Impossible(Regressed) —
+        // neither). A future edit that drifted either compound-polarity
+        // arm from the two-axis grid fails here at the intersection
+        // pin before reaching any consumer that routes on the
+        // per-axis (watermark, generation) grid the ProofDelta's
+        // three-field shape carries at the delta altitude.
+        let intersection: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| k.is_watermark_moved() && k.is_generation_advanced())
+            .collect();
+        assert_eq!(
+            intersection,
+            vec![ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Progression
+            )],
+            "is_watermark_moved AND is_generation_advanced must intersect at Consistent(Progression) alone",
+        );
+        // Union spans the three non-null-non-regressed cells.
+        let union: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| k.is_watermark_moved() || k.is_generation_advanced())
+            .collect();
+        assert_eq!(
+            union,
+            vec![
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ],
+            "is_watermark_moved OR is_generation_advanced must span exactly the three activity-observing cells",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_refines_no_outer_half() {
+        // Refinement pin: unlike is_generation_advanced (which
+        // implies is_consistent — every publish-observing corner lies
+        // in the consistent half), is_watermark_moved is a CROSS-HALF
+        // compound that lands in BOTH outer halves. The predicate
+        // fires on Consistent(Progression) (consistent half) and
+        // Impossible(CrossStore) (impossibility half), so no
+        // single-arm outer-tag implication holds. This test pins the
+        // cross-half nature explicitly: each outer half contains at
+        // least one moved-watermark corner, so is_watermark_moved
+        // implies neither is_consistent nor is_impossible.
+        let consistent_moved = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .any(|k| k.is_watermark_moved() && k.is_consistent());
+        let impossible_moved = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .any(|k| k.is_watermark_moved() && k.is_impossible());
+        assert!(
+            consistent_moved,
+            "is_watermark_moved must fire on at least one consistent corner (Consistent(Progression))",
+        );
+        assert!(
+            impossible_moved,
+            "is_watermark_moved must fire on at least one impossibility corner (Impossible(CrossStore))",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_is_watermark_moved_is_const_callable() {
+        // The cross-half compound-polarity sibling at the fused
+        // altitude is `const`-callable, so a compile-time consumer (a
+        // `const` predicate table, a `const`-evaluated switch over a
+        // ProofRelationKind singleton, a `const`-eval-based
+        // static-assert on a classifier arm) resolves the polarity at
+        // compile time. Idiom-peer of
+        // `proof_relation_kind_is_generation_advanced_is_const_callable`.
+        // The const-block asserts below make the weld load-bearing at
+        // crate compile time: a future edit that flipped a polarity
+        // on this predicate fails at `cargo build`, not just at this
+        // test's runtime assertion.
+        const _: () = assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary)
+                .is_watermark_moved()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish)
+                .is_watermark_moved()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression)
+                .is_watermark_moved()
+        );
+        const _: () = assert!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore)
+                .is_watermark_moved()
+        );
+        const _: () = assert!(
+            !ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
+                .is_watermark_moved()
         );
     }
 }
