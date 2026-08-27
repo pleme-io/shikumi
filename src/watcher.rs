@@ -161,6 +161,69 @@ impl WatchEventClass {
         matches!(self, Self::Ignored)
     }
 
+    /// Whether this class names an *observed file mutation* — `true` on
+    /// [`Self::Reload`] (the file's bytes may have changed: `Create` or a
+    /// content / write-time `Modify`) and on [`Self::Removed`] (the file
+    /// was unlinked at the watched path), `false` on [`Self::Ignored`]
+    /// (access, rename, permissions / ownership metadata, and the
+    /// `Any` / `Other` catch-alls).
+    ///
+    /// The compound-polarity sibling on the reload-relevance ternary axis
+    /// — the two-cell disjunction pole every ternary axis in the crate now
+    /// carries a name for. The single-cell complement is the long-standing
+    /// [`Self::is_ignored`]; the two predicates form a closed binary
+    /// partition of [`WatchEventClass::ALL`] at the compound-polarity
+    /// altitude on top of the closed ternary partition
+    /// [`Self::is_reload`] / [`Self::is_removed`] / [`Self::is_ignored`]
+    /// already resolves at the singleton altitude. Mirror of the compound
+    /// polarity pairs the fleet-idiom sibling ladders carry —
+    /// [`crate::ConfigTierKind::is_computed`] on the tier axis (four
+    /// crate-side altitudes plus [`crate::cli::TierArg::is_computed`] on
+    /// the CLI operator-facing surface),
+    /// [`crate::secret::SecretBackendKind::is_cloud_secret_manager`] on the
+    /// secret-backend axis (three altitudes),
+    /// [`crate::source::ConfigSourceKind::is_overlay`] on the source-layer
+    /// axis (four altitudes), and
+    /// [`crate::discovery::Format::is_feature_gated`] on the file-format
+    /// axis.
+    ///
+    /// One canonical name for the "did the file change at the watched
+    /// path?" question over [`WatchEventClass`] — a per-tenant reload-
+    /// telemetry meter counting *observed-mutation* events distinctly from
+    /// silently-discarded events (a debounce-window guard grouping the two
+    /// mutation cells before the guard's window opens; a structured-tracing
+    /// span attribute distinguishing acted-on events from dropped ones; a
+    /// ConfigPlane broadcast-reload counter bucketing mutation observations
+    /// separately from noise) matches this predicate at ONE site instead of
+    /// open-coding `class.is_reload() || class.is_removed()` and re-doing
+    /// the closed-partition bookkeeping at every consumer that reasons
+    /// about the two acted-on arms as one group.
+    ///
+    /// The classifier [`Self::classify`] pointwise witnesses the polarity:
+    /// exactly `Create(_)` and content-or-write-time `Modify(_)` land on
+    /// [`Self::Reload`], exactly `Remove(_)` lands on [`Self::Removed`],
+    /// every other `EventKind` lands on [`Self::Ignored`]. A future
+    /// classifier edit that added a fourth mutation-observing arm without
+    /// its own [`WatchEventClass`] variant would collapse the polarity
+    /// silently, but the compound-polarity partition pin below catches the
+    /// dual failure: a future fourth [`WatchEventClass`] variant that did
+    /// not extend one of the compound arms (or extended both) fails at
+    /// [`tests::watch_event_class_is_file_mutation_and_is_ignored_are_a_closed_binary_partition`]
+    /// before drifting through any consumer that groups on this pole.
+    ///
+    /// The compound is pointwise the complement of [`Self::is_ignored`]
+    /// — pinned by
+    /// [`tests::watch_event_class_is_file_mutation_is_complement_of_is_ignored`]
+    /// — and equal to the two-arm disjunction
+    /// `class.is_reload() || class.is_removed()` — pinned by
+    /// [`tests::watch_event_class_is_file_mutation_agrees_with_disjunction_of_mutation_siblings`].
+    /// A future edit that drifted either polarity from the other fails at
+    /// the cross-axis boundary rather than at a per-polarity consumer site.
+    #[must_use]
+    pub const fn is_file_mutation(self) -> bool {
+        matches!(self, Self::Reload | Self::Removed)
+    }
+
     /// Canonical operator-facing lowercase name — `"reload"`, `"removed"`,
     /// or `"ignored"`. Inherent mirror of the [`ClosedAxisLabel`] trait
     /// method; the trait impl delegates here so the labels live at one
@@ -663,6 +726,161 @@ mod tests {
             assert_eq!(class.is_reload(), class == WatchEventClass::Reload);
             assert_eq!(class.is_removed(), class == WatchEventClass::Removed);
             assert_eq!(class.is_ignored(), class == WatchEventClass::Ignored);
+        }
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_partitions_ignored_from_mutation_arms() {
+        // Per-variant polarity table on the compound-polarity sibling of
+        // the reload-relevance ternary axis: exactly the two acted-on arms
+        // (Reload — bytes may have changed; Removed — file unlinked at the
+        // watched path) return true; the silently-discarded arm (Ignored —
+        // access, rename, catch-alls) returns false. Idiom-peer of the
+        // per-variant polarity pin on the tier-axis compound-polarity
+        // sibling `ConfigTierKind::is_computed` (commit `7d2825d`).
+        assert!(WatchEventClass::Reload.is_file_mutation());
+        assert!(WatchEventClass::Removed.is_file_mutation());
+        assert!(!WatchEventClass::Ignored.is_file_mutation());
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_is_complement_of_is_ignored() {
+        // The modal-pair complement law at the compound-polarity altitude:
+        // `is_file_mutation() == !is_ignored()` pointwise on
+        // WatchEventClass::ALL. The two predicates partition ALL into the
+        // compound pole (Reload | Removed — two acted-on arms) and its
+        // single-cell complement (Ignored — silently discarded). A future
+        // edit that drifted one polarity from the other fails here before
+        // any consumer of either surface can observe the divergence.
+        // Idiom-peer of `TierArg::is_computed_is_complement_of_is_custom`
+        // (commit `3f3f482`), of the pair-complement laws on the
+        // `is_overlay` (commit `93c21cb`), `is_cloud_secret_manager`
+        // (commits `dc2ee39` / `3553207`), and `is_feature_gated` /
+        // `is_always_available` (commit `006e0a7`) compound siblings.
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                class.is_file_mutation(),
+                !class.is_ignored(),
+                "is_file_mutation and !is_ignored must agree pointwise on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_agrees_with_disjunction_of_mutation_siblings() {
+        // The compound ↔ two-arm disjunction law at the compound-polarity
+        // altitude: `is_file_mutation() == is_reload() || is_removed()`
+        // pointwise on WatchEventClass::ALL — the compound-polarity
+        // sibling is exactly the disjunction of the two singleton
+        // predicates naming the acted-on arms. A future edit that flipped
+        // one arm of the `matches!` in `is_file_mutation` without flipping
+        // the corresponding singleton sibling fails here before drifting
+        // through any consumer that reasons about the two acted-on arms
+        // as one group. Idiom-peer of the compound ↔ disjunction pin on
+        // `TierArg::is_computed_agrees_with_disjunction_of_computed_siblings`
+        // (commit `3f3f482`).
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                class.is_file_mutation(),
+                class.is_reload() || class.is_removed(),
+                "is_file_mutation must equal is_reload || is_removed on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_and_is_ignored_are_a_closed_binary_partition() {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly two `WatchEventClass::ALL` cells satisfy
+        // `is_file_mutation`, exactly one satisfies `is_ignored`, and the
+        // two counts sum to `WatchEventClass::ALL.len()`. Binary-partition
+        // analogue of the closed-ternary-partition pin on the singleton
+        // predicates. A future fourth `WatchEventClass` variant that did
+        // not extend one of the compound arms (or extended both) fails at
+        // this cardinality invariant before drifting through any consumer
+        // site — the compound-polarity ladder's own load-bearing pin.
+        let mutation_cells = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_file_mutation())
+            .count();
+        let ignored_cells = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_ignored())
+            .count();
+        assert_eq!(
+            mutation_cells, 2,
+            "exactly two WatchEventClass::ALL cells must satisfy is_file_mutation",
+        );
+        assert_eq!(
+            ignored_cells, 1,
+            "exactly one WatchEventClass::ALL cell must satisfy is_ignored",
+        );
+        assert_eq!(
+            mutation_cells + ignored_cells,
+            WatchEventClass::ALL.len(),
+            "the compound-polarity binary partition must cover ALL",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `WatchEventClass` singleton, a `const`-eval-based
+        // static-assert on a classifier arm) resolves the polarity at
+        // compile time. Idiom-peer of `tier_arg_is_computed_is_const_callable`
+        // (commit `3f3f482`). The const-block asserts below make the weld
+        // load-bearing at crate compile time: a future edit that flipped a
+        // polarity on this predicate fails at `cargo build`, not just at
+        // this test's runtime assertion.
+        const _: () = assert!(WatchEventClass::Reload.is_file_mutation());
+        const _: () = assert!(WatchEventClass::Removed.is_file_mutation());
+        const _: () = assert!(!WatchEventClass::Ignored.is_file_mutation());
+    }
+
+    #[test]
+    fn watch_event_class_is_file_mutation_matches_classify_over_mutation_event_kinds() {
+        // Cross-axis witness at the classifier boundary: every EventKind
+        // the classifier maps to `Reload` or `Removed` satisfies
+        // `is_file_mutation` on the returned class, and every EventKind
+        // the classifier maps to `Ignored` does not. Ties the compound
+        // polarity to the classify surface it names — a future classifier
+        // edit that added a fourth mutation-observing arm without
+        // extending the compound-polarity arm here fails at this
+        // cross-axis boundary rather than at a per-polarity consumer site.
+        use notify::EventKind;
+        use notify::event::{
+            AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
+        };
+        // Mutation-observing EventKinds must classify to a mutation cell.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+        ] {
+            assert!(
+                WatchEventClass::classify(&kind).is_file_mutation(),
+                "{kind:?} must classify to a mutation cell",
+            );
+        }
+        // Non-mutation EventKinds must classify to the Ignored cell.
+        for kind in [
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            assert!(
+                !WatchEventClass::classify(&kind).is_file_mutation(),
+                "{kind:?} must classify to a non-mutation cell",
+            );
         }
     }
 
