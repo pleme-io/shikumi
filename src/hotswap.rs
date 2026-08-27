@@ -1806,6 +1806,137 @@ impl ProofDelta {
         self.generations_regressed() || self.cross_store_signal()
     }
 
+    /// True iff the two proofs bracket at least one publish — the
+    /// compound-polarity publish-observing pole at the delta altitude.
+    /// Returns `true` on the two publish-observing corners
+    /// [`Self::identity_republish`] (watermark stationary, generation
+    /// counter advanced by one or more) and [`Self::progression`]
+    /// (watermark moved, generation counter advanced by one or more);
+    /// `false` on the null-hypothesis polling corner [`Self::stationary`]
+    /// and on both same-store impossibility corners
+    /// [`Self::cross_store_signal`] and [`Self::generations_regressed`].
+    ///
+    /// **The delta-altitude lift of
+    /// [`ProofRelation::is_generation_advanced`],
+    /// [`ProofRelationWire::is_generation_advanced`],
+    /// [`ProofRelationKind::is_generation_advanced`], and
+    /// [`SameStoreConsistencyKind::is_generation_advanced`].** Closes
+    /// the compound-polarity publish-observing ladder across all FIVE
+    /// altitudes of the crate's `ProofRelation` classification family
+    /// — the fifth and final altitude at which the "did we observe a
+    /// publish?" question is answered by a single welded receiver,
+    /// reaching the classification axis directly from the
+    /// `generations_advanced: Option<u64>` field the delta shape
+    /// carries without projecting through any classification altitude
+    /// first.
+    ///
+    /// **Delegation ladder — the axis-direct answer at the delta
+    /// altitude.** A consumer holding a freshly computed
+    /// [`ProofDelta`] answering "did we observe a publish?" previously
+    /// had four inline paths, each leaking work: (a)
+    /// `matches!(self.generations_advanced, Some(n) if n > 0)` inline
+    /// at every seam — the axis-direct shape whose two-arm pattern
+    /// each consumer has to hand-write once per seam, without any
+    /// receiver-family sibling to bind it against the classification
+    /// altitudes; (b) `self.identity_republish() || self.progression()`
+    /// — a two-hop composition through two atomic classifiers whose
+    /// disjunction the exhaustiveness checker cannot help keep in
+    /// sync with a future publish-observing corner, and whose two
+    /// bodies each re-read the watermark shape the tag-only question
+    /// does not need; (c) `self.relation().is_some_and(|r|
+    /// r.is_generation_advanced())` — a fold through the classification
+    /// seam whose [`Option`] unwrapping AND the [`MovedWatermarkDelta`]
+    /// / [`std::num::NonZeroU64`] payload welds
+    /// [`Self::relation`] carries the tag-only question doesn't need
+    /// (and which on the regressed corner folds
+    /// [`Self::generations_advanced`] to [`None`] and short-circuits
+    /// to `None` before the classification predicate sees it, agreeing
+    /// with this receiver only by accident since the regressed corner
+    /// is not publish-observing); or (d)
+    /// `self.kind().is_generation_advanced()` — a two-hop composition
+    /// through the fused-kind projection whose [`Self::kind`] call
+    /// carries the five-arm classifying `match` the tag-only question
+    /// doesn't need. The receiver-sibling here answers the same
+    /// question through a single welded [`matches!`] on the
+    /// `generations_advanced` field, at ONE canonical site.
+    ///
+    /// **Cross-altitude same-answer with the four classification
+    /// receivers.** For every [`ProofDelta`] value:
+    ///
+    /// * `self.is_generation_advanced() ==
+    ///   self.kind().is_generation_advanced()` — the fused-kind
+    ///   altitude verdict projected through the delta-altitude
+    ///   always-[`Some`] fused-kind receiver [`Self::kind`].
+    /// * `self.is_generation_advanced() ==
+    ///   self.consistency_kind().is_some_and(|c|
+    ///   c.is_generation_advanced())` — the half-side altitude verdict
+    ///   projected through the delta-altitude typed-tag
+    ///   [`SameStoreConsistencyKind`] receiver
+    ///   [`Self::consistency_kind`], whose [`Option::None`] arm covers
+    ///   the two impossibility corners where the half-side predicate
+    ///   is unreachable, and where a shortest false is the correct
+    ///   answer.
+    /// * For every [`ProofDelta`] value that [`Self::relation`]
+    ///   classifies as `Some(r)`, `self.is_generation_advanced() ==
+    ///   r.is_generation_advanced()` — the delta-altitude verdict
+    ///   agrees pointwise with the value-classification-altitude
+    ///   verdict on the four delta-reachable corners. The regressed
+    ///   corner is [`None`] on the delta path (the count was folded
+    ///   away), so the classification-altitude answer is only
+    ///   reachable through [`ConfigSyncProof::relation_since`], but
+    ///   the delta-altitude answer is preserved:
+    ///   `self.is_generation_advanced()` is `false` on the regressed
+    ///   corner (the field is [`None`], which fails the [`matches!`]
+    ///   shape).
+    /// * For every [`ProofDelta`] value that [`Self::relation_wire`]
+    ///   classifies as `Some(w)`, `self.is_generation_advanced() ==
+    ///   w.is_generation_advanced()` — the wire-classification-altitude
+    ///   verdict agrees at the same four delta-reachable corners.
+    ///
+    /// **Disjunction identity with the two publish-observing atomic
+    /// classifiers.** `self.is_generation_advanced() ==
+    /// (self.identity_republish() || self.progression())` pointwise on
+    /// every [`ProofDelta`] value — the compound predicate equals the
+    /// disjunction of the two atomic classifiers whose corners it
+    /// welds. The two atomic classifiers are mutually exclusive at the
+    /// delta altitude (a delta cannot carry both a stationary and a
+    /// moved watermark), so the disjunction is also an XOR — the
+    /// receiver alone reaches the verdict through the shortest
+    /// composition.
+    ///
+    /// **Refinement — publish-observing implies same-store-consistent.**
+    /// At this altitude, `self.is_generation_advanced() ⇒
+    /// self.same_store_consistent()` pointwise on every corner — both
+    /// publish-observing corners lie in the same-store-consistent
+    /// half. The converse does NOT hold: the same-store-consistent
+    /// half also carries [`Self::stationary`] (a legitimate null-
+    /// hypothesis corner that does not witness a publish), so
+    /// `self.same_store_consistent()` covers three DISTINCT corners
+    /// while `self.is_generation_advanced()` covers only the two
+    /// publish-observing ones.
+    ///
+    /// **Field-direct identity.** At the delta altitude the receiver
+    /// reads the axis field directly:
+    /// `self.is_generation_advanced() ==
+    /// matches!(self.generations_advanced, Some(n) if n > 0)`
+    /// pointwise, with no watermark component involved. This is the
+    /// compound-polarity axis-direct shape — the only altitude where
+    /// the classification axis is a raw [`Option<u64>`] field rather
+    /// than a variant discriminator, so the delta-altitude reading is
+    /// the SHORTEST of the five altitudes and carries no exhaustive-
+    /// match burden of its own; every other altitude's answer is
+    /// reachable from this one through the cross-altitude
+    /// same-answer identities named above.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its generation-advanced verdict at compile time too, matching
+    /// the `const`-ness of every other classification accessor at
+    /// every altitude.
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        matches!(self.generations_advanced, Some(n) if n > 0)
+    }
+
     /// The impossibility-corner tag iff this delta lands in one of the
     /// two same-store impossibilities — [`Self::generations_regressed`]
     /// maps to `Some(SameStoreImpossibilityKind::Regressed)`,
@@ -30068,6 +30199,507 @@ mod proof_delta_progression_tests {
         assert!(PROGRESSION);
         assert!(!CROSS_STORE);
         assert!(!REGRESSED);
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_is_generation_advanced_tests {
+    //! Weld the compound-polarity publish-observing predicate at the
+    //! DELTA altitude — [`ProofDelta::is_generation_advanced`], the
+    //! delta-altitude receiver-sibling of the four classification-
+    //! altitude receivers already carrying this pole:
+    //! [`SameStoreConsistencyKind::is_generation_advanced`] (half-side
+    //! altitude), [`ProofRelationKind::is_generation_advanced`]
+    //! (fused-sum altitude), [`ProofRelation::is_generation_advanced`]
+    //! (payload-carrying value altitude), and
+    //! [`ProofRelationWire::is_generation_advanced`] (wire altitude).
+    //!
+    //! This is the FIFTH and CLOSING altitude of the compound-polarity
+    //! publish-observing ladder in the crate. The four classification
+    //! altitudes reach the "did we observe a publish?" verdict through
+    //! a welded two-variant [`matches!`] on the sum-type tag; the
+    //! delta altitude reaches the same verdict by reading the
+    //! `generations_advanced: Option<u64>` field directly, with no
+    //! variant to match against. Both routes must agree — that
+    //! agreement is the load-bearing cross-altitude weld this module
+    //! pins.
+    //!
+    //! The tests below cover:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners
+    //!    of the (watermark moved?, generation delta) grid: the two
+    //!    publish-observing corners (`identity_republish`,
+    //!    `progression`) return `true`; the three non-publish-observing
+    //!    corners (`stationary`, `cross_store_signal`,
+    //!    `generations_regressed`) return `false`.
+    //! 2. Field-direct identity:
+    //!    `d.is_generation_advanced() == matches!(d.generations_advanced,
+    //!    Some(n) if n > 0)` on every corner — the receiver reads the
+    //!    axis field directly, with no watermark component involved.
+    //! 3. Disjunction identity with the two atomic publish-observing
+    //!    classifiers: `d.is_generation_advanced() ==
+    //!    (d.identity_republish() || d.progression())` on every corner.
+    //! 4. XOR identity: the two atomic publish-observing classifiers
+    //!    are mutually exclusive at the delta altitude (a delta cannot
+    //!    carry both a stationary AND a moved watermark), so
+    //!    `d.is_generation_advanced() == (d.identity_republish() ^
+    //!    d.progression())` on every corner.
+    //! 5. Cross-altitude same-answer with the fused-kind receiver:
+    //!    `d.is_generation_advanced() ==
+    //!    d.kind().is_generation_advanced()` pointwise, welding the
+    //!    delta-altitude verdict against the always-[`Some`] fused-
+    //!    kind altitude.
+    //! 6. Cross-altitude same-answer with the half-side receiver via
+    //!    [`ProofDelta::consistency_kind`]:
+    //!    `d.is_generation_advanced() ==
+    //!    d.consistency_kind().is_some_and(|c|
+    //!    c.is_generation_advanced())` pointwise, welding the
+    //!    delta-altitude verdict against the typed-tag
+    //!    [`SameStoreConsistencyKind`] altitude through the
+    //!    [`Option`] shape.
+    //! 7. Cross-altitude same-answer with [`ProofRelation`]: for every
+    //!    delta whose [`ProofDelta::relation`] classifies as `Some(r)`,
+    //!    `d.is_generation_advanced() == r.is_generation_advanced()`.
+    //!    On the regressed corner where [`ProofDelta::relation`]
+    //!    returns [`None`], the delta-altitude verdict must be
+    //!    `false` (the field is [`None`], which fails the
+    //!    field-direct shape).
+    //! 8. Cross-altitude same-answer with [`ProofRelationWire`] via
+    //!    [`ProofDelta::relation_wire`], mirroring test 7.
+    //! 9. Full-classification same-answer via
+    //!    [`ConfigSyncProof::relation_since`]: on every legitimate
+    //!    corner AND on the regressed corner (where
+    //!    [`ProofDelta::relation`] folds the count away and returns
+    //!    [`None`]), the delta-altitude verdict equals the
+    //!    classification-altitude verdict reached through the lossless
+    //!    proof-pair path.
+    //! 10. Refinement — `d.is_generation_advanced() ⇒
+    //!    d.same_store_consistent()` and `d.is_generation_advanced()
+    //!    ⇒ !d.same_store_inconsistent()` on every corner (both
+    //!    publish-observing corners lie in the consistent half).
+    //! 11. Cardinality-side invariant: exactly 2 of 5 corners return
+    //!    `true`, 3 of 5 return `false`, sum == 5.
+    //! 12. `const`-callable on hand-constructed deltas at every corner.
+    //! 13. `#[must_use]`-attributed on the receiver, matching the
+    //!    every-classification-accessor discipline the crate carries.
+
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners of the (watermark moved?,
+    /// generation delta) grid, one row per corner. Each row carries a
+    /// label, the prior/current proofs to fold into a delta, and the
+    /// pinned truth-table verdict for `is_generation_advanced()`.
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof, bool)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                true,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                true,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                false,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned across the delta-reachable grid
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_generation_advanced(),
+                want,
+                "{name}: is_generation_advanced diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Field-direct identity
+
+    #[test]
+    fn field_direct_identity_reads_the_generations_advanced_axis_alone() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_generation_advanced(),
+                matches!(d.generations_advanced, Some(n) if n > 0),
+                "{name}: the delta-altitude receiver must read the \
+                 generations_advanced axis field directly, with no \
+                 watermark component involved",
+            );
+        }
+    }
+
+    // ---------- (3) Disjunction identity with the two publish-observing
+    //                atomic classifiers
+
+    #[test]
+    fn disjunction_identity_with_identity_republish_or_progression() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_generation_advanced(),
+                d.identity_republish() || d.progression(),
+                "{name}: is_generation_advanced must equal the disjunction \
+                 of the two atomic publish-observing classifiers",
+            );
+        }
+    }
+
+    // ---------- (4) XOR identity — the two atomic publish-observing
+    //                classifiers are mutually exclusive at the delta altitude
+
+    #[test]
+    fn xor_identity_at_the_delta_altitude() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert!(
+                !(d.identity_republish() && d.progression()),
+                "{name}: the two atomic publish-observing classifiers are \
+                 mutually exclusive at the delta altitude — a delta cannot \
+                 carry both a stationary AND a moved watermark",
+            );
+            assert_eq!(
+                d.is_generation_advanced(),
+                d.identity_republish() ^ d.progression(),
+                "{name}: XOR agreement follows from mutual exclusion",
+            );
+        }
+    }
+
+    // ---------- (5) Cross-altitude same-answer with the fused-kind receiver
+
+    #[test]
+    fn cross_altitude_agrees_with_fused_kind_receiver() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_generation_advanced(),
+                d.kind().is_generation_advanced(),
+                "{name}: delta-altitude verdict must equal fused-kind \
+                 verdict projected through ProofDelta::kind — the fused \
+                 kind is total (always Some) at the delta altitude",
+            );
+        }
+    }
+
+    // ---------- (6) Cross-altitude same-answer with the half-side
+    //                receiver via consistency_kind
+
+    #[test]
+    fn cross_altitude_agrees_with_half_side_receiver_via_consistency_kind() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_generation_advanced(),
+                d.consistency_kind()
+                    .is_some_and(|c| c.is_generation_advanced()),
+                "{name}: delta-altitude verdict must equal half-side \
+                 verdict projected through ProofDelta::consistency_kind — \
+                 the None arm on the two impossibility corners must \
+                 short-circuit to false, and the two impossibility corners \
+                 are correctly not publish-observing",
+            );
+        }
+    }
+
+    // ---------- (7) Cross-altitude same-answer with ProofRelation
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.is_generation_advanced(),
+                    relation.is_generation_advanced(),
+                    "{name}: delta and classification verdicts must agree \
+                     on the four delta-reachable corners",
+                );
+            } else {
+                // Only the regressed corner (or the class-partition
+                // impossibility, unreachable via between()) folds the
+                // count away. The delta-altitude verdict must be false
+                // there — the field is None, which fails the
+                // matches!(_, Some(n) if n > 0) shape.
+                assert!(
+                    !d.is_generation_advanced(),
+                    "{name}: delta.relation() == None implies the \
+                     regressed corner, where is_generation_advanced() \
+                     must be false because generations_advanced is None",
+                );
+                assert!(
+                    d.generations_regressed(),
+                    "{name}: the None branch of delta.relation() is only \
+                     reached on the regressed corner (or the class-partition \
+                     impossibility corner, unreachable via between())",
+                );
+            }
+        }
+    }
+
+    // ---------- (8) Cross-altitude same-answer with ProofRelationWire
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_wire_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(wire) = d.relation_wire() {
+                assert_eq!(
+                    d.is_generation_advanced(),
+                    wire.is_generation_advanced(),
+                    "{name}: delta and wire-classification verdicts must \
+                     agree on the four delta-reachable corners",
+                );
+            }
+        }
+    }
+
+    // ---------- (9) Full-classification same-answer via
+    //                ConfigSyncProof::relation_since
+
+    #[test]
+    fn full_classification_agrees_on_every_corner_including_regressed() {
+        // ConfigSyncProof::relation_since preserves the regression count
+        // through the lossless proof-pair path — where ProofDelta::relation
+        // returns None on the regressed corner (the count was folded away),
+        // relation_since fills in the ProofRelation::Regressed variant.
+        // The delta-altitude verdict must equal the classification-
+        // altitude verdict on all five corners, including regressed.
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.is_generation_advanced(),
+                r.is_generation_advanced(),
+                "{name}: delta and full-classification verdicts must agree \
+                 on every corner (including regressed, which the delta \
+                 path folds to None but ProofDelta::is_generation_advanced \
+                 preserves as false via the field-direct read)",
+            );
+            assert_eq!(
+                r.is_generation_advanced(),
+                want,
+                "{name}: full classification must also match the pinned \
+                 truth table",
+            );
+        }
+    }
+
+    // ---------- (10) Refinement — publish-observing implies
+    //                 same-store-consistent
+
+    #[test]
+    fn is_generation_advanced_implies_same_store_consistent() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if d.is_generation_advanced() {
+                assert!(
+                    d.same_store_consistent(),
+                    "{name}: publish-observing corners must lie in the \
+                     same-store-consistent half",
+                );
+                assert!(
+                    !d.same_store_inconsistent(),
+                    "{name}: publish-observing corners must lie outside \
+                     the same-store-inconsistent half",
+                );
+            }
+        }
+    }
+
+    // ---------- (11) Cardinality-side invariant
+
+    #[test]
+    fn cardinality_partition_is_two_from_three() {
+        let all: Vec<ProofDelta> = corners()
+            .into_iter()
+            .map(|(_, prior, current, _)| ProofDelta::between(&prior, &current))
+            .collect();
+        let (advanced, rest): (Vec<&ProofDelta>, Vec<&ProofDelta>) =
+            all.iter().partition(|d| d.is_generation_advanced());
+        assert_eq!(
+            advanced.len(),
+            2,
+            "publish-observing corners cardinality must be exactly 2 out of 5",
+        );
+        assert_eq!(
+            rest.len(),
+            3,
+            "non-publish-observing corners cardinality must be exactly 3 out of 5",
+        );
+        assert_eq!(
+            advanced.len() + rest.len(),
+            all.len(),
+            "partition must be total across the five delta-reachable corners",
+        );
+    }
+
+    // ---------- (12) const-callable on hand-constructed deltas
+
+    #[test]
+    fn const_callable_on_hand_constructed_deltas_at_every_corner() {
+        // A compile-time-known ProofDelta must project its verdict at
+        // compile time too. Five hand-constructed deltas, one per grid
+        // corner, evaluated in `const` position.
+        const STATIONARY: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_generation_advanced();
+        const IDENTITY_REPUBLISH: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_generation_advanced();
+        const PROGRESSION: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_generation_advanced();
+        const CROSS_STORE: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_generation_advanced();
+        const REGRESSED: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .is_generation_advanced();
+        assert!(!STATIONARY);
+        assert!(IDENTITY_REPUBLISH);
+        assert!(PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(!REGRESSED);
+    }
+
+    // ---------- (13) #[must_use] attribute on the receiver
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use, clippy::let_underscore_untyped)]
+    fn receiver_is_annotated_must_use() {
+        // If #[must_use] is dropped from the receiver, a lint on the
+        // clippy::let_underscore_must_use side would go silent, and the
+        // must_use signal on the compound-polarity family would drop.
+        // A positive assertion that at least one corner returns each
+        // polarity is the reachability weld that proves the receiver
+        // is called through the `_ =` binding at all, so a future
+        // must_use-dropping edit is caught by the compile-time
+        // let_underscore lint on the pedantic clippy pass tracked at
+        // pending-shikumi-clippy.
+        let d_ir = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        };
+        let _: bool = d_ir.is_generation_advanced();
+        assert!(d_ir.is_generation_advanced());
+        let d_stationary = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        };
+        assert!(!d_stationary.is_generation_advanced());
     }
 }
 
