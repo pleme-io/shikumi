@@ -8316,6 +8316,88 @@ impl SameStoreConsistencyKind {
         matches!(*self, Self::IdentityRepublish | Self::Progression)
     }
 
+    /// Whether this consistency corner witnessed the watermark stay put —
+    /// `true` on [`Self::Stationary`] (same observation twice: watermark
+    /// unchanged and generation unchanged, the `/healthz/config` polling
+    /// case) and on [`Self::IdentityRepublish`] (watermark unchanged but
+    /// generation advanced by one or more: a re-publish of the same
+    /// value), `false` on [`Self::Progression`] (watermark moved AND
+    /// generation advanced — the routine config-file edit).
+    ///
+    /// The **second** compound-polarity sibling on the consistency-half
+    /// ternary axis, orthogonal to [`Self::is_generation_advanced`]. The
+    /// two compound predicates carve the three cells along independent
+    /// axes:
+    ///
+    /// | | `watermark_stationary` | `watermark_moved` (= [`Self::is_progression`]) |
+    /// | --- | --- | --- |
+    /// | `!generation_advanced` (= [`Self::is_stationary`]) | [`Self::Stationary`] | — impossible corner |
+    /// | `generation_advanced` | [`Self::IdentityRepublish`] | [`Self::Progression`] |
+    ///
+    /// so a consumer holding a captured [`SameStoreConsistencyKind`] and
+    /// asking *"did the underlying config value stay visually the same
+    /// this observation window?"* — an ArcSwap-broadcast counter grouping
+    /// no-content-change ticks (Stationary polls plus identity republishes
+    /// of the same value) apart from routine-edit ticks, a dashboard row
+    /// hiding the two content-unchanged corners behind one heading, a
+    /// deployment-metric attester filter routing on
+    /// `--only=content-unchanged` — matches on this predicate at ONE site
+    /// instead of open-coding `k.is_stationary() ||
+    /// k.is_identity_republish()` or the equivalent `!k.is_progression()`
+    /// and re-doing the closed-partition bookkeeping at every consumer
+    /// site.
+    ///
+    /// **The orthogonal pair to [`Self::is_generation_advanced`].** The
+    /// existing compound answers *"did we observe a publish?"* and groups
+    /// [`Self::IdentityRepublish`] with [`Self::Progression`]; this
+    /// compound answers *"did the content stay visually the same?"* and
+    /// groups [`Self::IdentityRepublish`] with [`Self::Stationary`]. The
+    /// two axes meet at [`Self::IdentityRepublish`] — the sole cell that
+    /// witnesses BOTH a publish AND a content-unchanged watermark, which
+    /// is exactly the class of [`arc_swap::ArcSwap`] re-publish of the same value the
+    /// classification family exists to distinguish from a real content
+    /// edit. The meet is pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish`].
+    ///
+    /// The compound ↔ two-arm disjunction law
+    /// (`k.is_watermark_stationary() == k.is_stationary() ||
+    /// k.is_identity_republish()`) is pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_agrees_with_disjunction_of_stationary_siblings`],
+    /// the modal-pair complement law
+    /// (`k.is_watermark_stationary() == !k.is_progression()`) by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_is_complement_of_is_progression`],
+    /// and the closed-binary-partition cardinality invariant by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_and_is_progression_are_a_closed_binary_partition`].
+    /// A future edit that drifted one polarity from the other fails at
+    /// the cross-axis boundary rather than at a per-polarity consumer
+    /// site.
+    ///
+    /// Idiom-mirror of the compound-polarity pairs the fleet-idiom
+    /// sibling ladders already carry —
+    /// [`Self::is_generation_advanced`] on this same ternary axis (the
+    /// orthogonal peer), [`crate::WatchEventClass::is_file_mutation`]
+    /// (commit `8d55ddf`) on the reload-relevance ternary axis,
+    /// [`crate::discovery::Format::is_feature_gated`] (commit `006e0a7`)
+    /// on the file-format axis, and [`crate::coverage::HintSurface::is_coverage_hint`]
+    /// (commit `029e877`) on the coverage-hint surface axis.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreConsistencyKind`] projects its watermark-stationary
+    /// verdict at compile time too, matching the `const`-ness the rest
+    /// of the receiver-family already carries. The compile-time weld is
+    /// pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_is_const_callable`].
+    ///
+    /// A future fourth legitimate corner added to the enum without
+    /// extending this compound (or extending it beyond the two
+    /// watermark-stationary cells) fails the closed-binary-partition
+    /// invariant before drifting through any consumer that groups on
+    /// this pole.
+    #[must_use]
+    pub const fn is_watermark_stationary(&self) -> bool {
+        matches!(*self, Self::Stationary | Self::IdentityRepublish)
+    }
+
     /// The closed set of variant values in declaration order — the
     /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
     /// consistent half of the classification. An ordered slice of
@@ -35763,6 +35845,213 @@ mod variants_tests {
         const _: () = assert!(!SameStoreConsistencyKind::Stationary.is_generation_advanced());
         const _: () = assert!(SameStoreConsistencyKind::IdentityRepublish.is_generation_advanced());
         const _: () = assert!(SameStoreConsistencyKind::Progression.is_generation_advanced());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_partitions_progression_from_stationary_arms()
+     {
+        // Per-variant polarity table on the SECOND compound-polarity
+        // sibling of the consistency ternary axis, orthogonal to
+        // `is_generation_advanced`: exactly the two watermark-stationary
+        // arms (Stationary — watermark unchanged and generation
+        // unchanged; IdentityRepublish — watermark unchanged, generation
+        // advanced) return true; the sole watermark-moved arm
+        // (Progression — watermark moved AND generation advanced,
+        // i.e. every routine config-file edit) returns false. Idiom-peer
+        // of `same_store_consistency_kind_is_generation_advanced_partitions_stationary_from_advanced_arms`
+        // above (the orthogonal compound), and of
+        // `watch_event_class_is_file_mutation_partitions_ignored_from_mutation_arms`
+        // (commit `8d55ddf`).
+        assert!(SameStoreConsistencyKind::Stationary.is_watermark_stationary());
+        assert!(SameStoreConsistencyKind::IdentityRepublish.is_watermark_stationary());
+        assert!(!SameStoreConsistencyKind::Progression.is_watermark_stationary());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_is_complement_of_is_progression() {
+        // The modal-pair complement law at the compound-polarity altitude:
+        // `is_watermark_stationary() == !is_progression()` pointwise on
+        // SameStoreConsistencyKind::VARIANTS. The two predicates partition
+        // VARIANTS into the compound pole (Stationary | IdentityRepublish
+        // — the two watermark-stationary arms) and its single-cell
+        // complement (Progression — the sole watermark-moved arm). A
+        // future edit that drifted one polarity from the other fails here
+        // before any consumer of either surface can observe the
+        // divergence. Idiom-peer of
+        // `same_store_consistency_kind_is_generation_advanced_is_complement_of_is_stationary`
+        // above (the orthogonal compound's complement law).
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_stationary(),
+                !k.is_progression(),
+                "is_watermark_stationary and !is_progression must agree pointwise on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_agrees_with_disjunction_of_stationary_siblings()
+     {
+        // The compound ↔ two-arm disjunction law at the compound-polarity
+        // altitude: `is_watermark_stationary() == is_stationary() ||
+        // is_identity_republish()` pointwise on
+        // SameStoreConsistencyKind::VARIANTS — the compound-polarity
+        // sibling is exactly the disjunction of the two singleton
+        // predicates naming the watermark-stationary arms. A future edit
+        // that flipped one arm of the `matches!` in
+        // `is_watermark_stationary` without flipping the corresponding
+        // singleton sibling fails here before drifting through any
+        // consumer that reasons about the two watermark-stationary arms
+        // as one group. Idiom-peer of
+        // `same_store_consistency_kind_is_generation_advanced_agrees_with_disjunction_of_advanced_siblings`
+        // above.
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_stationary(),
+                k.is_stationary() || k.is_identity_republish(),
+                "is_watermark_stationary must equal is_stationary || is_identity_republish on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_and_is_progression_are_a_closed_binary_partition()
+     {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly two `SameStoreConsistencyKind::VARIANTS` cells satisfy
+        // `is_watermark_stationary`, exactly one satisfies
+        // `is_progression`, and the two counts sum to
+        // `SameStoreConsistencyKind::VARIANTS.len()`. The SECOND closed
+        // binary partition of the consistent-half ternary space,
+        // orthogonal to (is_generation_advanced, is_stationary). A future
+        // fourth `SameStoreConsistencyKind` variant that did not extend
+        // one of the compound arms (or extended both) fails at this
+        // cardinality invariant before drifting through any consumer
+        // site — the compound-polarity ladder's own load-bearing pin.
+        // Idiom-peer of
+        // `same_store_consistency_kind_is_generation_advanced_and_is_stationary_are_a_closed_binary_partition`
+        // above.
+        let watermark_stationary_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_watermark_stationary)
+            .count();
+        let progression_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_progression)
+            .count();
+        assert_eq!(
+            watermark_stationary_cells, 2,
+            "exactly two SameStoreConsistencyKind::VARIANTS cells must satisfy is_watermark_stationary",
+        );
+        assert_eq!(
+            progression_cells, 1,
+            "exactly one SameStoreConsistencyKind::VARIANTS cell must satisfy is_progression",
+        );
+        assert_eq!(
+            watermark_stationary_cells + progression_cells,
+            SameStoreConsistencyKind::VARIANTS.len(),
+            "the compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_meets_is_generation_advanced_at_identity_republish()
+     {
+        // The orthogonality pin — the two compound-polarity siblings on
+        // the consistency-half ternary axis carve the three cells along
+        // INDEPENDENT axes, and their intersection is exactly
+        // IdentityRepublish (the sole cell that witnesses BOTH a publish
+        // AND a content-unchanged watermark: an ArcSwap re-publish of the
+        // same value). The `!generation_advanced ∧ !watermark_stationary`
+        // corner is structurally impossible (a moved watermark forces the
+        // generation to advance by construction), so the two 2x2 axes
+        // fit into a 3-cell space without loss. A future fourth
+        // legitimate corner that landed in the impossible corner
+        // (moved watermark, no generation advance) would break this pin,
+        // catching the invariant violation before any consumer that
+        // reasons about (publish × content) cells can observe the drift.
+        // The novel-contribution pin of this compound-polarity sibling:
+        // its VALUE is in being orthogonal to `is_generation_advanced`,
+        // and this test is the load-bearing statement of that
+        // orthogonality.
+        let meet_cells: Vec<SameStoreConsistencyKind> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| k.is_watermark_stationary() && k.is_generation_advanced())
+            .collect();
+        assert_eq!(
+            meet_cells,
+            vec![SameStoreConsistencyKind::IdentityRepublish],
+            "the meet of the two orthogonal compound-polarity siblings must be exactly {{IdentityRepublish}}",
+        );
+        let empty_cells: Vec<SameStoreConsistencyKind> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(|k| !k.is_watermark_stationary() && !k.is_generation_advanced())
+            .collect();
+        assert!(
+            empty_cells.is_empty(),
+            "the (moved-watermark, generation-unchanged) corner is structurally impossible; found {empty_cells:?}",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_stationary_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `SameStoreConsistencyKind` singleton, a `const`-
+        // eval-based static-assert on a classifier arm) resolves the
+        // polarity at compile time. Idiom-peer of
+        // `same_store_consistency_kind_is_generation_advanced_is_const_callable`
+        // above. The const-block asserts below make the weld load-bearing
+        // at crate compile time: a future edit that flipped a polarity on
+        // this predicate fails at `cargo build`, not just at this test's
+        // runtime assertion.
+        const _: () = assert!(SameStoreConsistencyKind::Stationary.is_watermark_stationary());
+        const _: () =
+            assert!(SameStoreConsistencyKind::IdentityRepublish.is_watermark_stationary());
+        const _: () = assert!(!SameStoreConsistencyKind::Progression.is_watermark_stationary());
+    }
+
+    #[test]
+    fn proof_relation_kind_consistency_projection_refines_consistency_kind_is_watermark_stationary()
+    {
+        // Cross-projection refinement pin at the compound-polarity
+        // altitude: for every `Consistent(k)` cell of
+        // ProofRelationKind::VARIANTS, `.consistency()` returns `Some(k)`
+        // whose compound `is_watermark_stationary` agrees with the
+        // disjunction of the two per-variant singleton siblings; for
+        // every `Impossible(_)` cell, `.consistency()` returns `None`.
+        // Welds the SECOND compound-polarity sibling on
+        // `SameStoreConsistencyKind` to the fused `ProofRelationKind`
+        // sum: a hypothetical fourth legitimate corner landing without
+        // extending the compound arm fails this pin's exhaustive
+        // same-answer match rather than silently sitting in the
+        // singleton-partition negation. Compound-polarity analogue of
+        // `proof_relation_kind_consistency_projection_refines_consistency_kind_is_generation_advanced`
+        // below.
+        for k in ProofRelationKind::VARIANTS {
+            match k.consistency() {
+                Some(c) => {
+                    assert_eq!(
+                        c.is_watermark_stationary(),
+                        c.is_stationary() || c.is_identity_republish(),
+                        "ProofRelationKind::{k:?}.consistency() == Some({c:?}) — compound must equal disjunction of stationary siblings",
+                    );
+                    assert_eq!(
+                        c.is_watermark_stationary(),
+                        !c.is_progression(),
+                        "ProofRelationKind::{k:?}.consistency() == Some({c:?}) — compound must equal complement of is_progression",
+                    );
+                }
+                None => {
+                    assert!(k.is_impossible());
+                    assert!(!k.is_consistent());
+                }
+            }
+        }
     }
 
     #[test]
