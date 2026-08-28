@@ -1537,6 +1537,122 @@ impl SecretClientKind {
     pub const fn is_cloud_secret_manager(self) -> bool {
         matches!(self, Self::AwsSecretsManager | Self::GcpSecretManager)
     }
+
+    /// Returns `true` for the five NON-hyperscaler-Secret-Manager cells
+    /// of the seven-way [`SecretClientKind`] axis —
+    /// [`Self::Mem`] (in-memory test scaffold),
+    /// [`Self::Command`] (shell-subprocess `get` shim),
+    /// [`Self::Akeyless`] (native HTTP Akeyless gateway),
+    /// [`Self::OpConnect`] (1Password Connect HTTP transport), and
+    /// [`Self::Vault`] (`HashiCorp` Vault KV v2 HTTP transport) —
+    /// `false` for the two hyperscaler-managed cells
+    /// ([`Self::AwsSecretsManager`], [`Self::GcpSecretManager`]).
+    ///
+    /// Compound-polarity complement of [`Self::is_cloud_secret_manager`]
+    /// (commit `1390944`) at the runtime-client altitude, closing the
+    /// compound-polarity sibling pair on the seven-way runtime
+    /// [`SecretClient`] implementor axis. Idiom-peer of the same
+    /// complement pole already carried at the three other altitudes
+    /// the cloud-Secret-Manager compound is expressible on —
+    /// [`crate::secret::SecretBackendKind::is_non_cloud_secret_manager`]
+    /// (commit `5d7cd4c`) on the config-author backend-kind axis,
+    /// [`crate::secret::SecretBackend::is_non_cloud_secret_manager`]
+    /// (commit `9a76f5f`) on the payload-carrying backend value, and
+    /// [`crate::secret::SecretSource::is_non_cloud_secret_manager`]
+    /// (commit `658f0c7`) on the source-wrapping outer altitude —
+    /// closing the FOURTH and last altitude the non-cloud-Secret-
+    /// Manager pole is expressible on.
+    ///
+    /// Written as an exhaustive `match` naming BOTH arm groups
+    /// (rather than `matches!(self, Self::Mem | Self::Command |
+    /// Self::Akeyless | Self::OpConnect | Self::Vault)` with an
+    /// implicit `false` default, or a bare `!self.is_cloud_secret_manager()`
+    /// folded through the primary pole), so a hypothetical eighth
+    /// variant landing on [`Self`] — a `KubernetesSecrets` runtime
+    /// client on the non-cloud pole, an `AzureKeyVault` on the
+    /// cloud-Secret-Manager pole — must be placed on one polarity
+    /// or the other at `cargo build` rather than silently defaulting
+    /// past a bare `false` literal and drifting through every
+    /// consumer site that reasons about the cloud-vs-non-cloud
+    /// partition at the runtime-client altitude. Idiom-peer of the
+    /// same exhaustive-match discipline
+    /// [`crate::secret::SecretBackendKind::is_non_cloud_secret_manager`]
+    /// (commit `5d7cd4c`) carries at the config-author-backend
+    /// altitude.
+    ///
+    /// Names the *everything-else* pole of the (cloud-Secret-Manager
+    /// × everything-else) polarity axis at the runtime-client
+    /// altitude, so a monitoring consumer holding a captured
+    /// [`SecretClientKind`] and asking *"did this transport NOT
+    /// talk to a hyperscaler-managed Secret Manager API?"* — a
+    /// per-transport telemetry counter aggregating every non-
+    /// hyperscaler-Secret-Manager transport into one bin (in-memory
+    /// scaffold + shell subprocess + Akeyless + 1Password Connect
+    /// + Vault), an attestation manifest weighing non-hyperscaler
+    /// provenance separately from hyperscaler-managed reads, a
+    /// structured-log filter routing non-hyperscaler-resolved cells
+    /// away from the hyperscaler alerting bucket, a dashboard row
+    /// grouping the five non-hyperscaler transports under one
+    /// heading — reaches the same query through one named
+    /// predicate instead of `!kind.is_cloud_secret_manager()` (the
+    /// double-negative that reads awkwardly at the five-of-seven
+    /// majority pole) or the five-arm disjunction
+    /// `kind.is_mem() || kind.is_command() || kind.is_akeyless() ||
+    /// kind.is_op_connect() || kind.is_vault()` (five method calls,
+    /// ordering matters, a future eighth variant would silently drop).
+    ///
+    /// The modal-pair complement law
+    /// (`kind.is_non_cloud_secret_manager() ==
+    /// !kind.is_cloud_secret_manager()` pointwise on
+    /// [`Self::ALL`]) is pinned by
+    /// [`tests::secret_client_kind_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`],
+    /// so the two compound-polarity siblings stay strict
+    /// complements on the seven-way partition — a future edit
+    /// that widened either pole (e.g. reclassifying Vault as a
+    /// hyperscaler Secret Manager, or adding an eighth variant
+    /// without extending both `match` arms in lockstep) diverges
+    /// there before drifting through any per-polarity consumer
+    /// site.
+    ///
+    /// The compound ↔ five-arm disjunction law
+    /// (`kind.is_non_cloud_secret_manager() ==
+    /// kind.is_mem() || kind.is_command() || kind.is_akeyless() ||
+    /// kind.is_op_connect() || kind.is_vault()`) is pinned by
+    /// [`tests::secret_client_kind_is_non_cloud_secret_manager_agrees_with_or_of_individual_siblings`].
+    ///
+    /// The compound-polarity binary partition law
+    /// (`u8::from(kind.is_cloud_secret_manager()) +
+    ///  u8::from(kind.is_non_cloud_secret_manager()) == 1` for every
+    /// variant, with the cardinality sub-pin `2 + 5 = 7 =
+    /// SecretClientKind::ALL.len()`) is pinned by
+    /// [`tests::secret_client_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`].
+    ///
+    /// The cross-altitude two-cell partition weld with the
+    /// config-author backend-kind altitude (the runtime-client and
+    /// config-author altitudes both classify the SAME five upstream
+    /// backends under the complement pole through the natural
+    /// pairing) is pinned by
+    /// [`tests::secret_client_kind_is_non_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms`],
+    /// so a future edit that re-scoped the compound at either
+    /// altitude without extending the other diverges there before
+    /// drifting through any consumer that reasons about the two
+    /// altitudes as one pole.
+    ///
+    /// `const`-callable — matching the `const`-ness of the primary
+    /// pole [`Self::is_cloud_secret_manager`] and the per-variant
+    /// siblings, so a `kind.is_non_cloud_secret_manager()` composition
+    /// stays const-callable end-to-end. The compile-time weld is
+    /// pinned by
+    /// [`tests::secret_client_kind_is_non_cloud_secret_manager_is_const_callable`].
+    ///
+    /// [`SecretClient`]: crate::secret_client::SecretClient
+    #[must_use]
+    pub const fn is_non_cloud_secret_manager(self) -> bool {
+        match self {
+            Self::Mem | Self::Command | Self::Akeyless | Self::OpConnect | Self::Vault => true,
+            Self::AwsSecretsManager | Self::GcpSecretManager => false,
+        }
+    }
 }
 
 impl crate::ClosedAxis for SecretClientKind {
@@ -5667,6 +5783,231 @@ mod tests {
         // if the compound fires on both altitudes for both arms.
         assert!(SecretClientKind::AwsSecretsManager.is_cloud_secret_manager());
         assert!(SecretClientKind::GcpSecretManager.is_cloud_secret_manager());
+    }
+
+    #[test]
+    fn secret_client_kind_is_non_cloud_secret_manager_partitions_non_cloud_from_cloud() {
+        // Concrete-position polarity pin at the runtime-client
+        // altitude for the compound-polarity complement sibling:
+        // exactly {Mem, Command, Akeyless, OpConnect, Vault}
+        // satisfy is_non_cloud_secret_manager, and the two cloud-
+        // Secret-Manager kinds (AwsSecretsManager, GcpSecretManager)
+        // do not. Mirror of the primary-pole partition pin
+        // `secret_client_kind_is_cloud_secret_manager_partitions_cloud_from_non_cloud`
+        // on the five-of-seven complement pole, closing the
+        // compound-polarity sibling pair on the seven-way runtime-
+        // client axis. Idiom-peer of the same complement-pole
+        // partition pin
+        // `secret_backend_kind_is_non_cloud_secret_manager_partitions_non_cloud_from_cloud`
+        // (commit `5d7cd4c`) at the config-author-backend altitude.
+        for &kind in SecretClientKind::ALL {
+            let expected = matches!(
+                kind,
+                SecretClientKind::Mem
+                    | SecretClientKind::Command
+                    | SecretClientKind::Akeyless
+                    | SecretClientKind::OpConnect
+                    | SecretClientKind::Vault,
+            );
+            assert_eq!(
+                kind.is_non_cloud_secret_manager(),
+                expected,
+                "is_non_cloud_secret_manager returned {} on {kind:?} (expected {expected})",
+                kind.is_non_cloud_secret_manager(),
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager() {
+        // Modal-pair complement law pointwise on every variant:
+        // `kind.is_non_cloud_secret_manager() ==
+        //     !kind.is_cloud_secret_manager()`
+        // for every kind in ALL. Locks the two compound-polarity
+        // siblings as a strict complement pair on the seven-way
+        // partition — a future edit that widened either pole (e.g.
+        // reclassifying Vault as a cloud Secret Manager, or adding
+        // an eighth variant without extending both `match` arms in
+        // lockstep) would collapse the equivalence here before
+        // drifting through any per-polarity consumer site. Idiom-
+        // peer of
+        // `secret_backend_kind_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`
+        // (commit `5d7cd4c`) at the config-author-backend altitude.
+        for &kind in SecretClientKind::ALL {
+            assert_eq!(
+                kind.is_non_cloud_secret_manager(),
+                !kind.is_cloud_secret_manager(),
+                "modal-pair complement law drift on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_is_non_cloud_secret_manager_agrees_with_or_of_individual_siblings() {
+        // Compound-polarity ↔ five-arm disjunction pointwise law on
+        // the runtime-client side:
+        // `kind.is_non_cloud_secret_manager() ==
+        //     (kind.is_mem() || kind.is_command() ||
+        //      kind.is_akeyless() || kind.is_op_connect() ||
+        //      kind.is_vault())`
+        // for every kind in ALL. Locks the (compound = disjunction)
+        // invariant against a future edit that peeked past the five
+        // non-cloud arms (widening the compound to accept
+        // AwsSecretsManager, or shrinking one of the five per-variant
+        // arms without extending the `match` arms in lockstep).
+        // Mirror of the primary-pole two-arm disjunction pin
+        // `secret_client_kind_is_cloud_secret_manager_agrees_with_or_of_individual_siblings`
+        // on the complement side.
+        for &kind in SecretClientKind::ALL {
+            assert_eq!(
+                kind.is_non_cloud_secret_manager(),
+                kind.is_mem()
+                    || kind.is_command()
+                    || kind.is_akeyless()
+                    || kind.is_op_connect()
+                    || kind.is_vault(),
+                "compound-polarity ↔ (five-arm disjunction) drift on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition()
+     {
+        // Compound-polarity binary partition law:
+        // `u8::from(kind.is_cloud_secret_manager()) +
+        //  u8::from(kind.is_non_cloud_secret_manager()) == 1`
+        // for every kind in ALL. Exactly ONE of the two compound-
+        // polarity siblings fires on every variant — neither both
+        // (which would break disjointness: some cell would be
+        // simultaneously cloud AND non-cloud) nor neither (which
+        // would break jointness: some cell would be classified as
+        // neither cloud nor non-cloud). A future edit that widened
+        // both poles to fire on the same variant, or shrank both
+        // poles to miss a variant, fails here before drifting
+        // through any per-polarity consumer site. Cardinality
+        // sub-pin: exactly 2 cells satisfy is_cloud_secret_manager
+        // and exactly 5 satisfy is_non_cloud_secret_manager,
+        // summing to `SecretClientKind::ALL.len() == 7` — the
+        // partition covers the seven-way axis without overlap or
+        // gap. Idiom-peer of
+        // `secret_backend_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`
+        // (commit `5d7cd4c`) at the config-author-backend altitude.
+        let mut cloud_count = 0usize;
+        let mut non_cloud_count = 0usize;
+        for &kind in SecretClientKind::ALL {
+            let cloud = u8::from(kind.is_cloud_secret_manager());
+            let non_cloud = u8::from(kind.is_non_cloud_secret_manager());
+            assert_eq!(
+                cloud + non_cloud,
+                1,
+                "compound-polarity siblings failed strict binary partition on {kind:?} \
+                 (is_cloud={cloud}, is_non_cloud={non_cloud})",
+            );
+            cloud_count += cloud as usize;
+            non_cloud_count += non_cloud as usize;
+        }
+        assert_eq!(
+            cloud_count, 2,
+            "expected exactly 2 cloud-Secret-Manager cells"
+        );
+        assert_eq!(
+            non_cloud_count, 5,
+            "expected exactly 5 non-cloud-Secret-Manager cells",
+        );
+        assert_eq!(
+            cloud_count + non_cloud_count,
+            SecretClientKind::ALL.len(),
+            "compound-polarity partition failed to cover SecretClientKind::ALL",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_is_non_cloud_secret_manager_is_const_callable() {
+        // Compile-time weld between the const-fn constructors on
+        // `SecretClientKind::ALL` and the const-fn
+        // `is_non_cloud_secret_manager` predicate: a direct `const`
+        // binding fires on the five non-cloud cells and only those.
+        // Mirror of the primary-pole const-callability pin
+        // `secret_client_kind_is_cloud_secret_manager_is_const_callable`
+        // on the complement side, keeping the whole compound-polarity
+        // sibling pair const-callable end-to-end. Matches the same
+        // const-callability weld the peer complement siblings
+        // `SecretBackendKind::is_non_cloud_secret_manager` (commit
+        // `5d7cd4c`), `SecretBackend::is_non_cloud_secret_manager`
+        // (commit `9a76f5f`), and
+        // `SecretSource::is_non_cloud_secret_manager` (commit
+        // `658f0c7`) carry at their altitudes — no `static`
+        // workaround needed here because `SecretClientKind` is
+        // `Copy` and admits a direct `const` binding.
+        const MEM_IS_NON_CLOUD: bool = SecretClientKind::Mem.is_non_cloud_secret_manager();
+        const COMMAND_IS_NON_CLOUD: bool = SecretClientKind::Command.is_non_cloud_secret_manager();
+        const AKEYLESS_IS_NON_CLOUD: bool =
+            SecretClientKind::Akeyless.is_non_cloud_secret_manager();
+        const AWS_IS_NON_CLOUD: bool =
+            SecretClientKind::AwsSecretsManager.is_non_cloud_secret_manager();
+        const OP_CONNECT_IS_NON_CLOUD: bool =
+            SecretClientKind::OpConnect.is_non_cloud_secret_manager();
+        const VAULT_IS_NON_CLOUD: bool = SecretClientKind::Vault.is_non_cloud_secret_manager();
+        const GCP_IS_NON_CLOUD: bool =
+            SecretClientKind::GcpSecretManager.is_non_cloud_secret_manager();
+        assert!(MEM_IS_NON_CLOUD);
+        assert!(COMMAND_IS_NON_CLOUD);
+        assert!(AKEYLESS_IS_NON_CLOUD);
+        assert!(!AWS_IS_NON_CLOUD);
+        assert!(OP_CONNECT_IS_NON_CLOUD);
+        assert!(VAULT_IS_NON_CLOUD);
+        assert!(!GCP_IS_NON_CLOUD);
+    }
+
+    #[test]
+    fn secret_client_kind_is_non_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms()
+     {
+        // Cross-altitude complement-pole weld: the runtime-client
+        // altitude and the config-author backend-kind altitude both
+        // classify the SAME upstream backends under the non-cloud
+        // complement pole through the natural pairings that share
+        // a cross-altitude peer:
+        //
+        //   client.is_non_cloud_secret_manager() ==
+        //     backend.is_non_cloud_secret_manager()
+        //
+        // for (Command, Command), (Akeyless, Akeyless),
+        // (OpConnect, Op), and (Vault, Vault). A future edit that
+        // re-scoped the complement at either altitude without
+        // extending the other (moving Vault onto the cloud pole on
+        // one side alone, say) diverges here before drifting
+        // through any consumer that reasons about the two altitudes
+        // as one pole. Complement-side mirror of
+        // `secret_client_kind_is_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms`
+        // on the two hyperscaler arms.
+        use crate::secret::SecretBackendKind;
+        assert_eq!(
+            SecretClientKind::Command.is_non_cloud_secret_manager(),
+            SecretBackendKind::Command.is_non_cloud_secret_manager(),
+            "runtime-client / config-author non-cloud agreement drifted on the Command arm",
+        );
+        assert_eq!(
+            SecretClientKind::Akeyless.is_non_cloud_secret_manager(),
+            SecretBackendKind::Akeyless.is_non_cloud_secret_manager(),
+            "runtime-client / config-author non-cloud agreement drifted on the Akeyless arm",
+        );
+        assert_eq!(
+            SecretClientKind::OpConnect.is_non_cloud_secret_manager(),
+            SecretBackendKind::Op.is_non_cloud_secret_manager(),
+            "runtime-client / config-author non-cloud agreement drifted on the Op / OpConnect arm",
+        );
+        assert_eq!(
+            SecretClientKind::Vault.is_non_cloud_secret_manager(),
+            SecretBackendKind::Vault.is_non_cloud_secret_manager(),
+            "runtime-client / config-author non-cloud agreement drifted on the Vault arm",
+        );
+        // The pins above are not vacuous only if the complement
+        // fires on both altitudes for all four shared arms.
+        assert!(SecretClientKind::Command.is_non_cloud_secret_manager());
+        assert!(SecretClientKind::Akeyless.is_non_cloud_secret_manager());
+        assert!(SecretClientKind::OpConnect.is_non_cloud_secret_manager());
+        assert!(SecretClientKind::Vault.is_non_cloud_secret_manager());
     }
 
     #[test]
