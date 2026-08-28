@@ -8536,6 +8536,109 @@ impl SameStoreConsistencyKind {
         matches!(*self, Self::Stationary | Self::IdentityRepublish)
     }
 
+    /// Whether this consistency corner witnessed the class-scoped watermark
+    /// move — `true` on [`Self::Progression`] (watermark moved AND
+    /// generation advanced: the routine config-file edit — every routine
+    /// content change lands here), `false` on [`Self::Stationary`] (same
+    /// observation twice — watermark unchanged and generation unchanged,
+    /// the `/healthz/config` polling case) and on [`Self::IdentityRepublish`]
+    /// (watermark unchanged but generation advanced by one or more: a
+    /// re-publish of the same value).
+    ///
+    /// **The modal-pair polarity peer of [`Self::is_watermark_stationary`]
+    /// at the half-Kind altitude, closing the compound-polarity
+    /// `is_watermark_moved` ladder at the FIFTH and half-Kind altitude.**
+    /// The four higher altitudes already carry same-named
+    /// `is_watermark_moved` receivers:
+    /// [`crate::ProofRelationKind::is_watermark_moved`] (fused sum, commit
+    /// `b0e1868`), [`crate::ProofRelation::is_watermark_moved`] (value
+    /// classification, commit `1e1e4eb`),
+    /// [`crate::ProofRelationWire::is_watermark_moved`] (wire
+    /// classification, commit `36a0ef8`), and
+    /// [`crate::ProofDelta::is_watermark_moved`] (delta, commit `53a1316`).
+    /// With this method, a consumer that projects a
+    /// [`SameStoreConsistencyKind`] out of any higher-altitude receiver
+    /// reaches the same-named predicate here at the half altitude too,
+    /// without special-casing the half-Kind altitude with the atom-name
+    /// [`Self::is_progression`] alias that a cross-altitude generic
+    /// consumer would otherwise have to remember.
+    ///
+    /// **Singleton collapse at the half-Kind altitude.** On the consistency
+    /// ternary the compound `is_watermark_moved` collapses to the SINGLE
+    /// [`Self::Progression`] cell — the sole moved-watermark corner on
+    /// the consistent half — mirroring the sibling singleton collapse on
+    /// [`Self::is_watermark_stationary`]'s complement pole. Both compound
+    /// predicates carve the ternary space along the SAME axis; the
+    /// FUSED-sum altitude
+    /// ([`crate::ProofRelationKind::is_watermark_moved`]) is the first
+    /// altitude at which the compound becomes a two-corner cross-half
+    /// compound grouping [`crate::ProofRelation::Progression`] from the
+    /// consistent half with [`crate::ProofRelation::CrossStore`] from the
+    /// impossibility half.
+    ///
+    /// **Delegation ladder — the direct singleton polarity.** A consumer
+    /// holding a captured [`SameStoreConsistencyKind`] (a per-corner
+    /// metrics counter bucketing routine-edit observations distinctly from
+    /// the two content-unchanged corners; an attester filter routing on
+    /// `--only=watermark-moved`; a dashboard tile histogramming the
+    /// routine-edit rate against the polling and republish rates) asking
+    /// "did the class-scoped watermark move on this observation window?"
+    /// previously had three inline paths, each leaking work: (a)
+    /// `matches!(k, SameStoreConsistencyKind::Progression)` — an inline
+    /// `matches!` fold whose single-arm shape the exhaustiveness checker
+    /// cannot help keep in sync with a future moved-watermark corner (a
+    /// hypothetical fourth legitimate corner carrying a moved watermark,
+    /// say) silently escapes the one-arm shape; (b) `k.is_progression()`
+    /// — the singleton atom-name that a cross-altitude generic consumer
+    /// projecting a `SameStoreConsistencyKind` out of a higher-altitude
+    /// receiver must remember to spell differently from the same-named
+    /// `is_watermark_moved` receiver on the four higher altitudes; or
+    /// (c) `!k.is_watermark_stationary()` — the modal-pair negation whose
+    /// polarity a future fourth legitimate corner (a hypothetical
+    /// `SchemaEvolution`, say, carrying no watermark axis at all) would
+    /// flip silently. This receiver spells the positive form of the query
+    /// at ONE canonical site whose name matches the four higher altitudes.
+    ///
+    /// **Modal-pair complement law with [`Self::is_watermark_stationary`].**
+    /// `k.is_watermark_moved() == !k.is_watermark_stationary()` pointwise
+    /// on every [`Self::VARIANTS`] cell — pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_is_complement_of_is_watermark_stationary`],
+    /// mirroring the same-named complement law on the four higher
+    /// altitudes (`ProofRelationKind`, `ProofRelation`, `ProofRelationWire`,
+    /// `ProofDelta`). A future edit that drifted either polarity from the
+    /// other fails at the modal-pair boundary rather than at a
+    /// per-polarity consumer site.
+    ///
+    /// **Alias identity with [`Self::is_progression`].**
+    /// `k.is_watermark_moved() == k.is_progression()` pointwise on every
+    /// [`Self::VARIANTS`] cell — the half-Kind altitude compound
+    /// collapses to the singleton atom, pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_agrees_with_is_progression`].
+    /// The identity carries the cross-altitude naming bridge: a consumer
+    /// that switched between the half-Kind altitude and any of the four
+    /// higher altitudes reads the same predicate name at every stop, and
+    /// this test welds that bridge pointwise.
+    ///
+    /// **Closed-binary-partition invariant with
+    /// [`Self::is_watermark_stationary`].** Exactly two
+    /// [`Self::VARIANTS`] cells satisfy `is_watermark_stationary` and
+    /// exactly one satisfies `is_watermark_moved`; the two counts sum to
+    /// [`Self::VARIANTS`]`.len()`. Pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_and_is_watermark_stationary_are_a_closed_binary_partition`],
+    /// mirroring the same-shape cardinality pin
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_stationary_and_is_progression_are_a_closed_binary_partition`]
+    /// already welded on this axis.
+    ///
+    /// `const`-callable — a compile-time-known [`SameStoreConsistencyKind`]
+    /// projects its watermark-moved verdict at compile time too, matching
+    /// the `const`-ness the rest of the receiver-family already carries.
+    /// The compile-time weld is pinned by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_is_const_callable`].
+    #[must_use]
+    pub const fn is_watermark_moved(&self) -> bool {
+        matches!(*self, Self::Progression)
+    }
+
     /// The closed set of variant values in declaration order — the
     /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
     /// consistent half of the classification. An ordered slice of
@@ -37596,6 +37699,164 @@ mod variants_tests {
         const _: () =
             assert!(SameStoreConsistencyKind::IdentityRepublish.is_watermark_stationary());
         const _: () = assert!(!SameStoreConsistencyKind::Progression.is_watermark_stationary());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_partitions_progression_from_stationary_arms()
+    {
+        // Per-variant polarity table on the modal-pair peer of the
+        // compound-polarity sibling `is_watermark_stationary`: exactly the
+        // sole moved-watermark arm (Progression — watermark moved AND
+        // generation advanced, every routine config-file edit) returns
+        // true; the two watermark-stationary arms (Stationary — same
+        // observation twice, both axes at rest; IdentityRepublish —
+        // watermark unchanged, generation advanced by one or more) return
+        // false. The half-Kind altitude closure of the compound-polarity
+        // `is_watermark_moved` ladder — the four higher altitudes already
+        // carry same-named receivers on ProofRelationKind (fused sum),
+        // ProofRelation (value classification), ProofRelationWire (wire
+        // classification), and ProofDelta (delta).
+        assert!(!SameStoreConsistencyKind::Stationary.is_watermark_moved());
+        assert!(!SameStoreConsistencyKind::IdentityRepublish.is_watermark_moved());
+        assert!(SameStoreConsistencyKind::Progression.is_watermark_moved());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_is_complement_of_is_watermark_stationary() {
+        // The modal-pair complement law at the compound-polarity altitude:
+        // `is_watermark_moved() == !is_watermark_stationary()` pointwise
+        // on SameStoreConsistencyKind::VARIANTS. The two predicates
+        // partition VARIANTS into the compound moved-watermark pole
+        // (Progression, the sole moved-watermark arm) and its two-cell
+        // complement (Stationary | IdentityRepublish, the two
+        // stationary-watermark arms). A future edit that drifted one
+        // polarity from the other fails here before any consumer of
+        // either surface can observe the divergence. Idiom-peer of the
+        // same-named complement law on the four higher altitudes
+        // (ProofRelationKind, ProofRelation, ProofRelationWire,
+        // ProofDelta) and of the orthogonal
+        // `same_store_consistency_kind_is_watermark_stationary_is_complement_of_is_progression`
+        // above.
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_moved(),
+                !k.is_watermark_stationary(),
+                "is_watermark_moved and !is_watermark_stationary must agree pointwise on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_agrees_with_is_progression() {
+        // The cross-altitude naming-bridge law at the compound-polarity
+        // altitude: `is_watermark_moved() == is_progression()` pointwise
+        // on SameStoreConsistencyKind::VARIANTS — the compound-polarity
+        // sibling collapses to the singleton atom on the consistency
+        // ternary (the sole moved-watermark cell on the consistent half
+        // is Progression). The identity carries the cross-altitude
+        // naming bridge: a consumer that projects a
+        // SameStoreConsistencyKind out of any higher-altitude receiver
+        // reads the same-named `is_watermark_moved` predicate here at
+        // the half altitude too, without special-casing the half-Kind
+        // altitude with the atom-name `is_progression` that a
+        // cross-altitude generic consumer would otherwise have to
+        // remember. A future edit that flipped either arm without
+        // flipping the other fails here before drifting through any
+        // consumer that reasons about the two predicates as one
+        // group.
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_moved(),
+                k.is_progression(),
+                "is_watermark_moved must equal is_progression on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_and_is_watermark_stationary_are_a_closed_binary_partition()
+     {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly two SameStoreConsistencyKind::VARIANTS cells satisfy
+        // `is_watermark_stationary`, exactly one satisfies
+        // `is_watermark_moved`, and the two counts sum to
+        // SameStoreConsistencyKind::VARIANTS.len(). The closed binary
+        // partition of the consistent-half ternary space on the
+        // watermark-move axis, mirroring the same-shape closed binary
+        // partition already welded by
+        // `same_store_consistency_kind_is_watermark_stationary_and_is_progression_are_a_closed_binary_partition`
+        // above and the fused-altitude closed binary partition
+        // `proof_relation_kind_is_watermark_moved_partitions_variants_two_from_three`
+        // on ProofRelationKind::VARIANTS. A future fourth
+        // SameStoreConsistencyKind variant that did not extend one of the
+        // compound arms (or extended both) fails at this cardinality
+        // invariant before drifting through any consumer site.
+        let watermark_moved_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_watermark_moved)
+            .count();
+        let watermark_stationary_cells = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_watermark_stationary)
+            .count();
+        assert_eq!(
+            watermark_moved_cells, 1,
+            "exactly one SameStoreConsistencyKind::VARIANTS cell must satisfy is_watermark_moved",
+        );
+        assert_eq!(
+            watermark_stationary_cells, 2,
+            "exactly two SameStoreConsistencyKind::VARIANTS cells must satisfy is_watermark_stationary",
+        );
+        assert_eq!(
+            watermark_moved_cells + watermark_stationary_cells,
+            SameStoreConsistencyKind::VARIANTS.len(),
+            "the compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind()
+     {
+        // Cross-altitude same-answer with the fused-sum altitude: for
+        // every `Consistent(c)` cell of ProofRelationKind::VARIANTS,
+        // `c.is_watermark_moved()` (half-Kind altitude) agrees with
+        // `ProofRelationKind::Consistent(c).is_watermark_moved()`
+        // (fused-sum altitude). Welds the half-Kind altitude sibling
+        // added here to the fused-sum altitude's cross-half compound —
+        // the fused-sum altitude reads `true` on both moved-watermark
+        // corners (Consistent(Progression) from the consistent half and
+        // Impossible(CrossStore) from the impossibility half), and this
+        // test pins that the half-Kind altitude reads the same answer
+        // for the three delta-reachable consistent-half projections.
+        // Idiom-peer of the cross-altitude same-answer tests already
+        // welded on the four higher altitudes.
+        for c in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            let fused = ProofRelationKind::Consistent(c);
+            assert_eq!(
+                c.is_watermark_moved(),
+                fused.is_watermark_moved(),
+                "half-Kind and fused-sum altitude answers must agree on Consistent({c:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_is_watermark_moved_is_const_callable() {
+        // The modal-pair peer sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `SameStoreConsistencyKind` singleton, a `const`-
+        // eval-based static-assert on a classifier arm) resolves the
+        // polarity at compile time. Idiom-peer of
+        // `same_store_consistency_kind_is_watermark_stationary_is_const_callable`
+        // above. The const-block asserts below make the weld load-bearing
+        // at crate compile time: a future edit that flipped a polarity on
+        // this predicate fails at `cargo build`, not just at this test's
+        // runtime assertion.
+        const _: () = assert!(!SameStoreConsistencyKind::Stationary.is_watermark_moved());
+        const _: () = assert!(!SameStoreConsistencyKind::IdentityRepublish.is_watermark_moved());
+        const _: () = assert!(SameStoreConsistencyKind::Progression.is_watermark_moved());
     }
 
     #[test]
