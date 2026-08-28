@@ -1820,15 +1820,18 @@ impl ProofDelta {
     /// [`ProofRelation::is_generation_advanced`],
     /// [`ProofRelationWire::is_generation_advanced`],
     /// [`ProofRelationKind::is_generation_advanced`], and
-    /// [`SameStoreConsistencyKind::is_generation_advanced`].** Closes
-    /// the compound-polarity publish-observing ladder across all FIVE
-    /// altitudes of the crate's `ProofRelation` classification family
-    /// — the fifth and final altitude at which the "did we observe a
-    /// publish?" question is answered by a single welded receiver,
-    /// reaching the classification axis directly from the
+    /// [`SameStoreConsistencyKind::is_generation_advanced`].** Lifts
+    /// the compound-polarity publish-observing pole onto the delta
+    /// altitude of the crate's `ProofRelation` classification family
+    /// — the fifth altitude at which the "did we observe a publish?"
+    /// question is answered by a single welded receiver, reaching the
+    /// classification axis directly from the
     /// `generations_advanced: Option<u64>` field the delta shape
     /// carries without projecting through any classification altitude
-    /// first.
+    /// first. The ladder closes at the sixth altitude,
+    /// [`SameStoreImpossibilityKind::is_generation_advanced`], where the
+    /// compound collapses to a nullary constant-false receiver over the
+    /// two impossibility-half variants.
     ///
     /// **Delegation ladder — the axis-direct answer at the delta
     /// altitude.** A consumer holding a freshly computed
@@ -3258,6 +3261,113 @@ impl SameStoreImpossibilityKind {
     #[must_use]
     pub const fn is_watermark_stationary(&self) -> bool {
         matches!(*self, Self::Regressed)
+    }
+
+    /// Whether this impossibility corner witnessed the generation counter
+    /// advance — `false` on BOTH [`Self::Regressed`] (generation counter
+    /// went strictly backwards, the negation of an advance) AND
+    /// [`Self::CrossStore`] (watermark moved at unchanged generation
+    /// counter, no advance). The impossibility half carries no
+    /// publish-observing corner by construction, so the compound
+    /// collapses to the empty set at this altitude.
+    ///
+    /// **The nullary-collapse polarity at the half-impossibility Kind
+    /// altitude, closing the compound-polarity `is_generation_advanced`
+    /// ladder at the SIXTH and half-impossibility Kind altitude.** The
+    /// five higher altitudes already carry same-named
+    /// `is_generation_advanced` receivers:
+    /// [`crate::ProofRelationKind::is_generation_advanced`] (fused sum,
+    /// commit `9000d28`), [`crate::ProofRelation::is_generation_advanced`]
+    /// (value classification, commit `85ac063`),
+    /// [`crate::ProofRelationWire::is_generation_advanced`] (wire
+    /// classification, commit `40fe26b`),
+    /// [`crate::ProofDelta::is_generation_advanced`] (delta, commit
+    /// `c9036f4`), and [`SameStoreConsistencyKind::is_generation_advanced`]
+    /// (half-consistency Kind, commit `346c3cc`). With this method, a
+    /// consumer that projects a [`SameStoreImpossibilityKind`] out of
+    /// any higher-altitude receiver reaches the same-named predicate
+    /// here at the half-impossibility altitude too, without having to
+    /// remember the impossibility-half half-Kind altitude is the one
+    /// altitude where the compound is absent from the receiver family —
+    /// the cross-altitude name uniformly reaches a welded receiver
+    /// spelling the constant-false answer at ONE canonical site.
+    ///
+    /// **Nullary collapse at the half-impossibility Kind altitude.** On
+    /// the impossibility binary the compound `is_generation_advanced`
+    /// collapses to ZERO cells — the empty subset of [`Self::VARIANTS`]
+    /// — contrasting with the two sibling watermark compounds
+    /// [`Self::is_watermark_moved`] and [`Self::is_watermark_stationary`]
+    /// (each of which collapses to a SINGLETON on this same binary) and
+    /// with the singleton collapses
+    /// [`SameStoreConsistencyKind::is_watermark_moved`] and
+    /// [`SameStoreConsistencyKind::is_watermark_stationary`] carry on
+    /// the consistency-half ternary. The half-consistency altitude is
+    /// the first altitude on which the compound-polarity
+    /// `is_generation_advanced` receiver has non-empty support (both
+    /// [`SameStoreConsistencyKind::IdentityRepublish`] and
+    /// [`SameStoreConsistencyKind::Progression`] — two-of-three); the
+    /// fused-sum altitude and the three higher altitudes each hold the
+    /// same two-cell support. This altitude is the ONE altitude at which
+    /// the compound is a constant-false receiver — a structural fact
+    /// worth naming rather than leaving implicit in every consumer that
+    /// projects an impossibility half-Kind out of a higher altitude.
+    ///
+    /// **Delegation ladder — the shortest constant-false answer.** A
+    /// consumer holding a captured [`SameStoreImpossibilityKind`] (a
+    /// per-corner diagnostic dashboard that groups the two impossibility
+    /// corners against the two publish-observing consistent corners; an
+    /// attester filter routing on `--only=publish-observing` that has to
+    /// exclude both impossibility corners; a log formatter that pages on
+    /// every publish-observing tick and knows the impossibility half is
+    /// never publish-observing) asking "did the generation counter
+    /// advance on this impossibility observation?" previously had three
+    /// inline paths, each leaking work: (a)
+    /// [`crate::ProofRelationKind::Impossible`]`(k).is_generation_advanced()`
+    /// — a two-hop composition through the fused-sum altitude whose
+    /// `Impossible` re-wrapping the tag-only question doesn't need; (b)
+    /// `false` — the constant literal whose polarity a future third
+    /// impossibility variant (a hypothetical `SignedAttestationMismatch`
+    /// carrying a generation-advance signal, say) would silently flip;
+    /// or (c) `!k.is_regressed() && !k.is_cross_store()` — the
+    /// modal-pair negation of the closed-partition disjunction, an
+    /// awkward expression whose two `!` polarities a future variant
+    /// would silently drift. This receiver spells the constant-false
+    /// answer at ONE canonical half-impossibility altitude site whose
+    /// name matches the five higher altitudes and whose exhaustive
+    /// `match` a future third variant must extend.
+    ///
+    /// **Cross-altitude same-answer with the fused-sum altitude.** For
+    /// every impossibility cell `k` in [`Self::VARIANTS`],
+    /// `k.is_generation_advanced()` (half-Kind altitude) agrees with
+    /// [`crate::ProofRelationKind::Impossible`]`(k).is_generation_advanced()`
+    /// (fused-sum altitude), pinned by
+    /// [`variants_tests::same_store_impossibility_kind_is_generation_advanced_cross_altitude_agrees_with_proof_relation_kind`],
+    /// mirroring the same-shape cross-altitude tests
+    /// [`variants_tests::same_store_impossibility_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind`]
+    /// and
+    /// [`variants_tests::same_store_impossibility_kind_is_watermark_stationary_cross_altitude_agrees_with_proof_relation_kind`]
+    /// already welded on the modal-pair siblings at this same altitude —
+    /// the fused-sum altitude reads `false` on both impossibility-half
+    /// projections by construction of its `Self::Impossible(_) => false`
+    /// arm, and this test pins that the half-impossibility altitude
+    /// reads the same constant-false answer.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreImpossibilityKind`] projects its generation-advanced
+    /// verdict at compile time too, matching the `const`-ness the rest
+    /// of the receiver-family already carries. The compile-time weld is
+    /// pinned by
+    /// [`variants_tests::same_store_impossibility_kind_is_generation_advanced_is_const_callable`].
+    #[must_use]
+    pub const fn is_generation_advanced(&self) -> bool {
+        // Nullary collapse: no impossibility variant witnesses a
+        // generation advance. Written as an exhaustive `match` rather
+        // than a bare `false` literal so a hypothetical third
+        // impossibility variant fails at `cargo build` until named
+        // explicitly on this ladder.
+        match *self {
+            Self::Regressed | Self::CrossStore => false,
+        }
     }
 
     /// The closed set of variant values in declaration order — an
@@ -37872,6 +37982,108 @@ mod variants_tests {
         // `cargo build`, not just at this test's runtime assertion.
         const _: () = assert!(SameStoreImpossibilityKind::Regressed.is_watermark_stationary());
         const _: () = assert!(!SameStoreImpossibilityKind::CrossStore.is_watermark_stationary());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_generation_advanced_is_constant_false_on_variants() {
+        // Nullary-collapse polarity table on the compound-polarity sibling
+        // `is_generation_advanced` at the half-impossibility Kind altitude:
+        // BOTH impossibility corners (Regressed — generation counter went
+        // strictly backwards; CrossStore — watermark moved at unchanged
+        // generation counter) return false. The SIXTH altitude closure of
+        // the compound-polarity `is_generation_advanced` ladder — the five
+        // higher altitudes already carry same-named receivers on
+        // ProofRelationKind (fused sum), ProofRelation (value classification),
+        // ProofRelationWire (wire classification), ProofDelta (delta), and
+        // SameStoreConsistencyKind (half-consistency Kind). This altitude is
+        // the ONE altitude at which the compound is a constant-false receiver
+        // (the impossibility half carries no publish-observing corner by
+        // construction), contrasting with the singleton collapses the
+        // modal-pair siblings `is_watermark_moved` and
+        // `is_watermark_stationary` carry at this same altitude — pinned by
+        // `same_store_impossibility_kind_is_watermark_moved_partitions_cross_store_from_regressed`
+        // and
+        // `same_store_impossibility_kind_is_watermark_stationary_partitions_regressed_from_cross_store`
+        // respectively.
+        assert!(!SameStoreImpossibilityKind::Regressed.is_generation_advanced());
+        assert!(!SameStoreImpossibilityKind::CrossStore.is_generation_advanced());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_generation_advanced_has_empty_support_on_variants() {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // zero SameStoreImpossibilityKind::VARIANTS cells satisfy
+        // `is_generation_advanced` — the empty subset of the impossibility
+        // binary. The nullary-collapse cardinality complement of the
+        // singleton-collapse cardinality the modal-pair sibling
+        // `is_watermark_moved` (one cell) and `is_watermark_stationary`
+        // (one cell) carry on this same binary, pinned by
+        // `same_store_impossibility_kind_is_watermark_stationary_and_is_watermark_moved_are_a_closed_binary_partition`.
+        // Stronger than the per-variant constant-false pin above: it also
+        // catches a future extension `matches!(*self, Self::Regressed |
+        // Self::CrossStore)` that would silently flip the polarity to
+        // constant-true on this binary. Idiom-peer of the same-shape
+        // cardinality invariant on the half-consistency Kind altitude
+        // (`same_store_consistency_kind_is_generation_advanced_and_is_stationary_are_a_closed_binary_partition`,
+        // there two advanced cells against one stationary cell; here zero
+        // advanced cells).
+        let generation_advanced_cells = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreImpossibilityKind::is_generation_advanced)
+            .count();
+        assert_eq!(
+            generation_advanced_cells, 0,
+            "no SameStoreImpossibilityKind::VARIANTS cell must satisfy is_generation_advanced",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_generation_advanced_cross_altitude_agrees_with_proof_relation_kind()
+     {
+        // Cross-altitude same-answer with the fused-sum altitude: for
+        // every `Impossible(k)` cell of ProofRelationKind::VARIANTS,
+        // `k.is_generation_advanced()` (half-Kind altitude) agrees with
+        // `ProofRelationKind::Impossible(k).is_generation_advanced()`
+        // (fused-sum altitude). Welds the half-impossibility Kind altitude
+        // sibling added here to the fused-sum altitude's `Self::Impossible(_)
+        // => false` arm — the fused-sum altitude reads `false` on both
+        // impossibility-half projections by construction, and this test
+        // pins that the half-impossibility altitude reads the same
+        // constant-false answer. Idiom-peer of the same-shape cross-altitude
+        // tests on the modal-pair siblings at this same altitude
+        // (`same_store_impossibility_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind`
+        // and
+        // `same_store_impossibility_kind_is_watermark_stationary_cross_altitude_agrees_with_proof_relation_kind`)
+        // and of the same-shape cross-altitude test on the half-consistency
+        // Kind altitude.
+        for k in SameStoreImpossibilityKind::VARIANTS.iter().copied() {
+            let fused = ProofRelationKind::Impossible(k);
+            assert_eq!(
+                k.is_generation_advanced(),
+                fused.is_generation_advanced(),
+                "half-impossibility Kind and fused-sum altitude answers must agree on Impossible({k:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_generation_advanced_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `SameStoreImpossibilityKind` singleton, a `const`-
+        // eval-based static-assert on a classifier arm) resolves the
+        // polarity at compile time. Modal-pair peer of the same-altitude
+        // sibling const-callable tests
+        // (`same_store_impossibility_kind_is_watermark_moved_is_const_callable`
+        // and
+        // `same_store_impossibility_kind_is_watermark_stationary_is_const_callable`).
+        // The const-block asserts below make the weld load-bearing at crate
+        // compile time: a future edit that flipped a polarity on this
+        // predicate fails at `cargo build`, not just at this test's runtime
+        // assertion.
+        const _: () = assert!(!SameStoreImpossibilityKind::Regressed.is_generation_advanced());
+        const _: () = assert!(!SameStoreImpossibilityKind::CrossStore.is_generation_advanced());
     }
 
     #[test]
