@@ -836,6 +836,129 @@ impl SecretOperation {
     pub const fn is_get_version(self) -> bool {
         matches!(self, Self::GetVersion)
     }
+
+    /// Returns `true` for the *mutating* pole of the [`SecretOperation`]
+    /// axis — the three operations that *change the underlying store's
+    /// state*: [`Self::Put`] (create-or-update a value),
+    /// [`Self::Delete`] (destroy a value), [`Self::Rotate`] (trigger
+    /// backend-side generation of a new value under an existing key) —
+    /// `false` on the three non-mutating operations ([`Self::Get`],
+    /// [`Self::List`], [`Self::GetVersion`]).
+    ///
+    /// **The write-half compound-polarity pole at the operation
+    /// altitude.** The six per-variant singleton predicates
+    /// ([`Self::is_get`] / [`Self::is_list`] / [`Self::is_put`] /
+    /// [`Self::is_delete`] / [`Self::is_rotate`] / [`Self::is_get_version`])
+    /// already resolve the closed sextet partition of [`Self::ALL`] at the
+    /// primitive's altitude; the compound-polarity pair
+    /// ([`Self::is_mutating`] + [`Self::is_non_mutating`]) lifts the
+    /// *read-vs-write* meta-partition onto the same altitude so a
+    /// consumer reasoning about *whether the call changes the store*
+    /// (an RBAC gate on a daemon startup — "the resolved role has
+    /// read-only permission, so any [`Self::is_mutating`] dispatch must
+    /// refuse before touching the backend"; an audit-log filter routing
+    /// mutating dispatches into a separately-retained higher-severity
+    /// stream; an attestation manifest recording the read-vs-write
+    /// operation histogram of a recorded session; a structured-tracing
+    /// span attribute bucketing dispatches on the compound-polarity
+    /// pole; a CLI `--mutating-only` / `--read-only` filter over a
+    /// captured refusal log) names the *positive* form of the query at
+    /// the call site instead of the three-arm disjunction
+    /// `op.is_put() || op.is_delete() || op.is_rotate()` and reads the
+    /// pole through ONE welded predicate.
+    ///
+    /// Written as `match *self { Self::Put | Self::Delete | Self::Rotate
+    /// => true, Self::Get | Self::List | Self::GetVersion => false }` so
+    /// a hypothetical seventh operation (a `Metadata` read the
+    /// [`SecretOperation`] doc calls out explicitly, a `Renew` on a
+    /// lease-tracking backend that would sit on the mutating pole
+    /// alongside [`Self::Rotate`], a `Watch` streaming updates that
+    /// would sit on the non-mutating pole alongside [`Self::List`],
+    /// etc.) must be classified on this axis at `cargo build` — an
+    /// exhaustive `match` naming both arms fails the build until the
+    /// new variant is placed on one polarity or the other, rather than
+    /// silently defaulting past a bare `false` literal on the compound
+    /// pole and drifting through every consumer site that reasons about
+    /// the read/write partition. Idiom-peer of the same explicit-arms
+    /// discipline on the peer compound-polarity siblings
+    /// [`crate::WatchEventClass::is_file_mutation`],
+    /// [`crate::discovery::Format::is_feature_gated`],
+    /// [`crate::secret::SecretBackendKind::is_cloud_secret_manager`],
+    /// [`Self::is_cloud_secret_manager`][SecretClientKind::is_cloud_secret_manager],
+    /// [`crate::source::ConfigSourceKind::is_overlay`], and
+    /// [`crate::tiered::ConfigTierKind::is_computed`].
+    ///
+    /// **Cross-surface: agreement with [`Capabilities::full`].** Every
+    /// mutating operation is advertised by the full-capability set —
+    /// `Capabilities::full()` sets `put`, `delete`, and `rotate` to
+    /// `true`, so `op.is_mutating() ⇒ op.is_supported_by(Capabilities::full())`
+    /// — pinned by
+    /// [`tests::secret_operation_is_mutating_ops_supported_by_full_capabilities`].
+    /// The dual [`Capabilities::read_only`] set does *not* symmetrically
+    /// pin `!op.is_mutating() ⇒ op.is_supported_by(caps)`: the shipped
+    /// `read_only()` set enables only `get`, so it refuses both mutating
+    /// operations *and* the two non-mutating operations [`Self::List`]
+    /// and [`Self::GetVersion`] — the historically get-only shape of
+    /// `read_only()` is a stronger constraint than *just* non-mutating,
+    /// which is why the compound-polarity name here is `is_mutating` /
+    /// `is_non_mutating` rather than `is_write` / `is_read_only` (the
+    /// latter would falsely suggest agreement with the get-only
+    /// [`Capabilities::read_only`] shape).
+    ///
+    /// The compound ↔ complement law (`op.is_mutating() ==
+    /// !op.is_non_mutating()`) is pinned by
+    /// [`tests::secret_operation_is_mutating_is_complement_of_is_non_mutating`].
+    /// The compound ↔ three-arm disjunction law (`op.is_mutating() ==
+    /// op.is_put() || op.is_delete() || op.is_rotate()`) is pinned by
+    /// [`tests::secret_operation_is_mutating_agrees_with_disjunction_of_mutating_siblings`].
+    /// The compound-polarity binary partition is pinned by
+    /// [`tests::secret_operation_is_mutating_and_is_non_mutating_are_a_closed_binary_partition`].
+    /// The compile-time weld is pinned by
+    /// [`tests::secret_operation_is_mutating_is_const_callable`].
+    #[must_use]
+    pub const fn is_mutating(self) -> bool {
+        match self {
+            Self::Put | Self::Delete | Self::Rotate => true,
+            Self::Get | Self::List | Self::GetVersion => false,
+        }
+    }
+
+    /// Returns `true` for the *non-mutating* pole of the
+    /// [`SecretOperation`] axis — the three operations that *do not
+    /// change the underlying store's state*: [`Self::Get`] (read a
+    /// current value), [`Self::List`] (enumerate keys), [`Self::GetVersion`]
+    /// (read a historical value) — `false` on the three mutating
+    /// operations ([`Self::Put`], [`Self::Delete`], [`Self::Rotate`]).
+    ///
+    /// Complement pole of [`Self::is_mutating`] on the read-vs-write
+    /// meta-partition; equivalent to `!self.is_mutating()`. Named
+    /// separately (rather than left as a negation) so consumers reading
+    /// the non-mutating half of the axis no longer negate
+    /// [`Self::is_mutating`] — a shape whose polarity a future tertiary
+    /// class (e.g. a `Watch` streaming subscription that arguably neither
+    /// reads a *current* value nor mutates the store) would silently
+    /// flip: `!is_mutating` would then include the tertiary alongside the
+    /// three shipped non-mutating cells, whereas the direct predicate
+    /// stays true only for the three declared non-mutating cells and
+    /// forces the tertiary to declare its own polarity. Peer of the same
+    /// closed-binary-pair discipline the neighbouring compound-polarity
+    /// axes carry — [`crate::WatchEventClass::is_file_mutation`] /
+    /// [`crate::WatchEventClass::is_ignored`] on the reload-relevance
+    /// axis, [`crate::discovery::Format::is_feature_gated`] /
+    /// [`crate::discovery::Format::is_always_available`] on the file-
+    /// format axis, [`crate::tiered::ConfigTierKind::is_computed`] /
+    /// [`crate::tiered::ConfigTierKind::is_custom`] on the tier axis.
+    ///
+    /// See [`Self::is_mutating`] for the full compound-polarity
+    /// contract, the cross-surface `Capabilities::full` agreement law,
+    /// and the load-bearing test suite.
+    #[must_use]
+    pub const fn is_non_mutating(self) -> bool {
+        match self {
+            Self::Get | Self::List | Self::GetVersion => true,
+            Self::Put | Self::Delete | Self::Rotate => false,
+        }
+    }
 }
 
 impl crate::ClosedAxis for SecretOperation {
@@ -3740,6 +3863,231 @@ mod tests {
             assert_eq!(op.is_delete(), op == SecretOperation::Delete);
             assert_eq!(op.is_rotate(), op == SecretOperation::Rotate);
             assert_eq!(op.is_get_version(), op == SecretOperation::GetVersion);
+        }
+    }
+
+    // ── SecretOperation — is_mutating / is_non_mutating ────────────
+    //
+    // Compound-polarity sibling pair on the read-vs-write meta-partition
+    // of the operation axis. Names the write-half pole (Put | Delete |
+    // Rotate) and its non-mutating complement (Get | List | GetVersion)
+    // at the primitive's altitude, lifting the meta-partition off the
+    // three-arm disjunction consumers previously open-coded at every
+    // RBAC gate, audit-log filter, and telemetry-bucketing site.
+
+    #[test]
+    fn secret_operation_is_mutating_partitions_write_half_from_read_half() {
+        // Per-variant polarity table on the compound-polarity sibling of
+        // the operation sextet axis: exactly the three write-half arms
+        // (Put — create/update; Delete — destroy; Rotate — backend-side
+        // generation of a new value) return true; the three read-half
+        // arms (Get — read current; List — enumerate keys; GetVersion —
+        // read historical) return false.
+        assert!(!SecretOperation::Get.is_mutating());
+        assert!(!SecretOperation::List.is_mutating());
+        assert!(SecretOperation::Put.is_mutating());
+        assert!(SecretOperation::Delete.is_mutating());
+        assert!(SecretOperation::Rotate.is_mutating());
+        assert!(!SecretOperation::GetVersion.is_mutating());
+    }
+
+    #[test]
+    fn secret_operation_is_non_mutating_partitions_read_half_from_write_half() {
+        // Dual of the write-half polarity table: exactly the three read-
+        // half arms return true; the three write-half arms return false.
+        assert!(SecretOperation::Get.is_non_mutating());
+        assert!(SecretOperation::List.is_non_mutating());
+        assert!(!SecretOperation::Put.is_non_mutating());
+        assert!(!SecretOperation::Delete.is_non_mutating());
+        assert!(!SecretOperation::Rotate.is_non_mutating());
+        assert!(SecretOperation::GetVersion.is_non_mutating());
+    }
+
+    #[test]
+    fn secret_operation_is_mutating_is_complement_of_is_non_mutating() {
+        // The modal-pair complement law at the compound-polarity
+        // altitude: `is_mutating() == !is_non_mutating()` pointwise on
+        // SecretOperation::ALL. The two predicates partition ALL into
+        // the write-half pole (Put | Delete | Rotate — three mutating
+        // arms) and its complement (Get | List | GetVersion — three
+        // non-mutating arms). A future edit that drifted one polarity
+        // from the other fails here before any consumer of either
+        // surface can observe the divergence. Idiom-peer of the
+        // pair-complement laws on
+        // `WatchEventClass::is_file_mutation` /
+        // `WatchEventClass::is_ignored`,
+        // `Format::is_feature_gated` / `Format::is_always_available`,
+        // and `ConfigTierKind::is_computed` / `ConfigTierKind::is_custom`.
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                op.is_mutating(),
+                !op.is_non_mutating(),
+                "is_mutating and !is_non_mutating must agree pointwise on {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_is_mutating_agrees_with_disjunction_of_mutating_siblings() {
+        // The compound ↔ three-arm disjunction law at the compound-
+        // polarity altitude: `is_mutating() == is_put() || is_delete()
+        // || is_rotate()` pointwise on SecretOperation::ALL — the
+        // write-half compound is exactly the disjunction of the three
+        // singleton predicates naming the mutating arms. A future edit
+        // that flipped one arm of the `match` in `is_mutating` without
+        // flipping the corresponding singleton sibling fails here
+        // before drifting through any consumer that reasons about the
+        // three mutating arms as one group. Idiom-peer of the compound
+        // ↔ disjunction pin on
+        // `WatchEventClass::is_file_mutation_agrees_with_disjunction_of_mutation_siblings`
+        // and `SecretClientKind::is_cloud_secret_manager_agrees_with_or_of_individual_siblings`.
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                op.is_mutating(),
+                op.is_put() || op.is_delete() || op.is_rotate(),
+                "is_mutating must equal is_put || is_delete || is_rotate on {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_is_non_mutating_agrees_with_disjunction_of_non_mutating_siblings() {
+        // The complementary compound ↔ three-arm disjunction law:
+        // `is_non_mutating() == is_get() || is_list() || is_get_version()`
+        // pointwise on SecretOperation::ALL — the read-half compound is
+        // exactly the disjunction of the three singleton predicates
+        // naming the non-mutating arms. Together with the mutating
+        // sibling pin above, both poles route through named per-variant
+        // siblings so an edit to any arm surfaces at BOTH pole
+        // predicates rather than only one.
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                op.is_non_mutating(),
+                op.is_get() || op.is_list() || op.is_get_version(),
+                "is_non_mutating must equal is_get || is_list || is_get_version on {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_is_mutating_and_is_non_mutating_are_a_closed_binary_partition() {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly three SecretOperation::ALL cells satisfy `is_mutating`,
+        // exactly three satisfy `is_non_mutating`, and the two counts
+        // sum to `SecretOperation::ALL.len()`. Binary-partition analogue
+        // of the closed-sextet-partition pin on the singleton
+        // predicates. A future seventh SecretOperation variant that did
+        // not extend one of the compound arms (or extended both) fails
+        // at this cardinality invariant before drifting through any
+        // consumer site — the compound-polarity ladder's own load-
+        // bearing pin. Idiom-peer of
+        // `watch_event_class_is_file_mutation_and_is_ignored_are_a_closed_binary_partition`
+        // and `format_feature_gating_predicates_are_a_closed_binary_partition`.
+        let mutating_cells = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_mutating())
+            .count();
+        let non_mutating_cells = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_non_mutating())
+            .count();
+        assert_eq!(
+            mutating_cells, 3,
+            "exactly three SecretOperation::ALL cells must satisfy is_mutating",
+        );
+        assert_eq!(
+            non_mutating_cells, 3,
+            "exactly three SecretOperation::ALL cells must satisfy is_non_mutating",
+        );
+        assert_eq!(
+            mutating_cells + non_mutating_cells,
+            SecretOperation::ALL.len(),
+            "the compound-polarity binary partition must cover ALL",
+        );
+    }
+
+    #[test]
+    fn secret_operation_is_mutating_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a
+        // compile-time consumer (a `const` predicate table, a `const`-
+        // evaluated switch over a `SecretOperation` singleton, a
+        // `const`-eval-based static-assert on a dispatch arm) resolves
+        // the polarity at compile time. Idiom-peer of
+        // `watch_event_class_is_file_mutation_is_const_callable`. The
+        // const-block asserts below make the weld load-bearing at
+        // crate compile time: a future edit that flipped a polarity on
+        // this predicate fails at `cargo build`, not just at this
+        // test's runtime assertion.
+        const _: () = assert!(SecretOperation::Put.is_mutating());
+        const _: () = assert!(SecretOperation::Delete.is_mutating());
+        const _: () = assert!(SecretOperation::Rotate.is_mutating());
+        const _: () = assert!(!SecretOperation::Get.is_mutating());
+        const _: () = assert!(!SecretOperation::List.is_mutating());
+        const _: () = assert!(!SecretOperation::GetVersion.is_mutating());
+        const _: () = assert!(SecretOperation::Get.is_non_mutating());
+        const _: () = assert!(SecretOperation::List.is_non_mutating());
+        const _: () = assert!(SecretOperation::GetVersion.is_non_mutating());
+        const _: () = assert!(!SecretOperation::Put.is_non_mutating());
+        const _: () = assert!(!SecretOperation::Delete.is_non_mutating());
+        const _: () = assert!(!SecretOperation::Rotate.is_non_mutating());
+    }
+
+    #[test]
+    fn secret_operation_is_mutating_ops_supported_by_full_capabilities() {
+        // Cross-surface witness at the Capabilities boundary: every
+        // mutating operation is advertised by `Capabilities::full()`,
+        // so `op.is_mutating() ⇒ op.is_supported_by(Capabilities::full())`
+        // holds pointwise on SecretOperation::ALL. Ties the compound
+        // polarity to the capability surface it names — a future edit
+        // that scoped `Capabilities::full()` down (dropping `put`/
+        // `delete`/`rotate`) would silently break this implication,
+        // and a future new mutating variant that this predicate names
+        // but `Capabilities::full()` doesn't advertise fails here at
+        // the cross-surface boundary rather than at a per-dispatch
+        // site. Note: the reverse implication does NOT hold — the
+        // three non-mutating operations are also supported by the
+        // full-capability set (a superset of *all* six operations),
+        // so `!op.is_mutating() ⇒ op.is_supported_by(Capabilities::full())`
+        // is trivially true and carried by the peer
+        // `capabilities_full_supports_every_operation` pin.
+        let full = Capabilities::full();
+        for op in SecretOperation::ALL.iter().copied() {
+            if op.is_mutating() {
+                assert!(
+                    op.is_supported_by(full),
+                    "mutating op {op:?} must be advertised by Capabilities::full()",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secret_operation_read_only_capabilities_refuses_every_mutating_op() {
+        // Cross-surface *refusal* witness at the Capabilities boundary:
+        // every mutating operation is refused by
+        // `Capabilities::read_only()`, so `op.is_mutating() ⇒
+        // !op.is_supported_by(Capabilities::read_only())` holds
+        // pointwise on SecretOperation::ALL. Names the RBAC-gate the
+        // compound-polarity pole was lifted to serve directly at the
+        // typed capability altitude: a daemon that constrains itself
+        // to a `read_only()` capability set will refuse every
+        // `is_mutating` dispatch by construction. The reverse
+        // implication does NOT hold — `read_only()` also refuses the
+        // non-mutating `List` and `GetVersion` operations, which is
+        // exactly why the compound-polarity name here is
+        // `is_mutating` / `is_non_mutating` rather than
+        // `is_write` / `is_read_only` (the latter would falsely suggest
+        // agreement with the get-only shape of `read_only()`).
+        let read_only = Capabilities::read_only();
+        for op in SecretOperation::ALL.iter().copied() {
+            if op.is_mutating() {
+                assert!(
+                    !op.is_supported_by(read_only),
+                    "mutating op {op:?} must be refused by Capabilities::read_only()",
+                );
+            }
         }
     }
 
