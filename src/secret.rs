@@ -290,6 +290,116 @@ impl SecretSource {
             Self::Backend(backend) => backend.is_cloud_secret_manager(),
         }
     }
+
+    /// Returns `true` for the everything-else pole of the
+    /// [`SecretSource`] variant space — the top-level [`Self::Literal`]
+    /// bare-string shorthand and every non-cloud-Secret-Manager backend
+    /// under [`Self::Backend`] (the six non-hyperscaler variants
+    /// [`SecretBackend::Literal`], [`SecretBackend::Command`],
+    /// [`SecretBackend::Op`], [`SecretBackend::Sops`],
+    /// [`SecretBackend::Akeyless`], [`SecretBackend::Vault`]) —
+    /// regardless of inner payload; `false` on the two hyperscaler-
+    /// managed Secret Manager variants [`SecretBackend::AwsSecret`] and
+    /// [`SecretBackend::GcpSecret`] under [`Self::Backend`].
+    ///
+    /// Compound-polarity complement sibling of
+    /// [`Self::is_cloud_secret_manager`] lifted onto the outer source-
+    /// wrapping enum: closes the third and final altitude the
+    /// non-cloud-Secret-Manager compound-polarity ladder threads
+    /// through — [`SecretBackendKind::is_non_cloud_secret_manager`]
+    /// (commit `5d7cd4c`, primitive kind altitude),
+    /// [`SecretBackend::is_non_cloud_secret_manager`] (commit
+    /// `9a76f5f`, payload-carrying tag altitude), and now
+    /// [`Self::is_non_cloud_secret_manager`] (source-wrapping outer
+    /// altitude). Consumers holding a parsed [`SecretSource`] and
+    /// asking *"did this secret NOT come from a hyperscaler-managed
+    /// Secret Manager API?"* — a per-source telemetry counter over
+    /// parsed configs bucketing every non-Secret-Manager-resolved
+    /// source into one aggregate bin (bare literals + tagged literals
+    /// + shell commands + 1Password + SOPS + Akeyless + Vault), a
+    /// dashboard row grouping the six non-hyperscaler backends plus
+    /// both literal-authoring shapes under one heading, a structured-
+    /// log filter routing non-cloud-Secret-Manager-resolved cells
+    /// away from the cloud-Secret-Manager alerting bucket at the
+    /// parsed-source altitude — spell the *negative* form of the
+    /// query at the call site through one named predicate rather
+    /// than the double-negative `!source.is_cloud_secret_manager()`
+    /// (which reads awkwardly at seven-of-nine call sites) or the
+    /// two-shape disjunction
+    /// `source.is_literal() ||
+    ///  matches!(source, SecretSource::Backend(b) if
+    ///           b.is_non_cloud_secret_manager())`
+    /// (two shapes, ordering matters, a future third top-level
+    /// variant would silently drop).
+    ///
+    /// Both literal-authoring shapes agree on `true` at this altitude:
+    /// the top-level [`Self::Literal`] shorthand answers `true`
+    /// because the bare-string form resolves to
+    /// [`SecretBackendKind::Literal`] which sits on the non-cloud
+    /// pole; the [`Self::Backend`]-wrapped
+    /// [`SecretBackend::Literal`] shape answers `true` for the same
+    /// reason via the delegation into
+    /// [`SecretBackend::is_non_cloud_secret_manager`]. This mirrors
+    /// the primary-pole invariant that
+    /// [`Self::is_cloud_secret_manager`] names — the two literal-
+    /// authoring shapes agree on the *compound* axis regardless of
+    /// which pole they sit on, and diverge only on the *tag* axis
+    /// ([`Self::is_literal`] / [`Self::is_backend`]) — the load-
+    /// bearing distinction between the compound-axis pole (names the
+    /// *resolved-backend* axis) and the tag axis (names the
+    /// *authored-shape* axis).
+    ///
+    /// The body is written as an exhaustive `match` naming BOTH arm
+    /// groups (rather than `matches!(self, Self::Literal(_)) ||
+    /// matches!(self, Self::Backend(b) if b.is_non_cloud_secret_manager())`
+    /// or a bare `!self.is_cloud_secret_manager()` folded through the
+    /// primary pole), so a hypothetical third top-level variant
+    /// landing on [`Self`] — say a `Secret(SecretRef)` handle to a
+    /// pre-resolved reference — must be placed on one polarity or
+    /// the other at `cargo build` rather than silently defaulting
+    /// past a bare `false` or `true` literal and drifting through
+    /// every consumer site that reasons about the cloud-vs-non-cloud
+    /// partition at the source-wrapping altitude. Idiom-peer of the
+    /// same exhaustive-match discipline
+    /// [`SecretBackend::is_non_cloud_secret_manager`] (commit
+    /// `9a76f5f`) carries one seam down.
+    ///
+    /// `const`-callable — matching the const-ness of the sibling
+    /// [`Self::is_cloud_secret_manager`], the tag-side siblings
+    /// [`Self::is_literal`] / [`Self::is_backend`], and both
+    /// underlying [`SecretBackend`] /
+    /// [`SecretBackendKind`] compound-polarity predicates already
+    /// carry — so a
+    /// `source.is_non_cloud_secret_manager()` composition stays
+    /// const-callable end-to-end.
+    ///
+    /// **Kind-agreement law** —
+    /// `source.is_non_cloud_secret_manager() ==
+    ///  source.backend_kind().is_non_cloud_secret_manager()` for
+    /// every parsed source, including both literal-authoring paths
+    /// which collapse to [`SecretBackendKind::Literal`] and answer
+    /// `true` at both altitudes — pinned by
+    /// [`tests::secret_source_is_non_cloud_secret_manager_agrees_with_backend_kind_pointwise`].
+    ///
+    /// **Modal-pair complement law** —
+    /// `source.is_non_cloud_secret_manager() ==
+    ///  !source.is_cloud_secret_manager()` pointwise on every
+    /// canonical sample, pinned by
+    /// [`tests::secret_source_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`].
+    ///
+    /// **Binary-partition invariant** — exactly ONE of the two
+    /// compound-polarity siblings fires on every canonical source:
+    /// `u8::from(source.is_cloud_secret_manager()) +
+    ///  u8::from(source.is_non_cloud_secret_manager()) == 1`, pinned
+    /// by
+    /// [`tests::secret_source_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`].
+    #[must_use]
+    pub const fn is_non_cloud_secret_manager(&self) -> bool {
+        match self {
+            Self::Literal(_) => true,
+            Self::Backend(backend) => backend.is_non_cloud_secret_manager(),
+        }
+    }
 }
 
 /// Internally-tagged variants — the backends proper.
@@ -3417,6 +3527,300 @@ mod tests {
         assert!(call(&gcp));
         assert!(!call(&top_literal));
         assert!(!call(&backend_command));
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_partitions_non_cloud_from_cloud() {
+        // Per-source polarity pin at the source-wrapping altitude on
+        // the complement pole: every canonical parsed source returns
+        // the expected compound-polarity answer. The top-level
+        // Literal shorthand fires (`true`); each canonical backend
+        // sample fires iff its kind sits on the non-cloud pole (the
+        // six non-hyperscaler variants); the two Backend(AwsSecret |
+        // GcpSecret) samples reject (`false`). Source-side mirror of
+        // `secret_backend_is_non_cloud_secret_manager_true_for_six_non_cloud_variants_only`
+        // one seam down.
+        let top_literal = SecretSource::Literal("dev".into());
+        assert!(
+            top_literal.is_non_cloud_secret_manager(),
+            "top-level Literal must satisfy the non-cloud-Secret-Manager pole",
+        );
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let expected = matches!(
+                expected_kind,
+                SecretBackendKind::Literal
+                    | SecretBackendKind::Command
+                    | SecretBackendKind::Op
+                    | SecretBackendKind::Sops
+                    | SecretBackendKind::Akeyless
+                    | SecretBackendKind::Vault,
+            );
+            let source = SecretSource::Backend(backend);
+            assert_eq!(
+                source.is_non_cloud_secret_manager(),
+                expected,
+                "is_non_cloud_secret_manager returned {} on {source:?} (expected {expected})",
+                source.is_non_cloud_secret_manager(),
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_agrees_with_backend_kind_pointwise() {
+        // Source ↔ kind structural agreement law on the complement
+        // pole:
+        // `source.is_non_cloud_secret_manager() ==
+        //     source.backend_kind().is_non_cloud_secret_manager()`
+        // for every parsed source. Includes both literal-authoring
+        // paths — the two-literal-paths equivalence
+        // `secret_source_backend_kind_collapses_literal_paths` pins
+        // means both agree on `true` at both altitudes on the
+        // compound axis (the non-cloud pole picks up Literal), unlike
+        // the tag-axis divergence
+        // `secret_source_tag_axis_diverges_from_backend_kind_axis_on_backend_literal`
+        // exhibits on `is_literal`. Complement-pole mirror of
+        // `secret_source_is_cloud_secret_manager_agrees_with_backend_kind_pointwise`.
+        let top_literal = SecretSource::Literal("dev".into());
+        assert_eq!(
+            top_literal.is_non_cloud_secret_manager(),
+            top_literal.backend_kind().is_non_cloud_secret_manager(),
+            "is_non_cloud_secret_manager drift between source and backend_kind on {top_literal:?}",
+        );
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend);
+            assert_eq!(
+                source.is_non_cloud_secret_manager(),
+                source.backend_kind().is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager drift between source and backend_kind on {source:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_agrees_with_backend_predicate_on_backend_variant()
+    {
+        // Delegation law: on every `Backend(inner)` source, the
+        // outer predicate agrees pointwise with the inner tag-side
+        // predicate — i.e. the outer altitude is a pure lift of
+        // `SecretBackend::is_non_cloud_secret_manager` under the
+        // `Backend` wrapper, and the top-level `Literal` shorthand
+        // always answers `true` (the bare-string form resolves to a
+        // literal, which sits on the non-cloud pole). Catches a
+        // future refactor that peeked at the inner literal payload
+        // or diverged the wrapping-altitude predicate from the
+        // backend-altitude one.
+        let top_literal = SecretSource::Literal("dev".into());
+        assert!(
+            top_literal.is_non_cloud_secret_manager(),
+            "top-level Literal has no inner backend, must be true on the non-cloud pole",
+        );
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend.clone());
+            assert_eq!(
+                source.is_non_cloud_secret_manager(),
+                backend.is_non_cloud_secret_manager(),
+                "outer/inner is_non_cloud_secret_manager drift on {source:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager() {
+        // Modal-pair complement law at the source-wrapping altitude
+        // pointwise on every canonical source:
+        // `source.is_non_cloud_secret_manager() ==
+        //     !source.is_cloud_secret_manager()`.
+        // Locks the two compound-polarity siblings as a strict
+        // complement pair on the source-wrapping altitude — a future
+        // edit that widened either pole (adding a third top-level
+        // variant without extending both `match` arms in lockstep,
+        // routing the complement through a diverged delegation into
+        // the inner backend) would collapse the equivalence here
+        // before drifting through any per-polarity consumer site.
+        // Source-side mirror of the tag-side pin
+        // `secret_backend_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`
+        // one seam down.
+        let mut sources: Vec<SecretSource> = vec![SecretSource::Literal("dev".into())];
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            sources.push(SecretSource::Backend(backend));
+        }
+        for source in &sources {
+            assert_eq!(
+                source.is_non_cloud_secret_manager(),
+                !source.is_cloud_secret_manager(),
+                "modal-pair complement law drift on {source:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition()
+    {
+        // Compound-polarity binary partition law at the source-
+        // wrapping altitude:
+        // `u8::from(source.is_cloud_secret_manager()) +
+        //  u8::from(source.is_non_cloud_secret_manager()) == 1`
+        // for every canonical source. Exactly ONE of the two
+        // compound-polarity siblings fires on every source —
+        // neither both (some source would be simultaneously cloud
+        // AND non-cloud) nor neither (some source would be
+        // classified as neither). A future edit that widened both
+        // poles to fire on the same source shape, or shrank both
+        // poles to miss a shape, fails here before drifting through
+        // any per-polarity consumer site. Cardinality sub-pin: the
+        // top-level Literal shape plus the eight canonical backend
+        // samples cardinality-add to 2 cloud + 9 non-cloud (the
+        // canonical table has 10 backend rows because Sops and
+        // Vault appear twice under their `Whole` and `Field`
+        // shapes, both landing on the non-cloud pole; the top-level
+        // Literal adds one more non-cloud sample); the sum matches
+        // `1 + canonical_secret_backend_kind_samples().len()`.
+        // Source-side mirror of the tag-side pin
+        // `secret_backend_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`.
+        let mut sources: Vec<SecretSource> = vec![SecretSource::Literal("dev".into())];
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            sources.push(SecretSource::Backend(backend));
+        }
+        let total = sources.len();
+        let mut cloud_count = 0usize;
+        let mut non_cloud_count = 0usize;
+        for source in &sources {
+            let cloud = u8::from(source.is_cloud_secret_manager());
+            let non_cloud = u8::from(source.is_non_cloud_secret_manager());
+            assert_eq!(
+                cloud + non_cloud,
+                1,
+                "compound-polarity siblings failed strict binary partition on {source:?} \
+                 (is_cloud={cloud}, is_non_cloud={non_cloud})",
+            );
+            cloud_count += cloud as usize;
+            non_cloud_count += non_cloud as usize;
+        }
+        assert_eq!(
+            cloud_count, 2,
+            "expected exactly 2 cloud-Secret-Manager sources \
+             (Backend(AwsSecret), Backend(GcpSecret))",
+        );
+        assert_eq!(
+            non_cloud_count, 9,
+            "expected exactly 9 non-cloud-Secret-Manager sources \
+             (top-level Literal + Backend of \
+              Literal, Command, Op, two Sops, Akeyless, two Vault)",
+        );
+        assert_eq!(
+            cloud_count + non_cloud_count,
+            total,
+            "compound-polarity partition failed to cover the canonical source table",
+        );
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_two_literal_paths_agree() {
+        // Compound-axis analogue of the tag-axis divergence pin
+        // `secret_source_tag_axis_diverges_from_backend_kind_axis_on_backend_literal`
+        // on the complement pole: on the compound axis the two
+        // literal-authoring shapes AGREE (both answer `true`),
+        // unlike the tag axis where the top-level `Literal`
+        // shorthand and the wrapped `Backend(SecretBackend::Literal)`
+        // shape disagree on `is_literal`. This is the load-bearing
+        // invariant that makes the source-wrapping complement
+        // predicate name the *resolved-backend* axis rather than the
+        // authored-shape axis at the non-cloud pole too — mirror of
+        // `secret_source_is_cloud_secret_manager_two_literal_paths_agree`
+        // on the primary pole.
+        let top_literal = SecretSource::Literal("dev".into());
+        let backend_literal = SecretSource::Backend(SecretBackend::Literal("dev".into()));
+        assert_eq!(
+            top_literal.is_non_cloud_secret_manager(),
+            backend_literal.is_non_cloud_secret_manager(),
+            "the two literal-authoring paths must agree on the non-cloud-Secret-Manager pole",
+        );
+        assert!(top_literal.is_non_cloud_secret_manager());
+        assert!(backend_literal.is_non_cloud_secret_manager());
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_payload_independent() {
+        // Payload-independence pin at the source-wrapping altitude
+        // on the complement pole: multiple `String` payload shapes
+        // (empty / short / long-with-special-chars) on the two
+        // cloud-Secret-Manager arms all reject (`false`), and every
+        // top-level Literal payload shape as well as every
+        // Backend(SecretBackend::Literal) payload shape accepts
+        // (`true`). The delegation into
+        // `SecretBackend::is_non_cloud_secret_manager` discards the
+        // inner payload before the `match` fires; this pin catches a
+        // future edit that peeked at the id / resource name /
+        // literal-string length or content at the outer altitude.
+        for aws_id in [
+            "",
+            "prod/app/jwt",
+            "very/long/aws/secret/id/with-special-chars-$@!",
+        ] {
+            let source = SecretSource::Backend(SecretBackend::AwsSecret(aws_id.into()));
+            assert!(
+                !source.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must be false on {source:?}",
+            );
+        }
+        for gcp_name in [
+            "",
+            "projects/p/secrets/jwt",
+            "projects/very-long-project-name/secrets/my-secret/versions/42",
+        ] {
+            let source = SecretSource::Backend(SecretBackend::GcpSecret(gcp_name.into()));
+            assert!(
+                !source.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must be false on {source:?}",
+            );
+        }
+        for literal_payload in ["", "dev", "very-long-literal-payload-$@!"] {
+            let top = SecretSource::Literal(literal_payload.into());
+            assert!(
+                top.is_non_cloud_secret_manager(),
+                "top-level Literal must satisfy the non-cloud pole on {top:?}",
+            );
+            let backend_literal =
+                SecretSource::Backend(SecretBackend::Literal(literal_payload.into()));
+            assert!(
+                backend_literal.is_non_cloud_secret_manager(),
+                "Backend(Literal) must satisfy the non-cloud pole on {backend_literal:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_is_non_cloud_secret_manager_is_const_callable() {
+        // Compile-time weld: the outer wrapping complement predicate
+        // is callable from a `const fn` context. `SecretSource`
+        // variants both carry heap payloads (`String` /
+        // `SecretBackend` inner variants of the same), so no
+        // module-level `const` value can be built directly — but a
+        // `const fn` taking `&SecretSource` and delegating into
+        // `is_non_cloud_secret_manager` compiles iff the method is
+        // `const`. Catches a future edit that dropped the `const`
+        // qualifier from the outer predicate or the inner
+        // `SecretBackend::is_non_cloud_secret_manager` it delegates
+        // to, mirroring the const-callability weld on the tag
+        // altitude
+        // `secret_backend_is_non_cloud_secret_manager_is_const_callable`
+        // and the source-wrapping primary-pole weld
+        // `secret_source_is_cloud_secret_manager_is_const_callable`.
+        const fn call(source: &SecretSource) -> bool {
+            source.is_non_cloud_secret_manager()
+        }
+        // Runtime-constructed samples driving the const-callable
+        // seam; if `is_non_cloud_secret_manager` lost its `const`
+        // qualifier `call` above would fail to compile before this
+        // assertion ran.
+        let aws = SecretSource::Backend(SecretBackend::AwsSecret("prod/app/jwt".into()));
+        let gcp = SecretSource::Backend(SecretBackend::GcpSecret("projects/p/secrets/jwt".into()));
+        let top_literal = SecretSource::Literal("dev".into());
+        let backend_command = SecretSource::Backend(SecretBackend::Command("echo x".into()));
+        assert!(!call(&aws));
+        assert!(!call(&gcp));
+        assert!(call(&top_literal));
+        assert!(call(&backend_command));
     }
 
     // ── SecretBackendKind sibling predicates — the closed octuple ────
