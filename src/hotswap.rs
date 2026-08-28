@@ -3037,6 +3037,108 @@ impl SameStoreImpossibilityKind {
         matches!(*self, Self::CrossStore)
     }
 
+    /// Whether this impossibility corner witnessed the class-scoped watermark
+    /// move — `true` on [`Self::CrossStore`] (watermark moved at unchanged
+    /// generation counter — the moved-watermark impossibility corner, the
+    /// impossibility-half twin of the routine-edit consistent corner),
+    /// `false` on [`Self::Regressed`] (generation counter went strictly
+    /// backwards; the `Regressed` arm carries no [`MovedWatermarkDelta`]
+    /// payload — the class-scoped watermark is treated as stationary at this
+    /// altitude).
+    ///
+    /// **The modal-pair polarity peer of [`Self::is_watermark_stationary`]
+    /// at the half-Kind altitude, closing the compound-polarity
+    /// `is_watermark_moved` ladder at the SIXTH and half-impossibility-Kind
+    /// altitude.** The five higher altitudes already carry same-named
+    /// `is_watermark_moved` receivers: [`crate::ProofRelationKind::is_watermark_moved`]
+    /// (fused sum, commit `b0e1868`), [`crate::ProofRelation::is_watermark_moved`]
+    /// (value classification, commit `1e1e4eb`),
+    /// [`crate::ProofRelationWire::is_watermark_moved`] (wire classification,
+    /// commit `36a0ef8`), [`crate::ProofDelta::is_watermark_moved`] (delta,
+    /// commit `53a1316`), and [`SameStoreConsistencyKind::is_watermark_moved`]
+    /// (half-consistency Kind, commit `170ac33`). With this method, a
+    /// consumer that projects a [`SameStoreImpossibilityKind`] out of any
+    /// higher-altitude receiver reaches the same-named predicate here at the
+    /// half-impossibility altitude too, without special-casing this altitude
+    /// with the atom-name [`Self::is_cross_store`] alias that a cross-altitude
+    /// generic consumer would otherwise have to remember.
+    ///
+    /// **Singleton collapse at the half-impossibility Kind altitude.** On
+    /// the impossibility binary the compound `is_watermark_moved` collapses
+    /// to the SINGLE [`Self::CrossStore`] cell — the sole moved-watermark
+    /// corner on the impossibility half — mirroring the sibling singleton
+    /// collapse [`SameStoreConsistencyKind::is_watermark_moved`] carries on
+    /// its ternary axis (collapse to [`SameStoreConsistencyKind::Progression`],
+    /// the sole moved-watermark cell on the consistent half). Both half-Kind
+    /// altitudes carry the singleton-collapse shape; the fused-sum altitude
+    /// ([`crate::ProofRelationKind::is_watermark_moved`]) is the first
+    /// altitude at which the compound becomes a two-corner cross-half
+    /// compound grouping the two half-Kind singletons.
+    ///
+    /// **Delegation ladder — the direct singleton polarity.** A consumer
+    /// holding a captured [`SameStoreImpossibilityKind`] (a per-corner
+    /// diagnostic dashboard bucketing moved-watermark impossibility
+    /// observations distinctly from regressed-generation observations; an
+    /// attester filter routing on `--only=watermark-moved`; a log formatter
+    /// paging on the moved-watermark-without-publish impossibility versus
+    /// only annotating on the regressed-generation impossibility) asking
+    /// "did the class-scoped watermark move on this impossibility
+    /// observation?" previously had three inline paths, each leaking work:
+    /// (a) `matches!(k, SameStoreImpossibilityKind::CrossStore)` — an inline
+    /// `matches!` fold whose single-arm shape the exhaustiveness checker
+    /// cannot help keep in sync with a future moved-watermark impossibility
+    /// corner (a hypothetical third impossibility variant carrying a moved
+    /// watermark, say) silently escapes the one-arm shape; (b)
+    /// `k.is_cross_store()` — the singleton atom-name that a cross-altitude
+    /// generic consumer projecting a `SameStoreImpossibilityKind` out of a
+    /// higher-altitude receiver must remember to spell differently from the
+    /// same-named `is_watermark_moved` receiver on the five higher
+    /// altitudes; or (c) `!k.is_regressed()` — the modal-pair negation
+    /// whose polarity a future third impossibility corner (a hypothetical
+    /// `SignedAttestationMismatch`, say, carrying no watermark axis at all)
+    /// would flip silently. This receiver spells the positive form of the
+    /// query at ONE canonical half-impossibility altitude site whose name
+    /// matches the five higher altitudes.
+    ///
+    /// **Alias identity with [`Self::is_cross_store`].**
+    /// `k.is_watermark_moved() == k.is_cross_store()` pointwise on every
+    /// [`Self::VARIANTS`] cell — the half-impossibility Kind altitude
+    /// compound collapses to the singleton atom, pinned by
+    /// [`variants_tests::same_store_impossibility_kind_is_watermark_moved_agrees_with_is_cross_store`],
+    /// mirroring the same-shape alias identity
+    /// `k.is_watermark_moved() == k.is_progression()` welded on the
+    /// half-consistency Kind altitude by
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_agrees_with_is_progression`].
+    /// The identity carries the cross-altitude naming bridge: a consumer
+    /// that switched between the half-impossibility altitude and any of the
+    /// five higher altitudes reads the same predicate name at every stop,
+    /// and this test welds that bridge pointwise.
+    ///
+    /// **Cross-altitude same-answer with the fused-sum altitude.** For
+    /// every impossibility cell `k` in [`Self::VARIANTS`],
+    /// `k.is_watermark_moved()` (half-Kind altitude) agrees with
+    /// [`crate::ProofRelationKind::Impossible`]`(k).is_watermark_moved()`
+    /// (fused-sum altitude), pinned by
+    /// [`variants_tests::same_store_impossibility_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind`],
+    /// mirroring the same-shape cross-altitude test
+    /// [`variants_tests::same_store_consistency_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind`]
+    /// already welded on the half-consistency Kind altitude — the fused-sum
+    /// altitude reads `true` on both moved-watermark corners
+    /// (`Consistent(Progression)` from the consistent half and
+    /// `Impossible(CrossStore)` from the impossibility half), and this test
+    /// pins that the half-impossibility altitude reads the same answer for
+    /// the two impossibility-half projections.
+    ///
+    /// `const`-callable — a compile-time-known [`SameStoreImpossibilityKind`]
+    /// projects its watermark-moved verdict at compile time too, matching
+    /// the `const`-ness the rest of the receiver-family already carries.
+    /// The compile-time weld is pinned by
+    /// [`variants_tests::same_store_impossibility_kind_is_watermark_moved_is_const_callable`].
+    #[must_use]
+    pub const fn is_watermark_moved(&self) -> bool {
+        matches!(*self, Self::CrossStore)
+    }
+
     /// The closed set of variant values in declaration order — an
     /// ordered slice of every possible [`SameStoreImpossibilityKind`]
     /// value, whose length ([`slice::len`](slice)) is the axis
@@ -37334,6 +37436,163 @@ mod variants_tests {
                 other => panic!("unrecognized SameStoreImpossibilityKind name: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_partitions_cross_store_from_regressed() {
+        // Per-variant polarity table on the compound-polarity sibling
+        // `is_watermark_moved` at the half-impossibility Kind altitude:
+        // exactly the sole moved-watermark impossibility arm (CrossStore —
+        // watermark moved at unchanged generation) returns true; the
+        // regressed-generation arm (Regressed — generation counter went
+        // strictly backwards, no MovedWatermarkDelta payload) returns
+        // false. The SIXTH and half-impossibility Kind altitude closure of
+        // the compound-polarity `is_watermark_moved` ladder — the five
+        // higher altitudes already carry same-named receivers on
+        // ProofRelationKind (fused sum), ProofRelation (value
+        // classification), ProofRelationWire (wire classification),
+        // ProofDelta (delta), and SameStoreConsistencyKind (half-consistency
+        // Kind).
+        assert!(!SameStoreImpossibilityKind::Regressed.is_watermark_moved());
+        assert!(SameStoreImpossibilityKind::CrossStore.is_watermark_moved());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_agrees_with_is_cross_store() {
+        // The cross-altitude naming-bridge law at the compound-polarity
+        // altitude: `is_watermark_moved() == is_cross_store()` pointwise
+        // on SameStoreImpossibilityKind::VARIANTS — the compound-polarity
+        // sibling collapses to the singleton atom on the impossibility
+        // binary (the sole moved-watermark cell on the impossibility half
+        // is CrossStore). The identity carries the cross-altitude
+        // naming bridge: a consumer that projects a
+        // SameStoreImpossibilityKind out of any higher-altitude receiver
+        // reads the same-named `is_watermark_moved` predicate here at the
+        // half-impossibility altitude too, without special-casing this
+        // altitude with the atom-name `is_cross_store` that a
+        // cross-altitude generic consumer would otherwise have to
+        // remember. Idiom-peer of
+        // `same_store_consistency_kind_is_watermark_moved_agrees_with_is_progression`
+        // on the half-consistency Kind altitude.
+        for k in SameStoreImpossibilityKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_moved(),
+                k.is_cross_store(),
+                "is_watermark_moved must equal is_cross_store on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_is_complement_of_is_regressed() {
+        // The modal-pair complement law at the compound-polarity altitude:
+        // `is_watermark_moved() == !is_regressed()` pointwise on
+        // SameStoreImpossibilityKind::VARIANTS. On this binary axis the
+        // two per-variant polarities (Regressed / CrossStore) ARE the
+        // modal pair with the compound-polarity sibling; a future third
+        // impossibility corner (a hypothetical `SignedAttestationMismatch`,
+        // say, carrying no watermark axis at all) would flip the negation
+        // silently, but the closed-binary-partition invariant below
+        // catches the drift before it reaches any consumer of either
+        // surface. Idiom-peer of the same-named complement law on the
+        // half-consistency Kind altitude
+        // (`same_store_consistency_kind_is_watermark_moved_is_complement_of_is_watermark_stationary`,
+        // via that altitude's `is_watermark_stationary` sibling) and on
+        // the four higher altitudes carrying the fused compound.
+        for k in SameStoreImpossibilityKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                k.is_watermark_moved(),
+                !k.is_regressed(),
+                "is_watermark_moved and !is_regressed must agree pointwise on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_and_is_regressed_are_a_closed_binary_partition()
+     {
+        // Cardinality-side invariant at the compound-polarity altitude:
+        // exactly one SameStoreImpossibilityKind::VARIANTS cell satisfies
+        // `is_watermark_moved` (CrossStore) and exactly one satisfies
+        // `is_regressed`; the two counts sum to
+        // SameStoreImpossibilityKind::VARIANTS.len(). The closed binary
+        // partition of the impossibility-half binary space on the
+        // watermark-move axis, mirroring the same-shape closed binary
+        // partition already welded by
+        // `same_store_consistency_kind_is_watermark_moved_and_is_watermark_stationary_are_a_closed_binary_partition`
+        // on the half-consistency Kind altitude one axis up (there, one
+        // moved-watermark cell against two stationary cells; here, one
+        // moved-watermark cell against one regressed cell). A future
+        // third SameStoreImpossibilityKind variant that did not extend
+        // one of the compound arms (or extended both) fails at this
+        // cardinality invariant before drifting through any consumer
+        // site.
+        let watermark_moved_cells = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreImpossibilityKind::is_watermark_moved)
+            .count();
+        let regressed_cells = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreImpossibilityKind::is_regressed)
+            .count();
+        assert_eq!(
+            watermark_moved_cells, 1,
+            "exactly one SameStoreImpossibilityKind::VARIANTS cell must satisfy is_watermark_moved",
+        );
+        assert_eq!(
+            regressed_cells, 1,
+            "exactly one SameStoreImpossibilityKind::VARIANTS cell must satisfy is_regressed",
+        );
+        assert_eq!(
+            watermark_moved_cells + regressed_cells,
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            "the compound-polarity binary partition must cover VARIANTS",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind()
+     {
+        // Cross-altitude same-answer with the fused-sum altitude: for
+        // every `Impossible(k)` cell of ProofRelationKind::VARIANTS,
+        // `k.is_watermark_moved()` (half-Kind altitude) agrees with
+        // `ProofRelationKind::Impossible(k).is_watermark_moved()`
+        // (fused-sum altitude). Welds the half-impossibility Kind altitude
+        // sibling added here to the fused-sum altitude's cross-half
+        // compound — the fused-sum altitude reads `true` on both
+        // moved-watermark corners (Consistent(Progression) from the
+        // consistent half and Impossible(CrossStore) from the impossibility
+        // half), and this test pins that the half-impossibility altitude
+        // reads the same answer for the two impossibility-half projections.
+        // Idiom-peer of
+        // `same_store_consistency_kind_is_watermark_moved_cross_altitude_agrees_with_proof_relation_kind`
+        // on the half-consistency Kind altitude.
+        for k in SameStoreImpossibilityKind::VARIANTS.iter().copied() {
+            let fused = ProofRelationKind::Impossible(k);
+            assert_eq!(
+                k.is_watermark_moved(),
+                fused.is_watermark_moved(),
+                "half-impossibility Kind and fused-sum altitude answers must agree on Impossible({k:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_is_watermark_moved_is_const_callable() {
+        // The compound-polarity sibling is `const`-callable, so a compile-
+        // time consumer (a `const` predicate table, a `const`-evaluated
+        // switch over a `SameStoreImpossibilityKind` singleton, a `const`-
+        // eval-based static-assert on a classifier arm) resolves the
+        // polarity at compile time. Idiom-peer of
+        // `same_store_consistency_kind_is_watermark_moved_is_const_callable`
+        // on the half-consistency Kind altitude. The const-block asserts
+        // below make the weld load-bearing at crate compile time: a future
+        // edit that flipped a polarity on this predicate fails at
+        // `cargo build`, not just at this test's runtime assertion.
+        const _: () = assert!(!SameStoreImpossibilityKind::Regressed.is_watermark_moved());
+        const _: () = assert!(SameStoreImpossibilityKind::CrossStore.is_watermark_moved());
     }
 
     #[test]
