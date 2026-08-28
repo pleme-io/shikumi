@@ -484,6 +484,116 @@ impl SecretBackend {
     pub const fn is_cloud_secret_manager(&self) -> bool {
         matches!(self, Self::AwsSecret(_) | Self::GcpSecret(_))
     }
+
+    /// Returns `true` for the six non-cloud-provider-Secret-Manager
+    /// variants of the [`SecretBackend`] variant space —
+    /// [`Self::Literal`] (bare plaintext), [`Self::Command`] (shell
+    /// subprocess), [`Self::Op`] (1Password), [`Self::Sops`] (SOPS-
+    /// encrypted file), [`Self::Akeyless`] (hosted secrets platform),
+    /// and [`Self::Vault`] (`HashiCorp` Vault — Cloud offering or
+    /// self-hosted) — and `false` on the two hyperscaler-managed
+    /// Secret Manager variants [`Self::AwsSecret`] and
+    /// [`Self::GcpSecret`], regardless of the inner payload.
+    ///
+    /// Compound-polarity complement sibling of
+    /// [`Self::is_cloud_secret_manager`] on the eight-way secret-
+    /// resolution-backend axis at the payload-carrying tag altitude;
+    /// tag-side mirror of the kind-side
+    /// [`SecretBackendKind::is_non_cloud_secret_manager`] one seam
+    /// down. Consumers holding a parsed [`SecretBackend`] and asking
+    /// *"did this secret NOT come from a hyperscaler-managed Secret
+    /// Manager API?"* — per-backend telemetry counters bucketing every
+    /// non-Secret-Manager read into one aggregate bin (bare literals +
+    /// shell commands + 1Password + SOPS + Akeyless + Vault),
+    /// attestation manifests weighting non-cloud-Secret-Manager
+    /// provenance separately, structured-log filters routing non-
+    /// cloud-Secret-Manager-resolved cells away from the cloud-Secret-
+    /// Manager alerting bucket, dashboard rows grouping the six non-
+    /// hyperscaler backends under one heading — spell the *negative*
+    /// form of the query at the call site through one named predicate
+    /// rather than the double-negative
+    /// `!backend.is_cloud_secret_manager()` (which reads awkwardly at
+    /// six-of-eight call sites) or the six-arm disjunction
+    /// `backend.is_literal() || backend.is_command() ||
+    ///  backend.is_op() || backend.is_sops() || backend.is_akeyless()
+    ///  || backend.is_vault()` (six method calls, ordering matters,
+    /// a future ninth variant would silently drop).
+    ///
+    /// Payload-independent by construction: the inner payload
+    /// (`String`, `SopsRef`, `VaultRef`) is discarded before the
+    /// `match` fires, so
+    /// `SecretBackend::Literal(String::new())`,
+    /// `SecretBackend::Literal("dev".into())`,
+    /// `SecretBackend::Sops(SopsRef::File(_))`, and
+    /// `SecretBackend::Sops(SopsRef::Field { .. })` all hit the same
+    /// cell of the (cloud-provider-managed × everything-else)
+    /// partition — the same invariant the sibling
+    /// [`Self::is_cloud_secret_manager`] pins on the primary pole.
+    ///
+    /// The body is written as an exhaustive `match` naming BOTH arm
+    /// groups (rather than `matches!(self, Self::Literal(_) |
+    /// Self::Command(_) | Self::Op(_) | Self::Sops(_) |
+    /// Self::Akeyless(_) | Self::Vault(_))` with an implicit `false`
+    /// default), so a hypothetical ninth variant landing on [`Self`]
+    /// — an `AzureSecret` on the cloud-Secret-Manager pole, an
+    /// `EnvVar` / `KubernetesSecret` on the non-cloud pole — must be
+    /// placed on one polarity or the other at `cargo build` rather
+    /// than silently defaulting past a bare `false` literal and
+    /// drifting through every consumer site that reasons about the
+    /// cloud-vs-non-cloud partition. Idiom-peer of the same
+    /// exhaustive-match discipline
+    /// [`SecretBackendKind::is_non_cloud_secret_manager`] (commit
+    /// `5d7cd4c`) carries on the kind-side altitude, and
+    /// [`crate::SecretOperation::is_non_mutating`] (commit `ca7131b`)
+    /// carries on the read-vs-write meta-partition of the operation
+    /// axis.
+    ///
+    /// `const`-callable — matching the const-ness of the sibling
+    /// [`Self::is_cloud_secret_manager`] and the six individual
+    /// per-variant siblings ([`Self::is_literal`],
+    /// [`Self::is_command`], [`Self::is_op`], [`Self::is_sops`],
+    /// [`Self::is_akeyless`], [`Self::is_vault`]) it composes on, so
+    /// a `backend.is_non_cloud_secret_manager()` composition stays
+    /// const-callable end-to-end.
+    ///
+    /// **Tag ↔ kind pointwise-agreement law** —
+    /// `backend.is_non_cloud_secret_manager() ==
+    ///  backend.kind().is_non_cloud_secret_manager()` for every
+    /// canonical sample, pinned by
+    /// [`tests::secret_backend_is_non_cloud_secret_manager_agrees_with_kind_pointwise`].
+    ///
+    /// **Modal-pair complement law** —
+    /// `backend.is_non_cloud_secret_manager() ==
+    ///  !backend.is_cloud_secret_manager()` pointwise on every
+    /// canonical sample, pinned by
+    /// [`tests::secret_backend_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`].
+    ///
+    /// **Compound ↔ six-arm disjunction law** —
+    /// `backend.is_non_cloud_secret_manager() ==
+    ///  backend.is_literal() || backend.is_command() ||
+    ///  backend.is_op() || backend.is_sops() ||
+    ///  backend.is_akeyless() || backend.is_vault()` pointwise on
+    /// every canonical sample, pinned by
+    /// [`tests::secret_backend_is_non_cloud_secret_manager_agrees_with_or_of_individual_siblings`].
+    ///
+    /// **Binary-partition invariant** — exactly ONE of the two
+    /// compound-polarity siblings fires on every canonical sample:
+    /// `u8::from(backend.is_cloud_secret_manager()) +
+    ///  u8::from(backend.is_non_cloud_secret_manager()) == 1`,
+    /// pinned by
+    /// [`tests::secret_backend_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`].
+    #[must_use]
+    pub const fn is_non_cloud_secret_manager(&self) -> bool {
+        match self {
+            Self::Literal(_)
+            | Self::Command(_)
+            | Self::Op(_)
+            | Self::Sops(_)
+            | Self::Akeyless(_)
+            | Self::Vault(_) => true,
+            Self::AwsSecret(_) | Self::GcpSecret(_) => false,
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`SecretBackend`]: the kind of
@@ -4073,6 +4183,278 @@ mod tests {
                 "is_cloud_secret_manager must be false on {backend:?}",
             );
         }
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_true_for_six_non_cloud_variants_only() {
+        // Per-variant polarity pin at the tag-side altitude on the
+        // complement pole with payload-independence sub-pin: every
+        // canonical sample returns the expected compound-polarity
+        // answer regardless of its inner `String` / `SopsRef` /
+        // `VaultRef` payload shape. Tag-side mirror of
+        // `secret_backend_kind_is_non_cloud_secret_manager_partitions_non_cloud_from_cloud`
+        // one seam up, and the complement-pole peer of
+        // `secret_backend_is_cloud_secret_manager_true_for_aws_and_gcp_only`
+        // on the primary pole.
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let expected = matches!(
+                expected_kind,
+                SecretBackendKind::Literal
+                    | SecretBackendKind::Command
+                    | SecretBackendKind::Op
+                    | SecretBackendKind::Sops
+                    | SecretBackendKind::Akeyless
+                    | SecretBackendKind::Vault,
+            );
+            assert_eq!(
+                backend.is_non_cloud_secret_manager(),
+                expected,
+                "is_non_cloud_secret_manager returned {} on {backend:?} (expected {expected})",
+                backend.is_non_cloud_secret_manager(),
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_agrees_with_kind_pointwise() {
+        // Tag ↔ kind structural agreement law on the complement pole:
+        // `backend.is_non_cloud_secret_manager() ==
+        //     backend.kind().is_non_cloud_secret_manager()`
+        // for every canonical sample. Complement-pole mirror of
+        // `secret_backend_is_cloud_secret_manager_agrees_with_kind_pointwise`
+        // on the primary pole. Catches a future edit that peeks at
+        // the inner `String` / `SopsRef` / `VaultRef` payload when
+        // computing the tag-side complement predicate — it would
+        // diverge from the kind-side answer here.
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            assert_eq!(
+                backend.is_non_cloud_secret_manager(),
+                backend.kind().is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager drift between tag and kind on {backend:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager() {
+        // Modal-pair complement law at the tag-side altitude
+        // pointwise on every canonical sample:
+        // `backend.is_non_cloud_secret_manager() ==
+        //     !backend.is_cloud_secret_manager()`.
+        // Locks the two compound-polarity siblings as a strict
+        // complement pair on the eight-way partition at the payload-
+        // carrying altitude — a future edit that widened either pole
+        // (reclassifying Akeyless as a cloud Secret Manager, adding
+        // a ninth variant without extending both `match` arms in
+        // lockstep) would collapse the equivalence here before
+        // drifting through any per-polarity consumer site. Tag-side
+        // mirror of the kind-side pin
+        // `secret_backend_kind_is_non_cloud_secret_manager_is_complement_of_is_cloud_secret_manager`.
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            assert_eq!(
+                backend.is_non_cloud_secret_manager(),
+                !backend.is_cloud_secret_manager(),
+                "modal-pair complement law drift on {backend:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_agrees_with_or_of_individual_siblings() {
+        // Compound-polarity ↔ six-arm disjunction pointwise law at
+        // the tag-side altitude on the complement pole:
+        // `backend.is_non_cloud_secret_manager() ==
+        //     (backend.is_literal() || backend.is_command() ||
+        //      backend.is_op() || backend.is_sops() ||
+        //      backend.is_akeyless() || backend.is_vault())`
+        // for every canonical sample. Tag-side mirror of the kind-
+        // side pin
+        // `secret_backend_kind_is_non_cloud_secret_manager_agrees_with_or_of_individual_siblings`
+        // one seam down. Locks the (compound = disjunction) invariant
+        // against a future edit that peeked past the six non-cloud
+        // arms (widening the compound to accept AwsSecret/GcpSecret,
+        // or shrinking one of the six per-variant arms without
+        // extending the `match` arms in lockstep).
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            assert_eq!(
+                backend.is_non_cloud_secret_manager(),
+                backend.is_literal()
+                    || backend.is_command()
+                    || backend.is_op()
+                    || backend.is_sops()
+                    || backend.is_akeyless()
+                    || backend.is_vault(),
+                "compound-polarity ↔ (six-arm disjunction) drift on {backend:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition()
+     {
+        // Compound-polarity binary partition law at the tag-side
+        // altitude:
+        // `u8::from(backend.is_cloud_secret_manager()) +
+        //  u8::from(backend.is_non_cloud_secret_manager()) == 1`
+        // for every canonical sample. Exactly ONE of the two
+        // compound-polarity siblings fires on every sample — neither
+        // both (some sample would be simultaneously cloud AND non-
+        // cloud) nor neither (some sample would be classified as
+        // neither). A future edit that widened both poles to fire on
+        // the same variant, or shrank both poles to miss a variant,
+        // fails here before drifting through any per-polarity
+        // consumer site. Cardinality sub-pin: exactly 2 samples
+        // satisfy is_cloud_secret_manager and exactly 8 satisfy
+        // is_non_cloud_secret_manager (the canonical table has 10
+        // rows total — Literal, Command, Op, two Sops, Akeyless,
+        // two Vault, AwsSecret, GcpSecret — because Sops and Vault
+        // each appear twice under their `Whole` and `Field` shapes,
+        // both landing on the non-cloud pole); the sum matches
+        // `canonical_secret_backend_kind_samples().len()`. Tag-side
+        // mirror of the kind-side pin
+        // `secret_backend_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`.
+        let samples = canonical_secret_backend_kind_samples();
+        let total = samples.len();
+        let mut cloud_count = 0usize;
+        let mut non_cloud_count = 0usize;
+        for (backend, _) in &samples {
+            let cloud = u8::from(backend.is_cloud_secret_manager());
+            let non_cloud = u8::from(backend.is_non_cloud_secret_manager());
+            assert_eq!(
+                cloud + non_cloud,
+                1,
+                "compound-polarity siblings failed strict binary partition on {backend:?} \
+                 (is_cloud={cloud}, is_non_cloud={non_cloud})",
+            );
+            cloud_count += cloud as usize;
+            non_cloud_count += non_cloud as usize;
+        }
+        assert_eq!(
+            cloud_count, 2,
+            "expected exactly 2 cloud-Secret-Manager samples (AwsSecret, GcpSecret)",
+        );
+        assert_eq!(
+            non_cloud_count, 8,
+            "expected exactly 8 non-cloud-Secret-Manager samples \
+             (Literal, Command, Op, two Sops, Akeyless, two Vault)",
+        );
+        assert_eq!(
+            cloud_count + non_cloud_count,
+            total,
+            "compound-polarity partition failed to cover the canonical sample table",
+        );
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_payload_independent() {
+        // Payload-independence pin at the tag-side altitude on the
+        // complement pole: multiple payload shapes on each non-cloud
+        // arm (empty / short / long-with-special-chars) all agree on
+        // the same compound-polarity answer, and every cloud-Secret-
+        // Manager arm remains false regardless of payload. The
+        // `match` body discards the inner payload before firing, so
+        // a future edit that widened the complement to consult (say)
+        // the literal string length would diverge across payload
+        // shapes here — the complement-pole analogue of
+        // `secret_backend_is_cloud_secret_manager_payload_independent`
+        // on the primary pole.
+        let non_cloud_variants: &[fn(&str) -> SecretBackend] = &[
+            |s| SecretBackend::Literal(s.into()),
+            |s| SecretBackend::Command(s.into()),
+            |s| SecretBackend::Op(s.into()),
+            |s| SecretBackend::Akeyless(s.into()),
+        ];
+        for ctor in non_cloud_variants {
+            for payload in ["", "short", "very/long/payload/with-special-chars-$@!"] {
+                let backend = ctor(payload);
+                assert!(
+                    backend.is_non_cloud_secret_manager(),
+                    "is_non_cloud_secret_manager must fire on {backend:?}",
+                );
+            }
+        }
+        for path in ["", "a.yaml", "/very/long/path/to/b.json"] {
+            let backend = SecretBackend::Sops(SopsRef::File(PathBuf::from(path)));
+            assert!(
+                backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must fire on {backend:?}",
+            );
+        }
+        for (file, field) in [("", ""), ("a.yaml", "k"), ("/p/q.json", "deeply.nested.k")] {
+            let backend = SecretBackend::Sops(SopsRef::Field {
+                file: PathBuf::from(file),
+                field: field.into(),
+            });
+            assert!(
+                backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must fire on {backend:?}",
+            );
+        }
+        for path in ["", "p", "secret/data/prod/app"] {
+            let backend = SecretBackend::Vault(VaultRef::Path(path.into()));
+            assert!(
+                backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must fire on {backend:?}",
+            );
+        }
+        for (path, field) in [("", ""), ("p", "f"), ("secret/data/x", "password")] {
+            let backend = SecretBackend::Vault(VaultRef::Field {
+                path: path.into(),
+                field: field.into(),
+            });
+            assert!(
+                backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must fire on {backend:?}",
+            );
+        }
+        for aws_id in [
+            "",
+            "prod/app/jwt",
+            "very/long/aws/secret/id/with-special-chars-$@!",
+        ] {
+            let backend = SecretBackend::AwsSecret(aws_id.into());
+            assert!(
+                !backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must be false on {backend:?}",
+            );
+        }
+        for gcp_name in [
+            "",
+            "projects/p/secrets/jwt",
+            "projects/very-long-project-name/secrets/my-secret/versions/42",
+        ] {
+            let backend = SecretBackend::GcpSecret(gcp_name.into());
+            assert!(
+                !backend.is_non_cloud_secret_manager(),
+                "is_non_cloud_secret_manager must be false on {backend:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_is_non_cloud_secret_manager_is_const_callable() {
+        // Compile-time weld between const-fn `SecretBackend`
+        // constructors and the const-fn
+        // `is_non_cloud_secret_manager` predicate: direct `const`
+        // bindings fire on the six non-cloud arms and stay false on
+        // the two cloud-Secret-Manager arms. Complement-pole peer of
+        // `secret_backend_kind_is_non_cloud_secret_manager_is_const_callable`
+        // (which does the same weld one seam down on the data-free
+        // kind), keeping the compound-polarity sibling pair const-
+        // callable end-to-end at the tag altitude too. `SecretBackend`
+        // variants own `String` / `PathBuf` payloads that cannot
+        // construct in a `const` context, so the compile-time weld
+        // uses matches against a shared `&SecretBackend` binding
+        // built by the const-fn `matches!` on `SecretBackend::Sops`
+        // / `SecretBackend::Vault` shapes via the const-callable
+        // pattern-match itself.
+        const fn cloud_pole(b: &SecretBackend) -> bool {
+            b.is_non_cloud_secret_manager()
+        }
+        // Verify at compile time that the function is invocable in a
+        // `const fn` context — the compiler rejects the definition
+        // above if `is_non_cloud_secret_manager` is not `const`.
+        let _ = cloud_pole;
     }
 
     // ── SecretRefShape — the shared (whole × field) projection over
