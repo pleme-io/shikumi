@@ -200,6 +200,22 @@ pub(crate) fn provider_metadata_for(format: Format, path: &Path) -> Metadata {
 /// the exact wording every text-source shikumi-built provider previously
 /// produced from the open-coded step, kept verbatim so the operator-
 /// visible diagnostic does not change across this lift.
+///
+/// # `cfg` gate
+///
+/// The two live callers ([`crate::lisp_provider`] under `lisp`,
+/// [`crate::blue_provider`] under `blue`) both sit behind their own
+/// per-provider feature gates, so with NEITHER text-source feature enabled
+/// this helper has no consumer and would fire `warn(dead_code)`. Gated
+/// `any(test, feature = "lisp", feature = "blue")` — the peer pattern
+/// [`missing_feature_alternatives`] already uses — so the substrate helper
+/// disappears from a default-features build (keeping `warn(dead_code)`
+/// honest, per the same-file `pending-shikumi-clippy` note) but remains
+/// reachable from the `#[cfg(test)]` pin-suite that already exercises it.
+/// Adding a third gated caller (e.g. a Ruby `.rb` provider) extends the
+/// `any(...)` list with `feature = "ruby"`, same lockstep obligation the
+/// peer helper declares.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 pub(crate) fn read_source_or_parse_err(path: &Path) -> Result<String, ShikumiError> {
     std::fs::read_to_string(path)
         .map_err(|e| ShikumiError::Parse(format!("reading {}: {e}", path.display())))
@@ -259,6 +275,16 @@ pub(crate) fn read_source_or_parse_err(path: &Path) -> Result<String, ShikumiErr
 /// whatever [`ShikumiError`] the caller-supplied `map` produces on a
 /// map-step failure; the fusion does not alter, prefix, or synthesize
 /// that error path.
+///
+/// # `cfg` gate
+///
+/// Same gate as [`read_source_or_parse_err`]:
+/// `any(test, feature = "lisp", feature = "blue")`. The helper's only
+/// live callers are the text-source-provider substrate emitter
+/// [`text_source_provider_impl!`]'s generated `Self::load` and
+/// [`Self::data`](figment::Provider::data) bodies, both of which are
+/// themselves reachable only from a `lisp` or `blue` build.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 pub(crate) fn load_text_source(
     path: &Path,
     map: fn(&str) -> Result<Value, ShikumiError>,
@@ -331,6 +357,15 @@ pub(crate) fn load_text_source(
 // silence: figment picks its error size; boxing would fork the helper's
 // `Err` from the trait method's `Err` and force every call site to unbox
 // at the trait boundary.
+//
+// `cfg` gate: same as `read_source_or_parse_err` / `load_text_source` —
+// this fusion's only live callers are the two text-source-provider
+// `impl Provider::data` bodies emitted by `text_source_provider_impl!`,
+// both reachable only from a `lisp` or `blue` build. Gated
+// `any(test, feature = "lisp", feature = "blue")` so the pin-tests
+// (which reference the helper unconditionally in the `#[cfg(test)]`
+// suite) still compile.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 #[allow(clippy::result_large_err)]
 pub(crate) fn text_source_provider_data(
     path: &Path,
@@ -435,6 +470,22 @@ pub(crate) fn text_source_provider_data(
 /// // ONE substrate site instead of once per provider.
 /// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
 /// ```
+///
+/// # `cfg` gate
+///
+/// Same gate as the substrate helpers it expands to
+/// ([`text_source_provider_data`], [`load_text_source`],
+/// [`read_source_or_parse_err`]):
+/// `any(test, feature = "lisp", feature = "blue")`. The macro's only
+/// live callers are [`crate::lisp_provider`] and
+/// [`crate::blue_provider`], each behind its own per-provider feature
+/// gate; with NEITHER text-source feature enabled the macro has no
+/// consumer and would fire `warn(unused_macro_definitions)`. The `test`
+/// arm keeps the substrate-site pin `text_source_provider_impl!(
+/// MacroProbeProvider, Format::Lisp, macro_probe_mapper)` (the
+/// synthetic `MacroProbeProvider` at the head of the test module)
+/// reachable under a plain `cargo test`.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 macro_rules! text_source_provider_impl {
     ($ty:ty, $format:expr, $mapper:path $(,)?) => {
         impl ::figment::Provider for $ty {
@@ -480,6 +531,11 @@ macro_rules! text_source_provider_impl {
         }
     };
 }
+// Same-cfg peer of the macro definition above: keeps the exported
+// `pub(crate) use` invisible from a default-features build so
+// `warn(unused_imports)` doesn't fire, while remaining visible to the
+// `#[cfg(test)]` pin-suite via the `test` arm of the gate.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 pub(crate) use text_source_provider_impl;
 
 /// Emit the shared struct + `file(path)` ctor a text-source
@@ -562,6 +618,17 @@ pub(crate) use text_source_provider_impl;
 ///
 /// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
 /// ```
+///
+/// # `cfg` gate
+///
+/// Same gate as [`text_source_provider_impl!`]:
+/// `any(test, feature = "lisp", feature = "blue")`. The macro's only
+/// live callers ride the fused [`text_source_provider!`] wrapper at
+/// [`crate::lisp_provider`] / [`crate::blue_provider`], each behind
+/// its own per-provider feature gate; the `test` arm keeps the two
+/// substrate-site pin invocations (`MacroProbeProviderStructLisp` /
+/// `MacroProbeProviderStructBlue`) reachable from a plain `cargo test`.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 macro_rules! text_source_provider_struct {
     (
         $(#[$attr:meta])*
@@ -590,6 +657,8 @@ macro_rules! text_source_provider_struct {
         }
     };
 }
+// Same-cfg peer of the macro definition above.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 pub(crate) use text_source_provider_struct;
 
 /// Emit the FULL text-source shikumi-built provider surface — both the
@@ -678,6 +747,18 @@ pub(crate) use text_source_provider_struct;
 ///
 /// text_source_provider_impl!(MyProvider, Format::MyFormat, load_from_str);
 /// ```
+///
+/// # `cfg` gate
+///
+/// Same gate as the two half-side macros
+/// ([`text_source_provider_struct!`] / [`text_source_provider_impl!`])
+/// and the substrate helpers they route through:
+/// `any(test, feature = "lisp", feature = "blue")`. The macro's only
+/// live callers are the fused invocations at [`crate::lisp_provider`]
+/// and [`crate::blue_provider`], each behind its own per-provider
+/// feature gate; the `test` arm keeps the substrate-site pin
+/// invocation reachable from a plain `cargo test`.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 macro_rules! text_source_provider {
     (
         $(#[$attr:meta])*
@@ -693,6 +774,8 @@ macro_rules! text_source_provider {
         $crate::provider::text_source_provider_impl!($ty, $format, $mapper);
     };
 }
+// Same-cfg peer of the macro definition above.
+#[cfg(any(test, feature = "lisp", feature = "blue"))]
 pub(crate) use text_source_provider;
 
 /// Emit `impl ::figment::Provider for $ty { fn metadata … fn data … }` —

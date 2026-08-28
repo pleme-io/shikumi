@@ -10,7 +10,13 @@ use std::time::{Duration, Instant};
 
 use arc_swap::{ArcSwap, ArcSwapOption, Guard};
 use serde::Deserialize;
-use tracing::{error, info};
+use tracing::info;
+// `error!` is only reached from the `hotswap`-gated hot-swap validation-log
+// path in `load_and_watch_hotswap`; keeping the import same-gated stops
+// `warn(unused_imports)` from firing under default features, matching the
+// same-file gate on the `#[cfg(feature = "hotswap")]` block that consumes it.
+#[cfg(feature = "hotswap")]
+use tracing::error;
 
 use crate::error::ShikumiError;
 use crate::observatory::ReloadObservatory;

@@ -300,6 +300,19 @@ mod check_cfg_tests {
         // it apiece — exactly the drift-class this crate's shared-substrate
         // lifts (e.g. `record_failure_and_log`, `should_reload_on_event`,
         // the `merge_*_layer` tier helpers) spend to close on other seams.
+        //
+        // UPDATED 2026-08-28, store.rs 5 -> 6, per this test's own instruction.
+        // ONE bare attribute added: the split `use tracing::error;` line
+        // beside the ungated `use tracing::info;`. `error!` is only ever
+        // reached from the hot-swap validation-log path inside the
+        // existing `#[cfg(feature = "hotswap")]` block on
+        // `load_and_watch_hotswap`; keeping the import same-gated stops
+        // `warn(unused_imports)` from firing under default features (10
+        // → 0 warnings on `cargo build`, alongside the peer text-source
+        // helper/macro gates landed in the same commit). Load-bearing
+        // fix on the CLAUDE.md `pending-shikumi-clippy` note — the
+        // measured warning burn-down that had to precede any
+        // `-D warnings` gate in CI.
         let lib_hits = count_gate_attribute_lines(LIB_RS);
         let store_hits = count_gate_attribute_lines(STORE_RS);
         assert_eq!(
@@ -307,8 +320,8 @@ mod check_cfg_tests {
             "src/lib.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 2",
         );
         assert_eq!(
-            store_hits, 5,
-            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 5",
+            store_hits, 6,
+            "src/store.rs bare `{HOTSWAP_GATE_ATTR}` attribute-line count drifted from 6",
         );
     }
 
