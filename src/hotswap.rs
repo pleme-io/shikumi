@@ -16934,6 +16934,135 @@ impl ProofRelationWire {
     pub const fn is_watermark_moved(&self) -> bool {
         matches!(self, Self::Progression { .. } | Self::CrossStore { .. })
     }
+
+    /// True iff this wire classification witnesses NO class-scoped
+    /// watermark move — the three stationary-watermark corners
+    /// [`Self::Stationary`] (both axes at rest: the `/healthz/config`
+    /// polling case), [`Self::IdentityRepublish`] (watermark stationary,
+    /// generation advanced: a re-publish of the same value), and
+    /// [`Self::Regressed`] (the generation counter went backwards — by
+    /// arm construction the observation was made at strictly-less
+    /// generation, so the class-scoped watermark is folded away entirely
+    /// at this altitude and the tag alone reads as stationary). `false`
+    /// on the two moved-watermark corners [`Self::Progression`]
+    /// (watermark moved AND generation counter advanced: the legitimate
+    /// progression corner) and [`Self::CrossStore`] (watermark moved at
+    /// an unchanged generation counter: the same-store impossibility
+    /// corner).
+    ///
+    /// **The wire-side lift of
+    /// [`ProofRelation::is_watermark_stationary`] (commit `80f8e94`).**
+    /// The same "did the class-scoped watermark stay put on this proof
+    /// pair?" question the value-side receiver answers on the payload-
+    /// carrying enum, now reachable one altitude down at the wire
+    /// carrier without a value-side round-trip through
+    /// [`ProofRelation::try_from_wire`]. Modal-pair polarity sibling of
+    /// [`Self::is_watermark_moved`] (commit `36a0ef8`) at the wire
+    /// altitude — the two compound-polarity receivers cover the SAME
+    /// class-scoped watermark axis from the two opposite poles, forming
+    /// the wire-altitude modal pair (3/5 vs 2/5 halves of
+    /// [`ProofRelationWire`]'s five-way sum), mirroring the value-
+    /// altitude modal pair [`ProofRelation::is_watermark_moved`] vs.
+    /// [`ProofRelation::is_watermark_stationary`] one altitude up and the
+    /// fused-altitude modal pair
+    /// [`ProofRelationKind::is_watermark_moved`] vs.
+    /// [`ProofRelationKind::is_watermark_stationary`] one altitude down.
+    ///
+    /// **Delegation ladder — the tag-alone answer at the wire altitude.**
+    /// A wire consumer holding a freshly deserialized
+    /// [`ProofRelationWire`] answering "did the watermark stay put on
+    /// this proof pair?" previously had four inline paths, each leaking
+    /// work: (a) `ProofRelation::try_from_wire(&wire).map(|r|
+    /// r.is_watermark_stationary())` — chaining a
+    /// [`MovedWatermarkDelta::try_from_wire`] weld on the two payload-
+    /// carrying corners AND a [`std::num::NonZeroU64::new`] weld on the
+    /// three generation-carrying corners, none of which the tag-only
+    /// answer needs, plus a [`Result`]-fold on top since the parse can
+    /// fail; (b) `wire.kind().is_watermark_stationary()` — a two-hop
+    /// composition through the fused-kind projection whose
+    /// [`Self::kind`] call carries the same exhaustive `match` this
+    /// predicate would; (c) `wire.stationary() ||
+    /// wire.identity_republish() || wire.regressed()` — a three-hop
+    /// composition through three single-variant tag-only classifiers
+    /// whose disjunction the exhaustiveness checker cannot help keep in
+    /// sync with a future stationary-watermark corner (a hypothetical
+    /// third impossibility variant carrying no moved watermark, say,
+    /// would silently escape the three-arm disjunction without turning
+    /// the callsite red); or (d) `!wire.is_watermark_moved()` — the
+    /// modal-pair negation whose polarity a future sixth legitimate
+    /// corner (a hypothetical `SchemaMismatch` variant carrying no
+    /// watermark axis at all) would flip silently. The receiver-sibling
+    /// here answers the same question through a single welded
+    /// [`matches!`]: adding a sixth variant to [`ProofRelationWire`]
+    /// fails to compile at this method's pattern in lockstep with
+    /// [`Self::stationary`], [`Self::identity_republish`],
+    /// [`Self::regressed`], and every other classification receiver in
+    /// this impl.
+    ///
+    /// **Cross-altitude same-answer invariants.** The wire is a lossless
+    /// channel for the watermark-stationary question the value-side
+    /// sibling answers. For every legitimate value/wire pair:
+    ///
+    /// * `relation.is_watermark_stationary() ==
+    ///   relation.to_wire().is_watermark_stationary()` (value ↔ wire),
+    /// * `wire.is_watermark_stationary() ==
+    ///   wire.kind().is_watermark_stationary()` (wire ↔ fused-kind), and
+    /// * `wire.is_watermark_stationary() == wire.watermark().is_none()`
+    ///   (wire ↔ payload accessor) — the same 3/5 partition surfaced as
+    ///   a `bool` here and as the ABSENCE side of an
+    ///   `Option<&WatermarkDeltaWire>` via [`Self::watermark`].
+    ///
+    /// The three routes pin the delegation ladder — a future edit that
+    /// drifted any two of them fails at the pointwise agreement pin
+    /// before drifting through any consumer.
+    ///
+    /// **Modal-pair complement law with [`Self::is_watermark_moved`].**
+    /// For every [`ProofRelationWire`] variant,
+    /// `wire.is_watermark_stationary() == !wire.is_watermark_moved()` —
+    /// the two receivers exactly complement each other on the fixture,
+    /// forming the wire-altitude modal pair on the class-scoped
+    /// watermark axis. A future edit that drifted either polarity
+    /// without moving the other fails at the modal-pair boundary rather
+    /// than at a per-polarity consumer site.
+    ///
+    /// **Cross-half compound at the wire altitude.** Like
+    /// [`Self::is_watermark_moved`] (and unlike
+    /// [`Self::is_generation_advanced`], which sits entirely inside the
+    /// same-store-consistent half), this predicate is a CROSS-HALF
+    /// compound that lands in BOTH outer halves —
+    /// [`Self::Stationary`] and [`Self::IdentityRepublish`] on the
+    /// consistent half AND [`Self::Regressed`] on the impossibility half
+    /// — so neither outer-half predicate implies (or is implied by) it.
+    /// The exhaustiveness weld must live at the type level, not at every
+    /// consumer that groups on the stationary-watermark pole.
+    ///
+    /// **The tag alone is sufficient.** No payload field participates in
+    /// the answer, so no parse-time weld is even conceptually involved —
+    /// a wire consumer routing on the internally-tagged `kind` field
+    /// alone reaches the verdict without deserializing any payload
+    /// portion, matching the low-cost seam [`ProofRelationWire`]'s serde
+    /// encoding already established.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofRelationWire`]
+    /// projects its watermark-stationary verdict at compile time too,
+    /// matching the `const`-ness of every other classification accessor
+    /// (predicate, payload, or kind projection) in this impl.
+    ///
+    /// The delta-side sibling on [`ProofDelta`] remains to be surfaced
+    /// at the next altitude; the cross-altitude same-answer with
+    /// [`Self::kind`]`.is_watermark_stationary()` and with
+    /// [`ProofRelation::is_watermark_stationary`] pins the fused-kind and
+    /// value-side projections today, and the delta receiver will pin the
+    /// delta-side projection when it lands, closing the four-altitude
+    /// watermark-stationary ladder the [`Self::is_watermark_moved`]
+    /// modal-pair peer already carries at three altitudes today.
+    #[must_use]
+    pub const fn is_watermark_stationary(&self) -> bool {
+        matches!(
+            self,
+            Self::Stationary | Self::IdentityRepublish { .. } | Self::Regressed { .. }
+        )
+    }
 }
 
 impl TryFrom<&ProofRelationWire> for ProofRelation {
@@ -31206,6 +31335,351 @@ mod proof_relation_wire_is_watermark_moved_tests {
                 reconstructed.is_watermark_moved(),
                 "{name}: try_from_wire round-trip must preserve the \
                  watermark-move verdict",
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod proof_relation_wire_is_watermark_stationary_tests {
+    //! Weld the compound-polarity watermark-stationary predicate at the
+    //! wire altitude — [`ProofRelationWire::is_watermark_stationary`] —
+    //! the wire-side lift of
+    //! [`ProofRelation::is_watermark_stationary`] (commit `80f8e94`), and
+    //! the modal-pair polarity sibling of the wire-altitude
+    //! [`ProofRelationWire::is_watermark_moved`] (commit `36a0ef8`).
+    //!
+    //! The value-altitude module `proof_relation_is_watermark_stationary_tests`
+    //! pins the value-side truth table, the fused-kind delegation
+    //! ladder, and the cross-half nature of the predicate. This module
+    //! pins the wire altitude's cross-altitude same-answer with the
+    //! value side and with the fused-kind projection through the wire's
+    //! own [`ProofRelationWire::kind`] receiver, so a future edit that
+    //! drifted any leg of the ladder fails at the pointwise agreement
+    //! pin before drifting through any wire consumer.
+    //!
+    //! Together the tests below cover:
+    //!
+    //! 1. Truth table pinned by variant identity at the wire altitude —
+    //!    only the three stationary-watermark corners
+    //!    ([`ProofRelationWire::Stationary`],
+    //!    [`ProofRelationWire::IdentityRepublish`],
+    //!    [`ProofRelationWire::Regressed`]) return `true`; the two
+    //!    moved-watermark corners
+    //!    ([`ProofRelationWire::Progression`],
+    //!    [`ProofRelationWire::CrossStore`]) return `false`.
+    //! 2. Pointwise value/wire agreement across every variant — for
+    //!    every [`ProofRelation`] value the value-side accessor and the
+    //!    wire-side sibling agree pointwise. The wire is a lossless
+    //!    channel for the watermark-stationary question the value-side
+    //!    receiver answers.
+    //! 3. Wire-altitude cross-altitude same-answer with the fused kind
+    //!    — for every wire variant, `wire.is_watermark_stationary() ==
+    //!    wire.kind().is_watermark_stationary()`, pinning the wire-side
+    //!    delegation ladder against the fused-kind receiver at the same
+    //!    altitude.
+    //! 4. Wire-altitude cross-altitude same-answer with the disjunction
+    //!    of the three single-variant tag-only classifiers — for every
+    //!    wire variant, `wire.is_watermark_stationary() ==
+    //!    wire.stationary() || wire.identity_republish() ||
+    //!    wire.regressed()`.
+    //! 5. Payload accessor agreement — for every wire variant,
+    //!    `wire.is_watermark_stationary() == wire.watermark().is_none()`,
+    //!    pinning the two receivers against each other at ONE canonical
+    //!    site: the same 3/5 partition surfaced as a `bool` here and as
+    //!    the ABSENCE side of an `Option<&WatermarkDeltaWire>` via
+    //!    [`ProofRelationWire::watermark`].
+    //! 6. Modal-pair complement law with
+    //!    [`ProofRelationWire::is_watermark_moved`] — for every wire
+    //!    variant, `wire.is_watermark_stationary() ==
+    //!    !wire.is_watermark_moved()`, pinning the two receivers as the
+    //!    exact complements they are meant to be at the wire altitude.
+    //! 7. Cross-half nature at the wire altitude — the predicate fires
+    //!    on AT LEAST one same-store-consistent corner
+    //!    ([`ProofRelationWire::Stationary`] or
+    //!    [`ProofRelationWire::IdentityRepublish`]) AND on at least one
+    //!    same-store-inconsistent corner
+    //!    ([`ProofRelationWire::Regressed`]), so no single outer-half
+    //!    predicate implies (or is implied by) it.
+    //! 8. Cross-axis meet with
+    //!    [`ProofRelationWire::is_generation_advanced`] — the 3/5 vs
+    //!    2/5 compound-polarity partitions intersect at exactly
+    //!    [`ProofRelationWire::IdentityRepublish`], the sole wire corner
+    //!    witnessing BOTH a publish AND a stationary watermark, which
+    //!    is precisely the [`arc_swap::ArcSwap`] re-publish-of-same-
+    //!    value class at the wire altitude.
+    //! 9. Cardinality partition — exactly three of the five wire fixture
+    //!    variants satisfy the predicate, two do not.
+    //! 10. `const`-callable — a compile-time-known
+    //!     [`ProofRelationWire`] projects its watermark-stationary
+    //!     verdict at compile time too, matching the `const`-ness of
+    //!     every other classification receiver at the wire altitude.
+    //! 11. Round-trip through [`ProofRelation::try_from_wire`] preserves
+    //!     the watermark-stationary verdict — a wire consumer that
+    //!     follows the standard parse seam surfaces the same verdict the
+    //!     receiver-sibling reaches directly.
+    //!
+    //! Same test idiom as the modal-pair sibling
+    //! `proof_relation_wire_is_watermark_moved_tests` module (commit
+    //! `36a0ef8`).
+
+    use super::*;
+
+    fn nz(n: u64) -> std::num::NonZeroU64 {
+        std::num::NonZeroU64::new(n).expect("nonzero literal")
+    }
+
+    fn moved_all() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        })
+        .expect("all three axes moved is non-stationary")
+    }
+
+    fn moved_free_only() -> MovedWatermarkDelta {
+        MovedWatermarkDelta::new(WatermarkDelta {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: true,
+        })
+        .expect("free_moved+full_moved is non-stationary")
+    }
+
+    fn all_five_relations() -> Vec<(&'static str, ProofRelation)> {
+        vec![
+            ("Stationary", ProofRelation::Stationary),
+            (
+                "IdentityRepublish",
+                ProofRelation::IdentityRepublish { generations: nz(1) },
+            ),
+            (
+                "Progression",
+                ProofRelation::Progression {
+                    watermark: moved_all(),
+                    generations: nz(2),
+                },
+            ),
+            (
+                "CrossStore",
+                ProofRelation::CrossStore {
+                    watermark: moved_free_only(),
+                },
+            ),
+            ("Regressed", ProofRelation::Regressed { by: nz(3) }),
+        ]
+    }
+
+    fn all_five_wire_variants() -> Vec<(&'static str, ProofRelationWire)> {
+        all_five_relations()
+            .into_iter()
+            .map(|(name, relation)| (name, relation.to_wire()))
+            .collect()
+    }
+
+    // ---------- (1) Truth table pinned by variant identity at the wire altitude
+
+    #[test]
+    fn wire_truth_table_reads_the_three_stationary_watermark_corners_alone() {
+        for (name, wire) in all_five_wire_variants() {
+            let expected = matches!(
+                wire,
+                ProofRelationWire::Stationary
+                    | ProofRelationWire::IdentityRepublish { .. }
+                    | ProofRelationWire::Regressed { .. }
+            );
+            assert_eq!(
+                wire.is_watermark_stationary(),
+                expected,
+                "{name}: wire is_watermark_stationary() diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Pointwise value/wire agreement
+
+    #[test]
+    fn value_and_wire_predicates_agree_pointwise_on_every_variant() {
+        for (name, relation) in all_five_relations() {
+            let value = relation.is_watermark_stationary();
+            let wire = relation.to_wire().is_watermark_stationary();
+            assert_eq!(
+                value, wire,
+                "{name}: wire is_watermark_stationary must equal value \
+                 is_watermark_stationary pointwise",
+            );
+        }
+    }
+
+    // ---------- (3) Wire-altitude same-answer with the fused kind
+
+    #[test]
+    fn wire_cross_altitude_same_answer_with_kind_projection() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_watermark_stationary(),
+                wire.kind().is_watermark_stationary(),
+                "{name}: wire is_watermark_stationary must equal \
+                 wire.kind().is_watermark_stationary()",
+            );
+        }
+    }
+
+    // ---------- (4) Wire-altitude same-answer with the disjunction of siblings
+
+    #[test]
+    fn wire_compound_predicate_matches_disjunction_of_single_variant_siblings() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_watermark_stationary(),
+                wire.stationary() || wire.identity_republish() || wire.regressed(),
+                "{name}: wire is_watermark_stationary() must equal \
+                 stationary() || identity_republish() || regressed()",
+            );
+        }
+    }
+
+    // ---------- (5) Payload accessor agreement — same 3/5 partition surfaced as an Option
+
+    #[test]
+    fn wire_compound_predicate_agrees_with_watermark_payload_option_absence() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_watermark_stationary(),
+                wire.watermark().is_none(),
+                "{name}: wire is_watermark_stationary() must equal \
+                 wire.watermark().is_none()",
+            );
+        }
+    }
+
+    // ---------- (6) Modal-pair complement law with is_watermark_moved at the wire altitude
+
+    #[test]
+    fn wire_is_complement_of_is_watermark_moved() {
+        for (name, wire) in all_five_wire_variants() {
+            assert_eq!(
+                wire.is_watermark_stationary(),
+                !wire.is_watermark_moved(),
+                "{name}: wire is_watermark_stationary() must equal \
+                 !wire.is_watermark_moved()",
+            );
+        }
+    }
+
+    // ---------- (7) Cross-half nature — lands in BOTH outer halves
+
+    #[test]
+    fn wire_cross_half_predicate_lands_in_both_outer_halves() {
+        let consistent_hit = all_five_wire_variants()
+            .into_iter()
+            .any(|(_, w)| w.is_watermark_stationary() && w.same_store_consistent());
+        let inconsistent_hit = all_five_wire_variants()
+            .into_iter()
+            .any(|(_, w)| w.is_watermark_stationary() && w.same_store_inconsistent());
+        assert!(
+            consistent_hit,
+            "wire is_watermark_stationary must fire on at least one \
+             same-store-consistent corner (Stationary or IdentityRepublish)",
+        );
+        assert!(
+            inconsistent_hit,
+            "wire is_watermark_stationary must fire on at least one \
+             same-store-inconsistent corner (Regressed)",
+        );
+    }
+
+    // ---------- (8) Cross-axis meet with is_generation_advanced at IdentityRepublish
+
+    #[test]
+    fn wire_cross_axis_meet_with_is_generation_advanced_at_identity_republish() {
+        let intersect: Vec<&'static str> = all_five_wire_variants()
+            .into_iter()
+            .filter(|(_, w)| w.is_watermark_stationary() && w.is_generation_advanced())
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            intersect,
+            vec!["IdentityRepublish"],
+            "wire is_watermark_stationary AND is_generation_advanced must \
+             intersect at IdentityRepublish alone",
+        );
+    }
+
+    // ---------- (9) Cardinality partition — exactly three of five satisfy
+
+    #[test]
+    fn wire_cardinality_partition_is_three_from_two() {
+        let (stationary, rest): (Vec<_>, Vec<_>) = all_five_wire_variants()
+            .into_iter()
+            .partition(|(_, w)| w.is_watermark_stationary());
+        assert_eq!(
+            stationary.len(),
+            3,
+            "exactly three ProofRelationWire fixture variants must satisfy \
+             is_watermark_stationary (Stationary + IdentityRepublish + Regressed); got {}",
+            stationary.len(),
+        );
+        assert_eq!(
+            rest.len(),
+            2,
+            "exactly two ProofRelationWire fixture variants must NOT satisfy \
+             is_watermark_stationary (Progression + CrossStore); got {}",
+            rest.len(),
+        );
+        assert_eq!(
+            stationary.len() + rest.len(),
+            5,
+            "the compound-polarity binary partition must cover the fixture",
+        );
+    }
+
+    // ---------- (10) `const`-callable at compile time
+
+    #[test]
+    fn wire_is_watermark_stationary_is_const_callable() {
+        const STATIONARY: bool = ProofRelationWire::Stationary.is_watermark_stationary();
+        const IDENTITY_REPUBLISH: bool =
+            ProofRelationWire::IdentityRepublish { generations: 1 }.is_watermark_stationary();
+        const PROGRESSION: bool = ProofRelationWire::Progression {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: true,
+                free_moved: true,
+            },
+            generations: 2,
+        }
+        .is_watermark_stationary();
+        const CROSS_STORE: bool = ProofRelationWire::CrossStore {
+            watermark: WatermarkDeltaWire {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+        }
+        .is_watermark_stationary();
+        const REGRESSED: bool = ProofRelationWire::Regressed { by: 3 }.is_watermark_stationary();
+        assert!(STATIONARY);
+        assert!(IDENTITY_REPUBLISH);
+        assert!(!PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(REGRESSED);
+    }
+
+    // ---------- (11) Round-trip through try_from_wire preserves the verdict
+
+    #[test]
+    fn try_from_wire_round_trip_preserves_the_verdict() {
+        for (name, wire) in all_five_wire_variants() {
+            let wire_verdict = wire.is_watermark_stationary();
+            let reconstructed =
+                ProofRelation::try_from_wire(&wire).expect("legitimate wire parses back");
+            assert_eq!(
+                wire_verdict,
+                reconstructed.is_watermark_stationary(),
+                "{name}: try_from_wire round-trip must preserve the \
+                 watermark-stationary verdict",
             );
         }
     }
