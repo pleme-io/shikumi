@@ -2050,6 +2050,144 @@ impl ProofDelta {
         self.watermark.any_moved()
     }
 
+    /// True iff this delta observed the class-scoped watermark stay put
+    /// — the compound-polarity watermark-stationary pole at the delta
+    /// altitude. Returns `true` on the three stationary-watermark
+    /// corners [`Self::stationary`] (both axes at rest — the
+    /// `/healthz/config` polling case), [`Self::identity_republish`]
+    /// (watermark stationary, generation counter advanced by one or
+    /// more — a re-publish of the same value), and — on the fixture
+    /// where the regressed corner's underlying watermarks are bit-
+    /// identical — on [`Self::generations_regressed`]; `false` on the
+    /// two moved-watermark corners [`Self::progression`] (watermark
+    /// moved AND generation counter advanced) and
+    /// [`Self::cross_store_signal`] (watermark moved AT the same
+    /// generation counter).
+    ///
+    /// **The delta-altitude lift of
+    /// [`ProofRelation::is_watermark_stationary`] (commit `80f8e94`),
+    /// [`ProofRelationWire::is_watermark_stationary`] (commit
+    /// `25da769`), and [`ProofRelationKind::is_watermark_stationary`]
+    /// (commit `e8518a2`).** Closes the compound-polarity watermark-
+    /// stationary ladder across all FOUR altitudes the crate's
+    /// `ProofRelation` classification family carries this cross-half
+    /// pole at — the fourth and final altitude at which the "did the
+    /// class-scoped watermark stay put on this proof pair?" question is
+    /// answered by a single welded receiver, reaching the classification
+    /// axis directly from the `watermark: WatermarkDelta` field the
+    /// delta shape carries without projecting through any classification
+    /// altitude first. Modal-pair polarity sibling of
+    /// [`Self::is_watermark_moved`] (commit `53a1316`) at this altitude
+    /// — the two compound-polarity predicates cover the SAME class-
+    /// scoped watermark axis from the two opposite poles, forming the
+    /// delta-altitude modal pair (3/5 vs 2/5 halves of the five delta-
+    /// reachable corners), mirroring the value-altitude, wire-altitude,
+    /// and fused-altitude modal pairs at the three classification
+    /// altitudes below. The two half-side altitudes
+    /// ([`SameStoreConsistencyKind`], [`SameStoreImpossibilityKind`])
+    /// cannot carry this compound on their own — the cross-half
+    /// grouping is only nameable from the fused-sum altitude up, and
+    /// the delta altitude reaches it through the axis-direct read the
+    /// delta shape already carries.
+    ///
+    /// **Delegation ladder — the axis-direct answer at the delta
+    /// altitude.** A consumer holding a freshly computed
+    /// [`ProofDelta`] answering "did the class-scoped watermark stay
+    /// put on this proof pair?" previously had four inline paths, each
+    /// leaking work: (a) `self.watermark.stationary()` inline at every
+    /// seam — the axis-direct shape whose one-hop projection each
+    /// consumer has to hand-write once per seam, without any receiver-
+    /// family sibling to bind it against the three classification
+    /// altitudes; (b) `self.stationary() || self.identity_republish() ||
+    /// self.generations_regressed()` — a three-hop composition through
+    /// three single-variant atomic classifiers whose disjunction the
+    /// exhaustiveness checker cannot help keep in sync with a future
+    /// stationary-watermark corner, and whose three bodies each re-read
+    /// the generation axis the tag-only watermark-stationary question
+    /// doesn't need; (c) `self.relation().is_some_and(|r|
+    /// r.is_watermark_stationary())` — a fold through the classification
+    /// seam whose [`Option`] unwrapping AND the [`MovedWatermarkDelta`] /
+    /// [`std::num::NonZeroU64`] payload welds [`Self::relation`] carries
+    /// the tag-only question doesn't need (and which on the regressed
+    /// corner folds [`Self::generations_advanced`] to [`None`] and
+    /// short-circuits to `None` before the classification predicate sees
+    /// it, disagreeing with this receiver's `true` on the regressed
+    /// corner where the fixture's watermarks are bit-identical); or (d)
+    /// `!self.is_watermark_moved()` — the modal-pair negation whose
+    /// polarity a future sixth legitimate corner would flip silently.
+    /// The receiver-sibling here answers the same question through a
+    /// single welded delegation to [`WatermarkDelta::stationary`], at
+    /// ONE canonical site.
+    ///
+    /// **Cross-altitude same-answer with the three classification
+    /// receivers on the delta-reachable corners.** For every
+    /// [`ProofDelta`] value that [`Self::relation`] classifies as
+    /// `Some(r)`, `self.is_watermark_stationary() ==
+    /// r.is_watermark_stationary()` — the delta-altitude verdict agrees
+    /// pointwise with the value-classification-altitude verdict on the
+    /// four delta-reachable corners. On the regressed corner where
+    /// [`Self::relation`] returns [`None`], the classification-altitude
+    /// answer is only reachable through
+    /// [`ConfigSyncProof::relation_since`], whose
+    /// [`ProofRelation::Regressed`] payload carries no watermark and
+    /// reads as `true` for `is_watermark_stationary` by construction;
+    /// the delta-altitude answer here is the field-direct read
+    /// [`WatermarkDelta::stationary`] and coincides with the
+    /// classification answer exactly when the two underlying watermarks
+    /// were bit-identical (the fixture case). The same identity holds
+    /// through [`Self::relation_wire`] on the same four delta-reachable
+    /// corners and through [`Self::kind`] on all delta-reachable
+    /// corners.
+    ///
+    /// **Field-direct identity.** At the delta altitude the receiver
+    /// reads the axis field directly:
+    /// `self.is_watermark_stationary() == self.watermark.stationary()`
+    /// pointwise, with no generation component involved. This is the
+    /// compound-polarity axis-direct shape at the delta altitude —
+    /// mirroring the sibling [`Self::is_generation_advanced`], which
+    /// reads the [`Option<u64>`] `generations_advanced` axis field
+    /// directly, and the modal-pair peer [`Self::is_watermark_moved`],
+    /// which reads the same `watermark` axis field through the opposite
+    /// polarity accessor [`WatermarkDelta::any_moved`].
+    ///
+    /// **Modal-pair complement law with [`Self::is_watermark_moved`].**
+    /// For every [`ProofDelta`] value,
+    /// `self.is_watermark_stationary() == !self.is_watermark_moved()` —
+    /// the two receivers exactly complement each other pointwise, welded
+    /// at the delta altitude by the field-direct identity
+    /// [`WatermarkDelta::stationary`] `== !`[`WatermarkDelta::any_moved`]
+    /// the underlying shape already carries. A future edit that
+    /// drifted either polarity from the
+    /// other at the delta altitude fails at the modal-pair boundary
+    /// rather than at a per-polarity delta consumer site.
+    ///
+    /// **The 3/2 compound-polarity partition on this altitude.** The
+    /// predicate cuts the five delta-reachable corners into a
+    /// {[`Self::stationary`], [`Self::identity_republish`],
+    /// [`Self::generations_regressed`]} half (stationary watermark,
+    /// 3 of 5 on the fixture where the regressed corner's watermarks
+    /// are stationary) and a {[`Self::progression`],
+    /// [`Self::cross_store_signal`]} half (moved watermark, 2 of 5),
+    /// exactly complementing the 2/3 partition
+    /// [`Self::is_watermark_moved`] carries. The cross-axis meet with
+    /// [`Self::is_generation_advanced`] identifies
+    /// [`Self::identity_republish`] as the sole delta cell witnessing
+    /// BOTH a publish AND a stationary watermark — precisely the class
+    /// of [`arc_swap::ArcSwap`] re-publish-of-same-value the
+    /// classification family exists to distinguish from a real content
+    /// edit, at the delta altitude too, mirroring the identical
+    /// singleton meet already pinned at the fused, value, and wire
+    /// altitudes on the same compound-polarity axis pair.
+    ///
+    /// `const`-callable — a compile-time-known [`ProofDelta`] projects
+    /// its watermark-stationary verdict at compile time too, matching
+    /// the `const`-ness of every other classification accessor at every
+    /// altitude.
+    #[must_use]
+    pub const fn is_watermark_stationary(&self) -> bool {
+        self.watermark.stationary()
+    }
+
     /// The impossibility-corner tag iff this delta lands in one of the
     /// two same-store impossibilities — [`Self::generations_regressed`]
     /// maps to `Some(SameStoreImpossibilityKind::Regressed)`,
@@ -33398,6 +33536,402 @@ mod proof_delta_is_watermark_moved_tests {
             observed_at_elapsed: None,
         };
         assert!(!d_stationary.is_watermark_moved());
+    }
+}
+
+#[cfg(test)]
+mod proof_delta_is_watermark_stationary_tests {
+    //! Weld the compound-polarity watermark-stationary predicate at the
+    //! DELTA altitude — [`ProofDelta::is_watermark_stationary`], the
+    //! delta-altitude receiver-sibling of the three classification-
+    //! altitude receivers already carrying this cross-half pole:
+    //! [`ProofRelationKind::is_watermark_stationary`] (fused-sum),
+    //! [`ProofRelation::is_watermark_stationary`] (value), and
+    //! [`ProofRelationWire::is_watermark_stationary`] (wire).
+    //!
+    //! This is the FOURTH and CLOSING altitude of the compound-polarity
+    //! watermark-stationary ladder in the crate, mirroring the four-
+    //! altitude closure the modal-pair peer
+    //! [`ProofDelta::is_watermark_moved`] (commit `53a1316`) already
+    //! carries. The three classification altitudes reach the "did the
+    //! watermark stay put on this proof pair?" verdict through a welded
+    //! three-variant [`matches!`] on the sum-type tag; the delta altitude
+    //! reaches the same verdict by reading the `watermark: WatermarkDelta`
+    //! field directly through [`WatermarkDelta::stationary`], with no
+    //! variant to match against. On the four delta-reachable corners
+    //! both routes agree pointwise — that agreement is the load-bearing
+    //! cross-altitude weld this module pins.
+    //!
+    //! The tests below cover:
+    //!
+    //! 1. Truth table pinned across the five delta-reachable corners:
+    //!    the three stationary-watermark corners (`stationary`,
+    //!    `identity_republish`, `generations_regressed`) return `true`
+    //!    on the fixture where the regressed corner's underlying
+    //!    watermarks are bit-identical; the two moved-watermark corners
+    //!    (`progression`, `cross_store_signal`) return `false`.
+    //! 2. Field-direct identity:
+    //!    `d.is_watermark_stationary() == d.watermark.stationary()` on
+    //!    every corner — the receiver reads the axis field directly,
+    //!    with no generation component involved.
+    //! 3. Modal-pair complement law:
+    //!    `d.is_watermark_stationary() == !d.is_watermark_moved()` on
+    //!    every corner — the two receivers exactly complement each
+    //!    other pointwise.
+    //! 4. Cross-altitude same-answer with the fused-kind receiver:
+    //!    `d.is_watermark_stationary() == d.kind().is_watermark_stationary()`
+    //!    pointwise on the fixture.
+    //! 5. Cross-altitude same-answer with [`ProofRelation`] on the four
+    //!    delta-reachable corners; on the regressed corner where
+    //!    [`ProofDelta::relation`] returns [`None`], the delta-altitude
+    //!    verdict must be `true` via the field-direct read (fixture
+    //!    watermarks are bit-identical there).
+    //! 6. Cross-altitude same-answer with [`ProofRelationWire`] via
+    //!    [`ProofDelta::relation_wire`], mirroring test 5.
+    //! 7. Full-classification same-answer via
+    //!    [`ConfigSyncProof::relation_since`] on every corner including
+    //!    regressed.
+    //! 8. Cross-axis meet with [`ProofDelta::is_generation_advanced`]:
+    //!    the two compound-polarity partitions meet at exactly one
+    //!    cell — [`Self::identity_republish`], the sole delta corner
+    //!    witnessing BOTH a publish AND a stationary watermark, matching
+    //!    the identical singleton meet already pinned at the fused,
+    //!    value, and wire altitudes.
+    //! 9. Cardinality-side invariant: exactly 3 of 5 corners return
+    //!    `true` on the fixture, 2 of 5 return `false`, sum == 5 —
+    //!    exactly complementing the `is_watermark_moved` 2/3 partition.
+    //! 10. `const`-callable on hand-constructed deltas at every corner.
+    //!
+    //! Same test idiom as the sibling
+    //! `proof_delta_is_watermark_moved_tests` module (commit `53a1316`)
+    //! and the value-side sibling `proof_relation_is_watermark_stationary_tests`
+    //! module (commit `80f8e94`).
+    use super::*;
+    use serde::Serialize;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+    struct Cfg {
+        log_level: String,
+        bind_addr: String,
+    }
+
+    const FIELD_CLASSES: &[(&str, HotSwapClass)] = &[
+        ("log_level", HotSwapClass::Free),
+        (
+            "bind_addr",
+            HotSwapClass::RequiresRestart {
+                reason: "bound at process start",
+            },
+        ),
+    ];
+
+    fn base() -> Cfg {
+        Cfg {
+            log_level: "info".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn mutated() -> Cfg {
+        Cfg {
+            log_level: "debug".into(),
+            bind_addr: "0.0.0.0:8080".into(),
+        }
+    }
+
+    fn proof_at(cfg: &Cfg, generation: u64, epoch_secs: u64) -> ConfigSyncProof {
+        ConfigSyncProof {
+            generation,
+            watermark: ConfigWatermark::compute(cfg, FIELD_CLASSES),
+            observed_at: UNIX_EPOCH + Duration::from_secs(epoch_secs),
+        }
+    }
+
+    /// The five delta-reachable corners of the (watermark moved?,
+    /// generation delta) grid, one row per corner. Each row carries a
+    /// label, the prior/current proofs to fold into a delta, and the
+    /// pinned truth-table verdict for `is_watermark_stationary()`.
+    fn corners() -> Vec<(&'static str, ConfigSyncProof, ConfigSyncProof, bool)> {
+        let anchor = base();
+        let alt = mutated();
+        vec![
+            (
+                "Stationary",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                true,
+            ),
+            (
+                "IdentityRepublish",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&anchor, 6, 1_700_000_060),
+                true,
+            ),
+            (
+                "Progression",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 6, 1_700_000_060),
+                false,
+            ),
+            (
+                "CrossStore",
+                proof_at(&anchor, 5, 1_700_000_000),
+                proof_at(&alt, 5, 1_700_000_060),
+                false,
+            ),
+            (
+                "Regressed",
+                proof_at(&anchor, 10, 1_700_000_000),
+                proof_at(&anchor, 5, 1_700_000_060),
+                true,
+            ),
+        ]
+    }
+
+    // ---------- (1) Truth table pinned across the delta-reachable grid
+
+    #[test]
+    fn truth_table_matches_the_pinned_grid() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_stationary(),
+                want,
+                "{name}: is_watermark_stationary diverged from the pinned truth table",
+            );
+        }
+    }
+
+    // ---------- (2) Field-direct identity
+
+    #[test]
+    fn field_direct_identity_reads_the_watermark_axis_alone() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_stationary(),
+                d.watermark.stationary(),
+                "{name}: the delta-altitude receiver must read the \
+                 watermark axis field directly via WatermarkDelta::stationary, \
+                 with no generation component involved",
+            );
+        }
+    }
+
+    // ---------- (3) Modal-pair complement law
+
+    #[test]
+    fn is_watermark_stationary_is_complement_of_is_watermark_moved() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_stationary(),
+                !d.is_watermark_moved(),
+                "{name}: the two compound-polarity receivers must exactly \
+                 complement each other at the delta altitude, matching the \
+                 field-direct identity WatermarkDelta::stationary == \
+                 !WatermarkDelta::any_moved the underlying shape carries",
+            );
+        }
+    }
+
+    // ---------- (4) Cross-altitude same-answer with the fused-kind receiver
+
+    #[test]
+    fn cross_altitude_agrees_with_fused_kind_receiver() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            assert_eq!(
+                d.is_watermark_stationary(),
+                d.kind().is_watermark_stationary(),
+                "{name}: delta-altitude verdict must equal fused-kind \
+                 verdict projected through ProofDelta::kind on the fixture \
+                 where the regressed corner's watermarks are bit-identical",
+            );
+        }
+    }
+
+    // ---------- (5) Cross-altitude same-answer with ProofRelation
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(relation) = d.relation() {
+                assert_eq!(
+                    d.is_watermark_stationary(),
+                    relation.is_watermark_stationary(),
+                    "{name}: delta and classification verdicts must agree \
+                     on the four delta-reachable corners",
+                );
+            } else {
+                assert!(
+                    d.is_watermark_stationary(),
+                    "{name}: delta.relation() == None implies the regressed \
+                     corner, where the fixture's underlying watermarks are \
+                     bit-identical, so is_watermark_stationary must be true \
+                     via the field-direct read",
+                );
+                assert!(
+                    d.generations_regressed(),
+                    "{name}: the None branch of delta.relation() is only \
+                     reached on the regressed corner",
+                );
+            }
+        }
+    }
+
+    // ---------- (6) Cross-altitude same-answer with ProofRelationWire
+
+    #[test]
+    fn cross_altitude_agrees_with_proof_relation_wire_on_delta_reachable_corners() {
+        for (name, prior, current, _) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            if let Some(wire) = d.relation_wire() {
+                assert_eq!(
+                    d.is_watermark_stationary(),
+                    wire.is_watermark_stationary(),
+                    "{name}: delta and wire-classification verdicts must \
+                     agree on the four delta-reachable corners",
+                );
+            }
+        }
+    }
+
+    // ---------- (7) Full-classification same-answer via
+    //                ConfigSyncProof::relation_since
+
+    #[test]
+    fn full_classification_agrees_on_every_corner_including_regressed() {
+        for (name, prior, current, want) in corners() {
+            let d = ProofDelta::between(&prior, &current);
+            let r = current.relation_since(&prior);
+            assert_eq!(
+                d.is_watermark_stationary(),
+                r.is_watermark_stationary(),
+                "{name}: delta and full-classification verdicts must agree \
+                 on every corner on the fixture (the regressed corner has \
+                 bit-identical watermarks so the field-direct answer agrees \
+                 with the classification tag-only answer)",
+            );
+            assert_eq!(
+                r.is_watermark_stationary(),
+                want,
+                "{name}: full classification must also match the pinned \
+                 truth table",
+            );
+        }
+    }
+
+    // ---------- (8) Cross-axis meet with is_generation_advanced
+
+    #[test]
+    fn cross_axis_meet_with_is_generation_advanced_at_identity_republish() {
+        // The cross-axis meet identifies IdentityRepublish as the sole
+        // delta cell witnessing BOTH a publish AND a stationary
+        // watermark — the ArcSwap re-publish-of-same-value class at the
+        // delta altitude too, mirroring the identical singleton meet
+        // already pinned at the fused, value, and wire altitudes.
+        let meet: Vec<&'static str> = corners()
+            .into_iter()
+            .map(|(name, prior, current, _)| (name, ProofDelta::between(&prior, &current)))
+            .filter(|(_, d)| d.is_watermark_stationary() && d.is_generation_advanced())
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            meet,
+            vec!["IdentityRepublish"],
+            "is_watermark_stationary AND is_generation_advanced must meet at IdentityRepublish alone",
+        );
+    }
+
+    // ---------- (9) Cardinality-side invariant
+
+    #[test]
+    fn cardinality_partition_is_three_from_two() {
+        let all: Vec<ProofDelta> = corners()
+            .into_iter()
+            .map(|(_, prior, current, _)| ProofDelta::between(&prior, &current))
+            .collect();
+        let (stationary, moved): (Vec<&ProofDelta>, Vec<&ProofDelta>) =
+            all.iter().partition(|d| d.is_watermark_stationary());
+        assert_eq!(
+            stationary.len(),
+            3,
+            "stationary-watermark corners cardinality must be exactly 3 out of 5",
+        );
+        assert_eq!(
+            moved.len(),
+            2,
+            "moved-watermark corners cardinality must be exactly 2 out of 5",
+        );
+        assert_eq!(
+            stationary.len() + moved.len(),
+            all.len(),
+            "partition must be total across the five delta-reachable corners",
+        );
+    }
+
+    // ---------- (10) const-callable on hand-constructed deltas
+
+    #[test]
+    fn const_callable_on_hand_constructed_deltas_at_every_corner() {
+        const STATIONARY: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_stationary();
+        const IDENTITY_REPUBLISH: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_stationary();
+        const PROGRESSION: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(1),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_stationary();
+        const CROSS_STORE: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: true,
+                restart_required_moved: false,
+                free_moved: true,
+            },
+            generations_advanced: Some(0),
+            observed_at_elapsed: None,
+        }
+        .is_watermark_stationary();
+        const REGRESSED: bool = ProofDelta {
+            watermark: WatermarkDelta {
+                full_moved: false,
+                restart_required_moved: false,
+                free_moved: false,
+            },
+            generations_advanced: None,
+            observed_at_elapsed: None,
+        }
+        .is_watermark_stationary();
+        assert!(STATIONARY);
+        assert!(IDENTITY_REPUBLISH);
+        assert!(!PROGRESSION);
+        assert!(!CROSS_STORE);
+        assert!(REGRESSED);
     }
 }
 
