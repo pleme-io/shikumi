@@ -1460,7 +1460,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
             optional = true;
             features = [ "client" "http1" "http2" ];
           }
@@ -3527,7 +3527,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
             features = [ "serde" ];
           }
           {
@@ -3759,7 +3759,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
             features = [ "std" ];
           }
           {
@@ -3831,7 +3831,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
             features = [ "std" ];
           }
           {
@@ -4224,11 +4224,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "client" "h2" "http1" "http2" "runtime" "server" "socket2" "stream" "tcp" ];
       };
-      "hyper 1.11.0" = rec {
+      "hyper 1.11.1" = rec {
         crateName = "hyper";
-        version = "1.11.0";
+        version = "1.11.1";
         edition = "2021";
-        sha256 = "0wha96biivgpj0fpf80a2aar5dfbff1lk62i9x9i2bl53wl5686j";
+        sha256 = "0hxyikj5livhmw5q3x3ifyhphh1g2cjsc32nsg1jcyhflpx03d97";
         authors = [
           "Sean McArthur <sean@seanmonstar.com>"
         ];
@@ -4413,7 +4413,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
             usesDefaultFeatures = false;
           }
           {
@@ -4528,7 +4528,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
           }
           {
             name = "ipnet";
@@ -4587,7 +4587,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
             features = [ "full" ];
           }
           {
@@ -5083,11 +5083,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "serde" "serde-1" "std" ];
       };
-      "indexmap 2.14.0" = rec {
+      "indexmap 2.14.1" = rec {
         crateName = "indexmap";
-        version = "2.14.0";
+        version = "2.14.1";
         edition = "2024";
-        sha256 = "1na9z6f0d5pkjr1lgsni470v98gv2r7c41j8w48skr089x2yjrnl";
+        sha256 = "1sq9z90viwfw8053l32rrby563hy67xl8n6k65d92hi22i421ah7";
         dependencies = [
           {
             name = "equivalent";
@@ -8057,7 +8057,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
             target = { target, features }: (!("wasm32" == target."arch" or null));
             features = [ "http1" "client" ];
           }
@@ -8218,7 +8218,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.11.0";
+            packageId = "hyper 1.11.1";
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
             features = [ "http1" "http2" "client" "server" ];
@@ -9269,7 +9269,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
             rename = "indexmap_2";
             optional = true;
             usesDefaultFeatures = false;
@@ -9408,7 +9408,7 @@ rec {
         dependencies = [
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
           }
           {
             name = "itoa";
@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.732";
+        version = "0.1.733";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10648,7 +10648,7 @@ rec {
         dependencies = [
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.0";
+            packageId = "indexmap 2.14.1";
             features = [ "std" ];
           }
           {
