@@ -14,10 +14,11 @@
 
 New shikumi work aims at one destination: shikumi FULLY SUPPORTS the
 **ConfigPlane** default-config behavior by default. ConfigPlane is the reusable
-pleme-io configuration control plane (surface + API + tool; camelot the first
-consumer) — one central authority owns/discovers/reconciles config for services
-*and* per-tick controllers and pushes/syncs it down, while each component
-resolves its own slice the shikumi progressive-discovery way. Three pieces —
+pleme-io configuration control plane (surface + API + tool; the fleet
+control-plane cluster is the first consumer) — one central authority
+owns/discovers/reconciles config for services *and* per-tick controllers and
+pushes/syncs it down, while each component resolves its own slice the shikumi
+progressive-discovery way. Three pieces —
 (a) + (b) are now **shipped**, (c) remains destination (tier-honest: a
 `Result::Err` is mitigation, not a guarantee):
 
@@ -65,7 +66,7 @@ pushes/syncs config down and broadcasts reloads. `ConfigStore` has NO
 central/broadcast mode today (per-process only) — the broadcast-subscribe surface
 is shikumi's slice of that pattern.
 
-**M0:** one service comes up on camelot-dev resolving `db_host_name` /
+**M0:** one service comes up on a dev cluster resolving `db_host_name` /
 `auth_dns_internal` / S3 / `metrics_port` from the cluster with ZERO hand-injected
 env — shadow-first, golden-conf-gated.
 

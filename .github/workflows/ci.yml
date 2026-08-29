@@ -74,7 +74,7 @@ concurrency:
 jobs:
   cargo-test:
     # Public repo -> ubuntu-latest, matching the fleet visibility-default
-    # that runner-resolve applies (private -> camelot-builder-pleme-eks).
+    # that runner-resolve applies (private -> the self-hosted builder pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

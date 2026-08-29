@@ -512,7 +512,7 @@ impl Format {
     /// cell is empty by the first invariant above and impossible by
     /// construction.
     ///
-    /// **Intended consumers.** A ConfigPlane / camelot diagnostic surface
+    /// **Intended consumers.** A ConfigPlane / fleet diagnostic surface
     /// answering "which cargo features must be enabled to load `.b`?" reads
     /// [`Format::Blue.required_feature()`]. An attestation manifest
     /// recording the feature set a resolved config depended on reads this
