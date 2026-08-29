@@ -1209,10 +1209,41 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
 /// `merge` and one `Vec::push` — so the substrate lift adds zero
 /// per-call overhead the compiler cannot inline away.
 #[must_use]
+/// The env keys the prefix layer must never claim as fields.
+///
+/// ── ★ WHY `config` IS RESERVED (2026-08-29) ────────────────────────────
+///
+/// shikumi's own documented discovery convention is
+/// `ConfigDiscovery::new(app).env_override("<APP>_CONFIG")`, and its own
+/// documented field-override convention is `ConfigStore::load(path,
+/// "<APP>_")`. Those two conventions COLLIDE: the env layer maps
+/// `<PREFIX><FIELD>` onto fields, so `<APP>_CONFIG` is read as a field named
+/// `config`. No consumer declares one, so with `deny_unknown_fields` — which
+/// every fleet consumer sets — the ENTIRE load is refused and the caller
+/// silently falls back to its prescribed tier.
+///
+/// **The documented way to point an application at a config file was the one
+/// way to guarantee it ignored the file.**
+///
+/// Measured 2026-08-29: live in `omoya` (`OMOYA_CONFIG`/`OMOYA_`), `mukae`
+/// and `annai`, latent in all three because it fires only when someone
+/// actually uses the override — and nobody had. Found by RUNNING a daemon,
+/// not by reading any of the three copies of the idiom.
+///
+/// Each consumer patched it locally by moving to an `<APP>_OPT_` prefix, which
+/// is three copies of one rule and cannot stop a fourth consumer writing the
+/// collision fresh. This is the fix at the layer that knows BOTH conventions.
+///
+/// **The cost, stated:** a consumer with a genuine field literally named
+/// `config` loses env-override for that one field. That is the right trade —
+/// a field called `config` inside a config struct is pathological, and the
+/// alternative is silently disabling the file override for everyone.
+pub(crate) const RESERVED_ENV_KEYS: &[&str] = &["config"];
+
 pub(crate) fn merge_env_prefix_layer(chain: ProviderChain, prefix: &str) -> ProviderChain {
     merge_provider_and_record(
         chain,
-        Env::prefixed(prefix).split("__"),
+        Env::prefixed(prefix).split("__").ignore(RESERVED_ENV_KEYS),
         ConfigSource::for_env(prefix),
     )
 }
