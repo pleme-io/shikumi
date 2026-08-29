@@ -46,6 +46,9 @@ pub mod blue_provider;
 pub mod cli;
 pub mod coverage;
 mod cube;
+/// Daemon startup: answer `--help`/`--version` and refuse unknown argv
+/// before any config load or side effect. Ungated -- no clap.
+pub mod daemon;
 pub mod discovered;
 mod discovery;
 mod error;

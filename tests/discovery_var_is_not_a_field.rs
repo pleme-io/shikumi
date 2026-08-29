@@ -32,7 +32,10 @@ struct Probe {
 
 impl Default for Probe {
     fn default() -> Self {
-        Self { listen: "127.0.0.1:53".into(), retries: 1 }
+        Self {
+            listen: "127.0.0.1:53".into(),
+            retries: 1,
+        }
     }
 }
 
@@ -63,7 +66,11 @@ fn the_discovery_variable_does_not_refuse_the_whole_load() {
 
     assert_eq!(got.listen, "0.0.0.0:5353", "file value was not applied");
     assert_eq!(got.retries, 7);
-    assert_ne!(got, Probe::default(), "silently fell back to the default tier");
+    assert_ne!(
+        got,
+        Probe::default(),
+        "silently fell back to the default tier"
+    );
 
     unsafe {
         std::env::remove_var("SHIKUMI_PROBE_CONFIG");
@@ -95,7 +102,10 @@ fn the_env_layer_still_supplies_fields_the_file_omits() {
     }
     let store = shikumi::ConfigStore::<Probe>::load(&path, "SHIKUMI_PROBE2_").expect("load");
     let got = Probe::clone(&store.get());
-    assert_eq!(got.retries, 42, "env layer stopped supplying omitted fields");
+    assert_eq!(
+        got.retries, 42,
+        "env layer stopped supplying omitted fields"
+    );
     assert_eq!(got.listen, "0.0.0.0:5353", "file value lost");
 
     unsafe {
