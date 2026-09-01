@@ -575,10 +575,10 @@ rec {
       };
       "aws-lc-rs" = rec {
         crateName = "aws-lc-rs";
-        version = "1.18.0";
+        version = "1.18.1";
         edition = "2021";
-        links = "aws_lc_rs_1_18_0_sys";
-        sha256 = "17nx79a6wyx6xx5kj0f09vr0wh1q4agwjxqy6w6swfwwhz62sayf";
+        links = "aws_lc_rs_1_18_1_sys";
+        sha256 = "07k2hf51mp5sh47f3dbj5xkygqjr4rrr0j4743llsqwdb03x70dj";
         libName = "aws_lc_rs";
         authors = [
           "AWS-LibCrypto"
@@ -611,10 +611,10 @@ rec {
       };
       "aws-lc-sys" = rec {
         crateName = "aws-lc-sys";
-        version = "0.44.0";
+        version = "0.45.0";
         edition = "2021";
-        links = "aws_lc_0_44_0";
-        sha256 = "10vlwayxyylnn4vs57xs0iy0rp76k50v7zbabkh78cdvx1xsx7zh";
+        links = "aws_lc_0_45_0";
+        sha256 = "09qvqgsy424myj9g1xf1jwa726aqaspjq45qc0p9mmzsahxnrzwv";
         build = "builder/main.rs";
         libName = "aws_lc_sys";
         authors = [
@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.737";
+        version = "0.1.738";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
