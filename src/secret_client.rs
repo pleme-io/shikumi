@@ -1580,6 +1580,200 @@ impl Capabilities {
     pub const fn supports_not_every_non_mutating_op(self) -> bool {
         !self.get || !self.list || !self.versions
     }
+
+    /// Returns `true` iff this capability set advertises AT LEAST ONE
+    /// of the six [`SecretOperation`] variants — i.e. `self.get ||
+    /// self.list || self.put || self.delete || self.rotate ||
+    /// self.versions`.
+    ///
+    /// **The whole-set existential (∃) pole at the [`Capabilities`]
+    /// altitude**, orthogonal to (and welding back together) the
+    /// (any/no × every/not_every) × (write/read) closed matrix already
+    /// shipped at this altitude. The four partitioned ∃/∀ pairs
+    /// ([`Self::supports_any_mutating_op`] / [`Self::supports_no_mutating_op`],
+    /// [`Self::supports_any_non_mutating_op`] / [`Self::supports_no_non_mutating_op`],
+    /// [`Self::supports_every_mutating_op`] / [`Self::supports_not_every_mutating_op`],
+    /// [`Self::supports_every_non_mutating_op`] / [`Self::supports_not_every_non_mutating_op`])
+    /// each read ONE half of the mutating-vs-non-mutating meta-partition
+    /// [`SecretOperation::is_mutating`] / [`SecretOperation::is_non_mutating`]
+    /// names one altitude down; this pair reads the WHOLE
+    /// [`SecretOperation::ALL`] universe at once, without a consumer
+    /// having to compose the two halves inline through the meta-partition
+    /// union law below.
+    ///
+    /// **Cross-altitude weld with [`SecretOperation`].** The ∃ pole
+    /// agrees structurally with the existential quantifier over the
+    /// whole operation axis: `caps.supports_any_op() ==
+    /// SecretOperation::ALL.iter().any(|op| caps.supports(*op))`. Pinned
+    /// by
+    /// [`tests::capabilities_supports_any_op_agrees_with_operation_axis_disjunction`].
+    ///
+    /// **Meta-partition union law.** The whole-set ∃ pole is the union
+    /// of the two partitioned ∃ poles across the mutating-vs-non-mutating
+    /// meta-partition: `caps.supports_any_op() ==
+    /// caps.supports_any_mutating_op() ||
+    /// caps.supports_any_non_mutating_op()`, and dually
+    /// `caps.supports_no_op() == caps.supports_no_mutating_op() &&
+    /// caps.supports_no_non_mutating_op()`. Pinned by
+    /// [`tests::capabilities_supports_any_op_agrees_with_meta_partition_union`].
+    ///
+    /// **Cross-quantifier implication weld with [`Self::supports_every_op`].**
+    /// The ∀ pole implies the ∃ pole: `caps.supports_every_op() ⇒
+    /// caps.supports_any_op()`. Pinned by
+    /// [`tests::capabilities_supports_every_op_implies_supports_any_op`].
+    ///
+    /// **Cross-surface anchors on the shipped constructors.**
+    /// [`Capabilities::full`] advertises every operation, so
+    /// `Capabilities::full().supports_any_op()` is `true` — pinned by
+    /// [`tests::capabilities_full_supports_any_op`].
+    /// [`Capabilities::read_only`] advertises `get` alone, so
+    /// `Capabilities::read_only().supports_any_op()` is `true` — pinned
+    /// by [`tests::capabilities_read_only_supports_any_op`]. Both shipped
+    /// constructors sit on the *capable* pole of this axis by construction;
+    /// the ∃-mute pole is only reachable via a hand-built all-`false`
+    /// [`Capabilities`] value (a hypothetical "resolved backend
+    /// advertises no operation whatsoever" refusal-cache entry, an
+    /// attestation manifest recording a torn/incomplete client init).
+    ///
+    /// Written as an explicit `self.get || self.list || self.put ||
+    /// self.delete || self.rotate || self.versions` disjunction over
+    /// exactly the six [`Capabilities`] fields (rather than iterating
+    /// [`SecretOperation::ALL`] and dispatching through [`Self::supports`]
+    /// on every arm, and rather than delegating to `supports_any_mutating_op
+    /// () || supports_any_non_mutating_op()`), so the compile-time weld
+    /// to the six specific field identifiers stays load-bearing: a
+    /// future [`Capabilities`] field rename (`put` → `create`, `rotate`
+    /// → `renew`, `versions` → `history`) fails at `cargo build` here
+    /// before drifting through any consumer that reasons about the
+    /// whole-set ∃ pole, and a hypothetical seventh [`SecretOperation`]
+    /// variant with its own [`Capabilities`] field surfaces at the
+    /// cross-altitude agreement pin above rather than silently changing
+    /// this predicate's answer. Idiom-peer of the explicit-disjunction
+    /// discipline on [`Self::supports_any_mutating_op`] /
+    /// [`Self::supports_any_non_mutating_op`] at this same altitude.
+    ///
+    /// The compound ↔ complement law (`caps.supports_any_op() ==
+    /// !caps.supports_no_op()`) is pinned by
+    /// [`tests::capabilities_supports_any_op_is_complement_of_supports_no_op`].
+    /// The compile-time weld is pinned by
+    /// [`tests::capabilities_supports_any_op_is_const_callable`].
+    #[must_use]
+    pub const fn supports_any_op(self) -> bool {
+        self.get || self.list || self.put || self.delete || self.rotate || self.versions
+    }
+
+    /// Returns `true` iff this capability set advertises NONE of the
+    /// six [`SecretOperation`] variants — i.e. `!self.get && !self.list
+    /// && !self.put && !self.delete && !self.rotate && !self.versions`.
+    ///
+    /// Complement pole of [`Self::supports_any_op`] on the whole-set
+    /// existential axis at the [`Capabilities`] altitude; equivalent to
+    /// `!self.supports_any_op()`. Named separately (rather than left as
+    /// a negation) so consumers reading the "advertises no operation
+    /// whatsoever" half of the axis no longer negate
+    /// [`Self::supports_any_op`] — a shape whose polarity a future
+    /// seventh [`SecretOperation`] variant with its own [`Capabilities`]
+    /// field would silently include in the negation without extending
+    /// this predicate. The direct predicate, written as `!self.get &&
+    /// !self.list && !self.put && !self.delete && !self.rotate &&
+    /// !self.versions` over exactly the six currently-declared fields,
+    /// forces the maintainer landing the new [`Capabilities`] field to
+    /// update this arm in lockstep with the new field — or the
+    /// cross-altitude weld with the operation axis one altitude down
+    /// diverges at test time.
+    ///
+    /// See [`Self::supports_any_op`] for the full compound-polarity
+    /// contract, the cross-altitude weld, the meta-partition union
+    /// law, the cross-quantifier implication (∀ ⇒ ∃), the cross-surface
+    /// anchors on [`Self::full`] / [`Self::read_only`] (both on the
+    /// *capable* pole by construction, so this ∃-mute pole is only
+    /// reachable via a hand-built all-`false` [`Capabilities`] value),
+    /// and the load-bearing test suite.
+    #[must_use]
+    pub const fn supports_no_op(self) -> bool {
+        !self.get && !self.list && !self.put && !self.delete && !self.rotate && !self.versions
+    }
+
+    /// Returns `true` iff this capability set advertises ALL SIX
+    /// [`SecretOperation`] variants — i.e. `self.get && self.list &&
+    /// self.put && self.delete && self.rotate && self.versions`.
+    ///
+    /// **The whole-set universal (∀) pole at the [`Capabilities`]
+    /// altitude**, orthogonal to (and welding back together) the two
+    /// partitioned ∀ pairs [`Self::supports_every_mutating_op`] /
+    /// [`Self::supports_not_every_mutating_op`] and
+    /// [`Self::supports_every_non_mutating_op`] /
+    /// [`Self::supports_not_every_non_mutating_op`] already shipped on
+    /// this altitude. The ∀ pole reads the WHOLE
+    /// [`SecretOperation::ALL`] universe at once and is the direct
+    /// characterisation of the shipped [`Self::full`] constructor —
+    /// `caps.supports_every_op() == (caps == Capabilities::full())` by
+    /// construction — pinned by
+    /// [`tests::capabilities_supports_every_op_agrees_with_full_constructor`].
+    ///
+    /// **Cross-altitude weld with [`SecretOperation`].** The ∀ pole
+    /// agrees structurally with the universal quantifier over the whole
+    /// operation axis: `caps.supports_every_op() ==
+    /// SecretOperation::ALL.iter().all(|op| caps.supports(*op))`. Pinned
+    /// by
+    /// [`tests::capabilities_supports_every_op_agrees_with_operation_axis_conjunction`].
+    ///
+    /// **Meta-partition intersection law.** The whole-set ∀ pole is the
+    /// intersection of the two partitioned ∀ poles across the mutating-
+    /// vs-non-mutating meta-partition: `caps.supports_every_op() ==
+    /// caps.supports_every_mutating_op() &&
+    /// caps.supports_every_non_mutating_op()`. Pinned by
+    /// [`tests::capabilities_supports_every_op_agrees_with_meta_partition_intersection`].
+    ///
+    /// **Cross-quantifier implication weld with [`Self::supports_any_op`].**
+    /// The ∀ pole implies the ∃ pole on this same whole-set axis:
+    /// `caps.supports_every_op() ⇒ caps.supports_any_op()`. Pinned by
+    /// [`tests::capabilities_supports_every_op_implies_supports_any_op`].
+    ///
+    /// Written as an explicit conjunction over exactly the six
+    /// [`Capabilities`] fields (rather than iterating
+    /// [`SecretOperation::ALL`] or delegating to the meta-partition
+    /// intersection), so the compile-time weld to the six specific
+    /// field identifiers stays load-bearing under a future field rename
+    /// or a hypothetical seventh variant, matching the explicit-arms
+    /// discipline of the four partitioned ∃/∀ predicates already at
+    /// this altitude.
+    ///
+    /// The compound ↔ complement law
+    /// (`caps.supports_every_op() ==
+    /// !caps.supports_not_every_op()`) is pinned by
+    /// [`tests::capabilities_supports_every_op_is_complement_of_supports_not_every_op`].
+    /// The compile-time weld is pinned by
+    /// [`tests::capabilities_supports_every_op_is_const_callable`].
+    #[must_use]
+    pub const fn supports_every_op(self) -> bool {
+        self.get && self.list && self.put && self.delete && self.rotate && self.versions
+    }
+
+    /// Returns `true` iff this capability set is **missing at least
+    /// one** of the six [`SecretOperation`] variants — i.e. `!self.get
+    /// || !self.list || !self.put || !self.delete || !self.rotate ||
+    /// !self.versions`.
+    ///
+    /// Complement pole of [`Self::supports_every_op`] on the whole-set
+    /// universal axis at the [`Capabilities`] altitude; equivalent to
+    /// `!self.supports_every_op()`. Named separately (rather than left
+    /// as a negation) so consumers reading the "missing at least one
+    /// op" half of the axis no longer negate [`Self::supports_every_op`]
+    /// — a shape whose polarity a future seventh [`SecretOperation`]
+    /// variant with its own [`Capabilities`] field would silently include
+    /// in the negation without extending this predicate. The direct
+    /// predicate is written as `!self.get || !self.list || !self.put ||
+    /// !self.delete || !self.rotate || !self.versions` over exactly the
+    /// six currently-declared fields.
+    ///
+    /// See [`Self::supports_every_op`] for the full compound-polarity
+    /// contract, the cross-altitude weld, the meta-partition
+    /// intersection law, and the cross-quantifier implication (∀ ⇒ ∃).
+    #[must_use]
+    pub const fn supports_not_every_op(self) -> bool {
+        !self.get || !self.list || !self.put || !self.delete || !self.rotate || !self.versions
+    }
 }
 
 /// Closed-axis primitive over the shikumi-provided [`SecretClient`]
@@ -5746,6 +5940,605 @@ mod tests {
         const _: () = assert!(!Capabilities::full().supports_not_every_non_mutating_op());
         const _: () = assert!(!Capabilities::read_only().supports_every_non_mutating_op());
         const _: () = assert!(Capabilities::read_only().supports_not_every_non_mutating_op());
+    }
+
+    // ── Capabilities — whole-set (unpartitioned) ∃ / ∀ pairs ────────
+    //
+    // Pin table for the two whole-set compound-polarity pairs
+    // `supports_any_op` / `supports_no_op` (∃) and
+    // `supports_every_op` / `supports_not_every_op` (∀) at the
+    // Capabilities altitude — orthogonal to (and welding back together)
+    // the (any/no × every/not_every) × (write/read) closed matrix
+    // already shipped:
+    //   1. `capabilities_full_supports_any_op` — cross-surface anchor
+    //      on the shipped `full()` constructor (capable pole of ∃).
+    //   2. `capabilities_read_only_supports_any_op` — cross-surface
+    //      anchor on the shipped `read_only()` constructor (also on
+    //      the capable pole of ∃: even the get-only shape advertises
+    //      SOME operation).
+    //   3. `capabilities_empty_supports_no_op` — cross-surface anchor
+    //      on the hand-built all-`false` shape (∃-mute pole).
+    //   4. `capabilities_supports_any_op_is_complement_of_supports_no_op`
+    //      — the ∃ modal-pair complement law.
+    //   5. `capabilities_supports_any_op_agrees_with_operation_axis_disjunction`
+    //      — the cross-altitude weld with the operation axis (∃).
+    //   6. `capabilities_supports_any_op_agrees_with_meta_partition_union`
+    //      — the meta-partition union law: whole-set ∃ = ∃-mutating ∨
+    //      ∃-non-mutating, and dually whole-set ¬∃ = ¬∃-mutating ∧
+    //      ¬∃-non-mutating.
+    //   7. `capabilities_supports_any_op_is_const_callable` —
+    //      const-callability weld on the ∃ pair.
+    //   8. `capabilities_full_supports_every_op` — cross-surface
+    //      anchor on `full()` (∀ pole).
+    //   9. `capabilities_read_only_supports_not_every_op` —
+    //      cross-surface anchor on `read_only()` (missing every
+    //      mutating op and two of three non-mutating ops).
+    //  10. `capabilities_supports_every_op_agrees_with_full_constructor`
+    //      — the ∀ pole exactly characterises the shipped `full()`
+    //      constructor.
+    //  11. `capabilities_supports_every_op_is_complement_of_supports_not_every_op`
+    //      — the ∀ modal-pair complement law.
+    //  12. `capabilities_supports_every_op_agrees_with_operation_axis_conjunction`
+    //      — the cross-altitude weld with the operation axis (∀).
+    //  13. `capabilities_supports_every_op_agrees_with_meta_partition_intersection`
+    //      — the meta-partition intersection law: whole-set ∀ =
+    //      ∀-mutating ∧ ∀-non-mutating.
+    //  14. `capabilities_supports_every_op_implies_supports_any_op`
+    //      — the cross-quantifier ∀ ⇒ ∃ weld on the whole-set axis.
+    //  15. `capabilities_supports_every_op_is_const_callable` —
+    //      const-callability weld on the ∀ pair.
+
+    #[test]
+    fn capabilities_full_supports_any_op() {
+        // Cross-surface anchor: the shipped `Capabilities::full()` set
+        // sits on the capable pole of the whole-set ∃ axis (advertises
+        // every operation, so the ∃ predicate trivially fires).
+        assert!(Capabilities::full().supports_any_op());
+        assert!(!Capabilities::full().supports_no_op());
+    }
+
+    #[test]
+    fn capabilities_read_only_supports_any_op() {
+        // Cross-surface anchor: the shipped `Capabilities::read_only()`
+        // set also sits on the capable pole of the whole-set ∃ axis
+        // (advertises `get: true`, so ∃ fires despite the five
+        // remaining flags being `false`). Both shipped constructors
+        // sit on the SAME pole of this axis by construction; the
+        // ∃-mute pole is only reachable via a hand-built all-`false`
+        // Capabilities value.
+        assert!(Capabilities::read_only().supports_any_op());
+        assert!(!Capabilities::read_only().supports_no_op());
+    }
+
+    #[test]
+    fn capabilities_empty_supports_no_op() {
+        // Cross-surface anchor on the hand-built all-`false` shape:
+        // the ∃-mute pole (no shipped constructor lands here, but the
+        // pole is reachable and must remain crisply named). A future
+        // edit that flipped either polarity would silently drift the
+        // ∃-mute anchor; this pin locks the pole to the exact
+        // all-`false` shape.
+        let empty = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        assert!(!empty.supports_any_op());
+        assert!(empty.supports_no_op());
+    }
+
+    #[test]
+    fn capabilities_supports_any_op_is_complement_of_supports_no_op() {
+        // The modal-pair complement law at the Capabilities altitude on
+        // the whole-set ∃ axis: `caps.supports_any_op() ==
+        // !caps.supports_no_op()` pointwise on every shape in the
+        // canonical sample table.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: true,
+                rotate: false,
+                versions: false,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_any_op(),
+                !caps.supports_no_op(),
+                "supports_any_op and !supports_no_op must agree pointwise on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_any_op_agrees_with_operation_axis_disjunction() {
+        // Cross-altitude weld with the operation axis: the whole-set ∃
+        // pole holds iff there EXISTS a SecretOperation variant `op`
+        // with `caps.supports(op)`. Locks the Capabilities-altitude
+        // whole-set predicate to the operation-altitude enumeration
+        // through the (Capabilities → SecretOperation) `supports`
+        // projection: a future edit that flipped the polarity on
+        // either side without flipping the other diverges here at
+        // test time.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: true,
+                versions: false,
+            },
+        ];
+        for caps in samples {
+            let by_disjunction_over_operation_axis = SecretOperation::ALL
+                .iter()
+                .copied()
+                .any(|op| caps.supports(op));
+            assert_eq!(
+                caps.supports_any_op(),
+                by_disjunction_over_operation_axis,
+                "supports_any_op must agree with any(caps.supports(op)) over SecretOperation::ALL on {caps:?}",
+            );
+            let by_conjunction_over_operation_axis = SecretOperation::ALL
+                .iter()
+                .copied()
+                .all(|op| !caps.supports(op));
+            assert_eq!(
+                caps.supports_no_op(),
+                by_conjunction_over_operation_axis,
+                "supports_no_op must agree with all(!caps.supports(op)) over SecretOperation::ALL on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_any_op_agrees_with_meta_partition_union() {
+        // Meta-partition union / intersection law at the Capabilities
+        // altitude: the whole-set ∃ pole is the union of the two
+        // partitioned ∃ poles across the mutating-vs-non-mutating
+        // meta-partition, and dually the whole-set ¬∃ pole is the
+        // intersection of the two partitioned ¬∃ poles. This locks
+        // the whole-set pair to the already-shipped WRITE-half and
+        // READ-half ∃ pairs — a future edit that shifted a field from
+        // one half to the other on ONE of the three predicates
+        // diverges here.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: true,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_any_op(),
+                caps.supports_any_mutating_op() || caps.supports_any_non_mutating_op(),
+                "meta-partition union: supports_any_op must equal supports_any_mutating_op ∨ supports_any_non_mutating_op on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_no_op(),
+                caps.supports_no_mutating_op() && caps.supports_no_non_mutating_op(),
+                "meta-partition intersection: supports_no_op must equal supports_no_mutating_op ∧ supports_no_non_mutating_op on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_any_op_is_const_callable() {
+        // The whole-set ∃-quantifier pair is `const`-callable, matching
+        // the const-ness of the shipped constructors and of the four
+        // partitioned ∃/∀ pairs at this altitude. Const-block asserts
+        // make the weld load-bearing at crate compile time.
+        const _: () = assert!(Capabilities::full().supports_any_op());
+        const _: () = assert!(!Capabilities::full().supports_no_op());
+        const _: () = assert!(Capabilities::read_only().supports_any_op());
+        const _: () = assert!(!Capabilities::read_only().supports_no_op());
+    }
+
+    #[test]
+    fn capabilities_full_supports_every_op() {
+        // Cross-surface anchor: the shipped `Capabilities::full()` set
+        // sits on the ∀ pole of the whole-set universal axis
+        // (advertises every one of the six operations).
+        assert!(Capabilities::full().supports_every_op());
+        assert!(!Capabilities::full().supports_not_every_op());
+    }
+
+    #[test]
+    fn capabilities_read_only_supports_not_every_op() {
+        // Cross-surface anchor: the shipped `Capabilities::read_only()`
+        // set sits on the ¬∀ pole of the whole-set universal axis
+        // (advertises `get` alone, missing every mutating op and two
+        // of three non-mutating ops). Anchor asymmetry: on the ∃ axis
+        // both shipped constructors sit on the capable pole, on the
+        // ∀ axis they sit on OPPOSITE poles — `read_only` is the
+        // partial shape that distinguishes the two quantifiers on the
+        // whole-set axis, mirroring its role on the READ-half ∀ axis.
+        assert!(!Capabilities::read_only().supports_every_op());
+        assert!(Capabilities::read_only().supports_not_every_op());
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_agrees_with_full_constructor() {
+        // The whole-set ∀ pole exactly characterises the shipped
+        // `full()` constructor: `caps.supports_every_op() ⇔ caps ==
+        // Capabilities::full()`. A future edit that scoped `full()`
+        // down (dropping one of the six flags) would silently break
+        // this equivalence — the anchor pins the shipped constructor's
+        // whole-set shape to the ∀ predicate.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: false,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_every_op(),
+                caps == Capabilities::full(),
+                "supports_every_op must exactly characterise Capabilities::full() on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_is_complement_of_supports_not_every_op() {
+        // The modal-pair complement law at the Capabilities altitude on
+        // the whole-set ∀ axis.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_every_op(),
+                !caps.supports_not_every_op(),
+                "supports_every_op and !supports_not_every_op must agree pointwise on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_agrees_with_operation_axis_conjunction() {
+        // Cross-altitude weld: `caps.supports_every_op() ==
+        // SecretOperation::ALL.iter().all(|op| caps.supports(*op))`.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            let by_conjunction = SecretOperation::ALL
+                .iter()
+                .copied()
+                .all(|op| caps.supports(op));
+            assert_eq!(
+                caps.supports_every_op(),
+                by_conjunction,
+                "supports_every_op must agree with all(caps.supports(op)) over SecretOperation::ALL on {caps:?}",
+            );
+            let by_disjunction_of_negation = SecretOperation::ALL
+                .iter()
+                .copied()
+                .any(|op| !caps.supports(op));
+            assert_eq!(
+                caps.supports_not_every_op(),
+                by_disjunction_of_negation,
+                "supports_not_every_op must agree with any(!caps.supports(op)) over SecretOperation::ALL on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_agrees_with_meta_partition_intersection() {
+        // Meta-partition intersection law at the Capabilities altitude:
+        // the whole-set ∀ pole is the intersection of the two partitioned
+        // ∀ poles across the mutating-vs-non-mutating meta-partition.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_every_op(),
+                caps.supports_every_mutating_op() && caps.supports_every_non_mutating_op(),
+                "meta-partition intersection: supports_every_op must equal supports_every_mutating_op ∧ supports_every_non_mutating_op on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_implies_supports_any_op() {
+        // Cross-quantifier weld on the whole-set axis: ∀ ⇒ ∃, and
+        // dually ¬∃ ⇒ ¬∀. A future edit that drifted one polarity
+        // from the other on this pair fails here.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+        ];
+        for caps in samples {
+            if caps.supports_every_op() {
+                assert!(
+                    caps.supports_any_op(),
+                    "∀ ⇒ ∃: supports_every_op holds but supports_any_op does not on {caps:?}",
+                );
+            }
+            if caps.supports_no_op() {
+                assert!(
+                    caps.supports_not_every_op(),
+                    "¬∃ ⇒ ¬∀: supports_no_op holds but supports_not_every_op does not on {caps:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_every_op_is_const_callable() {
+        // The whole-set ∀-quantifier pair is `const`-callable.
+        const _: () = assert!(Capabilities::full().supports_every_op());
+        const _: () = assert!(!Capabilities::full().supports_not_every_op());
+        const _: () = assert!(!Capabilities::read_only().supports_every_op());
+        const _: () = assert!(Capabilities::read_only().supports_not_every_op());
     }
 
     // ── SecretOperation — Ord / Display / FromStr / serde ──────────
