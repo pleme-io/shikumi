@@ -1206,6 +1206,164 @@ impl Capabilities {
     pub const fn supports_no_mutating_op(self) -> bool {
         !self.put && !self.delete && !self.rotate
     }
+
+    /// Returns `true` iff this capability set advertises AT LEAST ONE
+    /// of the three non-mutating [`SecretOperation`] variants
+    /// ([`SecretOperation::Get`], [`SecretOperation::List`],
+    /// [`SecretOperation::GetVersion`]) — i.e. `self.get || self.list
+    /// || self.versions`.
+    ///
+    /// **The read-capable pole of the compound-polarity axis
+    /// [`SecretOperation::is_non_mutating`] names one altitude down**,
+    /// lifted onto the [`Capabilities`] altitude — orthogonal READ-half
+    /// counterpart of the WRITE-half pair
+    /// [`Self::supports_any_mutating_op`] / [`Self::supports_no_mutating_op`]
+    /// already shipped on this altitude. Together the two pairs cover
+    /// the two poles of the read-vs-write meta-partition
+    /// [`SecretOperation::is_mutating`] / [`SecretOperation::is_non_mutating`]
+    /// names one altitude down: any [`Capabilities`] value now surfaces
+    /// its WRITE-half and READ-half "any / none" answers through four
+    /// welded predicates at the primitive's own altitude, without a
+    /// consumer holding a bare [`Capabilities`] value ever having to
+    /// re-derive the three-arm disjunction inline.
+    ///
+    /// The [`SecretOperation::is_non_mutating`] pair already partitions
+    /// [`SecretOperation::ALL`] into the read-half
+    /// ([`SecretOperation::Get`] / [`SecretOperation::List`] /
+    /// [`SecretOperation::GetVersion`]) and write-half
+    /// ([`SecretOperation::Put`] / [`SecretOperation::Delete`] /
+    /// [`SecretOperation::Rotate`]) at the operation altitude; this
+    /// method lifts the *read-capable* pole onto the capability-set
+    /// altitude so a consumer holding a [`Capabilities`] value alone (a
+    /// daemon startup gate: "the resolved backend advertises no
+    /// non-mutating operation at all, so this deployment cannot serve
+    /// any read-side request — refuse to start"; an RBAC dispatch
+    /// table: "reject a deployment whose declared role requires reads
+    /// against a `Capabilities` set that advertises none"; an
+    /// attestation manifest recording the count of resolved backends
+    /// grouped by whether the operator retained ANY read access; a
+    /// `/healthz/capabilities` dashboard bucketing runtime clients by
+    /// their read-capability pole) names the *positive* form of the
+    /// query at the call site instead of the three-arm disjunction
+    /// `caps.get || caps.list || caps.versions` and reads the pole
+    /// through ONE welded predicate — the same relief
+    /// [`Self::supports_any_mutating_op`] provides on the write pole
+    /// and the same relief the [`SecretOperation::is_non_mutating`]
+    /// pole provides one altitude down on the operation-tag surface.
+    ///
+    /// **Cross-altitude weld with [`SecretOperation::is_non_mutating`].**
+    /// The two poles agree structurally:
+    /// `caps.supports_any_non_mutating_op()` holds iff there EXISTS a
+    /// [`SecretOperation`] variant satisfying both
+    /// `op.is_non_mutating()` and `caps.supports(op)` — i.e.,
+    /// `caps.supports_any_non_mutating_op() == SecretOperation::ALL.iter()
+    /// .any(|op| op.is_non_mutating() && caps.supports(*op))`. This law
+    /// is what makes the compound predicate on this altitude coherent
+    /// with the non-mutating-pole meta-partition on the operation
+    /// altitude — a future edit that flipped the polarity on either
+    /// side without flipping the other diverges here at test time,
+    /// before drifting through any RBAC gate that reasons about the
+    /// two altitudes as one pole. Pinned by
+    /// [`tests::capabilities_supports_any_non_mutating_op_agrees_with_operation_is_non_mutating`].
+    ///
+    /// **Cross-surface anchors on the shipped constructors.**
+    /// [`Capabilities::full`] advertises every non-mutating operation
+    /// (`get`, `list`, `versions` all `true`), so
+    /// `Capabilities::full().supports_any_non_mutating_op()` is `true`
+    /// — pinned by
+    /// [`tests::capabilities_full_supports_any_non_mutating_op`].
+    /// [`Capabilities::read_only`] advertises `get: true` (with `list`
+    /// / `versions` both `false`), so
+    /// `Capabilities::read_only().supports_any_non_mutating_op()` is
+    /// `true` too — pinned by
+    /// [`tests::capabilities_read_only_supports_any_non_mutating_op`].
+    /// Both shipped constructors sit on the same read-capable pole of
+    /// this compound-polarity axis by construction, mirroring the
+    /// (asymmetric) fact that the two shipped constructors sit on
+    /// OPPOSITE poles of the write-capable axis
+    /// [`Self::supports_any_mutating_op`] (only [`Self::full`] fires
+    /// there): shikumi ships no read-incapable constructor, so the
+    /// non-mutating-pole predicate only distinguishes hand-rolled
+    /// [`Capabilities`] shapes (e.g. a write-only backend), never
+    /// either shipped preset.
+    ///
+    /// Written as an explicit `self.get || self.list || self.versions`
+    /// disjunction over exactly the three non-mutating fields (rather
+    /// than iterating [`SecretOperation::ALL`] and dispatching through
+    /// [`Self::supports`] on every arm), so the compile-time weld to
+    /// the three specific field identifiers stays load-bearing: a
+    /// future [`Capabilities`] field rename (`get` → `read`, `versions`
+    /// → `history`) fails at `cargo build` here before drifting through
+    /// any consumer that reasons about the read-capable pole, and a
+    /// hypothetical fourth non-mutating operation landing on
+    /// [`SecretOperation`] (a `Watch` streaming subscription, a
+    /// `Metadata` read) surfaces at the cross-altitude agreement pin
+    /// above rather than silently changing this predicate's answer.
+    /// Idiom-peer of the explicit-arms discipline
+    /// [`SecretOperation::is_non_mutating`] carries on its
+    /// `Self::Get | Self::List | Self::GetVersion` arm one altitude
+    /// down and of [`Self::supports_any_mutating_op`]'s
+    /// `self.put || self.delete || self.rotate` disjunction on the
+    /// write pole of this same altitude.
+    ///
+    /// The compound ↔ complement law
+    /// (`caps.supports_any_non_mutating_op() ==
+    /// !caps.supports_no_non_mutating_op()`) is pinned by
+    /// [`tests::capabilities_supports_any_non_mutating_op_is_complement_of_supports_no_non_mutating_op`].
+    /// The compile-time weld is pinned by
+    /// [`tests::capabilities_supports_any_non_mutating_op_is_const_callable`].
+    #[must_use]
+    pub const fn supports_any_non_mutating_op(self) -> bool {
+        self.get || self.list || self.versions
+    }
+
+    /// Returns `true` iff this capability set advertises NONE of the
+    /// three non-mutating [`SecretOperation`] variants
+    /// ([`SecretOperation::Get`], [`SecretOperation::List`],
+    /// [`SecretOperation::GetVersion`]) — i.e. `!self.get && !self.list
+    /// && !self.versions`.
+    ///
+    /// Complement pole of [`Self::supports_any_non_mutating_op`] on
+    /// the read-capability meta-partition at the [`Capabilities`]
+    /// altitude; equivalent to `!self.supports_any_non_mutating_op()`.
+    /// Named separately (rather than left as a negation) so consumers
+    /// reading the read-incapable half of the axis no longer negate
+    /// [`Self::supports_any_non_mutating_op`] — a shape whose polarity
+    /// a future fourth non-mutating [`SecretOperation`] variant (a
+    /// `Watch` streaming subscription that reads without mutating, a
+    /// `Metadata` read) with its own [`Capabilities`] field would
+    /// silently include in the negation without extending this
+    /// predicate. The direct predicate, written as
+    /// `!self.get && !self.list && !self.versions` over exactly the
+    /// three currently-non-mutating fields, forces the maintainer
+    /// landing the new [`Capabilities`] field to update this arm in
+    /// lockstep with the new field — or the cross-altitude weld with
+    /// [`SecretOperation::is_non_mutating`] one altitude down diverges
+    /// at test time.
+    ///
+    /// See [`Self::supports_any_non_mutating_op`] for the full
+    /// compound-polarity contract, the cross-altitude weld with
+    /// [`SecretOperation::is_non_mutating`] /
+    /// [`SecretOperation::is_mutating`], the cross-surface anchors on
+    /// [`Self::full`] / [`Self::read_only`] (both on the read-capable
+    /// pole), and the load-bearing test suite.
+    ///
+    /// Named `supports_no_non_mutating_op` (rather than
+    /// `is_write_only` or `has_no_reads`) to match the compound-
+    /// polarity naming discipline established by
+    /// [`Self::supports_any_mutating_op`] /
+    /// [`Self::supports_no_mutating_op`] on the write pole of this same
+    /// altitude and by [`SecretOperation::is_mutating`] /
+    /// [`SecretOperation::is_non_mutating`] one altitude down — the
+    /// `is_write_only` name would falsely imply the shape *also*
+    /// advertises every mutating operation (a strictly stronger
+    /// constraint than mere read-incapability), whereas
+    /// `supports_no_non_mutating_op` names ONLY the read-incapability
+    /// pole without saying anything about the mutating half.
+    #[must_use]
+    pub const fn supports_no_non_mutating_op(self) -> bool {
+        !self.get && !self.list && !self.versions
+    }
 }
 
 /// Closed-axis primitive over the shikumi-provided [`SecretClient`]
@@ -4543,6 +4701,226 @@ mod tests {
         const _: () = assert!(!Capabilities::full().supports_no_mutating_op());
         const _: () = assert!(!Capabilities::read_only().supports_any_mutating_op());
         const _: () = assert!(Capabilities::read_only().supports_no_mutating_op());
+    }
+
+    #[test]
+    fn capabilities_full_supports_any_non_mutating_op() {
+        // Cross-surface anchor: the shipped `Capabilities::full()` set
+        // sits on the read-capable pole of the READ-half compound-
+        // polarity axis (advertises every non-mutating operation, so
+        // the compound polarity trivially fires). A future edit that
+        // scoped `Capabilities::full()` down (dropping every one of
+        // `get` / `list` / `versions`) would silently flip this anchor
+        // and fail here at the shipped-constructor boundary before
+        // drifting through any RBAC gate reading the polarity.
+        assert!(Capabilities::full().supports_any_non_mutating_op());
+        assert!(!Capabilities::full().supports_no_non_mutating_op());
+    }
+
+    #[test]
+    fn capabilities_read_only_supports_any_non_mutating_op() {
+        // Cross-surface anchor: the shipped `Capabilities::read_only()`
+        // set sits on the read-capable pole (advertises `get: true`,
+        // with `list` / `versions` both `false`, so the read-half
+        // three-arm disjunction still fires on the first arm). A
+        // future edit that dropped `get: true` from `read_only()`
+        // would silently flip this anchor. Note: unlike the WRITE-half
+        // pair (where the two shipped constructors sit on OPPOSITE
+        // poles), on the READ-half axis BOTH `full()` and `read_only()`
+        // sit on the SAME (read-capable) pole — shikumi ships no
+        // read-incapable constructor, so the non-mutating-pole
+        // predicate only distinguishes hand-rolled `Capabilities`
+        // shapes (e.g. a write-only backend). That is exactly what
+        // the compound name `supports_any_non_mutating_op` (rather
+        // than `is_readable`) records: the name partitions the axis
+        // without claiming either shipped constructor as its
+        // canonical anchor on the read-incapable pole.
+        assert!(Capabilities::read_only().supports_any_non_mutating_op());
+        assert!(!Capabilities::read_only().supports_no_non_mutating_op());
+    }
+
+    #[test]
+    fn capabilities_supports_any_non_mutating_op_is_complement_of_supports_no_non_mutating_op() {
+        // The modal-pair complement law at the Capabilities altitude
+        // on the READ-half axis: `caps.supports_any_non_mutating_op()
+        // == !caps.supports_no_non_mutating_op()` pointwise on every
+        // Capabilities shape in the canonical sample table. A future
+        // edit that drifted one polarity from the other fails here
+        // before any RBAC gate can observe the divergence. Idiom-peer
+        // of the pair-complement law on
+        // `Capabilities::supports_any_mutating_op` /
+        // `Capabilities::supports_no_mutating_op` on the WRITE-half
+        // axis at this same altitude, of
+        // `SecretOperation::is_non_mutating` /
+        // `SecretOperation::is_mutating` one altitude down, and of
+        // `ConfigTierKind::is_computed` / `ConfigTierKind::is_custom`
+        // one primitive over. The sample table includes a write-only
+        // shape (put/delete/rotate all `true`, get/list/versions all
+        // `false`) that is the *distinguishing* case for the READ-half
+        // axis — neither shipped constructor exercises the read-
+        // incapable pole, so an explicit hand-rolled shape here is
+        // what keeps the complement law non-trivial across both
+        // poles.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: false,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            assert_eq!(
+                caps.supports_any_non_mutating_op(),
+                !caps.supports_no_non_mutating_op(),
+                "supports_any_non_mutating_op and !supports_no_non_mutating_op must agree pointwise on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_any_non_mutating_op_agrees_with_operation_is_non_mutating() {
+        // The cross-altitude weld with `SecretOperation::is_non_mutating`
+        // one altitude down: `caps.supports_any_non_mutating_op()`
+        // holds iff there EXISTS a SecretOperation variant satisfying
+        // both `op.is_non_mutating()` and `caps.supports(op)`. Locks
+        // the Capabilities-altitude READ-half compound polarity to the
+        // operation-altitude READ-half compound polarity through the
+        // (Capabilities → SecretOperation) `supports` projection: a
+        // future edit that flipped the polarity on either side without
+        // flipping the other diverges here at test time, before
+        // drifting through any RBAC gate that reasons about the two
+        // altitudes as one pole. Cross-altitude analogue of the
+        // WRITE-half weld
+        // `capabilities_supports_any_mutating_op_agrees_with_operation_is_mutating`
+        // at this same altitude and of the tag ↔ kind agreement laws
+        // on `ConfigTier::is_computed` / `ConfigTierKind::is_computed`
+        // and on `Provenance::is_computed` / `ConfigTier::is_computed`.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            let by_disjunction_over_operation_axis = SecretOperation::ALL
+                .iter()
+                .copied()
+                .any(|op| op.is_non_mutating() && caps.supports(op));
+            assert_eq!(
+                caps.supports_any_non_mutating_op(),
+                by_disjunction_over_operation_axis,
+                "supports_any_non_mutating_op must agree with any(op.is_non_mutating() && caps.supports(op)) on {caps:?}",
+            );
+            let by_conjunction_over_operation_axis = SecretOperation::ALL
+                .iter()
+                .copied()
+                .all(|op| !op.is_non_mutating() || !caps.supports(op));
+            assert_eq!(
+                caps.supports_no_non_mutating_op(),
+                by_conjunction_over_operation_axis,
+                "supports_no_non_mutating_op must agree with all(!op.is_non_mutating() || !caps.supports(op)) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_any_non_mutating_op_is_const_callable() {
+        // The Capabilities-altitude READ-half compound-polarity pair
+        // is `const`-callable, matching the const-ness of the shipped
+        // constructors `Capabilities::read_only` / `Capabilities::full`,
+        // of the WRITE-half pair
+        // `Capabilities::supports_any_mutating_op` /
+        // `Capabilities::supports_no_mutating_op` at this same
+        // altitude, and of the SecretOperation-altitude compound
+        // polarity `SecretOperation::is_mutating` /
+        // `SecretOperation::is_non_mutating` one altitude down. Const-
+        // block asserts make the weld load-bearing at crate compile
+        // time: a future edit that flipped a polarity on this predicate
+        // fails at `cargo build`, not just at this test's runtime
+        // assertion. Idiom-peer of
+        // `capabilities_supports_any_mutating_op_is_const_callable` on
+        // the WRITE pole and of
+        // `secret_operation_is_mutating_is_const_callable` one
+        // altitude down.
+        const _: () = assert!(Capabilities::full().supports_any_non_mutating_op());
+        const _: () = assert!(!Capabilities::full().supports_no_non_mutating_op());
+        const _: () = assert!(Capabilities::read_only().supports_any_non_mutating_op());
+        const _: () = assert!(!Capabilities::read_only().supports_no_non_mutating_op());
     }
 
     // ── SecretOperation — Ord / Display / FromStr / serde ──────────
