@@ -28908,6 +28908,89 @@ impl FigmentNameTagKind {
             Self::Env => "env",
         }
     }
+
+    /// The single FORMAT [`FigmentNameTagKind`] variant —
+    /// [`Self::Format`] (the shikumi-built-provider pole of the
+    /// (format × env) meta-partition on the figment-Name axis) — in
+    /// the SAME relative declaration order it occupies in
+    /// [`Self::ALL`], as a `'static` slice constant at the primitive's
+    /// OWN altitude on the figment-name-axis kind. Mirrors the shipped
+    /// boolean predicate [`Self::is_format`] one altitude down
+    /// (per-variant polarity) and follows the same
+    /// `pub const &'static [Self]` static-slice discipline as
+    /// [`Self::ALL`].
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the pole occupies in [`Self::ALL`],
+    /// not derived by filtering [`Self::ALL`] through
+    /// [`Self::is_format`] at const-fn altitude — the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first cell where they disagree.
+    ///
+    /// A per-half consumer iterating [`Self::FORMAT`] (an attestation
+    /// manifest recording the format-vs-env figment-name-axis kind
+    /// cardinality mix of a resolved chain; a diagnostics renderer
+    /// weighting env-name attributions visibly differently from
+    /// format-name ones since they originate from distinct provider
+    /// classes; a structured-log field surfacing env attributions
+    /// separately from format ones; a per-kind dashboard histogram
+    /// over [`FigmentNameTag::kind`]) reaches the format pole without
+    /// a runtime filter through
+    /// `FigmentNameTagKind::ALL.iter().filter(|k| k.is_format())`
+    /// — one static slice reference, const-addressable end-to-end,
+    /// ordered the same way [`Self::ALL`] is.
+    ///
+    /// A future tertiary variant (e.g. a hypothetical `Url` kind in
+    /// lockstep with a hypothetical [`FigmentNameTag::Url`] if
+    /// figment grows a URL-shaped name axis) landing on [`Self`] must
+    /// either extend one slice in lockstep with the boolean predicate
+    /// that admits it, or introduce a third slice; the partition and
+    /// cardinality pins refuse a silent landing under the negation of
+    /// one of the existing two.
+    ///
+    /// The two agreement laws
+    /// (`FORMAT.iter().all(|k| k.is_format())` and
+    /// `FORMAT.iter().all(|k| !k.is_env())`) are pinned by
+    /// [`tests::figment_name_tag_kind_format_slice_agrees_with_is_format_predicate`].
+    /// Partition invariant with [`Self::ENV`]:
+    /// [`tests::figment_name_tag_kind_format_and_env_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::figment_name_tag_kind_format_and_env_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::figment_name_tag_kind_format_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::figment_name_tag_kind_format_and_env_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::figment_name_tag_kind_format_and_env_slices_are_const_addressable`].
+    pub const FORMAT: &'static [Self] = &[Self::Format];
+
+    /// The single ENV [`FigmentNameTagKind`] variant — [`Self::Env`]
+    /// (the `figment::providers::Env` pole of the (format × env)
+    /// meta-partition on the figment-Name axis) — in the SAME
+    /// relative declaration order it occupies in [`Self::ALL`], the
+    /// complement pole of [`Self::FORMAT`] on the (format × env)
+    /// closed-binary polarity at the axis primitive's OWN altitude on
+    /// the figment-name-axis kind. Mirrors the shipped boolean
+    /// predicate [`Self::is_env`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::FORMAT`] pins the
+    /// whole-set cardinality identity
+    /// `FORMAT.len() + ENV.len() == ALL.len()`. Because the axis is
+    /// closed-binary and XOR-complementary by construction today, a
+    /// future third figment-name-axis kind landing (e.g. a `Url` cell
+    /// in lockstep with a hypothetical [`FigmentNameTag::Url`]) would
+    /// first fail the two-entry cardinality pins, then fail the
+    /// partition and cardinality pins on this constant pair unless
+    /// extended in lockstep with the boolean predicates.
+    ///
+    /// See [`Self::FORMAT`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter
+    /// through [`Self::is_format`]), and the load-bearing agreement
+    /// and partition pins.
+    pub const ENV: &'static [Self] = &[Self::Env];
 }
 
 impl crate::ClosedAxis for FigmentNameTagKind {
@@ -98356,6 +98439,202 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_slice_agrees_with_is_format_predicate() {
+        // Bidirectional weld between the slice literal
+        // `FigmentNameTagKind::FORMAT` and the boolean predicate
+        // `FigmentNameTagKind::is_format` on the (format × env)
+        // polarity axis. Every slice entry satisfies the format pole
+        // (and its complement `!is_env`), and every ALL cell agrees on
+        // membership under the boolean predicate. Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_slice_agrees_with_is_prefixed_predicate`
+        // (commit `13304d0`) — the two independent declaration
+        // surfaces (slice literal + boolean predicate) diverge at THIS
+        // pin on the first cell where they disagree, before a
+        // consumer that reads one altitude but not the other can
+        // observe the drift.
+        for k in FigmentNameTagKind::FORMAT.iter().copied() {
+            assert!(
+                k.is_format(),
+                "FigmentNameTagKind::FORMAT entry {k:?} must satisfy is_format()",
+            );
+            assert!(
+                !k.is_env(),
+                "FigmentNameTagKind::FORMAT entry {k:?} must NOT satisfy is_env()",
+            );
+        }
+        for k in FigmentNameTagKind::ALL.iter().copied() {
+            assert_eq!(
+                FigmentNameTagKind::FORMAT.contains(&k),
+                k.is_format(),
+                "FORMAT membership must agree with is_format() on FigmentNameTagKind::{k:?}",
+            );
+            assert_eq!(
+                FigmentNameTagKind::ENV.contains(&k),
+                k.is_env(),
+                "ENV membership must agree with is_env() on FigmentNameTagKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_and_env_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `FORMAT.len() + ENV.len() == ALL.len()` at the slice
+        // altitude on the figment-name-axis kind. Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_and_bare_slices_partition_all`
+        // (commit `13304d0`) — a variant landing on one slice AND
+        // the other, or on neither, breaks the partition here before
+        // any consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        for k in FigmentNameTagKind::FORMAT.iter().copied() {
+            assert!(
+                !FigmentNameTagKind::ENV.contains(&k),
+                "FigmentNameTagKind::{k:?} appears in BOTH FORMAT and ENV",
+            );
+        }
+        for k in FigmentNameTagKind::ALL.iter().copied() {
+            let in_format = FigmentNameTagKind::FORMAT.contains(&k);
+            let in_env = FigmentNameTagKind::ENV.contains(&k);
+            assert!(
+                in_format || in_env,
+                "FigmentNameTagKind::{k:?} is in NEITHER FORMAT nor ENV",
+            );
+            assert!(
+                !(in_format && in_env),
+                "FigmentNameTagKind::{k:?} is in BOTH FORMAT and ENV",
+            );
+        }
+        assert_eq!(
+            FigmentNameTagKind::FORMAT.len() + FigmentNameTagKind::ENV.len(),
+            FigmentNameTagKind::ALL.len(),
+            "FORMAT and ENV slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_and_env_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in FigmentNameTagKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated
+        // reproduces the ALL order (`Format` first, then `Env`).
+        // Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_and_bare_slices_preserve_all_order`
+        // (commit `13304d0`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let format_from_all: Vec<FigmentNameTagKind> = FigmentNameTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_format())
+            .collect();
+        assert_eq!(
+            format_from_all,
+            FigmentNameTagKind::FORMAT.to_vec(),
+            "FORMAT must be ALL-filtered by is_format in declaration order",
+        );
+        let env_from_all: Vec<FigmentNameTagKind> = FigmentNameTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_env())
+            .collect();
+        assert_eq!(
+            env_from_all,
+            FigmentNameTagKind::ENV.to_vec(),
+            "ENV must be ALL-filtered by is_env in declaration order",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into ENV, an accidental re-add of an already-present Format
+        // cell into FORMAT) fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set.
+        // Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_slice_has_no_duplicates`
+        // (commit `13304d0`).
+        for slice in [FigmentNameTagKind::FORMAT, FigmentNameTagKind::ENV] {
+            let deduped_len = {
+                let mut seen: Vec<FigmentNameTagKind> = Vec::with_capacity(slice.len());
+                for k in slice {
+                    if !seen.contains(k) {
+                        seen.push(*k);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "FigmentNameTagKind slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_and_env_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on FigmentNameTagKind::ALL —
+        // i.e., `FORMAT.len() ==
+        // ALL.iter().filter(is_format).count()` and
+        // `ENV.len() == ALL.iter().filter(is_env).count()` — the
+        // cardinality projection at the slice altitude agrees with
+        // the boolean-altitude projection on both halves. Concrete
+        // positions today: 1 format + 1 env = 2 = ALL. Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_and_bare_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `13304d0`).
+        let format_count = FigmentNameTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_format())
+            .count();
+        let env_count = FigmentNameTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_env())
+            .count();
+        assert_eq!(
+            FigmentNameTagKind::FORMAT.len(),
+            format_count,
+            "FORMAT.len() must match the is_format count on ALL",
+        );
+        assert_eq!(
+            FigmentNameTagKind::ENV.len(),
+            env_count,
+            "ENV.len() must match the is_env count on ALL",
+        );
+        assert_eq!(FigmentNameTagKind::FORMAT.len(), 1);
+        assert_eq!(FigmentNameTagKind::ENV.len(), 1);
+        assert_eq!(FigmentNameTagKind::ALL.len(), 2);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_format_and_env_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding
+        // of `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `env_metadata_tag_kind_prefixed_and_bare_slices_are_const_addressable`
+        // (commit `13304d0`).
+        const FORMAT_LEN: usize = FigmentNameTagKind::FORMAT.len();
+        const ENV_LEN: usize = FigmentNameTagKind::ENV.len();
+        const ALL_LEN: usize = FigmentNameTagKind::ALL.len();
+        assert_eq!(FORMAT_LEN, 1);
+        assert_eq!(ENV_LEN, 1);
+        assert_eq!(FORMAT_LEN + ENV_LEN, ALL_LEN);
     }
 
     #[test]
