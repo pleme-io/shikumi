@@ -2106,6 +2106,102 @@ impl Capabilities {
             + (!self.rotate as u8)
             + (!self.versions as u8)
     }
+
+    /// Returns the CARDINALITY of the mutating [`SecretOperation`]
+    /// variants ([`SecretOperation::Put`], [`SecretOperation::Delete`],
+    /// [`SecretOperation::Rotate`]) NOT advertised by this capability set —
+    /// i.e. `(!self.put as u8) + (!self.delete as u8) + (!self.rotate as u8)`,
+    /// a `u8` in the closed range `0..=3` (exactly the write-half
+    /// meta-partition size for the shipped six-variant operation axis).
+    ///
+    /// **The WRITE-half slice of the COMPLEMENT projection at the
+    /// [`Capabilities`] altitude** — the compound-polarity sibling of
+    /// [`Self::supported_mutating_op_count`], closing the write-half pair
+    /// via the meta-partition sum-complement law
+    /// `caps.supported_mutating_op_count() +
+    /// caps.unsupported_mutating_op_count() == 3`. Idiom-peer of the
+    /// whole-set complement [`Self::unsupported_op_count`] one meta-partition
+    /// step wider: the same explicit-negated-fields discipline restricted
+    /// to the three write-half [`Capabilities`] fields (`put`, `delete`,
+    /// `rotate`).
+    ///
+    /// **Cross-surface anchors on the shipped constructors.**
+    /// [`Capabilities::full`] advertises every write-half operation, so
+    /// `Capabilities::full().unsupported_mutating_op_count() == 0` —
+    /// pinned by
+    /// [`tests::capabilities_full_unsupported_mutating_op_count_is_zero`].
+    /// [`Capabilities::read_only`] advertises `get` alone (no write-half
+    /// operation), so `Capabilities::read_only().unsupported_mutating_op_count()
+    /// == 3` — pinned by
+    /// [`tests::capabilities_read_only_unsupported_mutating_op_count_is_three`].
+    /// The hand-built all-`false` shape returns `3` — pinned by
+    /// [`tests::capabilities_empty_unsupported_mutating_op_count_is_three`].
+    ///
+    /// **Write-half sum-complement law with the shipped supported half.**
+    /// `caps.supported_mutating_op_count() +
+    /// caps.unsupported_mutating_op_count() == 3` for every reachable
+    /// shape — the load-bearing weld that recovers the write-half
+    /// meta-partition size from the two polarity slices, and pins any
+    /// drift on ONE of the two write-half counts at test time before a
+    /// consumer can observe the disagreement. Pinned by
+    /// [`tests::capabilities_supported_and_unsupported_mutating_op_counts_sum_to_write_half_size`].
+    ///
+    /// **Cross-altitude weld with the operation axis one altitude down.**
+    /// `caps.unsupported_mutating_op_count() as usize ==
+    /// SecretOperation::ALL.iter().filter(|op| op.is_mutating() &&
+    /// !caps.supports(**op)).count()`. Pinned by
+    /// [`tests::capabilities_unsupported_mutating_op_count_agrees_with_operation_axis_filter_count`].
+    ///
+    /// **Inverse threshold identities with the write-half compound-polarity
+    /// quartet.** The write-half ∃/¬∃/∀/¬∀ matrix is recovered from this
+    /// count through the four inverse threshold identities:
+    /// `caps.supports_no_mutating_op() ==
+    ///     (caps.unsupported_mutating_op_count() == 3)`,
+    /// `caps.supports_every_mutating_op() ==
+    ///     (caps.unsupported_mutating_op_count() == 0)`,
+    /// `caps.supports_any_mutating_op() ==
+    ///     (caps.unsupported_mutating_op_count() < 3)`,
+    /// `caps.supports_not_every_mutating_op() ==
+    ///     (caps.unsupported_mutating_op_count() > 0)`.
+    /// Pinned by
+    /// [`tests::capabilities_unsupported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix`].
+    ///
+    /// **Bounds pin.** `caps.unsupported_mutating_op_count()` stays in
+    /// the closed range `0..=3` for every reachable [`Capabilities`]
+    /// shape (the bound is exactly the write-half meta-partition size
+    /// for the shipped six-variant operation axis, and rises in lockstep
+    /// should a fourth mutating variant with its own [`Capabilities`]
+    /// field land). Pinned by
+    /// [`tests::capabilities_unsupported_mutating_op_count_stays_within_write_half_bound`].
+    ///
+    /// Written as an explicit three-term `bool as u8` sum over exactly
+    /// the three currently-mutating [`Capabilities`] fields negated
+    /// (`put`, `delete`, `rotate`) rather than deriving from `3 -
+    /// self.supported_mutating_op_count()` via the sum-complement law or
+    /// iterating [`SecretOperation::ALL`] and dispatching through
+    /// [`Self::supports`] on every arm — so the compile-time weld to the
+    /// three specific write-half field identifiers stays load-bearing: a
+    /// future [`Capabilities`] field rename fails at `cargo build` here
+    /// before drifting through any consumer that reads the write-half
+    /// complement cardinality, and a hypothetical fourth mutating
+    /// [`SecretOperation`] variant with its own [`Capabilities`] field
+    /// surfaces at the cross-altitude filter-count agreement pin (via
+    /// [`SecretOperation::is_mutating`]) rather than silently ceiling
+    /// this predicate's answer at three. The two write-half projections
+    /// stay independent witnesses of the same underlying three-field
+    /// state, and the sum-complement pin catches drift on either single
+    /// one. Matches the explicit-arms discipline of
+    /// [`Self::supported_mutating_op_count`] at the same altitude, of the
+    /// whole-set complement [`Self::unsupported_op_count`] one
+    /// meta-partition step wider, and of the four write-half compound-
+    /// polarity predicates already at this altitude.
+    ///
+    /// The compile-time const weld is pinned by
+    /// [`tests::capabilities_unsupported_mutating_op_count_is_const_callable`].
+    #[must_use]
+    pub const fn unsupported_mutating_op_count(self) -> u8 {
+        (!self.put as u8) + (!self.delete as u8) + (!self.rotate as u8)
+    }
 }
 
 /// Closed-axis primitive over the shikumi-provided [`SecretClient`]
@@ -7764,6 +7860,241 @@ mod tests {
             versions: false,
         };
         const _: () = assert!(EMPTY.unsupported_op_count() == 6);
+    }
+
+    // ── Capabilities — write-half complement cardinality projection ─
+    //
+    // Pin table for `unsupported_mutating_op_count` — the write-half
+    // slice of the complement projection at the Capabilities altitude,
+    // compound-polarity sibling of the shipped `supported_mutating_op_count`
+    // (commit `69eb383`), closing the write-half pair via the
+    // meta-partition sum-complement law `supported_mutating_op_count +
+    // unsupported_mutating_op_count == 3`. Peer of the whole-set
+    // complement `unsupported_op_count` (commit `d6f627d`) restricted to
+    // the write-half three-field partition:
+    //   1. `capabilities_full_unsupported_mutating_op_count_is_zero` —
+    //      cross-surface anchor on `full()` (bottom of `0..=3`).
+    //   2. `capabilities_read_only_unsupported_mutating_op_count_is_three`
+    //      — cross-surface anchor on `read_only()` (top of `0..=3`,
+    //      since `read_only()` advertises no write-half op).
+    //   3. `capabilities_empty_unsupported_mutating_op_count_is_three` —
+    //      cross-surface anchor on the hand-built all-`false` shape
+    //      (top of `0..=3`).
+    //   4. `capabilities_supported_and_unsupported_mutating_op_counts_sum_to_write_half_size`
+    //      — the load-bearing write-half sum-complement law welding the
+    //      two polarity slices to the write-half meta-partition size.
+    //   5. `capabilities_unsupported_mutating_op_count_agrees_with_operation_axis_filter_count`
+    //      — the cross-altitude weld via
+    //      `SecretOperation::ALL.iter().filter(is_mutating && !supports)
+    //      .count()`.
+    //   6. `capabilities_unsupported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix`
+    //      — the four inverse threshold identities that recover the
+    //      write-half ∃/¬∃/∀/¬∀ pair from the write-half complement count.
+    //   7. `capabilities_unsupported_mutating_op_count_stays_within_write_half_bound`
+    //      — the closed-range bound with a popcount oracle on the
+    //      INVERTED three write-half bits, swept exhaustively over 2^6
+    //      shapes.
+    //   8. `capabilities_unsupported_mutating_op_count_is_const_callable`
+    //      — const-callability weld on the write-half complement
+    //      projection.
+
+    #[test]
+    fn capabilities_full_unsupported_mutating_op_count_is_zero() {
+        // Cross-surface anchor: the shipped `Capabilities::full()`
+        // constructor advertises every write-half operation, so the
+        // write-half complement projection returns the bottom of the
+        // closed range `0..=3`. A future edit that dropped a write-half
+        // flag from `full()` would silently drift this anchor; this pin
+        // locks the write-half bottom of the range to the shipped shape.
+        assert_eq!(Capabilities::full().unsupported_mutating_op_count(), 0);
+    }
+
+    #[test]
+    fn capabilities_read_only_unsupported_mutating_op_count_is_three() {
+        // Cross-surface anchor: the shipped `Capabilities::read_only()`
+        // constructor advertises `get` alone (no write-half op), so the
+        // write-half complement projection saturates at the top of the
+        // closed range `0..=3`. A future edit that widened `read_only()`
+        // onto ANY write-half flag (a rogue `put`, `delete`, or `rotate`)
+        // would silently drift this anchor; this pin locks the read-only
+        // shape's write-half pole at the top of the range.
+        assert_eq!(Capabilities::read_only().unsupported_mutating_op_count(), 3,);
+    }
+
+    #[test]
+    fn capabilities_empty_unsupported_mutating_op_count_is_three() {
+        // Cross-surface anchor: the hand-built all-`false` shape
+        // advertises no operation, so the write-half complement projection
+        // saturates at the top of the closed range `0..=3`. Locks the
+        // top of the range on the empty pole (no shipped constructor
+        // lands here, but the pole is reachable).
+        let empty = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        assert_eq!(empty.unsupported_mutating_op_count(), 3);
+    }
+
+    #[test]
+    fn capabilities_supported_and_unsupported_mutating_op_counts_sum_to_write_half_size() {
+        // The load-bearing write-half sum-complement law:
+        // `supported_mutating_op_count() + unsupported_mutating_op_count()
+        // == 3` (the write-half meta-partition size) for every reachable
+        // shape. A future edit that drifted ONE of the two write-half
+        // polarity projections (a dropped term, a doubled term, a
+        // mis-signed term on either three-term sum) diverges here on the
+        // first shape where that term flips, rather than silently. Sweeps
+        // the full 2^6 = 64 reachable shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            assert_eq!(
+                caps.supported_mutating_op_count() + caps.unsupported_mutating_op_count(),
+                3,
+                "supported_mutating_op_count + unsupported_mutating_op_count must equal 3 on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_mutating_op_count_agrees_with_operation_axis_filter_count() {
+        // The cross-altitude weld with the operation axis one altitude
+        // down on the write-half complement: the count must agree with
+        // the re-derivation `SecretOperation::ALL.iter().filter(|op|
+        // op.is_mutating() && !caps.supports(**op)).count()` pointwise
+        // over the exhaustive 2^6 = 64 shape sweep. A future edit that
+        // shifted a field from one half to the other on either the
+        // write-half complement count or on `SecretOperation::is_mutating`
+        // diverges here.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let filter_count = SecretOperation::ALL
+                .iter()
+                .filter(|op| op.is_mutating() && !caps.supports(**op))
+                .count();
+            assert_eq!(
+                caps.unsupported_mutating_op_count() as usize,
+                filter_count,
+                "unsupported_mutating_op_count must agree with the is_mutating && !supports filter count on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix()
+     {
+        // The load-bearing inverse-weld: the four inverse threshold
+        // identities that recover the write-half ∃/¬∃/∀/¬∀ compound-
+        // polarity quartet from the write-half complement projection.
+        // A future edit that drifted the write-half complement count
+        // from the four write-half compound predicates on ONE shape
+        // diverges here rather than silently. Swept exhaustively over
+        // the 2^6 = 64 reachable shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.unsupported_mutating_op_count();
+            assert_eq!(
+                caps.supports_no_mutating_op(),
+                count == 3,
+                "supports_no_mutating_op must equal (unsupported_mutating_op_count == 3) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_every_mutating_op(),
+                count == 0,
+                "supports_every_mutating_op must equal (unsupported_mutating_op_count == 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_any_mutating_op(),
+                count < 3,
+                "supports_any_mutating_op must equal (unsupported_mutating_op_count < 3) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_not_every_mutating_op(),
+                count > 0,
+                "supports_not_every_mutating_op must equal (unsupported_mutating_op_count > 0) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_mutating_op_count_stays_within_write_half_bound() {
+        // Bounds pin on the write-half complement: the count stays in
+        // the closed range `0..=3` for every reachable Capabilities
+        // shape (the bound is exactly the write-half meta-partition
+        // size for the shipped six-variant operation axis). Independent
+        // oracle: the three-bit popcount of the INVERTED `(put, delete,
+        // rotate)` half-shape via `u32::count_ones` — a future edit
+        // that dropped, doubled, or mis-signed one term on the three-
+        // term complement sum diverges here on the first shape where
+        // that term flips, orthogonal to the sum-complement pin above
+        // (where a matching drift on `supported_mutating_op_count` would
+        // mask it) and to the threshold-identity pin (where a matching
+        // drift on the compound-polarity quartet would mask it).
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.unsupported_mutating_op_count();
+            assert!(
+                count <= 3,
+                "unsupported_mutating_op_count must stay within the write-half meta-partition size 3 on {caps:?}, got {count}",
+            );
+            let inverted_write_half_bits = ((!bits) >> 2) & 0b111;
+            assert_eq!(
+                count,
+                u32::from(inverted_write_half_bits).count_ones() as u8,
+                "unsupported_mutating_op_count must equal the popcount of the inverted three write-half bits (put|delete|rotate) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_mutating_op_count_is_const_callable() {
+        // The write-half complement cardinality projection is `const`-
+        // callable, matching the discipline of the four write-half
+        // compound-polarity predicates, of `supported_mutating_op_count`
+        // at the same altitude, and of the whole-set complement
+        // `unsupported_op_count` one meta-partition step wider.
+        const _: () = assert!(Capabilities::full().unsupported_mutating_op_count() == 0);
+        const _: () = assert!(Capabilities::read_only().unsupported_mutating_op_count() == 3);
+        const EMPTY: Capabilities = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        const _: () = assert!(EMPTY.unsupported_mutating_op_count() == 3);
     }
 
     // ── SecretOperation — Ord / Display / FromStr / serde ──────────
