@@ -527,6 +527,89 @@ impl ConfigSourceKind {
     /// typescape recognizes.
     pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File];
 
+    /// The single BASELINE [`ConfigSourceKind`] variant —
+    /// [`Self::Defaults`] (developer-prescribed baseline via
+    /// [`ConfigSource::Defaults`]) — in the SAME relative declaration
+    /// order it occupies in [`Self::ALL`], carrying the
+    /// *developer-prescribed / internally-derived* pole of the
+    /// (baseline × overlay) polarity axis at the primitive's OWN
+    /// altitude on the layer-kind axis, mirroring the shipped boolean
+    /// predicate [`Self::is_defaults`] one altitude down: every variant
+    /// in this slice satisfies `k.is_defaults()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with [`Self::OVERLAY`], the two disjoint slices partition
+    /// [`Self::ALL`] at the static-slice altitude the same way the
+    /// shipped boolean predicates [`Self::is_defaults`] /
+    /// [`Self::is_overlay`] meta-partition it at the boolean altitude.
+    /// The two constants sit in the same `impl ConfigSourceKind` block
+    /// as [`Self::ALL`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the baseline pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_defaults`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical second baseline variant (a future `Prescribed`
+    /// developer-supplied kind emitted by `prescribed_default()`) lands
+    /// here in lockstep with [`Self::is_defaults`].
+    ///
+    /// Idiom-peer of [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`), [`crate::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`), [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`), and
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the three-way layer-kind axis's
+    /// (baseline × overlay) meta-partition, extending the shipped
+    /// per-half-slice pattern from the tier-kind axis onto the sibling
+    /// layer-kind axis of the atomic `(tier, source)` pair every
+    /// [`crate::Provenance`] carries.
+    ///
+    /// The two agreement laws
+    /// (`DEFAULTS.iter().all(|k| k.is_defaults())` and
+    /// `DEFAULTS.iter().all(|k| !k.is_overlay())`) are pinned by
+    /// [`tests::config_source_kind_defaults_slice_agrees_with_is_defaults_predicate`].
+    /// Partition invariant with [`Self::OVERLAY`]:
+    /// [`tests::config_source_kind_defaults_and_overlay_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::config_source_kind_defaults_and_overlay_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::config_source_kind_defaults_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::config_source_kind_defaults_and_overlay_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::config_source_kind_defaults_and_overlay_slices_are_const_addressable`].
+    pub const DEFAULTS: &'static [Self] = &[Self::Defaults];
+
+    /// The two OVERLAY [`ConfigSourceKind`] variants — [`Self::Env`]
+    /// and [`Self::File`] (both operator-supplied) — in the SAME
+    /// relative declaration order they occupy in [`Self::ALL`], the
+    /// complement pole of [`Self::DEFAULTS`] on the (baseline × overlay)
+    /// polarity axis at the layer-kind primitive's OWN altitude. Mirrors
+    /// the shipped boolean predicate [`Self::is_overlay`] one altitude
+    /// down.
+    ///
+    /// The partition invariant with [`Self::DEFAULTS`] pins the
+    /// whole-set cardinality identity
+    /// `DEFAULTS.len() + OVERLAY.len() == ALL.len()` — a hypothetical
+    /// fourth operator-supplied variant (a future `Http`, `Vault`, or
+    /// `ConfigMap` layer kind paired with a new [`ConfigSource`]
+    /// variant) lands here in lockstep with [`Self::is_overlay`], and
+    /// the cardinality-agreement pin catches any drift between the
+    /// slice and the boolean predicate on the same edit.
+    ///
+    /// See [`Self::DEFAULTS`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_overlay`]), and the load-bearing agreement and
+    /// partition pins.
+    pub const OVERLAY: &'static [Self] = &[Self::Env, Self::File];
+
     /// Canonical operator-facing lowercase name of the layer kind —
     /// `"defaults"`, `"env"`, or `"file"`.
     ///
@@ -95367,6 +95450,203 @@ mod tests {
                  is_defaults() on the layer-kind axis",
             );
         }
+    }
+
+    #[test]
+    fn config_source_kind_defaults_slice_agrees_with_is_defaults_predicate() {
+        // Bidirectional weld between the slice literal
+        // `ConfigSourceKind::DEFAULTS` and the boolean predicate
+        // `ConfigSourceKind::is_defaults` on the (baseline × overlay)
+        // polarity axis. Every slice entry satisfies the baseline
+        // pole (and its complement `!is_overlay`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of `config_tier_kind_computed_slice_agrees_with_is_computed_predicate`
+        // (`2c0686f`) — the two independent declaration surfaces (slice
+        // literal + boolean predicate) diverge at THIS pin on the first
+        // shape where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift.
+        for k in ConfigSourceKind::DEFAULTS.iter().copied() {
+            assert!(
+                k.is_defaults(),
+                "ConfigSourceKind::DEFAULTS entry {k:?} must satisfy is_defaults()",
+            );
+            assert!(
+                !k.is_overlay(),
+                "ConfigSourceKind::DEFAULTS entry {k:?} must NOT satisfy is_overlay()",
+            );
+        }
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                ConfigSourceKind::DEFAULTS.contains(&k),
+                k.is_defaults(),
+                "DEFAULTS membership must agree with is_defaults() on \
+                 ConfigSourceKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigSourceKind::OVERLAY.contains(&k),
+                k.is_overlay(),
+                "OVERLAY membership must agree with is_overlay() on \
+                 ConfigSourceKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_defaults_and_overlay_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `DEFAULTS.len() + OVERLAY.len() == ALL.len()` at the slice
+        // altitude on the layer-kind axis. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_partition_all`
+        // (`2c0686f`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in ConfigSourceKind::DEFAULTS.iter().copied() {
+            assert!(
+                !ConfigSourceKind::OVERLAY.contains(&k),
+                "ConfigSourceKind::{k:?} appears in BOTH DEFAULTS and OVERLAY",
+            );
+        }
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            let in_defaults = ConfigSourceKind::DEFAULTS.contains(&k);
+            let in_overlay = ConfigSourceKind::OVERLAY.contains(&k);
+            assert!(
+                in_defaults || in_overlay,
+                "ConfigSourceKind::{k:?} is in NEITHER DEFAULTS nor OVERLAY",
+            );
+            assert!(
+                !(in_defaults && in_overlay),
+                "ConfigSourceKind::{k:?} is in BOTH DEFAULTS and OVERLAY",
+            );
+        }
+        assert_eq!(
+            ConfigSourceKind::DEFAULTS.len() + ConfigSourceKind::OVERLAY.len(),
+            ConfigSourceKind::ALL.len(),
+            "DEFAULTS and OVERLAY slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_defaults_and_overlay_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ConfigSourceKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (once the two polarity groups are ordered per
+        // the provider-chain precedence Defaults → Env → File). Idiom-
+        // peer of
+        // `config_tier_kind_computed_and_custom_slices_preserve_all_order`
+        // (`2c0686f`) — a reordering of one slice without the other,
+        // or a reordering of ALL that shuffles the two poles' variant
+        // order without updating the slices, diverges at THIS pin.
+        let defaults_from_all: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_defaults())
+            .collect();
+        assert_eq!(
+            defaults_from_all,
+            ConfigSourceKind::DEFAULTS.to_vec(),
+            "DEFAULTS must be ALL-filtered by is_defaults in declaration order",
+        );
+        let overlay_from_all: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_overlay())
+            .collect();
+        assert_eq!(
+            overlay_from_all,
+            ConfigSourceKind::OVERLAY.to_vec(),
+            "OVERLAY must be ALL-filtered by is_overlay in declaration order",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_defaults_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into OVERLAY, an accidental re-add of an already-present
+        // Defaults cell into DEFAULTS) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        for slice in [ConfigSourceKind::DEFAULTS, ConfigSourceKind::OVERLAY] {
+            let mut sorted = slice.to_vec();
+            sorted.sort();
+            let deduped_len = {
+                let mut seen: Vec<ConfigSourceKind> = Vec::with_capacity(sorted.len());
+                for k in &sorted {
+                    if !seen.contains(k) {
+                        seen.push(*k);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "ConfigSourceKind slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_defaults_and_overlay_slice_lengths_agree_with_boolean_pole_cardinalities()
+    {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ConfigSourceKind::ALL — i.e.,
+        // `DEFAULTS.len() == ALL.iter().filter(is_defaults).count()`
+        // and `OVERLAY.len() == ALL.iter().filter(is_overlay).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 1 baseline + 2 overlay = 3 = ALL.
+        // Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2c0686f`).
+        let defaults_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_defaults())
+            .count();
+        let overlay_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_overlay())
+            .count();
+        assert_eq!(
+            ConfigSourceKind::DEFAULTS.len(),
+            defaults_count,
+            "DEFAULTS.len() must match the is_defaults count on ALL",
+        );
+        assert_eq!(
+            ConfigSourceKind::OVERLAY.len(),
+            overlay_count,
+            "OVERLAY.len() must match the is_overlay count on ALL",
+        );
+        assert_eq!(ConfigSourceKind::DEFAULTS.len(), 1);
+        assert_eq!(ConfigSourceKind::OVERLAY.len(), 2);
+        assert_eq!(ConfigSourceKind::ALL.len(), 3);
+    }
+
+    #[test]
+    fn config_source_kind_defaults_and_overlay_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_are_const_addressable`
+        // (`2c0686f`).
+        const DEFAULTS_LEN: usize = ConfigSourceKind::DEFAULTS.len();
+        const OVERLAY_LEN: usize = ConfigSourceKind::OVERLAY.len();
+        const ALL_LEN: usize = ConfigSourceKind::ALL.len();
+        assert_eq!(DEFAULTS_LEN, 1);
+        assert_eq!(OVERLAY_LEN, 2);
+        assert_eq!(DEFAULTS_LEN + OVERLAY_LEN, ALL_LEN);
     }
 
     #[test]
