@@ -101,6 +101,99 @@ impl Format {
     /// matching every variant.
     pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix, Self::Blue];
 
+    /// The two FEATURE-GATED [`Format`] variants — [`Self::Lisp`]
+    /// (behind the `lisp` cargo feature) and [`Self::Blue`] (behind
+    /// the `blue` cargo feature) — in the SAME relative declaration
+    /// order they occupy in [`Self::ALL`], carrying the
+    /// *compile-time-optional* pole of the
+    /// (feature-gated × always-available) polarity axis at the primitive's
+    /// OWN altitude on the file-format axis, mirroring the shipped
+    /// boolean predicate [`Self::is_feature_gated`] one altitude down:
+    /// every variant in this slice satisfies `f.is_feature_gated()`,
+    /// and no variant outside it does.
+    ///
+    /// Paired with [`Self::ALWAYS_AVAILABLE`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same way
+    /// the shipped boolean predicates [`Self::is_feature_gated`] /
+    /// [`Self::is_always_available`] meta-partition it at the boolean
+    /// altitude. The two constants sit in the same `impl Format` block
+    /// as [`Self::ALL`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit two-variant slice literal in the SAME
+    /// relative declaration order the feature-gated pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_feature_gated`] at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical sixth variant landing behind a new cargo feature
+    /// (a `Cue` behind `cue`, a `Jsonnet` behind `jsonnet`) lands here
+    /// in lockstep with [`Self::is_feature_gated`], and the cardinality
+    /// pin catches any drift between the slice and the boolean
+    /// predicate on the same edit.
+    ///
+    /// Idiom-peer of [`crate::ConfigTierKind::COMPUTED`] (commit
+    /// `2c0686f`), [`crate::source::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cf6dd8`), [`crate::secret_client::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`), and the per-half slice-constant landings on
+    /// [`crate::error::AttributionConfidence::EXACT`] (commit `13c1003`),
+    /// [`crate::secret::SecretRefShape::WHOLE`] (commit `036673b`),
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] (commit `7ef79e4`),
+    /// [`crate::cube::PartitionFace::REALIZABLE`] (commit `a344056`),
+    /// [`crate::cli::OutputFormat::YAML`] (commit `292ca1d`),
+    /// [`crate::source::EnvMetadataTagKind::PREFIXED`] (commit `13304d0`),
+    /// and [`crate::source::FigmentNameTagKind::FORMAT`] (commit
+    /// `2d2ef9d`) — the per-half meta-partition slice-constant discipline
+    /// applied here to the five-way file-format axis's
+    /// (feature-gated × always-available) meta-partition.
+    ///
+    /// The two agreement laws
+    /// (`FEATURE_GATED.iter().all(|f| f.is_feature_gated())` and
+    /// `FEATURE_GATED.iter().all(|f| !f.is_always_available())`) are
+    /// pinned by
+    /// [`tests::format_feature_gated_slice_agrees_with_is_feature_gated_predicate`].
+    /// Partition invariant with [`Self::ALWAYS_AVAILABLE`]:
+    /// [`tests::format_feature_gated_and_always_available_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::format_feature_gated_and_always_available_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::format_feature_gated_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::format_feature_gated_and_always_available_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::format_feature_gated_and_always_available_slices_are_const_addressable`].
+    pub const FEATURE_GATED: &'static [Self] = &[Self::Lisp, Self::Blue];
+
+    /// The three ALWAYS-AVAILABLE [`Format`] variants —
+    /// [`Self::Yaml`], [`Self::Toml`], and [`Self::Nix`] — in the SAME
+    /// relative declaration order they occupy in [`Self::ALL`], carrying
+    /// the *unconditionally-compiled* pole of the
+    /// (feature-gated × always-available) polarity axis at the primitive's
+    /// OWN altitude on the file-format axis, mirroring the shipped
+    /// boolean predicate [`Self::is_always_available`] one altitude
+    /// down.
+    ///
+    /// The declaration-order projection preserves [`Self::ALL`]'s
+    /// interleaving on this pole: [`Self::Yaml`] and [`Self::Toml`]
+    /// come before [`Self::Lisp`] (skipped — the other pole), and
+    /// [`Self::Nix`] comes after [`Self::Lisp`] but before
+    /// [`Self::Blue`] (also skipped), so the always-available slice is
+    /// [`Self::Yaml`], [`Self::Toml`], [`Self::Nix`] — not a suffix or
+    /// prefix of [`Self::ALL`], but the ALL-order filtered projection
+    /// under [`Self::is_always_available`]. Any future variant landing
+    /// on this pole extends the slice at the ALL-declaration-order
+    /// position, not at the tail.
+    ///
+    /// See [`Self::FEATURE_GATED`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_always_available`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ALWAYS_AVAILABLE: &'static [Self] = &[Self::Yaml, Self::Toml, Self::Nix];
+
     /// Canonical separator between the format token and the path in the
     /// `"<format>: <path>"` shape shikumi-built providers write into
     /// `figment::Metadata::name` for per-value attribution.
@@ -5209,6 +5302,218 @@ mod tests {
         assert!(YAML_ALWAYS);
         assert!(TOML_ALWAYS);
         assert!(NIX_ALWAYS);
+    }
+
+    // ---- Format::FEATURE_GATED / Format::ALWAYS_AVAILABLE slice constants ----
+    //
+    // Six pins mirror the per-half meta-partition slice-constant discipline
+    // that shipped in `2c0686f` (`ConfigTierKind::COMPUTED / CUSTOM`),
+    // `2cf6dd8` (`ConfigSourceKind::DEFAULTS / OVERLAY`), `b2cfa2a`
+    // (`SecretOperation::MUTATING / NON_MUTATING`), and the recent
+    // closed-binary landings on `AttributionConfidence`,
+    // `SecretRefShape`, `FormatProvenance`, `PartitionFace`,
+    // `OutputFormat`, `EnvMetadataTagKind`, and `FigmentNameTagKind`
+    // — applied here to the five-way file-format axis's
+    // (feature-gated × always-available) compound-polarity meta-partition.
+
+    #[test]
+    fn format_feature_gated_slice_agrees_with_is_feature_gated_predicate() {
+        // Bidirectional weld between the slice literal
+        // `Format::FEATURE_GATED` and the boolean predicate
+        // `Format::is_feature_gated` on the
+        // (feature-gated × always-available) polarity axis. Every
+        // slice entry satisfies the feature-gated pole (and its
+        // complement `!is_always_available`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of `config_tier_kind_computed_slice_agrees_with_is_computed_predicate`
+        // (`2c0686f`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        for f in Format::FEATURE_GATED.iter().copied() {
+            assert!(
+                f.is_feature_gated(),
+                "Format::FEATURE_GATED entry {f:?} must satisfy is_feature_gated()",
+            );
+            assert!(
+                !f.is_always_available(),
+                "Format::FEATURE_GATED entry {f:?} must NOT satisfy is_always_available()",
+            );
+        }
+        for f in Format::ALWAYS_AVAILABLE.iter().copied() {
+            assert!(
+                f.is_always_available(),
+                "Format::ALWAYS_AVAILABLE entry {f:?} must satisfy is_always_available()",
+            );
+            assert!(
+                !f.is_feature_gated(),
+                "Format::ALWAYS_AVAILABLE entry {f:?} must NOT satisfy is_feature_gated()",
+            );
+        }
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                Format::FEATURE_GATED.contains(&f),
+                f.is_feature_gated(),
+                "FEATURE_GATED membership must agree with is_feature_gated() on Format::{f:?}",
+            );
+            assert_eq!(
+                Format::ALWAYS_AVAILABLE.contains(&f),
+                f.is_always_available(),
+                "ALWAYS_AVAILABLE membership must agree with is_always_available() on Format::{f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_feature_gated_and_always_available_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `FEATURE_GATED.len() + ALWAYS_AVAILABLE.len() == ALL.len()`
+        // at the slice altitude on the file-format axis. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_partition_all`
+        // (`2c0686f`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for f in Format::FEATURE_GATED.iter().copied() {
+            assert!(
+                !Format::ALWAYS_AVAILABLE.contains(&f),
+                "Format::{f:?} appears in BOTH FEATURE_GATED and ALWAYS_AVAILABLE",
+            );
+        }
+        for f in Format::ALL.iter().copied() {
+            let in_feature_gated = Format::FEATURE_GATED.contains(&f);
+            let in_always_available = Format::ALWAYS_AVAILABLE.contains(&f);
+            assert!(
+                in_feature_gated || in_always_available,
+                "Format::{f:?} is in NEITHER FEATURE_GATED nor ALWAYS_AVAILABLE",
+            );
+            assert!(
+                !(in_feature_gated && in_always_available),
+                "Format::{f:?} is in BOTH FEATURE_GATED and ALWAYS_AVAILABLE",
+            );
+        }
+        assert_eq!(
+            Format::FEATURE_GATED.len() + Format::ALWAYS_AVAILABLE.len(),
+            Format::ALL.len(),
+            "FEATURE_GATED and ALWAYS_AVAILABLE slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn format_feature_gated_and_always_available_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in Format::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. The
+        // always-available pole in particular is INTERLEAVED with the
+        // feature-gated pole in Format::ALL (Yaml, Toml, Lisp, Nix,
+        // Blue — the always-available cells Yaml/Toml/Nix are split
+        // by the feature-gated Lisp cell), so a suffix or prefix
+        // rewriting of the slices — or a reordering of ALL that
+        // shuffled the interleaving — diverges at THIS pin. Idiom-peer
+        // of `config_tier_kind_computed_and_custom_slices_preserve_all_order`
+        // (`2c0686f`).
+        let feature_gated_from_all: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_feature_gated())
+            .collect();
+        assert_eq!(
+            feature_gated_from_all,
+            Format::FEATURE_GATED.to_vec(),
+            "FEATURE_GATED must be ALL-filtered by is_feature_gated in declaration order",
+        );
+        let always_available_from_all: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_always_available())
+            .collect();
+        assert_eq!(
+            always_available_from_all,
+            Format::ALWAYS_AVAILABLE.to_vec(),
+            "ALWAYS_AVAILABLE must be ALL-filtered by is_always_available in declaration order",
+        );
+    }
+
+    #[test]
+    fn format_feature_gated_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into FEATURE_GATED, an accidental re-add of an already-present
+        // cell into ALWAYS_AVAILABLE) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        for slice in [Format::FEATURE_GATED, Format::ALWAYS_AVAILABLE] {
+            let mut seen: Vec<Format> = Vec::with_capacity(slice.len());
+            for f in slice {
+                assert!(
+                    !seen.contains(f),
+                    "Format slice {slice:?} contains duplicate entry {f:?}",
+                );
+                seen.push(*f);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn format_feature_gated_and_always_available_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on Format::ALL — i.e.,
+        // `FEATURE_GATED.len() == ALL.iter().filter(is_feature_gated).count()`
+        // and `ALWAYS_AVAILABLE.len() ==
+        // ALL.iter().filter(is_always_available).count()` — the
+        // cardinality projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete positions
+        // today: 2 feature-gated + 3 always-available = 5 = ALL.
+        // Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2c0686f`).
+        let feature_gated_count = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_feature_gated())
+            .count();
+        let always_available_count = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_always_available())
+            .count();
+        assert_eq!(
+            Format::FEATURE_GATED.len(),
+            feature_gated_count,
+            "FEATURE_GATED.len() must match the is_feature_gated count on ALL",
+        );
+        assert_eq!(
+            Format::ALWAYS_AVAILABLE.len(),
+            always_available_count,
+            "ALWAYS_AVAILABLE.len() must match the is_always_available count on ALL",
+        );
+        assert_eq!(Format::FEATURE_GATED.len(), 2);
+        assert_eq!(Format::ALWAYS_AVAILABLE.len(), 3);
+        assert_eq!(Format::ALL.len(), 5);
+    }
+
+    #[test]
+    fn format_feature_gated_and_always_available_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_are_const_addressable`
+        // (`2c0686f`).
+        const FEATURE_GATED_LEN: usize = Format::FEATURE_GATED.len();
+        const ALWAYS_AVAILABLE_LEN: usize = Format::ALWAYS_AVAILABLE.len();
+        const ALL_LEN: usize = Format::ALL.len();
+        assert_eq!(FEATURE_GATED_LEN, 2);
+        assert_eq!(ALWAYS_AVAILABLE_LEN, 3);
+        assert_eq!(FEATURE_GATED_LEN + ALWAYS_AVAILABLE_LEN, ALL_LEN);
     }
 
     // ---- required_feature (the format → optional-cargo-feature axis) ----
