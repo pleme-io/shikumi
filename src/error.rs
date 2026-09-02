@@ -1117,6 +1117,90 @@ impl AttributionRule {
         Self::DefaultsByCodeUniqueness,
     ];
 
+    /// The three EXACT [`AttributionRule`] variants —
+    /// [`Self::FileBySource`], [`Self::FileByMetadataName`], and
+    /// [`Self::EnvByPrefix`] — in the SAME relative declaration order
+    /// they occupy in [`Self::ALL`], carrying the *equality-based
+    /// attribution* pole of the (exact × fallback) confidence
+    /// meta-partition at the rule's OWN altitude on the attribution-rule
+    /// axis, mirroring the shipped boolean predicate [`Self::is_exact`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `rule.is_exact()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::FALLBACK`], the two disjoint slices partition
+    /// [`Self::ALL`] at the static-slice altitude the same way the
+    /// shipped boolean predicates [`Self::is_exact`] /
+    /// [`Self::is_fallback`] meta-partition it at the boolean altitude.
+    /// The two constants sit in the same `impl AttributionRule` block as
+    /// [`Self::ALL`] and follow the same `pub const &'static [Self]`
+    /// static-slice discipline.
+    ///
+    /// Written as an explicit three-variant slice literal in the SAME
+    /// relative declaration order the exact pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_exact`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate) remain
+    /// independent load-bearing witnesses of the same meta-partition,
+    /// and a future edit that shifts a variant across the polarity on
+    /// ONE declaration surface but not the other diverges at test time
+    /// on the first shape where they disagree. A hypothetical sixth
+    /// variant landing on the exact side (e.g. an `EnvByExactName` cell
+    /// for a case-sensitive full-name equality match on the env axis)
+    /// lands here in lockstep with [`Self::is_exact`], and the
+    /// cardinality pin catches any drift between the slice and the
+    /// boolean predicate on the same edit.
+    ///
+    /// Idiom-peer of
+    /// [`crate::FieldPathLocalization::APPLICABLE`] (commit `9dad33d`),
+    /// [`crate::ShikumiErrorKind::FIGMENT_BEARING`] (commit `e45018d`),
+    /// [`crate::Format::FEATURE_GATED`] (commit `2013269`),
+    /// [`crate::source::FigmentNameTagKind::FORMAT`] (commit `2d2ef9d`),
+    /// [`crate::source::EnvMetadataTagKind::PREFIXED`] (commit `13304d0`),
+    /// [`crate::AttributionAxis::METADATA_SOURCE`] (commit `34bfbb6`),
+    /// [`crate::cli::OutputFormat::YAML`] (commit `292ca1d`),
+    /// [`crate::AttributionConfidence::EXACT`] (commit `13c1003`),
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] (commit `7ef79e4`),
+    /// [`crate::secret::SecretRefShape::WHOLE`] (commit `036673b`), and
+    /// [`crate::cube::PartitionFace::REALIZABLE`] (commit `a344056`) —
+    /// the per-half meta-partition slice-constant discipline applied
+    /// here to the five-way attribution-rule axis's
+    /// (exact × fallback) 3/2 meta-partition.
+    ///
+    /// The two agreement laws
+    /// (`EXACT.iter().all(|r| r.is_exact())` and
+    /// `EXACT.iter().all(|r| !r.is_fallback())`) are pinned by
+    /// [`tests::attribution_rule_exact_slice_agrees_with_is_exact_predicate`].
+    /// Partition invariant with [`Self::FALLBACK`]:
+    /// [`tests::attribution_rule_exact_and_fallback_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_rule_exact_and_fallback_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::attribution_rule_exact_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::attribution_rule_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_rule_exact_and_fallback_slices_are_const_addressable`].
+    pub const EXACT: &'static [Self] = &[
+        Self::FileBySource,
+        Self::FileByMetadataName,
+        Self::EnvByPrefix,
+    ];
+
+    /// The two FALLBACK [`AttributionRule`] variants —
+    /// [`Self::EnvByUniqueness`] and [`Self::DefaultsByCodeUniqueness`] —
+    /// in the SAME relative declaration order they occupy in
+    /// [`Self::ALL`], carrying the *uniqueness-based attribution* pole
+    /// of the (exact × fallback) confidence meta-partition at the rule's
+    /// OWN altitude on the attribution-rule axis, mirroring the shipped
+    /// boolean predicate [`Self::is_fallback`] one altitude down.
+    ///
+    /// See [`Self::EXACT`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_fallback`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const FALLBACK: &'static [Self] = &[Self::EnvByUniqueness, Self::DefaultsByCodeUniqueness];
+
     /// Canonical operator-facing lowercase name of the attribution rule —
     /// [`Self::FileBySource`] renders as `"file-by-source"`,
     /// [`Self::FileByMetadataName`] as `"file-by-metadata-name"`,
@@ -5849,6 +5933,218 @@ mod tests {
         assert!(!IF_EBP);
         assert!(IF_EBU);
         assert!(IF_DBCU);
+    }
+
+    // ---- AttributionRule::EXACT / FALLBACK slice constants ----
+    //
+    // Six pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped in `9dad33d`
+    // (`FieldPathLocalization::APPLICABLE / NOT_APPLICABLE`), `e45018d`
+    // (`ShikumiErrorKind::FIGMENT_BEARING / NOT_FIGMENT_BEARING`),
+    // `2013269` (`Format::FEATURE_GATED / ALWAYS_AVAILABLE`), and the
+    // earlier closed-binary landings on `AttributionAxis`,
+    // `AttributionConfidence`, `FormatProvenance`, `SecretRefShape`,
+    // `PartitionFace`, `OutputFormat`, `EnvMetadataTagKind`,
+    // `FigmentNameTagKind`, `ConfigTierKind`, `ConfigSourceKind`,
+    // `SecretOperation`, `SecretBackendKind`, and `SecretClientKind` —
+    // applied here to the five-way attribution-rule axis's
+    // (exact × fallback) 3/2 compound-polarity meta-partition.
+    // Directly nominated by `9dad33d`'s "future beneficiary (c)" as the
+    // next rung of the same discipline.
+    #[test]
+    fn attribution_rule_exact_slice_agrees_with_is_exact_predicate() {
+        // Bidirectional weld between the slice literal
+        // `AttributionRule::EXACT` and the boolean predicate
+        // `AttributionRule::is_exact` on the (exact × fallback)
+        // confidence polarity axis. Every slice entry satisfies the
+        // exact pole (and its complement `!is_fallback`), and every
+        // ALL cell agrees on membership under the boolean predicate.
+        // Idiom-peer of
+        // `field_path_localization_applicable_slice_agrees_with_is_applicable_predicate`
+        // (`9dad33d`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        for rule in AttributionRule::EXACT.iter().copied() {
+            assert!(
+                rule.is_exact(),
+                "AttributionRule::EXACT entry {rule:?} must satisfy is_exact()",
+            );
+            assert!(
+                !rule.is_fallback(),
+                "AttributionRule::EXACT entry {rule:?} must NOT satisfy is_fallback()",
+            );
+        }
+        for rule in AttributionRule::FALLBACK.iter().copied() {
+            assert!(
+                rule.is_fallback(),
+                "AttributionRule::FALLBACK entry {rule:?} must satisfy is_fallback()",
+            );
+            assert!(
+                !rule.is_exact(),
+                "AttributionRule::FALLBACK entry {rule:?} must NOT satisfy is_exact()",
+            );
+        }
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                AttributionRule::EXACT.contains(&rule),
+                rule.is_exact(),
+                "EXACT membership must agree with is_exact() on AttributionRule::{rule:?}",
+            );
+            assert_eq!(
+                AttributionRule::FALLBACK.contains(&rule),
+                rule.is_fallback(),
+                "FALLBACK membership must agree with is_fallback() on AttributionRule::{rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_exact_and_fallback_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `EXACT.len() + FALLBACK.len() == ALL.len()` at the slice
+        // altitude on the attribution-rule axis. Idiom-peer of
+        // `field_path_localization_applicable_and_not_applicable_slices_partition_all`
+        // (`9dad33d`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for rule in AttributionRule::EXACT {
+            assert!(
+                !AttributionRule::FALLBACK.contains(rule),
+                "AttributionRule::{rule:?} appears in BOTH EXACT and FALLBACK",
+            );
+        }
+        for rule in AttributionRule::ALL {
+            let in_exact = AttributionRule::EXACT.contains(rule);
+            let in_fallback = AttributionRule::FALLBACK.contains(rule);
+            assert!(
+                in_exact || in_fallback,
+                "AttributionRule::{rule:?} is in NEITHER EXACT nor FALLBACK",
+            );
+            assert!(
+                !(in_exact && in_fallback),
+                "AttributionRule::{rule:?} is in BOTH EXACT and FALLBACK",
+            );
+        }
+        assert_eq!(
+            AttributionRule::EXACT.len() + AttributionRule::FALLBACK.len(),
+            AttributionRule::ALL.len(),
+            "EXACT and FALLBACK slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_exact_and_fallback_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in AttributionRule::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted the exact pole (e.g. [EnvByPrefix,
+        // FileBySource, FileByMetadataName] instead of the
+        // ALL-declaration order [FileBySource, FileByMetadataName,
+        // EnvByPrefix]) diverges at THIS pin. Idiom-peer of
+        // `field_path_localization_applicable_and_not_applicable_slices_preserve_all_order`
+        // (`9dad33d`).
+        let exact_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_exact())
+            .collect();
+        assert_eq!(
+            exact_from_all,
+            AttributionRule::EXACT.to_vec(),
+            "EXACT must be ALL-filtered by is_exact in declaration order",
+        );
+        let fallback_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_fallback())
+            .collect();
+        assert_eq!(
+            fallback_from_all,
+            AttributionRule::FALLBACK.to_vec(),
+            "FALLBACK must be ALL-filtered by is_fallback in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_exact_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into EXACT, an accidental re-add of an already-present cell
+        // into FALLBACK) fails at THIS pin before drifting through any
+        // consumer that iterates the slice expecting a set.
+        for slice in [AttributionRule::EXACT, AttributionRule::FALLBACK] {
+            let mut seen: Vec<AttributionRule> = Vec::with_capacity(slice.len());
+            for rule in slice {
+                assert!(
+                    !seen.contains(rule),
+                    "AttributionRule slice {slice:?} contains duplicate entry {rule:?}",
+                );
+                seen.push(*rule);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionRule::ALL — i.e.,
+        // `EXACT.len() == ALL.iter().filter(is_exact).count()` and
+        // `FALLBACK.len() == ALL.iter().filter(is_fallback).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 3 exact + 2 fallback = 5 = ALL.
+        // Idiom-peer of
+        // `field_path_localization_applicable_and_not_applicable_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`9dad33d`).
+        let exact_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_exact())
+            .count();
+        let fallback_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_fallback())
+            .count();
+        assert_eq!(
+            AttributionRule::EXACT.len(),
+            exact_count,
+            "EXACT.len() must match the is_exact count on ALL",
+        );
+        assert_eq!(
+            AttributionRule::FALLBACK.len(),
+            fallback_count,
+            "FALLBACK.len() must match the is_fallback count on ALL",
+        );
+        assert_eq!(AttributionRule::EXACT.len(), 3);
+        assert_eq!(AttributionRule::FALLBACK.len(), 2);
+        assert_eq!(AttributionRule::ALL.len(), 5);
+    }
+
+    #[test]
+    fn attribution_rule_exact_and_fallback_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `field_path_localization_applicable_and_not_applicable_slices_are_const_addressable`
+        // (`9dad33d`).
+        const EXACT_LEN: usize = AttributionRule::EXACT.len();
+        const FALLBACK_LEN: usize = AttributionRule::FALLBACK.len();
+        const ALL_LEN: usize = AttributionRule::ALL.len();
+        assert_eq!(EXACT_LEN, 3);
+        assert_eq!(FALLBACK_LEN, 2);
+        assert_eq!(EXACT_LEN + FALLBACK_LEN, ALL_LEN);
     }
 
     #[test]
