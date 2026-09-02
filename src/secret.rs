@@ -1562,6 +1562,93 @@ impl SecretRefShape {
     /// the contract.
     pub const ALL: &'static [Self] = &[Self::Whole, Self::Field];
 
+    /// The single WHOLE [`SecretRefShape`] variant — [`Self::Whole`]
+    /// (the bare-payload shorthand image of the extraction-shape axis)
+    /// — in the SAME relative declaration order it occupies in
+    /// [`Self::ALL`], carrying the *whole-payload* pole of the
+    /// (whole × field) closed-binary polarity at the shape primitive's
+    /// OWN altitude on the secret-ref extraction-shape axis, mirroring
+    /// the shipped boolean predicate [`Self::is_whole`] one altitude
+    /// down: every variant in this slice satisfies `s.is_whole()`, and
+    /// no variant outside it does.
+    ///
+    /// Paired with [`Self::FIELD`], the two disjoint slices partition
+    /// [`Self::ALL`] at the static-slice altitude the same way the
+    /// shipped boolean predicates [`Self::is_whole`] / [`Self::is_field`]
+    /// meta-partition it at the boolean altitude. Both sit in the same
+    /// `impl SecretRefShape` block as [`Self::ALL`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the whole-payload pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_whole`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate) remain
+    /// independent load-bearing witnesses of the same meta-partition,
+    /// and a future edit that shifts a variant across the polarity on
+    /// ONE declaration surface but not the other diverges at test time
+    /// on the first shape where they disagree.
+    ///
+    /// Idiom-peer of [`crate::PartitionFace::REALIZABLE`]
+    /// (commit `a344056`), [`crate::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cd8ef8`), [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`), [`crate::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`), [`SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`), and
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the secret-ref extraction-shape axis,
+    /// closing the second landing on a `cube.rs`-referenced
+    /// closed-binary primitive after `PartitionFace`.
+    ///
+    /// A future tertiary variant (e.g. the
+    /// `MultiField { fields: Vec<String> }` shape referenced in
+    /// [`Self::ALL`]'s docs) lands here either extending one of the two
+    /// slices in lockstep with the boolean predicate that admits it, or
+    /// introducing a third slice; the partition and cardinality pins
+    /// refuse a silent landing under the negation of one of the existing
+    /// two.
+    ///
+    /// The two agreement laws
+    /// (`WHOLE.iter().all(|s| s.is_whole())` and
+    /// `WHOLE.iter().all(|s| !s.is_field())`) are pinned by
+    /// [`tests::secret_ref_shape_whole_slice_agrees_with_is_whole_predicate`].
+    /// Partition invariant with [`Self::FIELD`]:
+    /// [`tests::secret_ref_shape_whole_and_field_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::secret_ref_shape_whole_and_field_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::secret_ref_shape_whole_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::secret_ref_shape_whole_and_field_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::secret_ref_shape_whole_and_field_slices_are_const_addressable`].
+    pub const WHOLE: &'static [Self] = &[Self::Whole];
+
+    /// The single FIELD [`SecretRefShape`] variant — [`Self::Field`]
+    /// (the explicit `{path/file, field}` extraction form) — in the
+    /// SAME relative declaration order it occupies in [`Self::ALL`],
+    /// the complement pole of [`Self::WHOLE`] on the (whole × field)
+    /// closed-binary polarity at the shape primitive's OWN altitude.
+    /// Mirrors the shipped boolean predicate [`Self::is_field`] one
+    /// altitude down.
+    ///
+    /// The partition invariant with [`Self::WHOLE`] pins the whole-set
+    /// cardinality identity
+    /// `WHOLE.len() + FIELD.len() == ALL.len()`. Because the axis is
+    /// closed-binary and XOR-complementary by construction today, a
+    /// future third shape landing (e.g. the `MultiField` variant
+    /// referenced in [`Self::ALL`]'s docs) would first fail the
+    /// two-entry cardinality pins, then fail the partition and
+    /// cardinality pins on this constant pair unless extended in
+    /// lockstep with the boolean predicates.
+    ///
+    /// See [`Self::WHOLE`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_whole`]), and the load-bearing agreement and partition
+    /// pins.
+    pub const FIELD: &'static [Self] = &[Self::Field];
+
     /// Canonical operator-facing lowercase name of the extraction
     /// shape — `"whole"` or `"field"`.
     ///
@@ -5531,6 +5618,206 @@ mod tests {
             .shape()
             .is_field()
         );
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_slice_agrees_with_is_whole_predicate() {
+        // Bidirectional weld between the slice literal
+        // `SecretRefShape::WHOLE` and the boolean predicate
+        // `SecretRefShape::is_whole` on the (whole × field) polarity
+        // axis. Every slice entry satisfies the whole-payload pole
+        // (and its complement `!is_field`), and every ALL cell agrees
+        // on membership under the boolean predicate. Idiom-peer of
+        // `partition_face_realizable_slice_agrees_with_is_realizable_predicate`
+        // (commit `a344056`) —
+        // the two independent declaration surfaces (slice literal +
+        // boolean predicate) diverge at THIS pin on the first shape
+        // where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift.
+        for s in SecretRefShape::WHOLE.iter().copied() {
+            assert!(
+                s.is_whole(),
+                "SecretRefShape::WHOLE entry {s:?} must satisfy is_whole()",
+            );
+            assert!(
+                !s.is_field(),
+                "SecretRefShape::WHOLE entry {s:?} must NOT satisfy is_field()",
+            );
+        }
+        for s in SecretRefShape::ALL.iter().copied() {
+            assert_eq!(
+                SecretRefShape::WHOLE.contains(&s),
+                s.is_whole(),
+                "WHOLE membership must agree with is_whole() on \
+                 SecretRefShape::{s:?}",
+            );
+            assert_eq!(
+                SecretRefShape::FIELD.contains(&s),
+                s.is_field(),
+                "FIELD membership must agree with is_field() on \
+                 SecretRefShape::{s:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_and_field_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `WHOLE.len() + FIELD.len() == ALL.len()` at the slice
+        // altitude on the extraction-shape axis. Idiom-peer of
+        // `partition_face_realizable_and_unrealizable_slices_partition_all`
+        // (commit `a344056`) —
+        // a variant landing on one slice AND the other, or on
+        // neither, breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for s in SecretRefShape::WHOLE.iter().copied() {
+            assert!(
+                !SecretRefShape::FIELD.contains(&s),
+                "SecretRefShape::{s:?} appears in BOTH WHOLE and FIELD",
+            );
+        }
+        for s in SecretRefShape::ALL.iter().copied() {
+            let in_whole = SecretRefShape::WHOLE.contains(&s);
+            let in_field = SecretRefShape::FIELD.contains(&s);
+            assert!(
+                in_whole || in_field,
+                "SecretRefShape::{s:?} is in NEITHER WHOLE nor FIELD",
+            );
+            assert!(
+                !(in_whole && in_field),
+                "SecretRefShape::{s:?} is in BOTH WHOLE and FIELD",
+            );
+        }
+        assert_eq!(
+            SecretRefShape::WHOLE.len() + SecretRefShape::FIELD.len(),
+            SecretRefShape::ALL.len(),
+            "WHOLE and FIELD slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_and_field_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SecretRefShape::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`Whole` first, then `Field`). Idiom-peer of
+        // `partition_face_realizable_and_unrealizable_slices_preserve_all_order`
+        // (commit `a344056`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let whole_from_all: Vec<SecretRefShape> = SecretRefShape::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_whole())
+            .collect();
+        assert_eq!(
+            whole_from_all,
+            SecretRefShape::WHOLE.to_vec(),
+            "WHOLE must be ALL-filtered by is_whole in declaration order",
+        );
+        let field_from_all: Vec<SecretRefShape> = SecretRefShape::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_field())
+            .collect();
+        assert_eq!(
+            field_from_all,
+            SecretRefShape::FIELD.to_vec(),
+            "FIELD must be ALL-filtered by is_field in declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into FIELD, an accidental re-add of an already-present Whole
+        // cell into WHOLE) fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set.
+        // Idiom-peer of
+        // `partition_face_realizable_slice_has_no_duplicates`
+        // (commit `a344056`).
+        for slice in [SecretRefShape::WHOLE, SecretRefShape::FIELD] {
+            let mut sorted = slice.to_vec();
+            sorted.sort();
+            let deduped_len = {
+                let mut seen: Vec<SecretRefShape> = Vec::with_capacity(sorted.len());
+                for s in &sorted {
+                    if !seen.contains(s) {
+                        seen.push(*s);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "SecretRefShape slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_and_field_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SecretRefShape::ALL — i.e.,
+        // `WHOLE.len() == ALL.iter().filter(is_whole).count()`
+        // and `FIELD.len() == ALL.iter().filter(is_field).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 1 whole + 1 field = 2 = ALL.
+        // Idiom-peer of
+        // `partition_face_realizable_and_unrealizable_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `a344056`).
+        let whole_count = SecretRefShape::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_whole())
+            .count();
+        let field_count = SecretRefShape::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_field())
+            .count();
+        assert_eq!(
+            SecretRefShape::WHOLE.len(),
+            whole_count,
+            "WHOLE.len() must match the is_whole count on ALL",
+        );
+        assert_eq!(
+            SecretRefShape::FIELD.len(),
+            field_count,
+            "FIELD.len() must match the is_field count on ALL",
+        );
+        assert_eq!(SecretRefShape::WHOLE.len(), 1);
+        assert_eq!(SecretRefShape::FIELD.len(), 1);
+        assert_eq!(SecretRefShape::ALL.len(), 2);
+    }
+
+    #[test]
+    fn secret_ref_shape_whole_and_field_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `partition_face_realizable_and_unrealizable_slices_are_const_addressable`
+        // (commit `a344056`).
+        const WHOLE_LEN: usize = SecretRefShape::WHOLE.len();
+        const FIELD_LEN: usize = SecretRefShape::FIELD.len();
+        const ALL_LEN: usize = SecretRefShape::ALL.len();
+        assert_eq!(WHOLE_LEN, 1);
+        assert_eq!(FIELD_LEN, 1);
+        assert_eq!(WHOLE_LEN + FIELD_LEN, ALL_LEN);
     }
 
     // ── SecretBackendKind — Ord / Display / FromStr / serde ──────────
