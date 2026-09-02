@@ -3129,6 +3129,99 @@ impl AttributionConfidence {
     pub const fn is_fallback(self) -> bool {
         matches!(self, Self::Fallback)
     }
+
+    /// The single EXACT [`AttributionConfidence`] variant —
+    /// [`Self::Exact`] (the equality-based pole of the (exact ×
+    /// fallback) confidence partition) — in the SAME relative
+    /// declaration order it occupies in [`Self::ALL`], carrying the
+    /// *exact* pole of the closed-binary polarity at the confidence
+    /// primitive's OWN altitude on the confidence axis, mirroring the
+    /// shipped boolean predicate [`Self::is_exact`] one altitude down:
+    /// every variant in this slice satisfies `c.is_exact()`, and no
+    /// variant outside it does.
+    ///
+    /// Paired with [`Self::FALLBACK`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates [`Self::is_exact`] /
+    /// [`Self::is_fallback`] meta-partition it at the boolean altitude.
+    /// Both sit in the same `impl AttributionConfidence` block as
+    /// [`Self::ALL`] and follow the same `pub const &'static [Self]`
+    /// static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the exact pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_exact`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first confidence where they
+    /// disagree.
+    ///
+    /// Idiom-peer of [`crate::PartitionFace::REALIZABLE`]
+    /// (commit `a344056`), [`crate::SecretRefShape::WHOLE`]
+    /// (commit `036673b`), [`crate::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cd8ef8`), [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`), [`crate::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`),
+    /// [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`),
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`), and
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] (commit `7ef79e4`)
+    /// — the per-half meta-partition slice-constant discipline applied
+    /// here to the confidence axis, lifting the [`AttributionConfidence`]
+    /// closed-binary primitive onto the slice-constant altitude.
+    ///
+    /// A future tertiary confidence variant (e.g. a `Heuristic` class
+    /// for resolver paths that combine equality with structural hints,
+    /// which the primitive's own doc-comment already anticipates)
+    /// lands here either extending one of the two slices in lockstep
+    /// with the boolean predicate that admits it, or introducing a
+    /// third slice; the partition and cardinality pins refuse a silent
+    /// landing under the negation of one of the existing two.
+    ///
+    /// The two agreement laws
+    /// (`EXACT.iter().all(|c| c.is_exact())` and
+    /// `EXACT.iter().all(|c| !c.is_fallback())`) are pinned by
+    /// [`tests::attribution_confidence_exact_slice_agrees_with_is_exact_predicate`].
+    /// Partition invariant with [`Self::FALLBACK`]:
+    /// [`tests::attribution_confidence_exact_and_fallback_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_confidence_exact_and_fallback_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::attribution_confidence_exact_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::attribution_confidence_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_confidence_exact_and_fallback_slices_are_const_addressable`].
+    pub const EXACT: &'static [Self] = &[Self::Exact];
+
+    /// The single FALLBACK [`AttributionConfidence`] variant —
+    /// [`Self::Fallback`] (the uniqueness-based pole of the (exact ×
+    /// fallback) confidence partition) — in the SAME relative
+    /// declaration order it occupies in [`Self::ALL`], the complement
+    /// pole of [`Self::EXACT`] on the (exact × fallback) closed-binary
+    /// polarity at the confidence primitive's OWN altitude on the
+    /// confidence axis. Mirrors the shipped boolean predicate
+    /// [`Self::is_fallback`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::EXACT`] pins the whole-set
+    /// cardinality identity
+    /// `EXACT.len() + FALLBACK.len() == ALL.len()`. Because the axis
+    /// is closed-binary and XOR-complementary by construction today, a
+    /// future third confidence landing (e.g. a `Heuristic` class the
+    /// primitive's own doc-comment anticipates) would first fail the
+    /// two-entry cardinality pins, then fail the partition and
+    /// cardinality pins on this constant pair unless extended in
+    /// lockstep with the boolean predicates.
+    ///
+    /// See [`Self::EXACT`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_exact`]), and the load-bearing agreement and
+    /// partition pins.
+    pub const FALLBACK: &'static [Self] = &[Self::Fallback];
 }
 
 impl crate::ClosedAxisLabel for AttributionConfidence {
@@ -10985,5 +11078,206 @@ mod tests {
              instead of at each open-coded literal apart: {offenders:#?}",
             offenders.len(),
         );
+    }
+
+    #[test]
+    fn attribution_confidence_exact_slice_agrees_with_is_exact_predicate() {
+        // Bidirectional weld between the slice literal
+        // `AttributionConfidence::EXACT` and the boolean predicate
+        // `AttributionConfidence::is_exact` on the (exact × fallback)
+        // polarity axis. Every slice entry satisfies the exact pole
+        // (and its complement `!is_fallback`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of
+        // `format_provenance_figment_builtin_slice_agrees_with_is_figment_builtin_predicate`
+        // (commit `7ef79e4`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first confidence where they disagree, before a consumer
+        // that reads one altitude but not the other can observe the
+        // drift.
+        for c in AttributionConfidence::EXACT.iter().copied() {
+            assert!(
+                c.is_exact(),
+                "AttributionConfidence::EXACT entry {c:?} must satisfy is_exact()",
+            );
+            assert!(
+                !c.is_fallback(),
+                "AttributionConfidence::EXACT entry {c:?} must NOT satisfy is_fallback()",
+            );
+        }
+        for c in AttributionConfidence::ALL.iter().copied() {
+            assert_eq!(
+                AttributionConfidence::EXACT.contains(&c),
+                c.is_exact(),
+                "EXACT membership must agree with is_exact() on AttributionConfidence::{c:?}",
+            );
+            assert_eq!(
+                AttributionConfidence::FALLBACK.contains(&c),
+                c.is_fallback(),
+                "FALLBACK membership must agree with is_fallback() on AttributionConfidence::{c:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_exact_and_fallback_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `EXACT.len() + FALLBACK.len() == ALL.len()` at the slice
+        // altitude on the confidence axis. Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_partition_all`
+        // (commit `7ef79e4`) — a variant landing on one slice AND the
+        // other, or on neither, breaks the partition here before any
+        // consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        for c in AttributionConfidence::EXACT.iter().copied() {
+            assert!(
+                !AttributionConfidence::FALLBACK.contains(&c),
+                "AttributionConfidence::{c:?} appears in BOTH EXACT and FALLBACK",
+            );
+        }
+        for c in AttributionConfidence::ALL.iter().copied() {
+            let in_exact = AttributionConfidence::EXACT.contains(&c);
+            let in_fallback = AttributionConfidence::FALLBACK.contains(&c);
+            assert!(
+                in_exact || in_fallback,
+                "AttributionConfidence::{c:?} is in NEITHER EXACT nor FALLBACK",
+            );
+            assert!(
+                !(in_exact && in_fallback),
+                "AttributionConfidence::{c:?} is in BOTH EXACT and FALLBACK",
+            );
+        }
+        assert_eq!(
+            AttributionConfidence::EXACT.len() + AttributionConfidence::FALLBACK.len(),
+            AttributionConfidence::ALL.len(),
+            "EXACT and FALLBACK slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_exact_and_fallback_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in AttributionConfidence::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`Exact` first, then `Fallback`). Idiom-peer
+        // of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_preserve_all_order`
+        // (commit `7ef79e4`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let exact_from_all: Vec<AttributionConfidence> = AttributionConfidence::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_exact())
+            .collect();
+        assert_eq!(
+            exact_from_all,
+            AttributionConfidence::EXACT.to_vec(),
+            "EXACT must be ALL-filtered by is_exact in declaration order",
+        );
+        let fallback_from_all: Vec<AttributionConfidence> = AttributionConfidence::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_fallback())
+            .collect();
+        assert_eq!(
+            fallback_from_all,
+            AttributionConfidence::FALLBACK.to_vec(),
+            "FALLBACK must be ALL-filtered by is_fallback in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_exact_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into FALLBACK, an accidental re-add of an already-present
+        // Exact cell into EXACT) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Idiom-peer of
+        // `format_provenance_figment_builtin_slice_has_no_duplicates`
+        // (commit `7ef79e4`).
+        for slice in [
+            AttributionConfidence::EXACT,
+            AttributionConfidence::FALLBACK,
+        ] {
+            let deduped_len = {
+                let mut seen: Vec<AttributionConfidence> = Vec::with_capacity(slice.len());
+                for c in slice {
+                    if !seen.contains(c) {
+                        seen.push(*c);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "AttributionConfidence slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionConfidence::ALL —
+        // i.e., `EXACT.len() == ALL.iter().filter(is_exact).count()`
+        // and `FALLBACK.len() == ALL.iter().filter(is_fallback).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 1 exact + 1 fallback = 2 = ALL.
+        // Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `7ef79e4`).
+        let exact_count = AttributionConfidence::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_exact())
+            .count();
+        let fallback_count = AttributionConfidence::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_fallback())
+            .count();
+        assert_eq!(
+            AttributionConfidence::EXACT.len(),
+            exact_count,
+            "EXACT.len() must match the is_exact count on ALL",
+        );
+        assert_eq!(
+            AttributionConfidence::FALLBACK.len(),
+            fallback_count,
+            "FALLBACK.len() must match the is_fallback count on ALL",
+        );
+        assert_eq!(AttributionConfidence::EXACT.len(), 1);
+        assert_eq!(AttributionConfidence::FALLBACK.len(), 1);
+        assert_eq!(AttributionConfidence::ALL.len(), 2);
+    }
+
+    #[test]
+    fn attribution_confidence_exact_and_fallback_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_are_const_addressable`
+        // (commit `7ef79e4`).
+        const EXACT_LEN: usize = AttributionConfidence::EXACT.len();
+        const FALLBACK_LEN: usize = AttributionConfidence::FALLBACK.len();
+        const ALL_LEN: usize = AttributionConfidence::ALL.len();
+        assert_eq!(EXACT_LEN, 1);
+        assert_eq!(FALLBACK_LEN, 1);
+        assert_eq!(EXACT_LEN + FALLBACK_LEN, ALL_LEN);
     }
 }
