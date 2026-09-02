@@ -691,6 +691,85 @@ impl SecretOperation {
         Self::GetVersion,
     ];
 
+    /// The three MUTATING [`SecretOperation`] variants that *change the
+    /// underlying store's state* — [`Self::Put`], [`Self::Delete`],
+    /// [`Self::Rotate`] — in the relative declaration order they appear
+    /// in [`Self::ALL`].
+    ///
+    /// **The write-half slice of the operation axis at the primitive's
+    /// own altitude.** The compound-polarity meta-partition of
+    /// [`Self::ALL`] materialized as a static slice, one altitude down
+    /// from the shipped [`Self::is_mutating`] predicate: every variant in
+    /// this slice satisfies `op.is_mutating()`, and no variant outside it
+    /// does. Paired with [`Self::NON_MUTATING`], the two disjoint slices
+    /// partition [`Self::ALL`] pointwise — the same read-vs-write
+    /// meta-partition the shipped `is_mutating` / `is_non_mutating`
+    /// predicates name at the boolean altitude, lifted onto the slice
+    /// altitude so consumers enumerate one pole in one iterator instead
+    /// of filtering [`Self::ALL`] through the polarity predicate.
+    ///
+    /// Consumers that iterate ONLY the write half (an RBAC gate walking
+    /// "which mutating operations does this backend actually support?",
+    /// an attestation manifest emitting the mutating-operation histogram
+    /// of a resolved client, a `/healthz/capabilities` dashboard row
+    /// bucketing each backend by "N of 3 mutating ops advertised", a CLI
+    /// `--mutating-only` filter over a captured refusal log) walk this
+    /// slice directly rather than iterating [`Self::ALL`] and dispatching
+    /// through [`Self::is_mutating`] on every step. Idiom-peer of the
+    /// shipped [`Capabilities::supported_mutating_op_count`] one altitude
+    /// up: both project the write-half meta-partition at their own
+    /// altitude without re-deriving through the sibling polarity
+    /// predicate.
+    ///
+    /// Written as an explicit three-variant slice literal (in the
+    /// declaration order [`Self::Put`], [`Self::Delete`], [`Self::Rotate`]
+    /// mirroring their appearance in [`Self::ALL`]) rather than derived
+    /// by filtering [`Self::ALL`] through [`Self::is_mutating`] — so a
+    /// hypothetical seventh mutating operation must be added HERE in
+    /// lockstep with `is_mutating`, and the two independent declarations
+    /// keep the pin catching any drift between them before either can
+    /// silently disagree. Uses the same static-slice discipline as
+    /// [`Self::ALL`].
+    ///
+    /// The two agreement laws (`MUTATING.iter().all(|op|
+    /// op.is_mutating())` and `MUTATING.iter().all(|op|
+    /// !op.is_non_mutating())`) are pinned by
+    /// [`tests::secret_operation_mutating_slice_agrees_with_is_mutating_predicate`].
+    /// The pair partitions [`Self::ALL`] via
+    /// [`tests::secret_operation_mutating_and_non_mutating_slices_partition_all`].
+    /// The declaration-order preservation pin is
+    /// [`tests::secret_operation_mutating_and_non_mutating_slices_preserve_all_order`].
+    /// No duplicates: [`tests::secret_operation_mutating_slice_has_no_duplicates`].
+    pub const MUTATING: &'static [Self] = &[Self::Put, Self::Delete, Self::Rotate];
+
+    /// The three NON-MUTATING [`SecretOperation`] variants that *do not
+    /// change the underlying store's state* — [`Self::Get`], [`Self::List`],
+    /// [`Self::GetVersion`] — in the relative declaration order they
+    /// appear in [`Self::ALL`].
+    ///
+    /// **The read-half slice of the operation axis at the primitive's
+    /// own altitude.** Complement pole of [`Self::MUTATING`] on the
+    /// read-vs-write meta-partition; the pair partitions [`Self::ALL`]
+    /// into two disjoint three-element slices whose union is
+    /// [`Self::ALL`] pointwise. Mirrors the shipped
+    /// [`Self::is_non_mutating`] predicate one altitude down: every
+    /// variant in this slice satisfies `op.is_non_mutating()`, and no
+    /// variant outside it does.
+    ///
+    /// Consumers iterating ONLY the read half (a captured-refusal log's
+    /// read-path filter, an attestation manifest recording the read-path
+    /// support histogram, a `/healthz/capabilities` dashboard row
+    /// bucketing each backend by "N of 3 read ops advertised") walk this
+    /// slice directly rather than filtering [`Self::ALL`] through
+    /// [`Self::is_non_mutating`] on every step. Idiom-peer of the shipped
+    /// [`Capabilities::supported_non_mutating_op_count`] one altitude up.
+    ///
+    /// See [`Self::MUTATING`] for the full contract, the discipline
+    /// behind the explicit three-variant slice literal (rather than a
+    /// filter through [`Self::is_non_mutating`]), and the load-bearing
+    /// agreement and partition pins.
+    pub const NON_MUTATING: &'static [Self] = &[Self::Get, Self::List, Self::GetVersion];
+
     /// Canonical operator-facing `snake_case` name — `"get"`, `"list"`,
     /// `"put"`, `"delete"`, `"rotate"`, or `"get_version"`.
     ///
@@ -5448,6 +5527,226 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── SecretOperation — MUTATING / NON_MUTATING slice constants ──────
+    //
+    // The compound-polarity meta-partition of `SecretOperation::ALL`
+    // lifted from the boolean predicate altitude (`is_mutating` /
+    // `is_non_mutating`) onto the static-slice altitude. Each of the
+    // four pins below welds one of the four load-bearing invariants:
+    //   1. `secret_operation_mutating_slice_agrees_with_is_mutating_predicate`
+    //      — every entry satisfies its polarity predicate and none
+    //      outside does; the same for the complement slice.
+    //   2. `secret_operation_mutating_and_non_mutating_slices_partition_all`
+    //      — the two slices are disjoint, their union is ALL, and their
+    //      combined length equals `ALL.len()`.
+    //   3. `secret_operation_mutating_and_non_mutating_slices_preserve_all_order`
+    //      — relative declaration order matches ALL, so the slice
+    //      literal cannot silently reorder the meta-partition.
+    //   4. `secret_operation_mutating_slice_has_no_duplicates` and
+    //      `secret_operation_non_mutating_slice_has_no_duplicates` —
+    //      each slice lists every variant at most once.
+
+    #[test]
+    fn secret_operation_mutating_slice_agrees_with_is_mutating_predicate() {
+        // Cross-altitude weld: the slice's membership agrees with the
+        // boolean predicate one altitude down. Every entry in MUTATING
+        // satisfies `is_mutating` (and, by the meta-partition, none
+        // satisfies `is_non_mutating`); every entry in NON_MUTATING
+        // satisfies `is_non_mutating` (and none satisfies `is_mutating`).
+        // A future edit that renamed a variant across the polarity on
+        // one declaration surface but not the other diverges here rather
+        // than silently. Idiom-peer of the shipped Capabilities per-half
+        // filter-count pins that re-derive against the predicate.
+        for op in SecretOperation::MUTATING.iter().copied() {
+            assert!(
+                op.is_mutating(),
+                "SecretOperation::MUTATING entry {op:?} must satisfy is_mutating",
+            );
+            assert!(
+                !op.is_non_mutating(),
+                "SecretOperation::MUTATING entry {op:?} must NOT satisfy is_non_mutating",
+            );
+        }
+        for op in SecretOperation::NON_MUTATING.iter().copied() {
+            assert!(
+                op.is_non_mutating(),
+                "SecretOperation::NON_MUTATING entry {op:?} must satisfy is_non_mutating",
+            );
+            assert!(
+                !op.is_mutating(),
+                "SecretOperation::NON_MUTATING entry {op:?} must NOT satisfy is_mutating",
+            );
+        }
+        // The dual direction: every variant outside MUTATING must fail
+        // is_mutating, and every variant outside NON_MUTATING must fail
+        // is_non_mutating — swept over ALL. This dual pin catches the
+        // failure mode where a mutating variant is silently dropped from
+        // MUTATING while still satisfying `is_mutating` at the boolean
+        // altitude.
+        for op in SecretOperation::ALL.iter().copied() {
+            let in_mutating = SecretOperation::MUTATING.iter().any(|m| *m == op);
+            let in_non_mutating = SecretOperation::NON_MUTATING.iter().any(|n| *n == op);
+            assert_eq!(
+                in_mutating,
+                op.is_mutating(),
+                "MUTATING membership must agree with is_mutating on {op:?}",
+            );
+            assert_eq!(
+                in_non_mutating,
+                op.is_non_mutating(),
+                "NON_MUTATING membership must agree with is_non_mutating on {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_mutating_and_non_mutating_slices_partition_all() {
+        // The two slices are DISJOINT (no variant appears in both), their
+        // UNION is exactly ALL (no variant missing from both), and their
+        // combined length equals `ALL.len()` (the meta-partition covers
+        // the axis without overlap). This is the slice-altitude analogue
+        // of the boolean-altitude pin
+        // `secret_operation_is_mutating_and_is_non_mutating_are_a_closed_binary_partition`.
+        // A future third-pole operation landing in ALL without being
+        // classified onto one of the two slices fails here.
+        assert_eq!(
+            SecretOperation::MUTATING.len() + SecretOperation::NON_MUTATING.len(),
+            SecretOperation::ALL.len(),
+            "MUTATING and NON_MUTATING must together be the same size as ALL",
+        );
+        for m in SecretOperation::MUTATING.iter().copied() {
+            assert!(
+                !SecretOperation::NON_MUTATING.iter().any(|n| *n == m),
+                "SecretOperation::{m:?} must NOT appear in both MUTATING and NON_MUTATING",
+            );
+        }
+        for op in SecretOperation::ALL.iter().copied() {
+            let in_mutating = SecretOperation::MUTATING.iter().any(|m| *m == op);
+            let in_non_mutating = SecretOperation::NON_MUTATING.iter().any(|n| *n == op);
+            assert!(
+                in_mutating || in_non_mutating,
+                "SecretOperation::{op:?} in ALL must appear in MUTATING or NON_MUTATING",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_mutating_and_non_mutating_slices_preserve_all_order() {
+        // The declaration order within each per-half slice matches the
+        // relative order of those variants in `SecretOperation::ALL` — a
+        // slice literal cannot silently reorder the meta-partition (which
+        // would misalign per-half operation histograms or per-index
+        // dashboards keyed on the slice). Idiom analogue of
+        // `secret_operation_all_covers_every_variant`'s implicit-order
+        // discipline. The all-slice pins the declaration order; this pin
+        // welds the per-half slices to the same order.
+        let mutating_from_all: Vec<SecretOperation> = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_mutating())
+            .collect();
+        let non_mutating_from_all: Vec<SecretOperation> = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_non_mutating())
+            .collect();
+        assert_eq!(
+            SecretOperation::MUTATING.to_vec(),
+            mutating_from_all,
+            "SecretOperation::MUTATING must match ALL's mutating-order projection",
+        );
+        assert_eq!(
+            SecretOperation::NON_MUTATING.to_vec(),
+            non_mutating_from_all,
+            "SecretOperation::NON_MUTATING must match ALL's non-mutating-order projection",
+        );
+    }
+
+    #[test]
+    fn secret_operation_mutating_slice_has_no_duplicates() {
+        // Same set-shape discipline as `secret_operation_all_has_no_duplicates`.
+        // Sorting on the canonical label decouples this pin from the
+        // slice's declaration order (which is welded by the sibling
+        // `secret_operation_mutating_and_non_mutating_slices_preserve_all_order`).
+        let mut labels: Vec<&'static str> = SecretOperation::MUTATING
+            .iter()
+            .map(|o| o.as_str())
+            .collect();
+        let original_len = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            original_len,
+            "SecretOperation::MUTATING must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_operation_non_mutating_slice_has_no_duplicates() {
+        // Read-half twin of the write-half no-duplicates pin.
+        let mut labels: Vec<&'static str> = SecretOperation::NON_MUTATING
+            .iter()
+            .map(|o| o.as_str())
+            .collect();
+        let original_len = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            original_len,
+            "SecretOperation::NON_MUTATING must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_operation_mutating_and_non_mutating_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // The slice lengths agree with the boolean-altitude pole
+        // cardinalities: `MUTATING.len()` equals the number of ALL cells
+        // satisfying `is_mutating`, and the same on the read half. Ties
+        // the slice altitude back to the boolean altitude at the length
+        // scalar the whole meta-partition is measured by (the same
+        // constant `3` that both `Capabilities::supported_mutating_op_count`
+        // and its complement `unsupported_mutating_op_count` sum to on
+        // every reachable Capabilities shape).
+        let mutating_boolean_count = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_mutating())
+            .count();
+        let non_mutating_boolean_count = SecretOperation::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_non_mutating())
+            .count();
+        assert_eq!(
+            SecretOperation::MUTATING.len(),
+            mutating_boolean_count,
+            "SecretOperation::MUTATING.len() must equal the is_mutating filter count on ALL",
+        );
+        assert_eq!(
+            SecretOperation::NON_MUTATING.len(),
+            non_mutating_boolean_count,
+            "SecretOperation::NON_MUTATING.len() must equal the is_non_mutating filter count on ALL",
+        );
+    }
+
+    #[test]
+    fn secret_operation_mutating_and_non_mutating_slices_are_const_addressable() {
+        // The two slice constants are addressable in const context — a
+        // const-fn caller can index into them or take their `len()`
+        // without going through a runtime iterator. Idiom-peer of the
+        // sibling `secret_operation_is_mutating_is_const_callable` pin at
+        // the boolean altitude. This weld pins that a hypothetical future
+        // edit lifting `MUTATING` behind a `pub fn` (rather than
+        // `pub const`) — losing const-time addressability — fails here.
+        const MUTATING_LEN: usize = SecretOperation::MUTATING.len();
+        const NON_MUTATING_LEN: usize = SecretOperation::NON_MUTATING.len();
+        assert_eq!(MUTATING_LEN, 3);
+        assert_eq!(NON_MUTATING_LEN, 3);
     }
 
     // ── Capabilities — mutation-capability compound-polarity pair ──────
