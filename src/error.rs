@@ -524,6 +524,125 @@ impl ShikumiErrorKind {
     pub const fn is_validation(self) -> bool {
         matches!(self, Self::Validation)
     }
+
+    /// The two FIGMENT-BEARING [`ShikumiErrorKind`] variants —
+    /// [`Self::Figment`] (a bare [`figment::Error`] without a recorded
+    /// [`ConfigSource`] chain) and [`Self::Extract`] (with a recorded
+    /// chain) — in the SAME relative declaration order they occupy in
+    /// [`Self::ALL`], carrying the *figment-wrapping* pole of the
+    /// (figment-bearing × not-figment-bearing) polarity axis at the
+    /// primitive's OWN altitude on the seven-way kind axis, mirroring
+    /// the shipped boolean predicate [`Self::is_figment_bearing`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `k.is_figment_bearing()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::NOT_FIGMENT_BEARING`], the two disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude the
+    /// same way the shipped boolean predicates
+    /// [`Self::is_figment_bearing`] / [`Self::is_not_figment_bearing`]
+    /// meta-partition it at the boolean altitude. The two constants sit
+    /// in the same `impl ShikumiErrorKind` block as [`Self::ALL`] and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Written as an explicit two-variant slice literal in the SAME
+    /// relative declaration order the figment-bearing pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_figment_bearing`] at const-fn altitude — so
+    /// the two declarations (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical third figment-bearing kind — a variant that
+    /// wraps a figment error through a third path the two current arms
+    /// don't name — lands here in lockstep with
+    /// [`Self::is_figment_bearing`], and the cardinality pin catches
+    /// any drift between the slice and the boolean predicate on the
+    /// same edit.
+    ///
+    /// Idiom-peer of [`crate::Format::FEATURE_GATED`] (commit
+    /// `2013269`) on the file-format axis (the first landing of this
+    /// discipline on a five-way primitive with an interleaved polarity
+    /// partition), [`crate::source::FigmentNameTagKind::FORMAT`]
+    /// (commit `2d2ef9d`),
+    /// [`crate::source::EnvMetadataTagKind::PREFIXED`] (commit
+    /// `13304d0`), [`AttributionAxis::METADATA_SOURCE`] (commit
+    /// `34bfbb6`), [`crate::cli::OutputFormat::YAML`] (commit
+    /// `292ca1d`), [`AttributionConfidence::EXACT`] (commit `13c1003`),
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] (commit `7ef79e4`),
+    /// [`crate::secret::SecretRefShape::WHOLE`] (commit `036673b`),
+    /// [`crate::cube::PartitionFace::REALIZABLE`] (commit `a344056`),
+    /// [`crate::source::ConfigSourceKind::DEFAULTS`] (commit
+    /// `2cd8ef8`), and [`crate::tiered::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the seven-way shikumi error-kind
+    /// axis's (figment-bearing × not-figment-bearing) meta-partition,
+    /// with a genuine interleaved projection: the not-figment-bearing
+    /// pole spans [`Self::NotFound`] / [`Self::Parse`] / [`Self::Watch`]
+    /// / [`Self::Io`] on the ALL-prefix and [`Self::Validation`] on the
+    /// ALL-suffix, split by the two figment-bearing cells in the middle
+    /// ([`Self::Figment`] and [`Self::Extract`]).
+    ///
+    /// The two agreement laws
+    /// (`FIGMENT_BEARING.iter().all(|k| k.is_figment_bearing())` and
+    /// `FIGMENT_BEARING.iter().all(|k| !k.is_not_figment_bearing())`)
+    /// are pinned by
+    /// [`tests::shikumi_error_kind_figment_bearing_slice_agrees_with_is_figment_bearing_predicate`].
+    /// Partition invariant with [`Self::NOT_FIGMENT_BEARING`]:
+    /// [`tests::shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::shikumi_error_kind_figment_bearing_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::shikumi_error_kind_figment_bearing_and_not_figment_bearing_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_are_const_addressable`].
+    pub const FIGMENT_BEARING: &'static [Self] = &[Self::Figment, Self::Extract];
+
+    /// The five NOT-FIGMENT-BEARING [`ShikumiErrorKind`] variants —
+    /// [`Self::NotFound`], [`Self::Parse`], [`Self::Watch`],
+    /// [`Self::Io`], and [`Self::Validation`] — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], the complement
+    /// pole of [`Self::FIGMENT_BEARING`] on the
+    /// (figment-bearing × not-figment-bearing) closed-binary polarity at
+    /// the axis primitive's OWN altitude on the seven-way kind axis.
+    /// Mirrors the shipped boolean predicate
+    /// [`Self::is_not_figment_bearing`] one altitude down.
+    ///
+    /// The declaration-order projection preserves [`Self::ALL`]'s
+    /// interleaving on this pole: [`Self::NotFound`], [`Self::Parse`],
+    /// [`Self::Watch`], and [`Self::Io`] come before [`Self::Figment`]
+    /// / [`Self::Extract`] (skipped — the other pole), and
+    /// [`Self::Validation`] comes AFTER [`Self::Figment`] /
+    /// [`Self::Extract`], so the not-figment-bearing slice is neither a
+    /// prefix nor a suffix of [`Self::ALL`] but the ALL-order filtered
+    /// projection under [`Self::is_not_figment_bearing`]. Any future
+    /// variant landing on this pole extends the slice at the
+    /// ALL-declaration-order position, not at the tail.
+    ///
+    /// The partition invariant with [`Self::FIGMENT_BEARING`] pins the
+    /// whole-set cardinality identity
+    /// `FIGMENT_BEARING.len() + NOT_FIGMENT_BEARING.len() == ALL.len()`.
+    /// Because the axis is a closed binary meta-partition by
+    /// construction today, a future third figment-bearing kind would
+    /// first fail the two-versus-five cardinality pins, then fail the
+    /// partition and cardinality pins on this constant pair unless
+    /// extended in lockstep with the boolean predicates.
+    ///
+    /// See [`Self::FIGMENT_BEARING`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_figment_bearing`]), and the
+    /// load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins.
+    pub const NOT_FIGMENT_BEARING: &'static [Self] = &[
+        Self::NotFound,
+        Self::Parse,
+        Self::Watch,
+        Self::Io,
+        Self::Validation,
+    ];
 }
 
 /// Closed tri-state partition over the field-path-localization axis of
@@ -7237,6 +7356,231 @@ mod tests {
                 "figment-bearing must equal (is_figment ∨ is_extract) on {k:?}",
             );
         }
+    }
+
+    // ---- ShikumiErrorKind::FIGMENT_BEARING / NOT_FIGMENT_BEARING slice pair ----
+    //
+    // Slice-altitude witnesses of the (figment-bearing ×
+    // not-figment-bearing) compound-polarity meta-partition on the
+    // seven-way kind axis. Idiom-peers of the shipped per-half slice
+    // pairs on `Format` (`2013269`), `FigmentNameTagKind` (`2d2ef9d`),
+    // `EnvMetadataTagKind` (`13304d0`), `AttributionAxis` (`34bfbb6`),
+    // `OutputFormat` (`292ca1d`), `AttributionConfidence` (`13c1003`),
+    // `FormatProvenance` (`7ef79e4`), `SecretRefShape` (`036673b`),
+    // `PartitionFace` (`a344056`), `ConfigSourceKind` (`2cd8ef8`), and
+    // `ConfigTierKind` (`2c0686f`) — applied here to the seven-way
+    // shikumi error-kind axis's (figment-bearing × not-figment-bearing)
+    // compound-polarity meta-partition, an INTERLEAVED projection in
+    // which the not-figment-bearing pole spans both an ALL-prefix
+    // (NotFound/Parse/Watch/Io) AND an ALL-suffix cell (Validation),
+    // split by the two figment-bearing cells (Figment/Extract) in the
+    // middle.
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_slice_agrees_with_is_figment_bearing_predicate() {
+        // Bidirectional weld between the slice literal
+        // `ShikumiErrorKind::FIGMENT_BEARING` and the boolean predicate
+        // `ShikumiErrorKind::is_figment_bearing` on the
+        // (figment-bearing × not-figment-bearing) polarity axis. Every
+        // slice entry satisfies the figment-bearing pole (and its
+        // complement `!is_not_figment_bearing`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of `format_feature_gated_slice_agrees_with_is_feature_gated_predicate`
+        // (`2013269`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        for k in ShikumiErrorKind::FIGMENT_BEARING.iter().copied() {
+            assert!(
+                k.is_figment_bearing(),
+                "ShikumiErrorKind::FIGMENT_BEARING entry {k:?} must satisfy is_figment_bearing()",
+            );
+            assert!(
+                !k.is_not_figment_bearing(),
+                "ShikumiErrorKind::FIGMENT_BEARING entry {k:?} must NOT satisfy is_not_figment_bearing()",
+            );
+        }
+        for k in ShikumiErrorKind::NOT_FIGMENT_BEARING.iter().copied() {
+            assert!(
+                k.is_not_figment_bearing(),
+                "ShikumiErrorKind::NOT_FIGMENT_BEARING entry {k:?} must satisfy is_not_figment_bearing()",
+            );
+            assert!(
+                !k.is_figment_bearing(),
+                "ShikumiErrorKind::NOT_FIGMENT_BEARING entry {k:?} must NOT satisfy is_figment_bearing()",
+            );
+        }
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                ShikumiErrorKind::FIGMENT_BEARING.contains(&k),
+                k.is_figment_bearing(),
+                "FIGMENT_BEARING membership must agree with is_figment_bearing() on ShikumiErrorKind::{k:?}",
+            );
+            assert_eq!(
+                ShikumiErrorKind::NOT_FIGMENT_BEARING.contains(&k),
+                k.is_not_figment_bearing(),
+                "NOT_FIGMENT_BEARING membership must agree with is_not_figment_bearing() on ShikumiErrorKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `FIGMENT_BEARING.len() + NOT_FIGMENT_BEARING.len() == ALL.len()`
+        // at the slice altitude on the seven-way kind axis. Idiom-peer
+        // of `format_feature_gated_and_always_available_slices_partition_all`
+        // (`2013269`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in ShikumiErrorKind::FIGMENT_BEARING.iter().copied() {
+            assert!(
+                !ShikumiErrorKind::NOT_FIGMENT_BEARING.contains(&k),
+                "ShikumiErrorKind::{k:?} appears in BOTH FIGMENT_BEARING and NOT_FIGMENT_BEARING",
+            );
+        }
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            let in_figment_bearing = ShikumiErrorKind::FIGMENT_BEARING.contains(&k);
+            let in_not_figment_bearing = ShikumiErrorKind::NOT_FIGMENT_BEARING.contains(&k);
+            assert!(
+                in_figment_bearing || in_not_figment_bearing,
+                "ShikumiErrorKind::{k:?} is in NEITHER FIGMENT_BEARING nor NOT_FIGMENT_BEARING",
+            );
+            assert!(
+                !(in_figment_bearing && in_not_figment_bearing),
+                "ShikumiErrorKind::{k:?} is in BOTH FIGMENT_BEARING and NOT_FIGMENT_BEARING",
+            );
+        }
+        assert_eq!(
+            ShikumiErrorKind::FIGMENT_BEARING.len() + ShikumiErrorKind::NOT_FIGMENT_BEARING.len(),
+            ShikumiErrorKind::ALL.len(),
+            "FIGMENT_BEARING and NOT_FIGMENT_BEARING slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ShikumiErrorKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. The
+        // not-figment-bearing pole in particular is INTERLEAVED with
+        // the figment-bearing pole in ShikumiErrorKind::ALL (NotFound,
+        // Parse, Watch, Io, Figment, Extract, Validation — the
+        // not-figment-bearing cells NotFound/Parse/Watch/Io on the
+        // prefix AND Validation on the suffix are split by the
+        // figment-bearing Figment/Extract pair in the middle), so a
+        // suffix or prefix rewriting of the slices — or a reordering
+        // of ALL that shuffled the interleaving — diverges at THIS
+        // pin. Idiom-peer of
+        // `format_feature_gated_and_always_available_slices_preserve_all_order`
+        // (`2013269`).
+        let figment_bearing_from_all: Vec<ShikumiErrorKind> = ShikumiErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_figment_bearing())
+            .collect();
+        assert_eq!(
+            figment_bearing_from_all,
+            ShikumiErrorKind::FIGMENT_BEARING.to_vec(),
+            "FIGMENT_BEARING must be ALL-filtered by is_figment_bearing in declaration order",
+        );
+        let not_figment_bearing_from_all: Vec<ShikumiErrorKind> = ShikumiErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_not_figment_bearing())
+            .collect();
+        assert_eq!(
+            not_figment_bearing_from_all,
+            ShikumiErrorKind::NOT_FIGMENT_BEARING.to_vec(),
+            "NOT_FIGMENT_BEARING must be ALL-filtered by is_not_figment_bearing in declaration order",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into FIGMENT_BEARING, an accidental re-add of an
+        // already-present cell into NOT_FIGMENT_BEARING) fails at THIS
+        // pin before drifting through any consumer that iterates the
+        // slice expecting a set.
+        for slice in [
+            ShikumiErrorKind::FIGMENT_BEARING,
+            ShikumiErrorKind::NOT_FIGMENT_BEARING,
+        ] {
+            let mut seen: Vec<ShikumiErrorKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ShikumiErrorKind slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_and_not_figment_bearing_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ShikumiErrorKind::ALL — i.e.,
+        // `FIGMENT_BEARING.len() == ALL.iter().filter(is_figment_bearing).count()`
+        // and `NOT_FIGMENT_BEARING.len() ==
+        // ALL.iter().filter(is_not_figment_bearing).count()` — the
+        // cardinality projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete
+        // positions today: 2 figment-bearing + 5 not-figment-bearing
+        // = 7 = ALL. Idiom-peer of
+        // `format_feature_gated_and_always_available_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2013269`).
+        let figment_bearing_count = ShikumiErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_figment_bearing())
+            .count();
+        let not_figment_bearing_count = ShikumiErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_not_figment_bearing())
+            .count();
+        assert_eq!(
+            ShikumiErrorKind::FIGMENT_BEARING.len(),
+            figment_bearing_count,
+            "FIGMENT_BEARING.len() must match the is_figment_bearing count on ALL",
+        );
+        assert_eq!(
+            ShikumiErrorKind::NOT_FIGMENT_BEARING.len(),
+            not_figment_bearing_count,
+            "NOT_FIGMENT_BEARING.len() must match the is_not_figment_bearing count on ALL",
+        );
+        assert_eq!(ShikumiErrorKind::FIGMENT_BEARING.len(), 2);
+        assert_eq!(ShikumiErrorKind::NOT_FIGMENT_BEARING.len(), 5);
+        assert_eq!(ShikumiErrorKind::ALL.len(), 7);
+    }
+
+    #[test]
+    fn shikumi_error_kind_figment_bearing_and_not_figment_bearing_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `format_feature_gated_and_always_available_slices_are_const_addressable`
+        // (`2013269`).
+        const FIGMENT_BEARING_LEN: usize = ShikumiErrorKind::FIGMENT_BEARING.len();
+        const NOT_FIGMENT_BEARING_LEN: usize = ShikumiErrorKind::NOT_FIGMENT_BEARING.len();
+        const ALL_LEN: usize = ShikumiErrorKind::ALL.len();
+        assert_eq!(FIGMENT_BEARING_LEN, 2);
+        assert_eq!(NOT_FIGMENT_BEARING_LEN, 5);
+        assert_eq!(FIGMENT_BEARING_LEN + NOT_FIGMENT_BEARING_LEN, ALL_LEN);
     }
 
     #[test]
