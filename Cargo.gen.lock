@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "ef5a831034dd9e27c6327dcd9f982028d17edf2b775a0d68edd189a69ac3f8f9",
+  "cargo_lock_sha256": "98cbfcef32df8b4a793fcb3df1cd616944d7a51fb12d61de579cd0e4a2d3ed76",
   "manifest_sha256": {
-    "Cargo.toml": "b45bd1edae94b97b6c67aef71f201dd0ec8492b53058e53237b4113aee53ca79"
+    "Cargo.toml": "1daf46e4114634cd06ae0c55d56c2be81c98524b28ba95ff10d59b04fa9356f0"
   },
   "target_resolves": {
     "base": {
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.753": {
+      "shikumi-0.1.754": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -2278,7 +2278,7 @@
               "no_std"
             ]
           },
-          "mio-1.2.2": {
+          "mio-1.2.3": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -2343,7 +2343,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2355,7 +2355,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2619,7 +2619,7 @@
               "no_std"
             ]
           },
-          "mio-1.2.2": {
+          "mio-1.2.3": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -2684,7 +2684,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2696,7 +2696,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3226,7 +3226,7 @@
               "no_std"
             ]
           },
-          "mio-1.2.2": {
+          "mio-1.2.3": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -3291,7 +3291,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3303,7 +3303,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3582,7 +3582,7 @@
               "no_std"
             ]
           },
-          "mio-1.2.2": {
+          "mio-1.2.3": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -3647,7 +3647,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3659,7 +3659,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.2",
+                "package_key": "mio-1.2.3",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3912,7 +3912,7 @@
     "memchr-2.8.3": {
       "edition": "2021"
     },
-    "mio-1.2.2": {
+    "mio-1.2.3": {
       "edition": "2021"
     },
     "notify-8.2.0": {
@@ -3991,7 +3991,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.753": {
+    "shikumi-0.1.754": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
