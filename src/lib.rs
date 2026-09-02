@@ -33,6 +33,21 @@
 //! println!("width: {:?}", config.window_width);
 //! ```
 
+// Deny orphaned attribute / doc-comment defects at the crate root, so a
+// future edit inserting a new item between an attribute (or `///` doc-
+// comment block) and the item the attribute was intended for fires at
+// compile time instead of surviving as a `warn`-level notice a busy CI
+// gate can miss. Two such orphanings landed in `src/provider.rs` before
+// this gate was wired: a `#[must_use]` gate above `merge_env_prefix_layer`
+// that a later insertion of `RESERVED_ENV_KEYS`'s doc-comment block re-
+// homed onto the constant (rustc rejects `#[must_use]` on constants and
+// warned it will become a hard error), and a `///` doc-comment above the
+// `text_source_provider!` macro invocation for `MacroFusedProbeProvider`
+// that rustc could not attach to a macro invocation (rustdoc rides
+// INSIDE the invocation on the `$(#[$attr])*` slot instead). Both are
+// fixed at their sites; this gate stops the class recurring.
+#![deny(unused_attributes, unused_doc_comments)]
+
 // `macros` MUST be declared first: `#[macro_use]` only makes its `macro_rules!`
 // visible to modules declared AFTER it. `cube` + `discovery` call
 // `serde_via_display_fromstr!` / `closed_axis_label_string_surface*!` by bare
@@ -365,5 +380,141 @@ mod check_cfg_tests {
             "counter must match only the two lines whose trimmed-start \
              is the bare attribute, not any of the six mention forms",
         );
+    }
+}
+
+#[cfg(test)]
+mod unused_attribute_gate_tests {
+    //! Build-hygiene invariants that pin the crate-level
+    //! `#![deny(unused_attributes, unused_doc_comments)]` gate above and
+    //! the four `#[must_use]` stamps on the `merge_*_layer` peer helpers
+    //! in `src/provider.rs`.
+    //!
+    //! The gate blocks two orphaning shapes rustc could otherwise let a
+    //! future edit reintroduce at `warn` altitude only:
+    //!
+    //! - `#[must_use]` above a `pub(crate) fn` that a subsequent edit
+    //!   pushes DOWN the file by inserting a new item (constant, type
+    //!   alias, doc-comment block) between the attribute and its target.
+    //!   rustc rehomes the attribute onto the inserted item; if that
+    //!   item is a constant, rustc emits
+    //!   `#[must_use] attribute cannot be used on constants` — a warning
+    //!   that is scheduled to become a hard error but reaches CI as a
+    //!   warning today. This is what happened at `provider.rs:1211`
+    //!   before this gate: an inserted `RESERVED_ENV_KEYS` block re-
+    //!   homed the `#[must_use]` gate for `merge_env_prefix_layer` onto
+    //!   the constant.
+    //!
+    //! - `///` doc-comments above a macro invocation that rustc cannot
+    //!   attach to the invocation (rustdoc rides INSIDE the invocation
+    //!   on the `$(#[$attr])*` slot). The outer `///` becomes an
+    //!   orphaned doc-comment and rustc emits `unused doc comment`.
+    //!   This is what happened at `provider.rs:5609` before this gate.
+    //!
+    //! Delete the crate-level deny only together with the four
+    //! `#[must_use]` stamps below — never in isolation.
+
+    const LIB_RS: &str = include_str!("lib.rs");
+    const PROVIDER_RS: &str = include_str!("provider.rs");
+
+    const CRATE_LEVEL_DENY: &str = "#![deny(unused_attributes, unused_doc_comments)]";
+
+    /// Every peer helper in the `merge_*_layer` family MUST carry
+    /// `#[must_use]` immediately above its `pub(crate) fn` line. The
+    /// four helpers take `chain` by value and return `chain` by value —
+    /// dropping the returned chain silently discards the just-merged
+    /// tier layer, the exact class the attribute guards against.
+    const MUST_USE_MERGE_HELPERS: &[&str] = &[
+        "pub(crate) fn merge_provider_and_record<",
+        "pub(crate) fn merge_serialized_defaults_layer<",
+        "pub(crate) fn merge_env_prefix_layer(",
+        "pub(crate) fn merge_file_layer<",
+    ];
+
+    #[test]
+    fn lib_rs_declares_crate_level_unused_attributes_deny() {
+        assert!(
+            LIB_RS.contains(CRATE_LEVEL_DENY),
+            "src/lib.rs must declare `{CRATE_LEVEL_DENY}` at the crate \
+             root so the two orphaning shapes at `provider.rs:1211` \
+             (`#[must_use]` on a constant) and `provider.rs:5609` \
+             (`///` above a macro invocation) — both fixed in the same \
+             commit that wired this gate — cannot recur as `warn`-level \
+             notices CI overlooks",
+        );
+    }
+
+    #[test]
+    fn merge_layer_helpers_all_carry_must_use() {
+        for helper_signature in MUST_USE_MERGE_HELPERS {
+            let idx = PROVIDER_RS.find(helper_signature).unwrap_or_else(|| {
+                panic!(
+                    "src/provider.rs must still declare the peer helper \
+                     `{helper_signature}` — if the signature has been \
+                     renamed, update MUST_USE_MERGE_HELPERS here in \
+                     lockstep"
+                )
+            });
+            // Look at the line immediately preceding the signature: the
+            // `#[must_use]` stamp lives on its own line right above the
+            // `pub(crate) fn` declaration for all four peers.
+            let prefix = &PROVIDER_RS[..idx];
+            let prev_line = prefix
+                .rsplit_once('\n')
+                .and_then(|(before, _)| before.rsplit_once('\n').map(|(_, line)| line))
+                .unwrap_or("");
+            assert_eq!(
+                prev_line.trim(),
+                "#[must_use]",
+                "peer helper `{helper_signature}` in src/provider.rs must \
+                 carry `#[must_use]` on the line immediately above its \
+                 signature — dropping the returned chain would silently \
+                 discard the merged tier layer, the exact class \
+                 `#[must_use]` guards against; the prior line was \
+                 {prev_line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reserved_env_keys_is_not_preceded_by_orphaned_must_use() {
+        // Regression pin for the exact 2026-09-02 orphaning at
+        // `provider.rs:1211`: an inserted doc-comment block for
+        // `RESERVED_ENV_KEYS` re-homed the `#[must_use]` intended for
+        // `merge_env_prefix_layer` onto the constant. `RESERVED_ENV_KEYS`
+        // is a `pub(crate) const`, and rustc rejects `#[must_use]` on
+        // constants — the crate-level deny above catches it going
+        // forward, and this pin also catches it in the source string
+        // for the specific site the class first appeared at.
+        let anchor = "pub(crate) const RESERVED_ENV_KEYS:";
+        let idx = PROVIDER_RS
+            .find(anchor)
+            .expect("src/provider.rs must still declare `RESERVED_ENV_KEYS`");
+        let prefix = &PROVIDER_RS[..idx];
+        // Scan up to 128 lines above the declaration; the orphaning
+        // shape puts `#[must_use]` on its own line just below the
+        // helper's doc-comment block. A `#[must_use]` anywhere in that
+        // window that is NOT immediately followed by a `pub(crate) fn`
+        // is the defect.
+        let window = prefix
+            .rsplit('\n')
+            .take(128)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>();
+        for pair in window.windows(2) {
+            if pair[0].trim() == "#[must_use]" {
+                let next = pair[1].trim();
+                assert!(
+                    next.starts_with("pub(crate) fn")
+                        || next.starts_with("pub fn")
+                        || next.starts_with("fn "),
+                    "orphaned `#[must_use]` above `RESERVED_ENV_KEYS` — \
+                     the next non-empty line after `#[must_use]` was \
+                     {next:?}, not a `fn` declaration"
+                );
+            }
+        }
     }
 }

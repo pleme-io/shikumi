@@ -1208,7 +1208,18 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
 /// statements the pre-lift open-coded body performed — one figment
 /// `merge` and one `Vec::push` — so the substrate lift adds zero
 /// per-call overhead the compiler cannot inline away.
-#[must_use]
+///
+/// The `#[must_use]` gate is stamped on the [`pub(crate) fn`
+/// declaration itself, one item BELOW the intervening
+/// [`RESERVED_ENV_KEYS`] constant — dropping the returned chain
+/// would silently discard the just-merged Env layer, the exact
+/// class the three peer helpers ([`merge_provider_and_record`],
+/// [`merge_serialized_defaults_layer`], [`merge_file_layer`]) also
+/// gate against. The 2026-09-02 orphaning of that attribute
+/// (parked ABOVE the [`RESERVED_ENV_KEYS`] doc-comment block a
+/// prior edit inserted between the docs and the fn) is now
+/// blocked by the crate-level `#![deny(unused_attributes)]` gate
+/// in `src/lib.rs`.
 /// The env keys the prefix layer must never claim as fields.
 ///
 /// ── ★ WHY `config` IS RESERVED (2026-08-29) ────────────────────────────
@@ -1240,6 +1251,7 @@ pub(crate) fn merge_serialized_defaults_layer<T: Serialize>(
 /// alternative is silently disabling the file override for everyone.
 pub(crate) const RESERVED_ENV_KEYS: &[&str] = &["config"];
 
+#[must_use]
 pub(crate) fn merge_env_prefix_layer(chain: ProviderChain, prefix: &str) -> ProviderChain {
     merge_provider_and_record(
         chain,
@@ -5606,13 +5618,22 @@ mod tests {
     // re-introducing the two-macro shape at either site would trip a
     // pin.
 
-    /// Synthetic fused-emitter probe. Byte-for-byte equivalent to what
-    /// the pre-lift two-invocation shape would emit for the same
-    /// `(Ty, Format, mapper)` triple — so every pin below can compare
-    /// this fixture against either of the two half-side macros' probes
-    /// (`MacroProbeProvider` above, `PathMacroProbeProvider` below —
-    /// the ones the sibling `text_source_provider_impl!` /
-    /// `path_provider_impl!` pins already exercise).
+    // Synthetic fused-emitter probe. Byte-for-byte equivalent to what
+    // the pre-lift two-invocation shape would emit for the same
+    // `(Ty, Format, mapper)` triple — so every pin below can compare
+    // this fixture against either of the two half-side macros' probes
+    // (`MacroProbeProvider` above, `PathMacroProbeProvider` below —
+    // the ones the sibling `text_source_provider_impl!` /
+    // `path_provider_impl!` pins already exercise).
+    //
+    // Written as a `//` non-doc comment because rustdoc cannot attach
+    // outer `///` to a macro invocation — the doc that becomes the
+    // emitted struct's rustdoc rides INSIDE the invocation on the
+    // `$(#[$attr])*` slot below (`/// A fixture doc — forwarded
+    // verbatim …`). An outer `///` here was orphaned and tripped
+    // rustc's `unused_doc_comments` lint before the crate-level
+    // `#![deny(unused_attributes, unused_doc_comments)]` gate in
+    // `src/lib.rs` blocked the class.
     text_source_provider! {
         /// A fixture doc — forwarded verbatim through the fused macro's
         /// `$(#[$attr])*` slot into the emitted struct's front matter,
