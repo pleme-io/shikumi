@@ -1308,6 +1308,106 @@ impl AttributionRule {
     /// const-addressability pins.
     pub const LAYER_DEFAULTS: &'static [Self] = &[Self::DefaultsByCodeUniqueness];
 
+    /// The two METADATA_SOURCE_AXIS [`AttributionRule`] variants —
+    /// [`Self::FileBySource`] and [`Self::DefaultsByCodeUniqueness`] — in
+    /// the SAME relative declaration order they occupy in [`Self::ALL`],
+    /// carrying the *`figment::Metadata::source`-dispatched* pole of the
+    /// (metadata-source × metadata-name) meta-partition at the rule's OWN
+    /// altitude on the attribution-rule axis, mirroring the shipped
+    /// boolean predicate [`Self::is_metadata_source_axis`] one altitude
+    /// down: every variant in this slice satisfies
+    /// `rule.is_metadata_source_axis()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::METADATA_NAME_AXIS`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same way
+    /// the shipped boolean predicates [`Self::is_metadata_source_axis`] /
+    /// [`Self::is_metadata_name_axis`] meta-partition it at the boolean
+    /// altitude (per
+    /// [`tests::attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition`]).
+    /// The two constants sit in the same `impl AttributionRule` block as
+    /// [`Self::ALL`], [`Self::EXACT`], [`Self::FALLBACK`],
+    /// [`Self::LAYER_FILE`], [`Self::LAYER_ENV`], and
+    /// [`Self::LAYER_DEFAULTS`], and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit two-variant slice literal in the SAME
+    /// relative declaration order the source-axis pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_metadata_source_axis`] at const-fn altitude —
+    /// so the two declarations (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other diverges
+    /// at test time on the first shape where they disagree. A
+    /// hypothetical sixth variant landing on the source side (e.g. a
+    /// `EnvBySourceOverride` cell dispatching off `metadata.source` on
+    /// the env layer) lands here in lockstep with
+    /// [`Self::is_metadata_source_axis`], and the cardinality pin catches
+    /// any drift between the slice and the boolean predicate on the same
+    /// edit.
+    ///
+    /// Third orthogonal projection of the attribution-rule axis to close
+    /// on the per-half meta-partition slice-constant discipline — after
+    /// the binary confidence projection ([`Self::EXACT`] /
+    /// [`Self::FALLBACK`], commit `19c11d2`) and the ternary layer-kind
+    /// projection ([`Self::LAYER_FILE`] / [`Self::LAYER_ENV`] /
+    /// [`Self::LAYER_DEFAULTS`], commit `fae8271`) — and idiom-peer of
+    /// the closed-binary landings on
+    /// [`crate::FieldPathLocalization::APPLICABLE`] (commit `9dad33d`),
+    /// [`crate::ShikumiErrorKind::FIGMENT_BEARING`] (commit `e45018d`),
+    /// [`crate::Format::FEATURE_GATED`] (commit `2013269`),
+    /// [`crate::source::FigmentNameTagKind::FORMAT`] (commit `2d2ef9d`),
+    /// [`crate::source::EnvMetadataTagKind::PREFIXED`] (commit `13304d0`),
+    /// [`crate::AttributionAxis::METADATA_SOURCE`] (commit `34bfbb6`),
+    /// [`crate::cli::OutputFormat::YAML`] (commit `292ca1d`),
+    /// [`crate::AttributionConfidence::EXACT`] (commit `13c1003`),
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] (commit `7ef79e4`),
+    /// [`crate::secret::SecretRefShape::WHOLE`] (commit `036673b`), and
+    /// [`crate::cube::PartitionFace::REALIZABLE`] (commit `a344056`) —
+    /// the per-half meta-partition slice-constant discipline applied
+    /// here to the five-way attribution-rule axis's
+    /// (metadata-source × metadata-name) 2/3 metadata-axis meta-partition.
+    ///
+    /// The bidirectional agreement laws
+    /// (`METADATA_SOURCE_AXIS.iter().all(|r| r.is_metadata_source_axis())`
+    /// and
+    /// `METADATA_SOURCE_AXIS.iter().all(|r| !r.is_metadata_name_axis())`,
+    /// symmetric on [`Self::METADATA_NAME_AXIS`]) are pinned by
+    /// [`tests::attribution_rule_metadata_axis_slices_agree_with_metadata_axis_predicates`].
+    /// Partition invariant with [`Self::METADATA_NAME_AXIS`]:
+    /// [`tests::attribution_rule_metadata_axis_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_rule_metadata_axis_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::attribution_rule_metadata_axis_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::attribution_rule_metadata_axis_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_rule_metadata_axis_slices_are_const_addressable`].
+    pub const METADATA_SOURCE_AXIS: &'static [Self] =
+        &[Self::FileBySource, Self::DefaultsByCodeUniqueness];
+
+    /// The three METADATA_NAME_AXIS [`AttributionRule`] variants —
+    /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`], and
+    /// [`Self::EnvByUniqueness`] — in the SAME relative declaration order
+    /// they occupy in [`Self::ALL`], carrying the
+    /// *`figment::Metadata::name`-dispatched* pole of the
+    /// (metadata-source × metadata-name) meta-partition at the rule's OWN
+    /// altitude on the attribution-rule axis, mirroring the shipped
+    /// boolean predicate [`Self::is_metadata_name_axis`] one altitude
+    /// down.
+    ///
+    /// See [`Self::METADATA_SOURCE_AXIS`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a filter
+    /// through [`Self::is_metadata_name_axis`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const METADATA_NAME_AXIS: &'static [Self] = &[
+        Self::FileByMetadataName,
+        Self::EnvByPrefix,
+        Self::EnvByUniqueness,
+    ];
+
     /// Canonical operator-facing lowercase name of the attribution rule —
     /// [`Self::FileBySource`] renders as `"file-by-source"`,
     /// [`Self::FileByMetadataName`] as `"file-by-metadata-name"`,
@@ -6524,6 +6624,222 @@ mod tests {
         assert_eq!(ENV_LEN, 2);
         assert_eq!(DEFAULTS_LEN, 1);
         assert_eq!(FILE_LEN + ENV_LEN + DEFAULTS_LEN, ALL_LEN);
+    }
+
+    // Six pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped for AttributionRule's own binary
+    // (exact × fallback) confidence projection (`19c11d2`) and ternary
+    // (file × env × defaults) layer-kind projection (`fae8271`), applied
+    // here to the SAME axis's THIRD orthogonal projection — the binary
+    // (metadata-source × metadata-name) 2/3 metadata-axis partition.
+    // Directly nominated by `fae8271`'s "future beneficiary (c)" as the
+    // next rung of the discipline on this axis, closing the third
+    // projection after the confidence and layer-kind ones.
+    #[test]
+    fn attribution_rule_metadata_axis_slices_agree_with_metadata_axis_predicates() {
+        // Bidirectional weld between the slice literals
+        // `AttributionRule::METADATA_SOURCE_AXIS` /
+        // `AttributionRule::METADATA_NAME_AXIS` and the boolean
+        // predicates `AttributionRule::is_metadata_source_axis` /
+        // `AttributionRule::is_metadata_name_axis` on the
+        // (metadata-source × metadata-name) metadata-axis polarity.
+        // Every slice entry satisfies its pole (and its complement), and
+        // every ALL cell agrees on membership under each boolean
+        // predicate. Binary peer of
+        // `attribution_rule_layer_slices_agree_with_layer_predicates`
+        // (`fae8271`) on the ternary layer-kind projection of the same
+        // axis, and idiom-peer of
+        // `attribution_rule_exact_slice_agrees_with_is_exact_predicate`
+        // (`19c11d2`) on the binary confidence projection — the two
+        // independent declaration surfaces (slice literal + boolean
+        // predicate) diverge at THIS pin on the first shape where they
+        // disagree, before a consumer that reads one altitude but not
+        // the other can observe the drift.
+        for rule in AttributionRule::METADATA_SOURCE_AXIS.iter().copied() {
+            assert!(
+                rule.is_metadata_source_axis(),
+                "AttributionRule::METADATA_SOURCE_AXIS entry {rule:?} must satisfy is_metadata_source_axis()",
+            );
+            assert!(
+                !rule.is_metadata_name_axis(),
+                "AttributionRule::METADATA_SOURCE_AXIS entry {rule:?} must NOT satisfy is_metadata_name_axis()",
+            );
+        }
+        for rule in AttributionRule::METADATA_NAME_AXIS.iter().copied() {
+            assert!(
+                rule.is_metadata_name_axis(),
+                "AttributionRule::METADATA_NAME_AXIS entry {rule:?} must satisfy is_metadata_name_axis()",
+            );
+            assert!(
+                !rule.is_metadata_source_axis(),
+                "AttributionRule::METADATA_NAME_AXIS entry {rule:?} must NOT satisfy is_metadata_source_axis()",
+            );
+        }
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                AttributionRule::METADATA_SOURCE_AXIS.contains(&rule),
+                rule.is_metadata_source_axis(),
+                "METADATA_SOURCE_AXIS membership must agree with is_metadata_source_axis() on AttributionRule::{rule:?}",
+            );
+            assert_eq!(
+                AttributionRule::METADATA_NAME_AXIS.contains(&rule),
+                rule.is_metadata_name_axis(),
+                "METADATA_NAME_AXIS membership must agree with is_metadata_name_axis() on AttributionRule::{rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint and
+        // their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `METADATA_SOURCE_AXIS.len() + METADATA_NAME_AXIS.len() ==
+        // ALL.len()` at the slice altitude on the attribution-rule axis's
+        // metadata-axis projection. Binary peer of
+        // `attribution_rule_exact_and_fallback_slices_partition_all`
+        // (`19c11d2`) on the confidence projection of the same axis,
+        // and slice-altitude peer of
+        // `attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition`
+        // one altitude down. A variant landing on both slices or on
+        // neither breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for rule in AttributionRule::METADATA_SOURCE_AXIS {
+            assert!(
+                !AttributionRule::METADATA_NAME_AXIS.contains(rule),
+                "AttributionRule::{rule:?} appears in BOTH METADATA_SOURCE_AXIS and METADATA_NAME_AXIS",
+            );
+        }
+        for rule in AttributionRule::ALL {
+            let in_source = AttributionRule::METADATA_SOURCE_AXIS.contains(rule);
+            let in_name = AttributionRule::METADATA_NAME_AXIS.contains(rule);
+            assert!(
+                in_source || in_name,
+                "AttributionRule::{rule:?} is in NEITHER METADATA_SOURCE_AXIS nor METADATA_NAME_AXIS",
+            );
+            assert!(
+                !(in_source && in_name),
+                "AttributionRule::{rule:?} is in BOTH METADATA_SOURCE_AXIS and METADATA_NAME_AXIS",
+            );
+        }
+        assert_eq!(
+            AttributionRule::METADATA_SOURCE_AXIS.len() + AttributionRule::METADATA_NAME_AXIS.len(),
+            AttributionRule::ALL.len(),
+            "METADATA_SOURCE_AXIS and METADATA_NAME_AXIS slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its variants
+        // in the SAME relative declaration order they appear in
+        // AttributionRule::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted the source pole (e.g.
+        // [DefaultsByCodeUniqueness, FileBySource] instead of the
+        // ALL-declaration order [FileBySource,
+        // DefaultsByCodeUniqueness]) diverges at THIS pin. Binary peer
+        // of `attribution_rule_exact_and_fallback_slices_preserve_all_order`
+        // (`19c11d2`).
+        let source_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_metadata_source_axis())
+            .collect();
+        assert_eq!(
+            source_from_all,
+            AttributionRule::METADATA_SOURCE_AXIS.to_vec(),
+            "METADATA_SOURCE_AXIS must be ALL-filtered by is_metadata_source_axis in declaration order",
+        );
+        let name_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_metadata_name_axis())
+            .collect();
+        assert_eq!(
+            name_from_all,
+            AttributionRule::METADATA_NAME_AXIS.to_vec(),
+            "METADATA_NAME_AXIS must be ALL-filtered by is_metadata_name_axis in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_slices_have_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice literals
+        // are declared as sets under the discriminant `Eq` relation. A
+        // future edit that accidentally double-lists a variant on one
+        // half fails at THIS pin before drifting through any consumer
+        // that iterates the slice expecting a set. Binary peer of
+        // `attribution_rule_exact_slice_has_no_duplicates` (`19c11d2`).
+        for slice in [
+            AttributionRule::METADATA_SOURCE_AXIS,
+            AttributionRule::METADATA_NAME_AXIS,
+        ] {
+            let mut seen: Vec<AttributionRule> = Vec::with_capacity(slice.len());
+            for rule in slice {
+                assert!(
+                    !seen.contains(rule),
+                    "AttributionRule metadata-axis slice {slice:?} contains duplicate entry {rule:?}",
+                );
+                seen.push(*rule);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionRule::ALL — i.e.,
+        // `METADATA_SOURCE_AXIS.len() == ALL.iter().filter(is_metadata_source_axis).count()`
+        // (and symmetric on METADATA_NAME_AXIS) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete positions
+        // today: 2 source + 3 name = 5 = ALL. Binary peer of
+        // `attribution_rule_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`19c11d2`).
+        let source_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_metadata_source_axis())
+            .count();
+        let name_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_metadata_name_axis())
+            .count();
+        assert_eq!(
+            AttributionRule::METADATA_SOURCE_AXIS.len(),
+            source_count,
+            "METADATA_SOURCE_AXIS.len() must match the is_metadata_source_axis count on ALL",
+        );
+        assert_eq!(
+            AttributionRule::METADATA_NAME_AXIS.len(),
+            name_count,
+            "METADATA_NAME_AXIS.len() must match the is_metadata_name_axis count on ALL",
+        );
+        assert_eq!(AttributionRule::METADATA_SOURCE_AXIS.len(), 2);
+        assert_eq!(AttributionRule::METADATA_NAME_AXIS.len(), 3);
+        assert_eq!(AttributionRule::ALL.len(), 5);
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Binary peer of
+        // `attribution_rule_exact_and_fallback_slices_are_const_addressable`
+        // (`19c11d2`).
+        const SOURCE_LEN: usize = AttributionRule::METADATA_SOURCE_AXIS.len();
+        const NAME_LEN: usize = AttributionRule::METADATA_NAME_AXIS.len();
+        const ALL_LEN: usize = AttributionRule::ALL.len();
+        assert_eq!(SOURCE_LEN, 2);
+        assert_eq!(NAME_LEN, 3);
+        assert_eq!(SOURCE_LEN + NAME_LEN, ALL_LEN);
     }
 
     #[test]
