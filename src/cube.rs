@@ -13740,6 +13740,83 @@ impl PartitionFace {
     /// [`for_each_closed_axis_primitive`] macro cardinality checksum.
     pub const ALL: &'static [Self] = &[Self::Realizable, Self::Unrealizable];
 
+    /// The single REALIZABLE [`PartitionFace`] variant —
+    /// [`Self::Realizable`] (the cube's recognized-image half) — in the
+    /// SAME relative declaration order it occupies in [`Self::ALL`],
+    /// carrying the *recognized-image* pole of the (realizable ×
+    /// unrealizable) closed-binary polarity at the face primitive's OWN
+    /// altitude on the partition-face axis, mirroring the shipped
+    /// boolean predicate [`Self::is_realizable`] one altitude down:
+    /// every variant in this slice satisfies `f.is_realizable()`, and
+    /// no variant outside it does.
+    ///
+    /// Paired with [`Self::UNREALIZABLE`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates [`Self::is_realizable`] /
+    /// [`Self::is_unrealizable`] meta-partition it at the boolean
+    /// altitude. Both sit in the same `impl PartitionFace` block as
+    /// [`Self::ALL`] and follow the same `pub const &'static [Self]`
+    /// static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the recognized-image pole occupies
+    /// in [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_realizable`] at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// Idiom-peer of [`crate::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cd8ef8`), [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`), [`crate::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`),
+    /// [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`), and
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the cube's face axis, closing the
+    /// first landing on a `cube.rs`-native closed-binary primitive.
+    ///
+    /// The two agreement laws
+    /// (`REALIZABLE.iter().all(|f| f.is_realizable())` and
+    /// `REALIZABLE.iter().all(|f| !f.is_unrealizable())`) are pinned by
+    /// [`tests::partition_face_realizable_slice_agrees_with_is_realizable_predicate`].
+    /// Partition invariant with [`Self::UNREALIZABLE`]:
+    /// [`tests::partition_face_realizable_and_unrealizable_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::partition_face_realizable_and_unrealizable_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::partition_face_realizable_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::partition_face_realizable_and_unrealizable_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::partition_face_realizable_and_unrealizable_slices_are_const_addressable`].
+    pub const REALIZABLE: &'static [Self] = &[Self::Realizable];
+
+    /// The single UNREALIZABLE [`PartitionFace`] variant —
+    /// [`Self::Unrealizable`] (the cross-axis consistency-violation
+    /// complement) — in the SAME relative declaration order it occupies
+    /// in [`Self::ALL`], the complement pole of [`Self::REALIZABLE`] on
+    /// the (realizable × unrealizable) closed-binary polarity at the
+    /// face primitive's OWN altitude. Mirrors the shipped boolean
+    /// predicate [`Self::is_unrealizable`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::REALIZABLE`] pins the
+    /// whole-set cardinality identity
+    /// `REALIZABLE.len() + UNREALIZABLE.len() == ALL.len()`. Because
+    /// the axis is closed-binary and XOR-complementary by construction,
+    /// a future third face landing (not anticipated) would first fail
+    /// [`tests::partition_face_all_has_two_entries`], then fail the
+    /// partition and cardinality pins on this constant pair.
+    ///
+    /// See [`Self::REALIZABLE`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_realizable`]), and the load-bearing agreement and
+    /// partition pins.
+    pub const UNREALIZABLE: &'static [Self] = &[Self::Unrealizable];
+
     /// `true` exactly on [`PartitionFace::Realizable`].
     ///
     /// The face-level dual of [`ProductCube::is_realizable`]: where
@@ -18998,6 +19075,206 @@ mod tests {
                 "{face:?}: is_unrealizable must equal !is_realizable",
             );
         }
+    }
+
+    #[test]
+    fn partition_face_realizable_slice_agrees_with_is_realizable_predicate() {
+        // Bidirectional weld between the slice literal
+        // `PartitionFace::REALIZABLE` and the boolean predicate
+        // `PartitionFace::is_realizable` on the (realizable ×
+        // unrealizable) polarity axis. Every slice entry satisfies
+        // the recognized-image pole (and its complement
+        // `!is_unrealizable`), and every ALL cell agrees on membership
+        // under the boolean predicate. Idiom-peer of
+        // `config_source_kind_defaults_slice_agrees_with_is_defaults_predicate`
+        // (`2cd8ef8`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        for f in PartitionFace::REALIZABLE.iter().copied() {
+            assert!(
+                f.is_realizable(),
+                "PartitionFace::REALIZABLE entry {f:?} must satisfy is_realizable()",
+            );
+            assert!(
+                !f.is_unrealizable(),
+                "PartitionFace::REALIZABLE entry {f:?} must NOT satisfy is_unrealizable()",
+            );
+        }
+        for f in PartitionFace::ALL.iter().copied() {
+            assert_eq!(
+                PartitionFace::REALIZABLE.contains(&f),
+                f.is_realizable(),
+                "REALIZABLE membership must agree with is_realizable() on \
+                 PartitionFace::{f:?}",
+            );
+            assert_eq!(
+                PartitionFace::UNREALIZABLE.contains(&f),
+                f.is_unrealizable(),
+                "UNREALIZABLE membership must agree with is_unrealizable() on \
+                 PartitionFace::{f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_realizable_and_unrealizable_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `REALIZABLE.len() + UNREALIZABLE.len() == ALL.len()` at the
+        // slice altitude on the face axis. Idiom-peer of
+        // `config_source_kind_defaults_and_overlay_slices_partition_all`
+        // (`2cd8ef8`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for f in PartitionFace::REALIZABLE.iter().copied() {
+            assert!(
+                !PartitionFace::UNREALIZABLE.contains(&f),
+                "PartitionFace::{f:?} appears in BOTH REALIZABLE and UNREALIZABLE",
+            );
+        }
+        for f in PartitionFace::ALL.iter().copied() {
+            let in_realizable = PartitionFace::REALIZABLE.contains(&f);
+            let in_unrealizable = PartitionFace::UNREALIZABLE.contains(&f);
+            assert!(
+                in_realizable || in_unrealizable,
+                "PartitionFace::{f:?} is in NEITHER REALIZABLE nor UNREALIZABLE",
+            );
+            assert!(
+                !(in_realizable && in_unrealizable),
+                "PartitionFace::{f:?} is in BOTH REALIZABLE and UNREALIZABLE",
+            );
+        }
+        assert_eq!(
+            PartitionFace::REALIZABLE.len() + PartitionFace::UNREALIZABLE.len(),
+            PartitionFace::ALL.len(),
+            "REALIZABLE and UNREALIZABLE slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn partition_face_realizable_and_unrealizable_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in PartitionFace::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`Realizable` first, then `Unrealizable`).
+        // Idiom-peer of
+        // `config_source_kind_defaults_and_overlay_slices_preserve_all_order`
+        // (`2cd8ef8`) — a reordering of one slice without the other,
+        // or a reordering of ALL that shuffles the two poles' variant
+        // order without updating the slices, diverges at THIS pin.
+        let realizable_from_all: Vec<PartitionFace> = PartitionFace::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_realizable())
+            .collect();
+        assert_eq!(
+            realizable_from_all,
+            PartitionFace::REALIZABLE.to_vec(),
+            "REALIZABLE must be ALL-filtered by is_realizable in declaration order",
+        );
+        let unrealizable_from_all: Vec<PartitionFace> = PartitionFace::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_unrealizable())
+            .collect();
+        assert_eq!(
+            unrealizable_from_all,
+            PartitionFace::UNREALIZABLE.to_vec(),
+            "UNREALIZABLE must be ALL-filtered by is_unrealizable in declaration order",
+        );
+    }
+
+    #[test]
+    fn partition_face_realizable_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into UNREALIZABLE, an accidental re-add of an already-present
+        // Realizable cell into REALIZABLE) fails at THIS pin before
+        // drifting through any consumer that iterates the slice
+        // expecting a set. Idiom-peer of
+        // `config_source_kind_defaults_slice_has_no_duplicates`
+        // (`2cd8ef8`).
+        for slice in [PartitionFace::REALIZABLE, PartitionFace::UNREALIZABLE] {
+            let mut sorted = slice.to_vec();
+            sorted.sort();
+            let deduped_len = {
+                let mut seen: Vec<PartitionFace> = Vec::with_capacity(sorted.len());
+                for f in &sorted {
+                    if !seen.contains(f) {
+                        seen.push(*f);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "PartitionFace slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_realizable_and_unrealizable_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on PartitionFace::ALL — i.e.,
+        // `REALIZABLE.len() == ALL.iter().filter(is_realizable).count()`
+        // and `UNREALIZABLE.len() == ALL.iter().filter(is_unrealizable).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 1 realizable + 1 unrealizable = 2 = ALL.
+        // Idiom-peer of
+        // `config_source_kind_defaults_and_overlay_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2cd8ef8`).
+        let realizable_count = PartitionFace::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_realizable())
+            .count();
+        let unrealizable_count = PartitionFace::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_unrealizable())
+            .count();
+        assert_eq!(
+            PartitionFace::REALIZABLE.len(),
+            realizable_count,
+            "REALIZABLE.len() must match the is_realizable count on ALL",
+        );
+        assert_eq!(
+            PartitionFace::UNREALIZABLE.len(),
+            unrealizable_count,
+            "UNREALIZABLE.len() must match the is_unrealizable count on ALL",
+        );
+        assert_eq!(PartitionFace::REALIZABLE.len(), 1);
+        assert_eq!(PartitionFace::UNREALIZABLE.len(), 1);
+        assert_eq!(PartitionFace::ALL.len(), 2);
+    }
+
+    #[test]
+    fn partition_face_realizable_and_unrealizable_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `config_source_kind_defaults_and_overlay_slices_are_const_addressable`
+        // (`2cd8ef8`).
+        const REALIZABLE_LEN: usize = PartitionFace::REALIZABLE.len();
+        const UNREALIZABLE_LEN: usize = PartitionFace::UNREALIZABLE.len();
+        const ALL_LEN: usize = PartitionFace::ALL.len();
+        assert_eq!(REALIZABLE_LEN, 1);
+        assert_eq!(UNREALIZABLE_LEN, 1);
+        assert_eq!(REALIZABLE_LEN + UNREALIZABLE_LEN, ALL_LEN);
     }
 
     fn assert_partition_ordinal_face_agrees_with_is_realizable<C>()
