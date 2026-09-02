@@ -3444,6 +3444,88 @@ impl AttributionAxis {
     pub const fn is_metadata_name(self) -> bool {
         matches!(self, Self::MetadataName)
     }
+
+    /// The single METADATA_SOURCE [`AttributionAxis`] variant —
+    /// [`Self::MetadataSource`] (the typed-`figment::Source`-driven
+    /// pole of the (source × name) metadata partition) — in the SAME
+    /// relative declaration order it occupies in [`Self::ALL`], as a
+    /// per-half projection of the (source × name) closed-binary
+    /// polarity at the axis primitive's OWN altitude on the metadata
+    /// axis. Mirrors the shipped boolean predicate
+    /// [`Self::is_metadata_source`] one altitude down (per-variant
+    /// polarity), and follows the same `pub const &'static [Self]`
+    /// static-slice discipline as [`Self::ALL`].
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the source pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_metadata_source`] at const-fn altitude — so
+    /// the two declarations (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the
+    /// same meta-partition, and a future edit that shifts a variant
+    /// across the polarity on ONE declaration surface but not the
+    /// other diverges at test time on the first axis where they
+    /// disagree.
+    ///
+    /// Peer to the shipped per-half slice constants
+    /// [`AttributionConfidence::EXACT`] on the confidence axis,
+    /// [`crate::FormatProvenance::FIGMENT_BUILTIN`] on the format-
+    /// provenance axis, [`crate::secret::SecretRefShape::WHOLE`] on
+    /// the secret-ref extraction-shape axis,
+    /// [`crate::tiered::ConfigTierKind::COMPUTED`] on the tier-kind
+    /// axis, and [`crate::source::ConfigSourceKind::DEFAULTS`] on the
+    /// layer-kind axis of the atomic `(tier, source)` pair — same
+    /// altitude, applied to the metadata axis.
+    ///
+    /// A future tertiary variant (e.g. a `MetadataExtras` cell for
+    /// figment providers that surface additional typed metadata
+    /// fields) landing on [`Self`] must either extend one slice in
+    /// lockstep with the boolean predicate that admits it, or
+    /// introduce a third slice; the partition and cardinality pins
+    /// refuse a silent landing under the negation of one of the
+    /// existing two.
+    ///
+    /// The two agreement laws
+    /// (`METADATA_SOURCE.iter().all(|a| a.is_metadata_source())` and
+    /// `METADATA_SOURCE.iter().all(|a| !a.is_metadata_name())`) are
+    /// pinned by
+    /// [`tests::attribution_axis_metadata_source_slice_agrees_with_is_metadata_source_predicate`].
+    /// Partition invariant with [`Self::METADATA_NAME`]:
+    /// [`tests::attribution_axis_metadata_source_and_metadata_name_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_axis_metadata_source_and_metadata_name_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::attribution_axis_metadata_source_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::attribution_axis_metadata_source_and_metadata_name_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_axis_metadata_source_and_metadata_name_slices_are_const_addressable`].
+    pub const METADATA_SOURCE: &'static [Self] = &[Self::MetadataSource];
+
+    /// The single METADATA_NAME [`AttributionAxis`] variant —
+    /// [`Self::MetadataName`] (the string-shape-driven pole of the
+    /// (source × name) metadata partition) — in the SAME relative
+    /// declaration order it occupies in [`Self::ALL`], the complement
+    /// pole of [`Self::METADATA_SOURCE`] on the (source × name)
+    /// closed-binary polarity at the axis primitive's OWN altitude on
+    /// the metadata axis. Mirrors the shipped boolean predicate
+    /// [`Self::is_metadata_name`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::METADATA_SOURCE`] pins
+    /// the whole-set cardinality identity
+    /// `METADATA_SOURCE.len() + METADATA_NAME.len() == ALL.len()`.
+    /// Because the axis is closed-binary and XOR-complementary by
+    /// construction today, a future third metadata-axis landing (e.g.
+    /// a `MetadataExtras` cell the primitive's own doc-comment
+    /// anticipates) would first fail the two-entry cardinality pins,
+    /// then fail the partition and cardinality pins on this constant
+    /// pair unless extended in lockstep with the boolean predicates.
+    ///
+    /// See [`Self::METADATA_SOURCE`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_metadata_source`]), and the
+    /// load-bearing agreement and partition pins.
+    pub const METADATA_NAME: &'static [Self] = &[Self::MetadataName];
 }
 
 impl crate::ClosedAxisLabel for AttributionAxis {
@@ -11279,5 +11361,207 @@ mod tests {
         assert_eq!(EXACT_LEN, 1);
         assert_eq!(FALLBACK_LEN, 1);
         assert_eq!(EXACT_LEN + FALLBACK_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_slice_agrees_with_is_metadata_source_predicate() {
+        // Bidirectional weld between the slice literal
+        // `AttributionAxis::METADATA_SOURCE` and the boolean predicate
+        // `AttributionAxis::is_metadata_source` on the (source × name)
+        // polarity axis. Every slice entry satisfies the source pole
+        // (and its complement `!is_metadata_name`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of
+        // `attribution_confidence_exact_slice_agrees_with_is_exact_predicate`
+        // (commit `13c1003`) — the two independent declaration
+        // surfaces (slice literal + boolean predicate) diverge at THIS
+        // pin on the first axis where they disagree, before a consumer
+        // that reads one altitude but not the other can observe the
+        // drift.
+        for a in AttributionAxis::METADATA_SOURCE.iter().copied() {
+            assert!(
+                a.is_metadata_source(),
+                "AttributionAxis::METADATA_SOURCE entry {a:?} must satisfy is_metadata_source()",
+            );
+            assert!(
+                !a.is_metadata_name(),
+                "AttributionAxis::METADATA_SOURCE entry {a:?} must NOT satisfy is_metadata_name()",
+            );
+        }
+        for a in AttributionAxis::ALL.iter().copied() {
+            assert_eq!(
+                AttributionAxis::METADATA_SOURCE.contains(&a),
+                a.is_metadata_source(),
+                "METADATA_SOURCE membership must agree with is_metadata_source() on AttributionAxis::{a:?}",
+            );
+            assert_eq!(
+                AttributionAxis::METADATA_NAME.contains(&a),
+                a.is_metadata_name(),
+                "METADATA_NAME membership must agree with is_metadata_name() on AttributionAxis::{a:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_and_metadata_name_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `METADATA_SOURCE.len() + METADATA_NAME.len() == ALL.len()`
+        // at the slice altitude on the metadata axis. Idiom-peer of
+        // `attribution_confidence_exact_and_fallback_slices_partition_all`
+        // (commit `13c1003`) — a variant landing on one slice AND the
+        // other, or on neither, breaks the partition here before any
+        // consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        for a in AttributionAxis::METADATA_SOURCE.iter().copied() {
+            assert!(
+                !AttributionAxis::METADATA_NAME.contains(&a),
+                "AttributionAxis::{a:?} appears in BOTH METADATA_SOURCE and METADATA_NAME",
+            );
+        }
+        for a in AttributionAxis::ALL.iter().copied() {
+            let in_source = AttributionAxis::METADATA_SOURCE.contains(&a);
+            let in_name = AttributionAxis::METADATA_NAME.contains(&a);
+            assert!(
+                in_source || in_name,
+                "AttributionAxis::{a:?} is in NEITHER METADATA_SOURCE nor METADATA_NAME",
+            );
+            assert!(
+                !(in_source && in_name),
+                "AttributionAxis::{a:?} is in BOTH METADATA_SOURCE and METADATA_NAME",
+            );
+        }
+        assert_eq!(
+            AttributionAxis::METADATA_SOURCE.len() + AttributionAxis::METADATA_NAME.len(),
+            AttributionAxis::ALL.len(),
+            "METADATA_SOURCE and METADATA_NAME slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_and_metadata_name_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in AttributionAxis::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`MetadataSource` first, then `MetadataName`).
+        // Idiom-peer of
+        // `attribution_confidence_exact_and_fallback_slices_preserve_all_order`
+        // (commit `13c1003`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let source_from_all: Vec<AttributionAxis> = AttributionAxis::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_metadata_source())
+            .collect();
+        assert_eq!(
+            source_from_all,
+            AttributionAxis::METADATA_SOURCE.to_vec(),
+            "METADATA_SOURCE must be ALL-filtered by is_metadata_source in declaration order",
+        );
+        let name_from_all: Vec<AttributionAxis> = AttributionAxis::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_metadata_name())
+            .collect();
+        assert_eq!(
+            name_from_all,
+            AttributionAxis::METADATA_NAME.to_vec(),
+            "METADATA_NAME must be ALL-filtered by is_metadata_name in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into METADATA_NAME, an accidental re-add of an already-
+        // present MetadataSource cell into METADATA_SOURCE) fails at
+        // THIS pin before drifting through any consumer that iterates
+        // the slice expecting a set. Idiom-peer of
+        // `attribution_confidence_exact_slice_has_no_duplicates`
+        // (commit `13c1003`).
+        for slice in [
+            AttributionAxis::METADATA_SOURCE,
+            AttributionAxis::METADATA_NAME,
+        ] {
+            let deduped_len = {
+                let mut seen: Vec<AttributionAxis> = Vec::with_capacity(slice.len());
+                for a in slice {
+                    if !seen.contains(a) {
+                        seen.push(*a);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "AttributionAxis slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_and_metadata_name_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionAxis::ALL —
+        // i.e., `METADATA_SOURCE.len() ==
+        // ALL.iter().filter(is_metadata_source).count()` and
+        // `METADATA_NAME.len() ==
+        // ALL.iter().filter(is_metadata_name).count()` — the
+        // cardinality projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete
+        // positions today: 1 source + 1 name = 2 = ALL. Idiom-peer of
+        // `attribution_confidence_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `13c1003`).
+        let source_count = AttributionAxis::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_metadata_source())
+            .count();
+        let name_count = AttributionAxis::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_metadata_name())
+            .count();
+        assert_eq!(
+            AttributionAxis::METADATA_SOURCE.len(),
+            source_count,
+            "METADATA_SOURCE.len() must match the is_metadata_source count on ALL",
+        );
+        assert_eq!(
+            AttributionAxis::METADATA_NAME.len(),
+            name_count,
+            "METADATA_NAME.len() must match the is_metadata_name count on ALL",
+        );
+        assert_eq!(AttributionAxis::METADATA_SOURCE.len(), 1);
+        assert_eq!(AttributionAxis::METADATA_NAME.len(), 1);
+        assert_eq!(AttributionAxis::ALL.len(), 2);
+    }
+
+    #[test]
+    fn attribution_axis_metadata_source_and_metadata_name_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `attribution_confidence_exact_and_fallback_slices_are_const_addressable`
+        // (commit `13c1003`).
+        const METADATA_SOURCE_LEN: usize = AttributionAxis::METADATA_SOURCE.len();
+        const METADATA_NAME_LEN: usize = AttributionAxis::METADATA_NAME.len();
+        const ALL_LEN: usize = AttributionAxis::ALL.len();
+        assert_eq!(METADATA_SOURCE_LEN, 1);
+        assert_eq!(METADATA_NAME_LEN, 1);
+        assert_eq!(METADATA_SOURCE_LEN + METADATA_NAME_LEN, ALL_LEN);
     }
 }
