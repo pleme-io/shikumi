@@ -1201,6 +1201,113 @@ impl AttributionRule {
     /// const-addressability pins.
     pub const FALLBACK: &'static [Self] = &[Self::EnvByUniqueness, Self::DefaultsByCodeUniqueness];
 
+    /// The two LAYER_FILE [`AttributionRule`] variants —
+    /// [`Self::FileBySource`] and [`Self::FileByMetadataName`] — in the
+    /// SAME relative declaration order they occupy in [`Self::ALL`],
+    /// carrying the *file-layer attribution* pole of the
+    /// (file × env × defaults) layer-kind meta-partition at the rule's
+    /// OWN altitude on the attribution-rule axis, mirroring the shipped
+    /// boolean predicate [`Self::is_file_layer`] one altitude down:
+    /// every variant in this slice satisfies `rule.is_file_layer()`, and
+    /// no variant outside it does.
+    ///
+    /// Paired with [`Self::LAYER_ENV`] and [`Self::LAYER_DEFAULTS`], the
+    /// three disjoint slices partition [`Self::ALL`] at the static-slice
+    /// altitude the same way the shipped boolean predicates
+    /// [`Self::is_file_layer`] / [`Self::is_env_layer`] /
+    /// [`Self::is_defaults_layer`] meta-partition it at the boolean
+    /// altitude (per
+    /// [`tests::attribution_rule_layer_predicates_are_a_closed_ternary_partition`]).
+    /// The three constants sit in the same `impl AttributionRule` block
+    /// as [`Self::ALL`], [`Self::EXACT`], and [`Self::FALLBACK`], and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Written as explicit slice literals in the SAME relative
+    /// declaration order each pole occupies in [`Self::ALL`], rather
+    /// than derived by filtering [`Self::ALL`] through
+    /// [`Self::is_file_layer`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate) remain
+    /// independent load-bearing witnesses of the same meta-partition,
+    /// and a future edit that shifts a variant across the polarity on
+    /// ONE declaration surface but not the other diverges at test time
+    /// on the first shape where they disagree. A hypothetical sixth
+    /// variant landing on the file side (e.g. a `FileByEnvOverride` cell
+    /// referencing a file layer through an env-provided path) lands here
+    /// in lockstep with [`Self::is_file_layer`], and the cardinality pin
+    /// catches any drift between the slice and the boolean predicate on
+    /// the same edit.
+    ///
+    /// Ternary peer of the binary [`Self::EXACT`] / [`Self::FALLBACK`]
+    /// meta-partition on the confidence projection of the same axis
+    /// (both project the five-way rule space onto orthogonal
+    /// closed-partition axes at the static-slice altitude), and
+    /// idiom-peer of the closed-binary landings on
+    /// [`crate::FieldPathLocalization::APPLICABLE`] (commit `9dad33d`),
+    /// [`crate::ShikumiErrorKind::FIGMENT_BEARING`] (commit `e45018d`),
+    /// [`crate::Format::FEATURE_GATED`] (commit `2013269`),
+    /// [`crate::source::FigmentNameTagKind::FORMAT`] (commit `2d2ef9d`),
+    /// [`crate::source::EnvMetadataTagKind::PREFIXED`] (commit `13304d0`),
+    /// [`crate::AttributionAxis::METADATA_SOURCE`] (commit `34bfbb6`),
+    /// and the same-axis [`Self::EXACT`] (commit `19c11d2`, this axis's
+    /// confidence-projection landing) — the per-half meta-partition
+    /// slice-constant discipline applied here to the five-way
+    /// attribution-rule axis's ternary (file × env × defaults) 2/2/1
+    /// layer-kind meta-partition.
+    ///
+    /// The three-way agreement laws
+    /// (`LAYER_FILE.iter().all(|r| r.is_file_layer())`,
+    /// `!LAYER_FILE.iter().any(|r| r.is_env_layer())`,
+    /// `!LAYER_FILE.iter().any(|r| r.is_defaults_layer())`, and the
+    /// symmetric laws on [`Self::LAYER_ENV`] and
+    /// [`Self::LAYER_DEFAULTS`]) are pinned by
+    /// [`tests::attribution_rule_layer_slices_agree_with_layer_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::attribution_rule_layer_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_rule_layer_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::attribution_rule_layer_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::attribution_rule_layer_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_rule_layer_slices_are_const_addressable`].
+    pub const LAYER_FILE: &'static [Self] = &[Self::FileBySource, Self::FileByMetadataName];
+
+    /// The two LAYER_ENV [`AttributionRule`] variants —
+    /// [`Self::EnvByPrefix`] and [`Self::EnvByUniqueness`] — in the SAME
+    /// relative declaration order they occupy in [`Self::ALL`], carrying
+    /// the *env-layer attribution* pole of the (file × env × defaults)
+    /// layer-kind meta-partition at the rule's OWN altitude on the
+    /// attribution-rule axis, mirroring the shipped boolean predicate
+    /// [`Self::is_env_layer`] one altitude down.
+    ///
+    /// See [`Self::LAYER_FILE`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_env_layer`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins that hold uniformly across all three
+    /// layer-kind halves.
+    pub const LAYER_ENV: &'static [Self] = &[Self::EnvByPrefix, Self::EnvByUniqueness];
+
+    /// The single LAYER_DEFAULTS [`AttributionRule`] variant —
+    /// [`Self::DefaultsByCodeUniqueness`] — carrying the
+    /// *defaults-layer attribution* pole of the (file × env × defaults)
+    /// layer-kind meta-partition at the rule's OWN altitude on the
+    /// attribution-rule axis, mirroring the shipped boolean predicate
+    /// [`Self::is_defaults_layer`] one altitude down.
+    ///
+    /// The unique-inhabitant singleton pole of the ternary
+    /// (file × env × defaults) meta-partition — today the sole
+    /// attribution rule to the defaults layer, alongside the two-cell
+    /// [`Self::LAYER_FILE`] and [`Self::LAYER_ENV`] siblings. See
+    /// [`Self::LAYER_FILE`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_defaults_layer`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const LAYER_DEFAULTS: &'static [Self] = &[Self::DefaultsByCodeUniqueness];
+
     /// Canonical operator-facing lowercase name of the attribution rule —
     /// [`Self::FileBySource`] renders as `"file-by-source"`,
     /// [`Self::FileByMetadataName`] as `"file-by-metadata-name"`,
@@ -6145,6 +6252,278 @@ mod tests {
         assert_eq!(EXACT_LEN, 3);
         assert_eq!(FALLBACK_LEN, 2);
         assert_eq!(EXACT_LEN + FALLBACK_LEN, ALL_LEN);
+    }
+
+    // Six pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped for AttributionRule's own binary
+    // (exact × fallback) confidence projection (`19c11d2`), applied here
+    // to the SAME axis's orthogonal ternary (file × env × defaults) 2/2/1
+    // layer-kind projection. Directly nominated by `19c11d2`'s "future
+    // beneficiary (c)" as the next rung of the discipline on this axis.
+    #[test]
+    fn attribution_rule_layer_slices_agree_with_layer_predicates() {
+        // Three-way agreement pin across the (file × env × defaults)
+        // ternary layer-kind meta-partition. Every LAYER_FILE entry
+        // satisfies is_file_layer and neither is_env_layer nor
+        // is_defaults_layer; every LAYER_ENV entry satisfies
+        // is_env_layer alone; every LAYER_DEFAULTS entry satisfies
+        // is_defaults_layer alone. Every AttributionRule::ALL cell
+        // agrees on membership under each of the three boolean
+        // predicates. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift. Ternary
+        // peer of
+        // `attribution_rule_exact_slice_agrees_with_is_exact_predicate`
+        // (`19c11d2`) on the confidence projection of the same axis.
+        for rule in AttributionRule::LAYER_FILE.iter().copied() {
+            assert!(
+                rule.is_file_layer(),
+                "AttributionRule::LAYER_FILE entry {rule:?} must satisfy is_file_layer()",
+            );
+            assert!(
+                !rule.is_env_layer(),
+                "AttributionRule::LAYER_FILE entry {rule:?} must NOT satisfy is_env_layer()",
+            );
+            assert!(
+                !rule.is_defaults_layer(),
+                "AttributionRule::LAYER_FILE entry {rule:?} must NOT satisfy is_defaults_layer()",
+            );
+        }
+        for rule in AttributionRule::LAYER_ENV.iter().copied() {
+            assert!(
+                rule.is_env_layer(),
+                "AttributionRule::LAYER_ENV entry {rule:?} must satisfy is_env_layer()",
+            );
+            assert!(
+                !rule.is_file_layer(),
+                "AttributionRule::LAYER_ENV entry {rule:?} must NOT satisfy is_file_layer()",
+            );
+            assert!(
+                !rule.is_defaults_layer(),
+                "AttributionRule::LAYER_ENV entry {rule:?} must NOT satisfy is_defaults_layer()",
+            );
+        }
+        for rule in AttributionRule::LAYER_DEFAULTS.iter().copied() {
+            assert!(
+                rule.is_defaults_layer(),
+                "AttributionRule::LAYER_DEFAULTS entry {rule:?} must satisfy is_defaults_layer()",
+            );
+            assert!(
+                !rule.is_file_layer(),
+                "AttributionRule::LAYER_DEFAULTS entry {rule:?} must NOT satisfy is_file_layer()",
+            );
+            assert!(
+                !rule.is_env_layer(),
+                "AttributionRule::LAYER_DEFAULTS entry {rule:?} must NOT satisfy is_env_layer()",
+            );
+        }
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                AttributionRule::LAYER_FILE.contains(&rule),
+                rule.is_file_layer(),
+                "LAYER_FILE membership must agree with is_file_layer() on AttributionRule::{rule:?}",
+            );
+            assert_eq!(
+                AttributionRule::LAYER_ENV.contains(&rule),
+                rule.is_env_layer(),
+                "LAYER_ENV membership must agree with is_env_layer() on AttributionRule::{rule:?}",
+            );
+            assert_eq!(
+                AttributionRule::LAYER_DEFAULTS.contains(&rule),
+                rule.is_defaults_layer(),
+                "LAYER_DEFAULTS membership must agree with is_defaults_layer() on AttributionRule::{rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `LAYER_FILE.len() + LAYER_ENV.len() + LAYER_DEFAULTS.len() ==
+        // ALL.len()` at the slice altitude on the attribution-rule
+        // axis's layer-kind projection. Ternary peer of
+        // `attribution_rule_exact_and_fallback_slices_partition_all`
+        // (`19c11d2`) on the binary confidence projection of the same
+        // axis, and slice-altitude peer of
+        // `attribution_rule_layer_predicates_are_a_closed_ternary_partition`
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for rule in AttributionRule::LAYER_FILE {
+            assert!(
+                !AttributionRule::LAYER_ENV.contains(rule),
+                "AttributionRule::{rule:?} appears in BOTH LAYER_FILE and LAYER_ENV",
+            );
+            assert!(
+                !AttributionRule::LAYER_DEFAULTS.contains(rule),
+                "AttributionRule::{rule:?} appears in BOTH LAYER_FILE and LAYER_DEFAULTS",
+            );
+        }
+        for rule in AttributionRule::LAYER_ENV {
+            assert!(
+                !AttributionRule::LAYER_DEFAULTS.contains(rule),
+                "AttributionRule::{rule:?} appears in BOTH LAYER_ENV and LAYER_DEFAULTS",
+            );
+        }
+        for rule in AttributionRule::ALL {
+            let in_file = AttributionRule::LAYER_FILE.contains(rule);
+            let in_env = AttributionRule::LAYER_ENV.contains(rule);
+            let in_defaults = AttributionRule::LAYER_DEFAULTS.contains(rule);
+            let held = usize::from(in_file) + usize::from(in_env) + usize::from(in_defaults);
+            assert_eq!(
+                held, 1,
+                "AttributionRule::{rule:?} must appear in exactly one of LAYER_FILE / LAYER_ENV / LAYER_DEFAULTS (found in {held})",
+            );
+        }
+        assert_eq!(
+            AttributionRule::LAYER_FILE.len()
+                + AttributionRule::LAYER_ENV.len()
+                + AttributionRule::LAYER_DEFAULTS.len(),
+            AttributionRule::ALL.len(),
+            "LAYER_FILE + LAYER_ENV + LAYER_DEFAULTS slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_layer_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in AttributionRule::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted the file pole (e.g.
+        // [FileByMetadataName, FileBySource] instead of the
+        // ALL-declaration order [FileBySource, FileByMetadataName])
+        // diverges at THIS pin. Ternary peer of
+        // `attribution_rule_exact_and_fallback_slices_preserve_all_order`
+        // (`19c11d2`).
+        let file_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_file_layer())
+            .collect();
+        assert_eq!(
+            file_from_all,
+            AttributionRule::LAYER_FILE.to_vec(),
+            "LAYER_FILE must be ALL-filtered by is_file_layer in declaration order",
+        );
+        let env_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_env_layer())
+            .collect();
+        assert_eq!(
+            env_from_all,
+            AttributionRule::LAYER_ENV.to_vec(),
+            "LAYER_ENV must be ALL-filtered by is_env_layer in declaration order",
+        );
+        let defaults_from_all: Vec<AttributionRule> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_defaults_layer())
+            .collect();
+        assert_eq!(
+            defaults_from_all,
+            AttributionRule::LAYER_DEFAULTS.to_vec(),
+            "LAYER_DEFAULTS must be ALL-filtered by is_defaults_layer in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_layer_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set. Ternary
+        // peer of `attribution_rule_exact_slice_has_no_duplicates`
+        // (`19c11d2`).
+        for slice in [
+            AttributionRule::LAYER_FILE,
+            AttributionRule::LAYER_ENV,
+            AttributionRule::LAYER_DEFAULTS,
+        ] {
+            let mut seen: Vec<AttributionRule> = Vec::with_capacity(slice.len());
+            for rule in slice {
+                assert!(
+                    !seen.contains(rule),
+                    "AttributionRule layer slice {slice:?} contains duplicate entry {rule:?}",
+                );
+                seen.push(*rule);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionRule::ALL — i.e.,
+        // `LAYER_FILE.len() == ALL.iter().filter(is_file_layer).count()`
+        // (and symmetric for the two siblings) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on all three halves. Concrete
+        // positions today: 2 file + 2 env + 1 defaults = 5 = ALL.
+        // Ternary peer of
+        // `attribution_rule_exact_and_fallback_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`19c11d2`).
+        let file_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_file_layer())
+            .count();
+        let env_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_env_layer())
+            .count();
+        let defaults_count = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter(|r| r.is_defaults_layer())
+            .count();
+        assert_eq!(
+            AttributionRule::LAYER_FILE.len(),
+            file_count,
+            "LAYER_FILE.len() must match the is_file_layer count on ALL",
+        );
+        assert_eq!(
+            AttributionRule::LAYER_ENV.len(),
+            env_count,
+            "LAYER_ENV.len() must match the is_env_layer count on ALL",
+        );
+        assert_eq!(
+            AttributionRule::LAYER_DEFAULTS.len(),
+            defaults_count,
+            "LAYER_DEFAULTS.len() must match the is_defaults_layer count on ALL",
+        );
+        assert_eq!(AttributionRule::LAYER_FILE.len(), 2);
+        assert_eq!(AttributionRule::LAYER_ENV.len(), 2);
+        assert_eq!(AttributionRule::LAYER_DEFAULTS.len(), 1);
+        assert_eq!(AttributionRule::ALL.len(), 5);
+    }
+
+    #[test]
+    fn attribution_rule_layer_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `attribution_rule_exact_and_fallback_slices_are_const_addressable`
+        // (`19c11d2`).
+        const FILE_LEN: usize = AttributionRule::LAYER_FILE.len();
+        const ENV_LEN: usize = AttributionRule::LAYER_ENV.len();
+        const DEFAULTS_LEN: usize = AttributionRule::LAYER_DEFAULTS.len();
+        const ALL_LEN: usize = AttributionRule::ALL.len();
+        assert_eq!(FILE_LEN, 2);
+        assert_eq!(ENV_LEN, 2);
+        assert_eq!(DEFAULTS_LEN, 1);
+        assert_eq!(FILE_LEN + ENV_LEN + DEFAULTS_LEN, ALL_LEN);
     }
 
     #[test]
