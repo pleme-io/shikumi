@@ -1001,6 +1001,98 @@ impl FormatProvenance {
         matches!(self, Self::FigmentBuiltin)
     }
 
+    /// The single FIGMENT-BUILTIN [`FormatProvenance`] variant —
+    /// [`Self::FigmentBuiltin`] (the `figment::providers::{Yaml, Toml}`
+    /// image of the provenance axis) — in the SAME relative declaration
+    /// order it occupies in [`Self::ALL`], carrying the *figment-
+    /// builtin* pole of the (figment-builtin × shikumi-built) closed-
+    /// binary polarity at the provenance primitive's OWN altitude on
+    /// the provenance axis, mirroring the shipped boolean predicate
+    /// [`Self::is_figment_builtin`] one altitude down: every variant
+    /// in this slice satisfies `p.is_figment_builtin()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with [`Self::SHIKUMI_BUILT`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates [`Self::is_figment_builtin`]
+    /// / [`Self::is_shikumi_built`] meta-partition it at the boolean
+    /// altitude. Both sit in the same `impl FormatProvenance` block as
+    /// [`Self::ALL`] and follow the same `pub const &'static [Self]`
+    /// static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the figment-builtin pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_figment_builtin`] at const-fn altitude — so
+    /// the two declarations (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the
+    /// same meta-partition, and a future edit that shifts a variant
+    /// across the polarity on ONE declaration surface but not the
+    /// other diverges at test time on the first provenance where they
+    /// disagree.
+    ///
+    /// Idiom-peer of [`crate::PartitionFace::REALIZABLE`]
+    /// (commit `a344056`), [`crate::SecretRefShape::WHOLE`]
+    /// (commit `036673b`), [`crate::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cd8ef8`), [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`), [`crate::SecretOperation::MUTATING`]
+    /// (commit `b2cfa2a`), [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`), and
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the provenance axis, lifting the
+    /// FormatProvenance closed-binary primitive onto the slice-constant
+    /// altitude.
+    ///
+    /// A future tertiary provenance variant (e.g. a `Custom` provider
+    /// class the primitive's own doc-comment already anticipates)
+    /// lands here either extending one of the two slices in lockstep
+    /// with the boolean predicate that admits it, or introducing a
+    /// third slice; the partition and cardinality pins refuse a silent
+    /// landing under the negation of one of the existing two.
+    ///
+    /// The two agreement laws
+    /// (`FIGMENT_BUILTIN.iter().all(|p| p.is_figment_builtin())` and
+    /// `FIGMENT_BUILTIN.iter().all(|p| !p.is_shikumi_built())`) are
+    /// pinned by
+    /// [`tests::format_provenance_figment_builtin_slice_agrees_with_is_figment_builtin_predicate`].
+    /// Partition invariant with [`Self::SHIKUMI_BUILT`]:
+    /// [`tests::format_provenance_figment_builtin_and_shikumi_built_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::format_provenance_figment_builtin_and_shikumi_built_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::format_provenance_figment_builtin_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::format_provenance_figment_builtin_and_shikumi_built_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::format_provenance_figment_builtin_and_shikumi_built_slices_are_const_addressable`].
+    pub const FIGMENT_BUILTIN: &'static [Self] = &[Self::FigmentBuiltin];
+
+    /// The single SHIKUMI-BUILT [`FormatProvenance`] variant —
+    /// [`Self::ShikumiBuilt`] (the `crate::LispProvider` /
+    /// `crate::NixProvider` image of the provenance axis) — in the
+    /// SAME relative declaration order it occupies in [`Self::ALL`],
+    /// the complement pole of [`Self::FIGMENT_BUILTIN`] on the
+    /// (figment-builtin × shikumi-built) closed-binary polarity at the
+    /// provenance primitive's OWN altitude. Mirrors the shipped boolean
+    /// predicate [`Self::is_shikumi_built`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::FIGMENT_BUILTIN`] pins the
+    /// whole-set cardinality identity
+    /// `FIGMENT_BUILTIN.len() + SHIKUMI_BUILT.len() == ALL.len()`.
+    /// Because the axis is closed-binary and XOR-complementary by
+    /// construction today, a future third provenance landing (e.g. a
+    /// `Custom` provider class the primitive's own doc-comment
+    /// anticipates) would first fail the two-entry cardinality pins,
+    /// then fail the partition and cardinality pins on this constant
+    /// pair unless extended in lockstep with the boolean predicates.
+    ///
+    /// See [`Self::FIGMENT_BUILTIN`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_figment_builtin`]), and the
+    /// load-bearing agreement and partition pins.
+    pub const SHIKUMI_BUILT: &'static [Self] = &[Self::ShikumiBuilt];
+
     /// The [`crate::AttributionRule`] that names a [`crate::ConfigSource::File`]
     /// layer when a per-value figment failure originates from a file of
     /// this provenance:
@@ -7203,6 +7295,212 @@ mod tests {
             FormatProvenance::ALL.to_vec(),
             "BTreeMap<FormatProvenance, _> key order must match FormatProvenance::ALL",
         );
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_slice_agrees_with_is_figment_builtin_predicate() {
+        // Bidirectional weld between the slice literal
+        // `FormatProvenance::FIGMENT_BUILTIN` and the boolean predicate
+        // `FormatProvenance::is_figment_builtin` on the
+        // (figment-builtin × shikumi-built) polarity axis. Every slice
+        // entry satisfies the figment-builtin pole (and its complement
+        // `!is_shikumi_built`), and every ALL cell agrees on membership
+        // under the boolean predicate. Idiom-peer of
+        // `secret_ref_shape_whole_slice_agrees_with_is_whole_predicate`
+        // (commit `036673b`) —
+        // the two independent declaration surfaces (slice literal +
+        // boolean predicate) diverge at THIS pin on the first
+        // provenance where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift.
+        for p in FormatProvenance::FIGMENT_BUILTIN.iter().copied() {
+            assert!(
+                p.is_figment_builtin(),
+                "FormatProvenance::FIGMENT_BUILTIN entry {p:?} must satisfy is_figment_builtin()",
+            );
+            assert!(
+                !p.is_shikumi_built(),
+                "FormatProvenance::FIGMENT_BUILTIN entry {p:?} must NOT satisfy is_shikumi_built()",
+            );
+        }
+        for p in FormatProvenance::ALL.iter().copied() {
+            assert_eq!(
+                FormatProvenance::FIGMENT_BUILTIN.contains(&p),
+                p.is_figment_builtin(),
+                "FIGMENT_BUILTIN membership must agree with is_figment_builtin() on \
+                 FormatProvenance::{p:?}",
+            );
+            assert_eq!(
+                FormatProvenance::SHIKUMI_BUILT.contains(&p),
+                p.is_shikumi_built(),
+                "SHIKUMI_BUILT membership must agree with is_shikumi_built() on \
+                 FormatProvenance::{p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_and_shikumi_built_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `FIGMENT_BUILTIN.len() + SHIKUMI_BUILT.len() == ALL.len()`
+        // at the slice altitude on the provenance axis. Idiom-peer of
+        // `secret_ref_shape_whole_and_field_slices_partition_all`
+        // (commit `036673b`) —
+        // a variant landing on one slice AND the other, or on neither,
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes the
+        // drift.
+        for p in FormatProvenance::FIGMENT_BUILTIN.iter().copied() {
+            assert!(
+                !FormatProvenance::SHIKUMI_BUILT.contains(&p),
+                "FormatProvenance::{p:?} appears in BOTH FIGMENT_BUILTIN and SHIKUMI_BUILT",
+            );
+        }
+        for p in FormatProvenance::ALL.iter().copied() {
+            let in_figment = FormatProvenance::FIGMENT_BUILTIN.contains(&p);
+            let in_shikumi = FormatProvenance::SHIKUMI_BUILT.contains(&p);
+            assert!(
+                in_figment || in_shikumi,
+                "FormatProvenance::{p:?} is in NEITHER FIGMENT_BUILTIN nor SHIKUMI_BUILT",
+            );
+            assert!(
+                !(in_figment && in_shikumi),
+                "FormatProvenance::{p:?} is in BOTH FIGMENT_BUILTIN and SHIKUMI_BUILT",
+            );
+        }
+        assert_eq!(
+            FormatProvenance::FIGMENT_BUILTIN.len() + FormatProvenance::SHIKUMI_BUILT.len(),
+            FormatProvenance::ALL.len(),
+            "FIGMENT_BUILTIN and SHIKUMI_BUILT slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_and_shikumi_built_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in FormatProvenance::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`FigmentBuiltin` first, then `ShikumiBuilt`).
+        // Idiom-peer of
+        // `secret_ref_shape_whole_and_field_slices_preserve_all_order`
+        // (commit `036673b`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let figment_from_all: Vec<FormatProvenance> = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .filter(|p| p.is_figment_builtin())
+            .collect();
+        assert_eq!(
+            figment_from_all,
+            FormatProvenance::FIGMENT_BUILTIN.to_vec(),
+            "FIGMENT_BUILTIN must be ALL-filtered by is_figment_builtin in declaration order",
+        );
+        let shikumi_from_all: Vec<FormatProvenance> = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .filter(|p| p.is_shikumi_built())
+            .collect();
+        assert_eq!(
+            shikumi_from_all,
+            FormatProvenance::SHIKUMI_BUILT.to_vec(),
+            "SHIKUMI_BUILT must be ALL-filtered by is_shikumi_built in declaration order",
+        );
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into SHIKUMI_BUILT, an accidental re-add of an already-
+        // present FigmentBuiltin cell into FIGMENT_BUILTIN) fails at
+        // THIS pin before drifting through any consumer that iterates
+        // the slice expecting a set. Idiom-peer of
+        // `secret_ref_shape_whole_slice_has_no_duplicates`
+        // (commit `036673b`).
+        for slice in [
+            FormatProvenance::FIGMENT_BUILTIN,
+            FormatProvenance::SHIKUMI_BUILT,
+        ] {
+            let mut sorted = slice.to_vec();
+            sorted.sort();
+            let deduped_len = {
+                let mut seen: Vec<FormatProvenance> = Vec::with_capacity(sorted.len());
+                for p in &sorted {
+                    if !seen.contains(p) {
+                        seen.push(*p);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "FormatProvenance slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_and_shikumi_built_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on FormatProvenance::ALL — i.e.,
+        // `FIGMENT_BUILTIN.len() == ALL.iter().filter(is_figment_builtin).count()`
+        // and `SHIKUMI_BUILT.len() == ALL.iter().filter(is_shikumi_built).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 1 figment_builtin + 1 shikumi_built
+        // = 2 = ALL. Idiom-peer of
+        // `secret_ref_shape_whole_and_field_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `036673b`).
+        let figment_count = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .filter(|p| p.is_figment_builtin())
+            .count();
+        let shikumi_count = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .filter(|p| p.is_shikumi_built())
+            .count();
+        assert_eq!(
+            FormatProvenance::FIGMENT_BUILTIN.len(),
+            figment_count,
+            "FIGMENT_BUILTIN.len() must match the is_figment_builtin count on ALL",
+        );
+        assert_eq!(
+            FormatProvenance::SHIKUMI_BUILT.len(),
+            shikumi_count,
+            "SHIKUMI_BUILT.len() must match the is_shikumi_built count on ALL",
+        );
+        assert_eq!(FormatProvenance::FIGMENT_BUILTIN.len(), 1);
+        assert_eq!(FormatProvenance::SHIKUMI_BUILT.len(), 1);
+        assert_eq!(FormatProvenance::ALL.len(), 2);
+    }
+
+    #[test]
+    fn format_provenance_figment_builtin_and_shikumi_built_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `secret_ref_shape_whole_and_field_slices_are_const_addressable`
+        // (commit `036673b`).
+        const FIGMENT_LEN: usize = FormatProvenance::FIGMENT_BUILTIN.len();
+        const SHIKUMI_LEN: usize = FormatProvenance::SHIKUMI_BUILT.len();
+        const ALL_LEN: usize = FormatProvenance::ALL.len();
+        assert_eq!(FIGMENT_LEN, 1);
+        assert_eq!(SHIKUMI_LEN, 1);
+        assert_eq!(FIGMENT_LEN + SHIKUMI_LEN, ALL_LEN);
     }
 
     // ---- FormatCoordinates / Format::format_coordinates / format_or_none ----
