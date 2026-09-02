@@ -28351,6 +28351,89 @@ impl EnvMetadataTagKind {
             Self::Bare => "bare",
         }
     }
+
+    /// The single PREFIXED [`EnvMetadataTagKind`] variant —
+    /// [`Self::Prefixed`] (the scoped-prefix pole of the (prefixed ×
+    /// bare) meta-partition) — in the SAME relative declaration order
+    /// it occupies in [`Self::ALL`], as a `'static` slice constant at
+    /// the primitive's OWN altitude on the env-name sub-axis kind.
+    /// Mirrors the shipped boolean predicate [`Self::is_prefixed`] one
+    /// altitude down (per-variant polarity) and follows the same
+    /// `pub const &'static [Self]` static-slice discipline as
+    /// [`Self::ALL`].
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the pole occupies in [`Self::ALL`],
+    /// not derived by filtering [`Self::ALL`] through
+    /// [`Self::is_prefixed`] at const-fn altitude — the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first cell where they disagree.
+    ///
+    /// A per-half consumer iterating [`Self::PREFIXED`] (an
+    /// attestation manifest recording the prefixed-vs-bare env-tag
+    /// kind cardinality mix of a resolved chain; a diagnostics
+    /// renderer weighting bare env attributions visibly weaker than
+    /// prefixed ones since the bare shape carries no scoping
+    /// information; a structured-log field surfacing bare env
+    /// attributions separately from prefixed ones; a per-kind
+    /// dashboard histogram over [`EnvMetadataTag::kind`]) reaches the
+    /// prefixed pole without a runtime filter through
+    /// `EnvMetadataTagKind::ALL.iter().filter(|k| k.is_prefixed())`
+    /// — one static slice reference, const-addressable end-to-end,
+    /// ordered the same way [`Self::ALL`] is.
+    ///
+    /// A future tertiary variant (e.g. a hypothetical `Glob` kind in
+    /// lockstep with a hypothetical [`EnvMetadataTag::Glob`] if
+    /// figment grows pattern-matched env providers) landing on
+    /// [`Self`] must either extend one slice in lockstep with the
+    /// boolean predicate that admits it, or introduce a third slice;
+    /// the partition and cardinality pins refuse a silent landing
+    /// under the negation of one of the existing two.
+    ///
+    /// The two agreement laws
+    /// (`PREFIXED.iter().all(|k| k.is_prefixed())` and
+    /// `PREFIXED.iter().all(|k| !k.is_bare())`) are pinned by
+    /// [`tests::env_metadata_tag_kind_prefixed_slice_agrees_with_is_prefixed_predicate`].
+    /// Partition invariant with [`Self::BARE`]:
+    /// [`tests::env_metadata_tag_kind_prefixed_and_bare_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::env_metadata_tag_kind_prefixed_and_bare_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::env_metadata_tag_kind_prefixed_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::env_metadata_tag_kind_prefixed_and_bare_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::env_metadata_tag_kind_prefixed_and_bare_slices_are_const_addressable`].
+    pub const PREFIXED: &'static [Self] = &[Self::Prefixed];
+
+    /// The single BARE [`EnvMetadataTagKind`] variant —
+    /// [`Self::Bare`] (the no-scoping pole of the (prefixed × bare)
+    /// meta-partition) — in the SAME relative declaration order it
+    /// occupies in [`Self::ALL`], the complement pole of
+    /// [`Self::PREFIXED`] on the (prefixed × bare) closed-binary
+    /// polarity at the axis primitive's OWN altitude on the env-name
+    /// sub-axis kind. Mirrors the shipped boolean predicate
+    /// [`Self::is_bare`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::PREFIXED`] pins the
+    /// whole-set cardinality identity
+    /// `PREFIXED.len() + BARE.len() == ALL.len()`. Because the axis
+    /// is closed-binary and XOR-complementary by construction today,
+    /// a future third env-name sub-axis kind landing (e.g. a `Glob`
+    /// cell in lockstep with a hypothetical
+    /// [`EnvMetadataTag::Glob`]) would first fail the two-entry
+    /// cardinality pins, then fail the partition and cardinality
+    /// pins on this constant pair unless extended in lockstep with
+    /// the boolean predicates.
+    ///
+    /// See [`Self::PREFIXED`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter
+    /// through [`Self::is_prefixed`]), and the load-bearing agreement
+    /// and partition pins.
+    pub const BARE: &'static [Self] = &[Self::Bare];
 }
 
 impl crate::ClosedAxis for EnvMetadataTagKind {
@@ -98802,6 +98885,205 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_slice_agrees_with_is_prefixed_predicate() {
+        // Bidirectional weld between the slice literal
+        // `EnvMetadataTagKind::PREFIXED` and the boolean predicate
+        // `EnvMetadataTagKind::is_prefixed` on the (prefixed × bare)
+        // polarity axis. Every slice entry satisfies the prefixed
+        // pole (and its complement `!is_bare`), and every ALL cell
+        // agrees on membership under the boolean predicate. Idiom-peer
+        // of
+        // `attribution_axis_metadata_source_slice_agrees_with_is_metadata_source_predicate`
+        // (commit `34bfbb6`) — the two independent declaration
+        // surfaces (slice literal + boolean predicate) diverge at THIS
+        // pin on the first cell where they disagree, before a
+        // consumer that reads one altitude but not the other can
+        // observe the drift.
+        for k in EnvMetadataTagKind::PREFIXED.iter().copied() {
+            assert!(
+                k.is_prefixed(),
+                "EnvMetadataTagKind::PREFIXED entry {k:?} must satisfy is_prefixed()",
+            );
+            assert!(
+                !k.is_bare(),
+                "EnvMetadataTagKind::PREFIXED entry {k:?} must NOT satisfy is_bare()",
+            );
+        }
+        for k in EnvMetadataTagKind::ALL.iter().copied() {
+            assert_eq!(
+                EnvMetadataTagKind::PREFIXED.contains(&k),
+                k.is_prefixed(),
+                "PREFIXED membership must agree with is_prefixed() on EnvMetadataTagKind::{k:?}",
+            );
+            assert_eq!(
+                EnvMetadataTagKind::BARE.contains(&k),
+                k.is_bare(),
+                "BARE membership must agree with is_bare() on EnvMetadataTagKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_and_bare_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `PREFIXED.len() + BARE.len() == ALL.len()` at the slice
+        // altitude on the env-name sub-axis kind. Idiom-peer of
+        // `attribution_axis_metadata_source_and_metadata_name_slices_partition_all`
+        // (commit `34bfbb6`) — a variant landing on one slice AND
+        // the other, or on neither, breaks the partition here before
+        // any consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        for k in EnvMetadataTagKind::PREFIXED.iter().copied() {
+            assert!(
+                !EnvMetadataTagKind::BARE.contains(&k),
+                "EnvMetadataTagKind::{k:?} appears in BOTH PREFIXED and BARE",
+            );
+        }
+        for k in EnvMetadataTagKind::ALL.iter().copied() {
+            let in_prefixed = EnvMetadataTagKind::PREFIXED.contains(&k);
+            let in_bare = EnvMetadataTagKind::BARE.contains(&k);
+            assert!(
+                in_prefixed || in_bare,
+                "EnvMetadataTagKind::{k:?} is in NEITHER PREFIXED nor BARE",
+            );
+            assert!(
+                !(in_prefixed && in_bare),
+                "EnvMetadataTagKind::{k:?} is in BOTH PREFIXED and BARE",
+            );
+        }
+        assert_eq!(
+            EnvMetadataTagKind::PREFIXED.len() + EnvMetadataTagKind::BARE.len(),
+            EnvMetadataTagKind::ALL.len(),
+            "PREFIXED and BARE slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_and_bare_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in EnvMetadataTagKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated
+        // reproduces the ALL order (`Prefixed` first, then `Bare`).
+        // Idiom-peer of
+        // `attribution_axis_metadata_source_and_metadata_name_slices_preserve_all_order`
+        // (commit `34bfbb6`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let prefixed_from_all: Vec<EnvMetadataTagKind> = EnvMetadataTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_prefixed())
+            .collect();
+        assert_eq!(
+            prefixed_from_all,
+            EnvMetadataTagKind::PREFIXED.to_vec(),
+            "PREFIXED must be ALL-filtered by is_prefixed in declaration order",
+        );
+        let bare_from_all: Vec<EnvMetadataTagKind> = EnvMetadataTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_bare())
+            .collect();
+        assert_eq!(
+            bare_from_all,
+            EnvMetadataTagKind::BARE.to_vec(),
+            "BARE must be ALL-filtered by is_bare in declaration order",
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into BARE, an accidental re-add of an already-present
+        // Prefixed cell into PREFIXED) fails at THIS pin before
+        // drifting through any consumer that iterates the slice
+        // expecting a set. Idiom-peer of
+        // `attribution_axis_metadata_source_slice_has_no_duplicates`
+        // (commit `34bfbb6`).
+        for slice in [EnvMetadataTagKind::PREFIXED, EnvMetadataTagKind::BARE] {
+            let deduped_len = {
+                let mut seen: Vec<EnvMetadataTagKind> = Vec::with_capacity(slice.len());
+                for k in slice {
+                    if !seen.contains(k) {
+                        seen.push(*k);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "EnvMetadataTagKind slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_and_bare_slice_lengths_agree_with_boolean_pole_cardinalities()
+    {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on EnvMetadataTagKind::ALL —
+        // i.e., `PREFIXED.len() ==
+        // ALL.iter().filter(is_prefixed).count()` and
+        // `BARE.len() == ALL.iter().filter(is_bare).count()` — the
+        // cardinality projection at the slice altitude agrees with
+        // the boolean-altitude projection on both halves. Concrete
+        // positions today: 1 prefixed + 1 bare = 2 = ALL. Idiom-peer
+        // of
+        // `attribution_axis_metadata_source_and_metadata_name_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `34bfbb6`).
+        let prefixed_count = EnvMetadataTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_prefixed())
+            .count();
+        let bare_count = EnvMetadataTagKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_bare())
+            .count();
+        assert_eq!(
+            EnvMetadataTagKind::PREFIXED.len(),
+            prefixed_count,
+            "PREFIXED.len() must match the is_prefixed count on ALL",
+        );
+        assert_eq!(
+            EnvMetadataTagKind::BARE.len(),
+            bare_count,
+            "BARE.len() must match the is_bare count on ALL",
+        );
+        assert_eq!(EnvMetadataTagKind::PREFIXED.len(), 1);
+        assert_eq!(EnvMetadataTagKind::BARE.len(), 1);
+        assert_eq!(EnvMetadataTagKind::ALL.len(), 2);
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_prefixed_and_bare_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding
+        // of `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `attribution_axis_metadata_source_and_metadata_name_slices_are_const_addressable`
+        // (commit `34bfbb6`).
+        const PREFIXED_LEN: usize = EnvMetadataTagKind::PREFIXED.len();
+        const BARE_LEN: usize = EnvMetadataTagKind::BARE.len();
+        const ALL_LEN: usize = EnvMetadataTagKind::ALL.len();
+        assert_eq!(PREFIXED_LEN, 1);
+        assert_eq!(BARE_LEN, 1);
+        assert_eq!(PREFIXED_LEN + BARE_LEN, ALL_LEN);
     }
 
     #[test]
