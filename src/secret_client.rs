@@ -2975,6 +2975,102 @@ impl SecretClientKind {
             Self::AwsSecretsManager | Self::GcpSecretManager => false,
         }
     }
+
+    /// The two CLOUD-SECRET-MANAGER [`SecretClientKind`] variants —
+    /// [`Self::AwsSecretsManager`] (AWS Secrets Manager SDK) and
+    /// [`Self::GcpSecretManager`] (GCP Secret Manager SDK) — carrying
+    /// the *hyperscaler-managed Secret Manager API* pole of the
+    /// (cloud-Secret-Manager × everything-else) polarity axis at the
+    /// primitive's OWN altitude on the runtime-client axis, mirroring
+    /// the shipped boolean predicate [`Self::is_cloud_secret_manager`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `k.is_cloud_secret_manager()`, and no variant outside it does.
+    /// Paired with [`Self::NON_CLOUD_SECRET_MANAGER`], the two disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude the
+    /// same way the shipped boolean predicates
+    /// [`Self::is_cloud_secret_manager`] / [`Self::is_non_cloud_secret_manager`]
+    /// meta-partition it at the boolean altitude.
+    ///
+    /// Written as an explicit two-variant slice literal in the SAME
+    /// relative declaration order the cloud-Secret-Manager pole
+    /// occupies in [`Self::ALL`], rather than derived by filtering
+    /// [`Self::ALL`] through [`Self::is_cloud_secret_manager`] at
+    /// const-fn altitude — so the two declarations (the slice literal
+    /// and the boolean predicate) remain independent load-bearing
+    /// witnesses of the same meta-partition, and a future edit that
+    /// shifts a variant across the polarity on ONE declaration surface
+    /// but not the other diverges at test time on the first shape
+    /// where they disagree. A hypothetical eighth cloud-Secret-Manager
+    /// variant (e.g. an `AzureKeyVault` transport) lands here in
+    /// lockstep with [`Self::is_cloud_secret_manager`]. Uses the same
+    /// `pub const &'static [Self]` static-slice discipline as
+    /// [`Self::ALL`].
+    ///
+    /// Idiom-peer of
+    /// [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`) at the same static-slice altitude on the
+    /// config-author backend-kind axis, and
+    /// [`crate::SecretOperation::MUTATING`] (commit `b2cfa2a`) on the
+    /// operation-axis's read-vs-write meta-partition — applied here to
+    /// the seven-way runtime-client axis's cloud-vs-non-cloud
+    /// meta-partition, closing the FOURTH and last altitude the
+    /// cloud-Secret-Manager slice constants are expressible on
+    /// (mirroring the four altitudes the boolean predicates were
+    /// already lifted onto — `SecretBackendKind`, `SecretBackend`,
+    /// `SecretSource`, `SecretClientKind`).
+    ///
+    /// The two agreement laws
+    /// (`CLOUD_SECRET_MANAGER.iter().all(|k| k.is_cloud_secret_manager())`
+    /// and `CLOUD_SECRET_MANAGER.iter().all(|k| !k.is_non_cloud_secret_manager())`)
+    /// are pinned by
+    /// [`tests::secret_client_kind_cloud_secret_manager_slice_agrees_with_is_cloud_secret_manager_predicate`].
+    /// Partition invariant with [`Self::NON_CLOUD_SECRET_MANAGER`]:
+    /// [`tests::secret_client_kind_cloud_and_non_cloud_secret_manager_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::secret_client_kind_cloud_and_non_cloud_secret_manager_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::secret_client_kind_cloud_secret_manager_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::secret_client_kind_cloud_and_non_cloud_secret_manager_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::secret_client_kind_cloud_and_non_cloud_secret_manager_slices_are_const_addressable`].
+    pub const CLOUD_SECRET_MANAGER: &'static [Self] =
+        &[Self::AwsSecretsManager, Self::GcpSecretManager];
+
+    /// The five NON-CLOUD-SECRET-MANAGER [`SecretClientKind`] variants —
+    /// [`Self::Mem`] (in-memory test scaffold), [`Self::Command`]
+    /// (shell-subprocess `get` shim), [`Self::Akeyless`] (native HTTP
+    /// Akeyless gateway), [`Self::OpConnect`] (1Password Connect HTTP
+    /// transport), and [`Self::Vault`] (`HashiCorp` Vault KV v2 HTTP
+    /// transport) — carrying the *everything-else* pole of the
+    /// (cloud-Secret-Manager × everything-else) polarity axis at the
+    /// primitive's OWN altitude. Complement pole of
+    /// [`Self::CLOUD_SECRET_MANAGER`] on the seven-way
+    /// [`SecretClientKind`] axis, mirroring the shipped boolean
+    /// predicate [`Self::is_non_cloud_secret_manager`] one altitude
+    /// down: every variant in this slice satisfies
+    /// `k.is_non_cloud_secret_manager()`, and no variant outside it
+    /// does.
+    ///
+    /// Written as an explicit five-variant slice literal in the SAME
+    /// relative declaration order the non-cloud pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_non_cloud_secret_manager`] on every step.
+    /// Idiom-peer of the shipped backend-axis complement slice
+    /// [`crate::secret::SecretBackendKind::NON_CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`) at the same static-slice altitude.
+    ///
+    /// See [`Self::CLOUD_SECRET_MANAGER`] for the full contract, the
+    /// discipline behind writing the slice as a literal (rather than a
+    /// filter through [`Self::is_non_cloud_secret_manager`]), and the
+    /// load-bearing test pins.
+    pub const NON_CLOUD_SECRET_MANAGER: &'static [Self] = &[
+        Self::Mem,
+        Self::Command,
+        Self::Akeyless,
+        Self::OpConnect,
+        Self::Vault,
+    ];
 }
 
 impl crate::ClosedAxis for SecretClientKind {
@@ -10607,6 +10703,310 @@ mod tests {
         assert!(SecretClientKind::Akeyless.is_non_cloud_secret_manager());
         assert!(SecretClientKind::OpConnect.is_non_cloud_secret_manager());
         assert!(SecretClientKind::Vault.is_non_cloud_secret_manager());
+    }
+
+    // ---- SecretClientKind CLOUD_SECRET_MANAGER / NON_CLOUD_SECRET_MANAGER
+    //
+    // The compound-polarity meta-partition of `SecretClientKind::ALL`
+    // lifted from the boolean predicate altitude (`is_cloud_secret_manager`
+    // / `is_non_cloud_secret_manager`) onto the static-slice altitude,
+    // mirroring the same lift `SecretBackendKind::CLOUD_SECRET_MANAGER`
+    // / `SecretBackendKind::NON_CLOUD_SECRET_MANAGER` shipped for the
+    // eight-way config-author backend axis at commit `04e0f5d`. Six
+    // pins below weld the six load-bearing invariants of the pair on
+    // the seven-way runtime-client axis.
+
+    #[test]
+    fn secret_client_kind_cloud_secret_manager_slice_agrees_with_is_cloud_secret_manager_predicate()
+    {
+        // Cross-altitude weld: the slice's membership agrees with the
+        // boolean predicate one altitude down. Every entry in
+        // CLOUD_SECRET_MANAGER satisfies `is_cloud_secret_manager` (and,
+        // by the meta-partition, none satisfies
+        // `is_non_cloud_secret_manager`); every entry in
+        // NON_CLOUD_SECRET_MANAGER satisfies `is_non_cloud_secret_manager`
+        // (and none satisfies `is_cloud_secret_manager`). A future edit
+        // that reclassified a variant across the polarity on one
+        // declaration surface but not the other diverges here rather
+        // than silently. Runtime-client-axis idiom-peer of
+        // `secret_backend_kind_cloud_secret_manager_slice_agrees_with_is_cloud_secret_manager_predicate`
+        // (commit `04e0f5d`) on the config-author backend axis.
+        for kind in SecretClientKind::CLOUD_SECRET_MANAGER.iter().copied() {
+            assert!(
+                kind.is_cloud_secret_manager(),
+                "SecretClientKind::CLOUD_SECRET_MANAGER entry {kind:?} must satisfy \
+                 is_cloud_secret_manager",
+            );
+            assert!(
+                !kind.is_non_cloud_secret_manager(),
+                "SecretClientKind::CLOUD_SECRET_MANAGER entry {kind:?} must NOT satisfy \
+                 is_non_cloud_secret_manager",
+            );
+        }
+        for kind in SecretClientKind::NON_CLOUD_SECRET_MANAGER.iter().copied() {
+            assert!(
+                kind.is_non_cloud_secret_manager(),
+                "SecretClientKind::NON_CLOUD_SECRET_MANAGER entry {kind:?} must satisfy \
+                 is_non_cloud_secret_manager",
+            );
+            assert!(
+                !kind.is_cloud_secret_manager(),
+                "SecretClientKind::NON_CLOUD_SECRET_MANAGER entry {kind:?} must NOT satisfy \
+                 is_cloud_secret_manager",
+            );
+        }
+        // Dual direction: every variant outside CLOUD_SECRET_MANAGER
+        // must fail is_cloud_secret_manager, and every variant outside
+        // NON_CLOUD_SECRET_MANAGER must fail is_non_cloud_secret_manager
+        // — swept over ALL. This catches the failure mode where a
+        // cloud-Secret-Manager variant is silently dropped from
+        // CLOUD_SECRET_MANAGER while still satisfying
+        // `is_cloud_secret_manager` at the boolean altitude.
+        for kind in SecretClientKind::ALL.iter().copied() {
+            let in_cloud = SecretClientKind::CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|c| *c == kind);
+            let in_non_cloud = SecretClientKind::NON_CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|n| *n == kind);
+            assert_eq!(
+                in_cloud,
+                kind.is_cloud_secret_manager(),
+                "CLOUD_SECRET_MANAGER membership must agree with is_cloud_secret_manager on \
+                 {kind:?}",
+            );
+            assert_eq!(
+                in_non_cloud,
+                kind.is_non_cloud_secret_manager(),
+                "NON_CLOUD_SECRET_MANAGER membership must agree with is_non_cloud_secret_manager \
+                 on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_and_non_cloud_secret_manager_slices_partition_all() {
+        // The two slices are DISJOINT (no variant appears in both),
+        // their UNION is exactly ALL (no variant missing from both),
+        // and their combined length equals `ALL.len()` (the
+        // meta-partition covers the axis without overlap). This is the
+        // slice-altitude analogue of the boolean-altitude pin
+        // `secret_client_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`.
+        // A future eighth-pole runtime client landing in ALL without
+        // being classified onto one of the two slices fails here.
+        assert_eq!(
+            SecretClientKind::CLOUD_SECRET_MANAGER.len()
+                + SecretClientKind::NON_CLOUD_SECRET_MANAGER.len(),
+            SecretClientKind::ALL.len(),
+            "CLOUD_SECRET_MANAGER and NON_CLOUD_SECRET_MANAGER must together be the same size as \
+             ALL",
+        );
+        for c in SecretClientKind::CLOUD_SECRET_MANAGER.iter().copied() {
+            assert!(
+                !SecretClientKind::NON_CLOUD_SECRET_MANAGER
+                    .iter()
+                    .any(|n| *n == c),
+                "SecretClientKind::{c:?} must NOT appear in both CLOUD_SECRET_MANAGER and \
+                 NON_CLOUD_SECRET_MANAGER",
+            );
+        }
+        for kind in SecretClientKind::ALL.iter().copied() {
+            let in_cloud = SecretClientKind::CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|c| *c == kind);
+            let in_non_cloud = SecretClientKind::NON_CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|n| *n == kind);
+            assert!(
+                in_cloud || in_non_cloud,
+                "SecretClientKind::{kind:?} in ALL must appear in CLOUD_SECRET_MANAGER or \
+                 NON_CLOUD_SECRET_MANAGER",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_and_non_cloud_secret_manager_slices_preserve_all_order() {
+        // The declaration order within each per-half slice matches the
+        // relative order of those variants in `SecretClientKind::ALL`
+        // — a slice literal cannot silently reorder the meta-partition
+        // (which would misalign per-half runtime-client histograms or
+        // per-index dashboards keyed on the slice). Idiom analogue of
+        // `secret_backend_kind_cloud_and_non_cloud_secret_manager_slices_preserve_all_order`
+        // one axis over.
+        let cloud_from_all: Vec<SecretClientKind> = SecretClientKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_cloud_secret_manager())
+            .collect();
+        let non_cloud_from_all: Vec<SecretClientKind> = SecretClientKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_non_cloud_secret_manager())
+            .collect();
+        assert_eq!(
+            SecretClientKind::CLOUD_SECRET_MANAGER.to_vec(),
+            cloud_from_all,
+            "SecretClientKind::CLOUD_SECRET_MANAGER must match ALL's \
+             is_cloud_secret_manager-order projection",
+        );
+        assert_eq!(
+            SecretClientKind::NON_CLOUD_SECRET_MANAGER.to_vec(),
+            non_cloud_from_all,
+            "SecretClientKind::NON_CLOUD_SECRET_MANAGER must match ALL's \
+             is_non_cloud_secret_manager-order projection",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_secret_manager_slice_has_no_duplicates() {
+        // Same set-shape discipline as
+        // `secret_client_kind_all_has_no_duplicates`. Sorting on the
+        // canonical label decouples this pin from the slice's
+        // declaration order (which is welded by the sibling
+        // `secret_client_kind_cloud_and_non_cloud_secret_manager_slices_preserve_all_order`).
+        let mut labels: Vec<&'static str> = SecretClientKind::CLOUD_SECRET_MANAGER
+            .iter()
+            .map(|k| k.as_str())
+            .collect();
+        let original_len = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            original_len,
+            "SecretClientKind::CLOUD_SECRET_MANAGER must not list any variant twice",
+        );
+        // Non-cloud twin of the cloud-half no-duplicates pin.
+        let mut labels: Vec<&'static str> = SecretClientKind::NON_CLOUD_SECRET_MANAGER
+            .iter()
+            .map(|k| k.as_str())
+            .collect();
+        let original_len = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            original_len,
+            "SecretClientKind::NON_CLOUD_SECRET_MANAGER must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_and_non_cloud_secret_manager_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // The slice lengths agree with the boolean-altitude pole
+        // cardinalities: `CLOUD_SECRET_MANAGER.len()` equals the number
+        // of ALL cells satisfying `is_cloud_secret_manager`, and the
+        // same on the non-cloud half. Ties the slice altitude back to
+        // the boolean altitude at the length scalar the whole
+        // meta-partition is measured by (the same constants `2` and
+        // `5` welded by the boolean-altitude partition pin
+        // `secret_client_kind_is_cloud_secret_manager_and_is_non_cloud_secret_manager_form_binary_partition`).
+        let cloud_boolean_count = SecretClientKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_cloud_secret_manager())
+            .count();
+        let non_cloud_boolean_count = SecretClientKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_non_cloud_secret_manager())
+            .count();
+        assert_eq!(
+            SecretClientKind::CLOUD_SECRET_MANAGER.len(),
+            cloud_boolean_count,
+            "SecretClientKind::CLOUD_SECRET_MANAGER.len() must equal the \
+             is_cloud_secret_manager filter count on ALL",
+        );
+        assert_eq!(
+            SecretClientKind::NON_CLOUD_SECRET_MANAGER.len(),
+            non_cloud_boolean_count,
+            "SecretClientKind::NON_CLOUD_SECRET_MANAGER.len() must equal the \
+             is_non_cloud_secret_manager filter count on ALL",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_and_non_cloud_secret_manager_slices_are_const_addressable() {
+        // The two slice constants are addressable in const context —
+        // a const-fn caller can index into them or take their `len()`
+        // without going through a runtime iterator. Idiom-peer of the
+        // sibling `secret_client_kind_is_cloud_secret_manager_is_const_callable`
+        // pin at the boolean altitude. This weld pins that a
+        // hypothetical future edit lifting `CLOUD_SECRET_MANAGER`
+        // behind a `pub fn` (rather than `pub const`) — losing
+        // const-time addressability — fails here.
+        const CLOUD_LEN: usize = SecretClientKind::CLOUD_SECRET_MANAGER.len();
+        const NON_CLOUD_LEN: usize = SecretClientKind::NON_CLOUD_SECRET_MANAGER.len();
+        assert_eq!(CLOUD_LEN, 2);
+        assert_eq!(NON_CLOUD_LEN, 5);
+    }
+
+    #[test]
+    fn secret_client_kind_cloud_and_non_cloud_secret_manager_slices_agree_pointwise_with_backend_kind_shared_arms()
+     {
+        // Cross-altitude slice-side weld: the four runtime-client cells
+        // that share an upstream vault with a config-author backend
+        // (Command, Akeyless, OpConnect ↔ Op, Vault, plus the two
+        // cloud-Secret-Manager cells) land on the SAME polarity slice
+        // on both axes. This is the slice-altitude analogue of the
+        // boolean-altitude pin
+        // `secret_client_kind_is_cloud_secret_manager_agrees_with_secret_backend_kind_pointwise_on_shared_arms`
+        // and its non-cloud sibling. A future edit that reclassified a
+        // shared arm across the polarity on one axis's slice without
+        // extending the other's diverges here before drifting through
+        // any per-polarity consumer site that treats the two axes as
+        // one pole.
+        for (client_kind, backend_kind) in [
+            (
+                SecretClientKind::AwsSecretsManager,
+                crate::secret::SecretBackendKind::AwsSecret,
+            ),
+            (
+                SecretClientKind::GcpSecretManager,
+                crate::secret::SecretBackendKind::GcpSecret,
+            ),
+            (
+                SecretClientKind::Command,
+                crate::secret::SecretBackendKind::Command,
+            ),
+            (
+                SecretClientKind::Akeyless,
+                crate::secret::SecretBackendKind::Akeyless,
+            ),
+            (
+                SecretClientKind::OpConnect,
+                crate::secret::SecretBackendKind::Op,
+            ),
+            (
+                SecretClientKind::Vault,
+                crate::secret::SecretBackendKind::Vault,
+            ),
+        ] {
+            let client_in_cloud = SecretClientKind::CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|c| *c == client_kind);
+            let backend_in_cloud = crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|c| *c == backend_kind);
+            assert_eq!(
+                client_in_cloud, backend_in_cloud,
+                "runtime-client / config-author CLOUD_SECRET_MANAGER membership drift on the \
+                 shared arm ({client_kind:?}, {backend_kind:?})",
+            );
+            let client_in_non_cloud = SecretClientKind::NON_CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|n| *n == client_kind);
+            let backend_in_non_cloud = crate::secret::SecretBackendKind::NON_CLOUD_SECRET_MANAGER
+                .iter()
+                .any(|n| *n == backend_kind);
+            assert_eq!(
+                client_in_non_cloud, backend_in_non_cloud,
+                "runtime-client / config-author NON_CLOUD_SECRET_MANAGER membership drift on the \
+                 shared arm ({client_kind:?}, {backend_kind:?})",
+            );
+        }
     }
 
     #[test]
