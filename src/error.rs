@@ -737,6 +737,99 @@ impl FieldPathLocalization {
         Self::NotApplicable,
     ];
 
+    /// The two APPLICABLE [`FieldPathLocalization`] variants —
+    /// [`Self::Localized`] (figment attached a non-empty dotted path)
+    /// and [`Self::FigmentUnlocalized`] (figment error present but its
+    /// `path` slot is empty) — in the SAME relative declaration order
+    /// they occupy in [`Self::ALL`], carrying the
+    /// *figment-bearing-signal-present* pole of the
+    /// (applicable × not-applicable) polarity axis at the primitive's
+    /// OWN altitude on the field-localization axis, mirroring the
+    /// shipped boolean predicate [`Self::is_applicable`] one altitude
+    /// down: every variant in this slice satisfies
+    /// `loc.is_applicable()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::NOT_APPLICABLE`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates [`Self::is_applicable`] /
+    /// [`Self::is_not_applicable`] meta-partition it at the boolean
+    /// altitude. The two constants sit in the same `impl
+    /// FieldPathLocalization` block as [`Self::ALL`] and follow the
+    /// same `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit two-variant slice literal in the SAME
+    /// relative declaration order the applicable pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_applicable`] at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical fourth variant landing on the applicable side
+    /// (e.g. a `PartiallyLocalized` cell for a source that reports a
+    /// coarse-grained container but no leaf key) lands here in
+    /// lockstep with [`Self::is_applicable`], and the cardinality pin
+    /// catches any drift between the slice and the boolean predicate
+    /// on the same edit.
+    ///
+    /// Idiom-peer of [`crate::ShikumiErrorKind::FIGMENT_BEARING`]
+    /// (commit `e45018d`), [`crate::Format::FEATURE_GATED`] (commit
+    /// `2013269`), [`crate::source::FigmentNameTagKind::FORMAT`]
+    /// (commit `2d2ef9d`), [`crate::source::EnvMetadataTagKind::PREFIXED`]
+    /// (commit `13304d0`), [`crate::AttributionAxis::METADATA_SOURCE`]
+    /// (commit `34bfbb6`), [`crate::cli::OutputFormat::YAML`] (commit
+    /// `292ca1d`), [`crate::AttributionConfidence::EXACT`] (commit
+    /// `13c1003`), [`crate::FormatProvenance::FIGMENT_BUILTIN`]
+    /// (commit `7ef79e4`), [`crate::secret::SecretRefShape::WHOLE`]
+    /// (commit `036673b`), and [`crate::cube::PartitionFace::REALIZABLE`]
+    /// (commit `a344056`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the three-way field-localization
+    /// axis's (applicable × not-applicable) 2/1 meta-partition.
+    ///
+    /// The two agreement laws
+    /// (`APPLICABLE.iter().all(|l| l.is_applicable())` and
+    /// `APPLICABLE.iter().all(|l| !l.is_not_applicable())`) are pinned
+    /// by
+    /// [`tests::field_path_localization_applicable_slice_agrees_with_is_applicable_predicate`].
+    /// Partition invariant with [`Self::NOT_APPLICABLE`]:
+    /// [`tests::field_path_localization_applicable_and_not_applicable_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::field_path_localization_applicable_and_not_applicable_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::field_path_localization_applicable_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::field_path_localization_applicable_and_not_applicable_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::field_path_localization_applicable_and_not_applicable_slices_are_const_addressable`].
+    pub const APPLICABLE: &'static [Self] = &[Self::Localized, Self::FigmentUnlocalized];
+
+    /// The one NOT-APPLICABLE [`FieldPathLocalization`] variant —
+    /// [`Self::NotApplicable`] — carrying the
+    /// *no-figment-error-at-all* pole of the
+    /// (applicable × not-applicable) polarity axis at the primitive's
+    /// OWN altitude on the field-localization axis, mirroring the
+    /// shipped boolean predicate [`Self::is_not_applicable`] one
+    /// altitude down.
+    ///
+    /// A single-variant slice at today's cardinality — the
+    /// not-applicable pole is currently a singleton — but declared as
+    /// a slice (not a scalar) so a future non-applicable variant lands
+    /// here in lockstep at the ALL-declaration-order position, and
+    /// [`Self::APPLICABLE`] and [`Self::NOT_APPLICABLE`] retain the
+    /// same shape at the type level. Idiom-peer of
+    /// [`crate::AttributionAxis::METADATA_NAME`] (commit `34bfbb6`) and
+    /// [`crate::AttributionConfidence::FALLBACK`] (commit `13c1003`),
+    /// both of which are today singletons on their respective
+    /// closed-binary primitives and would extend the same way.
+    ///
+    /// See [`Self::APPLICABLE`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_not_applicable`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const NOT_APPLICABLE: &'static [Self] = &[Self::NotApplicable];
+
     /// Canonical operator-facing lowercase name of the localization cell —
     /// [`Self::Localized`] renders as `"localized"`,
     /// [`Self::FigmentUnlocalized`] renders as `"figment-unlocalized"`,
@@ -8081,6 +8174,222 @@ mod tests {
                 "the not-applicable meta-cell must be exactly the complement of the applicable siblings on {loc:?}",
             );
         }
+    }
+
+    // ---- FieldPathLocalization::APPLICABLE / NOT_APPLICABLE slice constants ----
+    //
+    // Six pins mirror the per-half meta-partition slice-constant discipline
+    // that shipped in `2c0686f` (`ConfigTierKind::COMPUTED / CUSTOM`),
+    // `2cf6dd8` (`ConfigSourceKind::DEFAULTS / OVERLAY`), `b2cfa2a`
+    // (`SecretOperation::MUTATING / NON_MUTATING`), and the recent
+    // closed-binary landings on `AttributionConfidence`, `SecretRefShape`,
+    // `FormatProvenance`, `PartitionFace`, `OutputFormat`,
+    // `EnvMetadataTagKind`, `FigmentNameTagKind`, `Format::FEATURE_GATED`,
+    // and `ShikumiErrorKind::FIGMENT_BEARING` — applied here to the
+    // three-way field-localization axis's (applicable × not-applicable)
+    // 2/1 compound-polarity meta-partition.
+
+    #[test]
+    fn field_path_localization_applicable_slice_agrees_with_is_applicable_predicate() {
+        // Bidirectional weld between the slice literal
+        // `FieldPathLocalization::APPLICABLE` and the boolean predicate
+        // `FieldPathLocalization::is_applicable` on the
+        // (applicable × not-applicable) polarity axis. Every slice
+        // entry satisfies the applicable pole (and its complement
+        // `!is_not_applicable`), and every ALL cell agrees on
+        // membership under the boolean predicate. Idiom-peer of
+        // `format_feature_gated_slice_agrees_with_is_feature_gated_predicate`
+        // (`2013269`) — the two independent declaration surfaces (slice
+        // literal + boolean predicate) diverge at THIS pin on the first
+        // shape where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift.
+        for loc in FieldPathLocalization::APPLICABLE.iter().copied() {
+            assert!(
+                loc.is_applicable(),
+                "FieldPathLocalization::APPLICABLE entry {loc:?} must satisfy is_applicable()",
+            );
+            assert!(
+                !loc.is_not_applicable(),
+                "FieldPathLocalization::APPLICABLE entry {loc:?} must NOT satisfy is_not_applicable()",
+            );
+        }
+        for loc in FieldPathLocalization::NOT_APPLICABLE.iter().copied() {
+            assert!(
+                loc.is_not_applicable(),
+                "FieldPathLocalization::NOT_APPLICABLE entry {loc:?} must satisfy is_not_applicable()",
+            );
+            assert!(
+                !loc.is_applicable(),
+                "FieldPathLocalization::NOT_APPLICABLE entry {loc:?} must NOT satisfy is_applicable()",
+            );
+        }
+        for loc in FieldPathLocalization::ALL.iter().copied() {
+            assert_eq!(
+                FieldPathLocalization::APPLICABLE.contains(&loc),
+                loc.is_applicable(),
+                "APPLICABLE membership must agree with is_applicable() on FieldPathLocalization::{loc:?}",
+            );
+            assert_eq!(
+                FieldPathLocalization::NOT_APPLICABLE.contains(&loc),
+                loc.is_not_applicable(),
+                "NOT_APPLICABLE membership must agree with is_not_applicable() on FieldPathLocalization::{loc:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_applicable_and_not_applicable_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `APPLICABLE.len() + NOT_APPLICABLE.len() == ALL.len()` at
+        // the slice altitude on the field-localization axis. Idiom-peer
+        // of `format_feature_gated_and_always_available_slices_partition_all`
+        // (`2013269`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for loc in FieldPathLocalization::APPLICABLE {
+            assert!(
+                !FieldPathLocalization::NOT_APPLICABLE.contains(loc),
+                "FieldPathLocalization::{loc:?} appears in BOTH APPLICABLE and NOT_APPLICABLE",
+            );
+        }
+        for loc in FieldPathLocalization::ALL {
+            let in_applicable = FieldPathLocalization::APPLICABLE.contains(loc);
+            let in_not_applicable = FieldPathLocalization::NOT_APPLICABLE.contains(loc);
+            assert!(
+                in_applicable || in_not_applicable,
+                "FieldPathLocalization::{loc:?} is in NEITHER APPLICABLE nor NOT_APPLICABLE",
+            );
+            assert!(
+                !(in_applicable && in_not_applicable),
+                "FieldPathLocalization::{loc:?} is in BOTH APPLICABLE and NOT_APPLICABLE",
+            );
+        }
+        assert_eq!(
+            FieldPathLocalization::APPLICABLE.len() + FieldPathLocalization::NOT_APPLICABLE.len(),
+            FieldPathLocalization::ALL.len(),
+            "APPLICABLE and NOT_APPLICABLE slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_applicable_and_not_applicable_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in FieldPathLocalization::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted the applicable pole
+        // ([Self::FigmentUnlocalized, Self::Localized] instead of the
+        // ALL-declaration order [Self::Localized,
+        // Self::FigmentUnlocalized], say) diverges at THIS pin.
+        // Idiom-peer of
+        // `format_feature_gated_and_always_available_slices_preserve_all_order`
+        // (`2013269`).
+        let applicable_from_all: Vec<FieldPathLocalization> = FieldPathLocalization::ALL
+            .iter()
+            .copied()
+            .filter(|loc| loc.is_applicable())
+            .collect();
+        assert_eq!(
+            applicable_from_all,
+            FieldPathLocalization::APPLICABLE.to_vec(),
+            "APPLICABLE must be ALL-filtered by is_applicable in declaration order",
+        );
+        let not_applicable_from_all: Vec<FieldPathLocalization> = FieldPathLocalization::ALL
+            .iter()
+            .copied()
+            .filter(|loc| loc.is_not_applicable())
+            .collect();
+        assert_eq!(
+            not_applicable_from_all,
+            FieldPathLocalization::NOT_APPLICABLE.to_vec(),
+            "NOT_APPLICABLE must be ALL-filtered by is_not_applicable in declaration order",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_applicable_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into APPLICABLE, an accidental re-add of an already-present
+        // cell into NOT_APPLICABLE) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        for slice in [
+            FieldPathLocalization::APPLICABLE,
+            FieldPathLocalization::NOT_APPLICABLE,
+        ] {
+            let mut seen: Vec<FieldPathLocalization> = Vec::with_capacity(slice.len());
+            for loc in slice {
+                assert!(
+                    !seen.contains(loc),
+                    "FieldPathLocalization slice {slice:?} contains duplicate entry {loc:?}",
+                );
+                seen.push(*loc);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn field_path_localization_applicable_and_not_applicable_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on FieldPathLocalization::ALL —
+        // i.e., `APPLICABLE.len() ==
+        // ALL.iter().filter(is_applicable).count()` and
+        // `NOT_APPLICABLE.len() ==
+        // ALL.iter().filter(is_not_applicable).count()` — the
+        // cardinality projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete
+        // positions today: 2 applicable + 1 not-applicable = 3 = ALL.
+        // Idiom-peer of
+        // `format_feature_gated_and_always_available_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2013269`).
+        let applicable_count = FieldPathLocalization::ALL
+            .iter()
+            .copied()
+            .filter(|loc| loc.is_applicable())
+            .count();
+        let not_applicable_count = FieldPathLocalization::ALL
+            .iter()
+            .copied()
+            .filter(|loc| loc.is_not_applicable())
+            .count();
+        assert_eq!(
+            FieldPathLocalization::APPLICABLE.len(),
+            applicable_count,
+            "APPLICABLE.len() must match the is_applicable count on ALL",
+        );
+        assert_eq!(
+            FieldPathLocalization::NOT_APPLICABLE.len(),
+            not_applicable_count,
+            "NOT_APPLICABLE.len() must match the is_not_applicable count on ALL",
+        );
+        assert_eq!(FieldPathLocalization::APPLICABLE.len(), 2);
+        assert_eq!(FieldPathLocalization::NOT_APPLICABLE.len(), 1);
+        assert_eq!(FieldPathLocalization::ALL.len(), 3);
+    }
+
+    #[test]
+    fn field_path_localization_applicable_and_not_applicable_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `format_feature_gated_and_always_available_slices_are_const_addressable`
+        // (`2013269`).
+        const APPLICABLE_LEN: usize = FieldPathLocalization::APPLICABLE.len();
+        const NOT_APPLICABLE_LEN: usize = FieldPathLocalization::NOT_APPLICABLE.len();
+        const ALL_LEN: usize = FieldPathLocalization::ALL.len();
+        assert_eq!(APPLICABLE_LEN, 2);
+        assert_eq!(NOT_APPLICABLE_LEN, 1);
+        assert_eq!(APPLICABLE_LEN + NOT_APPLICABLE_LEN, ALL_LEN);
     }
 
     // ---- AttributionAxis / AttributionRule::metadata_axis tests ----
