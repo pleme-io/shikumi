@@ -322,6 +322,95 @@ impl OutputFormat {
     pub const fn is_json(self) -> bool {
         matches!(self, Self::Json)
     }
+
+    /// The single YAML [`OutputFormat`] variant — [`Self::Yaml`] — in
+    /// the SAME relative declaration order it occupies in
+    /// [`Self::ALL`], forming one pole of the (yaml × json) closed-
+    /// binary polarity at the CLI operator-facing emission-format
+    /// primitive's OWN altitude. Mirrors the shipped boolean predicate
+    /// [`Self::is_yaml`] one altitude down (per-variant polarity), and
+    /// follows the same `pub const &'static [Self]` static-slice
+    /// discipline as [`Self::ALL`].
+    ///
+    /// Written as an explicit one-variant slice literal (rather than
+    /// derived by filtering [`Self::ALL`] through [`Self::is_yaml`] at
+    /// const-fn altitude), so the two declarations — the slice literal
+    /// and the boolean predicate — remain independent load-bearing
+    /// witnesses of the same meta-partition. An edit shifting the
+    /// polarity of a variant on ONE declaration surface but not the
+    /// other diverges at test time on the first format where they
+    /// disagree, before drifting through any consumer that reads one
+    /// altitude but not the other.
+    ///
+    /// **Idiom-peer.** Ninth (crate-wide) landing of the per-half
+    /// meta-partition slice-constant discipline, matched altitude-for-
+    /// altitude with
+    /// [`crate::error::AttributionConfidence::EXACT`]
+    /// (commit `13c1003`),
+    /// [`crate::discovery::FormatProvenance::FIGMENT_BUILTIN`]
+    /// (commit `7ef79e4`),
+    /// [`crate::SecretRefShape::WHOLE`]
+    /// (commit `036673b`),
+    /// [`crate::PartitionFace::REALIZABLE`]
+    /// (commit `a344056`),
+    /// [`crate::ConfigSourceKind::DEFAULTS`]
+    /// (commit `2cd8ef8`),
+    /// [`crate::ConfigTierKind::COMPUTED`]
+    /// (commit `2c0686f`),
+    /// [`crate::secret_client::SecretClientKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `399ee8a`), and
+    /// [`crate::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the CLI-side emission-format axis
+    /// (the FIRST landing on a `cli.rs`-scoped primitive), lifting the
+    /// [`OutputFormat`] closed-binary primitive onto the slice-constant
+    /// altitude.
+    ///
+    /// A future third emitter variant (e.g. a hypothetical `Toml`
+    /// class the primitive's own doc-comment already anticipates as a
+    /// deliberate narrowing today) lands here either extending one of
+    /// the two slices in lockstep with the boolean predicate that
+    /// admits it, or introducing a third slice; the partition and
+    /// cardinality pins refuse a silent landing under the negation of
+    /// one of the existing two.
+    ///
+    /// The two agreement laws
+    /// (`YAML.iter().all(|f| f.is_yaml())` and
+    /// `YAML.iter().all(|f| !f.is_json())`) are pinned by
+    /// [`tests::output_format_yaml_slice_agrees_with_is_yaml_predicate`].
+    /// Partition invariant with [`Self::JSON`]:
+    /// [`tests::output_format_yaml_and_json_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::output_format_yaml_and_json_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::output_format_yaml_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::output_format_yaml_and_json_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::output_format_yaml_and_json_slices_are_const_addressable`].
+    pub const YAML: &'static [Self] = &[Self::Yaml];
+
+    /// The single JSON [`OutputFormat`] variant — [`Self::Json`] — in
+    /// the SAME relative declaration order it occupies in
+    /// [`Self::ALL`], the complement pole of [`Self::YAML`] on the
+    /// (yaml × json) closed-binary polarity at the emission-format
+    /// primitive's OWN altitude. Mirrors the shipped boolean predicate
+    /// [`Self::is_json`] one altitude down.
+    ///
+    /// The partition invariant with [`Self::YAML`] pins the whole-set
+    /// cardinality identity `YAML.len() + JSON.len() == ALL.len()`.
+    /// Because the emission axis is closed-binary and XOR-
+    /// complementary by construction today, a future third emitter
+    /// landing (e.g. a `Toml` class) would first fail the two-entry
+    /// cardinality pins, then fail the partition and cardinality pins
+    /// on this constant pair unless extended in lockstep with the
+    /// boolean predicates.
+    ///
+    /// See [`Self::YAML`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_yaml`]), and the load-bearing agreement and
+    /// partition pins.
+    pub const JSON: &'static [Self] = &[Self::Json];
 }
 
 /// The clap subcommand every TieredConfig consumer pulls in.
@@ -968,6 +1057,206 @@ mod tests {
             assert_eq!(fmt.is_yaml(), fmt == OutputFormat::Yaml);
             assert_eq!(fmt.is_json(), fmt == OutputFormat::Json);
         }
+    }
+
+    // ─── OutputFormat per-half meta-partition slice constants ──────
+    // ─── (YAML / JSON) — the slice-constant altitude peer of the ──
+    // ─── boolean-predicate binary partition above ──────────────────
+
+    #[test]
+    fn output_format_yaml_slice_agrees_with_is_yaml_predicate() {
+        // Bidirectional weld between the slice literal
+        // `OutputFormat::YAML` and the boolean predicate
+        // `OutputFormat::is_yaml` on the (yaml × json) polarity axis.
+        // Every slice entry satisfies the yaml pole (and its
+        // complement `!is_json`), and every ALL cell agrees on
+        // membership under the boolean predicate. Idiom-peer of
+        // `format_provenance_figment_builtin_slice_agrees_with_is_figment_builtin_predicate`
+        // (commit `7ef79e4`) and
+        // `attribution_confidence_exact_slice_agrees_with_is_exact_predicate`
+        // (commit `13c1003`) — the two independent declaration
+        // surfaces (slice literal + boolean predicate) diverge at THIS
+        // pin on the first format where they disagree, before a
+        // consumer that reads one altitude but not the other can
+        // observe the drift.
+        for fmt in OutputFormat::YAML.iter().copied() {
+            assert!(
+                fmt.is_yaml(),
+                "OutputFormat::YAML entry {fmt:?} must satisfy is_yaml()",
+            );
+            assert!(
+                !fmt.is_json(),
+                "OutputFormat::YAML entry {fmt:?} must NOT satisfy is_json()",
+            );
+        }
+        for fmt in OutputFormat::ALL.iter().copied() {
+            assert_eq!(
+                OutputFormat::YAML.contains(&fmt),
+                fmt.is_yaml(),
+                "YAML membership must agree with is_yaml() on OutputFormat::{fmt:?}",
+            );
+            assert_eq!(
+                OutputFormat::JSON.contains(&fmt),
+                fmt.is_json(),
+                "JSON membership must agree with is_json() on OutputFormat::{fmt:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_yaml_and_json_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `YAML.len() + JSON.len() == ALL.len()` at the slice altitude
+        // on the CLI emission-format axis. Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_partition_all`
+        // (commit `7ef79e4`) — a variant landing on one slice AND the
+        // other, or on neither, breaks the partition here before any
+        // consumer that reasons about the polarity as a covering meta-
+        // partition observes the drift.
+        for fmt in OutputFormat::YAML.iter().copied() {
+            assert!(
+                !OutputFormat::JSON.contains(&fmt),
+                "OutputFormat::{fmt:?} appears in BOTH YAML and JSON",
+            );
+        }
+        for fmt in OutputFormat::ALL.iter().copied() {
+            let in_yaml = OutputFormat::YAML.contains(&fmt);
+            let in_json = OutputFormat::JSON.contains(&fmt);
+            assert!(
+                in_yaml || in_json,
+                "OutputFormat::{fmt:?} is in NEITHER YAML nor JSON",
+            );
+            assert!(
+                !(in_yaml && in_json),
+                "OutputFormat::{fmt:?} is in BOTH YAML and JSON",
+            );
+        }
+        assert_eq!(
+            OutputFormat::YAML.len() + OutputFormat::JSON.len(),
+            OutputFormat::ALL.len(),
+            "YAML and JSON slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn output_format_yaml_and_json_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in OutputFormat::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (`Yaml` first, then `Json`). Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_preserve_all_order`
+        // (commit `7ef79e4`) — a reordering of one slice without the
+        // other, or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at THIS
+        // pin.
+        let yaml_from_all: Vec<OutputFormat> = OutputFormat::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_yaml())
+            .collect();
+        assert_eq!(
+            yaml_from_all,
+            OutputFormat::YAML.to_vec(),
+            "YAML must be ALL-filtered by is_yaml in declaration order",
+        );
+        let json_from_all: Vec<OutputFormat> = OutputFormat::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_json())
+            .collect();
+        assert_eq!(
+            json_from_all,
+            OutputFormat::JSON.to_vec(),
+            "JSON must be ALL-filtered by is_json in declaration order",
+        );
+    }
+
+    #[test]
+    fn output_format_yaml_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into JSON, an accidental re-add of an already-present Yaml
+        // cell into YAML) fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set. Idiom-
+        // peer of
+        // `format_provenance_figment_builtin_slice_has_no_duplicates`
+        // (commit `7ef79e4`).
+        for slice in [OutputFormat::YAML, OutputFormat::JSON] {
+            let deduped_len = {
+                let mut seen: Vec<OutputFormat> = Vec::with_capacity(slice.len());
+                for fmt in slice {
+                    if !seen.contains(fmt) {
+                        seen.push(*fmt);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "OutputFormat slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_yaml_and_json_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on OutputFormat::ALL — i.e.,
+        // `YAML.len() == ALL.iter().filter(is_yaml).count()` and
+        // `JSON.len() == ALL.iter().filter(is_json).count()` — the
+        // cardinality projection at the slice altitude agrees with the
+        // boolean-altitude projection on both halves. Concrete
+        // positions today: 1 yaml + 1 json = 2 = ALL. Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `7ef79e4`).
+        let yaml_count = OutputFormat::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_yaml())
+            .count();
+        let json_count = OutputFormat::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_json())
+            .count();
+        assert_eq!(
+            OutputFormat::YAML.len(),
+            yaml_count,
+            "YAML.len() must match the is_yaml count on ALL",
+        );
+        assert_eq!(
+            OutputFormat::JSON.len(),
+            json_count,
+            "JSON.len() must match the is_json count on ALL",
+        );
+        assert_eq!(OutputFormat::YAML.len(), 1);
+        assert_eq!(OutputFormat::JSON.len(), 1);
+        assert_eq!(OutputFormat::ALL.len(), 2);
+    }
+
+    #[test]
+    fn output_format_yaml_and_json_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `format_provenance_figment_builtin_and_shikumi_built_slices_are_const_addressable`
+        // (commit `7ef79e4`).
+        const YAML_LEN: usize = OutputFormat::YAML.len();
+        const JSON_LEN: usize = OutputFormat::JSON.len();
+        const ALL_LEN: usize = OutputFormat::ALL.len();
+        assert_eq!(YAML_LEN, 1);
+        assert_eq!(JSON_LEN, 1);
+        assert_eq!(YAML_LEN + JSON_LEN, ALL_LEN);
     }
 
     // ─── ConfigShowError sibling predicates — ternary-partition arms
