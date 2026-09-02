@@ -2016,6 +2016,96 @@ impl Capabilities {
     pub const fn supported_non_mutating_op_count(self) -> u8 {
         (self.get as u8) + (self.list as u8) + (self.versions as u8)
     }
+
+    /// Returns the CARDINALITY of the [`SecretOperation`] variants NOT
+    /// advertised by this capability set — i.e. `(!self.get as u8) +
+    /// (!self.list as u8) + (!self.put as u8) + (!self.delete as u8) +
+    /// (!self.rotate as u8) + (!self.versions as u8)`, a `u8` in the
+    /// closed range `0..=6` (exactly `SecretOperation::ALL.len()` for the
+    /// shipped six-variant operation axis).
+    ///
+    /// **The compound-polarity sibling of [`Self::supported_op_count`]
+    /// at the [`Capabilities`] altitude** — the complement projection
+    /// that closes the pair via the axis-cardinality sum-complement law
+    /// `caps.supported_op_count() + caps.unsupported_op_count() ==
+    /// SecretOperation::ALL.len() as u8`. Idiom-peer of the
+    /// (any/no × every/not_every) × (write/read/whole) compound-polarity
+    /// matrix already shipped at this altitude: each shipped whole-set
+    /// polarity predicate has a sibling recovered from this count
+    /// through the four inverse threshold identities.
+    ///
+    /// **Cross-surface anchors on the shipped constructors.**
+    /// [`Capabilities::full`] advertises every operation, so
+    /// `Capabilities::full().unsupported_op_count() == 0` — pinned by
+    /// [`tests::capabilities_full_unsupported_op_count_is_zero`].
+    /// [`Capabilities::read_only`] advertises `get` alone, so
+    /// `Capabilities::read_only().unsupported_op_count() == 5` — pinned
+    /// by [`tests::capabilities_read_only_unsupported_op_count_is_five`].
+    /// The hand-built all-`false` shape returns `6` — pinned by
+    /// [`tests::capabilities_empty_unsupported_op_count_is_six`].
+    ///
+    /// **Axis-cardinality sum-complement law with the shipped
+    /// projection.** `caps.supported_op_count() +
+    /// caps.unsupported_op_count() == SecretOperation::ALL.len() as u8`
+    /// for every reachable [`Capabilities`] shape — the load-bearing
+    /// weld that recovers the whole-set cardinality bound from the two
+    /// polarity slices, and pins any drift on ONE of the two counts at
+    /// test time before a consumer can observe the disagreement. Pinned
+    /// by
+    /// [`tests::capabilities_supported_and_unsupported_op_counts_sum_to_axis_cardinality`].
+    ///
+    /// **Cross-altitude weld with the operation axis one altitude down.**
+    /// `caps.unsupported_op_count() as usize ==
+    /// SecretOperation::ALL.iter().filter(|op|
+    /// !caps.supports(**op)).count()`. Pinned by
+    /// [`tests::capabilities_unsupported_op_count_agrees_with_operation_axis_filter_count`].
+    ///
+    /// **Inverse threshold identities with the whole-set compound-
+    /// polarity quartet.** The whole-set ∃/¬∃/∀/¬∀ matrix is recovered
+    /// from this count through the four inverse threshold identities:
+    /// `caps.supports_no_op() == (caps.unsupported_op_count() == 6)`,
+    /// `caps.supports_every_op() == (caps.unsupported_op_count() == 0)`,
+    /// `caps.supports_any_op() == (caps.unsupported_op_count() < 6)`,
+    /// `caps.supports_not_every_op() == (caps.unsupported_op_count() > 0)`.
+    /// Pinned by
+    /// [`tests::capabilities_unsupported_op_count_thresholds_agree_with_whole_set_compound_polarity_matrix`].
+    ///
+    /// **Bounds pin.** `caps.unsupported_op_count()` stays in the closed
+    /// range `0..=6` for every reachable [`Capabilities`] shape (the
+    /// bound is exactly `SecretOperation::ALL.len()` for the shipped
+    /// six-variant operation axis, and rises in lockstep should a
+    /// seventh variant with its own [`Capabilities`] field land). Pinned
+    /// by
+    /// [`tests::capabilities_unsupported_op_count_stays_within_all_len_bound`].
+    ///
+    /// Written as an explicit six-term `bool as u8` sum over the negated
+    /// [`Capabilities`] fields (rather than deriving from
+    /// `SecretOperation::ALL.len() as u8 - self.supported_op_count()`
+    /// via the sum-complement law), so the compile-time weld to the six
+    /// specific field identifiers stays load-bearing: a future
+    /// [`Capabilities`] field rename fails at `cargo build` here before
+    /// drifting through any consumer that reads the complement
+    /// cardinality, and a hypothetical seventh [`SecretOperation`]
+    /// variant with its own [`Capabilities`] field surfaces at the
+    /// cross-altitude filter-count weld above rather than silently
+    /// ceiling this predicate's answer at six. The two projections stay
+    /// independent witnesses of the same underlying six-field state, and
+    /// the sum-complement pin catches drift on either single one.
+    /// Matches the explicit-arms discipline of [`Self::supported_op_count`]
+    /// and its two per-half slices at this same altitude, and of the
+    /// twelve compound-polarity predicates before them.
+    ///
+    /// The compile-time const weld is pinned by
+    /// [`tests::capabilities_unsupported_op_count_is_const_callable`].
+    #[must_use]
+    pub const fn unsupported_op_count(self) -> u8 {
+        (!self.get as u8)
+            + (!self.list as u8)
+            + (!self.put as u8)
+            + (!self.delete as u8)
+            + (!self.rotate as u8)
+            + (!self.versions as u8)
+    }
 }
 
 /// Closed-axis primitive over the shikumi-provided [`SecretClient`]
@@ -7414,6 +7504,266 @@ mod tests {
             versions: false,
         };
         const _: () = assert!(EMPTY.supported_non_mutating_op_count() == 0);
+    }
+
+    // ── Capabilities — complement cardinality projection ───────────
+    //
+    // Pin table for the `unsupported_op_count` complement projection at
+    // the Capabilities altitude — the compound-polarity sibling of the
+    // shipped whole-set `supported_op_count` (commit `67b95a3`), closing
+    // the pair via the axis-cardinality sum-complement law:
+    //   1. `capabilities_full_unsupported_op_count_is_zero` — cross-
+    //      surface anchor on the shipped `full()` constructor
+    //      (bottom of the closed range).
+    //   2. `capabilities_read_only_unsupported_op_count_is_five` —
+    //      cross-surface anchor on the shipped `read_only()`
+    //      constructor.
+    //   3. `capabilities_empty_unsupported_op_count_is_six` —
+    //      cross-surface anchor on the hand-built all-`false` shape
+    //      (top of the closed range).
+    //   4. `capabilities_supported_and_unsupported_op_counts_sum_to_axis_cardinality`
+    //      — the load-bearing sum-complement law that welds the two
+    //      polarity projections to the axis cardinality.
+    //   5. `capabilities_unsupported_op_count_agrees_with_operation_axis_filter_count`
+    //      — the cross-altitude weld with the operation axis via the
+    //      `SecretOperation::ALL.iter().filter(!supports).count()`
+    //      re-derivation.
+    //   6. `capabilities_unsupported_op_count_thresholds_agree_with_whole_set_compound_polarity_matrix`
+    //      — the four inverse threshold identities that recover the
+    //      whole-set ∃/¬∃/∀/¬∀ compound-polarity pairs from the count.
+    //   7. `capabilities_unsupported_op_count_stays_within_all_len_bound`
+    //      — the closed-range bound with a popcount oracle on the
+    //      inverted six-bit shape, swept exhaustively over 2^6 shapes.
+    //   8. `capabilities_unsupported_op_count_is_const_callable` —
+    //      const-callability weld on the complement projection.
+
+    #[test]
+    fn capabilities_full_unsupported_op_count_is_zero() {
+        // Cross-surface anchor: the shipped `Capabilities::full()`
+        // set advertises every operation, so the complement projection
+        // returns the bottom of the closed range `0..=6`. A future edit
+        // that dropped ANY flag from `full()` would silently drift the
+        // bottom anchor; this pin locks it to the shipped six-flag shape.
+        assert_eq!(Capabilities::full().unsupported_op_count(), 0);
+    }
+
+    #[test]
+    fn capabilities_read_only_unsupported_op_count_is_five() {
+        // Cross-surface anchor: the shipped `Capabilities::read_only()`
+        // set advertises `get` alone, so the complement projection
+        // returns exactly `5` (the five operations OTHER than `get`).
+        // A future edit that widened `read_only()` (or narrowed it below
+        // the singleton get-only shape) would silently drift this anchor.
+        assert_eq!(Capabilities::read_only().unsupported_op_count(), 5);
+    }
+
+    #[test]
+    fn capabilities_empty_unsupported_op_count_is_six() {
+        // Cross-surface anchor: the hand-built all-`false` shape
+        // advertises no operation, so the complement projection returns
+        // the top of the closed range `0..=6`. Locks the top of the
+        // range to the shipped six-variant operation axis.
+        let empty = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        assert_eq!(empty.unsupported_op_count(), 6);
+    }
+
+    #[test]
+    fn capabilities_supported_and_unsupported_op_counts_sum_to_axis_cardinality() {
+        // The load-bearing axis-cardinality sum-complement law:
+        // `supported_op_count() + unsupported_op_count() ==
+        // SecretOperation::ALL.len() as u8` for every reachable shape.
+        // A future edit that drifted ONE of the two polarity projections
+        // (a dropped term, a doubled term, a mis-signed term) diverges
+        // here on the first shape where that term flips, rather than
+        // silently. Sweeps the full 2^6 = 64 reachable shapes.
+        let axis_cardinality = SecretOperation::ALL.len() as u8;
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            assert_eq!(
+                caps.supported_op_count() + caps.unsupported_op_count(),
+                axis_cardinality,
+                "supported_op_count + unsupported_op_count must equal SecretOperation::ALL.len() = {axis_cardinality} on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_op_count_agrees_with_operation_axis_filter_count() {
+        // The cross-altitude weld with the operation axis one altitude
+        // down: the complement count reported by the projection must
+        // agree with the re-derivation `SecretOperation::ALL.iter()
+        // .filter(|op| !caps.supports(**op)).count()` pointwise on the
+        // canonical sample table. A future edit that shifted the flag
+        // ↔ operation pointwise correspondence in `Capabilities::supports`
+        // (an arm swap, a dropped arm, a new operation whose supports
+        // arm reads the wrong field) diverges here.
+        let samples = [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: false,
+                list: false,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: true,
+                put: false,
+                delete: false,
+                rotate: false,
+                versions: true,
+            },
+            Capabilities {
+                get: false,
+                list: false,
+                put: true,
+                delete: true,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: false,
+                rotate: true,
+                versions: false,
+            },
+            Capabilities {
+                get: false,
+                list: true,
+                put: false,
+                delete: true,
+                rotate: false,
+                versions: true,
+            },
+        ];
+        for caps in samples {
+            let filter_count = SecretOperation::ALL
+                .iter()
+                .filter(|op| !caps.supports(**op))
+                .count();
+            assert_eq!(
+                caps.unsupported_op_count() as usize,
+                filter_count,
+                "unsupported_op_count must agree with SecretOperation::ALL !supports filter count on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_op_count_thresholds_agree_with_whole_set_compound_polarity_matrix()
+    {
+        // The load-bearing inverse-weld: the four inverse threshold
+        // identities that recover the whole-set ∃/¬∃/∀/¬∀ compound-
+        // polarity pairs from the complement projection. A future edit
+        // that drifted the count from the twelve compound predicates on
+        // ONE shape diverges here rather than silently. Swept
+        // exhaustively over the 2^6 = 64 reachable shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.unsupported_op_count();
+            assert_eq!(
+                caps.supports_no_op(),
+                count == 6,
+                "supports_no_op must equal (unsupported_op_count == 6) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_every_op(),
+                count == 0,
+                "supports_every_op must equal (unsupported_op_count == 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_any_op(),
+                count < 6,
+                "supports_any_op must equal (unsupported_op_count < 6) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_not_every_op(),
+                count > 0,
+                "supports_not_every_op must equal (unsupported_op_count > 0) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_op_count_stays_within_all_len_bound() {
+        // Bounds pin: the complement count stays in the closed range
+        // `0..=6` for every reachable Capabilities shape. The bound is
+        // exactly `SecretOperation::ALL.len()` for the shipped
+        // six-variant operation axis; a hypothetical seventh
+        // SecretOperation variant with its own Capabilities field would
+        // raise the bound in lockstep at the field-adder site. Sweeps
+        // the full 2^6 = 64 reachable shapes and reconciles against
+        // `u32::count_ones` on the INVERTED six-bit shape as an
+        // independent oracle — a future edit that dropped, doubled, or
+        // mis-signed one term on the six-term complement sum diverges
+        // at the popcount check on the first shape where that term
+        // flips.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.unsupported_op_count();
+            assert!(
+                (count as usize) <= SecretOperation::ALL.len(),
+                "unsupported_op_count must stay within SecretOperation::ALL.len() = {} on {caps:?}, got {count}",
+                SecretOperation::ALL.len(),
+            );
+            let inverted = (!bits) & 0b0011_1111;
+            assert_eq!(
+                count,
+                inverted.count_ones() as u8,
+                "unsupported_op_count must equal the popcount of the inverted six-bit shape on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_unsupported_op_count_is_const_callable() {
+        // The complement projection is `const`-callable, matching the
+        // shipped `supported_op_count` and the twelve compound-polarity
+        // predicates at this same altitude.
+        const _: () = assert!(Capabilities::full().unsupported_op_count() == 0);
+        const _: () = assert!(Capabilities::read_only().unsupported_op_count() == 5);
+        const EMPTY: Capabilities = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        const _: () = assert!(EMPTY.unsupported_op_count() == 6);
     }
 
     // ── SecretOperation — Ord / Display / FromStr / serde ──────────
