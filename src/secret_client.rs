@@ -1860,6 +1860,162 @@ impl Capabilities {
             + (self.rotate as u8)
             + (self.versions as u8)
     }
+
+    /// Returns the CARDINALITY of the mutating [`SecretOperation`]
+    /// variants ([`SecretOperation::Put`], [`SecretOperation::Delete`],
+    /// [`SecretOperation::Rotate`]) advertised by this capability set —
+    /// i.e. `(self.put as u8) + (self.delete as u8) + (self.rotate as u8)`,
+    /// a `u8` in the closed range `0..=3` (exactly the write-half
+    /// meta-partition size for the shipped six-variant operation axis).
+    ///
+    /// **The WRITE-half slice of the cardinality projection at the
+    /// [`Capabilities`] altitude**, one of the two per-half slices
+    /// (with [`Self::supported_non_mutating_op_count`] on the read pole)
+    /// whose sum is the whole-set count [`Self::supported_op_count`]
+    /// via the meta-partition sum law. Orthogonal to (and welding
+    /// together via arithmetic threshold identities) the four write-half
+    /// compound-polarity predicates already shipped at this altitude:
+    /// [`Self::supports_any_mutating_op`], [`Self::supports_no_mutating_op`],
+    /// [`Self::supports_every_mutating_op`], [`Self::supports_not_every_mutating_op`].
+    ///
+    /// **Meta-partition sum law with the whole-set count.**
+    /// `caps.supported_op_count() == caps.supported_mutating_op_count()
+    /// + caps.supported_non_mutating_op_count()` for every reachable
+    /// shape — the load-bearing weld that recovers the whole-set count
+    /// from the two per-half slices, and pins any drift on ONE half at
+    /// test time before a consumer can observe the disagreement. Pinned
+    /// by [`tests::capabilities_supported_op_count_is_sum_of_per_half_op_counts`].
+    ///
+    /// **Threshold identities with the write-half compound-polarity pairs.**
+    /// The write-half ∃/¬∃/∀/¬∀ quartet is recovered from this count
+    /// through the four threshold identities:
+    /// `caps.supports_any_mutating_op() ==
+    ///     (caps.supported_mutating_op_count() > 0)`,
+    /// `caps.supports_no_mutating_op() ==
+    ///     (caps.supported_mutating_op_count() == 0)`,
+    /// `caps.supports_every_mutating_op() ==
+    ///     (caps.supported_mutating_op_count() == 3)`,
+    /// `caps.supports_not_every_mutating_op() ==
+    ///     (caps.supported_mutating_op_count() < 3)`.
+    /// Pinned by
+    /// [`tests::capabilities_supported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix`].
+    ///
+    /// **Cross-altitude weld with the operation axis one altitude down.**
+    /// `caps.supported_mutating_op_count() ==
+    /// SecretOperation::ALL.iter().filter(|op| op.is_mutating() &&
+    /// caps.supports(**op)).count()`. Pinned by
+    /// [`tests::capabilities_supported_mutating_op_count_agrees_with_operation_axis_filter_count`].
+    ///
+    /// **Bounds pin.** `caps.supported_mutating_op_count()` stays in
+    /// the closed range `0..=3` for every reachable [`Capabilities`]
+    /// shape (the bound is exactly the write-half meta-partition size
+    /// for the shipped six-variant operation axis, and rises in
+    /// lockstep should a fourth mutating variant with its own
+    /// [`Capabilities`] field land). Pinned by
+    /// [`tests::capabilities_supported_mutating_op_count_stays_within_write_half_bound`].
+    ///
+    /// Written as an explicit three-term `bool as u8` sum over exactly
+    /// the three currently-mutating [`Capabilities`] fields (`put`,
+    /// `delete`, `rotate`) rather than iterating
+    /// [`SecretOperation::ALL`] and dispatching through
+    /// [`Self::supports`] on every arm — so the compile-time weld to
+    /// the three specific write-half field identifiers stays
+    /// load-bearing: a future [`Capabilities`] field rename fails at
+    /// `cargo build` here before drifting through any consumer that
+    /// reads the write-half cardinality, and a hypothetical fourth
+    /// mutating [`SecretOperation`] variant with its own
+    /// [`Capabilities`] field surfaces at the cross-altitude filter-
+    /// count agreement pin (via [`SecretOperation::is_mutating`]) rather
+    /// than silently ceiling this predicate's answer at three. Matches
+    /// the explicit-arms discipline of [`Self::supports_any_mutating_op`]
+    /// and its three siblings at this same altitude, and of
+    /// [`Self::supported_op_count`] one meta-partition step wider.
+    ///
+    /// The compile-time const weld is pinned by
+    /// [`tests::capabilities_supported_mutating_op_count_is_const_callable`].
+    #[must_use]
+    pub const fn supported_mutating_op_count(self) -> u8 {
+        (self.put as u8) + (self.delete as u8) + (self.rotate as u8)
+    }
+
+    /// Returns the CARDINALITY of the non-mutating [`SecretOperation`]
+    /// variants ([`SecretOperation::Get`], [`SecretOperation::List`],
+    /// [`SecretOperation::GetVersion`]) advertised by this capability
+    /// set — i.e. `(self.get as u8) + (self.list as u8) +
+    /// (self.versions as u8)`, a `u8` in the closed range `0..=3`
+    /// (exactly the read-half meta-partition size for the shipped
+    /// six-variant operation axis).
+    ///
+    /// **The READ-half slice of the cardinality projection at the
+    /// [`Capabilities`] altitude**, one of the two per-half slices
+    /// (with [`Self::supported_mutating_op_count`] on the write pole)
+    /// whose sum is the whole-set count [`Self::supported_op_count`]
+    /// via the meta-partition sum law. Orthogonal to (and welding
+    /// together via arithmetic threshold identities) the four read-half
+    /// compound-polarity predicates already shipped at this altitude:
+    /// [`Self::supports_any_non_mutating_op`], [`Self::supports_no_non_mutating_op`],
+    /// [`Self::supports_every_non_mutating_op`], [`Self::supports_not_every_non_mutating_op`].
+    ///
+    /// **Meta-partition sum law with the whole-set count.**
+    /// `caps.supported_op_count() == caps.supported_mutating_op_count()
+    /// + caps.supported_non_mutating_op_count()` for every reachable
+    /// shape — the load-bearing weld that recovers the whole-set count
+    /// from the two per-half slices, and pins any drift on ONE half at
+    /// test time before a consumer can observe the disagreement. Pinned
+    /// by [`tests::capabilities_supported_op_count_is_sum_of_per_half_op_counts`].
+    ///
+    /// **Threshold identities with the read-half compound-polarity pairs.**
+    /// The read-half ∃/¬∃/∀/¬∀ quartet is recovered from this count
+    /// through the four threshold identities:
+    /// `caps.supports_any_non_mutating_op() ==
+    ///     (caps.supported_non_mutating_op_count() > 0)`,
+    /// `caps.supports_no_non_mutating_op() ==
+    ///     (caps.supported_non_mutating_op_count() == 0)`,
+    /// `caps.supports_every_non_mutating_op() ==
+    ///     (caps.supported_non_mutating_op_count() == 3)`,
+    /// `caps.supports_not_every_non_mutating_op() ==
+    ///     (caps.supported_non_mutating_op_count() < 3)`.
+    /// Pinned by
+    /// [`tests::capabilities_supported_non_mutating_op_count_thresholds_agree_with_read_half_compound_polarity_matrix`].
+    ///
+    /// **Cross-altitude weld with the operation axis one altitude down.**
+    /// `caps.supported_non_mutating_op_count() ==
+    /// SecretOperation::ALL.iter().filter(|op| op.is_non_mutating() &&
+    /// caps.supports(**op)).count()`. Pinned by
+    /// [`tests::capabilities_supported_non_mutating_op_count_agrees_with_operation_axis_filter_count`].
+    ///
+    /// **Bounds pin.** `caps.supported_non_mutating_op_count()` stays
+    /// in the closed range `0..=3` for every reachable [`Capabilities`]
+    /// shape (the bound is exactly the read-half meta-partition size
+    /// for the shipped six-variant operation axis, and rises in
+    /// lockstep should a fourth non-mutating variant with its own
+    /// [`Capabilities`] field land). Pinned by
+    /// [`tests::capabilities_supported_non_mutating_op_count_stays_within_read_half_bound`].
+    ///
+    /// Written as an explicit three-term `bool as u8` sum over exactly
+    /// the three currently-non-mutating [`Capabilities`] fields (`get`,
+    /// `list`, `versions`) rather than iterating
+    /// [`SecretOperation::ALL`] and dispatching through
+    /// [`Self::supports`] on every arm — so the compile-time weld to
+    /// the three specific read-half field identifiers stays
+    /// load-bearing: a future [`Capabilities`] field rename fails at
+    /// `cargo build` here before drifting through any consumer that
+    /// reads the read-half cardinality, and a hypothetical fourth
+    /// non-mutating [`SecretOperation`] variant with its own
+    /// [`Capabilities`] field surfaces at the cross-altitude filter-
+    /// count agreement pin (via [`SecretOperation::is_non_mutating`])
+    /// rather than silently ceiling this predicate's answer at three.
+    /// Matches the explicit-arms discipline of
+    /// [`Self::supports_any_non_mutating_op`] and its three siblings
+    /// at this same altitude, and of [`Self::supported_op_count`] one
+    /// meta-partition step wider.
+    ///
+    /// The compile-time const weld is pinned by
+    /// [`tests::capabilities_supported_non_mutating_op_count_is_const_callable`].
+    #[must_use]
+    pub const fn supported_non_mutating_op_count(self) -> u8 {
+        (self.get as u8) + (self.list as u8) + (self.versions as u8)
+    }
 }
 
 /// Closed-axis primitive over the shikumi-provided [`SecretClient`]
@@ -6885,6 +7041,379 @@ mod tests {
             versions: false,
         };
         const _: () = assert!(EMPTY.supported_op_count() == 0);
+    }
+
+    // ── Capabilities — per-half cardinality projections ────────────
+    //
+    // Pin table for the write/read-half slices of the cardinality
+    // projection at the Capabilities altitude — orthogonal to (and
+    // welding together with the shipped whole-set `supported_op_count`
+    // via the meta-partition sum law) the twelve compound-polarity
+    // predicates already at this altitude. The two per-half slices are
+    // strictly parallel; their tests are folded together on the shape
+    // sweeps and split apart on the write-half-only / read-half-only
+    // constructor anchors:
+    //   1. `capabilities_supported_op_count_is_sum_of_per_half_op_counts`
+    //      — the load-bearing meta-partition sum law:
+    //      whole == write-half + read-half on every reachable shape.
+    //   2. `capabilities_full_supported_mutating_op_count_is_three` /
+    //      `capabilities_full_supported_non_mutating_op_count_is_three`
+    //      — cross-surface top-anchors on the shipped `full()`
+    //      constructor (both halves saturate).
+    //   3. `capabilities_read_only_supported_mutating_op_count_is_zero`
+    //      / `capabilities_read_only_supported_non_mutating_op_count_is_one`
+    //      — cross-surface anchors on the shipped `read_only()`
+    //      constructor (write half is bottom, read half is the get-only
+    //      singleton).
+    //   4. `capabilities_empty_supported_per_half_op_counts_are_zero`
+    //      — cross-surface bottom anchors on the hand-built all-`false`
+    //      shape (both halves at the bottom of the closed range).
+    //   5. `capabilities_supported_mutating_op_count_agrees_with_operation_axis_filter_count`
+    //      / `capabilities_supported_non_mutating_op_count_agrees_with_operation_axis_filter_count`
+    //      — the cross-altitude welds with the operation axis via
+    //      `SecretOperation::ALL.iter().filter(is_mutating &&
+    //      supports).count()` and its is_non_mutating dual.
+    //   6. `capabilities_supported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix`
+    //      / `capabilities_supported_non_mutating_op_count_thresholds_agree_with_read_half_compound_polarity_matrix`
+    //      — the four threshold identities per half that recover the
+    //      write-half and read-half ∃/¬∃/∀/¬∀ compound-polarity pairs
+    //      from the per-half count.
+    //   7. `capabilities_supported_mutating_op_count_stays_within_write_half_bound`
+    //      / `capabilities_supported_non_mutating_op_count_stays_within_read_half_bound`
+    //      — the closed-range bounds `count as usize <= 3` for every
+    //      reachable shape, with an independent oracle via
+    //      `u32::count_ones` on the three-bit half-shape.
+    //   8. `capabilities_supported_mutating_op_count_is_const_callable`
+    //      / `capabilities_supported_non_mutating_op_count_is_const_callable`
+    //      — const-callability welds on both per-half projections.
+
+    #[test]
+    fn capabilities_supported_op_count_is_sum_of_per_half_op_counts() {
+        // The load-bearing meta-partition sum law: the whole-set
+        // cardinality equals the sum of the two per-half cardinalities
+        // on every reachable Capabilities shape. A future edit that
+        // shifts a field from one half to the other on ONE of the
+        // three projections (whole / write-half / read-half) diverges
+        // here rather than silently. Swept exhaustively over the full
+        // 2^6 = 64 reachable shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            assert_eq!(
+                caps.supported_op_count(),
+                caps.supported_mutating_op_count() + caps.supported_non_mutating_op_count(),
+                "supported_op_count must equal supported_mutating_op_count + supported_non_mutating_op_count on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_full_supported_mutating_op_count_is_three() {
+        // Cross-surface top-anchor on the shipped `Capabilities::full()`
+        // constructor: it advertises every write-half operation, so the
+        // write-half cardinality saturates at the meta-partition size
+        // (3 = SecretOperation::ALL.iter().filter(is_mutating).count()).
+        assert_eq!(Capabilities::full().supported_mutating_op_count(), 3);
+    }
+
+    #[test]
+    fn capabilities_full_supported_non_mutating_op_count_is_three() {
+        // Cross-surface top-anchor on `Capabilities::full()`: the
+        // read-half cardinality saturates at 3 =
+        // SecretOperation::ALL.iter().filter(is_non_mutating).count().
+        assert_eq!(Capabilities::full().supported_non_mutating_op_count(), 3);
+    }
+
+    #[test]
+    fn capabilities_read_only_supported_mutating_op_count_is_zero() {
+        // Cross-surface anchor on `Capabilities::read_only()`: it
+        // advertises NO mutating operations, so the write-half
+        // cardinality is exactly 0. A future edit that widened
+        // `read_only()` onto ANY mutating flag would silently drift
+        // this anchor; this pin locks the read-only shape's mutation
+        // pole at the bottom of the closed range.
+        assert_eq!(Capabilities::read_only().supported_mutating_op_count(), 0);
+    }
+
+    #[test]
+    fn capabilities_read_only_supported_non_mutating_op_count_is_one() {
+        // Cross-surface anchor on `Capabilities::read_only()`: it
+        // advertises `get` alone (and not `list` or `versions`), so
+        // the read-half cardinality is exactly the get-only singleton
+        // `1`. A future edit that widened `read_only()` onto `list` or
+        // `versions` (or dropped `get`) would silently drift this
+        // anchor; this pin locks the read-only shape to its intended
+        // get-only singleton on the read half.
+        assert_eq!(
+            Capabilities::read_only().supported_non_mutating_op_count(),
+            1,
+        );
+    }
+
+    #[test]
+    fn capabilities_empty_supported_per_half_op_counts_are_zero() {
+        // Cross-surface bottom anchors on the hand-built all-`false`
+        // shape: both per-half cardinalities land at the bottom of the
+        // closed range `0..=3`. No shipped constructor lands here, but
+        // the pole is reachable and must carry the bottom cardinality
+        // on both halves by construction.
+        let empty = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        assert_eq!(empty.supported_mutating_op_count(), 0);
+        assert_eq!(empty.supported_non_mutating_op_count(), 0);
+    }
+
+    #[test]
+    fn capabilities_supported_mutating_op_count_agrees_with_operation_axis_filter_count() {
+        // The cross-altitude weld with the operation axis one altitude
+        // down on the write-half: the count must agree with the
+        // re-derivation `SecretOperation::ALL.iter().filter(|op|
+        // op.is_mutating() && caps.supports(**op)).count()` pointwise
+        // over the exhaustive 2^6 = 64 shape sweep. A future edit that
+        // shifted a field from one half to the other on either the
+        // per-half count or on `SecretOperation::is_mutating` diverges
+        // here.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let filter_count = SecretOperation::ALL
+                .iter()
+                .filter(|op| op.is_mutating() && caps.supports(**op))
+                .count();
+            assert_eq!(
+                caps.supported_mutating_op_count() as usize,
+                filter_count,
+                "supported_mutating_op_count must agree with the is_mutating filter count on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_non_mutating_op_count_agrees_with_operation_axis_filter_count() {
+        // Read-half dual of the above: the count must agree with the
+        // re-derivation via `SecretOperation::is_non_mutating` on the
+        // full 64-shape sweep.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let filter_count = SecretOperation::ALL
+                .iter()
+                .filter(|op| op.is_non_mutating() && caps.supports(**op))
+                .count();
+            assert_eq!(
+                caps.supported_non_mutating_op_count() as usize,
+                filter_count,
+                "supported_non_mutating_op_count must agree with the is_non_mutating filter count on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_mutating_op_count_thresholds_agree_with_write_half_compound_polarity_matrix()
+     {
+        // The load-bearing weld on the write half: the four threshold
+        // identities that recover the write-half ∃/¬∃/∀/¬∀ compound-
+        // polarity quartet from the per-half cardinality. A future edit
+        // that drifted the write-half count from the four compound
+        // predicates on ONE shape diverges here rather than silently.
+        // Swept exhaustively over the full 2^6 = 64 reachable shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.supported_mutating_op_count();
+            assert_eq!(
+                caps.supports_any_mutating_op(),
+                count > 0,
+                "supports_any_mutating_op must equal (supported_mutating_op_count > 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_no_mutating_op(),
+                count == 0,
+                "supports_no_mutating_op must equal (supported_mutating_op_count == 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_every_mutating_op(),
+                count == 3,
+                "supports_every_mutating_op must equal (supported_mutating_op_count == 3) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_not_every_mutating_op(),
+                count < 3,
+                "supports_not_every_mutating_op must equal (supported_mutating_op_count < 3) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_non_mutating_op_count_thresholds_agree_with_read_half_compound_polarity_matrix()
+     {
+        // Read-half dual: the four threshold identities that recover
+        // the read-half ∃/¬∃/∀/¬∀ compound-polarity quartet from the
+        // per-half cardinality. Swept over the full 2^6 = 64 shapes.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.supported_non_mutating_op_count();
+            assert_eq!(
+                caps.supports_any_non_mutating_op(),
+                count > 0,
+                "supports_any_non_mutating_op must equal (supported_non_mutating_op_count > 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_no_non_mutating_op(),
+                count == 0,
+                "supports_no_non_mutating_op must equal (supported_non_mutating_op_count == 0) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_every_non_mutating_op(),
+                count == 3,
+                "supports_every_non_mutating_op must equal (supported_non_mutating_op_count == 3) on {caps:?}",
+            );
+            assert_eq!(
+                caps.supports_not_every_non_mutating_op(),
+                count < 3,
+                "supports_not_every_non_mutating_op must equal (supported_non_mutating_op_count < 3) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_mutating_op_count_stays_within_write_half_bound() {
+        // Bounds pin on the write half: the count stays in the closed
+        // range `0..=3` for every reachable Capabilities shape (the
+        // bound is exactly the write-half meta-partition size for the
+        // shipped six-variant operation axis). Independent oracle: the
+        // three-bit popcount of `(put, delete, rotate)` via
+        // `u32::count_ones` — a future edit that dropped, doubled, or
+        // mis-signed one term of the three-term sum diverges here on
+        // the first shape where that term flips, orthogonal to the
+        // threshold-identity pin above.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.supported_mutating_op_count();
+            assert!(
+                count <= 3,
+                "supported_mutating_op_count must stay within the write-half meta-partition size 3 on {caps:?}, got {count}",
+            );
+            let write_half_bits = ((bits >> 2) & 0b111) as u32;
+            assert_eq!(
+                count,
+                write_half_bits.count_ones() as u8,
+                "supported_mutating_op_count must equal the popcount of the three write-half bits (put|delete|rotate) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_non_mutating_op_count_stays_within_read_half_bound() {
+        // Read-half dual of the above: bounded by 3, independent oracle
+        // via `u32::count_ones` on the three-bit `(get, list, versions)`
+        // half-shape. Note the bit layout: bits 0 (get) and 1 (list)
+        // pack together, and bit 5 (versions) sits at the top of the
+        // six-bit shape; the oracle re-packs the three read-half bits
+        // into `(get << 0) | (list << 1) | (versions << 2)` so the
+        // popcount is orthogonal to the bit assignment above.
+        for bits in 0u8..64 {
+            let caps = Capabilities {
+                get: (bits & 0b00_0001) != 0,
+                list: (bits & 0b00_0010) != 0,
+                put: (bits & 0b00_0100) != 0,
+                delete: (bits & 0b00_1000) != 0,
+                rotate: (bits & 0b01_0000) != 0,
+                versions: (bits & 0b10_0000) != 0,
+            };
+            let count = caps.supported_non_mutating_op_count();
+            assert!(
+                count <= 3,
+                "supported_non_mutating_op_count must stay within the read-half meta-partition size 3 on {caps:?}, got {count}",
+            );
+            let read_half_bits = ((bits & 0b0000_0001) as u32)
+                | ((bits & 0b0000_0010) as u32)
+                | ((((bits >> 5) & 0b1) as u32) << 2);
+            assert_eq!(
+                count,
+                read_half_bits.count_ones() as u8,
+                "supported_non_mutating_op_count must equal the popcount of the three read-half bits (get|list|versions) on {caps:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_supported_mutating_op_count_is_const_callable() {
+        // The write-half cardinality projection is `const`-callable,
+        // matching the discipline of the four write-half compound-
+        // polarity predicates and the whole-set count at this altitude.
+        const _: () = assert!(Capabilities::full().supported_mutating_op_count() == 3);
+        const _: () = assert!(Capabilities::read_only().supported_mutating_op_count() == 0);
+        const EMPTY: Capabilities = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        const _: () = assert!(EMPTY.supported_mutating_op_count() == 0);
+    }
+
+    #[test]
+    fn capabilities_supported_non_mutating_op_count_is_const_callable() {
+        // Read-half dual: the read-half cardinality projection is
+        // `const`-callable.
+        const _: () = assert!(Capabilities::full().supported_non_mutating_op_count() == 3);
+        const _: () = assert!(Capabilities::read_only().supported_non_mutating_op_count() == 1);
+        const EMPTY: Capabilities = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        const _: () = assert!(EMPTY.supported_non_mutating_op_count() == 0);
     }
 
     // ── SecretOperation — Ord / Display / FromStr / serde ──────────
