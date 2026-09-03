@@ -900,6 +900,145 @@ impl SecretBackendKind {
         Self::Vault,
     ];
 
+    /// The [`Self::Literal`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Literal]`
+    /// mirroring the shipped boolean predicate [`Self::is_literal`]
+    /// one altitude down (per-variant polarity).
+    ///
+    /// Paired with [`Self::ONLY_COMMAND`], [`Self::ONLY_OP`],
+    /// [`Self::ONLY_SOPS`], [`Self::ONLY_AKEYLESS`],
+    /// [`Self::ONLY_VAULT`], [`Self::ONLY_AWS_SECRET`], and
+    /// [`Self::ONLY_GCP_SECRET`], the eight disjoint singletons
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the eight shipped boolean predicates
+    /// [`Self::is_literal`] / [`Self::is_command`] / [`Self::is_op`] /
+    /// [`Self::is_sops`] / [`Self::is_akeyless`] / [`Self::is_vault`] /
+    /// [`Self::is_aws_secret`] / [`Self::is_gcp_secret`] meta-partition
+    /// it at the boolean altitude. The eight constants sit in the same
+    /// `impl SecretBackendKind` block as [`Self::ALL`],
+    /// [`Self::CLOUD_SECRET_MANAGER`] and
+    /// [`Self::NON_CLOUD_SECRET_MANAGER`], and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal (rather than
+    /// derived by filtering [`Self::ALL`] through [`Self::is_literal`]
+    /// at const-fn altitude), so the two declaration surfaces — the
+    /// slice literal and the boolean predicate — remain independent
+    /// load-bearing witnesses of the same identity partition. An edit
+    /// that shifts a variant across the polarity on ONE surface but
+    /// not the other diverges at test time on the first kind where
+    /// they disagree, before drifting through any consumer that reads
+    /// one altitude but not the other.
+    ///
+    /// **Idiom-peer.** First OCTONARY landing of the per-half meta-
+    /// partition slice-constant discipline in the crate, extending the
+    /// discipline over the widest closed kind axis shikumi carries
+    /// (eight cells: literal × command × op × sops × akeyless × vault
+    /// × aws_secret × gcp_secret). Matched altitude-for-altitude with
+    /// the quinary identity landing on the CLI operator-facing tier
+    /// tag ([`crate::cli::TierArg::ONLY_BARE`] / … / `ONLY_ENV`,
+    /// commit `f7f5529`) and the quaternary identity landing on the
+    /// crate-side sibling tier-kind axis
+    /// ([`crate::tiered::ConfigTierKind::ONLY_BARE`] / … / `ONLY_CUSTOM`,
+    /// commit `ff6492b`), lifted here onto the eight-way secret-
+    /// resolution backend kind axis. The compound-polarity slices
+    /// [`Self::CLOUD_SECRET_MANAGER`] / [`Self::NON_CLOUD_SECRET_MANAGER`]
+    /// (commit `04e0f5d`) already ship the 2/6 meta-partition on the
+    /// same axis at the same altitude; this landing adds the 1/1/1/1/1/1/1/1
+    /// identity meta-partition alongside, so an axis-crossing consumer
+    /// reaches either the compound pole or a specific-backend pole
+    /// through one static slice reference without re-filtering.
+    ///
+    /// Welded by
+    /// [`tests::secret_backend_kind_identity_slices_agree_with_identity_predicates`],
+    /// [`tests::secret_backend_kind_identity_slices_partition_all`],
+    /// [`tests::secret_backend_kind_identity_slices_preserve_all_order`],
+    /// [`tests::secret_backend_kind_identity_slices_have_no_duplicates`],
+    /// [`tests::secret_backend_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`tests::secret_backend_kind_identity_slices_are_const_addressable`].
+    pub const ONLY_LITERAL: &'static [Self] = &[Self::Literal];
+
+    /// The [`Self::Command`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Command]`
+    /// mirroring the shipped boolean predicate [`Self::is_command`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_LITERAL`] for the full contract, the discipline
+    /// behind writing the eight identity-partition constants as
+    /// explicit slice literals (rather than filters through
+    /// [`Self::is_command`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins the eight `ONLY_*` singletons share.
+    pub const ONLY_COMMAND: &'static [Self] = &[Self::Command];
+
+    /// The [`Self::Op`] pole of the eight-way identity meta-partition
+    /// on the secret-resolution backend kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Op]` mirroring the
+    /// shipped boolean predicate [`Self::is_op`] one altitude down.
+    ///
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_OP: &'static [Self] = &[Self::Op];
+
+    /// The [`Self::Sops`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Sops]`
+    /// mirroring the shipped boolean predicate [`Self::is_sops`] one
+    /// altitude down.
+    ///
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_SOPS: &'static [Self] = &[Self::Sops];
+
+    /// The [`Self::Akeyless`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Akeyless]`
+    /// mirroring the shipped boolean predicate [`Self::is_akeyless`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_AKEYLESS: &'static [Self] = &[Self::Akeyless];
+
+    /// The [`Self::Vault`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Vault]`
+    /// mirroring the shipped boolean predicate [`Self::is_vault`] one
+    /// altitude down.
+    ///
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_VAULT: &'static [Self] = &[Self::Vault];
+
+    /// The [`Self::AwsSecret`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::AwsSecret]`
+    /// mirroring the shipped boolean predicate [`Self::is_aws_secret`]
+    /// one altitude down.
+    ///
+    /// Also the first cell of [`Self::CLOUD_SECRET_MANAGER`] — the
+    /// two witnesses agree here (`ONLY_AWS_SECRET` ⊆ `CLOUD_SECRET_MANAGER`)
+    /// per the identity-vs-compound partition cross-check.
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_AWS_SECRET: &'static [Self] = &[Self::AwsSecret];
+
+    /// The [`Self::GcpSecret`] pole of the eight-way identity meta-
+    /// partition on the secret-resolution backend kind axis at the
+    /// static-slice altitude — the singleton slice `&[Self::GcpSecret]`
+    /// mirroring the shipped boolean predicate [`Self::is_gcp_secret`]
+    /// one altitude down.
+    ///
+    /// Also the second cell of [`Self::CLOUD_SECRET_MANAGER`] — the
+    /// two witnesses agree here (`ONLY_GCP_SECRET` ⊆ `CLOUD_SECRET_MANAGER`)
+    /// per the identity-vs-compound partition cross-check.
+    /// See [`Self::ONLY_LITERAL`] for the full contract and the load-
+    /// bearing pins the eight `ONLY_*` singletons share.
+    pub const ONLY_GCP_SECRET: &'static [Self] = &[Self::GcpSecret];
+
     /// Canonical operator-facing `snake_case` name of the backend kind
     /// — `"literal"`, `"command"`, `"op"`, `"sops"`, `"akeyless"`,
     /// `"vault"`, `"aws_secret"`, or `"gcp_secret"`.
@@ -4882,6 +5021,609 @@ mod tests {
         const NON_CLOUD_LEN: usize = SecretBackendKind::NON_CLOUD_SECRET_MANAGER.len();
         assert_eq!(CLOUD_LEN, 2);
         assert_eq!(NON_CLOUD_LEN, 6);
+    }
+
+    // ── SecretBackendKind ONLY_* eight-way identity meta-partition
+    //
+    // Static-slice altitude of the eight-way (literal × command × op
+    // × sops × akeyless × vault × aws_secret × gcp_secret)
+    // 1/1/1/1/1/1/1/1 identity meta-partition on the secret-resolution
+    // backend kind axis. The eight singleton slices ONLY_LITERAL /
+    // ONLY_COMMAND / ONLY_OP / ONLY_SOPS / ONLY_AKEYLESS / ONLY_VAULT
+    // / ONLY_AWS_SECRET / ONLY_GCP_SECRET are the identity projection
+    // of the shipped boolean predicates is_literal / is_command /
+    // is_op / is_sops / is_akeyless / is_vault / is_aws_secret /
+    // is_gcp_secret one altitude down.
+    //
+    // FIRST octonary landing of the per-half meta-partition slice-
+    // constant discipline in the crate, extending the discipline over
+    // the widest closed kind axis shikumi carries. Idiom-peer of the
+    // quinary identity landing on the CLI operator-facing tier tag
+    // (`tier_arg_identity_*` on `TierArg::ONLY_BARE / … / ONLY_ENV`,
+    // commit `f7f5529`) and of the quaternary identity landing on the
+    // crate-side sibling tier-kind axis (`config_tier_kind_identity_*`
+    // on `ConfigTierKind::ONLY_BARE / … / ONLY_CUSTOM`, commit
+    // `ff6492b`), one and three cells wider respectively. The
+    // compound-polarity 2/6 partition on the same axis is already
+    // welded by the CLOUD_SECRET_MANAGER / NON_CLOUD_SECRET_MANAGER
+    // pins above; this landing adds the identity 1/1/1/1/1/1/1/1
+    // partition alongside.
+
+    #[test]
+    fn secret_backend_kind_identity_slices_agree_with_identity_predicates() {
+        // Eight-way agreement pin across the (literal × command × op ×
+        // sops × akeyless × vault × aws_secret × gcp_secret) identity
+        // meta-partition. Every ONLY_LITERAL entry satisfies is_literal
+        // and none of the seven sibling predicates; every ONLY_COMMAND
+        // entry satisfies is_command alone; … and so on across all
+        // eight halves. Every SecretBackendKind::ALL cell agrees on
+        // membership under each of the eight boolean predicates. The
+        // two independent declaration surfaces (slice literals +
+        // boolean predicates) diverge at THIS pin on the first shape
+        // where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift. Octonary
+        // peer of `tier_arg_identity_slices_agree_with_identity_predicates`
+        // (commit `f7f5529`) on the CLI operator-facing tier tag,
+        // three cells wider.
+        for k in SecretBackendKind::ONLY_LITERAL.iter().copied() {
+            assert!(k.is_literal(), "ONLY_LITERAL {k:?} must satisfy is_literal");
+            assert!(
+                !k.is_command(),
+                "ONLY_LITERAL {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_LITERAL {k:?} must NOT satisfy is_op");
+            assert!(!k.is_sops(), "ONLY_LITERAL {k:?} must NOT satisfy is_sops");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_LITERAL {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_LITERAL {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_LITERAL {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_LITERAL {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_COMMAND.iter().copied() {
+            assert!(k.is_command(), "ONLY_COMMAND {k:?} must satisfy is_command");
+            assert!(
+                !k.is_literal(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_literal"
+            );
+            assert!(!k.is_op(), "ONLY_COMMAND {k:?} must NOT satisfy is_op");
+            assert!(!k.is_sops(), "ONLY_COMMAND {k:?} must NOT satisfy is_sops");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_OP.iter().copied() {
+            assert!(k.is_op(), "ONLY_OP {k:?} must satisfy is_op");
+            assert!(!k.is_literal(), "ONLY_OP {k:?} must NOT satisfy is_literal");
+            assert!(!k.is_command(), "ONLY_OP {k:?} must NOT satisfy is_command");
+            assert!(!k.is_sops(), "ONLY_OP {k:?} must NOT satisfy is_sops");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_OP {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(!k.is_vault(), "ONLY_OP {k:?} must NOT satisfy is_vault");
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_OP {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_OP {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_SOPS.iter().copied() {
+            assert!(k.is_sops(), "ONLY_SOPS {k:?} must satisfy is_sops");
+            assert!(
+                !k.is_literal(),
+                "ONLY_SOPS {k:?} must NOT satisfy is_literal"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_SOPS {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_SOPS {k:?} must NOT satisfy is_op");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_SOPS {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(!k.is_vault(), "ONLY_SOPS {k:?} must NOT satisfy is_vault");
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_SOPS {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_SOPS {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_AKEYLESS.iter().copied() {
+            assert!(
+                k.is_akeyless(),
+                "ONLY_AKEYLESS {k:?} must satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_literal(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_literal"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_AKEYLESS {k:?} must NOT satisfy is_op");
+            assert!(!k.is_sops(), "ONLY_AKEYLESS {k:?} must NOT satisfy is_sops");
+            assert!(
+                !k.is_vault(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_VAULT.iter().copied() {
+            assert!(k.is_vault(), "ONLY_VAULT {k:?} must satisfy is_vault");
+            assert!(
+                !k.is_literal(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_literal"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_VAULT {k:?} must NOT satisfy is_op");
+            assert!(!k.is_sops(), "ONLY_VAULT {k:?} must NOT satisfy is_sops");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_AWS_SECRET.iter().copied() {
+            assert!(
+                k.is_aws_secret(),
+                "ONLY_AWS_SECRET {k:?} must satisfy is_aws_secret"
+            );
+            assert!(
+                !k.is_literal(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_literal"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_AWS_SECRET {k:?} must NOT satisfy is_op");
+            assert!(
+                !k.is_sops(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_sops"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_gcp_secret(),
+                "ONLY_AWS_SECRET {k:?} must NOT satisfy is_gcp_secret"
+            );
+        }
+        for k in SecretBackendKind::ONLY_GCP_SECRET.iter().copied() {
+            assert!(
+                k.is_gcp_secret(),
+                "ONLY_GCP_SECRET {k:?} must satisfy is_gcp_secret"
+            );
+            assert!(
+                !k.is_literal(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_literal"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_command"
+            );
+            assert!(!k.is_op(), "ONLY_GCP_SECRET {k:?} must NOT satisfy is_op");
+            assert!(
+                !k.is_sops(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_sops"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_aws_secret(),
+                "ONLY_GCP_SECRET {k:?} must NOT satisfy is_aws_secret"
+            );
+        }
+        for k in SecretBackendKind::ALL.iter().copied() {
+            assert_eq!(
+                SecretBackendKind::ONLY_LITERAL.contains(&k),
+                k.is_literal(),
+                "ONLY_LITERAL membership must agree with is_literal on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_COMMAND.contains(&k),
+                k.is_command(),
+                "ONLY_COMMAND membership must agree with is_command on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_OP.contains(&k),
+                k.is_op(),
+                "ONLY_OP membership must agree with is_op on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_SOPS.contains(&k),
+                k.is_sops(),
+                "ONLY_SOPS membership must agree with is_sops on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_AKEYLESS.contains(&k),
+                k.is_akeyless(),
+                "ONLY_AKEYLESS membership must agree with is_akeyless on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_VAULT.contains(&k),
+                k.is_vault(),
+                "ONLY_VAULT membership must agree with is_vault on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_AWS_SECRET.contains(&k),
+                k.is_aws_secret(),
+                "ONLY_AWS_SECRET membership must agree with is_aws_secret on {k:?}",
+            );
+            assert_eq!(
+                SecretBackendKind::ONLY_GCP_SECRET.contains(&k),
+                k.is_gcp_secret(),
+                "ONLY_GCP_SECRET membership must agree with is_gcp_secret on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slices_partition_all() {
+        // Octonary partition invariant: the eight per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_LITERAL.len() + ONLY_COMMAND.len() + … + ONLY_GCP_SECRET.len()
+        // == ALL.len()` at the slice altitude on the eight-way
+        // secret-resolution backend kind axis. Octonary peer of
+        // `tier_arg_identity_slices_partition_all` (commit `f7f5529`),
+        // three cells wider. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        let identity_slices: [&[SecretBackendKind]; 8] = [
+            SecretBackendKind::ONLY_LITERAL,
+            SecretBackendKind::ONLY_COMMAND,
+            SecretBackendKind::ONLY_OP,
+            SecretBackendKind::ONLY_SOPS,
+            SecretBackendKind::ONLY_AKEYLESS,
+            SecretBackendKind::ONLY_VAULT,
+            SecretBackendKind::ONLY_AWS_SECRET,
+            SecretBackendKind::ONLY_GCP_SECRET,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for k in left.iter() {
+                    assert!(
+                        !right.contains(k),
+                        "SecretBackendKind::{k:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for k in SecretBackendKind::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&k)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "SecretBackendKind::{k:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            SecretBackendKind::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SecretBackendKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at
+        // THIS pin. Octonary peer of
+        // `tier_arg_identity_slices_preserve_all_order`
+        // (commit `f7f5529`) on the CLI-side sibling tier tag.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<SecretBackendKind> = SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(SecretBackendKind::ONLY_LITERAL, is_literal);
+        pin!(SecretBackendKind::ONLY_COMMAND, is_command);
+        pin!(SecretBackendKind::ONLY_OP, is_op);
+        pin!(SecretBackendKind::ONLY_SOPS, is_sops);
+        pin!(SecretBackendKind::ONLY_AKEYLESS, is_akeyless);
+        pin!(SecretBackendKind::ONLY_VAULT, is_vault);
+        pin!(SecretBackendKind::ONLY_AWS_SECRET, is_aws_secret);
+        pin!(SecretBackendKind::ONLY_GCP_SECRET, is_gcp_secret);
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all eight per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Octonary peer of `tier_arg_identity_slices_have_no_duplicates`
+        // (commit `f7f5529`) on the CLI-side sibling tier tag.
+        for slice in [
+            SecretBackendKind::ONLY_LITERAL,
+            SecretBackendKind::ONLY_COMMAND,
+            SecretBackendKind::ONLY_OP,
+            SecretBackendKind::ONLY_SOPS,
+            SecretBackendKind::ONLY_AKEYLESS,
+            SecretBackendKind::ONLY_VAULT,
+            SecretBackendKind::ONLY_AWS_SECRET,
+            SecretBackendKind::ONLY_GCP_SECRET,
+        ] {
+            let mut seen: Vec<SecretBackendKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SecretBackendKind identity slice {slice:?} contains \
+                     duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SecretBackendKind::ALL — i.e.,
+        // `ONLY_LITERAL.len() == ALL.iter().filter(is_literal).count()`
+        // (and symmetric for the seven siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all eight halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 8 = ALL. Octonary
+        // peer of `tier_arg_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `f7f5529`) on the CLI-side sibling tier tag.
+        let counts = [
+            (
+                "is_literal",
+                SecretBackendKind::ONLY_LITERAL.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_literal())
+                    .count(),
+            ),
+            (
+                "is_command",
+                SecretBackendKind::ONLY_COMMAND.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_command())
+                    .count(),
+            ),
+            (
+                "is_op",
+                SecretBackendKind::ONLY_OP.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_op())
+                    .count(),
+            ),
+            (
+                "is_sops",
+                SecretBackendKind::ONLY_SOPS.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_sops())
+                    .count(),
+            ),
+            (
+                "is_akeyless",
+                SecretBackendKind::ONLY_AKEYLESS.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_akeyless())
+                    .count(),
+            ),
+            (
+                "is_vault",
+                SecretBackendKind::ONLY_VAULT.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_vault())
+                    .count(),
+            ),
+            (
+                "is_aws_secret",
+                SecretBackendKind::ONLY_AWS_SECRET.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_aws_secret())
+                    .count(),
+            ),
+            (
+                "is_gcp_secret",
+                SecretBackendKind::ONLY_GCP_SECRET.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_gcp_secret())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(SecretBackendKind::ALL.len(), 8);
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the eight per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub
+        // fn` (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Octonary peer of `tier_arg_identity_slices_are_const_addressable`
+        // (commit `f7f5529`) on the CLI-side sibling tier tag.
+        const ONLY_LITERAL_LEN: usize = SecretBackendKind::ONLY_LITERAL.len();
+        const ONLY_COMMAND_LEN: usize = SecretBackendKind::ONLY_COMMAND.len();
+        const ONLY_OP_LEN: usize = SecretBackendKind::ONLY_OP.len();
+        const ONLY_SOPS_LEN: usize = SecretBackendKind::ONLY_SOPS.len();
+        const ONLY_AKEYLESS_LEN: usize = SecretBackendKind::ONLY_AKEYLESS.len();
+        const ONLY_VAULT_LEN: usize = SecretBackendKind::ONLY_VAULT.len();
+        const ONLY_AWS_SECRET_LEN: usize = SecretBackendKind::ONLY_AWS_SECRET.len();
+        const ONLY_GCP_SECRET_LEN: usize = SecretBackendKind::ONLY_GCP_SECRET.len();
+        const ALL_LEN: usize = SecretBackendKind::ALL.len();
+        assert_eq!(ONLY_LITERAL_LEN, 1);
+        assert_eq!(ONLY_COMMAND_LEN, 1);
+        assert_eq!(ONLY_OP_LEN, 1);
+        assert_eq!(ONLY_SOPS_LEN, 1);
+        assert_eq!(ONLY_AKEYLESS_LEN, 1);
+        assert_eq!(ONLY_VAULT_LEN, 1);
+        assert_eq!(ONLY_AWS_SECRET_LEN, 1);
+        assert_eq!(ONLY_GCP_SECRET_LEN, 1);
+        assert_eq!(
+            ONLY_LITERAL_LEN
+                + ONLY_COMMAND_LEN
+                + ONLY_OP_LEN
+                + ONLY_SOPS_LEN
+                + ONLY_AKEYLESS_LEN
+                + ONLY_VAULT_LEN
+                + ONLY_AWS_SECRET_LEN
+                + ONLY_GCP_SECRET_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the compound-polarity meta-partition
+        // (CLOUD_SECRET_MANAGER / NON_CLOUD_SECRET_MANAGER). The
+        // union of the two identity singletons in the cloud pole
+        // (ONLY_AWS_SECRET + ONLY_GCP_SECRET) equals
+        // CLOUD_SECRET_MANAGER as a set, and the union of the six
+        // non-cloud identity singletons equals NON_CLOUD_SECRET_MANAGER
+        // as a set. A future rearrangement of one meta-partition
+        // without the other (say, moving Vault into the cloud pole
+        // without adding it to the identity → compound aggregation)
+        // diverges at THIS pin, before drifting through a consumer
+        // that materializes one altitude from the other.
+        let cloud_from_identity: Vec<SecretBackendKind> = [
+            SecretBackendKind::ONLY_AWS_SECRET,
+            SecretBackendKind::ONLY_GCP_SECRET,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            cloud_from_identity,
+            SecretBackendKind::CLOUD_SECRET_MANAGER.to_vec(),
+            "identity singleton union on the cloud pole must reproduce \
+             CLOUD_SECRET_MANAGER in declaration order",
+        );
+        let non_cloud_from_identity: Vec<SecretBackendKind> = [
+            SecretBackendKind::ONLY_LITERAL,
+            SecretBackendKind::ONLY_COMMAND,
+            SecretBackendKind::ONLY_OP,
+            SecretBackendKind::ONLY_SOPS,
+            SecretBackendKind::ONLY_AKEYLESS,
+            SecretBackendKind::ONLY_VAULT,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            non_cloud_from_identity,
+            SecretBackendKind::NON_CLOUD_SECRET_MANAGER.to_vec(),
+            "identity singleton union on the non-cloud pole must reproduce \
+             NON_CLOUD_SECRET_MANAGER in declaration order",
+        );
     }
 
     #[test]
