@@ -224,6 +224,114 @@ impl WatchEventClass {
         matches!(self, Self::Reload | Self::Removed)
     }
 
+    /// The single `ONLY_RELOAD` [`WatchEventClass`] variant —
+    /// [`Self::Reload`] (a content/metadata-write `Modify` or any
+    /// `Create` — the file's bytes may have changed and the store should
+    /// re-read) — in the SAME relative declaration order it occupies in
+    /// [`Self::ALL`], carrying the *reload-identity* pole of the
+    /// (reload × removed × ignored) 1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the reload-relevance axis, mirroring
+    /// the shipped boolean predicate [`Self::is_reload`] one altitude
+    /// down: the sole variant in this slice satisfies `c.is_reload()`,
+    /// and no variant outside it does.
+    ///
+    /// Paired with [`Self::ONLY_REMOVED`] and [`Self::ONLY_IGNORED`],
+    /// the three disjoint singleton slices partition [`Self::ALL`] at
+    /// the static-slice altitude the same way the shipped boolean
+    /// predicates [`Self::is_reload`] / [`Self::is_removed`] /
+    /// [`Self::is_ignored`] meta-partition it at the boolean altitude
+    /// (per
+    /// [`tests::watch_event_class_predicates_are_a_closed_ternary_partition`]).
+    /// The three constants sit in the same `impl WatchEventClass` block
+    /// as [`Self::ALL`], and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_reload`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// Ternary peer of the shipped ternary
+    /// [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::ONLY_ENV`] /
+    /// [`crate::ConfigSourceKind::ONLY_FILE`] (commit `f287239`, the
+    /// third ternary landing of the per-half meta-partition
+    /// slice-constant discipline on a shikumi-native closed-primitive
+    /// axis, on the shikumi-side layer-kind axis's
+    /// (defaults × env × file) 1/1/1 identity projection) and the sibling
+    /// ternary [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`, the
+    /// second ternary landing on the figment-side kind axis's
+    /// (file × code × custom) 1/1/1 identity projection) and
+    /// [`crate::AttributionRule::LAYER_FILE`] /
+    /// [`crate::AttributionRule::LAYER_ENV`] /
+    /// [`crate::AttributionRule::LAYER_DEFAULTS`] (commit `fae8271`,
+    /// the first ternary landing on the attribution-rule axis's
+    /// (file × env × defaults) layer-kind projection). The per-half
+    /// meta-partition slice-constant discipline applied here to the
+    /// three-way reload-relevance axis's ternary
+    /// (reload × removed × ignored) 1/1/1 identity meta-partition,
+    /// closing the FIRST landing of the discipline on a
+    /// `watcher.rs`-scoped closed-primitive axis.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_RELOAD.iter().all(|c| c.is_reload())`,
+    /// `!ONLY_RELOAD.iter().any(|c| c.is_removed())`,
+    /// `!ONLY_RELOAD.iter().any(|c| c.is_ignored())`, and the symmetric
+    /// laws on [`Self::ONLY_REMOVED`] and [`Self::ONLY_IGNORED`]) are
+    /// pinned by
+    /// [`tests::watch_event_class_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::watch_event_class_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::watch_event_class_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::watch_event_class_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::watch_event_class_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::watch_event_class_ternary_slices_are_const_addressable`].
+    pub const ONLY_RELOAD: &'static [Self] = &[Self::Reload];
+
+    /// The single `ONLY_REMOVED` [`WatchEventClass`] variant —
+    /// [`Self::Removed`] (a `Remove` — the watched path was unlinked;
+    /// nix-darwin's atomic unlink+symlink swap surfaces a transient
+    /// mid-swap `Remove` that must not trigger a read of a half-applied
+    /// rebuild) — carrying the *removed-identity* pole of the
+    /// (reload × removed × ignored) 1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the reload-relevance axis, mirroring
+    /// the shipped boolean predicate [`Self::is_removed`] one altitude
+    /// down.
+    ///
+    /// See [`Self::ONLY_RELOAD`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_removed`]), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_REMOVED: &'static [Self] = &[Self::Removed];
+
+    /// The single `ONLY_IGNORED` [`WatchEventClass`] variant —
+    /// [`Self::Ignored`] (any other event — non-mutating access, a
+    /// rename, a non-write metadata touch, or the `Any` / `Other`
+    /// catch-alls; not reload-relevant) — carrying the *ignored-identity*
+    /// pole of the (reload × removed × ignored) 1/1/1 identity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// reload-relevance axis, mirroring the shipped boolean predicate
+    /// [`Self::is_ignored`] one altitude down.
+    ///
+    /// See [`Self::ONLY_RELOAD`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_ignored`]), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_IGNORED: &'static [Self] = &[Self::Ignored];
+
     /// Canonical operator-facing lowercase name — `"reload"`, `"removed"`,
     /// or `"ignored"`. Inherent mirror of the [`ClosedAxisLabel`] trait
     /// method; the trait impl delegates here so the labels live at one
@@ -713,6 +821,280 @@ mod tests {
                 "class {class:?} must satisfy exactly one sibling predicate, got {hits}",
             );
         }
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way weld pin between the per-half slice literals and
+        // the shipped boolean predicates on the reload-relevance axis's
+        // (reload × removed × ignored) 1/1/1 identity meta-partition.
+        // For every entry in each `ONLY_*` slice: the positive-pole
+        // predicate holds and the two negative-pole predicates do not,
+        // plus ALL-membership agreement between the slice `.contains()`
+        // and the boolean predicate across all three poles. Ternary
+        // peer of
+        // `config_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`f287239`) on the shikumi-side layer-kind axis,
+        // `figment_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`723060b`) on the figment-side layer-kind axis, and
+        // `attribution_rule_layer_slices_agree_with_layer_predicates`
+        // (`fae8271`) on the attribution-rule axis's layer-kind
+        // projection.
+        for c in WatchEventClass::ONLY_RELOAD.iter().copied() {
+            assert!(
+                c.is_reload(),
+                "WatchEventClass::ONLY_RELOAD entry {c:?} must satisfy is_reload()",
+            );
+            assert!(
+                !c.is_removed(),
+                "WatchEventClass::ONLY_RELOAD entry {c:?} must NOT satisfy is_removed()",
+            );
+            assert!(
+                !c.is_ignored(),
+                "WatchEventClass::ONLY_RELOAD entry {c:?} must NOT satisfy is_ignored()",
+            );
+        }
+        for c in WatchEventClass::ONLY_REMOVED.iter().copied() {
+            assert!(
+                c.is_removed(),
+                "WatchEventClass::ONLY_REMOVED entry {c:?} must satisfy is_removed()",
+            );
+            assert!(
+                !c.is_reload(),
+                "WatchEventClass::ONLY_REMOVED entry {c:?} must NOT satisfy is_reload()",
+            );
+            assert!(
+                !c.is_ignored(),
+                "WatchEventClass::ONLY_REMOVED entry {c:?} must NOT satisfy is_ignored()",
+            );
+        }
+        for c in WatchEventClass::ONLY_IGNORED.iter().copied() {
+            assert!(
+                c.is_ignored(),
+                "WatchEventClass::ONLY_IGNORED entry {c:?} must satisfy is_ignored()",
+            );
+            assert!(
+                !c.is_reload(),
+                "WatchEventClass::ONLY_IGNORED entry {c:?} must NOT satisfy is_reload()",
+            );
+            assert!(
+                !c.is_removed(),
+                "WatchEventClass::ONLY_IGNORED entry {c:?} must NOT satisfy is_removed()",
+            );
+        }
+        for c in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                WatchEventClass::ONLY_RELOAD.contains(&c),
+                c.is_reload(),
+                "ONLY_RELOAD membership must agree with is_reload() on \
+                 WatchEventClass::{c:?}",
+            );
+            assert_eq!(
+                WatchEventClass::ONLY_REMOVED.contains(&c),
+                c.is_removed(),
+                "ONLY_REMOVED membership must agree with is_removed() on \
+                 WatchEventClass::{c:?}",
+            );
+            assert_eq!(
+                WatchEventClass::ONLY_IGNORED.contains(&c),
+                c.is_ignored(),
+                "ONLY_IGNORED membership must agree with is_ignored() on \
+                 WatchEventClass::{c:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_RELOAD.len() + ONLY_REMOVED.len() + ONLY_IGNORED.len()
+        // == ALL.len()` at the slice altitude on the reload-relevance
+        // axis's identity projection. Ternary peer of
+        // `config_source_kind_ternary_slices_partition_all` (`f287239`)
+        // and slice-altitude peer of
+        // `watch_event_class_predicates_are_a_closed_ternary_partition`
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for c in WatchEventClass::ONLY_RELOAD {
+            assert!(
+                !WatchEventClass::ONLY_REMOVED.contains(c),
+                "WatchEventClass::{c:?} appears in BOTH ONLY_RELOAD and ONLY_REMOVED",
+            );
+            assert!(
+                !WatchEventClass::ONLY_IGNORED.contains(c),
+                "WatchEventClass::{c:?} appears in BOTH ONLY_RELOAD and ONLY_IGNORED",
+            );
+        }
+        for c in WatchEventClass::ONLY_REMOVED {
+            assert!(
+                !WatchEventClass::ONLY_IGNORED.contains(c),
+                "WatchEventClass::{c:?} appears in BOTH ONLY_REMOVED and ONLY_IGNORED",
+            );
+        }
+        for c in WatchEventClass::ALL {
+            let in_reload = WatchEventClass::ONLY_RELOAD.contains(c);
+            let in_removed = WatchEventClass::ONLY_REMOVED.contains(c);
+            let in_ignored = WatchEventClass::ONLY_IGNORED.contains(c);
+            let held = usize::from(in_reload) + usize::from(in_removed) + usize::from(in_ignored);
+            assert_eq!(
+                held, 1,
+                "WatchEventClass::{c:?} must appear in exactly one of ONLY_RELOAD / \
+                 ONLY_REMOVED / ONLY_IGNORED (found in {held})",
+            );
+        }
+        assert_eq!(
+            WatchEventClass::ONLY_RELOAD.len()
+                + WatchEventClass::ONLY_REMOVED.len()
+                + WatchEventClass::ONLY_IGNORED.len(),
+            WatchEventClass::ALL.len(),
+            "ONLY_RELOAD + ONLY_REMOVED + ONLY_IGNORED slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in WatchEventClass::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell future
+        // variant reshuffle on the same axis) diverges at THIS pin.
+        // Ternary peer of
+        // `config_source_kind_ternary_slices_preserve_all_order`
+        // (`f287239`).
+        let reload_from_all: Vec<WatchEventClass> = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_reload())
+            .collect();
+        assert_eq!(
+            reload_from_all,
+            WatchEventClass::ONLY_RELOAD.to_vec(),
+            "ONLY_RELOAD must be ALL-filtered by is_reload in declaration order",
+        );
+        let removed_from_all: Vec<WatchEventClass> = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_removed())
+            .collect();
+        assert_eq!(
+            removed_from_all,
+            WatchEventClass::ONLY_REMOVED.to_vec(),
+            "ONLY_REMOVED must be ALL-filtered by is_removed in declaration order",
+        );
+        let ignored_from_all: Vec<WatchEventClass> = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_ignored())
+            .collect();
+        assert_eq!(
+            ignored_from_all,
+            WatchEventClass::ONLY_IGNORED.to_vec(),
+            "ONLY_IGNORED must be ALL-filtered by is_ignored in declaration order",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set. Ternary
+        // peer of
+        // `config_source_kind_ternary_slices_have_no_duplicates`
+        // (`f287239`).
+        for slice in [
+            WatchEventClass::ONLY_RELOAD,
+            WatchEventClass::ONLY_REMOVED,
+            WatchEventClass::ONLY_IGNORED,
+        ] {
+            let mut seen: Vec<WatchEventClass> = Vec::with_capacity(slice.len());
+            for c in slice {
+                assert!(
+                    !seen.contains(c),
+                    "WatchEventClass ternary slice {slice:?} contains duplicate entry {c:?}",
+                );
+                seen.push(*c);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on WatchEventClass::ALL — i.e.,
+        // `ONLY_RELOAD.len() == ALL.iter().filter(is_reload).count()`
+        // (and symmetric for the two siblings) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on all three halves. Concrete
+        // positions today: 1 reload + 1 removed + 1 ignored = 3 = ALL.
+        // Ternary peer of
+        // `config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`f287239`).
+        let reload_count = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_reload())
+            .count();
+        let removed_count = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_removed())
+            .count();
+        let ignored_count = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_ignored())
+            .count();
+        assert_eq!(
+            WatchEventClass::ONLY_RELOAD.len(),
+            reload_count,
+            "ONLY_RELOAD.len() must match the is_reload count on ALL",
+        );
+        assert_eq!(
+            WatchEventClass::ONLY_REMOVED.len(),
+            removed_count,
+            "ONLY_REMOVED.len() must match the is_removed count on ALL",
+        );
+        assert_eq!(
+            WatchEventClass::ONLY_IGNORED.len(),
+            ignored_count,
+            "ONLY_IGNORED.len() must match the is_ignored count on ALL",
+        );
+        assert_eq!(WatchEventClass::ONLY_RELOAD.len(), 1);
+        assert_eq!(WatchEventClass::ONLY_REMOVED.len(), 1);
+        assert_eq!(WatchEventClass::ONLY_IGNORED.len(), 1);
+        assert_eq!(WatchEventClass::ALL.len(), 3);
+    }
+
+    #[test]
+    fn watch_event_class_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `config_source_kind_ternary_slices_are_const_addressable`
+        // (`f287239`).
+        const ONLY_RELOAD_LEN: usize = WatchEventClass::ONLY_RELOAD.len();
+        const ONLY_REMOVED_LEN: usize = WatchEventClass::ONLY_REMOVED.len();
+        const ONLY_IGNORED_LEN: usize = WatchEventClass::ONLY_IGNORED.len();
+        const ALL_LEN: usize = WatchEventClass::ALL.len();
+        assert_eq!(ONLY_RELOAD_LEN, 1);
+        assert_eq!(ONLY_REMOVED_LEN, 1);
+        assert_eq!(ONLY_IGNORED_LEN, 1);
+        assert_eq!(
+            ONLY_RELOAD_LEN + ONLY_REMOVED_LEN + ONLY_IGNORED_LEN,
+            ALL_LEN
+        );
     }
 
     #[test]
