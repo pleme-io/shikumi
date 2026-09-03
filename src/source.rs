@@ -610,6 +610,134 @@ impl ConfigSourceKind {
     /// partition pins.
     pub const OVERLAY: &'static [Self] = &[Self::Env, Self::File];
 
+    /// The single `ONLY_DEFAULTS` [`ConfigSourceKind`] variant —
+    /// [`Self::Defaults`] (the developer-prescribed baseline layer) — in
+    /// the SAME relative declaration order it occupies in [`Self::ALL`],
+    /// carrying the *defaults-identity* pole of the
+    /// (defaults × env × file) 1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the shikumi-side layer-kind axis,
+    /// mirroring the shipped boolean predicate [`Self::is_defaults`] one
+    /// altitude down: the sole variant in this slice satisfies
+    /// `k.is_defaults()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::ONLY_ENV`] and [`Self::ONLY_FILE`], the three
+    /// disjoint singleton slices partition [`Self::ALL`] at the
+    /// static-slice altitude the same way the shipped boolean predicates
+    /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`]
+    /// meta-partition it at the boolean altitude (per
+    /// [`tests::config_source_kind_predicates_are_a_closed_ternary_partition`]).
+    /// The three constants sit in the same `impl ConfigSourceKind` block
+    /// as [`Self::ALL`], [`Self::DEFAULTS`], and [`Self::OVERLAY`], and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// **Distinct from the shared-baseline binary [`Self::DEFAULTS`].**
+    /// The two constants agree pointwise today
+    /// (`ONLY_DEFAULTS == DEFAULTS == &[Self::Defaults]`) because the
+    /// (baseline × overlay) binary's baseline pole and the identity
+    /// partition's Defaults-pole both project to the singleton Defaults
+    /// slice at present. They diverge structurally on the first future
+    /// edit that grows the baseline pole (a hypothetical `Self::Prescribed`
+    /// developer-supplied kind emitted by `prescribed_default()`): the
+    /// binary [`Self::DEFAULTS`] extends to include `Prescribed` in
+    /// lockstep with [`Self::is_defaults_layer`]-family baseline
+    /// contracts, while [`Self::ONLY_DEFAULTS`] stays a singleton because
+    /// the identity partition is per-variant by definition. Keeping the
+    /// two constants independent surfaces that future divergence
+    /// exactly at the declaration site the partition's contract lives
+    /// in, rather than silently under a reused name.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_defaults`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate) remain
+    /// independent load-bearing witnesses of the same meta-partition,
+    /// and a future edit that shifts a variant across the polarity on
+    /// ONE declaration surface but not the other diverges at test time
+    /// on the first shape where they disagree.
+    ///
+    /// Ternary peer of the shipped ternary
+    /// [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`, the
+    /// second ternary landing of the per-half meta-partition
+    /// slice-constant discipline on a shikumi-native closed-primitive
+    /// axis, and the direct sibling on the figment-side of the
+    /// (figment-source-kind × shikumi-layer-kind) resolution boundary
+    /// joined as a cube cell by
+    /// [`crate::cube::AttributionSourceKindCoordinates`]) and
+    /// [`crate::AttributionRule::LAYER_FILE`] /
+    /// [`crate::AttributionRule::LAYER_ENV`] /
+    /// [`crate::AttributionRule::LAYER_DEFAULTS`] (commit `fae8271`, the
+    /// first ternary landing of the discipline on a shikumi-native
+    /// closed-primitive axis, and the direct sibling on the
+    /// attribution-rule axis's layer-kind projection sharing the
+    /// (file × env × defaults) coordinate space with this axis). The
+    /// per-half meta-partition slice-constant discipline applied here
+    /// to the three-way shikumi-side layer-kind axis's ternary
+    /// (defaults × env × file) 1/1/1 identity meta-partition, closing
+    /// the third ternary landing of the discipline on a shikumi-native
+    /// closed-primitive axis.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_DEFAULTS.iter().all(|k| k.is_defaults())`,
+    /// `!ONLY_DEFAULTS.iter().any(|k| k.is_env())`,
+    /// `!ONLY_DEFAULTS.iter().any(|k| k.is_file())`, and the symmetric
+    /// laws on [`Self::ONLY_ENV`] and [`Self::ONLY_FILE`]) are pinned by
+    /// [`tests::config_source_kind_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::config_source_kind_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::config_source_kind_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::config_source_kind_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::config_source_kind_ternary_slices_are_const_addressable`].
+    pub const ONLY_DEFAULTS: &'static [Self] = &[Self::Defaults];
+
+    /// The single `ONLY_ENV` [`ConfigSourceKind`] variant — [`Self::Env`]
+    /// (the operator-supplied env-layer) — carrying the *env-identity*
+    /// pole of the (defaults × env × file) 1/1/1 identity meta-partition
+    /// at the primitive's OWN altitude on the shikumi-side layer-kind
+    /// axis, mirroring the shipped boolean predicate [`Self::is_env`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_DEFAULTS`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_env`]), the distinction from the shared-overlay
+    /// binary [`Self::OVERLAY`] pole (which today merges `Env` with
+    /// `File`), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins that hold uniformly across all three
+    /// identity-partition halves.
+    pub const ONLY_ENV: &'static [Self] = &[Self::Env];
+
+    /// The single `ONLY_FILE` [`ConfigSourceKind`] variant — [`Self::File`]
+    /// (the operator-supplied file-layer) — carrying the *file-identity*
+    /// pole of the (defaults × env × file) 1/1/1 identity meta-partition
+    /// at the primitive's OWN altitude on the shikumi-side layer-kind
+    /// axis, mirroring the shipped boolean predicate [`Self::is_file`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_DEFAULTS`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_file`]), the distinction from the shared-overlay
+    /// binary [`Self::OVERLAY`] pole (which today merges `File` with
+    /// `Env`), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    ///
+    /// The `"file"` semantic here intentionally coincides with the
+    /// figment-side sibling [`crate::FigmentSourceKind::FILE`]
+    /// (commit `723060b`) by typescape design: the two axes meet at the
+    /// shikumi-file-layer ↔ figment-File-source resolution boundary,
+    /// joined as a cube cell in
+    /// [`crate::cube::AttributionSourceKindCoordinates`].
+    pub const ONLY_FILE: &'static [Self] = &[Self::File];
+
     /// Canonical operator-facing lowercase name of the layer kind —
     /// `"defaults"`, `"env"`, or `"file"`.
     ///
@@ -95914,6 +96042,301 @@ mod tests {
         assert_eq!(DEFAULTS_LEN, 1);
         assert_eq!(OVERLAY_LEN, 2);
         assert_eq!(DEFAULTS_LEN + OVERLAY_LEN, ALL_LEN);
+    }
+
+    // Six pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped for `FigmentSourceKind::FILE / CODE /
+    // CUSTOM` (`723060b`, the second ternary landing of the discipline
+    // on a shikumi-native closed-primitive axis and the direct sibling
+    // on the figment-side of the (figment-source-kind ×
+    // shikumi-layer-kind) resolution boundary), and for
+    // `AttributionRule::LAYER_FILE / LAYER_ENV / LAYER_DEFAULTS`
+    // (`fae8271`, the first ternary landing, sharing the
+    // (file × env × defaults) coordinate space with this axis), applied
+    // here to the ConfigSourceKind axis's ternary (defaults × env ×
+    // file) 1/1/1 identity meta-partition. Directly nominated by
+    // `723060b`'s "future beneficiary (c)": the direct sibling ternary
+    // landing on the shikumi-side layer-kind axis's identity
+    // projection, closing the third ternary landing of the discipline
+    // on a shikumi-native closed-primitive axis.
+    #[test]
+    fn config_source_kind_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way agreement pin across the (defaults × env × file)
+        // ternary identity meta-partition. Every ONLY_DEFAULTS entry
+        // satisfies is_defaults and neither is_env nor is_file; every
+        // ONLY_ENV entry satisfies is_env alone; every ONLY_FILE entry
+        // satisfies is_file alone. Every ConfigSourceKind::ALL cell
+        // agrees on membership under each of the three boolean
+        // predicates. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift. Ternary
+        // peer of
+        // `figment_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`723060b`) on the figment-side layer-kind axis and
+        // `attribution_rule_layer_slices_agree_with_layer_predicates`
+        // (`fae8271`) on the attribution-rule axis's layer-kind
+        // projection sharing the (file × env × defaults) coordinate
+        // space with this axis.
+        for k in ConfigSourceKind::ONLY_DEFAULTS.iter().copied() {
+            assert!(
+                k.is_defaults(),
+                "ConfigSourceKind::ONLY_DEFAULTS entry {k:?} must satisfy is_defaults()",
+            );
+            assert!(
+                !k.is_env(),
+                "ConfigSourceKind::ONLY_DEFAULTS entry {k:?} must NOT satisfy is_env()",
+            );
+            assert!(
+                !k.is_file(),
+                "ConfigSourceKind::ONLY_DEFAULTS entry {k:?} must NOT satisfy is_file()",
+            );
+        }
+        for k in ConfigSourceKind::ONLY_ENV.iter().copied() {
+            assert!(
+                k.is_env(),
+                "ConfigSourceKind::ONLY_ENV entry {k:?} must satisfy is_env()",
+            );
+            assert!(
+                !k.is_defaults(),
+                "ConfigSourceKind::ONLY_ENV entry {k:?} must NOT satisfy is_defaults()",
+            );
+            assert!(
+                !k.is_file(),
+                "ConfigSourceKind::ONLY_ENV entry {k:?} must NOT satisfy is_file()",
+            );
+        }
+        for k in ConfigSourceKind::ONLY_FILE.iter().copied() {
+            assert!(
+                k.is_file(),
+                "ConfigSourceKind::ONLY_FILE entry {k:?} must satisfy is_file()",
+            );
+            assert!(
+                !k.is_defaults(),
+                "ConfigSourceKind::ONLY_FILE entry {k:?} must NOT satisfy is_defaults()",
+            );
+            assert!(
+                !k.is_env(),
+                "ConfigSourceKind::ONLY_FILE entry {k:?} must NOT satisfy is_env()",
+            );
+        }
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                ConfigSourceKind::ONLY_DEFAULTS.contains(&k),
+                k.is_defaults(),
+                "ONLY_DEFAULTS membership must agree with is_defaults() on \
+                 ConfigSourceKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigSourceKind::ONLY_ENV.contains(&k),
+                k.is_env(),
+                "ONLY_ENV membership must agree with is_env() on ConfigSourceKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigSourceKind::ONLY_FILE.contains(&k),
+                k.is_file(),
+                "ONLY_FILE membership must agree with is_file() on ConfigSourceKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_DEFAULTS.len() + ONLY_ENV.len() + ONLY_FILE.len() ==
+        // ALL.len()` at the slice altitude on the shikumi-side
+        // layer-kind axis's identity projection. Ternary peer of
+        // `figment_source_kind_ternary_slices_partition_all` (`723060b`)
+        // and `attribution_rule_layer_slices_partition_all` (`fae8271`),
+        // and slice-altitude peer of
+        // `config_source_kind_predicates_are_a_closed_ternary_partition`
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in ConfigSourceKind::ONLY_DEFAULTS {
+            assert!(
+                !ConfigSourceKind::ONLY_ENV.contains(k),
+                "ConfigSourceKind::{k:?} appears in BOTH ONLY_DEFAULTS and ONLY_ENV",
+            );
+            assert!(
+                !ConfigSourceKind::ONLY_FILE.contains(k),
+                "ConfigSourceKind::{k:?} appears in BOTH ONLY_DEFAULTS and ONLY_FILE",
+            );
+        }
+        for k in ConfigSourceKind::ONLY_ENV {
+            assert!(
+                !ConfigSourceKind::ONLY_FILE.contains(k),
+                "ConfigSourceKind::{k:?} appears in BOTH ONLY_ENV and ONLY_FILE",
+            );
+        }
+        for k in ConfigSourceKind::ALL {
+            let in_defaults = ConfigSourceKind::ONLY_DEFAULTS.contains(k);
+            let in_env = ConfigSourceKind::ONLY_ENV.contains(k);
+            let in_file = ConfigSourceKind::ONLY_FILE.contains(k);
+            let held = usize::from(in_defaults) + usize::from(in_env) + usize::from(in_file);
+            assert_eq!(
+                held, 1,
+                "ConfigSourceKind::{k:?} must appear in exactly one of ONLY_DEFAULTS / \
+                 ONLY_ENV / ONLY_FILE (found in {held})",
+            );
+        }
+        assert_eq!(
+            ConfigSourceKind::ONLY_DEFAULTS.len()
+                + ConfigSourceKind::ONLY_ENV.len()
+                + ConfigSourceKind::ONLY_FILE.len(),
+            ConfigSourceKind::ALL.len(),
+            "ONLY_DEFAULTS + ONLY_ENV + ONLY_FILE slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ConfigSourceKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell future
+        // variant reshuffle on the same axis) diverges at THIS pin.
+        // Ternary peer of
+        // `figment_source_kind_ternary_slices_preserve_all_order`
+        // (`723060b`) and
+        // `attribution_rule_layer_slices_preserve_all_order`
+        // (`fae8271`).
+        let defaults_from_all: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_defaults())
+            .collect();
+        assert_eq!(
+            defaults_from_all,
+            ConfigSourceKind::ONLY_DEFAULTS.to_vec(),
+            "ONLY_DEFAULTS must be ALL-filtered by is_defaults in declaration order",
+        );
+        let env_from_all: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_env())
+            .collect();
+        assert_eq!(
+            env_from_all,
+            ConfigSourceKind::ONLY_ENV.to_vec(),
+            "ONLY_ENV must be ALL-filtered by is_env in declaration order",
+        );
+        let file_from_all: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_file())
+            .collect();
+        assert_eq!(
+            file_from_all,
+            ConfigSourceKind::ONLY_FILE.to_vec(),
+            "ONLY_FILE must be ALL-filtered by is_file in declaration order",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set. Ternary
+        // peer of
+        // `figment_source_kind_ternary_slices_have_no_duplicates`
+        // (`723060b`) and
+        // `attribution_rule_layer_slices_have_no_duplicates`
+        // (`fae8271`).
+        for slice in [
+            ConfigSourceKind::ONLY_DEFAULTS,
+            ConfigSourceKind::ONLY_ENV,
+            ConfigSourceKind::ONLY_FILE,
+        ] {
+            let mut seen: Vec<ConfigSourceKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ConfigSourceKind ternary slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ConfigSourceKind::ALL — i.e.,
+        // `ONLY_DEFAULTS.len() == ALL.iter().filter(is_defaults).count()`
+        // (and symmetric for the two siblings) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on all three halves. Concrete
+        // positions today: 1 defaults + 1 env + 1 file = 3 = ALL.
+        // Ternary peer of
+        // `figment_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`723060b`) and
+        // `attribution_rule_layer_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`fae8271`).
+        let defaults_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_defaults())
+            .count();
+        let env_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_env())
+            .count();
+        let file_count = ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_file())
+            .count();
+        assert_eq!(
+            ConfigSourceKind::ONLY_DEFAULTS.len(),
+            defaults_count,
+            "ONLY_DEFAULTS.len() must match the is_defaults count on ALL",
+        );
+        assert_eq!(
+            ConfigSourceKind::ONLY_ENV.len(),
+            env_count,
+            "ONLY_ENV.len() must match the is_env count on ALL",
+        );
+        assert_eq!(
+            ConfigSourceKind::ONLY_FILE.len(),
+            file_count,
+            "ONLY_FILE.len() must match the is_file count on ALL",
+        );
+        assert_eq!(ConfigSourceKind::ONLY_DEFAULTS.len(), 1);
+        assert_eq!(ConfigSourceKind::ONLY_ENV.len(), 1);
+        assert_eq!(ConfigSourceKind::ONLY_FILE.len(), 1);
+        assert_eq!(ConfigSourceKind::ALL.len(), 3);
+    }
+
+    #[test]
+    fn config_source_kind_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `figment_source_kind_ternary_slices_are_const_addressable`
+        // (`723060b`) and
+        // `attribution_rule_layer_slices_are_const_addressable`
+        // (`fae8271`).
+        const ONLY_DEFAULTS_LEN: usize = ConfigSourceKind::ONLY_DEFAULTS.len();
+        const ONLY_ENV_LEN: usize = ConfigSourceKind::ONLY_ENV.len();
+        const ONLY_FILE_LEN: usize = ConfigSourceKind::ONLY_FILE.len();
+        const ALL_LEN: usize = ConfigSourceKind::ALL.len();
+        assert_eq!(ONLY_DEFAULTS_LEN, 1);
+        assert_eq!(ONLY_ENV_LEN, 1);
+        assert_eq!(ONLY_FILE_LEN, 1);
+        assert_eq!(ONLY_DEFAULTS_LEN + ONLY_ENV_LEN + ONLY_FILE_LEN, ALL_LEN);
     }
 
     #[test]
