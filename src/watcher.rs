@@ -332,6 +332,107 @@ impl WatchEventClass {
     /// const-addressability pins.
     pub const ONLY_IGNORED: &'static [Self] = &[Self::Ignored];
 
+    /// The two-cell `FILE_MUTATIONS` [`WatchEventClass`] slice —
+    /// [`Self::Reload`] and [`Self::Removed`], the two acted-on arms of
+    /// the reload-relevance axis (the file's bytes may have changed, or
+    /// the file was unlinked at the watched path) — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], carrying the
+    /// *file-mutation-observing* pole of the compound-polarity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// reload-relevance axis, mirroring the shipped boolean predicate
+    /// [`Self::is_file_mutation`] one altitude down: every variant in
+    /// this slice satisfies `c.is_file_mutation()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with [`Self::NON_FILE_MUTATIONS`], the two disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude the
+    /// same way the shipped boolean predicates [`Self::is_file_mutation`]
+    /// and [`Self::is_ignored`] partition it at the boolean altitude
+    /// (per
+    /// [`tests::watch_event_class_is_file_mutation_and_is_ignored_are_a_closed_binary_partition`]).
+    /// Compound-polarity peer of the shipped ternary identity
+    /// [`Self::ONLY_RELOAD`] / [`Self::ONLY_REMOVED`] /
+    /// [`Self::ONLY_IGNORED`] (commit `9e5ea18`, the first landing of
+    /// the per-half meta-partition slice-constant discipline on a
+    /// `watcher.rs`-scoped closed-primitive axis) — this closes the
+    /// compound-polarity binary meta-partition at the same altitude the
+    /// ternary identity closed the singleton meta-partition, matching
+    /// the ladder shape [`crate::ConfigTierKind::COMPUTED`] /
+    /// [`crate::ConfigTierKind::CUSTOM`] (commit `2c0686f`) closed on
+    /// the tier-kind axis and [`crate::ConfigSourceKind::DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::OVERLAY`] (commit `2cd8ef8`) closed on
+    /// the source-layer axis.
+    ///
+    /// Written as an explicit two-cell slice literal in the SAME
+    /// relative declaration order the two acted-on arms occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_file_mutation`] at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// compound-polarity meta-partition, and a future edit that shifts
+    /// a variant across the polarity on ONE declaration surface but not
+    /// the other diverges at test time on the first shape where they
+    /// disagree.
+    ///
+    /// Consumers that group the two acted-on arms as one static set (a
+    /// per-tenant reload-telemetry meter counting observed-mutation
+    /// events distinctly from silently-discarded events, a
+    /// debounce-window guard grouping the two mutation cells before the
+    /// guard's window opens, a structured-tracing span attribute
+    /// distinguishing acted-on events from dropped ones, a `ConfigPlane`
+    /// broadcast-reload counter bucketing mutation observations
+    /// separately from noise) now read the pole as one `&'static [Self]`
+    /// slice lookup — no re-derived `matches!` at the callsite, no
+    /// ALL-filter fold each time.
+    ///
+    /// The compound-polarity agreement laws
+    /// (`FILE_MUTATIONS.iter().all(|c| c.is_file_mutation())`,
+    /// `!FILE_MUTATIONS.iter().any(|c| c.is_ignored())`, and the
+    /// symmetric laws on [`Self::NON_FILE_MUTATIONS`]) are pinned by
+    /// [`tests::watch_event_class_file_mutations_slice_agrees_with_is_file_mutation_predicate`].
+    /// Compound-polarity partition invariant across both siblings:
+    /// [`tests::watch_event_class_file_mutations_and_non_file_mutations_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::watch_event_class_file_mutations_and_non_file_mutations_slices_preserve_all_order`].
+    /// No duplicates on either half:
+    /// [`tests::watch_event_class_file_mutations_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::watch_event_class_file_mutations_and_non_file_mutations_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::watch_event_class_file_mutations_and_non_file_mutations_slices_are_const_addressable`].
+    pub const FILE_MUTATIONS: &'static [Self] = &[Self::Reload, Self::Removed];
+
+    /// The single-cell `NON_FILE_MUTATIONS` [`WatchEventClass`] slice —
+    /// [`Self::Ignored`] (any non-mutation-observing event — access, a
+    /// rename, a non-write metadata touch, or the `Any` / `Other`
+    /// catch-alls; not reload-relevant) — carrying the
+    /// *non-mutation* pole of the compound-polarity meta-partition at
+    /// the primitive's OWN altitude on the reload-relevance axis,
+    /// mirroring the shipped boolean predicate `!is_file_mutation` (i.e.
+    /// [`Self::is_ignored`], the two are pointwise complements per
+    /// [`tests::watch_event_class_is_file_mutation_is_complement_of_is_ignored`])
+    /// one altitude down.
+    ///
+    /// Today `NON_FILE_MUTATIONS == ONLY_IGNORED == &[Self::Ignored]`
+    /// because the compound-polarity negative pole collapses to the
+    /// singleton ignored cell at present, but the two constants remain
+    /// independent by design: a future edit that adds a fourth
+    /// non-mutation-observing variant (a hypothetical `Self::Renamed`
+    /// or `Self::Access` split off from the `Ignored` catch-all) grows
+    /// the compound `NON_FILE_MUTATIONS` in lockstep with
+    /// `!is_file_mutation`-family contracts while `ONLY_IGNORED` stays
+    /// the ternary-identity singleton — the same discipline
+    /// [`Self::ONLY_CUSTOM`]-vs-`CUSTOM` on `ConfigTierKind`
+    /// (`ff6492b`) and the sibling `ConfigSourceKind::OVERLAY` binary
+    /// carry.
+    ///
+    /// See [`Self::FILE_MUTATIONS`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_ignored`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const NON_FILE_MUTATIONS: &'static [Self] = &[Self::Ignored];
+
     /// Canonical operator-facing lowercase name — `"reload"`, `"removed"`,
     /// or `"ignored"`. Inherent mirror of the [`ClosedAxisLabel`] trait
     /// method; the trait impl delegates here so the labels live at one
@@ -1264,6 +1365,222 @@ mod tests {
                 "{kind:?} must classify to a non-mutation cell",
             );
         }
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_slice_agrees_with_is_file_mutation_predicate() {
+        // Bidirectional weld between the slice literal
+        // `WatchEventClass::FILE_MUTATIONS` and the boolean predicate
+        // `WatchEventClass::is_file_mutation` on the compound-polarity
+        // (file-mutation × non-file-mutation) meta-partition. Every
+        // slice entry satisfies the mutation pole (and its complement
+        // `!is_ignored`), and every ALL cell agrees on membership under
+        // the boolean predicate on both halves. Compound-polarity peer
+        // of `config_source_kind_defaults_slice_agrees_with_is_defaults_predicate`
+        // (`2cd8ef8`) and
+        // `config_tier_kind_computed_slice_agrees_with_is_computed_predicate`
+        // (`2c0686f`) — the two independent declaration surfaces (slice
+        // literal + boolean predicate) diverge at THIS pin on the first
+        // shape where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift.
+        for c in WatchEventClass::FILE_MUTATIONS.iter().copied() {
+            assert!(
+                c.is_file_mutation(),
+                "FILE_MUTATIONS entry {c:?} must satisfy is_file_mutation()",
+            );
+            assert!(
+                !c.is_ignored(),
+                "FILE_MUTATIONS entry {c:?} must NOT satisfy is_ignored()",
+            );
+        }
+        for c in WatchEventClass::NON_FILE_MUTATIONS.iter().copied() {
+            assert!(
+                !c.is_file_mutation(),
+                "NON_FILE_MUTATIONS entry {c:?} must NOT satisfy is_file_mutation()",
+            );
+            assert!(
+                c.is_ignored(),
+                "NON_FILE_MUTATIONS entry {c:?} must satisfy is_ignored()",
+            );
+        }
+        for c in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                WatchEventClass::FILE_MUTATIONS.contains(&c),
+                c.is_file_mutation(),
+                "FILE_MUTATIONS membership must agree with is_file_mutation() on \
+                 WatchEventClass::{c:?}",
+            );
+            assert_eq!(
+                WatchEventClass::NON_FILE_MUTATIONS.contains(&c),
+                c.is_ignored(),
+                "NON_FILE_MUTATIONS membership must agree with is_ignored() on \
+                 WatchEventClass::{c:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_and_non_file_mutations_slices_partition_all() {
+        // Compound-polarity partition invariant: the two per-half
+        // slices are disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `FILE_MUTATIONS.len() + NON_FILE_MUTATIONS.len() == ALL.len()`
+        // at the slice altitude on the reload-relevance axis's
+        // compound-polarity meta-partition. Compound-polarity peer of
+        // `config_source_kind_defaults_and_overlay_slices_partition_all`
+        // (`2cd8ef8`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for c in WatchEventClass::FILE_MUTATIONS.iter().copied() {
+            assert!(
+                !WatchEventClass::NON_FILE_MUTATIONS.contains(&c),
+                "WatchEventClass::{c:?} appears in BOTH FILE_MUTATIONS and NON_FILE_MUTATIONS",
+            );
+        }
+        for c in WatchEventClass::ALL.iter().copied() {
+            let in_mut = WatchEventClass::FILE_MUTATIONS.contains(&c);
+            let in_non = WatchEventClass::NON_FILE_MUTATIONS.contains(&c);
+            assert!(
+                in_mut || in_non,
+                "WatchEventClass::{c:?} is in NEITHER FILE_MUTATIONS nor NON_FILE_MUTATIONS",
+            );
+            assert!(
+                !(in_mut && in_non),
+                "WatchEventClass::{c:?} is in BOTH FILE_MUTATIONS and NON_FILE_MUTATIONS",
+            );
+        }
+        assert_eq!(
+            WatchEventClass::FILE_MUTATIONS.len() + WatchEventClass::NON_FILE_MUTATIONS.len(),
+            WatchEventClass::ALL.len(),
+            "FILE_MUTATIONS and NON_FILE_MUTATIONS slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_and_non_file_mutations_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in WatchEventClass::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order (once the two polarity groups are ordered per
+        // the reload-relevance ranking Reload < Removed < Ignored).
+        // Compound-polarity peer of
+        // `config_source_kind_defaults_and_overlay_slices_preserve_all_order`
+        // (`2cd8ef8`) — a reordering of one slice without the other,
+        // or a reordering of ALL that shuffles the two poles' variant
+        // order without updating the slices, diverges at THIS pin.
+        let mutations_from_all: Vec<WatchEventClass> = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_file_mutation())
+            .collect();
+        assert_eq!(
+            mutations_from_all,
+            WatchEventClass::FILE_MUTATIONS.to_vec(),
+            "FILE_MUTATIONS must be ALL-filtered by is_file_mutation in declaration order",
+        );
+        let non_mutations_from_all: Vec<WatchEventClass> = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_ignored())
+            .collect();
+        assert_eq!(
+            non_mutations_from_all,
+            WatchEventClass::NON_FILE_MUTATIONS.to_vec(),
+            "NON_FILE_MUTATIONS must be ALL-filtered by is_ignored in declaration order",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into FILE_MUTATIONS, an accidental re-add of the Ignored cell
+        // into NON_FILE_MUTATIONS) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        // Compound-polarity peer of
+        // `config_source_kind_defaults_slice_has_no_duplicates` (`2cd8ef8`).
+        for slice in [
+            WatchEventClass::FILE_MUTATIONS,
+            WatchEventClass::NON_FILE_MUTATIONS,
+        ] {
+            let mut sorted = slice.to_vec();
+            sorted.sort();
+            let deduped_len = {
+                let mut seen: Vec<WatchEventClass> = Vec::with_capacity(sorted.len());
+                for c in &sorted {
+                    if !seen.contains(c) {
+                        seen.push(*c);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "WatchEventClass slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_and_non_file_mutations_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on WatchEventClass::ALL — i.e.,
+        // `FILE_MUTATIONS.len() == ALL.iter().filter(is_file_mutation).count()`
+        // and `NON_FILE_MUTATIONS.len() == ALL.iter().filter(is_ignored).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 2 file-mutation + 1 non-file-mutation
+        // = 3 = ALL. Compound-polarity peer of
+        // `config_source_kind_defaults_and_overlay_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2cd8ef8`).
+        let mutation_count = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_file_mutation())
+            .count();
+        let non_mutation_count = WatchEventClass::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_ignored())
+            .count();
+        assert_eq!(
+            WatchEventClass::FILE_MUTATIONS.len(),
+            mutation_count,
+            "FILE_MUTATIONS.len() must match the is_file_mutation count on ALL",
+        );
+        assert_eq!(
+            WatchEventClass::NON_FILE_MUTATIONS.len(),
+            non_mutation_count,
+            "NON_FILE_MUTATIONS.len() must match the is_ignored count on ALL",
+        );
+        assert_eq!(WatchEventClass::FILE_MUTATIONS.len(), 2);
+        assert_eq!(WatchEventClass::NON_FILE_MUTATIONS.len(), 1);
+        assert_eq!(WatchEventClass::ALL.len(), 3);
+    }
+
+    #[test]
+    fn watch_event_class_file_mutations_and_non_file_mutations_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Compound-polarity peer of
+        // `config_source_kind_defaults_and_overlay_slices_are_const_addressable`
+        // (`2cd8ef8`).
+        const FILE_MUTATIONS_LEN: usize = WatchEventClass::FILE_MUTATIONS.len();
+        const NON_FILE_MUTATIONS_LEN: usize = WatchEventClass::NON_FILE_MUTATIONS.len();
+        const ALL_LEN: usize = WatchEventClass::ALL.len();
+        assert_eq!(FILE_MUTATIONS_LEN, 2);
+        assert_eq!(NON_FILE_MUTATIONS_LEN, 1);
+        assert_eq!(FILE_MUTATIONS_LEN + NON_FILE_MUTATIONS_LEN, ALL_LEN);
     }
 
     #[test]
