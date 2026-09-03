@@ -9092,6 +9092,112 @@ impl SameStoreConsistencyKind {
     /// the accepted-set in one edit rather than two.
     pub const NAMES: &'static [&'static str] = &["stationary", "identity_republish", "progression"];
 
+    /// The single [`Self::Stationary`] variant — the sole
+    /// null-hypothesis legitimate corner (watermark stationary AND
+    /// generation unchanged: the `/healthz/config` polling case) — in
+    /// the SAME relative declaration order it occupies in
+    /// [`Self::VARIANTS`], carrying the *stationary-identity* pole of
+    /// the (stationary × identity_republish × progression) 1/1/1
+    /// identity meta-partition at the primitive's OWN altitude on the
+    /// consistency-half kind axis, mirroring the shipped boolean
+    /// predicate [`Self::is_stationary`] one altitude down: the sole
+    /// variant in this slice satisfies `k.is_stationary()`, and no
+    /// variant outside it does.
+    ///
+    /// Paired with [`Self::ONLY_IDENTITY_REPUBLISH`] and
+    /// [`Self::ONLY_PROGRESSION`], the three disjoint singleton slices
+    /// partition [`Self::VARIANTS`] at the static-slice altitude the
+    /// same way the shipped boolean predicates [`Self::is_stationary`]
+    /// / [`Self::is_identity_republish`] / [`Self::is_progression`]
+    /// meta-partition it at the boolean altitude (per
+    /// [`variants_tests::same_store_consistency_kind_per_variant_predicates_are_a_closed_ternary_partition`]).
+    /// The three constants sit in the same `impl SameStoreConsistencyKind`
+    /// block as [`Self::VARIANTS`] and [`Self::NAMES`], and follow the
+    /// same `pub const &'static [Self]` static-slice discipline the
+    /// per-half meta-partition slice-constant idiom carries elsewhere
+    /// in the crate.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::VARIANTS`], rather than derived by filtering
+    /// [`Self::VARIANTS`] through [`Self::is_stationary`] at const-fn
+    /// altitude — so the two declaration surfaces (the slice literal
+    /// and the boolean predicate) remain independent load-bearing
+    /// witnesses of the same identity partition, and a future edit
+    /// that shifts a variant across the polarity on ONE surface but
+    /// not the other diverges at test time on the first kind where
+    /// they disagree.
+    ///
+    /// **Ternary landing of the per-half meta-partition slice-constant
+    /// discipline on the consistency-half kind axis in `hotswap.rs`.**
+    /// Direct sibling of [`SameStoreImpossibilityKind::ONLY_REGRESSED`]
+    /// / [`SameStoreImpossibilityKind::ONLY_CROSS_STORE`] (commit
+    /// `273ec6c`) on the impossibility half of the same classification
+    /// — the identity meta-partition ladder now reaches the two
+    /// half-side kind axes in `hotswap.rs` in lockstep, one cell
+    /// wider on this ternary axis than on the sibling binary. Ternary
+    /// peer of [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// `ONLY_ENV` / `ONLY_FILE` (commit `f287239`),
+    /// [`crate::tiered::DiffLineKind::ONLY_REMOVED`] / `ONLY_ADDED` /
+    /// `ONLY_CONTEXT` (commit `7ea710e`), and
+    /// [`crate::watcher::WatchEventClass::ONLY_RELOAD`] /
+    /// `ONLY_REMOVED` / `ONLY_IGNORED` (commit `9e5ea18`) on
+    /// crate-native ternary axes outside `hotswap.rs`.
+    ///
+    /// A hypothetical fourth legitimate corner landing on the enum
+    /// must extend [`Self::VARIANTS`] AND either add its own singleton
+    /// slice under the identity partition here or extend one of the
+    /// existing singletons in lockstep with the matching boolean
+    /// predicate — the partition, order-preservation, and cardinality
+    /// pins refuse a silent landing under the negation of all three
+    /// existing identity poles.
+    ///
+    /// The agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability laws are pinned by
+    /// [`variants_tests::same_store_consistency_kind_identity_slices_agree_with_identity_predicates`],
+    /// [`variants_tests::same_store_consistency_kind_identity_slices_partition_variants`],
+    /// [`variants_tests::same_store_consistency_kind_identity_slices_preserve_variants_order`],
+    /// [`variants_tests::same_store_consistency_kind_identity_slices_have_no_duplicates`],
+    /// [`variants_tests::same_store_consistency_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`variants_tests::same_store_consistency_kind_identity_slices_are_const_addressable`].
+    pub const ONLY_STATIONARY: &'static [Self] = &[Self::Stationary];
+
+    /// The single [`Self::IdentityRepublish`] variant — the sole
+    /// identical-value republish legitimate corner (watermark
+    /// stationary, generation advanced by one or more: a reload cycle
+    /// over a filesystem that flipped and flipped back before the
+    /// observer noticed) — carrying the *identity_republish-identity*
+    /// pole of the (stationary × identity_republish × progression)
+    /// 1/1/1 identity meta-partition at the primitive's OWN altitude
+    /// on the consistency-half kind axis, mirroring the shipped boolean
+    /// predicate [`Self::is_identity_republish`] one altitude down.
+    ///
+    /// See [`Self::ONLY_STATIONARY`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_identity_republish`]), and the
+    /// load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// three `ONLY_*` singletons share.
+    pub const ONLY_IDENTITY_REPUBLISH: &'static [Self] = &[Self::IdentityRepublish];
+
+    /// The single [`Self::Progression`] variant — the sole
+    /// normal-progression legitimate corner (watermark moved AND
+    /// generation advanced: every routine config-file edit) — carrying
+    /// the *progression-identity* pole of the (stationary ×
+    /// identity_republish × progression) 1/1/1 identity meta-partition
+    /// at the primitive's OWN altitude on the consistency-half kind
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_progression`] one altitude down.
+    ///
+    /// See [`Self::ONLY_STATIONARY`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_progression`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins the three `ONLY_*`
+    /// singletons share.
+    pub const ONLY_PROGRESSION: &'static [Self] = &[Self::Progression];
+
     /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
     /// the compile-time closed set of variant values, the mirror of
     /// [`SameStoreImpossibilityKind::variants`] on the consistent
@@ -38884,6 +38990,294 @@ mod variants_tests {
         const _: () = assert!(!SameStoreConsistencyKind::Stationary.is_watermark_moved());
         const _: () = assert!(!SameStoreConsistencyKind::IdentityRepublish.is_watermark_moved());
         const _: () = assert!(SameStoreConsistencyKind::Progression.is_watermark_moved());
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slices_agree_with_identity_predicates() {
+        // Ternary agreement pin between the three `ONLY_*` slice
+        // literals and the shipped `is_stationary` / `is_identity_republish`
+        // / `is_progression` predicates on the consistency-half kind
+        // axis's (stationary × identity_republish × progression) 1/1/1
+        // identity meta-partition. For every entry in each `ONLY_*`
+        // slice: the positive-pole predicate holds and the two
+        // negative-pole predicates do not, plus `VARIANTS`-membership
+        // agreement between the slice `.contains()` and the boolean
+        // predicate across all three poles. Ternary peer of
+        // `same_store_impossibility_kind_identity_slices_agree_with_identity_predicates`
+        // (commit `273ec6c`) on the impossibility half, one cell wider,
+        // and of
+        // `diff_line_kind_ternary_slices_agree_with_ternary_predicates`
+        // (commit `7ea710e`) on the diff-cell axis. The two
+        // independent declaration surfaces (slice literals + boolean
+        // predicates) diverge at THIS pin on the first shape where
+        // they disagree, before a consumer that reads one altitude but
+        // not the other observes the drift.
+        for k in SameStoreConsistencyKind::ONLY_STATIONARY.iter().copied() {
+            assert!(
+                k.is_stationary(),
+                "SameStoreConsistencyKind::ONLY_STATIONARY entry {k:?} must satisfy is_stationary()",
+            );
+            assert!(
+                !k.is_identity_republish(),
+                "SameStoreConsistencyKind::ONLY_STATIONARY entry {k:?} must NOT satisfy is_identity_republish()",
+            );
+            assert!(
+                !k.is_progression(),
+                "SameStoreConsistencyKind::ONLY_STATIONARY entry {k:?} must NOT satisfy is_progression()",
+            );
+        }
+        for k in SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_identity_republish(),
+                "SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH entry {k:?} must satisfy is_identity_republish()",
+            );
+            assert!(
+                !k.is_stationary(),
+                "SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH entry {k:?} must NOT satisfy is_stationary()",
+            );
+            assert!(
+                !k.is_progression(),
+                "SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH entry {k:?} must NOT satisfy is_progression()",
+            );
+        }
+        for k in SameStoreConsistencyKind::ONLY_PROGRESSION.iter().copied() {
+            assert!(
+                k.is_progression(),
+                "SameStoreConsistencyKind::ONLY_PROGRESSION entry {k:?} must satisfy is_progression()",
+            );
+            assert!(
+                !k.is_stationary(),
+                "SameStoreConsistencyKind::ONLY_PROGRESSION entry {k:?} must NOT satisfy is_stationary()",
+            );
+            assert!(
+                !k.is_identity_republish(),
+                "SameStoreConsistencyKind::ONLY_PROGRESSION entry {k:?} must NOT satisfy is_identity_republish()",
+            );
+        }
+        for k in SameStoreConsistencyKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                SameStoreConsistencyKind::ONLY_STATIONARY.contains(&k),
+                k.is_stationary(),
+                "ONLY_STATIONARY membership must agree with is_stationary() on \
+                 SameStoreConsistencyKind::{k:?}",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.contains(&k),
+                k.is_identity_republish(),
+                "ONLY_IDENTITY_REPUBLISH membership must agree with is_identity_republish() on \
+                 SameStoreConsistencyKind::{k:?}",
+            );
+            assert_eq!(
+                SameStoreConsistencyKind::ONLY_PROGRESSION.contains(&k),
+                k.is_progression(),
+                "ONLY_PROGRESSION membership must agree with is_progression() on \
+                 SameStoreConsistencyKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slices_partition_variants() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers VARIANTS. Direct
+        // application of the meta-partition sum law
+        // `ONLY_STATIONARY.len() + ONLY_IDENTITY_REPUBLISH.len() +
+        // ONLY_PROGRESSION.len() == VARIANTS.len()` at the slice
+        // altitude on the consistency-half kind axis's identity
+        // projection. Ternary peer of
+        // `same_store_impossibility_kind_identity_slices_partition_variants`
+        // (commit `273ec6c`) on the impossibility half, one cell wider,
+        // and of `diff_line_kind_ternary_slices_partition_all` (commit
+        // `7ea710e`). A variant landing on two slices or on none breaks
+        // the partition here before any consumer that reasons about the
+        // polarity as a covering meta-partition observes the drift.
+        for k in SameStoreConsistencyKind::ONLY_STATIONARY {
+            assert!(
+                !SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.contains(k),
+                "SameStoreConsistencyKind::{k:?} appears in BOTH ONLY_STATIONARY and ONLY_IDENTITY_REPUBLISH",
+            );
+            assert!(
+                !SameStoreConsistencyKind::ONLY_PROGRESSION.contains(k),
+                "SameStoreConsistencyKind::{k:?} appears in BOTH ONLY_STATIONARY and ONLY_PROGRESSION",
+            );
+        }
+        for k in SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH {
+            assert!(
+                !SameStoreConsistencyKind::ONLY_PROGRESSION.contains(k),
+                "SameStoreConsistencyKind::{k:?} appears in BOTH ONLY_IDENTITY_REPUBLISH and ONLY_PROGRESSION",
+            );
+        }
+        for k in SameStoreConsistencyKind::VARIANTS {
+            let in_stationary = SameStoreConsistencyKind::ONLY_STATIONARY.contains(k);
+            let in_identity_republish =
+                SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.contains(k);
+            let in_progression = SameStoreConsistencyKind::ONLY_PROGRESSION.contains(k);
+            let held = usize::from(in_stationary)
+                + usize::from(in_identity_republish)
+                + usize::from(in_progression);
+            assert_eq!(
+                held, 1,
+                "SameStoreConsistencyKind::{k:?} must appear in exactly one of \
+                 ONLY_STATIONARY / ONLY_IDENTITY_REPUBLISH / ONLY_PROGRESSION (found in {held})",
+            );
+        }
+        assert_eq!(
+            SameStoreConsistencyKind::ONLY_STATIONARY.len()
+                + SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.len()
+                + SameStoreConsistencyKind::ONLY_PROGRESSION.len(),
+            SameStoreConsistencyKind::VARIANTS.len(),
+            "ONLY_STATIONARY + ONLY_IDENTITY_REPUBLISH + ONLY_PROGRESSION slice lengths must sum to VARIANTS.len()",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slices_preserve_variants_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SameStoreConsistencyKind::VARIANTS — i.e., the slice
+        // equals `VARIANTS.iter().filter(polarity).collect()` pointwise.
+        // A future edit that permuted any pole (impossible for singleton
+        // halves today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Ternary peer of
+        // `same_store_impossibility_kind_identity_slices_preserve_variants_order`
+        // (commit `273ec6c`) on the impossibility half, one cell wider.
+        let stationary_from_variants: Vec<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::VARIANTS
+                .iter()
+                .copied()
+                .filter(SameStoreConsistencyKind::is_stationary)
+                .collect();
+        assert_eq!(
+            stationary_from_variants,
+            SameStoreConsistencyKind::ONLY_STATIONARY.to_vec(),
+            "ONLY_STATIONARY must be VARIANTS-filtered by is_stationary in declaration order",
+        );
+        let identity_republish_from_variants: Vec<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::VARIANTS
+                .iter()
+                .copied()
+                .filter(SameStoreConsistencyKind::is_identity_republish)
+                .collect();
+        assert_eq!(
+            identity_republish_from_variants,
+            SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.to_vec(),
+            "ONLY_IDENTITY_REPUBLISH must be VARIANTS-filtered by is_identity_republish in declaration order",
+        );
+        let progression_from_variants: Vec<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::VARIANTS
+                .iter()
+                .copied()
+                .filter(SameStoreConsistencyKind::is_progression)
+                .collect();
+        assert_eq!(
+            progression_from_variants,
+            SameStoreConsistencyKind::ONLY_PROGRESSION.to_vec(),
+            "ONLY_PROGRESSION must be VARIANTS-filtered by is_progression in declaration order",
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-listed a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        // Ternary peer of
+        // `same_store_impossibility_kind_identity_slices_have_no_duplicates`
+        // (commit `273ec6c`) on the impossibility half, one cell wider.
+        for slice in [
+            SameStoreConsistencyKind::ONLY_STATIONARY,
+            SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH,
+            SameStoreConsistencyKind::ONLY_PROGRESSION,
+        ] {
+            let mut seen: Vec<SameStoreConsistencyKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SameStoreConsistencyKind identity slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SameStoreConsistencyKind::VARIANTS
+        // — i.e., `ONLY_STATIONARY.len() ==
+        // VARIANTS.iter().filter(is_stationary).count()` (and symmetric
+        // for the two siblings) — the cardinality projection at the
+        // slice altitude agrees with the boolean-altitude projection on
+        // all three halves. Concrete positions today: 1 stationary +
+        // 1 identity_republish + 1 progression = 3 = VARIANTS.
+        // Ternary peer of
+        // `same_store_impossibility_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `273ec6c`) on the impossibility half, one cell wider.
+        let stationary_count = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_stationary)
+            .count();
+        let identity_republish_count = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_identity_republish)
+            .count();
+        let progression_count = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreConsistencyKind::is_progression)
+            .count();
+        assert_eq!(
+            SameStoreConsistencyKind::ONLY_STATIONARY.len(),
+            stationary_count,
+            "ONLY_STATIONARY.len() must match the is_stationary count on VARIANTS",
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.len(),
+            identity_republish_count,
+            "ONLY_IDENTITY_REPUBLISH.len() must match the is_identity_republish count on VARIANTS",
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::ONLY_PROGRESSION.len(),
+            progression_count,
+            "ONLY_PROGRESSION.len() must match the is_progression count on VARIANTS",
+        );
+        assert_eq!(SameStoreConsistencyKind::ONLY_STATIONARY.len(), 1);
+        assert_eq!(SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.len(), 1);
+        assert_eq!(SameStoreConsistencyKind::ONLY_PROGRESSION.len(), 1);
+        assert_eq!(SameStoreConsistencyKind::VARIANTS.len(), 3);
+    }
+
+    #[test]
+    fn same_store_consistency_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `same_store_impossibility_kind_identity_slices_are_const_addressable`
+        // (commit `273ec6c`) on the impossibility half, one cell wider.
+        const ONLY_STATIONARY_LEN: usize = SameStoreConsistencyKind::ONLY_STATIONARY.len();
+        const ONLY_IDENTITY_REPUBLISH_LEN: usize =
+            SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH.len();
+        const ONLY_PROGRESSION_LEN: usize = SameStoreConsistencyKind::ONLY_PROGRESSION.len();
+        const VARIANTS_LEN: usize = SameStoreConsistencyKind::VARIANTS.len();
+        assert_eq!(ONLY_STATIONARY_LEN, 1);
+        assert_eq!(ONLY_IDENTITY_REPUBLISH_LEN, 1);
+        assert_eq!(ONLY_PROGRESSION_LEN, 1);
+        assert_eq!(
+            ONLY_STATIONARY_LEN + ONLY_IDENTITY_REPUBLISH_LEN + ONLY_PROGRESSION_LEN,
+            VARIANTS_LEN,
+        );
     }
 
     #[test]
