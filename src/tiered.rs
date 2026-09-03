@@ -22861,6 +22861,110 @@ impl DiffLineKind {
     /// `cube::tests`) catches drift before silent dropouts.
     pub const ALL: &'static [Self] = &[Self::Removed, Self::Added, Self::Context];
 
+    /// The single `ONLY_REMOVED` [`DiffLineKind`] variant —
+    /// [`Self::Removed`] (a line present in the baseline and absent in
+    /// the candidate; rendered with the canonical unified-diff `-`
+    /// prefix per [`Self::glyph`]) — in the SAME relative declaration
+    /// order it occupies in [`Self::ALL`], carrying the
+    /// *removed-identity* pole of the (removed × added × context)
+    /// 1/1/1 identity meta-partition at the primitive's OWN altitude
+    /// on the diff-cell axis, mirroring the shipped boolean predicate
+    /// [`Self::is_removed`] one altitude down: the sole variant in
+    /// this slice satisfies `k.is_removed()`, and no variant outside
+    /// it does.
+    ///
+    /// Paired with [`Self::ONLY_ADDED`] and [`Self::ONLY_CONTEXT`],
+    /// the three disjoint singleton slices partition [`Self::ALL`] at
+    /// the static-slice altitude the same way the shipped boolean
+    /// predicates [`Self::is_removed`] / [`Self::is_added`] /
+    /// [`Self::is_context`] meta-partition it at the boolean altitude
+    /// (per [`tests::diff_line_kind_agrees_with_predicates_pointwise`]).
+    /// The three constants sit in the same `impl DiffLineKind` block
+    /// as [`Self::ALL`], and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_removed`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// Ternary peer of the shipped ternary
+    /// [`crate::WatchEventClass::ONLY_RELOAD`] /
+    /// [`crate::WatchEventClass::ONLY_REMOVED`] /
+    /// [`crate::WatchEventClass::ONLY_IGNORED`] (commit `9e5ea18`, the
+    /// first landing of the per-half meta-partition slice-constant
+    /// discipline on a `watcher.rs`-scoped closed-primitive axis, on
+    /// the reload-relevance axis's (reload × removed × ignored) 1/1/1
+    /// identity projection), the ternary
+    /// [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::ONLY_ENV`] /
+    /// [`crate::ConfigSourceKind::ONLY_FILE`] (commit `f287239`) on
+    /// the shikumi-side layer-kind axis, and the ternary
+    /// [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`) on the
+    /// figment-side kind axis. The per-half meta-partition
+    /// slice-constant discipline applied here to the three-way
+    /// diff-cell axis's ternary (removed × added × context) 1/1/1
+    /// identity meta-partition, closing the FIRST landing of the
+    /// discipline on a `tiered.rs`-scoped closed-primitive axis.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_REMOVED.iter().all(|k| k.is_removed())`,
+    /// `!ONLY_REMOVED.iter().any(|k| k.is_added())`,
+    /// `!ONLY_REMOVED.iter().any(|k| k.is_context())`, and the
+    /// symmetric laws on [`Self::ONLY_ADDED`] and
+    /// [`Self::ONLY_CONTEXT`]) are pinned by
+    /// [`tests::diff_line_kind_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::diff_line_kind_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::diff_line_kind_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::diff_line_kind_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::diff_line_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::diff_line_kind_ternary_slices_are_const_addressable`].
+    pub const ONLY_REMOVED: &'static [Self] = &[Self::Removed];
+
+    /// The single `ONLY_ADDED` [`DiffLineKind`] variant —
+    /// [`Self::Added`] (a line absent in the baseline and present in
+    /// the candidate; rendered with the canonical unified-diff `+`
+    /// prefix per [`Self::glyph`]) — carrying the *added-identity*
+    /// pole of the (removed × added × context) 1/1/1 identity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// diff-cell axis, mirroring the shipped boolean predicate
+    /// [`Self::is_added`] one altitude down.
+    ///
+    /// See [`Self::ONLY_REMOVED`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_added`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_ADDED: &'static [Self] = &[Self::Added];
+
+    /// The single `ONLY_CONTEXT` [`DiffLineKind`] variant —
+    /// [`Self::Context`] (a line identical in both sides; rendered
+    /// with the canonical unified-diff ` ` (space) prefix per
+    /// [`Self::glyph`]) — carrying the *context-identity* pole of
+    /// the (removed × added × context) 1/1/1 identity meta-partition
+    /// at the primitive's OWN altitude on the diff-cell axis,
+    /// mirroring the shipped boolean predicate [`Self::is_context`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_REMOVED`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_context`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_CONTEXT: &'static [Self] = &[Self::Context];
+
     /// Canonical operator-facing lowercase name of the diff-line kind —
     /// `"removed"`, `"added"`, or `"context"`.
     ///
@@ -32283,6 +32387,278 @@ mod tests {
         assert_eq!(DiffLineKind::Removed.glyph(), '-');
         assert_eq!(DiffLineKind::Added.glyph(), '+');
         assert_eq!(DiffLineKind::Context.glyph(), ' ');
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way weld pin between the per-half slice literals and
+        // the shipped boolean predicates on the diff-cell axis's
+        // (removed × added × context) 1/1/1 identity meta-partition.
+        // For every entry in each `ONLY_*` slice: the positive-pole
+        // predicate holds and the two negative-pole predicates do not,
+        // plus ALL-membership agreement between the slice `.contains()`
+        // and the boolean predicate across all three poles. Ternary
+        // peer of
+        // `watch_event_class_ternary_slices_agree_with_ternary_predicates`
+        // (`9e5ea18`) on the watcher-side reload-relevance axis,
+        // `config_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`f287239`) on the shikumi-side layer-kind axis, and
+        // `figment_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`723060b`) on the figment-side kind axis.
+        for k in DiffLineKind::ONLY_REMOVED.iter().copied() {
+            assert!(
+                k.is_removed(),
+                "DiffLineKind::ONLY_REMOVED entry {k:?} must satisfy is_removed()",
+            );
+            assert!(
+                !k.is_added(),
+                "DiffLineKind::ONLY_REMOVED entry {k:?} must NOT satisfy is_added()",
+            );
+            assert!(
+                !k.is_context(),
+                "DiffLineKind::ONLY_REMOVED entry {k:?} must NOT satisfy is_context()",
+            );
+        }
+        for k in DiffLineKind::ONLY_ADDED.iter().copied() {
+            assert!(
+                k.is_added(),
+                "DiffLineKind::ONLY_ADDED entry {k:?} must satisfy is_added()",
+            );
+            assert!(
+                !k.is_removed(),
+                "DiffLineKind::ONLY_ADDED entry {k:?} must NOT satisfy is_removed()",
+            );
+            assert!(
+                !k.is_context(),
+                "DiffLineKind::ONLY_ADDED entry {k:?} must NOT satisfy is_context()",
+            );
+        }
+        for k in DiffLineKind::ONLY_CONTEXT.iter().copied() {
+            assert!(
+                k.is_context(),
+                "DiffLineKind::ONLY_CONTEXT entry {k:?} must satisfy is_context()",
+            );
+            assert!(
+                !k.is_removed(),
+                "DiffLineKind::ONLY_CONTEXT entry {k:?} must NOT satisfy is_removed()",
+            );
+            assert!(
+                !k.is_added(),
+                "DiffLineKind::ONLY_CONTEXT entry {k:?} must NOT satisfy is_added()",
+            );
+        }
+        for k in DiffLineKind::ALL.iter().copied() {
+            assert_eq!(
+                DiffLineKind::ONLY_REMOVED.contains(&k),
+                k.is_removed(),
+                "ONLY_REMOVED membership must agree with is_removed() on \
+                 DiffLineKind::{k:?}",
+            );
+            assert_eq!(
+                DiffLineKind::ONLY_ADDED.contains(&k),
+                k.is_added(),
+                "ONLY_ADDED membership must agree with is_added() on \
+                 DiffLineKind::{k:?}",
+            );
+            assert_eq!(
+                DiffLineKind::ONLY_CONTEXT.contains(&k),
+                k.is_context(),
+                "ONLY_CONTEXT membership must agree with is_context() on \
+                 DiffLineKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_REMOVED.len() + ONLY_ADDED.len() + ONLY_CONTEXT.len()
+        // == ALL.len()` at the slice altitude on the diff-cell axis's
+        // identity projection. Ternary peer of
+        // `watch_event_class_ternary_slices_partition_all` (`9e5ea18`)
+        // and slice-altitude peer of the trio-predicate agreement pin
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in DiffLineKind::ONLY_REMOVED {
+            assert!(
+                !DiffLineKind::ONLY_ADDED.contains(k),
+                "DiffLineKind::{k:?} appears in BOTH ONLY_REMOVED and ONLY_ADDED",
+            );
+            assert!(
+                !DiffLineKind::ONLY_CONTEXT.contains(k),
+                "DiffLineKind::{k:?} appears in BOTH ONLY_REMOVED and ONLY_CONTEXT",
+            );
+        }
+        for k in DiffLineKind::ONLY_ADDED {
+            assert!(
+                !DiffLineKind::ONLY_CONTEXT.contains(k),
+                "DiffLineKind::{k:?} appears in BOTH ONLY_ADDED and ONLY_CONTEXT",
+            );
+        }
+        for k in DiffLineKind::ALL {
+            let in_removed = DiffLineKind::ONLY_REMOVED.contains(k);
+            let in_added = DiffLineKind::ONLY_ADDED.contains(k);
+            let in_context = DiffLineKind::ONLY_CONTEXT.contains(k);
+            let held = usize::from(in_removed) + usize::from(in_added) + usize::from(in_context);
+            assert_eq!(
+                held, 1,
+                "DiffLineKind::{k:?} must appear in exactly one of ONLY_REMOVED / \
+                 ONLY_ADDED / ONLY_CONTEXT (found in {held})",
+            );
+        }
+        assert_eq!(
+            DiffLineKind::ONLY_REMOVED.len()
+                + DiffLineKind::ONLY_ADDED.len()
+                + DiffLineKind::ONLY_CONTEXT.len(),
+            DiffLineKind::ALL.len(),
+            "ONLY_REMOVED + ONLY_ADDED + ONLY_CONTEXT slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in DiffLineKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Ternary peer of
+        // `watch_event_class_ternary_slices_preserve_all_order`
+        // (`9e5ea18`).
+        let removed_from_all: Vec<DiffLineKind> = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_removed())
+            .collect();
+        assert_eq!(
+            removed_from_all,
+            DiffLineKind::ONLY_REMOVED.to_vec(),
+            "ONLY_REMOVED must be ALL-filtered by is_removed in declaration order",
+        );
+        let added_from_all: Vec<DiffLineKind> = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_added())
+            .collect();
+        assert_eq!(
+            added_from_all,
+            DiffLineKind::ONLY_ADDED.to_vec(),
+            "ONLY_ADDED must be ALL-filtered by is_added in declaration order",
+        );
+        let context_from_all: Vec<DiffLineKind> = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_context())
+            .collect();
+        assert_eq!(
+            context_from_all,
+            DiffLineKind::ONLY_CONTEXT.to_vec(),
+            "ONLY_CONTEXT must be ALL-filtered by is_context in declaration order",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Ternary peer of
+        // `watch_event_class_ternary_slices_have_no_duplicates`
+        // (`9e5ea18`).
+        for slice in [
+            DiffLineKind::ONLY_REMOVED,
+            DiffLineKind::ONLY_ADDED,
+            DiffLineKind::ONLY_CONTEXT,
+        ] {
+            let mut seen: Vec<DiffLineKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "DiffLineKind ternary slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on DiffLineKind::ALL — i.e.,
+        // `ONLY_REMOVED.len() == ALL.iter().filter(is_removed).count()`
+        // (and symmetric for the two siblings) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on all three halves. Concrete
+        // positions today: 1 removed + 1 added + 1 context = 3 = ALL.
+        // Ternary peer of
+        // `watch_event_class_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`9e5ea18`).
+        let removed_count = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_removed())
+            .count();
+        let added_count = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_added())
+            .count();
+        let context_count = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_context())
+            .count();
+        assert_eq!(
+            DiffLineKind::ONLY_REMOVED.len(),
+            removed_count,
+            "ONLY_REMOVED.len() must match the is_removed count on ALL",
+        );
+        assert_eq!(
+            DiffLineKind::ONLY_ADDED.len(),
+            added_count,
+            "ONLY_ADDED.len() must match the is_added count on ALL",
+        );
+        assert_eq!(
+            DiffLineKind::ONLY_CONTEXT.len(),
+            context_count,
+            "ONLY_CONTEXT.len() must match the is_context count on ALL",
+        );
+        assert_eq!(DiffLineKind::ONLY_REMOVED.len(), 1);
+        assert_eq!(DiffLineKind::ONLY_ADDED.len(), 1);
+        assert_eq!(DiffLineKind::ONLY_CONTEXT.len(), 1);
+        assert_eq!(DiffLineKind::ALL.len(), 3);
+    }
+
+    #[test]
+    fn diff_line_kind_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `watch_event_class_ternary_slices_are_const_addressable`
+        // (`9e5ea18`).
+        const ONLY_REMOVED_LEN: usize = DiffLineKind::ONLY_REMOVED.len();
+        const ONLY_ADDED_LEN: usize = DiffLineKind::ONLY_ADDED.len();
+        const ONLY_CONTEXT_LEN: usize = DiffLineKind::ONLY_CONTEXT.len();
+        const ALL_LEN: usize = DiffLineKind::ALL.len();
+        assert_eq!(ONLY_REMOVED_LEN, 1);
+        assert_eq!(ONLY_ADDED_LEN, 1);
+        assert_eq!(ONLY_CONTEXT_LEN, 1);
+        assert_eq!(
+            ONLY_REMOVED_LEN + ONLY_ADDED_LEN + ONLY_CONTEXT_LEN,
+            ALL_LEN
+        );
     }
 
     #[test]
