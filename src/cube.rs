@@ -1232,6 +1232,144 @@ impl SupportCardinalityClass {
         Self::FullCover,
     ];
 
+    /// The single `ONLY_EMPTY` [`SupportCardinalityClass`] variant —
+    /// [`Self::Empty`] (`distinct_cells() == 0`, the empty-histogram
+    /// boundary) — carrying the *empty-identity* pole of the
+    /// (empty × singular-support × strict-partial-cover × singular-gap ×
+    /// full-cover) 1/1/1/1/1 identity meta-partition at the primitive's
+    /// OWN altitude on the support-cardinality five-corner axis,
+    /// mirroring the shipped boolean predicate [`Self::is_empty`] one
+    /// altitude down.
+    ///
+    /// First **quinary** landing of the per-half meta-partition
+    /// slice-constant discipline on a `cube.rs`-scoped closed-primitive
+    /// axis, and the first quinary landing anywhere in the crate — the
+    /// prior quaternary landing
+    /// [`crate::ConfigTierKind::ONLY_BARE`] /
+    /// [`crate::ConfigTierKind::ONLY_DISCOVERED`] /
+    /// [`crate::ConfigTierKind::ONLY_DEFAULT`] /
+    /// [`crate::ConfigTierKind::ONLY_CUSTOM`] (commit `ff6492b`) on the
+    /// four-way sealed-fold tier-kind axis, the ternary siblings
+    /// [`SupportBoundaryDistance::ONLY_BOUNDARY`] /
+    /// [`SupportBoundaryDistance::ONLY_SINGULAR`] /
+    /// [`SupportBoundaryDistance::ONLY_STRICT_INTERIOR`] (commit
+    /// `b42b435`) and
+    /// [`SupportMagnitudeDirection::ONLY_LOW`] /
+    /// [`SupportMagnitudeDirection::ONLY_STRICT_INTERIOR`] /
+    /// [`SupportMagnitudeDirection::ONLY_HIGH`] (commit `4d47661`) on
+    /// the two orthogonal three-bucket peers of this same
+    /// support-cardinality scalar, all lift the same per-half
+    /// meta-partition slice-constant discipline applied here to the
+    /// five-way support-cardinality class axis's
+    /// (empty × singular-support × strict-partial-cover × singular-gap
+    /// × full-cover) 1/1/1/1/1 identity meta-partition, closing the
+    /// FIRST quinary landing of the discipline.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the boolean predicate at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// The five-way agreement laws
+    /// (`ONLY_EMPTY.iter().all(|k| k.is_empty())`, and the four
+    /// negative-pole exclusions on each half, and the symmetric laws on
+    /// [`Self::ONLY_SINGULAR_SUPPORT`],
+    /// [`Self::ONLY_STRICT_PARTIAL_COVER`],
+    /// [`Self::ONLY_SINGULAR_GAP`], and [`Self::ONLY_FULL_COVER`]) are
+    /// pinned by
+    /// [`tests::support_cardinality_class_identity_slices_agree_with_identity_predicates`].
+    /// Quinary partition invariant across all five siblings:
+    /// [`tests::support_cardinality_class_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::support_cardinality_class_identity_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::support_cardinality_class_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::support_cardinality_class_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::support_cardinality_class_identity_slices_are_const_addressable`].
+    pub const ONLY_EMPTY: &'static [Self] = &[Self::Empty];
+
+    /// The single `ONLY_SINGULAR_SUPPORT` [`SupportCardinalityClass`]
+    /// variant — [`Self::SingularSupport`] (`distinct_cells() == 1`,
+    /// the bottom singular boundary of the support-cardinality
+    /// interval) — carrying the *singular-support-identity* pole of the
+    /// (empty × singular-support × strict-partial-cover × singular-gap
+    /// × full-cover) 1/1/1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the support-cardinality five-corner
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_singular_support`] one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_singular_support`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_SINGULAR_SUPPORT: &'static [Self] = &[Self::SingularSupport];
+
+    /// The single `ONLY_STRICT_PARTIAL_COVER`
+    /// [`SupportCardinalityClass`] variant —
+    /// [`Self::StrictPartialCover`]
+    /// (`2 <= distinct_cells() <= axis_cardinality::<A>() - 2`, the
+    /// strict interior of the support-cardinality interval; only
+    /// reachable on cardinality-`>= 4` axes, vacuously absent on
+    /// cardinality-`<= 3` axes) — carrying the
+    /// *strict-partial-cover-identity* pole of the (empty ×
+    /// singular-support × strict-partial-cover × singular-gap ×
+    /// full-cover) 1/1/1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the support-cardinality five-corner
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_strict_partial_cover`] one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_strict_partial_cover`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_STRICT_PARTIAL_COVER: &'static [Self] = &[Self::StrictPartialCover];
+
+    /// The single `ONLY_SINGULAR_GAP` [`SupportCardinalityClass`]
+    /// variant — [`Self::SingularGap`]
+    /// (`distinct_cells() == axis_cardinality::<A>() - 1`, the top
+    /// singular boundary of the support-cardinality interval; only
+    /// reachable on cardinality-`>= 3` axes, collapses onto
+    /// [`Self::SingularSupport`] on cardinality 2, unreachable on
+    /// cardinality `<= 1`) — carrying the *singular-gap-identity* pole
+    /// of the (empty × singular-support × strict-partial-cover ×
+    /// singular-gap × full-cover) 1/1/1/1/1 identity meta-partition at
+    /// the primitive's OWN altitude on the support-cardinality
+    /// five-corner axis, mirroring the shipped boolean predicate
+    /// [`Self::is_singular_gap`] one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_singular_gap`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_SINGULAR_GAP: &'static [Self] = &[Self::SingularGap];
+
+    /// The single `ONLY_FULL_COVER` [`SupportCardinalityClass`]
+    /// variant — [`Self::FullCover`]
+    /// (`distinct_cells() == axis_cardinality::<A>()`, the full-cover
+    /// boundary) — carrying the *full-cover-identity* pole of the
+    /// (empty × singular-support × strict-partial-cover × singular-gap
+    /// × full-cover) 1/1/1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the support-cardinality five-corner
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_full_cover`] one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_full_cover`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_FULL_COVER: &'static [Self] = &[Self::FullCover];
+
     /// `true` exactly on [`Self::Empty`] — the enum-level peer of
     /// [`AxisHistogram::is_empty`] projected from the variant tag.
     #[must_use]
@@ -46717,6 +46855,468 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (empty × singular-support ×
+        // strict-partial-cover × singular-gap × full-cover) identity
+        // meta-partition. Every ONLY_EMPTY entry satisfies is_empty and
+        // none of the four other pole predicates; every
+        // ONLY_SINGULAR_SUPPORT entry satisfies is_singular_support
+        // alone; every ONLY_STRICT_PARTIAL_COVER entry satisfies
+        // is_strict_partial_cover alone; every ONLY_SINGULAR_GAP entry
+        // satisfies is_singular_gap alone; every ONLY_FULL_COVER entry
+        // satisfies is_full_cover alone. Every
+        // SupportCardinalityClass::ALL cell agrees on membership under
+        // each of the five boolean predicates. The two independent
+        // declaration surfaces (slice literals + boolean predicates)
+        // diverge at THIS pin on the first shape where they disagree,
+        // before a consumer that reads one altitude but not the other
+        // can observe the drift. Quinary peer of the quaternary
+        // `config_tier_kind_identity_slices_agree_with_identity_predicates`
+        // (`ff6492b`) on the sealed-fold tier-kind axis and the ternary
+        // `support_boundary_distance_ternary_slices_agree_with_ternary_predicates`
+        // (`b42b435`) on the orthogonal distance-from-boundary bucket
+        // peer of this same support-cardinality scalar.
+        for k in SupportCardinalityClass::ONLY_EMPTY.iter().copied() {
+            assert!(
+                k.is_empty(),
+                "SupportCardinalityClass::ONLY_EMPTY entry {k:?} must satisfy is_empty()",
+            );
+            assert!(
+                !k.is_singular_support(),
+                "SupportCardinalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_singular_support()",
+            );
+            assert!(
+                !k.is_strict_partial_cover(),
+                "SupportCardinalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_strict_partial_cover()",
+            );
+            assert!(
+                !k.is_singular_gap(),
+                "SupportCardinalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_singular_gap()",
+            );
+            assert!(
+                !k.is_full_cover(),
+                "SupportCardinalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_full_cover()",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_SINGULAR_SUPPORT
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_singular_support(),
+                "SupportCardinalityClass::ONLY_SINGULAR_SUPPORT entry {k:?} must satisfy is_singular_support()",
+            );
+            assert!(
+                !k.is_empty(),
+                "SupportCardinalityClass::ONLY_SINGULAR_SUPPORT entry {k:?} must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_strict_partial_cover(),
+                "SupportCardinalityClass::ONLY_SINGULAR_SUPPORT entry {k:?} must NOT satisfy is_strict_partial_cover()",
+            );
+            assert!(
+                !k.is_singular_gap(),
+                "SupportCardinalityClass::ONLY_SINGULAR_SUPPORT entry {k:?} must NOT satisfy is_singular_gap()",
+            );
+            assert!(
+                !k.is_full_cover(),
+                "SupportCardinalityClass::ONLY_SINGULAR_SUPPORT entry {k:?} must NOT satisfy is_full_cover()",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_strict_partial_cover(),
+                "SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER entry {k:?} must satisfy is_strict_partial_cover()",
+            );
+            assert!(
+                !k.is_empty(),
+                "SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER entry {k:?} must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_singular_support(),
+                "SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER entry {k:?} must NOT satisfy is_singular_support()",
+            );
+            assert!(
+                !k.is_singular_gap(),
+                "SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER entry {k:?} must NOT satisfy is_singular_gap()",
+            );
+            assert!(
+                !k.is_full_cover(),
+                "SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER entry {k:?} must NOT satisfy is_full_cover()",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_SINGULAR_GAP.iter().copied() {
+            assert!(
+                k.is_singular_gap(),
+                "SupportCardinalityClass::ONLY_SINGULAR_GAP entry {k:?} must satisfy is_singular_gap()",
+            );
+            assert!(
+                !k.is_empty(),
+                "SupportCardinalityClass::ONLY_SINGULAR_GAP entry {k:?} must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_singular_support(),
+                "SupportCardinalityClass::ONLY_SINGULAR_GAP entry {k:?} must NOT satisfy is_singular_support()",
+            );
+            assert!(
+                !k.is_strict_partial_cover(),
+                "SupportCardinalityClass::ONLY_SINGULAR_GAP entry {k:?} must NOT satisfy is_strict_partial_cover()",
+            );
+            assert!(
+                !k.is_full_cover(),
+                "SupportCardinalityClass::ONLY_SINGULAR_GAP entry {k:?} must NOT satisfy is_full_cover()",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_FULL_COVER.iter().copied() {
+            assert!(
+                k.is_full_cover(),
+                "SupportCardinalityClass::ONLY_FULL_COVER entry {k:?} must satisfy is_full_cover()",
+            );
+            assert!(
+                !k.is_empty(),
+                "SupportCardinalityClass::ONLY_FULL_COVER entry {k:?} must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_singular_support(),
+                "SupportCardinalityClass::ONLY_FULL_COVER entry {k:?} must NOT satisfy is_singular_support()",
+            );
+            assert!(
+                !k.is_strict_partial_cover(),
+                "SupportCardinalityClass::ONLY_FULL_COVER entry {k:?} must NOT satisfy is_strict_partial_cover()",
+            );
+            assert!(
+                !k.is_singular_gap(),
+                "SupportCardinalityClass::ONLY_FULL_COVER entry {k:?} must NOT satisfy is_singular_gap()",
+            );
+        }
+        for k in SupportCardinalityClass::ALL.iter().copied() {
+            assert_eq!(
+                SupportCardinalityClass::ONLY_EMPTY.contains(&k),
+                k.is_empty(),
+                "ONLY_EMPTY membership must agree with is_empty() on \
+                 SupportCardinalityClass::{k:?}",
+            );
+            assert_eq!(
+                SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.contains(&k),
+                k.is_singular_support(),
+                "ONLY_SINGULAR_SUPPORT membership must agree with is_singular_support() on \
+                 SupportCardinalityClass::{k:?}",
+            );
+            assert_eq!(
+                SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.contains(&k),
+                k.is_strict_partial_cover(),
+                "ONLY_STRICT_PARTIAL_COVER membership must agree with is_strict_partial_cover() on \
+                 SupportCardinalityClass::{k:?}",
+            );
+            assert_eq!(
+                SupportCardinalityClass::ONLY_SINGULAR_GAP.contains(&k),
+                k.is_singular_gap(),
+                "ONLY_SINGULAR_GAP membership must agree with is_singular_gap() on \
+                 SupportCardinalityClass::{k:?}",
+            );
+            assert_eq!(
+                SupportCardinalityClass::ONLY_FULL_COVER.contains(&k),
+                k.is_full_cover(),
+                "ONLY_FULL_COVER membership must agree with is_full_cover() on \
+                 SupportCardinalityClass::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_EMPTY.len() + ONLY_SINGULAR_SUPPORT.len() +
+        // ONLY_STRICT_PARTIAL_COVER.len() + ONLY_SINGULAR_GAP.len() +
+        // ONLY_FULL_COVER.len() == ALL.len()` at the slice altitude on
+        // the support-cardinality axis's identity projection. Quinary
+        // peer of `config_tier_kind_identity_slices_partition_all`
+        // (`ff6492b`) on the quaternary sealed-fold tier-kind axis. A
+        // variant landing on two slices or on none breaks the partition
+        // here before any consumer that reasons about the polarity as a
+        // covering meta-partition observes the drift.
+        for k in SupportCardinalityClass::ONLY_EMPTY {
+            assert!(
+                !SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_EMPTY and ONLY_SINGULAR_SUPPORT",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_EMPTY and ONLY_STRICT_PARTIAL_COVER",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_SINGULAR_GAP.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_EMPTY and ONLY_SINGULAR_GAP",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_FULL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_EMPTY and ONLY_FULL_COVER",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_SINGULAR_SUPPORT {
+            assert!(
+                !SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_SINGULAR_SUPPORT and ONLY_STRICT_PARTIAL_COVER",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_SINGULAR_GAP.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_SINGULAR_SUPPORT and ONLY_SINGULAR_GAP",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_FULL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_SINGULAR_SUPPORT and ONLY_FULL_COVER",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER {
+            assert!(
+                !SupportCardinalityClass::ONLY_SINGULAR_GAP.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_STRICT_PARTIAL_COVER and ONLY_SINGULAR_GAP",
+            );
+            assert!(
+                !SupportCardinalityClass::ONLY_FULL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_STRICT_PARTIAL_COVER and ONLY_FULL_COVER",
+            );
+        }
+        for k in SupportCardinalityClass::ONLY_SINGULAR_GAP {
+            assert!(
+                !SupportCardinalityClass::ONLY_FULL_COVER.contains(k),
+                "SupportCardinalityClass::{k:?} appears in BOTH ONLY_SINGULAR_GAP and ONLY_FULL_COVER",
+            );
+        }
+        for k in SupportCardinalityClass::ALL {
+            let in_empty = SupportCardinalityClass::ONLY_EMPTY.contains(k);
+            let in_singular_support = SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.contains(k);
+            let in_strict_partial_cover =
+                SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.contains(k);
+            let in_singular_gap = SupportCardinalityClass::ONLY_SINGULAR_GAP.contains(k);
+            let in_full_cover = SupportCardinalityClass::ONLY_FULL_COVER.contains(k);
+            let held = usize::from(in_empty)
+                + usize::from(in_singular_support)
+                + usize::from(in_strict_partial_cover)
+                + usize::from(in_singular_gap)
+                + usize::from(in_full_cover);
+            assert_eq!(
+                held, 1,
+                "SupportCardinalityClass::{k:?} must appear in exactly one of ONLY_EMPTY / \
+                 ONLY_SINGULAR_SUPPORT / ONLY_STRICT_PARTIAL_COVER / ONLY_SINGULAR_GAP / \
+                 ONLY_FULL_COVER (found in {held})",
+            );
+        }
+        assert_eq!(
+            SupportCardinalityClass::ONLY_EMPTY.len()
+                + SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.len()
+                + SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.len()
+                + SupportCardinalityClass::ONLY_SINGULAR_GAP.len()
+                + SupportCardinalityClass::ONLY_FULL_COVER.len(),
+            SupportCardinalityClass::ALL.len(),
+            "ONLY_EMPTY + ONLY_SINGULAR_SUPPORT + ONLY_STRICT_PARTIAL_COVER + \
+             ONLY_SINGULAR_GAP + ONLY_FULL_COVER slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SupportCardinalityClass::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Quinary peer of
+        // `config_tier_kind_identity_slices_preserve_all_order`
+        // (`ff6492b`) on the quaternary sealed-fold tier-kind axis.
+        let empty_from_all: Vec<SupportCardinalityClass> = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_empty())
+            .collect();
+        assert_eq!(
+            empty_from_all,
+            SupportCardinalityClass::ONLY_EMPTY.to_vec(),
+            "ONLY_EMPTY must be ALL-filtered by is_empty in declaration order",
+        );
+        let singular_support_from_all: Vec<SupportCardinalityClass> = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular_support())
+            .collect();
+        assert_eq!(
+            singular_support_from_all,
+            SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.to_vec(),
+            "ONLY_SINGULAR_SUPPORT must be ALL-filtered by is_singular_support in declaration order",
+        );
+        let strict_partial_cover_from_all: Vec<SupportCardinalityClass> =
+            SupportCardinalityClass::ALL
+                .iter()
+                .copied()
+                .filter(|k| k.is_strict_partial_cover())
+                .collect();
+        assert_eq!(
+            strict_partial_cover_from_all,
+            SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.to_vec(),
+            "ONLY_STRICT_PARTIAL_COVER must be ALL-filtered by is_strict_partial_cover in declaration order",
+        );
+        let singular_gap_from_all: Vec<SupportCardinalityClass> = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular_gap())
+            .collect();
+        assert_eq!(
+            singular_gap_from_all,
+            SupportCardinalityClass::ONLY_SINGULAR_GAP.to_vec(),
+            "ONLY_SINGULAR_GAP must be ALL-filtered by is_singular_gap in declaration order",
+        );
+        let full_cover_from_all: Vec<SupportCardinalityClass> = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_full_cover())
+            .collect();
+        assert_eq!(
+            full_cover_from_all,
+            SupportCardinalityClass::ONLY_FULL_COVER.to_vec(),
+            "ONLY_FULL_COVER must be ALL-filtered by is_full_cover in declaration order",
+        );
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Quinary peer of
+        // `config_tier_kind_identity_slices_have_no_duplicates`
+        // (`ff6492b`) on the quaternary sealed-fold tier-kind axis.
+        for slice in [
+            SupportCardinalityClass::ONLY_EMPTY,
+            SupportCardinalityClass::ONLY_SINGULAR_SUPPORT,
+            SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER,
+            SupportCardinalityClass::ONLY_SINGULAR_GAP,
+            SupportCardinalityClass::ONLY_FULL_COVER,
+        ] {
+            let mut seen: Vec<SupportCardinalityClass> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SupportCardinalityClass identity slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SupportCardinalityClass::ALL —
+        // i.e., `ONLY_EMPTY.len() == ALL.iter().filter(is_empty).count()`
+        // (and symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 empty + 1 singular-support + 1 strict-partial-cover
+        // + 1 singular-gap + 1 full-cover = 5 = ALL. Quinary peer of
+        // `config_tier_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`ff6492b`) on the quaternary sealed-fold tier-kind axis.
+        let empty_count = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_empty())
+            .count();
+        let singular_support_count = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular_support())
+            .count();
+        let strict_partial_cover_count = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_strict_partial_cover())
+            .count();
+        let singular_gap_count = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular_gap())
+            .count();
+        let full_cover_count = SupportCardinalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_full_cover())
+            .count();
+        assert_eq!(
+            SupportCardinalityClass::ONLY_EMPTY.len(),
+            empty_count,
+            "ONLY_EMPTY.len() must match the is_empty count on ALL",
+        );
+        assert_eq!(
+            SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.len(),
+            singular_support_count,
+            "ONLY_SINGULAR_SUPPORT.len() must match the is_singular_support count on ALL",
+        );
+        assert_eq!(
+            SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.len(),
+            strict_partial_cover_count,
+            "ONLY_STRICT_PARTIAL_COVER.len() must match the is_strict_partial_cover count on ALL",
+        );
+        assert_eq!(
+            SupportCardinalityClass::ONLY_SINGULAR_GAP.len(),
+            singular_gap_count,
+            "ONLY_SINGULAR_GAP.len() must match the is_singular_gap count on ALL",
+        );
+        assert_eq!(
+            SupportCardinalityClass::ONLY_FULL_COVER.len(),
+            full_cover_count,
+            "ONLY_FULL_COVER.len() must match the is_full_cover count on ALL",
+        );
+        assert_eq!(SupportCardinalityClass::ONLY_EMPTY.len(), 1);
+        assert_eq!(SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.len(), 1);
+        assert_eq!(SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.len(), 1);
+        assert_eq!(SupportCardinalityClass::ONLY_SINGULAR_GAP.len(), 1);
+        assert_eq!(SupportCardinalityClass::ONLY_FULL_COVER.len(), 1);
+        assert_eq!(SupportCardinalityClass::ALL.len(), 5);
+    }
+
+    #[test]
+    fn support_cardinality_class_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Quinary peer of
+        // `config_tier_kind_identity_slices_are_const_addressable`
+        // (`ff6492b`) on the quaternary sealed-fold tier-kind axis.
+        const ONLY_EMPTY_LEN: usize = SupportCardinalityClass::ONLY_EMPTY.len();
+        const ONLY_SINGULAR_SUPPORT_LEN: usize =
+            SupportCardinalityClass::ONLY_SINGULAR_SUPPORT.len();
+        const ONLY_STRICT_PARTIAL_COVER_LEN: usize =
+            SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER.len();
+        const ONLY_SINGULAR_GAP_LEN: usize = SupportCardinalityClass::ONLY_SINGULAR_GAP.len();
+        const ONLY_FULL_COVER_LEN: usize = SupportCardinalityClass::ONLY_FULL_COVER.len();
+        const ALL_LEN: usize = SupportCardinalityClass::ALL.len();
+        assert_eq!(ONLY_EMPTY_LEN, 1);
+        assert_eq!(ONLY_SINGULAR_SUPPORT_LEN, 1);
+        assert_eq!(ONLY_STRICT_PARTIAL_COVER_LEN, 1);
+        assert_eq!(ONLY_SINGULAR_GAP_LEN, 1);
+        assert_eq!(ONLY_FULL_COVER_LEN, 1);
+        assert_eq!(
+            ONLY_EMPTY_LEN
+                + ONLY_SINGULAR_SUPPORT_LEN
+                + ONLY_STRICT_PARTIAL_COVER_LEN
+                + ONLY_SINGULAR_GAP_LEN
+                + ONLY_FULL_COVER_LEN,
+            ALL_LEN,
+        );
     }
 
     #[test]
