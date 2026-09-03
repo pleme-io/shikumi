@@ -281,6 +281,102 @@ impl ConfigTierKind {
     /// partition pins.
     pub const CUSTOM: &'static [Self] = &[Self::Custom];
 
+    /// The [`Self::Bare`] pole of the four-way identity meta-partition
+    /// on the tier-kind axis at the static-slice altitude — the
+    /// singleton slice `&[Self::Bare]` mirroring the derived boolean
+    /// predicate [`Self::is_bare`] one altitude down.
+    ///
+    /// Fresh identity-partition constant rather than reusing the
+    /// existing binary (computed × custom) pole [`Self::COMPUTED`]:
+    /// the two partitions stay independent so a hypothetical fifth
+    /// computed-defaults variant (e.g. a `Runtime` tier kind emitting
+    /// per-tick reconciler-supplied values) grows the binary
+    /// [`Self::COMPUTED`] in lockstep with the `is_computed`-family
+    /// pole contract while [`Self::ONLY_BARE`] stays a singleton by
+    /// identity-partition definition — surfacing that divergence at
+    /// the declaration site the partition contract lives in, rather
+    /// than silently under a reused name.
+    ///
+    /// Idiom-peer of [`crate::ConfigSourceKind::ONLY_DEFAULTS`]
+    /// (commit `f287239`, the third ternary identity-partition landing
+    /// on a shikumi-native closed-primitive axis and the direct
+    /// sibling of this axis on the atomic `(tier, source)` pair one
+    /// primitive over), lifted here onto the four-way tier-kind axis
+    /// as the FIRST quaternary identity-partition landing of the
+    /// per-half meta-partition slice-constant discipline on a
+    /// shikumi-native closed-primitive axis.
+    ///
+    /// Paired with [`Self::ONLY_DISCOVERED`], [`Self::ONLY_DEFAULT`],
+    /// and [`Self::ONLY_CUSTOM`], the four disjoint singletons
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the derived boolean predicates [`Self::is_bare`] /
+    /// [`Self::is_discovered`] / [`Self::is_default`] /
+    /// [`Self::is_custom`] meta-partition it at the boolean altitude.
+    /// The four constants sit in the same `impl ConfigTierKind` block
+    /// as [`Self::ALL`], [`Self::COMPUTED`], and [`Self::CUSTOM`], and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Welded by
+    /// [`tests::config_tier_kind_identity_slices_agree_with_identity_predicates`],
+    /// [`tests::config_tier_kind_identity_slices_partition_all`],
+    /// [`tests::config_tier_kind_identity_slices_preserve_all_order`],
+    /// [`tests::config_tier_kind_identity_slices_have_no_duplicates`],
+    /// [`tests::config_tier_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`tests::config_tier_kind_identity_slices_are_const_addressable`].
+    pub const ONLY_BARE: &'static [Self] = &[Self::Bare];
+
+    /// The [`Self::Discovered`] pole of the four-way identity
+    /// meta-partition on the tier-kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Discovered]` mirroring
+    /// the derived boolean predicate [`Self::is_discovered`] one
+    /// altitude down.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract, the discipline
+    /// behind the fresh identity-partition constants (rather than
+    /// reusing [`Self::COMPUTED`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins the four `ONLY_*` singletons share.
+    pub const ONLY_DISCOVERED: &'static [Self] = &[Self::Discovered];
+
+    /// The [`Self::Default`] pole of the four-way identity
+    /// meta-partition on the tier-kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Default]` mirroring
+    /// the derived boolean predicate [`Self::is_default`] one altitude
+    /// down.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract, the discipline
+    /// behind the fresh identity-partition constants (rather than
+    /// reusing [`Self::COMPUTED`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins the four `ONLY_*` singletons share.
+    pub const ONLY_DEFAULT: &'static [Self] = &[Self::Default];
+
+    /// The [`Self::Custom`] pole of the four-way identity
+    /// meta-partition on the tier-kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Custom]` mirroring the
+    /// derived boolean predicate [`Self::is_custom`] one altitude
+    /// down.
+    ///
+    /// Today `ONLY_CUSTOM == CUSTOM == &[Self::Custom]` because both
+    /// project to the singleton at present, but the two constants
+    /// stay independent by construction: a hypothetical second
+    /// operator-supplied variant (a future `Overlay(Vec<PathBuf>)`
+    /// for a stack of YAML fragments, an `Injected(Dict)` for
+    /// programmatic overrides) grows the binary [`Self::CUSTOM`] in
+    /// lockstep with the `is_custom`-family pole contract while
+    /// [`Self::ONLY_CUSTOM`] stays a singleton by identity-partition
+    /// definition — surfacing that divergence at the declaration
+    /// site the partition contract lives in, rather than silently
+    /// under a reused name.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract and the load-
+    /// bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// four `ONLY_*` singletons share.
+    pub const ONLY_CUSTOM: &'static [Self] = &[Self::Custom];
+
     /// Canonical operator-facing lowercase name of the tier kind.
     ///
     /// The single source of truth for the four tier names; both
@@ -31568,6 +31664,378 @@ mod tests {
         assert_eq!(COMPUTED_LEN, 3);
         assert_eq!(CUSTOM_LEN, 1);
         assert_eq!(COMPUTED_LEN + CUSTOM_LEN, ALL_LEN);
+    }
+
+    // ── ConfigTierKind ONLY_* four-way identity meta-partition
+    //
+    // Static-slice altitude of the four-way (bare × discovered × default
+    // × custom) 1/1/1/1 identity meta-partition on the tier-kind axis.
+    // The four singleton slices `ONLY_BARE / ONLY_DISCOVERED /
+    // ONLY_DEFAULT / ONLY_CUSTOM` are the identity projection of the
+    // shipped derived boolean predicates `is_bare / is_discovered /
+    // is_default / is_custom` one altitude down.
+    //
+    // Idiom-peer of the six ternary identity-partition pins on
+    // `ConfigSourceKind::ONLY_DEFAULTS / ONLY_ENV / ONLY_FILE` at
+    // `config_source_kind_ternary_*` (`f287239`, the third ternary
+    // landing of the discipline on a shikumi-native closed-primitive
+    // axis and the direct sibling of this axis on the atomic
+    // `(tier, source)` pair one primitive over), lifted here onto the
+    // four-way tier-kind axis. FIRST quaternary landing of the per-half
+    // meta-partition slice-constant discipline on a shikumi-native
+    // closed-primitive axis — every prior identity-partition landing was
+    // ternary (three-way) or binary (two-way).
+
+    #[test]
+    fn config_tier_kind_identity_slices_agree_with_identity_predicates() {
+        // Four-way agreement pin across the (bare × discovered ×
+        // default × custom) identity meta-partition. Every ONLY_BARE
+        // entry satisfies is_bare and none of is_discovered /
+        // is_default / is_custom; every ONLY_DISCOVERED entry satisfies
+        // is_discovered alone; every ONLY_DEFAULT entry satisfies
+        // is_default alone; every ONLY_CUSTOM entry satisfies is_custom
+        // alone. Every ConfigTierKind::ALL cell agrees on membership
+        // under each of the four boolean predicates. The two
+        // independent declaration surfaces (slice literals + boolean
+        // predicates) diverge at THIS pin on the first shape where they
+        // disagree, before a consumer that reads one altitude but not
+        // the other can observe the drift. Quaternary peer of the
+        // ternary
+        // `config_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`f287239`) on the sibling source-kind axis of the atomic
+        // `(tier, source)` pair.
+        for k in ConfigTierKind::ONLY_BARE.iter().copied() {
+            assert!(
+                k.is_bare(),
+                "ConfigTierKind::ONLY_BARE entry {k:?} must satisfy is_bare()",
+            );
+            assert!(
+                !k.is_discovered(),
+                "ConfigTierKind::ONLY_BARE entry {k:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !k.is_default(),
+                "ConfigTierKind::ONLY_BARE entry {k:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !k.is_custom(),
+                "ConfigTierKind::ONLY_BARE entry {k:?} must NOT satisfy is_custom()",
+            );
+        }
+        for k in ConfigTierKind::ONLY_DISCOVERED.iter().copied() {
+            assert!(
+                k.is_discovered(),
+                "ConfigTierKind::ONLY_DISCOVERED entry {k:?} must satisfy is_discovered()",
+            );
+            assert!(
+                !k.is_bare(),
+                "ConfigTierKind::ONLY_DISCOVERED entry {k:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !k.is_default(),
+                "ConfigTierKind::ONLY_DISCOVERED entry {k:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !k.is_custom(),
+                "ConfigTierKind::ONLY_DISCOVERED entry {k:?} must NOT satisfy is_custom()",
+            );
+        }
+        for k in ConfigTierKind::ONLY_DEFAULT.iter().copied() {
+            assert!(
+                k.is_default(),
+                "ConfigTierKind::ONLY_DEFAULT entry {k:?} must satisfy is_default()",
+            );
+            assert!(
+                !k.is_bare(),
+                "ConfigTierKind::ONLY_DEFAULT entry {k:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !k.is_discovered(),
+                "ConfigTierKind::ONLY_DEFAULT entry {k:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !k.is_custom(),
+                "ConfigTierKind::ONLY_DEFAULT entry {k:?} must NOT satisfy is_custom()",
+            );
+        }
+        for k in ConfigTierKind::ONLY_CUSTOM.iter().copied() {
+            assert!(
+                k.is_custom(),
+                "ConfigTierKind::ONLY_CUSTOM entry {k:?} must satisfy is_custom()",
+            );
+            assert!(
+                !k.is_bare(),
+                "ConfigTierKind::ONLY_CUSTOM entry {k:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !k.is_discovered(),
+                "ConfigTierKind::ONLY_CUSTOM entry {k:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !k.is_default(),
+                "ConfigTierKind::ONLY_CUSTOM entry {k:?} must NOT satisfy is_default()",
+            );
+        }
+        for k in ConfigTierKind::ALL.iter().copied() {
+            assert_eq!(
+                ConfigTierKind::ONLY_BARE.contains(&k),
+                k.is_bare(),
+                "ONLY_BARE membership must agree with is_bare() on ConfigTierKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigTierKind::ONLY_DISCOVERED.contains(&k),
+                k.is_discovered(),
+                "ONLY_DISCOVERED membership must agree with is_discovered() on \
+                 ConfigTierKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigTierKind::ONLY_DEFAULT.contains(&k),
+                k.is_default(),
+                "ONLY_DEFAULT membership must agree with is_default() on \
+                 ConfigTierKind::{k:?}",
+            );
+            assert_eq!(
+                ConfigTierKind::ONLY_CUSTOM.contains(&k),
+                k.is_custom(),
+                "ONLY_CUSTOM membership must agree with is_custom() on \
+                 ConfigTierKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_identity_slices_partition_all() {
+        // Quaternary partition invariant: the four per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_BARE.len() + ONLY_DISCOVERED.len() + ONLY_DEFAULT.len()
+        // + ONLY_CUSTOM.len() == ALL.len()` at the slice altitude on
+        // the tier-kind axis's identity projection. Quaternary peer of
+        // `config_source_kind_ternary_slices_partition_all` (`f287239`)
+        // on the sibling source-kind axis. A variant landing on two
+        // slices or on none breaks the partition here before any
+        // consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        for k in ConfigTierKind::ONLY_BARE {
+            assert!(
+                !ConfigTierKind::ONLY_DISCOVERED.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_BARE and ONLY_DISCOVERED",
+            );
+            assert!(
+                !ConfigTierKind::ONLY_DEFAULT.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_BARE and ONLY_DEFAULT",
+            );
+            assert!(
+                !ConfigTierKind::ONLY_CUSTOM.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_BARE and ONLY_CUSTOM",
+            );
+        }
+        for k in ConfigTierKind::ONLY_DISCOVERED {
+            assert!(
+                !ConfigTierKind::ONLY_DEFAULT.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_DISCOVERED and ONLY_DEFAULT",
+            );
+            assert!(
+                !ConfigTierKind::ONLY_CUSTOM.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_DISCOVERED and ONLY_CUSTOM",
+            );
+        }
+        for k in ConfigTierKind::ONLY_DEFAULT {
+            assert!(
+                !ConfigTierKind::ONLY_CUSTOM.contains(k),
+                "ConfigTierKind::{k:?} appears in BOTH ONLY_DEFAULT and ONLY_CUSTOM",
+            );
+        }
+        for k in ConfigTierKind::ALL {
+            let in_bare = ConfigTierKind::ONLY_BARE.contains(k);
+            let in_discovered = ConfigTierKind::ONLY_DISCOVERED.contains(k);
+            let in_default = ConfigTierKind::ONLY_DEFAULT.contains(k);
+            let in_custom = ConfigTierKind::ONLY_CUSTOM.contains(k);
+            let held = usize::from(in_bare)
+                + usize::from(in_discovered)
+                + usize::from(in_default)
+                + usize::from(in_custom);
+            assert_eq!(
+                held, 1,
+                "ConfigTierKind::{k:?} must appear in exactly one of ONLY_BARE / \
+                 ONLY_DISCOVERED / ONLY_DEFAULT / ONLY_CUSTOM (found in {held})",
+            );
+        }
+        assert_eq!(
+            ConfigTierKind::ONLY_BARE.len()
+                + ConfigTierKind::ONLY_DISCOVERED.len()
+                + ConfigTierKind::ONLY_DEFAULT.len()
+                + ConfigTierKind::ONLY_CUSTOM.len(),
+            ConfigTierKind::ALL.len(),
+            "ONLY_BARE + ONLY_DISCOVERED + ONLY_DEFAULT + ONLY_CUSTOM slice lengths \
+             must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn config_tier_kind_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ConfigTierKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell future
+        // variant reshuffle on the same axis) diverges at THIS pin.
+        // Quaternary peer of
+        // `config_source_kind_ternary_slices_preserve_all_order`
+        // (`f287239`) on the sibling source-kind axis.
+        let bare_from_all: Vec<ConfigTierKind> = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_bare())
+            .collect();
+        assert_eq!(
+            bare_from_all,
+            ConfigTierKind::ONLY_BARE.to_vec(),
+            "ONLY_BARE must be ALL-filtered by is_bare in declaration order",
+        );
+        let discovered_from_all: Vec<ConfigTierKind> = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_discovered())
+            .collect();
+        assert_eq!(
+            discovered_from_all,
+            ConfigTierKind::ONLY_DISCOVERED.to_vec(),
+            "ONLY_DISCOVERED must be ALL-filtered by is_discovered in declaration order",
+        );
+        let default_from_all: Vec<ConfigTierKind> = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_default())
+            .collect();
+        assert_eq!(
+            default_from_all,
+            ConfigTierKind::ONLY_DEFAULT.to_vec(),
+            "ONLY_DEFAULT must be ALL-filtered by is_default in declaration order",
+        );
+        let custom_from_all: Vec<ConfigTierKind> = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_custom())
+            .collect();
+        assert_eq!(
+            custom_from_all,
+            ConfigTierKind::ONLY_CUSTOM.to_vec(),
+            "ONLY_CUSTOM must be ALL-filtered by is_custom in declaration order",
+        );
+    }
+
+    #[test]
+    fn config_tier_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all four per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Quaternary peer of
+        // `config_source_kind_ternary_slices_have_no_duplicates`
+        // (`f287239`) on the sibling source-kind axis.
+        for slice in [
+            ConfigTierKind::ONLY_BARE,
+            ConfigTierKind::ONLY_DISCOVERED,
+            ConfigTierKind::ONLY_DEFAULT,
+            ConfigTierKind::ONLY_CUSTOM,
+        ] {
+            let mut seen: Vec<ConfigTierKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ConfigTierKind identity slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ConfigTierKind::ALL — i.e.,
+        // `ONLY_BARE.len() == ALL.iter().filter(is_bare).count()` (and
+        // symmetric for the three siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all four halves. Concrete positions
+        // today: 1 bare + 1 discovered + 1 default + 1 custom = 4 =
+        // ALL. Quaternary peer of
+        // `config_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`f287239`) on the sibling source-kind axis.
+        let bare_count = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_bare())
+            .count();
+        let discovered_count = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_discovered())
+            .count();
+        let default_count = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_default())
+            .count();
+        let custom_count = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_custom())
+            .count();
+        assert_eq!(
+            ConfigTierKind::ONLY_BARE.len(),
+            bare_count,
+            "ONLY_BARE.len() must match the is_bare count on ALL",
+        );
+        assert_eq!(
+            ConfigTierKind::ONLY_DISCOVERED.len(),
+            discovered_count,
+            "ONLY_DISCOVERED.len() must match the is_discovered count on ALL",
+        );
+        assert_eq!(
+            ConfigTierKind::ONLY_DEFAULT.len(),
+            default_count,
+            "ONLY_DEFAULT.len() must match the is_default count on ALL",
+        );
+        assert_eq!(
+            ConfigTierKind::ONLY_CUSTOM.len(),
+            custom_count,
+            "ONLY_CUSTOM.len() must match the is_custom count on ALL",
+        );
+        assert_eq!(ConfigTierKind::ONLY_BARE.len(), 1);
+        assert_eq!(ConfigTierKind::ONLY_DISCOVERED.len(), 1);
+        assert_eq!(ConfigTierKind::ONLY_DEFAULT.len(), 1);
+        assert_eq!(ConfigTierKind::ONLY_CUSTOM.len(), 1);
+        assert_eq!(ConfigTierKind::ALL.len(), 4);
+    }
+
+    #[test]
+    fn config_tier_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the four per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub
+        // fn` (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Quaternary peer of
+        // `config_source_kind_ternary_slices_are_const_addressable`
+        // (`f287239`) on the sibling source-kind axis.
+        const ONLY_BARE_LEN: usize = ConfigTierKind::ONLY_BARE.len();
+        const ONLY_DISCOVERED_LEN: usize = ConfigTierKind::ONLY_DISCOVERED.len();
+        const ONLY_DEFAULT_LEN: usize = ConfigTierKind::ONLY_DEFAULT.len();
+        const ONLY_CUSTOM_LEN: usize = ConfigTierKind::ONLY_CUSTOM.len();
+        const ALL_LEN: usize = ConfigTierKind::ALL.len();
+        assert_eq!(ONLY_BARE_LEN, 1);
+        assert_eq!(ONLY_DISCOVERED_LEN, 1);
+        assert_eq!(ONLY_DEFAULT_LEN, 1);
+        assert_eq!(ONLY_CUSTOM_LEN, 1);
+        assert_eq!(
+            ONLY_BARE_LEN + ONLY_DISCOVERED_LEN + ONLY_DEFAULT_LEN + ONLY_CUSTOM_LEN,
+            ALL_LEN,
+        );
     }
 
     #[test]
