@@ -3425,6 +3425,87 @@ impl SameStoreImpossibilityKind {
     /// in exactly one edit rather than two.
     pub const NAMES: &'static [&'static str] = &["regressed", "cross_store"];
 
+    /// The single [`Self::Regressed`] variant — the sole
+    /// generation-went-backwards impossibility corner (the negation of
+    /// an advance) — in the SAME relative declaration order it occupies
+    /// in [`Self::VARIANTS`], carrying the *regressed-identity* pole of
+    /// the (regressed × cross_store) 1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the impossibility-half kind axis,
+    /// mirroring the shipped boolean predicate [`Self::is_regressed`]
+    /// one altitude down: the sole variant in this slice satisfies
+    /// `k.is_regressed()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::ONLY_CROSS_STORE`], the two disjoint
+    /// singleton slices partition [`Self::VARIANTS`] at the
+    /// static-slice altitude the same way the shipped boolean
+    /// predicates [`Self::is_regressed`] / [`Self::is_cross_store`]
+    /// meta-partition it at the boolean altitude (per
+    /// [`variants_tests::same_store_impossibility_kind_per_variant_predicates_are_a_closed_binary_partition`]).
+    /// The two constants sit in the same `impl SameStoreImpossibilityKind`
+    /// block as [`Self::VARIANTS`] and [`Self::NAMES`], and follow the
+    /// same `pub const &'static [Self]` static-slice discipline the
+    /// per-half meta-partition slice-constant idiom carries elsewhere
+    /// in the crate.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::VARIANTS`], rather than derived by filtering
+    /// [`Self::VARIANTS`] through [`Self::is_regressed`] at const-fn
+    /// altitude — so the two declaration surfaces (the slice literal
+    /// and the boolean predicate) remain independent load-bearing
+    /// witnesses of the same identity partition, and a future edit
+    /// that shifts a variant across the polarity on ONE surface but
+    /// not the other diverges at test time on the first kind where
+    /// they disagree.
+    ///
+    /// **Binary landing of the per-half meta-partition slice-constant
+    /// discipline on hotswap.rs.** First `ONLY_*` static-slice landing
+    /// in `hotswap.rs`, one cell narrower than the ternary landings
+    /// on [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// `ONLY_ENV` / `ONLY_FILE` (commit `f287239`),
+    /// [`crate::DiffLineKind::ONLY_REMOVED`] / `ONLY_ADDED` /
+    /// `ONLY_CONTEXT` (commit `7ea710e`), and the septenary
+    /// [`crate::secret_client::SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`) — the identity
+    /// meta-partition ladder now reaches the impossibility-half kind
+    /// axis in `hotswap.rs`.
+    ///
+    /// A hypothetical third impossibility corner (a
+    /// `SignedAttestationMismatch`, say) landing on the enum must
+    /// extend [`Self::VARIANTS`] AND either add its own singleton
+    /// slice under the identity partition here or extend one of the
+    /// existing singletons in lockstep with the matching boolean
+    /// predicate — the partition, order-preservation, and cardinality
+    /// pins refuse a silent landing under the negation of both
+    /// existing identity poles.
+    ///
+    /// The agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability laws are pinned by
+    /// [`variants_tests::same_store_impossibility_kind_identity_slices_agree_with_identity_predicates`],
+    /// [`variants_tests::same_store_impossibility_kind_identity_slices_partition_variants`],
+    /// [`variants_tests::same_store_impossibility_kind_identity_slices_preserve_variants_order`],
+    /// [`variants_tests::same_store_impossibility_kind_identity_slices_have_no_duplicates`],
+    /// [`variants_tests::same_store_impossibility_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`variants_tests::same_store_impossibility_kind_identity_slices_are_const_addressable`].
+    pub const ONLY_REGRESSED: &'static [Self] = &[Self::Regressed];
+
+    /// The single [`Self::CrossStore`] variant — the sole
+    /// moved-watermark-at-unchanged-generation impossibility corner —
+    /// carrying the *cross_store-identity* pole of the
+    /// (regressed × cross_store) 1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the impossibility-half kind axis,
+    /// mirroring the shipped boolean predicate [`Self::is_cross_store`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_REGRESSED`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_cross_store`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins the two `ONLY_*`
+    /// singletons share.
+    pub const ONLY_CROSS_STORE: &'static [Self] = &[Self::CrossStore];
+
     /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
     /// the compile-time closed set of variant values. `const`-callable,
     /// projecting the same `'static` reference at compile time and at
@@ -38084,6 +38165,202 @@ mod variants_tests {
         // assertion.
         const _: () = assert!(!SameStoreImpossibilityKind::Regressed.is_generation_advanced());
         const _: () = assert!(!SameStoreImpossibilityKind::CrossStore.is_generation_advanced());
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slices_agree_with_identity_predicates() {
+        // Binary agreement pin between the two `ONLY_*` slice literals
+        // and the shipped `is_regressed` / `is_cross_store` predicates
+        // on the impossibility-half kind axis's (regressed × cross_store)
+        // 1/1 identity meta-partition. For every entry in each `ONLY_*`
+        // slice: the positive-pole predicate holds and the sibling
+        // negative-pole predicate does not, plus `VARIANTS`-membership
+        // agreement between the slice `.contains()` and the boolean
+        // predicate across both poles. Binary peer of the ternary
+        // agreement pins on `DiffLineKind::ONLY_*` (commit `7ea710e`),
+        // `ConfigSourceKind::ONLY_*` (commit `f287239`), and
+        // `WatchEventClass::ONLY_*` (commit `9e5ea18`), one cell
+        // narrower. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other observes the drift.
+        for k in SameStoreImpossibilityKind::ONLY_REGRESSED.iter().copied() {
+            assert!(
+                k.is_regressed(),
+                "SameStoreImpossibilityKind::ONLY_REGRESSED entry {k:?} must satisfy is_regressed()",
+            );
+            assert!(
+                !k.is_cross_store(),
+                "SameStoreImpossibilityKind::ONLY_REGRESSED entry {k:?} must NOT satisfy is_cross_store()",
+            );
+        }
+        for k in SameStoreImpossibilityKind::ONLY_CROSS_STORE.iter().copied() {
+            assert!(
+                k.is_cross_store(),
+                "SameStoreImpossibilityKind::ONLY_CROSS_STORE entry {k:?} must satisfy is_cross_store()",
+            );
+            assert!(
+                !k.is_regressed(),
+                "SameStoreImpossibilityKind::ONLY_CROSS_STORE entry {k:?} must NOT satisfy is_regressed()",
+            );
+        }
+        for k in SameStoreImpossibilityKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                SameStoreImpossibilityKind::ONLY_REGRESSED.contains(&k),
+                k.is_regressed(),
+                "ONLY_REGRESSED membership must agree with is_regressed() on \
+                 SameStoreImpossibilityKind::{k:?}",
+            );
+            assert_eq!(
+                SameStoreImpossibilityKind::ONLY_CROSS_STORE.contains(&k),
+                k.is_cross_store(),
+                "ONLY_CROSS_STORE membership must agree with is_cross_store() on \
+                 SameStoreImpossibilityKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slices_partition_variants() {
+        // Binary partition invariant: the two per-half slices are
+        // pairwise-disjoint and their union covers VARIANTS. Direct
+        // application of the meta-partition sum law
+        // `ONLY_REGRESSED.len() + ONLY_CROSS_STORE.len() ==
+        // VARIANTS.len()` at the slice altitude on the
+        // impossibility-half kind axis's identity projection. A variant
+        // landing on both slices or on neither breaks the partition here
+        // before any consumer that reasons about the polarity as a
+        // covering meta-partition observes the drift.
+        for k in SameStoreImpossibilityKind::ONLY_REGRESSED {
+            assert!(
+                !SameStoreImpossibilityKind::ONLY_CROSS_STORE.contains(k),
+                "SameStoreImpossibilityKind::{k:?} appears in BOTH ONLY_REGRESSED and ONLY_CROSS_STORE",
+            );
+        }
+        for k in SameStoreImpossibilityKind::VARIANTS {
+            let in_regressed = SameStoreImpossibilityKind::ONLY_REGRESSED.contains(k);
+            let in_cross_store = SameStoreImpossibilityKind::ONLY_CROSS_STORE.contains(k);
+            let held = usize::from(in_regressed) + usize::from(in_cross_store);
+            assert_eq!(
+                held, 1,
+                "SameStoreImpossibilityKind::{k:?} must appear in exactly one of \
+                 ONLY_REGRESSED / ONLY_CROSS_STORE (found in {held})",
+            );
+        }
+        assert_eq!(
+            SameStoreImpossibilityKind::ONLY_REGRESSED.len()
+                + SameStoreImpossibilityKind::ONLY_CROSS_STORE.len(),
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            "ONLY_REGRESSED + ONLY_CROSS_STORE slice lengths must sum to VARIANTS.len()",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slices_preserve_variants_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SameStoreImpossibilityKind::VARIANTS — i.e., the slice
+        // equals `VARIANTS.iter().filter(polarity).collect()` pointwise.
+        // A future edit that permuted any pole (impossible for singleton
+        // halves today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin.
+        let regressed_from_variants: Vec<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::VARIANTS
+                .iter()
+                .copied()
+                .filter(SameStoreImpossibilityKind::is_regressed)
+                .collect();
+        assert_eq!(
+            regressed_from_variants,
+            SameStoreImpossibilityKind::ONLY_REGRESSED.to_vec(),
+            "ONLY_REGRESSED must be VARIANTS-filtered by is_regressed in declaration order",
+        );
+        let cross_store_from_variants: Vec<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::VARIANTS
+                .iter()
+                .copied()
+                .filter(SameStoreImpossibilityKind::is_cross_store)
+                .collect();
+        assert_eq!(
+            cross_store_from_variants,
+            SameStoreImpossibilityKind::ONLY_CROSS_STORE.to_vec(),
+            "ONLY_CROSS_STORE must be VARIANTS-filtered by is_cross_store in declaration order",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice literals
+        // are declared as sets under the discriminant `Eq` relation. A
+        // future edit that accidentally double-listed a variant on one
+        // half fails at THIS pin before drifting through any consumer
+        // that iterates the slice expecting a set.
+        for slice in [
+            SameStoreImpossibilityKind::ONLY_REGRESSED,
+            SameStoreImpossibilityKind::ONLY_CROSS_STORE,
+        ] {
+            let mut seen: Vec<SameStoreImpossibilityKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SameStoreImpossibilityKind identity slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities()
+    {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SameStoreImpossibilityKind::VARIANTS
+        // — i.e., `ONLY_REGRESSED.len() ==
+        // VARIANTS.iter().filter(is_regressed).count()` (and symmetric
+        // for the sibling) — the cardinality projection at the slice
+        // altitude agrees with the boolean-altitude projection on both
+        // halves. Concrete positions today: 1 regressed + 1 cross_store
+        // = 2 = VARIANTS.
+        let regressed_count = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreImpossibilityKind::is_regressed)
+            .count();
+        let cross_store_count = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(SameStoreImpossibilityKind::is_cross_store)
+            .count();
+        assert_eq!(
+            SameStoreImpossibilityKind::ONLY_REGRESSED.len(),
+            regressed_count,
+            "ONLY_REGRESSED.len() must match the is_regressed count on VARIANTS",
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::ONLY_CROSS_STORE.len(),
+            cross_store_count,
+            "ONLY_CROSS_STORE.len() must match the is_cross_store count on VARIANTS",
+        );
+        assert_eq!(SameStoreImpossibilityKind::ONLY_REGRESSED.len(), 1);
+        assert_eq!(SameStoreImpossibilityKind::ONLY_CROSS_STORE.len(), 1);
+        assert_eq!(SameStoreImpossibilityKind::VARIANTS.len(), 2);
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_REGRESSED_LEN: usize = SameStoreImpossibilityKind::ONLY_REGRESSED.len();
+        const ONLY_CROSS_STORE_LEN: usize = SameStoreImpossibilityKind::ONLY_CROSS_STORE.len();
+        const VARIANTS_LEN: usize = SameStoreImpossibilityKind::VARIANTS.len();
+        assert_eq!(ONLY_REGRESSED_LEN, 1);
+        assert_eq!(ONLY_CROSS_STORE_LEN, 1);
+        assert_eq!(ONLY_REGRESSED_LEN + ONLY_CROSS_STORE_LEN, VARIANTS_LEN);
     }
 
     #[test]
