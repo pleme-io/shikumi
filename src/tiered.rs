@@ -22965,6 +22965,105 @@ impl DiffLineKind {
     /// cardinality, and const-addressability pins.
     pub const ONLY_CONTEXT: &'static [Self] = &[Self::Context];
 
+    /// The two-cell `CHANGED` [`DiffLineKind`] slice — [`Self::Removed`]
+    /// and [`Self::Added`], the two structural-change arms of the
+    /// diff-cell axis (the line is present on exactly one side; rendered
+    /// with `-` or `+` per [`Self::glyph`]) — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], carrying the
+    /// *changed* pole of the compound-polarity (changed × unchanged)
+    /// meta-partition at the primitive's OWN altitude on the diff-cell
+    /// axis, mirroring the shipped boolean predicate [`Self::is_changed`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `k.is_changed()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::UNCHANGED`], the two disjoint slices partition
+    /// [`Self::ALL`] at the static-slice altitude the same way the shipped
+    /// boolean predicates [`Self::is_changed`] and [`Self::is_unchanged`]
+    /// partition it at the boolean altitude (per
+    /// [`tests::diff_line_kind_is_unchanged_is_complement_of_is_changed`]).
+    /// Compound-polarity peer of the shipped ternary identity
+    /// [`Self::ONLY_REMOVED`] / [`Self::ONLY_ADDED`] / [`Self::ONLY_CONTEXT`]
+    /// (commit `7ea710e`, the first landing of the per-half meta-partition
+    /// slice-constant discipline on a `tiered.rs`-scoped closed-primitive
+    /// axis) — this closes the compound-polarity binary meta-partition at
+    /// the same altitude the ternary identity closed the singleton
+    /// meta-partition, matching the ladder shape
+    /// [`crate::WatchEventClass::FILE_MUTATIONS`] /
+    /// [`crate::WatchEventClass::NON_FILE_MUTATIONS`] (commit `323d6e2`)
+    /// closed on the reload-relevance axis, and
+    /// [`crate::ConfigSourceKind::DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::OVERLAY`] (commit `2cd8ef8`) on the
+    /// source-layer axis.
+    ///
+    /// Written as an explicit two-cell slice literal in the SAME
+    /// relative declaration order the two structural-change arms occupy
+    /// in [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_changed`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate) remain
+    /// independent load-bearing witnesses of the same compound-polarity
+    /// meta-partition, and a future edit that shifts a variant across the
+    /// polarity on ONE declaration surface but not the other diverges at
+    /// test time on the first shape where they disagree.
+    ///
+    /// Consumers that group the two structural-change arms as one static
+    /// set (a `ConfigDiff` summary counting *changed* lines separately
+    /// from context — the direct next-altitude beneficiary named in the
+    /// `is_changed` doc — a Markdown-fenced renderer coloring the two
+    /// change arms as one class, a per-tier attestation manifest bucketing
+    /// changed-line cardinality distinct from context, a structured-log
+    /// span attribute distinguishing structurally-changed rows from
+    /// quiet context rows) now read the pole as one `&'static [Self]`
+    /// slice lookup — no re-derived `matches!(k, DiffLineKind::Added |
+    /// DiffLineKind::Removed)` at the callsite, no ALL-filter fold each
+    /// time.
+    ///
+    /// The compound-polarity agreement laws
+    /// (`CHANGED.iter().all(|k| k.is_changed())`,
+    /// `!CHANGED.iter().any(|k| k.is_unchanged())`, and the symmetric
+    /// laws on [`Self::UNCHANGED`]) are pinned by
+    /// [`tests::diff_line_kind_changed_slice_agrees_with_is_changed_predicate`].
+    /// Compound-polarity partition invariant across both siblings:
+    /// [`tests::diff_line_kind_changed_and_unchanged_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::diff_line_kind_changed_and_unchanged_slices_preserve_all_order`].
+    /// No duplicates on either half:
+    /// [`tests::diff_line_kind_changed_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::diff_line_kind_changed_and_unchanged_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::diff_line_kind_changed_and_unchanged_slices_are_const_addressable`].
+    pub const CHANGED: &'static [Self] = &[Self::Removed, Self::Added];
+
+    /// The single-cell `UNCHANGED` [`DiffLineKind`] slice —
+    /// [`Self::Context`] (a line identical on both sides; rendered with
+    /// the canonical unified-diff ` ` (space) prefix per [`Self::glyph`])
+    /// — carrying the *unchanged* pole of the compound-polarity
+    /// meta-partition at the primitive's OWN altitude on the diff-cell
+    /// axis, mirroring the shipped boolean predicate [`Self::is_unchanged`]
+    /// (i.e. `!Self::is_changed`, the two are pointwise complements per
+    /// [`tests::diff_line_kind_is_unchanged_is_complement_of_is_changed`])
+    /// one altitude down.
+    ///
+    /// Today `UNCHANGED == ONLY_CONTEXT == &[Self::Context]` because the
+    /// compound-polarity negative pole collapses to the singleton context
+    /// cell at present, but the two constants remain independent by
+    /// design: a future fourth [`DiffLineKind`] variant landing on the
+    /// unchanged side (a hypothetical `Header` for hunk headers, `Sep`
+    /// for inter-hunk separators — both `false` on `is_changed`) grows
+    /// the compound `UNCHANGED` in lockstep with `!is_changed`-family
+    /// contracts while `ONLY_CONTEXT` stays the ternary-identity
+    /// singleton — the same discipline
+    /// [`crate::WatchEventClass::NON_FILE_MUTATIONS`]-vs-`ONLY_IGNORED`
+    /// (`323d6e2`) and [`crate::ConfigTierKind::ONLY_CUSTOM`]-vs-`CUSTOM`
+    /// (`ff6492b`) carry on their own axes.
+    ///
+    /// See [`Self::CHANGED`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_unchanged`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const UNCHANGED: &'static [Self] = &[Self::Context];
+
     /// Canonical operator-facing lowercase name of the diff-line kind —
     /// `"removed"`, `"added"`, or `"context"`.
     ///
@@ -32659,6 +32758,215 @@ mod tests {
             ONLY_REMOVED_LEN + ONLY_ADDED_LEN + ONLY_CONTEXT_LEN,
             ALL_LEN
         );
+    }
+
+    #[test]
+    fn diff_line_kind_changed_slice_agrees_with_is_changed_predicate() {
+        // Bidirectional weld between the slice literal
+        // `DiffLineKind::CHANGED` and the boolean predicate
+        // `DiffLineKind::is_changed` on the compound-polarity
+        // (changed × unchanged) meta-partition. Every slice entry
+        // satisfies the changed pole (and its complement `!is_unchanged`),
+        // and every ALL cell agrees on membership under the boolean
+        // predicate on both halves. Compound-polarity peer of
+        // `watch_event_class_file_mutations_slice_agrees_with_is_file_mutation_predicate`
+        // (`323d6e2`) on the watcher-side reload-relevance axis,
+        // `config_source_kind_defaults_slice_agrees_with_is_defaults_predicate`
+        // (`2cd8ef8`) on the shikumi-side layer-kind axis, and
+        // `config_tier_kind_computed_slice_agrees_with_is_computed_predicate`
+        // (`2c0686f`) on the tier-kind axis — the two independent
+        // declaration surfaces (slice literal + boolean predicate)
+        // diverge at THIS pin on the first shape where they disagree,
+        // before a consumer that reads one altitude but not the other
+        // can observe the drift.
+        for k in DiffLineKind::CHANGED.iter().copied() {
+            assert!(
+                k.is_changed(),
+                "DiffLineKind::CHANGED entry {k:?} must satisfy is_changed()",
+            );
+            assert!(
+                !k.is_unchanged(),
+                "DiffLineKind::CHANGED entry {k:?} must NOT satisfy is_unchanged()",
+            );
+        }
+        for k in DiffLineKind::UNCHANGED.iter().copied() {
+            assert!(
+                !k.is_changed(),
+                "DiffLineKind::UNCHANGED entry {k:?} must NOT satisfy is_changed()",
+            );
+            assert!(
+                k.is_unchanged(),
+                "DiffLineKind::UNCHANGED entry {k:?} must satisfy is_unchanged()",
+            );
+        }
+        for k in DiffLineKind::ALL.iter().copied() {
+            assert_eq!(
+                DiffLineKind::CHANGED.contains(&k),
+                k.is_changed(),
+                "CHANGED membership must agree with is_changed() on \
+                 DiffLineKind::{k:?}",
+            );
+            assert_eq!(
+                DiffLineKind::UNCHANGED.contains(&k),
+                k.is_unchanged(),
+                "UNCHANGED membership must agree with is_unchanged() on \
+                 DiffLineKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_changed_and_unchanged_slices_partition_all() {
+        // Compound-polarity partition invariant: the two per-half slices
+        // are disjoint and their union covers ALL. Direct application of
+        // the meta-partition sum law
+        // `CHANGED.len() + UNCHANGED.len() == ALL.len()` at the slice
+        // altitude on the diff-cell axis's compound-polarity
+        // (changed × unchanged) meta-partition. Compound-polarity peer
+        // of `watch_event_class_file_mutations_and_non_file_mutations_slices_partition_all`
+        // (`323d6e2`) — a variant landing on both slices, or on neither,
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes the
+        // drift.
+        for k in DiffLineKind::CHANGED.iter().copied() {
+            assert!(
+                !DiffLineKind::UNCHANGED.contains(&k),
+                "DiffLineKind::{k:?} appears in BOTH CHANGED and UNCHANGED",
+            );
+        }
+        for k in DiffLineKind::ALL.iter().copied() {
+            let in_changed = DiffLineKind::CHANGED.contains(&k);
+            let in_unchanged = DiffLineKind::UNCHANGED.contains(&k);
+            assert!(
+                in_changed || in_unchanged,
+                "DiffLineKind::{k:?} is in NEITHER CHANGED nor UNCHANGED",
+            );
+            assert!(
+                !(in_changed && in_unchanged),
+                "DiffLineKind::{k:?} is in BOTH CHANGED and UNCHANGED",
+            );
+        }
+        assert_eq!(
+            DiffLineKind::CHANGED.len() + DiffLineKind::UNCHANGED.len(),
+            DiffLineKind::ALL.len(),
+            "CHANGED and UNCHANGED slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_changed_and_unchanged_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its variants
+        // in the SAME relative declaration order they appear in
+        // DiffLineKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // (Removed, Added, Context) once the two polarity groups are
+        // ordered per the diff-cell ranking Removed < Added < Context.
+        // Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slices_preserve_all_order`
+        // (`323d6e2`) — a reordering of one slice without the other, or
+        // a reordering of ALL that shuffles the two poles' variant order
+        // without updating the slices, diverges at THIS pin.
+        let changed_from_all: Vec<DiffLineKind> = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_changed())
+            .collect();
+        assert_eq!(
+            changed_from_all,
+            DiffLineKind::CHANGED.to_vec(),
+            "CHANGED must be ALL-filtered by is_changed in declaration order",
+        );
+        let unchanged_from_all: Vec<DiffLineKind> = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_unchanged())
+            .collect();
+        assert_eq!(
+            unchanged_from_all,
+            DiffLineKind::UNCHANGED.to_vec(),
+            "UNCHANGED must be ALL-filtered by is_unchanged in declaration order",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_changed_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice literals
+        // are declared as sets under the discriminant `Eq` relation. A
+        // future edit that accidentally double-lists a variant on one
+        // half (a typo copying the SAME variant twice into CHANGED, an
+        // accidental re-add of the Context cell into UNCHANGED) fails at
+        // THIS pin before drifting through any consumer that iterates
+        // the slice expecting a set. Compound-polarity peer of
+        // `watch_event_class_file_mutations_slice_has_no_duplicates`
+        // (`323d6e2`).
+        for slice in [DiffLineKind::CHANGED, DiffLineKind::UNCHANGED] {
+            let mut seen: Vec<DiffLineKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "DiffLineKind compound-polarity slice {slice:?} contains \
+                     duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_changed_and_unchanged_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on DiffLineKind::ALL — i.e.,
+        // `CHANGED.len() == ALL.iter().filter(is_changed).count()` and
+        // `UNCHANGED.len() == ALL.iter().filter(is_unchanged).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves. Concrete
+        // positions today: 2 changed + 1 unchanged = 3 = ALL.
+        // Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`323d6e2`).
+        let changed_count = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_changed())
+            .count();
+        let unchanged_count = DiffLineKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_unchanged())
+            .count();
+        assert_eq!(
+            DiffLineKind::CHANGED.len(),
+            changed_count,
+            "CHANGED.len() must match the is_changed count on ALL",
+        );
+        assert_eq!(
+            DiffLineKind::UNCHANGED.len(),
+            unchanged_count,
+            "UNCHANGED.len() must match the is_unchanged count on ALL",
+        );
+        assert_eq!(DiffLineKind::CHANGED.len(), 2);
+        assert_eq!(DiffLineKind::UNCHANGED.len(), 1);
+        assert_eq!(DiffLineKind::ALL.len(), 3);
+    }
+
+    #[test]
+    fn diff_line_kind_changed_and_unchanged_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context consumer.
+        // Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slices_are_const_addressable`
+        // (`323d6e2`).
+        const CHANGED_LEN: usize = DiffLineKind::CHANGED.len();
+        const UNCHANGED_LEN: usize = DiffLineKind::UNCHANGED.len();
+        const ALL_LEN: usize = DiffLineKind::ALL.len();
+        assert_eq!(CHANGED_LEN, 2);
+        assert_eq!(UNCHANGED_LEN, 1);
+        assert_eq!(CHANGED_LEN + UNCHANGED_LEN, ALL_LEN);
     }
 
     #[test]
