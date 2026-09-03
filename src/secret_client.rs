@@ -3071,6 +3071,132 @@ impl SecretClientKind {
         Self::OpConnect,
         Self::Vault,
     ];
+
+    /// The [`Self::Mem`] pole of the seven-way identity meta-partition
+    /// on the runtime-client kind axis at the static-slice altitude —
+    /// the singleton slice `&[Self::Mem]` mirroring the shipped boolean
+    /// predicate [`Self::is_mem`] one altitude down (per-variant
+    /// polarity).
+    ///
+    /// Paired with [`Self::ONLY_COMMAND`], [`Self::ONLY_AKEYLESS`],
+    /// [`Self::ONLY_AWS_SECRETS_MANAGER`], [`Self::ONLY_OP_CONNECT`],
+    /// [`Self::ONLY_VAULT`], and [`Self::ONLY_GCP_SECRET_MANAGER`], the
+    /// seven disjoint singletons partition [`Self::ALL`] at the
+    /// static-slice altitude the same way the seven shipped boolean
+    /// predicates [`Self::is_mem`] / [`Self::is_command`] /
+    /// [`Self::is_akeyless`] / [`Self::is_aws_secrets_manager`] /
+    /// [`Self::is_op_connect`] / [`Self::is_vault`] /
+    /// [`Self::is_gcp_secret_manager`] meta-partition it at the boolean
+    /// altitude. The seven constants sit in the same `impl
+    /// SecretClientKind` block as [`Self::ALL`],
+    /// [`Self::CLOUD_SECRET_MANAGER`] and
+    /// [`Self::NON_CLOUD_SECRET_MANAGER`], and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal (rather than
+    /// derived by filtering [`Self::ALL`] through [`Self::is_mem`] at
+    /// const-fn altitude), so the two declaration surfaces — the slice
+    /// literal and the boolean predicate — remain independent
+    /// load-bearing witnesses of the same identity partition. An edit
+    /// that shifts a variant across the polarity on ONE surface but not
+    /// the other diverges at test time on the first kind where they
+    /// disagree, before drifting through any consumer that reads one
+    /// altitude but not the other.
+    ///
+    /// **Idiom-peer.** Septenary landing of the per-half meta-partition
+    /// slice-constant discipline in the crate, one cell narrower than
+    /// the octonary identity landing on the config-author
+    /// [`crate::secret::SecretBackendKind`] axis
+    /// ([`crate::secret::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET`, commit `19364e3`) and one cell wider than the
+    /// six-variant identity landings elsewhere in the crate. The
+    /// compound-polarity slices [`Self::CLOUD_SECRET_MANAGER`] /
+    /// [`Self::NON_CLOUD_SECRET_MANAGER`] (commit `399ee8a`) already
+    /// ship the 2/5 meta-partition on the same axis at the same
+    /// altitude; this landing adds the 1/1/1/1/1/1/1 identity
+    /// meta-partition alongside, so an axis-crossing consumer reaches
+    /// either the compound pole or a specific-client pole through one
+    /// static slice reference without re-filtering.
+    ///
+    /// Welded by
+    /// [`tests::secret_client_kind_identity_slices_agree_with_identity_predicates`],
+    /// [`tests::secret_client_kind_identity_slices_partition_all`],
+    /// [`tests::secret_client_kind_identity_slices_preserve_all_order`],
+    /// [`tests::secret_client_kind_identity_slices_have_no_duplicates`],
+    /// [`tests::secret_client_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// [`tests::secret_client_kind_identity_slices_are_const_addressable`],
+    /// and
+    /// [`tests::secret_client_kind_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_MEM: &'static [Self] = &[Self::Mem];
+
+    /// The [`Self::Command`] pole of the seven-way identity meta-
+    /// partition on the runtime-client kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Command]` mirroring the
+    /// shipped boolean predicate [`Self::is_command`] one altitude
+    /// down.
+    ///
+    /// See [`Self::ONLY_MEM`] for the full contract, the discipline
+    /// behind writing the seven identity-partition constants as
+    /// explicit slice literals (rather than filters through
+    /// [`Self::is_command`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins the seven `ONLY_*` singletons share.
+    pub const ONLY_COMMAND: &'static [Self] = &[Self::Command];
+
+    /// The [`Self::Akeyless`] pole of the seven-way identity meta-
+    /// partition on the runtime-client kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Akeyless]` mirroring the
+    /// shipped boolean predicate [`Self::is_akeyless`] one altitude
+    /// down.
+    ///
+    /// See [`Self::ONLY_MEM`] for the full contract and the
+    /// load-bearing pins the seven `ONLY_*` singletons share.
+    pub const ONLY_AKEYLESS: &'static [Self] = &[Self::Akeyless];
+
+    /// The [`Self::AwsSecretsManager`] pole of the seven-way identity
+    /// meta-partition on the runtime-client kind axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::AwsSecretsManager]` mirroring the shipped boolean
+    /// predicate [`Self::is_aws_secrets_manager`] one altitude down.
+    ///
+    /// Also the first cell of [`Self::CLOUD_SECRET_MANAGER`] — the two
+    /// witnesses agree here (`ONLY_AWS_SECRETS_MANAGER` ⊆
+    /// `CLOUD_SECRET_MANAGER`) per the identity-vs-compound partition
+    /// cross-check. See [`Self::ONLY_MEM`] for the full contract and
+    /// the load-bearing pins the seven `ONLY_*` singletons share.
+    pub const ONLY_AWS_SECRETS_MANAGER: &'static [Self] = &[Self::AwsSecretsManager];
+
+    /// The [`Self::OpConnect`] pole of the seven-way identity meta-
+    /// partition on the runtime-client kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::OpConnect]` mirroring
+    /// the shipped boolean predicate [`Self::is_op_connect`] one
+    /// altitude down.
+    ///
+    /// See [`Self::ONLY_MEM`] for the full contract and the
+    /// load-bearing pins the seven `ONLY_*` singletons share.
+    pub const ONLY_OP_CONNECT: &'static [Self] = &[Self::OpConnect];
+
+    /// The [`Self::Vault`] pole of the seven-way identity meta-
+    /// partition on the runtime-client kind axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Vault]` mirroring the
+    /// shipped boolean predicate [`Self::is_vault`] one altitude down.
+    ///
+    /// See [`Self::ONLY_MEM`] for the full contract and the
+    /// load-bearing pins the seven `ONLY_*` singletons share.
+    pub const ONLY_VAULT: &'static [Self] = &[Self::Vault];
+
+    /// The [`Self::GcpSecretManager`] pole of the seven-way identity
+    /// meta-partition on the runtime-client kind axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::GcpSecretManager]` mirroring the shipped boolean
+    /// predicate [`Self::is_gcp_secret_manager`] one altitude down.
+    ///
+    /// Also the second cell of [`Self::CLOUD_SECRET_MANAGER`] — the two
+    /// witnesses agree here (`ONLY_GCP_SECRET_MANAGER` ⊆
+    /// `CLOUD_SECRET_MANAGER`) per the identity-vs-compound partition
+    /// cross-check. See [`Self::ONLY_MEM`] for the full contract and
+    /// the load-bearing pins the seven `ONLY_*` singletons share.
+    pub const ONLY_GCP_SECRET_MANAGER: &'static [Self] = &[Self::GcpSecretManager];
 }
 
 impl crate::ClosedAxis for SecretClientKind {
@@ -11007,6 +11133,570 @@ mod tests {
                  shared arm ({client_kind:?}, {backend_kind:?})",
             );
         }
+    }
+
+    // ---- SecretClientKind ONLY_MEM / ONLY_COMMAND / ONLY_AKEYLESS /
+    // ONLY_AWS_SECRETS_MANAGER / ONLY_OP_CONNECT / ONLY_VAULT /
+    // ONLY_GCP_SECRET_MANAGER identity meta-partition ──────────────────
+    //
+    // The identity 1/1/1/1/1/1/1 meta-partition of
+    // `SecretClientKind::ALL` lifted from the boolean predicate altitude
+    // (`is_mem` / `is_command` / … / `is_gcp_secret_manager`) onto the
+    // static-slice altitude, mirroring the same lift shipped for the
+    // eight-way config-author backend axis at commit `19364e3` on
+    // `SecretBackendKind::ONLY_LITERAL` / … / `ONLY_GCP_SECRET`. Six
+    // pins weld the load-bearing invariants of the septet on the
+    // seven-way runtime-client axis; a seventh pin welds the identity
+    // meta-partition to the shipped compound-polarity meta-partition
+    // (CLOUD_SECRET_MANAGER / NON_CLOUD_SECRET_MANAGER) at the same
+    // altitude on the same axis.
+
+    #[test]
+    fn secret_client_kind_identity_slices_agree_with_identity_predicates() {
+        // Seven-way agreement pin across the (mem × command × akeyless
+        // × aws_secrets_manager × op_connect × vault × gcp_secret_manager)
+        // identity meta-partition. Every ONLY_MEM entry satisfies
+        // is_mem and none of the six sibling predicates; every
+        // ONLY_COMMAND entry satisfies is_command alone; … and so on
+        // across all seven halves. Every SecretClientKind::ALL cell
+        // agrees on membership under each of the seven boolean
+        // predicates. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        // Septenary peer of
+        // `secret_backend_kind_identity_slices_agree_with_identity_predicates`
+        // (commit `19364e3`) on the config-author backend-kind axis,
+        // one cell narrower.
+        for k in SecretClientKind::ONLY_MEM.iter().copied() {
+            assert!(k.is_mem(), "ONLY_MEM {k:?} must satisfy is_mem");
+            assert!(
+                !k.is_command(),
+                "ONLY_MEM {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_MEM {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_MEM {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_MEM {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(!k.is_vault(), "ONLY_MEM {k:?} must NOT satisfy is_vault");
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_MEM {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_COMMAND.iter().copied() {
+            assert!(k.is_command(), "ONLY_COMMAND {k:?} must satisfy is_command");
+            assert!(!k.is_mem(), "ONLY_COMMAND {k:?} must NOT satisfy is_mem");
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_COMMAND {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_AKEYLESS.iter().copied() {
+            assert!(
+                k.is_akeyless(),
+                "ONLY_AKEYLESS {k:?} must satisfy is_akeyless"
+            );
+            assert!(!k.is_mem(), "ONLY_AKEYLESS {k:?} must NOT satisfy is_mem");
+            assert!(
+                !k.is_command(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_AKEYLESS {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_AWS_SECRETS_MANAGER.iter().copied() {
+            assert!(
+                k.is_aws_secrets_manager(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_mem(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_mem"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_AWS_SECRETS_MANAGER {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_OP_CONNECT.iter().copied() {
+            assert!(
+                k.is_op_connect(),
+                "ONLY_OP_CONNECT {k:?} must satisfy is_op_connect"
+            );
+            assert!(!k.is_mem(), "ONLY_OP_CONNECT {k:?} must NOT satisfy is_mem");
+            assert!(
+                !k.is_command(),
+                "ONLY_OP_CONNECT {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_OP_CONNECT {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_OP_CONNECT {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_OP_CONNECT {k:?} must NOT satisfy is_vault"
+            );
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_OP_CONNECT {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_VAULT.iter().copied() {
+            assert!(k.is_vault(), "ONLY_VAULT {k:?} must satisfy is_vault");
+            assert!(!k.is_mem(), "ONLY_VAULT {k:?} must NOT satisfy is_mem");
+            assert!(
+                !k.is_command(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(
+                !k.is_gcp_secret_manager(),
+                "ONLY_VAULT {k:?} must NOT satisfy is_gcp_secret_manager"
+            );
+        }
+        for k in SecretClientKind::ONLY_GCP_SECRET_MANAGER.iter().copied() {
+            assert!(
+                k.is_gcp_secret_manager(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must satisfy is_gcp_secret_manager"
+            );
+            assert!(
+                !k.is_mem(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_mem"
+            );
+            assert!(
+                !k.is_command(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_command"
+            );
+            assert!(
+                !k.is_akeyless(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_akeyless"
+            );
+            assert!(
+                !k.is_aws_secrets_manager(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_aws_secrets_manager"
+            );
+            assert!(
+                !k.is_op_connect(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_op_connect"
+            );
+            assert!(
+                !k.is_vault(),
+                "ONLY_GCP_SECRET_MANAGER {k:?} must NOT satisfy is_vault"
+            );
+        }
+        for k in SecretClientKind::ALL.iter().copied() {
+            assert_eq!(
+                SecretClientKind::ONLY_MEM.contains(&k),
+                k.is_mem(),
+                "ONLY_MEM membership must agree with is_mem on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_COMMAND.contains(&k),
+                k.is_command(),
+                "ONLY_COMMAND membership must agree with is_command on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_AKEYLESS.contains(&k),
+                k.is_akeyless(),
+                "ONLY_AKEYLESS membership must agree with is_akeyless on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_AWS_SECRETS_MANAGER.contains(&k),
+                k.is_aws_secrets_manager(),
+                "ONLY_AWS_SECRETS_MANAGER membership must agree with is_aws_secrets_manager \
+                 on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_OP_CONNECT.contains(&k),
+                k.is_op_connect(),
+                "ONLY_OP_CONNECT membership must agree with is_op_connect on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_VAULT.contains(&k),
+                k.is_vault(),
+                "ONLY_VAULT membership must agree with is_vault on {k:?}",
+            );
+            assert_eq!(
+                SecretClientKind::ONLY_GCP_SECRET_MANAGER.contains(&k),
+                k.is_gcp_secret_manager(),
+                "ONLY_GCP_SECRET_MANAGER membership must agree with is_gcp_secret_manager \
+                 on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slices_partition_all() {
+        // Septenary partition invariant: the seven per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_MEM.len() + ONLY_COMMAND.len() + … +
+        // ONLY_GCP_SECRET_MANAGER.len() == ALL.len()` at the slice
+        // altitude on the seven-way runtime-client axis. Septenary peer
+        // of `secret_backend_kind_identity_slices_partition_all` (commit
+        // `19364e3`), one cell narrower. A variant landing on two
+        // slices or on none breaks the partition here before any
+        // consumer that reasons about the polarity as a covering
+        // meta-partition observes the drift.
+        let identity_slices: [&[SecretClientKind]; 7] = [
+            SecretClientKind::ONLY_MEM,
+            SecretClientKind::ONLY_COMMAND,
+            SecretClientKind::ONLY_AKEYLESS,
+            SecretClientKind::ONLY_AWS_SECRETS_MANAGER,
+            SecretClientKind::ONLY_OP_CONNECT,
+            SecretClientKind::ONLY_VAULT,
+            SecretClientKind::ONLY_GCP_SECRET_MANAGER,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for k in left.iter() {
+                    assert!(
+                        !right.contains(k),
+                        "SecretClientKind::{k:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for k in SecretClientKind::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&k)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "SecretClientKind::{k:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            SecretClientKind::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SecretClientKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at
+        // THIS pin. Septenary peer of
+        // `secret_backend_kind_identity_slices_preserve_all_order`
+        // (commit `19364e3`) on the config-author backend-kind axis.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<SecretClientKind> = SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(SecretClientKind::ONLY_MEM, is_mem);
+        pin!(SecretClientKind::ONLY_COMMAND, is_command);
+        pin!(SecretClientKind::ONLY_AKEYLESS, is_akeyless);
+        pin!(
+            SecretClientKind::ONLY_AWS_SECRETS_MANAGER,
+            is_aws_secrets_manager
+        );
+        pin!(SecretClientKind::ONLY_OP_CONNECT, is_op_connect);
+        pin!(SecretClientKind::ONLY_VAULT, is_vault);
+        pin!(
+            SecretClientKind::ONLY_GCP_SECRET_MANAGER,
+            is_gcp_secret_manager
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all seven per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Septenary peer of
+        // `secret_backend_kind_identity_slices_have_no_duplicates`
+        // (commit `19364e3`) on the config-author backend-kind axis.
+        for slice in [
+            SecretClientKind::ONLY_MEM,
+            SecretClientKind::ONLY_COMMAND,
+            SecretClientKind::ONLY_AKEYLESS,
+            SecretClientKind::ONLY_AWS_SECRETS_MANAGER,
+            SecretClientKind::ONLY_OP_CONNECT,
+            SecretClientKind::ONLY_VAULT,
+            SecretClientKind::ONLY_GCP_SECRET_MANAGER,
+        ] {
+            let mut seen: Vec<SecretClientKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SecretClientKind identity slice {slice:?} contains \
+                     duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SecretClientKind::ALL — i.e.,
+        // `ONLY_MEM.len() == ALL.iter().filter(is_mem).count()` (and
+        // symmetric for the six siblings) — the cardinality projection
+        // at the slice altitude agrees with the boolean-altitude
+        // projection on all seven halves. Concrete positions today:
+        // 1 + 1 + 1 + 1 + 1 + 1 + 1 = 7 = ALL. Septenary peer of
+        // `secret_backend_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (commit `19364e3`) on the config-author backend-kind axis.
+        let counts = [
+            (
+                "is_mem",
+                SecretClientKind::ONLY_MEM.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_mem())
+                    .count(),
+            ),
+            (
+                "is_command",
+                SecretClientKind::ONLY_COMMAND.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_command())
+                    .count(),
+            ),
+            (
+                "is_akeyless",
+                SecretClientKind::ONLY_AKEYLESS.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_akeyless())
+                    .count(),
+            ),
+            (
+                "is_aws_secrets_manager",
+                SecretClientKind::ONLY_AWS_SECRETS_MANAGER.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_aws_secrets_manager())
+                    .count(),
+            ),
+            (
+                "is_op_connect",
+                SecretClientKind::ONLY_OP_CONNECT.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_op_connect())
+                    .count(),
+            ),
+            (
+                "is_vault",
+                SecretClientKind::ONLY_VAULT.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_vault())
+                    .count(),
+            ),
+            (
+                "is_gcp_secret_manager",
+                SecretClientKind::ONLY_GCP_SECRET_MANAGER.len(),
+                SecretClientKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_gcp_secret_manager())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(SecretClientKind::ALL.len(), 7);
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the seven per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub
+        // fn` (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Septenary peer of
+        // `secret_backend_kind_identity_slices_are_const_addressable`
+        // (commit `19364e3`) on the config-author backend-kind axis.
+        const ONLY_MEM_LEN: usize = SecretClientKind::ONLY_MEM.len();
+        const ONLY_COMMAND_LEN: usize = SecretClientKind::ONLY_COMMAND.len();
+        const ONLY_AKEYLESS_LEN: usize = SecretClientKind::ONLY_AKEYLESS.len();
+        const ONLY_AWS_SECRETS_MANAGER_LEN: usize =
+            SecretClientKind::ONLY_AWS_SECRETS_MANAGER.len();
+        const ONLY_OP_CONNECT_LEN: usize = SecretClientKind::ONLY_OP_CONNECT.len();
+        const ONLY_VAULT_LEN: usize = SecretClientKind::ONLY_VAULT.len();
+        const ONLY_GCP_SECRET_MANAGER_LEN: usize = SecretClientKind::ONLY_GCP_SECRET_MANAGER.len();
+        const ALL_LEN: usize = SecretClientKind::ALL.len();
+        assert_eq!(ONLY_MEM_LEN, 1);
+        assert_eq!(ONLY_COMMAND_LEN, 1);
+        assert_eq!(ONLY_AKEYLESS_LEN, 1);
+        assert_eq!(ONLY_AWS_SECRETS_MANAGER_LEN, 1);
+        assert_eq!(ONLY_OP_CONNECT_LEN, 1);
+        assert_eq!(ONLY_VAULT_LEN, 1);
+        assert_eq!(ONLY_GCP_SECRET_MANAGER_LEN, 1);
+        assert_eq!(
+            ONLY_MEM_LEN
+                + ONLY_COMMAND_LEN
+                + ONLY_AKEYLESS_LEN
+                + ONLY_AWS_SECRETS_MANAGER_LEN
+                + ONLY_OP_CONNECT_LEN
+                + ONLY_VAULT_LEN
+                + ONLY_GCP_SECRET_MANAGER_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the compound-polarity meta-partition
+        // (CLOUD_SECRET_MANAGER / NON_CLOUD_SECRET_MANAGER) on the
+        // same runtime-client axis. The union of the two identity
+        // singletons in the cloud pole (ONLY_AWS_SECRETS_MANAGER +
+        // ONLY_GCP_SECRET_MANAGER) equals CLOUD_SECRET_MANAGER as a
+        // set, and the union of the five non-cloud identity singletons
+        // equals NON_CLOUD_SECRET_MANAGER as a set. A future
+        // rearrangement of one meta-partition without the other (say,
+        // moving Vault into the cloud pole without adding it to the
+        // identity → compound aggregation) diverges at THIS pin,
+        // before drifting through a consumer that materializes one
+        // altitude from the other. Septenary peer of
+        // `secret_backend_kind_identity_slices_agree_with_compound_polarity_slices`
+        // (commit `19364e3`) on the config-author backend-kind axis.
+        let cloud_from_identity: Vec<SecretClientKind> = [
+            SecretClientKind::ONLY_AWS_SECRETS_MANAGER,
+            SecretClientKind::ONLY_GCP_SECRET_MANAGER,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            cloud_from_identity,
+            SecretClientKind::CLOUD_SECRET_MANAGER.to_vec(),
+            "identity singleton union on the cloud pole must reproduce \
+             CLOUD_SECRET_MANAGER in declaration order",
+        );
+        let non_cloud_from_identity: Vec<SecretClientKind> = [
+            SecretClientKind::ONLY_MEM,
+            SecretClientKind::ONLY_COMMAND,
+            SecretClientKind::ONLY_AKEYLESS,
+            SecretClientKind::ONLY_OP_CONNECT,
+            SecretClientKind::ONLY_VAULT,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            non_cloud_from_identity,
+            SecretClientKind::NON_CLOUD_SECRET_MANAGER.to_vec(),
+            "identity singleton union on the non-cloud pole must reproduce \
+             NON_CLOUD_SECRET_MANAGER in declaration order",
+        );
     }
 
     #[test]
