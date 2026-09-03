@@ -11994,6 +11994,123 @@ impl ProofRelationKind {
         "cross_store",
     ];
 
+    /// The three [`Self::Consistent`] arm variants of
+    /// [`Self::VARIANTS`] — the three legitimate corners (watermark
+    /// stationary, identical-value republish, and normal progression) —
+    /// in the SAME relative declaration order they occupy in
+    /// [`Self::VARIANTS`], carrying the *consistent-arm* pole of the
+    /// (consistent × impossible) 3/2 outer-arm-tag meta-partition at
+    /// the static-slice altitude on the fused-sum kind axis, mirroring
+    /// the shipped boolean predicate [`Self::is_consistent`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `k.is_consistent()`, and no variant outside it does.
+    ///
+    /// **Concatenation of the consistent half-side.** Elementwise this
+    /// is [`SameStoreConsistencyKind::VARIANTS`] wrapped in
+    /// [`Self::Consistent`] — the mechanical lift of the three
+    /// consistent-half singletons
+    /// [`SameStoreConsistencyKind::ONLY_STATIONARY`] /
+    /// [`SameStoreConsistencyKind::ONLY_IDENTITY_REPUBLISH`] /
+    /// [`SameStoreConsistencyKind::ONLY_PROGRESSION`] (commit
+    /// `26634ad`) onto the fused-sum altitude, matching the same
+    /// three consistent slots the fused [`Self::VARIANTS`] literal
+    /// carries at positions 0..3.
+    ///
+    /// Paired with [`Self::ONLY_IMPOSSIBLE`], the two disjoint slices
+    /// partition [`Self::VARIANTS`] at the static-slice altitude the
+    /// same way the shipped boolean predicates [`Self::is_consistent`]
+    /// / [`Self::is_impossible`] meta-partition it at the boolean
+    /// altitude (per [`variants_tests::fused_variants_partition_at_index_three`]).
+    /// The two constants sit in the same `impl ProofRelationKind`
+    /// block as [`Self::VARIANTS`] and [`Self::NAMES`], and follow the
+    /// same `pub const &'static [Self]` static-slice discipline the
+    /// per-half meta-partition slice-constant idiom carries on the two
+    /// half-side kind axes ([`SameStoreConsistencyKind::ONLY_STATIONARY`]
+    /// / [`SameStoreImpossibilityKind::ONLY_REGRESSED`]) — one altitude
+    /// up.
+    ///
+    /// Written as an explicit slice literal in the SAME relative
+    /// declaration order the consistent slots occupy in
+    /// [`Self::VARIANTS`], rather than derived by filtering
+    /// [`Self::VARIANTS`] through [`Self::is_consistent`] at const-fn
+    /// altitude — so the two declaration surfaces (the slice literal
+    /// and the boolean predicate) remain independent load-bearing
+    /// witnesses of the same outer-arm-tag partition, and a future
+    /// edit that shifts a variant across the polarity on ONE surface
+    /// but not the other diverges at test time on the first kind where
+    /// they disagree.
+    ///
+    /// **Fused-sum landing of the per-half meta-partition slice-
+    /// constant discipline on the fused-sum kind axis in `hotswap.rs`.**
+    /// Direct fused-sum lift of
+    /// [`SameStoreConsistencyKind::ONLY_STATIONARY`] /
+    /// `ONLY_IDENTITY_REPUBLISH` / `ONLY_PROGRESSION` (commit
+    /// `26634ad`) and sibling of
+    /// [`SameStoreImpossibilityKind::ONLY_REGRESSED`] /
+    /// `ONLY_CROSS_STORE` (commit `273ec6c`) on the two half-side
+    /// kind axes the fused sum projects into — the outer-arm-tag
+    /// binary meta-partition ladder now reaches the fused sum axis
+    /// too, one altitude up, so a consumer holding a
+    /// [`ProofRelationKind`] and iterating only the consistent-arm
+    /// corners (or only the impossibility-arm corners) reaches either
+    /// through ONE static slice reference without re-filtering
+    /// [`Self::VARIANTS`] through the boolean predicate at every
+    /// consumer site.
+    ///
+    /// A hypothetical sixth corner landing on either half-side enum
+    /// must extend the matching half-side `VARIANTS` AND extend either
+    /// [`Self::ONLY_CONSISTENT`] or [`Self::ONLY_IMPOSSIBLE`] in
+    /// lockstep with the matching boolean predicate — the partition,
+    /// order-preservation, and cardinality pins refuse a silent
+    /// landing under the negation of both outer-arm-tag poles.
+    ///
+    /// The agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, const-addressability, and cross-half concatenation
+    /// laws are pinned by
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_agree_with_outer_arm_predicates`],
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_partition_variants`],
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_preserve_variants_order`],
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_have_no_duplicates`],
+    /// [`variants_tests::proof_relation_kind_outer_arm_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_are_const_addressable`],
+    /// and
+    /// [`variants_tests::proof_relation_kind_outer_arm_slices_are_half_side_variants_wrapped_in_the_arm_constructor`].
+    pub const ONLY_CONSISTENT: &'static [Self] = &[
+        Self::Consistent(SameStoreConsistencyKind::Stationary),
+        Self::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+        Self::Consistent(SameStoreConsistencyKind::Progression),
+    ];
+
+    /// The two [`Self::Impossible`] arm variants of
+    /// [`Self::VARIANTS`] — the two impossibility corners
+    /// (`Regressed` and `CrossStore`) — in the SAME relative
+    /// declaration order they occupy in [`Self::VARIANTS`], carrying
+    /// the *impossible-arm* pole of the (consistent × impossible) 3/2
+    /// outer-arm-tag meta-partition at the static-slice altitude on
+    /// the fused-sum kind axis, mirroring the shipped boolean
+    /// predicate [`Self::is_impossible`] one altitude down.
+    ///
+    /// **Concatenation of the impossibility half-side.** Elementwise
+    /// this is [`SameStoreImpossibilityKind::VARIANTS`] wrapped in
+    /// [`Self::Impossible`] — the mechanical lift of the two
+    /// impossibility-half singletons
+    /// [`SameStoreImpossibilityKind::ONLY_REGRESSED`] /
+    /// [`SameStoreImpossibilityKind::ONLY_CROSS_STORE`] (commit
+    /// `273ec6c`) onto the fused-sum altitude, matching the same
+    /// two impossibility slots the fused [`Self::VARIANTS`] literal
+    /// carries at positions 3..5.
+    ///
+    /// See [`Self::ONLY_CONSISTENT`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_impossible`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, const-addressability, and cross-half concatenation
+    /// pins the two outer-arm-tag slice constants share.
+    pub const ONLY_IMPOSSIBLE: &'static [Self] = &[
+        Self::Impossible(SameStoreImpossibilityKind::Regressed),
+        Self::Impossible(SameStoreImpossibilityKind::CrossStore),
+    ];
+
     /// Accessor for [`Self::VARIANTS`] — the receiver-side view of
     /// the compile-time closed set of fused variant values.
     /// `const`-callable.
@@ -39277,6 +39394,260 @@ mod variants_tests {
         assert_eq!(
             ONLY_STATIONARY_LEN + ONLY_IDENTITY_REPUBLISH_LEN + ONLY_PROGRESSION_LEN,
             VARIANTS_LEN,
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_agree_with_outer_arm_predicates() {
+        // Outer-arm-tag agreement pin between the two aggregate `ONLY_*`
+        // slice literals and the shipped `is_consistent` /
+        // `is_impossible` predicates on the fused-sum kind axis's
+        // (consistent × impossible) 3/2 outer-arm-tag meta-partition.
+        // For every entry in each `ONLY_*` slice: the positive-pole
+        // predicate holds and the negative-pole predicate does not,
+        // plus `VARIANTS`-membership agreement between the slice
+        // `.contains()` and the boolean predicate across both poles.
+        // Fused-sum lift of
+        // `same_store_consistency_kind_identity_slices_agree_with_identity_predicates`
+        // and
+        // `same_store_impossibility_kind_identity_slices_agree_with_identity_predicates`
+        // one altitude up onto the fused sum. The two independent
+        // declaration surfaces (slice literals + boolean predicates)
+        // diverge at THIS pin on the first fused corner where they
+        // disagree, before a consumer that reads one altitude but not
+        // the other observes the drift.
+        for k in ProofRelationKind::ONLY_CONSISTENT.iter().copied() {
+            assert!(
+                k.is_consistent(),
+                "ProofRelationKind::ONLY_CONSISTENT entry {k:?} must satisfy is_consistent()",
+            );
+            assert!(
+                !k.is_impossible(),
+                "ProofRelationKind::ONLY_CONSISTENT entry {k:?} must NOT satisfy is_impossible()",
+            );
+        }
+        for k in ProofRelationKind::ONLY_IMPOSSIBLE.iter().copied() {
+            assert!(
+                k.is_impossible(),
+                "ProofRelationKind::ONLY_IMPOSSIBLE entry {k:?} must satisfy is_impossible()",
+            );
+            assert!(
+                !k.is_consistent(),
+                "ProofRelationKind::ONLY_IMPOSSIBLE entry {k:?} must NOT satisfy is_consistent()",
+            );
+        }
+        for k in ProofRelationKind::VARIANTS.iter().copied() {
+            assert_eq!(
+                ProofRelationKind::ONLY_CONSISTENT.contains(&k),
+                k.is_consistent(),
+                "ONLY_CONSISTENT membership must agree with is_consistent() on \
+                 ProofRelationKind::{k:?}",
+            );
+            assert_eq!(
+                ProofRelationKind::ONLY_IMPOSSIBLE.contains(&k),
+                k.is_impossible(),
+                "ONLY_IMPOSSIBLE membership must agree with is_impossible() on \
+                 ProofRelationKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_partition_variants() {
+        // Binary partition invariant: the two outer-arm-tag slices are
+        // disjoint and their union covers VARIANTS. Direct application
+        // of the meta-partition sum law
+        // `ONLY_CONSISTENT.len() + ONLY_IMPOSSIBLE.len() ==
+        // VARIANTS.len()` at the slice altitude on the fused-sum kind
+        // axis's outer-arm-tag projection. Fused-sum lift of
+        // `same_store_consistency_kind_identity_slices_partition_variants`
+        // / `same_store_impossibility_kind_identity_slices_partition_variants`
+        // one altitude up. A variant landing on both slices or on
+        // neither breaks the partition here before any consumer that
+        // reasons about the outer-arm tag as a covering meta-partition
+        // observes the drift.
+        for k in ProofRelationKind::ONLY_CONSISTENT {
+            assert!(
+                !ProofRelationKind::ONLY_IMPOSSIBLE.contains(k),
+                "ProofRelationKind::{k:?} appears in BOTH ONLY_CONSISTENT and ONLY_IMPOSSIBLE",
+            );
+        }
+        for k in ProofRelationKind::VARIANTS {
+            let in_consistent = ProofRelationKind::ONLY_CONSISTENT.contains(k);
+            let in_impossible = ProofRelationKind::ONLY_IMPOSSIBLE.contains(k);
+            let held = usize::from(in_consistent) + usize::from(in_impossible);
+            assert_eq!(
+                held, 1,
+                "ProofRelationKind::{k:?} must appear in exactly one of \
+                 ONLY_CONSISTENT / ONLY_IMPOSSIBLE (found in {held})",
+            );
+        }
+        assert_eq!(
+            ProofRelationKind::ONLY_CONSISTENT.len() + ProofRelationKind::ONLY_IMPOSSIBLE.len(),
+            ProofRelationKind::VARIANTS.len(),
+            "ONLY_CONSISTENT + ONLY_IMPOSSIBLE slice lengths must sum to VARIANTS.len()",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_preserve_variants_order() {
+        // Order-preservation pin: each outer-arm-tag slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ProofRelationKind::VARIANTS — i.e., the slice equals
+        // `VARIANTS.iter().filter(polarity).collect()` pointwise. A
+        // future edit that permuted variants within one arm (e.g. by
+        // reordering the half-side VARIANTS) fails at THIS pin before
+        // a consumer indexing the arm slice by ordinal observes the
+        // reshuffle. Fused-sum lift of
+        // `same_store_consistency_kind_identity_slices_preserve_variants_order`
+        // / `same_store_impossibility_kind_identity_slices_preserve_variants_order`.
+        let consistent_from_variants: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_consistent)
+            .collect();
+        assert_eq!(
+            consistent_from_variants,
+            ProofRelationKind::ONLY_CONSISTENT.to_vec(),
+            "ONLY_CONSISTENT must be VARIANTS-filtered by is_consistent in declaration order",
+        );
+        let impossible_from_variants: Vec<ProofRelationKind> = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_impossible)
+            .collect();
+        assert_eq!(
+            impossible_from_variants,
+            ProofRelationKind::ONLY_IMPOSSIBLE.to_vec(),
+            "ONLY_IMPOSSIBLE must be VARIANTS-filtered by is_impossible in declaration order",
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_have_no_duplicates() {
+        // No-duplicates pin on both outer-arm-tag slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-listed a
+        // variant on one arm fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set.
+        // Fused-sum lift of
+        // `same_store_consistency_kind_identity_slices_have_no_duplicates`
+        // / `same_store_impossibility_kind_identity_slices_have_no_duplicates`.
+        for slice in [
+            ProofRelationKind::ONLY_CONSISTENT,
+            ProofRelationKind::ONLY_IMPOSSIBLE,
+        ] {
+            let mut seen: Vec<ProofRelationKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ProofRelationKind outer-arm slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the outer-arm-tag slice lengths
+        // equal the boolean-filter counts on ProofRelationKind::VARIANTS
+        // — i.e., `ONLY_CONSISTENT.len() ==
+        // VARIANTS.iter().filter(is_consistent).count()` and symmetric
+        // for the impossibility arm — the cardinality projection at
+        // the slice altitude agrees with the boolean-altitude
+        // projection on both outer arms. Concrete positions today:
+        // 3 consistent + 2 impossibility = 5 = VARIANTS.
+        // Fused-sum lift of
+        // `same_store_consistency_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // / `same_store_impossibility_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`.
+        let consistent_count = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_consistent)
+            .count();
+        let impossible_count = ProofRelationKind::VARIANTS
+            .iter()
+            .copied()
+            .filter(ProofRelationKind::is_impossible)
+            .count();
+        assert_eq!(
+            ProofRelationKind::ONLY_CONSISTENT.len(),
+            consistent_count,
+            "ONLY_CONSISTENT.len() must match the is_consistent count on VARIANTS",
+        );
+        assert_eq!(
+            ProofRelationKind::ONLY_IMPOSSIBLE.len(),
+            impossible_count,
+            "ONLY_IMPOSSIBLE.len() must match the is_impossible count on VARIANTS",
+        );
+        assert_eq!(ProofRelationKind::ONLY_CONSISTENT.len(), 3);
+        assert_eq!(ProofRelationKind::ONLY_IMPOSSIBLE.len(), 2);
+        assert_eq!(ProofRelationKind::VARIANTS.len(), 5);
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_are_const_addressable() {
+        // Const-time addressability pin: the two outer-arm-tag slices
+        // are reachable at const evaluation position (a `const` binding
+        // of `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context consumer.
+        // Fused-sum lift of
+        // `same_store_consistency_kind_identity_slices_are_const_addressable`
+        // / `same_store_impossibility_kind_identity_slices_are_const_addressable`.
+        const ONLY_CONSISTENT_LEN: usize = ProofRelationKind::ONLY_CONSISTENT.len();
+        const ONLY_IMPOSSIBLE_LEN: usize = ProofRelationKind::ONLY_IMPOSSIBLE.len();
+        const VARIANTS_LEN: usize = ProofRelationKind::VARIANTS.len();
+        assert_eq!(ONLY_CONSISTENT_LEN, 3);
+        assert_eq!(ONLY_IMPOSSIBLE_LEN, 2);
+        assert_eq!(ONLY_CONSISTENT_LEN + ONLY_IMPOSSIBLE_LEN, VARIANTS_LEN);
+    }
+
+    #[test]
+    fn proof_relation_kind_outer_arm_slices_are_half_side_variants_wrapped_in_the_arm_constructor()
+    {
+        // Cross-half concatenation pin — the fused sum-law at the
+        // outer-arm-tag slice altitude. Elementwise:
+        // `ONLY_CONSISTENT[i] == Self::Consistent(SameStoreConsistencyKind::VARIANTS[i])`
+        // for every `i`, and
+        // `ONLY_IMPOSSIBLE[j] == Self::Impossible(SameStoreImpossibilityKind::VARIANTS[j])`
+        // for every `j`. The two half-side identity slices
+        // (`SameStoreConsistencyKind::VARIANTS` and
+        // `SameStoreImpossibilityKind::VARIANTS`) already carry the
+        // ordered payload for each arm; this pin welds the fused
+        // outer-arm-tag slices to the mechanical `Self::Consistent(_)`
+        // / `Self::Impossible(_)` lift of those two half-side ordered
+        // slices, so a hypothetical sixth corner added to either
+        // half-side enum forces a lockstep extension of the matching
+        // fused-arm slice or fails at this pin (and at the
+        // partition/order/cardinality pins above).
+        //
+        // The fused-sum landing of the meta-partition slice-constant
+        // discipline: the two aggregate outer-arm slices HERE are
+        // NOTHING BUT the two half-side identity slices wrapped, and
+        // the pin below is that concatenation identity at the value
+        // altitude.
+        let expected_consistent: Vec<ProofRelationKind> = SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .copied()
+            .map(ProofRelationKind::Consistent)
+            .collect();
+        assert_eq!(
+            ProofRelationKind::ONLY_CONSISTENT.to_vec(),
+            expected_consistent,
+            "ONLY_CONSISTENT must be SameStoreConsistencyKind::VARIANTS wrapped in Consistent",
+        );
+        let expected_impossible: Vec<ProofRelationKind> = SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .copied()
+            .map(ProofRelationKind::Impossible)
+            .collect();
+        assert_eq!(
+            ProofRelationKind::ONLY_IMPOSSIBLE.to_vec(),
+            expected_impossible,
+            "ONLY_IMPOSSIBLE must be SameStoreImpossibilityKind::VARIANTS wrapped in Impossible",
         );
     }
 
