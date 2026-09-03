@@ -2263,6 +2263,121 @@ impl SupportMagnitudeDirection {
     /// typed-bucket classifier.
     pub const ALL: &'static [Self] = &[Self::Low, Self::StrictInterior, Self::High];
 
+    /// The single `ONLY_LOW` [`SupportMagnitudeDirection`] variant —
+    /// [`Self::Low`] (the two low-support corners of the
+    /// support-cardinality interval,
+    /// [`SupportCardinalityClass::Empty`] and
+    /// [`SupportCardinalityClass::SingularSupport`], collapsed to
+    /// support magnitude at most one cell) — carrying the *low-identity*
+    /// pole of the (low × strict-interior × high) 1/1/1 identity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// support-magnitude axis, mirroring the shipped boolean predicate
+    /// [`Self::is_low`] one altitude down.
+    ///
+    /// Orthogonal-peer landing to [`SupportBoundaryDistance::ONLY_BOUNDARY`] /
+    /// [`SupportBoundaryDistance::ONLY_SINGULAR`] /
+    /// [`SupportBoundaryDistance::ONLY_STRICT_INTERIOR`] (commit
+    /// `b42b435`) — the two three-way sibling classifiers over the same
+    /// [`SupportCardinalityClass`] scalar now both carry the per-half
+    /// meta-partition slice-constant discipline at the static-slice
+    /// altitude. The distance-from-boundary axis's identity
+    /// meta-partition is (boundary × singular × strict-interior); the
+    /// support-magnitude axis's identity meta-partition is
+    /// (low × strict-interior × high). The two axes share the
+    /// `StrictInterior` middle leg pointwise on
+    /// [`SupportCardinalityClass::StrictPartialCover`] alone. Ternary
+    /// peer of [`crate::DiffLineKind::ONLY_REMOVED`] /
+    /// [`crate::DiffLineKind::ONLY_ADDED`] /
+    /// [`crate::DiffLineKind::ONLY_CONTEXT`] (commit `7ea710e`) on the
+    /// `tiered.rs`-scoped diff-cell axis,
+    /// [`crate::WatchEventClass::ONLY_RELOAD`] /
+    /// [`crate::WatchEventClass::ONLY_REMOVED`] /
+    /// [`crate::WatchEventClass::ONLY_IGNORED`] (commit `9e5ea18`) on
+    /// the watcher-side reload-relevance axis,
+    /// [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::ONLY_ENV`] /
+    /// [`crate::ConfigSourceKind::ONLY_FILE`] (commit `f287239`) on the
+    /// shikumi-side layer-kind axis, and
+    /// [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`) on the
+    /// figment-side kind axis.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the boolean predicate at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_LOW.iter().all(|k| k.is_low())`,
+    /// `!ONLY_LOW.iter().any(|k| k.is_strict_interior())`,
+    /// `!ONLY_LOW.iter().any(|k| k.is_high())`, and the symmetric laws
+    /// on [`Self::ONLY_STRICT_INTERIOR`] and [`Self::ONLY_HIGH`]) are
+    /// pinned by
+    /// [`tests::support_magnitude_direction_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::support_magnitude_direction_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::support_magnitude_direction_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::support_magnitude_direction_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::support_magnitude_direction_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::support_magnitude_direction_ternary_slices_are_const_addressable`].
+    pub const ONLY_LOW: &'static [Self] = &[Self::Low];
+
+    /// The single `ONLY_STRICT_INTERIOR` [`SupportMagnitudeDirection`]
+    /// variant — [`Self::StrictInterior`] (the strict interior of the
+    /// support-cardinality interval,
+    /// [`SupportCardinalityClass::StrictPartialCover`], support
+    /// `2..=axis_cardinality - 2`; only reachable on cardinality-`>= 4`
+    /// axes, vacuously absent on cardinality-`<= 3` axes) — carrying
+    /// the *strict-interior-identity* pole of the (low × strict-interior
+    /// × high) 1/1/1 identity meta-partition at the primitive's OWN
+    /// altitude on the support-magnitude axis, mirroring the shipped
+    /// boolean predicate [`Self::is_strict_interior`] one altitude
+    /// down. Pointwise-equal to
+    /// [`SupportBoundaryDistance::ONLY_STRICT_INTERIOR`] under
+    /// projection through
+    /// [`SupportCardinalityClass::support_magnitude_direction`] and
+    /// [`SupportCardinalityClass::support_boundary_distance`] — the
+    /// two sibling classifiers agree pointwise on the shared middle
+    /// leg [`SupportCardinalityClass::StrictPartialCover`].
+    ///
+    /// See [`Self::ONLY_LOW`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_strict_interior`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_STRICT_INTERIOR: &'static [Self] = &[Self::StrictInterior];
+
+    /// The single `ONLY_HIGH` [`SupportMagnitudeDirection`] variant —
+    /// [`Self::High`] (the two high-support corners of the
+    /// support-cardinality interval,
+    /// [`SupportCardinalityClass::SingularGap`] and
+    /// [`SupportCardinalityClass::FullCover`], collapsed to support
+    /// magnitude at least `axis_cardinality - 1`) — carrying the
+    /// *high-identity* pole of the (low × strict-interior × high) 1/1/1
+    /// identity meta-partition at the primitive's OWN altitude on the
+    /// support-magnitude axis, mirroring the shipped boolean predicate
+    /// [`Self::is_high`] one altitude down. Mirror peer of
+    /// [`Self::ONLY_LOW`] across the [`Self::StrictInterior`] middle
+    /// leg — the same mirror the [`Self::is_high`] / [`Self::is_low`]
+    /// boolean-predicate pair carries one altitude down.
+    ///
+    /// See [`Self::ONLY_LOW`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_high`]), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_HIGH: &'static [Self] = &[Self::High];
+
     /// `true` exactly on [`Self::Low`] — the typed-bucket peer of
     /// [`SupportCardinalityClass::is_low_support`] projected from the
     /// variant tag. Named `is_low` on the typed-bucket surface (the
@@ -49534,6 +49649,290 @@ mod tests {
         assert!(!SupportMagnitudeDirection::Low.is_high());
         assert!(!SupportMagnitudeDirection::StrictInterior.is_high());
         assert!(SupportMagnitudeDirection::High.is_high());
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way weld pin between the per-half slice literals and
+        // the shipped boolean predicates on the support-magnitude
+        // axis's (low × strict-interior × high) 1/1/1 identity
+        // meta-partition. For every entry in each `ONLY_*` slice: the
+        // positive-pole predicate holds and the two negative-pole
+        // predicates do not, plus ALL-membership agreement between the
+        // slice `.contains()` and the boolean predicate across all
+        // three poles. Orthogonal-peer of
+        // `support_boundary_distance_ternary_slices_agree_with_ternary_predicates`
+        // (`b42b435`) on the sibling three-bucket classifier over the
+        // same `SupportCardinalityClass` scalar, and ternary peer of
+        // `diff_line_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`7ea710e`),
+        // `watch_event_class_ternary_slices_agree_with_ternary_predicates`
+        // (`9e5ea18`),
+        // `config_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`f287239`), and
+        // `figment_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`723060b`) on their own ternary axes.
+        for k in SupportMagnitudeDirection::ONLY_LOW.iter().copied() {
+            assert!(
+                k.is_low(),
+                "SupportMagnitudeDirection::ONLY_LOW entry {k:?} must satisfy is_low()",
+            );
+            assert!(
+                !k.is_strict_interior(),
+                "SupportMagnitudeDirection::ONLY_LOW entry {k:?} must NOT satisfy is_strict_interior()",
+            );
+            assert!(
+                !k.is_high(),
+                "SupportMagnitudeDirection::ONLY_LOW entry {k:?} must NOT satisfy is_high()",
+            );
+        }
+        for k in SupportMagnitudeDirection::ONLY_STRICT_INTERIOR
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_strict_interior(),
+                "SupportMagnitudeDirection::ONLY_STRICT_INTERIOR entry {k:?} must satisfy is_strict_interior()",
+            );
+            assert!(
+                !k.is_low(),
+                "SupportMagnitudeDirection::ONLY_STRICT_INTERIOR entry {k:?} must NOT satisfy is_low()",
+            );
+            assert!(
+                !k.is_high(),
+                "SupportMagnitudeDirection::ONLY_STRICT_INTERIOR entry {k:?} must NOT satisfy is_high()",
+            );
+        }
+        for k in SupportMagnitudeDirection::ONLY_HIGH.iter().copied() {
+            assert!(
+                k.is_high(),
+                "SupportMagnitudeDirection::ONLY_HIGH entry {k:?} must satisfy is_high()",
+            );
+            assert!(
+                !k.is_low(),
+                "SupportMagnitudeDirection::ONLY_HIGH entry {k:?} must NOT satisfy is_low()",
+            );
+            assert!(
+                !k.is_strict_interior(),
+                "SupportMagnitudeDirection::ONLY_HIGH entry {k:?} must NOT satisfy is_strict_interior()",
+            );
+        }
+        for k in SupportMagnitudeDirection::ALL.iter().copied() {
+            assert_eq!(
+                SupportMagnitudeDirection::ONLY_LOW.contains(&k),
+                k.is_low(),
+                "ONLY_LOW membership must agree with is_low() on \
+                 SupportMagnitudeDirection::{k:?}",
+            );
+            assert_eq!(
+                SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.contains(&k),
+                k.is_strict_interior(),
+                "ONLY_STRICT_INTERIOR membership must agree with is_strict_interior() on \
+                 SupportMagnitudeDirection::{k:?}",
+            );
+            assert_eq!(
+                SupportMagnitudeDirection::ONLY_HIGH.contains(&k),
+                k.is_high(),
+                "ONLY_HIGH membership must agree with is_high() on \
+                 SupportMagnitudeDirection::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_LOW.len() + ONLY_STRICT_INTERIOR.len() +
+        // ONLY_HIGH.len() == ALL.len()` at the slice altitude on the
+        // support-magnitude axis's identity projection.
+        // Orthogonal-peer of
+        // `support_boundary_distance_ternary_slices_partition_all`
+        // (`b42b435`) on the sibling three-bucket classifier and
+        // slice-altitude peer of the trio-predicate agreement pin one
+        // altitude down. A variant landing on two slices or on none
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes the
+        // drift.
+        for k in SupportMagnitudeDirection::ONLY_LOW {
+            assert!(
+                !SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.contains(k),
+                "SupportMagnitudeDirection::{k:?} appears in BOTH ONLY_LOW and ONLY_STRICT_INTERIOR",
+            );
+            assert!(
+                !SupportMagnitudeDirection::ONLY_HIGH.contains(k),
+                "SupportMagnitudeDirection::{k:?} appears in BOTH ONLY_LOW and ONLY_HIGH",
+            );
+        }
+        for k in SupportMagnitudeDirection::ONLY_STRICT_INTERIOR {
+            assert!(
+                !SupportMagnitudeDirection::ONLY_HIGH.contains(k),
+                "SupportMagnitudeDirection::{k:?} appears in BOTH ONLY_STRICT_INTERIOR and ONLY_HIGH",
+            );
+        }
+        for k in SupportMagnitudeDirection::ALL {
+            let in_low = SupportMagnitudeDirection::ONLY_LOW.contains(k);
+            let in_strict_interior = SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.contains(k);
+            let in_high = SupportMagnitudeDirection::ONLY_HIGH.contains(k);
+            let held = usize::from(in_low) + usize::from(in_strict_interior) + usize::from(in_high);
+            assert_eq!(
+                held, 1,
+                "SupportMagnitudeDirection::{k:?} must appear in exactly one of \
+                 ONLY_LOW / ONLY_STRICT_INTERIOR / ONLY_HIGH (found in {held})",
+            );
+        }
+        assert_eq!(
+            SupportMagnitudeDirection::ONLY_LOW.len()
+                + SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.len()
+                + SupportMagnitudeDirection::ONLY_HIGH.len(),
+            SupportMagnitudeDirection::ALL.len(),
+            "ONLY_LOW + ONLY_STRICT_INTERIOR + ONLY_HIGH slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SupportMagnitudeDirection::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Orthogonal-peer of
+        // `support_boundary_distance_ternary_slices_preserve_all_order`
+        // (`b42b435`).
+        let low_from_all: Vec<SupportMagnitudeDirection> = SupportMagnitudeDirection::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_low())
+            .collect();
+        assert_eq!(
+            low_from_all,
+            SupportMagnitudeDirection::ONLY_LOW.to_vec(),
+            "ONLY_LOW must be ALL-filtered by is_low in declaration order",
+        );
+        let strict_interior_from_all: Vec<SupportMagnitudeDirection> =
+            SupportMagnitudeDirection::ALL
+                .iter()
+                .copied()
+                .filter(|k| k.is_strict_interior())
+                .collect();
+        assert_eq!(
+            strict_interior_from_all,
+            SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.to_vec(),
+            "ONLY_STRICT_INTERIOR must be ALL-filtered by is_strict_interior in declaration order",
+        );
+        let high_from_all: Vec<SupportMagnitudeDirection> = SupportMagnitudeDirection::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_high())
+            .collect();
+        assert_eq!(
+            high_from_all,
+            SupportMagnitudeDirection::ONLY_HIGH.to_vec(),
+            "ONLY_HIGH must be ALL-filtered by is_high in declaration order",
+        );
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Orthogonal-peer of
+        // `support_boundary_distance_ternary_slices_have_no_duplicates`
+        // (`b42b435`).
+        for slice in [
+            SupportMagnitudeDirection::ONLY_LOW,
+            SupportMagnitudeDirection::ONLY_STRICT_INTERIOR,
+            SupportMagnitudeDirection::ONLY_HIGH,
+        ] {
+            let mut seen: Vec<SupportMagnitudeDirection> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SupportMagnitudeDirection ternary slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SupportMagnitudeDirection::ALL —
+        // i.e., `ONLY_LOW.len() == ALL.iter().filter(is_low).count()`
+        // (and symmetric for the two siblings) — the cardinality
+        // projection at the slice altitude agrees with the
+        // boolean-altitude projection on all three halves. Concrete
+        // positions today: 1 low + 1 strict-interior + 1 high = 3 =
+        // ALL. Orthogonal-peer of
+        // `support_boundary_distance_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`b42b435`).
+        let low_count = SupportMagnitudeDirection::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_low())
+            .count();
+        let strict_interior_count = SupportMagnitudeDirection::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_strict_interior())
+            .count();
+        let high_count = SupportMagnitudeDirection::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_high())
+            .count();
+        assert_eq!(
+            SupportMagnitudeDirection::ONLY_LOW.len(),
+            low_count,
+            "ONLY_LOW.len() must match the is_low count on ALL",
+        );
+        assert_eq!(
+            SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.len(),
+            strict_interior_count,
+            "ONLY_STRICT_INTERIOR.len() must match the is_strict_interior count on ALL",
+        );
+        assert_eq!(
+            SupportMagnitudeDirection::ONLY_HIGH.len(),
+            high_count,
+            "ONLY_HIGH.len() must match the is_high count on ALL",
+        );
+        assert_eq!(SupportMagnitudeDirection::ONLY_LOW.len(), 1);
+        assert_eq!(SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.len(), 1);
+        assert_eq!(SupportMagnitudeDirection::ONLY_HIGH.len(), 1);
+        assert_eq!(SupportMagnitudeDirection::ALL.len(), 3);
+    }
+
+    #[test]
+    fn support_magnitude_direction_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Orthogonal-peer of
+        // `support_boundary_distance_ternary_slices_are_const_addressable`
+        // (`b42b435`).
+        const ONLY_LOW_LEN: usize = SupportMagnitudeDirection::ONLY_LOW.len();
+        const ONLY_STRICT_INTERIOR_LEN: usize =
+            SupportMagnitudeDirection::ONLY_STRICT_INTERIOR.len();
+        const ONLY_HIGH_LEN: usize = SupportMagnitudeDirection::ONLY_HIGH.len();
+        const ALL_LEN: usize = SupportMagnitudeDirection::ALL.len();
+        assert_eq!(ONLY_LOW_LEN, 1);
+        assert_eq!(ONLY_STRICT_INTERIOR_LEN, 1);
+        assert_eq!(ONLY_HIGH_LEN, 1);
+        assert_eq!(
+            ONLY_LOW_LEN + ONLY_STRICT_INTERIOR_LEN + ONLY_HIGH_LEN,
+            ALL_LEN
+        );
     }
 
     #[test]
