@@ -194,6 +194,122 @@ impl Format {
     /// const-addressability pins.
     pub const ALWAYS_AVAILABLE: &'static [Self] = &[Self::Yaml, Self::Toml, Self::Nix];
 
+    /// The single [`Self::Yaml`] pole of the five-way identity meta-
+    /// partition on the [`Format`] axis at the static-slice altitude —
+    /// the singleton slice `&[Self::Yaml]` mirroring the shipped
+    /// boolean predicate [`Self::is_yaml`] one altitude down: every
+    /// variant in this slice satisfies `f.is_yaml()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with the four siblings ([`Self::ONLY_TOML`],
+    /// [`Self::ONLY_LISP`], [`Self::ONLY_NIX`], [`Self::ONLY_BLUE`]),
+    /// the five disjoint singleton slices partition [`Self::ALL`] at
+    /// the static-slice altitude the same way the shipped boolean
+    /// predicates ([`Self::is_yaml`] / [`Self::is_toml`] /
+    /// [`Self::is_lisp`] / [`Self::is_nix`] / [`Self::is_blue`]) meta-
+    /// partition it at the boolean altitude. All five constants sit in
+    /// the same `impl Format` block as [`Self::ALL`] /
+    /// [`Self::FEATURE_GATED`] / [`Self::ALWAYS_AVAILABLE`] and follow
+    /// the same `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the five identity poles occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the five identity predicates at const-fn altitude — so
+    /// the two declaration surfaces (the slice literals and the
+    /// boolean predicates) remain independent load-bearing witnesses
+    /// of the same identity meta-partition, and a future edit that
+    /// shifts a variant across an identity pole on ONE surface but not
+    /// the other diverges at test time on the first shape where they
+    /// disagree.
+    ///
+    /// Also the first cell of [`Self::ALWAYS_AVAILABLE`] — the two
+    /// witnesses agree here (`ONLY_YAML ⊆ ALWAYS_AVAILABLE`) per the
+    /// identity-vs-compound cross-check that pins the five identity
+    /// singletons against the shipped
+    /// (feature-gated × always-available) compound-polarity meta-
+    /// partition.
+    ///
+    /// **Idiom-peer.** Quinary landing of the per-half meta-partition
+    /// slice-constant discipline on a shikumi-native closed-primitive
+    /// axis, matching altitude-for-altitude the septenary
+    /// [`crate::error::ShikumiErrorKind::ONLY_NOT_FOUND`] / … /
+    /// `ONLY_VALIDATION` (commit `6e74116`), the quinary
+    /// [`crate::secret_client::SecretErrorKind::ONLY_NOT_FOUND`] / … /
+    /// `ONLY_SHIKUMI` (commit `1a4ae14`), the senary
+    /// [`crate::secret_client::SecretOperation::ONLY_GET`] / … /
+    /// `ONLY_GET_VERSION` (commit `bfe3e24`), the septenary
+    /// [`crate::secret_client::SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), the octonary
+    /// [`crate::secret::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET` (commit `19364e3`), the quinary
+    /// [`crate::cli::TierArg::ONLY_BARE`] / … / `ONLY_ENV` (commit
+    /// `f7f5529`), and the quaternary
+    /// [`crate::tiered::ConfigTierKind::ONLY_BARE`] / … /
+    /// `ONLY_CUSTOM` (commit `ff6492b`) — the per-half meta-partition
+    /// slice-constant discipline applied here to the five-way
+    /// [`Format`] axis (the first identity-partition landing on the
+    /// config-file-format primitive), lifting the five identity poles
+    /// onto the slice-constant altitude alongside the shipped
+    /// compound-polarity [`Self::FEATURE_GATED`] /
+    /// [`Self::ALWAYS_AVAILABLE`] pair one altitude up.
+    ///
+    /// The five agreement laws
+    /// (`ONLY_YAML.iter().all(|f| f.is_yaml())` and
+    /// `ONLY_YAML.iter().all(|f| !f.is_toml() && !f.is_lisp() &&
+    /// !f.is_nix() && !f.is_blue())`, symmetric on the four siblings)
+    /// are pinned by
+    /// [`tests::format_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant across all five:
+    /// [`tests::format_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::format_identity_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::format_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the five boolean poles:
+    /// [`tests::format_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::format_identity_slices_are_const_addressable`].
+    /// Cross-altitude weld with the compound-polarity pair:
+    /// [`tests::format_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_YAML: &'static [Self] = &[Self::Yaml];
+
+    /// The single [`Self::Toml`] pole of the five-way identity meta-
+    /// partition on the [`Format`] axis at the static-slice altitude.
+    /// Also the second cell of [`Self::ALWAYS_AVAILABLE`] — the two
+    /// witnesses agree here (`ONLY_TOML ⊆ ALWAYS_AVAILABLE`) per the
+    /// identity-vs-compound cross-check. See [`Self::ONLY_YAML`] for
+    /// the full contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_TOML: &'static [Self] = &[Self::Toml];
+
+    /// The single [`Self::Lisp`] pole of the five-way identity meta-
+    /// partition on the [`Format`] axis at the static-slice altitude.
+    /// Also the first cell of [`Self::FEATURE_GATED`] — the two
+    /// witnesses agree here (`ONLY_LISP ⊆ FEATURE_GATED`) per the
+    /// identity-vs-compound cross-check. See [`Self::ONLY_YAML`] for
+    /// the full contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_LISP: &'static [Self] = &[Self::Lisp];
+
+    /// The single [`Self::Nix`] pole of the five-way identity meta-
+    /// partition on the [`Format`] axis at the static-slice altitude.
+    /// Also the third cell of [`Self::ALWAYS_AVAILABLE`] — the two
+    /// witnesses agree here (`ONLY_NIX ⊆ ALWAYS_AVAILABLE`), and its
+    /// interleaved position in [`Self::ALL`] (between [`Self::Lisp`]
+    /// and [`Self::Blue`]) means the identity-slice union on the
+    /// always-available pole reproduces [`Self::ALWAYS_AVAILABLE`]'s
+    /// neither-prefix-nor-suffix projection over [`Self::ALL`]. See
+    /// [`Self::ONLY_YAML`] for the full contract, load-bearing pins,
+    /// and idiom-peer landings.
+    pub const ONLY_NIX: &'static [Self] = &[Self::Nix];
+
+    /// The single [`Self::Blue`] pole of the five-way identity meta-
+    /// partition on the [`Format`] axis at the static-slice altitude.
+    /// Also the second cell of [`Self::FEATURE_GATED`] — the two
+    /// witnesses agree here (`ONLY_BLUE ⊆ FEATURE_GATED`) per the
+    /// identity-vs-compound cross-check. See [`Self::ONLY_YAML`] for
+    /// the full contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_BLUE: &'static [Self] = &[Self::Blue];
+
     /// Canonical separator between the format token and the path in the
     /// `"<format>: <path>"` shape shikumi-built providers write into
     /// `figment::Metadata::name` for per-value attribution.
@@ -5514,6 +5630,293 @@ mod tests {
         assert_eq!(FEATURE_GATED_LEN, 2);
         assert_eq!(ALWAYS_AVAILABLE_LEN, 3);
         assert_eq!(FEATURE_GATED_LEN + ALWAYS_AVAILABLE_LEN, ALL_LEN);
+    }
+
+    // ── Format — identity meta-partition slice constants ─────────────
+    //
+    // Quinary landing of the per-half meta-partition slice-constant
+    // discipline on the five-way Format axis (first identity-partition
+    // landing on the config-file-format primitive). Peer of the
+    // septenary `ShikumiErrorKind::ONLY_NOT_FOUND` / … /
+    // `ONLY_VALIDATION` (commit `6e74116`), the quinary
+    // `SecretErrorKind::ONLY_NOT_FOUND` / … / `ONLY_SHIKUMI` (commit
+    // `1a4ae14`), and the quinary `TierArg::ONLY_BARE` / … / `ONLY_ENV`
+    // (commit `f7f5529`). The seven pins below lock the identity
+    // singletons as a coherent meta-partition at the primitive's
+    // altitude alongside the shipped compound-polarity FEATURE_GATED /
+    // ALWAYS_AVAILABLE pair one altitude up.
+
+    #[test]
+    fn format_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (yaml × toml × lisp × nix
+        // × blue) identity meta-partition. Every ONLY_YAML entry
+        // satisfies is_yaml and none of the four sibling predicates;
+        // every ONLY_TOML entry satisfies is_toml alone; … and so on
+        // across all five halves. The two independent declaration
+        // surfaces (slice literals + boolean predicates) diverge at
+        // THIS pin on the first shape where they disagree, before a
+        // consumer that reads one altitude but not the other can
+        // observe the drift. Quinary peer of
+        // `shikumi_error_kind_identity_slices_agree_with_identity_predicates`
+        // (commit `6e74116`) two cells narrower.
+        for f in Format::ONLY_YAML.iter().copied() {
+            assert!(f.is_yaml(), "ONLY_YAML {f:?} must satisfy is_yaml");
+            assert!(!f.is_toml(), "ONLY_YAML {f:?} must NOT satisfy is_toml");
+            assert!(!f.is_lisp(), "ONLY_YAML {f:?} must NOT satisfy is_lisp");
+            assert!(!f.is_nix(), "ONLY_YAML {f:?} must NOT satisfy is_nix");
+            assert!(!f.is_blue(), "ONLY_YAML {f:?} must NOT satisfy is_blue");
+        }
+        for f in Format::ONLY_TOML.iter().copied() {
+            assert!(f.is_toml(), "ONLY_TOML {f:?} must satisfy is_toml");
+            assert!(!f.is_yaml(), "ONLY_TOML {f:?} must NOT satisfy is_yaml");
+            assert!(!f.is_lisp(), "ONLY_TOML {f:?} must NOT satisfy is_lisp");
+            assert!(!f.is_nix(), "ONLY_TOML {f:?} must NOT satisfy is_nix");
+            assert!(!f.is_blue(), "ONLY_TOML {f:?} must NOT satisfy is_blue");
+        }
+        for f in Format::ONLY_LISP.iter().copied() {
+            assert!(f.is_lisp(), "ONLY_LISP {f:?} must satisfy is_lisp");
+            assert!(!f.is_yaml(), "ONLY_LISP {f:?} must NOT satisfy is_yaml");
+            assert!(!f.is_toml(), "ONLY_LISP {f:?} must NOT satisfy is_toml");
+            assert!(!f.is_nix(), "ONLY_LISP {f:?} must NOT satisfy is_nix");
+            assert!(!f.is_blue(), "ONLY_LISP {f:?} must NOT satisfy is_blue");
+        }
+        for f in Format::ONLY_NIX.iter().copied() {
+            assert!(f.is_nix(), "ONLY_NIX {f:?} must satisfy is_nix");
+            assert!(!f.is_yaml(), "ONLY_NIX {f:?} must NOT satisfy is_yaml");
+            assert!(!f.is_toml(), "ONLY_NIX {f:?} must NOT satisfy is_toml");
+            assert!(!f.is_lisp(), "ONLY_NIX {f:?} must NOT satisfy is_lisp");
+            assert!(!f.is_blue(), "ONLY_NIX {f:?} must NOT satisfy is_blue");
+        }
+        for f in Format::ONLY_BLUE.iter().copied() {
+            assert!(f.is_blue(), "ONLY_BLUE {f:?} must satisfy is_blue");
+            assert!(!f.is_yaml(), "ONLY_BLUE {f:?} must NOT satisfy is_yaml");
+            assert!(!f.is_toml(), "ONLY_BLUE {f:?} must NOT satisfy is_toml");
+            assert!(!f.is_lisp(), "ONLY_BLUE {f:?} must NOT satisfy is_lisp");
+            assert!(!f.is_nix(), "ONLY_BLUE {f:?} must NOT satisfy is_nix");
+        }
+    }
+
+    #[test]
+    fn format_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_YAML.len() + ONLY_TOML.len() + ONLY_LISP.len() +
+        //  ONLY_NIX.len() + ONLY_BLUE.len() == ALL.len()`.
+        let identity_slices: [&[Format]; 5] = [
+            Format::ONLY_YAML,
+            Format::ONLY_TOML,
+            Format::ONLY_LISP,
+            Format::ONLY_NIX,
+            Format::ONLY_BLUE,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for f in left.iter() {
+                    assert!(
+                        !right.contains(f),
+                        "Format::{f:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for f in Format::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&f)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "Format::{f:?} must appear in exactly one identity slice \
+                 (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            Format::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn format_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in Format::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<Format> = Format::ALL
+                    .iter()
+                    .copied()
+                    .filter(|f| f.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(Format::ONLY_YAML, is_yaml);
+        pin!(Format::ONLY_TOML, is_toml);
+        pin!(Format::ONLY_LISP, is_lisp);
+        pin!(Format::ONLY_NIX, is_nix);
+        pin!(Format::ONLY_BLUE, is_blue);
+    }
+
+    #[test]
+    fn format_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set.
+        for slice in [
+            Format::ONLY_YAML,
+            Format::ONLY_TOML,
+            Format::ONLY_LISP,
+            Format::ONLY_NIX,
+            Format::ONLY_BLUE,
+        ] {
+            let mut seen: Vec<Format> = Vec::with_capacity(slice.len());
+            for f in slice {
+                assert!(
+                    !seen.contains(f),
+                    "Format identity slice {slice:?} contains duplicate entry {f:?}",
+                );
+                seen.push(*f);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn format_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on Format::ALL — i.e.,
+        // `ONLY_YAML.len() == ALL.iter().filter(is_yaml).count()`
+        // (and symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 = 5 = ALL.
+        let counts = [
+            (
+                "is_yaml",
+                Format::ONLY_YAML.len(),
+                Format::ALL.iter().copied().filter(|f| f.is_yaml()).count(),
+            ),
+            (
+                "is_toml",
+                Format::ONLY_TOML.len(),
+                Format::ALL.iter().copied().filter(|f| f.is_toml()).count(),
+            ),
+            (
+                "is_lisp",
+                Format::ONLY_LISP.len(),
+                Format::ALL.iter().copied().filter(|f| f.is_lisp()).count(),
+            ),
+            (
+                "is_nix",
+                Format::ONLY_NIX.len(),
+                Format::ALL.iter().copied().filter(|f| f.is_nix()).count(),
+            ),
+            (
+                "is_blue",
+                Format::ONLY_BLUE.len(),
+                Format::ALL.iter().copied().filter(|f| f.is_blue()).count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(Format::ALL.len(), 5);
+    }
+
+    #[test]
+    fn format_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_YAML_LEN: usize = Format::ONLY_YAML.len();
+        const ONLY_TOML_LEN: usize = Format::ONLY_TOML.len();
+        const ONLY_LISP_LEN: usize = Format::ONLY_LISP.len();
+        const ONLY_NIX_LEN: usize = Format::ONLY_NIX.len();
+        const ONLY_BLUE_LEN: usize = Format::ONLY_BLUE.len();
+        const ALL_LEN: usize = Format::ALL.len();
+        assert_eq!(ONLY_YAML_LEN, 1);
+        assert_eq!(ONLY_TOML_LEN, 1);
+        assert_eq!(ONLY_LISP_LEN, 1);
+        assert_eq!(ONLY_NIX_LEN, 1);
+        assert_eq!(ONLY_BLUE_LEN, 1);
+        assert_eq!(
+            ONLY_YAML_LEN + ONLY_TOML_LEN + ONLY_LISP_LEN + ONLY_NIX_LEN + ONLY_BLUE_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn format_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the compound-polarity meta-partition
+        // (FEATURE_GATED / ALWAYS_AVAILABLE). The union of the two
+        // identity singletons on the feature-gated pole
+        // (ONLY_LISP + ONLY_BLUE) equals FEATURE_GATED as a sequence
+        // in declaration order, and the union of the three always-
+        // available identity singletons (ONLY_YAML + ONLY_TOML +
+        // ONLY_NIX) equals ALWAYS_AVAILABLE likewise — the
+        // interleaved ALL-order projection preserved on the always-
+        // available pole ([`Format::Nix`] sits after [`Format::Lisp`]
+        // in [`Format::ALL`], so the always-available slice is
+        // neither a prefix nor a suffix of ALL). A future
+        // rearrangement of one meta-partition without the other (say,
+        // reclassifying [`Format::Nix`] as feature-gated without
+        // updating the identity → compound aggregation) diverges at
+        // THIS pin, before drifting through a consumer that
+        // materializes one altitude from the other. Idiom-peer of
+        // `shikumi_error_kind_identity_slices_agree_with_compound_polarity_slices`
+        // (commit `6e74116`).
+        let feature_gated_from_identity: Vec<Format> = [Format::ONLY_LISP, Format::ONLY_BLUE]
+            .iter()
+            .flat_map(|s| s.iter().copied())
+            .collect();
+        assert_eq!(
+            feature_gated_from_identity,
+            Format::FEATURE_GATED.to_vec(),
+            "identity singleton union on the feature-gated pole must \
+             reproduce FEATURE_GATED in declaration order",
+        );
+        let always_available_from_identity: Vec<Format> =
+            [Format::ONLY_YAML, Format::ONLY_TOML, Format::ONLY_NIX]
+                .iter()
+                .flat_map(|s| s.iter().copied())
+                .collect();
+        assert_eq!(
+            always_available_from_identity,
+            Format::ALWAYS_AVAILABLE.to_vec(),
+            "identity singleton union on the always-available pole must \
+             reproduce ALWAYS_AVAILABLE in declaration order",
+        );
     }
 
     // ---- required_feature (the format → optional-cargo-feature axis) ----
