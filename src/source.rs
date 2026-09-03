@@ -29412,6 +29412,107 @@ impl FigmentSourceKind {
     /// the constant to the variant space the typescape recognizes.
     pub const ALL: &'static [Self] = &[Self::File, Self::Code, Self::Custom];
 
+    /// The single FILE [`FigmentSourceKind`] variant — [`Self::File`] —
+    /// carrying the *file-source* pole of the (file × code × custom)
+    /// 1/1/1 identity meta-partition at the kind's OWN altitude on the
+    /// three-way figment-Source-axis kind, mirroring the shipped
+    /// boolean predicate [`Self::is_file`] one altitude down: the sole
+    /// variant in this slice satisfies `k.is_file()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with [`Self::CODE`] and [`Self::CUSTOM`], the three
+    /// disjoint singleton slices partition [`Self::ALL`] at the
+    /// static-slice altitude the same way the shipped boolean
+    /// predicates [`Self::is_file`] / [`Self::is_code`] /
+    /// [`Self::is_custom`] meta-partition it at the boolean altitude
+    /// (per [`tests::figment_source_kind_all_partition_is_file_xor_code_xor_custom`]).
+    /// The three constants sit in the same `impl FigmentSourceKind`
+    /// block as [`Self::ALL`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as explicit singleton slice literals in the SAME
+    /// relative declaration order each pole occupies in [`Self::ALL`],
+    /// rather than derived by filtering [`Self::ALL`] through
+    /// [`Self::is_file`] at const-fn altitude — so the two declarations
+    /// (the slice literal and the boolean predicate) remain independent
+    /// load-bearing witnesses of the same meta-partition, and a future
+    /// edit that shifts a variant across the polarity on ONE
+    /// declaration surface but not the other diverges at test time on
+    /// the first shape where they disagree. A hypothetical fourth
+    /// variant landing on the file side (e.g. a hypothetical
+    /// `Self::Url` cell in lockstep with a future
+    /// `FigmentSourceTag::Url` if figment grows one) lands here in
+    /// lockstep with [`Self::is_file`], and the cardinality pin catches
+    /// any drift between the slice and the boolean predicate on the
+    /// same edit.
+    ///
+    /// Ternary peer of the shipped ternary
+    /// [`crate::AttributionRule::LAYER_FILE`] /
+    /// [`crate::AttributionRule::LAYER_ENV`] /
+    /// [`crate::AttributionRule::LAYER_DEFAULTS`] meta-partition
+    /// (commit `fae8271`, the first ternary landing of the per-half
+    /// meta-partition slice-constant discipline on a shikumi-native
+    /// closed-primitive axis), and idiom-peer of the closed-binary
+    /// landings on [`crate::FieldPathLocalization::APPLICABLE`]
+    /// (commit `9dad33d`),
+    /// [`crate::ShikumiErrorKind::FIGMENT_BEARING`] (commit `e45018d`),
+    /// [`crate::Format::FEATURE_GATED`] (commit `2013269`),
+    /// [`FigmentNameTagKind::FORMAT`] (commit `2d2ef9d`),
+    /// [`EnvMetadataTagKind::PREFIXED`] (commit `13304d0`),
+    /// [`crate::AttributionAxis::METADATA_SOURCE`] (commit `34bfbb6`),
+    /// and the sibling shikumi-side layer-kind axis
+    /// [`ConfigSourceKind::DEFAULTS`] / [`ConfigSourceKind::OVERLAY`]
+    /// (commit `2cd8ef8`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the three-way figment-Source-axis
+    /// kind's ternary (file × code × custom) 1/1/1 identity
+    /// meta-partition.
+    ///
+    /// The three-way agreement laws
+    /// (`FILE.iter().all(|k| k.is_file())`,
+    /// `!FILE.iter().any(|k| k.is_code())`,
+    /// `!FILE.iter().any(|k| k.is_custom())`, and the symmetric laws
+    /// on [`Self::CODE`] and [`Self::CUSTOM`]) are pinned by
+    /// [`tests::figment_source_kind_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::figment_source_kind_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::figment_source_kind_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::figment_source_kind_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::figment_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::figment_source_kind_ternary_slices_are_const_addressable`].
+    pub const FILE: &'static [Self] = &[Self::File];
+
+    /// The single CODE [`FigmentSourceKind`] variant — [`Self::Code`] —
+    /// carrying the *code-source* pole of the (file × code × custom)
+    /// 1/1/1 identity meta-partition at the kind's OWN altitude on the
+    /// three-way figment-Source-axis kind, mirroring the shipped
+    /// boolean predicate [`Self::is_code`] one altitude down.
+    ///
+    /// See [`Self::FILE`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_code`]), and the load-bearing agreement, partition,
+    /// order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins that hold uniformly across all three
+    /// identity-partition halves.
+    pub const CODE: &'static [Self] = &[Self::Code];
+
+    /// The single CUSTOM [`FigmentSourceKind`] variant —
+    /// [`Self::Custom`] — carrying the *custom-source* pole of the
+    /// (file × code × custom) 1/1/1 identity meta-partition at the
+    /// kind's OWN altitude on the three-way figment-Source-axis kind,
+    /// mirroring the shipped boolean predicate [`Self::is_custom`] one
+    /// altitude down.
+    ///
+    /// See [`Self::FILE`] for the full contract, the discipline behind
+    /// the explicit slice literal (rather than a filter through
+    /// [`Self::is_custom`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const CUSTOM: &'static [Self] = &[Self::Custom];
+
     /// Returns `true` for [`Self::File`]; equivalent to
     /// `self == FigmentSourceKind::File`. Convenience predicate
     /// matching the [`ConfigSource::is_file`] /
@@ -97407,6 +97508,280 @@ mod tests {
                 FigmentSourceKind::Custom,
             ],
         );
+    }
+
+    // Six pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped for `AttributionRule::LAYER_FILE /
+    // LAYER_ENV / LAYER_DEFAULTS` (`fae8271`, the first ternary landing
+    // of the discipline on a shikumi-native closed-primitive axis),
+    // applied here to the FigmentSourceKind axis's ternary (file × code
+    // × custom) 1/1/1 identity meta-partition. Directly nominated by
+    // `a3863e4`'s "future beneficiary" — lifting the discipline onto
+    // other closed-primitive axes in the crate (the FigmentSourceKind
+    // axis was named explicitly).
+    #[test]
+    fn figment_source_kind_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way agreement pin across the (file × code × custom)
+        // ternary identity meta-partition. Every FILE entry satisfies
+        // is_file and neither is_code nor is_custom; every CODE entry
+        // satisfies is_code alone; every CUSTOM entry satisfies
+        // is_custom alone. Every FigmentSourceKind::ALL cell agrees on
+        // membership under each of the three boolean predicates. The
+        // two independent declaration surfaces (slice literals +
+        // boolean predicates) diverge at THIS pin on the first shape
+        // where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift. Ternary
+        // peer of
+        // `attribution_rule_layer_slices_agree_with_layer_predicates`
+        // (`fae8271`) on the attribution-rule axis's layer-kind
+        // projection.
+        for k in FigmentSourceKind::FILE.iter().copied() {
+            assert!(
+                k.is_file(),
+                "FigmentSourceKind::FILE entry {k:?} must satisfy is_file()",
+            );
+            assert!(
+                !k.is_code(),
+                "FigmentSourceKind::FILE entry {k:?} must NOT satisfy is_code()",
+            );
+            assert!(
+                !k.is_custom(),
+                "FigmentSourceKind::FILE entry {k:?} must NOT satisfy is_custom()",
+            );
+        }
+        for k in FigmentSourceKind::CODE.iter().copied() {
+            assert!(
+                k.is_code(),
+                "FigmentSourceKind::CODE entry {k:?} must satisfy is_code()",
+            );
+            assert!(
+                !k.is_file(),
+                "FigmentSourceKind::CODE entry {k:?} must NOT satisfy is_file()",
+            );
+            assert!(
+                !k.is_custom(),
+                "FigmentSourceKind::CODE entry {k:?} must NOT satisfy is_custom()",
+            );
+        }
+        for k in FigmentSourceKind::CUSTOM.iter().copied() {
+            assert!(
+                k.is_custom(),
+                "FigmentSourceKind::CUSTOM entry {k:?} must satisfy is_custom()",
+            );
+            assert!(
+                !k.is_file(),
+                "FigmentSourceKind::CUSTOM entry {k:?} must NOT satisfy is_file()",
+            );
+            assert!(
+                !k.is_code(),
+                "FigmentSourceKind::CUSTOM entry {k:?} must NOT satisfy is_code()",
+            );
+        }
+        for k in FigmentSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                FigmentSourceKind::FILE.contains(&k),
+                k.is_file(),
+                "FILE membership must agree with is_file() on FigmentSourceKind::{k:?}",
+            );
+            assert_eq!(
+                FigmentSourceKind::CODE.contains(&k),
+                k.is_code(),
+                "CODE membership must agree with is_code() on FigmentSourceKind::{k:?}",
+            );
+            assert_eq!(
+                FigmentSourceKind::CUSTOM.contains(&k),
+                k.is_custom(),
+                "CUSTOM membership must agree with is_custom() on FigmentSourceKind::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `FILE.len() + CODE.len() + CUSTOM.len() == ALL.len()` at the
+        // slice altitude on the figment-Source-axis kind's identity
+        // projection. Ternary peer of
+        // `attribution_rule_layer_slices_partition_all` (`fae8271`) on
+        // the attribution-rule axis's layer-kind projection, and
+        // slice-altitude peer of
+        // `figment_source_kind_all_partition_is_file_xor_code_xor_custom`
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in FigmentSourceKind::FILE {
+            assert!(
+                !FigmentSourceKind::CODE.contains(k),
+                "FigmentSourceKind::{k:?} appears in BOTH FILE and CODE",
+            );
+            assert!(
+                !FigmentSourceKind::CUSTOM.contains(k),
+                "FigmentSourceKind::{k:?} appears in BOTH FILE and CUSTOM",
+            );
+        }
+        for k in FigmentSourceKind::CODE {
+            assert!(
+                !FigmentSourceKind::CUSTOM.contains(k),
+                "FigmentSourceKind::{k:?} appears in BOTH CODE and CUSTOM",
+            );
+        }
+        for k in FigmentSourceKind::ALL {
+            let in_file = FigmentSourceKind::FILE.contains(k);
+            let in_code = FigmentSourceKind::CODE.contains(k);
+            let in_custom = FigmentSourceKind::CUSTOM.contains(k);
+            let held = usize::from(in_file) + usize::from(in_code) + usize::from(in_custom);
+            assert_eq!(
+                held, 1,
+                "FigmentSourceKind::{k:?} must appear in exactly one of FILE / CODE / CUSTOM (found in {held})",
+            );
+        }
+        assert_eq!(
+            FigmentSourceKind::FILE.len()
+                + FigmentSourceKind::CODE.len()
+                + FigmentSourceKind::CUSTOM.len(),
+            FigmentSourceKind::ALL.len(),
+            "FILE + CODE + CUSTOM slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in FigmentSourceKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Ternary peer of
+        // `attribution_rule_layer_slices_preserve_all_order`
+        // (`fae8271`).
+        let file_from_all: Vec<FigmentSourceKind> = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_file())
+            .collect();
+        assert_eq!(
+            file_from_all,
+            FigmentSourceKind::FILE.to_vec(),
+            "FILE must be ALL-filtered by is_file in declaration order",
+        );
+        let code_from_all: Vec<FigmentSourceKind> = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_code())
+            .collect();
+        assert_eq!(
+            code_from_all,
+            FigmentSourceKind::CODE.to_vec(),
+            "CODE must be ALL-filtered by is_code in declaration order",
+        );
+        let custom_from_all: Vec<FigmentSourceKind> = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_custom())
+            .collect();
+        assert_eq!(
+            custom_from_all,
+            FigmentSourceKind::CUSTOM.to_vec(),
+            "CUSTOM must be ALL-filtered by is_custom in declaration order",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set. Ternary
+        // peer of `attribution_rule_layer_slices_have_no_duplicates`
+        // (`fae8271`).
+        for slice in [
+            FigmentSourceKind::FILE,
+            FigmentSourceKind::CODE,
+            FigmentSourceKind::CUSTOM,
+        ] {
+            let mut seen: Vec<FigmentSourceKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "FigmentSourceKind ternary slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on FigmentSourceKind::ALL — i.e.,
+        // `FILE.len() == ALL.iter().filter(is_file).count()` (and
+        // symmetric for the two siblings) — the cardinality projection
+        // at the slice altitude agrees with the boolean-altitude
+        // projection on all three halves. Concrete positions today:
+        // 1 file + 1 code + 1 custom = 3 = ALL. Ternary peer of
+        // `attribution_rule_layer_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`fae8271`).
+        let file_count = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_file())
+            .count();
+        let code_count = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_code())
+            .count();
+        let custom_count = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_custom())
+            .count();
+        assert_eq!(
+            FigmentSourceKind::FILE.len(),
+            file_count,
+            "FILE.len() must match the is_file count on ALL",
+        );
+        assert_eq!(
+            FigmentSourceKind::CODE.len(),
+            code_count,
+            "CODE.len() must match the is_code count on ALL",
+        );
+        assert_eq!(
+            FigmentSourceKind::CUSTOM.len(),
+            custom_count,
+            "CUSTOM.len() must match the is_custom count on ALL",
+        );
+        assert_eq!(FigmentSourceKind::FILE.len(), 1);
+        assert_eq!(FigmentSourceKind::CODE.len(), 1);
+        assert_eq!(FigmentSourceKind::CUSTOM.len(), 1);
+        assert_eq!(FigmentSourceKind::ALL.len(), 3);
+    }
+
+    #[test]
+    fn figment_source_kind_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `attribution_rule_layer_slices_are_const_addressable`
+        // (`fae8271`).
+        const FILE_LEN: usize = FigmentSourceKind::FILE.len();
+        const CODE_LEN: usize = FigmentSourceKind::CODE.len();
+        const CUSTOM_LEN: usize = FigmentSourceKind::CUSTOM.len();
+        const ALL_LEN: usize = FigmentSourceKind::ALL.len();
+        assert_eq!(FILE_LEN, 1);
+        assert_eq!(CODE_LEN, 1);
+        assert_eq!(CUSTOM_LEN, 1);
+        assert_eq!(FILE_LEN + CODE_LEN + CUSTOM_LEN, ALL_LEN);
     }
 
     #[test]
