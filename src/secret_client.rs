@@ -543,6 +543,99 @@ impl SecretErrorKind {
     pub const fn is_shikumi(self) -> bool {
         matches!(self, Self::Shikumi)
     }
+
+    /// The single [`Self::NotFound`] pole of the five-way identity
+    /// meta-partition on the [`SecretErrorKind`] axis at the static-
+    /// slice altitude — the singleton slice `&[Self::NotFound]`
+    /// mirroring the shipped boolean predicate [`Self::is_not_found`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `kind.is_not_found()`, and no variant outside it does.
+    ///
+    /// Paired with the four siblings ([`Self::ONLY_UNAUTHORIZED`],
+    /// [`Self::ONLY_UNSUPPORTED`], [`Self::ONLY_BACKEND`],
+    /// [`Self::ONLY_SHIKUMI`]), the five disjoint singleton slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates ([`Self::is_not_found`] /
+    /// [`Self::is_unauthorized`] / [`Self::is_unsupported`] /
+    /// [`Self::is_backend`] / [`Self::is_shikumi`]) meta-partition it
+    /// at the boolean altitude. All five constants sit in the same
+    /// `impl SecretErrorKind` block as [`Self::ALL`] and follow the
+    /// same `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the five identity poles occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the five identity predicates at const-fn altitude — so
+    /// the two declaration surfaces (the slice literals and the
+    /// boolean predicates) remain independent load-bearing witnesses
+    /// of the same identity meta-partition, and a future edit that
+    /// shifts a variant across an identity pole on ONE surface but
+    /// not the other diverges at test time on the first shape where
+    /// they disagree.
+    ///
+    /// **Idiom-peer.** Second quinary landing (first on the
+    /// `secret_client.rs`-scoped [`SecretErrorKind`] primitive) of
+    /// the per-half meta-partition slice-constant discipline,
+    /// matching altitude-for-altitude the septenary
+    /// [`crate::ShikumiErrorKind::ONLY_NOT_FOUND`] / … /
+    /// `ONLY_VALIDATION` (commit `6e74116`), the senary
+    /// [`crate::secret_client::SecretOperation::ONLY_GET`] / … /
+    /// `ONLY_GET_VERSION` (commit `bfe3e24`), the septenary
+    /// [`crate::secret_client::SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), and the
+    /// octonary [`crate::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET` (commit `19364e3`) — the per-half meta-
+    /// partition slice-constant discipline applied here to the
+    /// five-way [`SecretErrorKind`] axis, lifting the five identity
+    /// poles onto the slice-constant altitude alongside the shipped
+    /// [`Self::ALL`] one altitude up.
+    ///
+    /// The five agreement laws
+    /// (`ONLY_NOT_FOUND.iter().all(|k| k.is_not_found())` and
+    /// `ONLY_NOT_FOUND.iter().all(|k| !k.is_unauthorized() &&
+    /// !k.is_unsupported() && !k.is_backend() && !k.is_shikumi())`,
+    /// symmetric on the four siblings) are pinned by
+    /// [`tests::secret_error_kind_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant across all five:
+    /// [`tests::secret_error_kind_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::secret_error_kind_identity_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::secret_error_kind_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the five boolean poles:
+    /// [`tests::secret_error_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::secret_error_kind_identity_slices_are_const_addressable`].
+    pub const ONLY_NOT_FOUND: &'static [Self] = &[Self::NotFound];
+
+    /// The single [`Self::Unauthorized`] pole of the five-way identity
+    /// meta-partition on the [`SecretErrorKind`] axis at the static-
+    /// slice altitude. See [`Self::ONLY_NOT_FOUND`] for the full
+    /// contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_UNAUTHORIZED: &'static [Self] = &[Self::Unauthorized];
+
+    /// The single [`Self::Unsupported`] pole of the five-way identity
+    /// meta-partition on the [`SecretErrorKind`] axis at the static-
+    /// slice altitude. See [`Self::ONLY_NOT_FOUND`] for the full
+    /// contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_UNSUPPORTED: &'static [Self] = &[Self::Unsupported];
+
+    /// The single [`Self::Backend`] pole of the five-way identity
+    /// meta-partition on the [`SecretErrorKind`] axis at the static-
+    /// slice altitude. See [`Self::ONLY_NOT_FOUND`] for the full
+    /// contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_BACKEND: &'static [Self] = &[Self::Backend];
+
+    /// The single [`Self::Shikumi`] pole of the five-way identity
+    /// meta-partition on the [`SecretErrorKind`] axis at the static-
+    /// slice altitude. Structural sibling of [`SecretError::as_shikumi`]:
+    /// `err.kind().is_shikumi() == err.as_shikumi().is_some()` holds
+    /// for every [`SecretError`], so a per-half consumer walking
+    /// [`Self::ONLY_SHIKUMI`] observes the exact set of kinds whose
+    /// tag-side surface exposes the wrapped [`crate::ShikumiError`].
+    /// See [`Self::ONLY_NOT_FOUND`] for the full contract,
+    /// load-bearing pins, and idiom-peer landings.
+    pub const ONLY_SHIKUMI: &'static [Self] = &[Self::Shikumi];
 }
 
 impl crate::ClosedAxis for SecretErrorKind {
@@ -10132,6 +10225,347 @@ mod tests {
             assert_eq!(k.is_backend(), k == SecretErrorKind::Backend);
             assert_eq!(k.is_shikumi(), k == SecretErrorKind::Shikumi);
         }
+    }
+
+    // ── SecretErrorKind — identity meta-partition slice constants ────
+    //
+    // Quinary landing of the per-half meta-partition slice-constant
+    // discipline on the five-way SecretErrorKind axis (first
+    // identity-partition landing on the secret-client error-kind
+    // primitive). Peer of the septenary
+    // `ShikumiErrorKind::ONLY_NOT_FOUND` / … / `ONLY_VALIDATION`
+    // (commit `6e74116`), the senary `SecretOperation::ONLY_GET` /
+    // … / `ONLY_GET_VERSION` (commit `bfe3e24`), the septenary
+    // `SecretClientKind::ONLY_MEM` / … / `ONLY_GCP_SECRET_MANAGER`
+    // (commit `d78ae31`), and the octonary
+    // `SecretBackendKind::ONLY_LITERAL` / … / `ONLY_GCP_SECRET`
+    // (commit `19364e3`). The six pins below lock the identity
+    // singletons as a coherent meta-partition at the primitive's
+    // altitude. SecretErrorKind carries NO compound-polarity pair
+    // today (unlike ShikumiErrorKind's FIGMENT_BEARING /
+    // NOT_FIGMENT_BEARING pair), so this landing omits the
+    // cross-altitude weld pin — a future compound-polarity landing
+    // (a hypothetical RETRYABLE / NON_RETRYABLE split, say) adds
+    // the weld pin then.
+
+    #[test]
+    fn secret_error_kind_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (not_found × unauthorized
+        // × unsupported × backend × shikumi) identity meta-partition.
+        // Every ONLY_NOT_FOUND entry satisfies is_not_found and none
+        // of the four sibling predicates; every ONLY_UNAUTHORIZED
+        // entry satisfies is_unauthorized alone; … and so on across
+        // all five identity poles.
+        for k in SecretErrorKind::ONLY_NOT_FOUND.iter().copied() {
+            assert!(
+                k.is_not_found(),
+                "ONLY_NOT_FOUND {k:?} must satisfy is_not_found"
+            );
+            assert!(
+                !k.is_unauthorized(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_unauthorized"
+            );
+            assert!(
+                !k.is_unsupported(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_unsupported"
+            );
+            assert!(
+                !k.is_backend(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_backend"
+            );
+            assert!(
+                !k.is_shikumi(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_shikumi"
+            );
+        }
+        for k in SecretErrorKind::ONLY_UNAUTHORIZED.iter().copied() {
+            assert!(
+                k.is_unauthorized(),
+                "ONLY_UNAUTHORIZED {k:?} must satisfy is_unauthorized"
+            );
+            assert!(
+                !k.is_not_found(),
+                "ONLY_UNAUTHORIZED {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_unsupported(),
+                "ONLY_UNAUTHORIZED {k:?} must NOT satisfy is_unsupported"
+            );
+            assert!(
+                !k.is_backend(),
+                "ONLY_UNAUTHORIZED {k:?} must NOT satisfy is_backend"
+            );
+            assert!(
+                !k.is_shikumi(),
+                "ONLY_UNAUTHORIZED {k:?} must NOT satisfy is_shikumi"
+            );
+        }
+        for k in SecretErrorKind::ONLY_UNSUPPORTED.iter().copied() {
+            assert!(
+                k.is_unsupported(),
+                "ONLY_UNSUPPORTED {k:?} must satisfy is_unsupported"
+            );
+            assert!(
+                !k.is_not_found(),
+                "ONLY_UNSUPPORTED {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_unauthorized(),
+                "ONLY_UNSUPPORTED {k:?} must NOT satisfy is_unauthorized"
+            );
+            assert!(
+                !k.is_backend(),
+                "ONLY_UNSUPPORTED {k:?} must NOT satisfy is_backend"
+            );
+            assert!(
+                !k.is_shikumi(),
+                "ONLY_UNSUPPORTED {k:?} must NOT satisfy is_shikumi"
+            );
+        }
+        for k in SecretErrorKind::ONLY_BACKEND.iter().copied() {
+            assert!(k.is_backend(), "ONLY_BACKEND {k:?} must satisfy is_backend");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_BACKEND {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_unauthorized(),
+                "ONLY_BACKEND {k:?} must NOT satisfy is_unauthorized"
+            );
+            assert!(
+                !k.is_unsupported(),
+                "ONLY_BACKEND {k:?} must NOT satisfy is_unsupported"
+            );
+            assert!(
+                !k.is_shikumi(),
+                "ONLY_BACKEND {k:?} must NOT satisfy is_shikumi"
+            );
+        }
+        for k in SecretErrorKind::ONLY_SHIKUMI.iter().copied() {
+            assert!(k.is_shikumi(), "ONLY_SHIKUMI {k:?} must satisfy is_shikumi");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_SHIKUMI {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_unauthorized(),
+                "ONLY_SHIKUMI {k:?} must NOT satisfy is_unauthorized"
+            );
+            assert!(
+                !k.is_unsupported(),
+                "ONLY_SHIKUMI {k:?} must NOT satisfy is_unsupported"
+            );
+            assert!(
+                !k.is_backend(),
+                "ONLY_SHIKUMI {k:?} must NOT satisfy is_backend"
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_NOT_FOUND.len() + ONLY_UNAUTHORIZED.len() +
+        //  ONLY_UNSUPPORTED.len() + ONLY_BACKEND.len() +
+        //  ONLY_SHIKUMI.len() == ALL.len()`.
+        let identity_slices: [&[SecretErrorKind]; 5] = [
+            SecretErrorKind::ONLY_NOT_FOUND,
+            SecretErrorKind::ONLY_UNAUTHORIZED,
+            SecretErrorKind::ONLY_UNSUPPORTED,
+            SecretErrorKind::ONLY_BACKEND,
+            SecretErrorKind::ONLY_SHIKUMI,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for k in left.iter() {
+                    assert!(
+                        !right.contains(k),
+                        "SecretErrorKind::{k:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for k in SecretErrorKind::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&k)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "SecretErrorKind::{k:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            SecretErrorKind::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SecretErrorKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<SecretErrorKind> = SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(SecretErrorKind::ONLY_NOT_FOUND, is_not_found);
+        pin!(SecretErrorKind::ONLY_UNAUTHORIZED, is_unauthorized);
+        pin!(SecretErrorKind::ONLY_UNSUPPORTED, is_unsupported);
+        pin!(SecretErrorKind::ONLY_BACKEND, is_backend);
+        pin!(SecretErrorKind::ONLY_SHIKUMI, is_shikumi);
+    }
+
+    #[test]
+    fn secret_error_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set.
+        for slice in [
+            SecretErrorKind::ONLY_NOT_FOUND,
+            SecretErrorKind::ONLY_UNAUTHORIZED,
+            SecretErrorKind::ONLY_UNSUPPORTED,
+            SecretErrorKind::ONLY_BACKEND,
+            SecretErrorKind::ONLY_SHIKUMI,
+        ] {
+            let mut seen: Vec<SecretErrorKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SecretErrorKind identity slice {slice:?} contains \
+                     duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SecretErrorKind::ALL — i.e.,
+        // `ONLY_NOT_FOUND.len() == ALL.iter().filter(is_not_found).count()`
+        // (and symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 = 5 = ALL.
+        let counts = [
+            (
+                "is_not_found",
+                SecretErrorKind::ONLY_NOT_FOUND.len(),
+                SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_not_found())
+                    .count(),
+            ),
+            (
+                "is_unauthorized",
+                SecretErrorKind::ONLY_UNAUTHORIZED.len(),
+                SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_unauthorized())
+                    .count(),
+            ),
+            (
+                "is_unsupported",
+                SecretErrorKind::ONLY_UNSUPPORTED.len(),
+                SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_unsupported())
+                    .count(),
+            ),
+            (
+                "is_backend",
+                SecretErrorKind::ONLY_BACKEND.len(),
+                SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_backend())
+                    .count(),
+            ),
+            (
+                "is_shikumi",
+                SecretErrorKind::ONLY_SHIKUMI.len(),
+                SecretErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_shikumi())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(SecretErrorKind::ALL.len(), 5);
+    }
+
+    #[test]
+    fn secret_error_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding
+        // of `.len()`), so a future lift of any constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer.
+        const ONLY_NOT_FOUND_LEN: usize = SecretErrorKind::ONLY_NOT_FOUND.len();
+        const ONLY_UNAUTHORIZED_LEN: usize = SecretErrorKind::ONLY_UNAUTHORIZED.len();
+        const ONLY_UNSUPPORTED_LEN: usize = SecretErrorKind::ONLY_UNSUPPORTED.len();
+        const ONLY_BACKEND_LEN: usize = SecretErrorKind::ONLY_BACKEND.len();
+        const ONLY_SHIKUMI_LEN: usize = SecretErrorKind::ONLY_SHIKUMI.len();
+        const ALL_LEN: usize = SecretErrorKind::ALL.len();
+        assert_eq!(ONLY_NOT_FOUND_LEN, 1);
+        assert_eq!(ONLY_UNAUTHORIZED_LEN, 1);
+        assert_eq!(ONLY_UNSUPPORTED_LEN, 1);
+        assert_eq!(ONLY_BACKEND_LEN, 1);
+        assert_eq!(ONLY_SHIKUMI_LEN, 1);
+        assert_eq!(
+            ONLY_NOT_FOUND_LEN
+                + ONLY_UNAUTHORIZED_LEN
+                + ONLY_UNSUPPORTED_LEN
+                + ONLY_BACKEND_LEN
+                + ONLY_SHIKUMI_LEN,
+            ALL_LEN,
+        );
     }
 
     #[test]
