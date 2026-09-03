@@ -246,6 +246,109 @@ impl TierArg {
             Self::Bare | Self::Discovered | Self::Default | Self::Env
         )
     }
+
+    /// The [`Self::Bare`] pole of the five-way identity meta-partition
+    /// on the CLI operator-facing tier tag at the static-slice
+    /// altitude — the singleton slice `&[Self::Bare]` mirroring the
+    /// shipped boolean predicate [`Self::is_bare`] one altitude down.
+    ///
+    /// Fresh identity-partition constant, kept independent of any
+    /// future compound-polarity slice on this axis (a hypothetical
+    /// `COMPUTED: &[Self::Bare, Self::Discovered, Self::Default,
+    /// Self::Env]` peer of the CLI compound sibling
+    /// [`Self::is_computed`], mirroring the crate-side pair
+    /// [`crate::ConfigTierKind::COMPUTED`] / [`crate::ConfigTierKind::CUSTOM`]
+    /// at commit `2c0686f`): the two partitions stay independent so a
+    /// hypothetical sixth CLI arm (a future `File(PathBuf)` for an
+    /// explicit `--tier file --path <FILE>` overlay separate from
+    /// `Custom`, a hypothetical `Runtime` for a CLI-visible tick-
+    /// reconciler tier) grows the compound-polarity slice in lockstep
+    /// with the `is_computed`-family pole contract while
+    /// [`Self::ONLY_BARE`] stays a singleton by identity-partition
+    /// definition.
+    ///
+    /// Idiom-peer of [`crate::ConfigTierKind::ONLY_BARE`] (commit
+    /// `ff6492b`, the FIRST quaternary identity-partition landing on a
+    /// shikumi-native closed-primitive axis and the direct crate-side
+    /// peer of this CLI-side axis on the atomic `(tier, source)` pair
+    /// one primitive over), lifted here onto the five-way CLI tier tag
+    /// as the FIRST quinary identity-partition landing of the per-half
+    /// meta-partition slice-constant discipline on the CLI operator-
+    /// facing tier tag — one cell wider (the CLI-only [`Self::Env`]
+    /// arm) than the crate-side quaternary landing.
+    ///
+    /// Paired with [`Self::ONLY_DISCOVERED`], [`Self::ONLY_DEFAULT`],
+    /// [`Self::ONLY_CUSTOM`], and [`Self::ONLY_ENV`], the five
+    /// disjoint singletons partition [`Self::ALL`] at the static-slice
+    /// altitude the same way the shipped boolean predicates
+    /// [`Self::is_bare`] / [`Self::is_discovered`] /
+    /// [`Self::is_default`] / [`Self::is_custom`] / [`Self::is_env`]
+    /// meta-partition it at the boolean altitude. The five constants
+    /// sit in the same `impl TierArg` block as [`Self::ALL`], and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Welded by
+    /// [`tests::tier_arg_identity_slices_agree_with_identity_predicates`],
+    /// [`tests::tier_arg_identity_slices_partition_all`],
+    /// [`tests::tier_arg_identity_slices_preserve_all_order`],
+    /// [`tests::tier_arg_identity_slices_have_no_duplicates`],
+    /// [`tests::tier_arg_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`tests::tier_arg_identity_slices_are_const_addressable`].
+    pub const ONLY_BARE: &'static [Self] = &[Self::Bare];
+
+    /// The [`Self::Discovered`] pole of the five-way identity
+    /// meta-partition on the CLI operator-facing tier tag at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::Discovered]` mirroring the shipped boolean predicate
+    /// [`Self::is_discovered`] one altitude down.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract, the discipline
+    /// behind the fresh identity-partition constants (independent of
+    /// any future compound-polarity slice), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins the five `ONLY_*`
+    /// singletons share.
+    pub const ONLY_DISCOVERED: &'static [Self] = &[Self::Discovered];
+
+    /// The [`Self::Default`] pole of the five-way identity
+    /// meta-partition on the CLI operator-facing tier tag at the
+    /// static-slice altitude — the singleton slice `&[Self::Default]`
+    /// mirroring the shipped boolean predicate [`Self::is_default`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract and the load-
+    /// bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// five `ONLY_*` singletons share.
+    pub const ONLY_DEFAULT: &'static [Self] = &[Self::Default];
+
+    /// The [`Self::Custom`] pole of the five-way identity
+    /// meta-partition on the CLI operator-facing tier tag at the
+    /// static-slice altitude — the singleton slice `&[Self::Custom]`
+    /// mirroring the shipped boolean predicate [`Self::is_custom`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_BARE`] for the full contract and the load-
+    /// bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// five `ONLY_*` singletons share.
+    pub const ONLY_CUSTOM: &'static [Self] = &[Self::Custom];
+
+    /// The [`Self::Env`] pole of the five-way identity meta-partition
+    /// on the CLI operator-facing tier tag at the static-slice
+    /// altitude — the singleton slice `&[Self::Env]` mirroring the
+    /// shipped boolean predicate [`Self::is_env`] one altitude down.
+    ///
+    /// The CLI-only cell (no [`crate::ConfigTierKind`] peer), so this
+    /// constant is the CLI-side surface without a crate-side sibling
+    /// — the fifth arm the CLI tier tag carries beyond the four
+    /// crate-side arms. See [`Self::ONLY_BARE`] for the full contract
+    /// and the load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// five `ONLY_*` singletons share.
+    pub const ONLY_ENV: &'static [Self] = &[Self::Env];
 }
 
 /// Emission format for `config-show` output.
@@ -964,6 +1067,461 @@ mod tests {
             computed_count + custom_count,
             TierArg::ALL.len(),
             "compound-polarity partition must cover TierArg::ALL exhaustively",
+        );
+    }
+
+    // ── TierArg ONLY_* five-way identity meta-partition
+    //
+    // Static-slice altitude of the five-way (bare × discovered ×
+    // default × custom × env) 1/1/1/1/1 identity meta-partition on
+    // the CLI operator-facing tier tag. The five singleton slices
+    // `ONLY_BARE / ONLY_DISCOVERED / ONLY_DEFAULT / ONLY_CUSTOM /
+    // ONLY_ENV` are the identity projection of the shipped boolean
+    // predicates `is_bare / is_discovered / is_default / is_custom /
+    // is_env` one altitude down.
+    //
+    // Idiom-peer of the six quaternary identity-partition pins on
+    // `ConfigTierKind::ONLY_BARE / ONLY_DISCOVERED / ONLY_DEFAULT /
+    // ONLY_CUSTOM` at `config_tier_kind_identity_*` (`ff6492b`, the
+    // FIRST quaternary landing of the discipline on a shikumi-native
+    // closed-primitive axis and the direct crate-side peer of this
+    // CLI-side axis on the atomic `(tier, source)` pair one primitive
+    // over), lifted here onto the five-way CLI tier tag. FIRST quinary
+    // identity-partition landing of the per-half meta-partition slice-
+    // constant discipline on a `cli.rs`-scoped closed-primitive axis —
+    // one cell wider than the crate-side quaternary landing (the
+    // CLI-only `Self::Env` arm).
+
+    #[test]
+    fn tier_arg_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (bare × discovered ×
+        // default × custom × env) identity meta-partition. Every
+        // ONLY_BARE entry satisfies is_bare and none of is_discovered
+        // / is_default / is_custom / is_env; every ONLY_DISCOVERED
+        // entry satisfies is_discovered alone; every ONLY_DEFAULT
+        // entry satisfies is_default alone; every ONLY_CUSTOM entry
+        // satisfies is_custom alone; every ONLY_ENV entry satisfies
+        // is_env alone. Every TierArg::ALL cell agrees on membership
+        // under each of the five boolean predicates. The two
+        // independent declaration surfaces (slice literals + boolean
+        // predicates) diverge at THIS pin on the first shape where
+        // they disagree, before a consumer that reads one altitude
+        // but not the other can observe the drift. Quinary peer of
+        // the quaternary
+        // `config_tier_kind_identity_slices_agree_with_identity_predicates`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis.
+        for a in TierArg::ONLY_BARE.iter().copied() {
+            assert!(
+                a.is_bare(),
+                "TierArg::ONLY_BARE entry {a:?} must satisfy is_bare()",
+            );
+            assert!(
+                !a.is_discovered(),
+                "TierArg::ONLY_BARE entry {a:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !a.is_default(),
+                "TierArg::ONLY_BARE entry {a:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !a.is_custom(),
+                "TierArg::ONLY_BARE entry {a:?} must NOT satisfy is_custom()",
+            );
+            assert!(
+                !a.is_env(),
+                "TierArg::ONLY_BARE entry {a:?} must NOT satisfy is_env()",
+            );
+        }
+        for a in TierArg::ONLY_DISCOVERED.iter().copied() {
+            assert!(
+                a.is_discovered(),
+                "TierArg::ONLY_DISCOVERED entry {a:?} must satisfy is_discovered()",
+            );
+            assert!(
+                !a.is_bare(),
+                "TierArg::ONLY_DISCOVERED entry {a:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !a.is_default(),
+                "TierArg::ONLY_DISCOVERED entry {a:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !a.is_custom(),
+                "TierArg::ONLY_DISCOVERED entry {a:?} must NOT satisfy is_custom()",
+            );
+            assert!(
+                !a.is_env(),
+                "TierArg::ONLY_DISCOVERED entry {a:?} must NOT satisfy is_env()",
+            );
+        }
+        for a in TierArg::ONLY_DEFAULT.iter().copied() {
+            assert!(
+                a.is_default(),
+                "TierArg::ONLY_DEFAULT entry {a:?} must satisfy is_default()",
+            );
+            assert!(
+                !a.is_bare(),
+                "TierArg::ONLY_DEFAULT entry {a:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !a.is_discovered(),
+                "TierArg::ONLY_DEFAULT entry {a:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !a.is_custom(),
+                "TierArg::ONLY_DEFAULT entry {a:?} must NOT satisfy is_custom()",
+            );
+            assert!(
+                !a.is_env(),
+                "TierArg::ONLY_DEFAULT entry {a:?} must NOT satisfy is_env()",
+            );
+        }
+        for a in TierArg::ONLY_CUSTOM.iter().copied() {
+            assert!(
+                a.is_custom(),
+                "TierArg::ONLY_CUSTOM entry {a:?} must satisfy is_custom()",
+            );
+            assert!(
+                !a.is_bare(),
+                "TierArg::ONLY_CUSTOM entry {a:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !a.is_discovered(),
+                "TierArg::ONLY_CUSTOM entry {a:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !a.is_default(),
+                "TierArg::ONLY_CUSTOM entry {a:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !a.is_env(),
+                "TierArg::ONLY_CUSTOM entry {a:?} must NOT satisfy is_env()",
+            );
+        }
+        for a in TierArg::ONLY_ENV.iter().copied() {
+            assert!(
+                a.is_env(),
+                "TierArg::ONLY_ENV entry {a:?} must satisfy is_env()",
+            );
+            assert!(
+                !a.is_bare(),
+                "TierArg::ONLY_ENV entry {a:?} must NOT satisfy is_bare()",
+            );
+            assert!(
+                !a.is_discovered(),
+                "TierArg::ONLY_ENV entry {a:?} must NOT satisfy is_discovered()",
+            );
+            assert!(
+                !a.is_default(),
+                "TierArg::ONLY_ENV entry {a:?} must NOT satisfy is_default()",
+            );
+            assert!(
+                !a.is_custom(),
+                "TierArg::ONLY_ENV entry {a:?} must NOT satisfy is_custom()",
+            );
+        }
+        for a in TierArg::ALL.iter().copied() {
+            assert_eq!(
+                TierArg::ONLY_BARE.contains(&a),
+                a.is_bare(),
+                "ONLY_BARE membership must agree with is_bare() on TierArg::{a:?}",
+            );
+            assert_eq!(
+                TierArg::ONLY_DISCOVERED.contains(&a),
+                a.is_discovered(),
+                "ONLY_DISCOVERED membership must agree with is_discovered() on \
+                 TierArg::{a:?}",
+            );
+            assert_eq!(
+                TierArg::ONLY_DEFAULT.contains(&a),
+                a.is_default(),
+                "ONLY_DEFAULT membership must agree with is_default() on \
+                 TierArg::{a:?}",
+            );
+            assert_eq!(
+                TierArg::ONLY_CUSTOM.contains(&a),
+                a.is_custom(),
+                "ONLY_CUSTOM membership must agree with is_custom() on TierArg::{a:?}",
+            );
+            assert_eq!(
+                TierArg::ONLY_ENV.contains(&a),
+                a.is_env(),
+                "ONLY_ENV membership must agree with is_env() on TierArg::{a:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_BARE.len() + ONLY_DISCOVERED.len() + ONLY_DEFAULT.len()
+        // + ONLY_CUSTOM.len() + ONLY_ENV.len() == ALL.len()` at the
+        // slice altitude on the CLI tier tag's identity projection.
+        // Quinary peer of `config_tier_kind_identity_slices_partition_all`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis, one
+        // cell wider. A variant landing on two slices or on none
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes
+        // the drift.
+        for a in TierArg::ONLY_BARE {
+            assert!(
+                !TierArg::ONLY_DISCOVERED.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_BARE and ONLY_DISCOVERED",
+            );
+            assert!(
+                !TierArg::ONLY_DEFAULT.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_BARE and ONLY_DEFAULT",
+            );
+            assert!(
+                !TierArg::ONLY_CUSTOM.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_BARE and ONLY_CUSTOM",
+            );
+            assert!(
+                !TierArg::ONLY_ENV.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_BARE and ONLY_ENV",
+            );
+        }
+        for a in TierArg::ONLY_DISCOVERED {
+            assert!(
+                !TierArg::ONLY_DEFAULT.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_DISCOVERED and ONLY_DEFAULT",
+            );
+            assert!(
+                !TierArg::ONLY_CUSTOM.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_DISCOVERED and ONLY_CUSTOM",
+            );
+            assert!(
+                !TierArg::ONLY_ENV.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_DISCOVERED and ONLY_ENV",
+            );
+        }
+        for a in TierArg::ONLY_DEFAULT {
+            assert!(
+                !TierArg::ONLY_CUSTOM.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_DEFAULT and ONLY_CUSTOM",
+            );
+            assert!(
+                !TierArg::ONLY_ENV.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_DEFAULT and ONLY_ENV",
+            );
+        }
+        for a in TierArg::ONLY_CUSTOM {
+            assert!(
+                !TierArg::ONLY_ENV.contains(a),
+                "TierArg::{a:?} appears in BOTH ONLY_CUSTOM and ONLY_ENV",
+            );
+        }
+        for a in TierArg::ALL {
+            let in_bare = TierArg::ONLY_BARE.contains(a);
+            let in_discovered = TierArg::ONLY_DISCOVERED.contains(a);
+            let in_default = TierArg::ONLY_DEFAULT.contains(a);
+            let in_custom = TierArg::ONLY_CUSTOM.contains(a);
+            let in_env = TierArg::ONLY_ENV.contains(a);
+            let held = usize::from(in_bare)
+                + usize::from(in_discovered)
+                + usize::from(in_default)
+                + usize::from(in_custom)
+                + usize::from(in_env);
+            assert_eq!(
+                held, 1,
+                "TierArg::{a:?} must appear in exactly one of ONLY_BARE / \
+                 ONLY_DISCOVERED / ONLY_DEFAULT / ONLY_CUSTOM / ONLY_ENV \
+                 (found in {held})",
+            );
+        }
+        assert_eq!(
+            TierArg::ONLY_BARE.len()
+                + TierArg::ONLY_DISCOVERED.len()
+                + TierArg::ONLY_DEFAULT.len()
+                + TierArg::ONLY_CUSTOM.len()
+                + TierArg::ONLY_ENV.len(),
+            TierArg::ALL.len(),
+            "ONLY_BARE + ONLY_DISCOVERED + ONLY_DEFAULT + ONLY_CUSTOM + ONLY_ENV \
+             slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn tier_arg_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in TierArg::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Quinary peer of
+        // `config_tier_kind_identity_slices_preserve_all_order`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis.
+        let bare_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_bare())
+            .collect();
+        assert_eq!(
+            bare_from_all,
+            TierArg::ONLY_BARE.to_vec(),
+            "ONLY_BARE must be ALL-filtered by is_bare in declaration order",
+        );
+        let discovered_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_discovered())
+            .collect();
+        assert_eq!(
+            discovered_from_all,
+            TierArg::ONLY_DISCOVERED.to_vec(),
+            "ONLY_DISCOVERED must be ALL-filtered by is_discovered in declaration order",
+        );
+        let default_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_default())
+            .collect();
+        assert_eq!(
+            default_from_all,
+            TierArg::ONLY_DEFAULT.to_vec(),
+            "ONLY_DEFAULT must be ALL-filtered by is_default in declaration order",
+        );
+        let custom_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_custom())
+            .collect();
+        assert_eq!(
+            custom_from_all,
+            TierArg::ONLY_CUSTOM.to_vec(),
+            "ONLY_CUSTOM must be ALL-filtered by is_custom in declaration order",
+        );
+        let env_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_env())
+            .collect();
+        assert_eq!(
+            env_from_all,
+            TierArg::ONLY_ENV.to_vec(),
+            "ONLY_ENV must be ALL-filtered by is_env in declaration order",
+        );
+    }
+
+    #[test]
+    fn tier_arg_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Quinary peer of
+        // `config_tier_kind_identity_slices_have_no_duplicates`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis.
+        for slice in [
+            TierArg::ONLY_BARE,
+            TierArg::ONLY_DISCOVERED,
+            TierArg::ONLY_DEFAULT,
+            TierArg::ONLY_CUSTOM,
+            TierArg::ONLY_ENV,
+        ] {
+            let mut seen: Vec<TierArg> = Vec::with_capacity(slice.len());
+            for a in slice {
+                assert!(
+                    !seen.contains(a),
+                    "TierArg identity slice {slice:?} contains duplicate entry {a:?}",
+                );
+                seen.push(*a);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn tier_arg_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on TierArg::ALL — i.e.,
+        // `ONLY_BARE.len() == ALL.iter().filter(is_bare).count()` (and
+        // symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 bare + 1 discovered + 1 default + 1 custom + 1 env
+        // = 5 = ALL. Quinary peer of
+        // `config_tier_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis.
+        let bare_count = TierArg::ALL.iter().copied().filter(|a| a.is_bare()).count();
+        let discovered_count = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_discovered())
+            .count();
+        let default_count = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_default())
+            .count();
+        let custom_count = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_custom())
+            .count();
+        let env_count = TierArg::ALL.iter().copied().filter(|a| a.is_env()).count();
+        assert_eq!(
+            TierArg::ONLY_BARE.len(),
+            bare_count,
+            "ONLY_BARE.len() must match the is_bare count on ALL",
+        );
+        assert_eq!(
+            TierArg::ONLY_DISCOVERED.len(),
+            discovered_count,
+            "ONLY_DISCOVERED.len() must match the is_discovered count on ALL",
+        );
+        assert_eq!(
+            TierArg::ONLY_DEFAULT.len(),
+            default_count,
+            "ONLY_DEFAULT.len() must match the is_default count on ALL",
+        );
+        assert_eq!(
+            TierArg::ONLY_CUSTOM.len(),
+            custom_count,
+            "ONLY_CUSTOM.len() must match the is_custom count on ALL",
+        );
+        assert_eq!(
+            TierArg::ONLY_ENV.len(),
+            env_count,
+            "ONLY_ENV.len() must match the is_env count on ALL",
+        );
+        assert_eq!(TierArg::ONLY_BARE.len(), 1);
+        assert_eq!(TierArg::ONLY_DISCOVERED.len(), 1);
+        assert_eq!(TierArg::ONLY_DEFAULT.len(), 1);
+        assert_eq!(TierArg::ONLY_CUSTOM.len(), 1);
+        assert_eq!(TierArg::ONLY_ENV.len(), 1);
+        assert_eq!(TierArg::ALL.len(), 5);
+    }
+
+    #[test]
+    fn tier_arg_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub
+        // fn` (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Quinary peer of
+        // `config_tier_kind_identity_slices_are_const_addressable`
+        // (`ff6492b`) on the crate-side sibling tier-kind axis.
+        const ONLY_BARE_LEN: usize = TierArg::ONLY_BARE.len();
+        const ONLY_DISCOVERED_LEN: usize = TierArg::ONLY_DISCOVERED.len();
+        const ONLY_DEFAULT_LEN: usize = TierArg::ONLY_DEFAULT.len();
+        const ONLY_CUSTOM_LEN: usize = TierArg::ONLY_CUSTOM.len();
+        const ONLY_ENV_LEN: usize = TierArg::ONLY_ENV.len();
+        const ALL_LEN: usize = TierArg::ALL.len();
+        assert_eq!(ONLY_BARE_LEN, 1);
+        assert_eq!(ONLY_DISCOVERED_LEN, 1);
+        assert_eq!(ONLY_DEFAULT_LEN, 1);
+        assert_eq!(ONLY_CUSTOM_LEN, 1);
+        assert_eq!(ONLY_ENV_LEN, 1);
+        assert_eq!(
+            ONLY_BARE_LEN + ONLY_DISCOVERED_LEN + ONLY_DEFAULT_LEN + ONLY_CUSTOM_LEN + ONLY_ENV_LEN,
+            ALL_LEN,
         );
     }
 
