@@ -1991,6 +1991,107 @@ impl SupportBoundaryDistance {
     /// [`ModalityClass::ALL`] on the sibling typed classifiers.
     pub const ALL: &'static [Self] = &[Self::Boundary, Self::Singular, Self::StrictInterior];
 
+    /// The single `ONLY_BOUNDARY` [`SupportBoundaryDistance`] variant —
+    /// [`Self::Boundary`] (the two boundary corners of the
+    /// support-cardinality interval,
+    /// [`SupportCardinalityClass::Empty`] and
+    /// [`SupportCardinalityClass::FullCover`], collapsed to distance
+    /// `0` from the boundary) — carrying the *boundary-identity* pole
+    /// of the (boundary × singular × strict-interior) 1/1/1 identity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// distance-from-boundary axis, mirroring the shipped boolean
+    /// predicate [`Self::is_boundary`] one altitude down.
+    ///
+    /// First landing of the per-half meta-partition slice-constant
+    /// discipline on a `cube.rs`-scoped closed-primitive axis. Ternary
+    /// peer of [`crate::DiffLineKind::ONLY_REMOVED`] /
+    /// [`crate::DiffLineKind::ONLY_ADDED`] /
+    /// [`crate::DiffLineKind::ONLY_CONTEXT`] (commit `7ea710e`) on the
+    /// `tiered.rs`-scoped diff-cell axis, of
+    /// [`crate::WatchEventClass::ONLY_RELOAD`] /
+    /// [`crate::WatchEventClass::ONLY_REMOVED`] /
+    /// [`crate::WatchEventClass::ONLY_IGNORED`] (commit `9e5ea18`) on
+    /// the watcher-side reload-relevance axis,
+    /// [`crate::ConfigSourceKind::ONLY_DEFAULTS`] /
+    /// [`crate::ConfigSourceKind::ONLY_ENV`] /
+    /// [`crate::ConfigSourceKind::ONLY_FILE`] (commit `f287239`) on
+    /// the shikumi-side layer-kind axis, and
+    /// [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`) on the
+    /// figment-side kind axis. The per-half meta-partition
+    /// slice-constant discipline applied here to the three-way
+    /// distance-from-boundary axis's (boundary × singular ×
+    /// strict-interior) 1/1/1 identity meta-partition, closing the
+    /// FIRST landing of the discipline on a `cube.rs`-scoped
+    /// closed-primitive axis.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the boolean predicate at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_BOUNDARY.iter().all(|k| k.is_boundary())`,
+    /// `!ONLY_BOUNDARY.iter().any(|k| k.is_singular())`,
+    /// `!ONLY_BOUNDARY.iter().any(|k| k.is_strict_interior())`, and
+    /// the symmetric laws on [`Self::ONLY_SINGULAR`] and
+    /// [`Self::ONLY_STRICT_INTERIOR`]) are pinned by
+    /// [`tests::support_boundary_distance_ternary_slices_agree_with_ternary_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::support_boundary_distance_ternary_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::support_boundary_distance_ternary_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::support_boundary_distance_ternary_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::support_boundary_distance_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::support_boundary_distance_ternary_slices_are_const_addressable`].
+    pub const ONLY_BOUNDARY: &'static [Self] = &[Self::Boundary];
+
+    /// The single `ONLY_SINGULAR` [`SupportBoundaryDistance`] variant —
+    /// [`Self::Singular`] (the two singular near-boundary corners of
+    /// the support-cardinality interval,
+    /// [`SupportCardinalityClass::SingularSupport`] and
+    /// [`SupportCardinalityClass::SingularGap`], collapsed to distance
+    /// `1` from the boundary) — carrying the *singular-identity* pole
+    /// of the (boundary × singular × strict-interior) 1/1/1 identity
+    /// meta-partition at the primitive's OWN altitude on the
+    /// distance-from-boundary axis, mirroring the shipped boolean
+    /// predicate [`Self::is_singular`] one altitude down.
+    ///
+    /// See [`Self::ONLY_BOUNDARY`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_singular`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_SINGULAR: &'static [Self] = &[Self::Singular];
+
+    /// The single `ONLY_STRICT_INTERIOR` [`SupportBoundaryDistance`]
+    /// variant — [`Self::StrictInterior`] (the strict interior of the
+    /// support-cardinality interval,
+    /// [`SupportCardinalityClass::StrictPartialCover`], distance
+    /// `>= 2` from each boundary; only reachable on cardinality-`>= 4`
+    /// axes, vacuously absent on cardinality-`<= 3` axes) — carrying
+    /// the *strict-interior-identity* pole of the (boundary × singular
+    /// × strict-interior) 1/1/1 identity meta-partition at the
+    /// primitive's OWN altitude on the distance-from-boundary axis,
+    /// mirroring the shipped boolean predicate
+    /// [`Self::is_strict_interior`] one altitude down.
+    ///
+    /// See [`Self::ONLY_BOUNDARY`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_strict_interior`]), and the
+    /// load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins.
+    pub const ONLY_STRICT_INTERIOR: &'static [Self] = &[Self::StrictInterior];
+
     /// `true` exactly on [`Self::Boundary`] — the typed-bucket peer of
     /// [`SupportCardinalityClass::is_boundary`] projected from the
     /// variant tag.
@@ -48713,6 +48814,286 @@ mod tests {
         assert!(!SupportBoundaryDistance::Boundary.is_strict_interior());
         assert!(!SupportBoundaryDistance::Singular.is_strict_interior());
         assert!(SupportBoundaryDistance::StrictInterior.is_strict_interior());
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slices_agree_with_ternary_predicates() {
+        // Three-way weld pin between the per-half slice literals and
+        // the shipped boolean predicates on the distance-from-boundary
+        // axis's (boundary × singular × strict-interior) 1/1/1
+        // identity meta-partition. For every entry in each `ONLY_*`
+        // slice: the positive-pole predicate holds and the two
+        // negative-pole predicates do not, plus ALL-membership
+        // agreement between the slice `.contains()` and the boolean
+        // predicate across all three poles. Ternary peer of
+        // `diff_line_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`7ea710e`) on the tiered.rs-scoped diff-cell axis,
+        // `watch_event_class_ternary_slices_agree_with_ternary_predicates`
+        // (`9e5ea18`) on the watcher-side reload-relevance axis,
+        // `config_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`f287239`) on the shikumi-side layer-kind axis, and
+        // `figment_source_kind_ternary_slices_agree_with_ternary_predicates`
+        // (`723060b`) on the figment-side kind axis.
+        for k in SupportBoundaryDistance::ONLY_BOUNDARY.iter().copied() {
+            assert!(
+                k.is_boundary(),
+                "SupportBoundaryDistance::ONLY_BOUNDARY entry {k:?} must satisfy is_boundary()",
+            );
+            assert!(
+                !k.is_singular(),
+                "SupportBoundaryDistance::ONLY_BOUNDARY entry {k:?} must NOT satisfy is_singular()",
+            );
+            assert!(
+                !k.is_strict_interior(),
+                "SupportBoundaryDistance::ONLY_BOUNDARY entry {k:?} must NOT satisfy is_strict_interior()",
+            );
+        }
+        for k in SupportBoundaryDistance::ONLY_SINGULAR.iter().copied() {
+            assert!(
+                k.is_singular(),
+                "SupportBoundaryDistance::ONLY_SINGULAR entry {k:?} must satisfy is_singular()",
+            );
+            assert!(
+                !k.is_boundary(),
+                "SupportBoundaryDistance::ONLY_SINGULAR entry {k:?} must NOT satisfy is_boundary()",
+            );
+            assert!(
+                !k.is_strict_interior(),
+                "SupportBoundaryDistance::ONLY_SINGULAR entry {k:?} must NOT satisfy is_strict_interior()",
+            );
+        }
+        for k in SupportBoundaryDistance::ONLY_STRICT_INTERIOR
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_strict_interior(),
+                "SupportBoundaryDistance::ONLY_STRICT_INTERIOR entry {k:?} must satisfy is_strict_interior()",
+            );
+            assert!(
+                !k.is_boundary(),
+                "SupportBoundaryDistance::ONLY_STRICT_INTERIOR entry {k:?} must NOT satisfy is_boundary()",
+            );
+            assert!(
+                !k.is_singular(),
+                "SupportBoundaryDistance::ONLY_STRICT_INTERIOR entry {k:?} must NOT satisfy is_singular()",
+            );
+        }
+        for k in SupportBoundaryDistance::ALL.iter().copied() {
+            assert_eq!(
+                SupportBoundaryDistance::ONLY_BOUNDARY.contains(&k),
+                k.is_boundary(),
+                "ONLY_BOUNDARY membership must agree with is_boundary() on \
+                 SupportBoundaryDistance::{k:?}",
+            );
+            assert_eq!(
+                SupportBoundaryDistance::ONLY_SINGULAR.contains(&k),
+                k.is_singular(),
+                "ONLY_SINGULAR membership must agree with is_singular() on \
+                 SupportBoundaryDistance::{k:?}",
+            );
+            assert_eq!(
+                SupportBoundaryDistance::ONLY_STRICT_INTERIOR.contains(&k),
+                k.is_strict_interior(),
+                "ONLY_STRICT_INTERIOR membership must agree with is_strict_interior() on \
+                 SupportBoundaryDistance::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_BOUNDARY.len() + ONLY_SINGULAR.len() +
+        // ONLY_STRICT_INTERIOR.len() == ALL.len()` at the slice
+        // altitude on the distance-from-boundary axis's identity
+        // projection. Ternary peer of
+        // `diff_line_kind_ternary_slices_partition_all` (`7ea710e`)
+        // and slice-altitude peer of the trio-predicate agreement pin
+        // one altitude down. A variant landing on two slices or on
+        // none breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in SupportBoundaryDistance::ONLY_BOUNDARY {
+            assert!(
+                !SupportBoundaryDistance::ONLY_SINGULAR.contains(k),
+                "SupportBoundaryDistance::{k:?} appears in BOTH ONLY_BOUNDARY and ONLY_SINGULAR",
+            );
+            assert!(
+                !SupportBoundaryDistance::ONLY_STRICT_INTERIOR.contains(k),
+                "SupportBoundaryDistance::{k:?} appears in BOTH ONLY_BOUNDARY and ONLY_STRICT_INTERIOR",
+            );
+        }
+        for k in SupportBoundaryDistance::ONLY_SINGULAR {
+            assert!(
+                !SupportBoundaryDistance::ONLY_STRICT_INTERIOR.contains(k),
+                "SupportBoundaryDistance::{k:?} appears in BOTH ONLY_SINGULAR and ONLY_STRICT_INTERIOR",
+            );
+        }
+        for k in SupportBoundaryDistance::ALL {
+            let in_boundary = SupportBoundaryDistance::ONLY_BOUNDARY.contains(k);
+            let in_singular = SupportBoundaryDistance::ONLY_SINGULAR.contains(k);
+            let in_strict_interior = SupportBoundaryDistance::ONLY_STRICT_INTERIOR.contains(k);
+            let held = usize::from(in_boundary)
+                + usize::from(in_singular)
+                + usize::from(in_strict_interior);
+            assert_eq!(
+                held, 1,
+                "SupportBoundaryDistance::{k:?} must appear in exactly one of \
+                 ONLY_BOUNDARY / ONLY_SINGULAR / ONLY_STRICT_INTERIOR (found in {held})",
+            );
+        }
+        assert_eq!(
+            SupportBoundaryDistance::ONLY_BOUNDARY.len()
+                + SupportBoundaryDistance::ONLY_SINGULAR.len()
+                + SupportBoundaryDistance::ONLY_STRICT_INTERIOR.len(),
+            SupportBoundaryDistance::ALL.len(),
+            "ONLY_BOUNDARY + ONLY_SINGULAR + ONLY_STRICT_INTERIOR slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SupportBoundaryDistance::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Ternary peer of
+        // `diff_line_kind_ternary_slices_preserve_all_order`
+        // (`7ea710e`).
+        let boundary_from_all: Vec<SupportBoundaryDistance> = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_boundary())
+            .collect();
+        assert_eq!(
+            boundary_from_all,
+            SupportBoundaryDistance::ONLY_BOUNDARY.to_vec(),
+            "ONLY_BOUNDARY must be ALL-filtered by is_boundary in declaration order",
+        );
+        let singular_from_all: Vec<SupportBoundaryDistance> = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular())
+            .collect();
+        assert_eq!(
+            singular_from_all,
+            SupportBoundaryDistance::ONLY_SINGULAR.to_vec(),
+            "ONLY_SINGULAR must be ALL-filtered by is_singular in declaration order",
+        );
+        let strict_interior_from_all: Vec<SupportBoundaryDistance> = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_strict_interior())
+            .collect();
+        assert_eq!(
+            strict_interior_from_all,
+            SupportBoundaryDistance::ONLY_STRICT_INTERIOR.to_vec(),
+            "ONLY_STRICT_INTERIOR must be ALL-filtered by is_strict_interior in declaration order",
+        );
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Ternary peer of
+        // `diff_line_kind_ternary_slices_have_no_duplicates`
+        // (`7ea710e`).
+        for slice in [
+            SupportBoundaryDistance::ONLY_BOUNDARY,
+            SupportBoundaryDistance::ONLY_SINGULAR,
+            SupportBoundaryDistance::ONLY_STRICT_INTERIOR,
+        ] {
+            let mut seen: Vec<SupportBoundaryDistance> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "SupportBoundaryDistance ternary slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SupportBoundaryDistance::ALL —
+        // i.e., `ONLY_BOUNDARY.len() ==
+        // ALL.iter().filter(is_boundary).count()` (and symmetric for
+        // the two siblings) — the cardinality projection at the slice
+        // altitude agrees with the boolean-altitude projection on all
+        // three halves. Concrete positions today: 1 boundary +
+        // 1 singular + 1 strict-interior = 3 = ALL. Ternary peer of
+        // `diff_line_kind_ternary_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`7ea710e`).
+        let boundary_count = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_boundary())
+            .count();
+        let singular_count = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_singular())
+            .count();
+        let strict_interior_count = SupportBoundaryDistance::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_strict_interior())
+            .count();
+        assert_eq!(
+            SupportBoundaryDistance::ONLY_BOUNDARY.len(),
+            boundary_count,
+            "ONLY_BOUNDARY.len() must match the is_boundary count on ALL",
+        );
+        assert_eq!(
+            SupportBoundaryDistance::ONLY_SINGULAR.len(),
+            singular_count,
+            "ONLY_SINGULAR.len() must match the is_singular count on ALL",
+        );
+        assert_eq!(
+            SupportBoundaryDistance::ONLY_STRICT_INTERIOR.len(),
+            strict_interior_count,
+            "ONLY_STRICT_INTERIOR.len() must match the is_strict_interior count on ALL",
+        );
+        assert_eq!(SupportBoundaryDistance::ONLY_BOUNDARY.len(), 1);
+        assert_eq!(SupportBoundaryDistance::ONLY_SINGULAR.len(), 1);
+        assert_eq!(SupportBoundaryDistance::ONLY_STRICT_INTERIOR.len(), 1);
+        assert_eq!(SupportBoundaryDistance::ALL.len(), 3);
+    }
+
+    #[test]
+    fn support_boundary_distance_ternary_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Ternary peer of
+        // `diff_line_kind_ternary_slices_are_const_addressable`
+        // (`7ea710e`).
+        const ONLY_BOUNDARY_LEN: usize = SupportBoundaryDistance::ONLY_BOUNDARY.len();
+        const ONLY_SINGULAR_LEN: usize = SupportBoundaryDistance::ONLY_SINGULAR.len();
+        const ONLY_STRICT_INTERIOR_LEN: usize = SupportBoundaryDistance::ONLY_STRICT_INTERIOR.len();
+        const ALL_LEN: usize = SupportBoundaryDistance::ALL.len();
+        assert_eq!(ONLY_BOUNDARY_LEN, 1);
+        assert_eq!(ONLY_SINGULAR_LEN, 1);
+        assert_eq!(ONLY_STRICT_INTERIOR_LEN, 1);
+        assert_eq!(
+            ONLY_BOUNDARY_LEN + ONLY_SINGULAR_LEN + ONLY_STRICT_INTERIOR_LEN,
+            ALL_LEN
+        );
     }
 
     #[test]
