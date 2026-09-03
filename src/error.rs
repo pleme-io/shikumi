@@ -643,6 +643,133 @@ impl ShikumiErrorKind {
         Self::Io,
         Self::Validation,
     ];
+
+    /// The single [`Self::NotFound`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude — the singleton slice `&[Self::NotFound]`
+    /// mirroring the shipped boolean predicate [`Self::is_not_found`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `kind.is_not_found()`, and no variant outside it does.
+    ///
+    /// Paired with the six siblings ([`Self::ONLY_PARSE`],
+    /// [`Self::ONLY_WATCH`], [`Self::ONLY_IO`], [`Self::ONLY_FIGMENT`],
+    /// [`Self::ONLY_EXTRACT`], [`Self::ONLY_VALIDATION`]), the seven
+    /// disjoint singleton slices partition [`Self::ALL`] at the
+    /// static-slice altitude the same way the shipped boolean
+    /// predicates ([`Self::is_not_found`] / [`Self::is_parse`] /
+    /// [`Self::is_watch`] / [`Self::is_io`] / [`Self::is_figment`] /
+    /// [`Self::is_extract`] / [`Self::is_validation`]) meta-partition it
+    /// at the boolean altitude. All seven constants sit in the same
+    /// `impl ShikumiErrorKind` block as [`Self::ALL`] /
+    /// [`Self::FIGMENT_BEARING`] / [`Self::NOT_FIGMENT_BEARING`] and
+    /// follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the seven identity poles occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the seven identity predicates at const-fn altitude —
+    /// so the two declaration surfaces (the slice literals and the
+    /// boolean predicates) remain independent load-bearing witnesses
+    /// of the same identity meta-partition, and a future edit that
+    /// shifts a variant across an identity pole on ONE surface but not
+    /// the other diverges at test time on the first shape where they
+    /// disagree.
+    ///
+    /// Also the first cell of [`Self::NOT_FIGMENT_BEARING`] — the two
+    /// witnesses agree here (`ONLY_NOT_FOUND ⊆ NOT_FIGMENT_BEARING`)
+    /// per the identity-vs-compound cross-check that pins the seven
+    /// identity singletons against the shipped figment-bearing meta-
+    /// partition.
+    ///
+    /// **Idiom-peer.** Septenary landing of the per-half meta-partition
+    /// slice-constant discipline, matching altitude-for-altitude the
+    /// senary [`crate::secret_client::SecretOperation::ONLY_GET`] / …
+    /// / `ONLY_GET_VERSION` (commit `bfe3e24`), the septenary
+    /// [`crate::secret_client::SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), the octonary
+    /// [`crate::secret::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET` (commit `19364e3`), the quinary
+    /// [`crate::cli::TierArg::ONLY_BARE`] / … / `ONLY_ENV` (commit
+    /// `f7f5529`), and the quaternary
+    /// [`crate::tiered::ConfigTierKind::ONLY_BARE`] / … /
+    /// `ONLY_CUSTOM` (commit `ff6492b`) — the per-half meta-partition
+    /// slice-constant discipline applied here to the seven-way
+    /// [`ShikumiErrorKind`] axis (the first identity-partition landing
+    /// on the error-kind primitive), lifting the seven identity poles
+    /// onto the slice-constant altitude alongside the shipped compound-
+    /// polarity [`Self::FIGMENT_BEARING`] / [`Self::NOT_FIGMENT_BEARING`]
+    /// pair one altitude up.
+    ///
+    /// The seven agreement laws
+    /// (`ONLY_NOT_FOUND.iter().all(|k| k.is_not_found())` and
+    /// `ONLY_NOT_FOUND.iter().all(|k| !k.is_parse() && !k.is_watch() &&
+    /// !k.is_io() && !k.is_figment() && !k.is_extract() &&
+    /// !k.is_validation())`, symmetric on the six siblings) are pinned
+    /// by
+    /// [`tests::shikumi_error_kind_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant across all seven:
+    /// [`tests::shikumi_error_kind_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::shikumi_error_kind_identity_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::shikumi_error_kind_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the seven boolean poles:
+    /// [`tests::shikumi_error_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::shikumi_error_kind_identity_slices_are_const_addressable`].
+    /// Cross-altitude weld with the compound-polarity pair:
+    /// [`tests::shikumi_error_kind_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_NOT_FOUND: &'static [Self] = &[Self::NotFound];
+
+    /// The single [`Self::Parse`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude. See [`Self::ONLY_NOT_FOUND`] for the full
+    /// contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_PARSE: &'static [Self] = &[Self::Parse];
+
+    /// The single [`Self::Watch`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude. See [`Self::ONLY_NOT_FOUND`] for the full
+    /// contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_WATCH: &'static [Self] = &[Self::Watch];
+
+    /// The single [`Self::Io`] pole of the seven-way identity meta-
+    /// partition on the [`ShikumiErrorKind`] axis at the static-slice
+    /// altitude. See [`Self::ONLY_NOT_FOUND`] for the full contract,
+    /// load-bearing pins, and idiom-peer landings.
+    pub const ONLY_IO: &'static [Self] = &[Self::Io];
+
+    /// The single [`Self::Figment`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude. Also the first cell of [`Self::FIGMENT_BEARING`]
+    /// — the two witnesses agree here (`ONLY_FIGMENT ⊆ FIGMENT_BEARING`)
+    /// per the identity-vs-compound cross-check. See
+    /// [`Self::ONLY_NOT_FOUND`] for the full contract, load-bearing
+    /// pins, and idiom-peer landings.
+    pub const ONLY_FIGMENT: &'static [Self] = &[Self::Figment];
+
+    /// The single [`Self::Extract`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude. Also the second cell of [`Self::FIGMENT_BEARING`]
+    /// — the two witnesses agree here (`ONLY_EXTRACT ⊆ FIGMENT_BEARING`)
+    /// per the identity-vs-compound cross-check. See
+    /// [`Self::ONLY_NOT_FOUND`] for the full contract, load-bearing
+    /// pins, and idiom-peer landings.
+    pub const ONLY_EXTRACT: &'static [Self] = &[Self::Extract];
+
+    /// The single [`Self::Validation`] pole of the seven-way identity
+    /// meta-partition on the [`ShikumiErrorKind`] axis at the static-
+    /// slice altitude. Also the last cell of
+    /// [`Self::NOT_FIGMENT_BEARING`] — the two witnesses agree here
+    /// (`ONLY_VALIDATION ⊆ NOT_FIGMENT_BEARING`) per the identity-vs-
+    /// compound cross-check, and the interleaved position (after the
+    /// two figment-bearing cells in [`Self::ALL`]) means the identity-
+    /// slice union on the non-figment-bearing pole reproduces
+    /// [`Self::NOT_FIGMENT_BEARING`]'s neither-prefix-nor-suffix
+    /// projection. See [`Self::ONLY_NOT_FOUND`] for the full contract,
+    /// load-bearing pins, and idiom-peer landings.
+    pub const ONLY_VALIDATION: &'static [Self] = &[Self::Validation];
 }
 
 /// Closed tri-state partition over the field-path-localization axis of
@@ -8665,6 +8792,479 @@ mod tests {
         assert_eq!(FIGMENT_BEARING_LEN, 2);
         assert_eq!(NOT_FIGMENT_BEARING_LEN, 5);
         assert_eq!(FIGMENT_BEARING_LEN + NOT_FIGMENT_BEARING_LEN, ALL_LEN);
+    }
+
+    // ── ShikumiErrorKind — identity meta-partition slice constants ────
+    //
+    // Septenary landing of the per-half meta-partition slice-constant
+    // discipline on the seven-way ShikumiErrorKind axis (first
+    // identity-partition landing on the error-kind primitive). Peer of
+    // the senary `SecretOperation::ONLY_GET` / … / `ONLY_GET_VERSION`
+    // (commit `bfe3e24`), the septenary `SecretClientKind::ONLY_MEM` /
+    // … / `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), the octonary
+    // `SecretBackendKind::ONLY_LITERAL` / … / `ONLY_GCP_SECRET` (commit
+    // `19364e3`), and the quinary `TierArg::ONLY_BARE` / … / `ONLY_ENV`
+    // (commit `f7f5529`). The seven pins below lock the identity
+    // singletons as a coherent meta-partition at the primitive's
+    // altitude alongside the shipped compound-polarity FIGMENT_BEARING
+    // / NOT_FIGMENT_BEARING pair one altitude up.
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_agree_with_identity_predicates() {
+        // Seven-way agreement pin across the (not_found × parse ×
+        // watch × io × figment × extract × validation) identity meta-
+        // partition. Every ONLY_NOT_FOUND entry satisfies is_not_found
+        // and none of the six sibling predicates; every ONLY_PARSE
+        // entry satisfies is_parse alone; … and so on across all seven
+        // halves. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift.
+        // Septenary peer of
+        // `secret_operation_identity_slices_agree_with_identity_predicates`
+        // (commit `bfe3e24`) one cell wider.
+        for k in ShikumiErrorKind::ONLY_NOT_FOUND.iter().copied() {
+            assert!(
+                k.is_not_found(),
+                "ONLY_NOT_FOUND {k:?} must satisfy is_not_found"
+            );
+            assert!(
+                !k.is_parse(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_parse"
+            );
+            assert!(
+                !k.is_watch(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_watch"
+            );
+            assert!(!k.is_io(), "ONLY_NOT_FOUND {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_figment(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_figment"
+            );
+            assert!(
+                !k.is_extract(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_extract"
+            );
+            assert!(
+                !k.is_validation(),
+                "ONLY_NOT_FOUND {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_PARSE.iter().copied() {
+            assert!(k.is_parse(), "ONLY_PARSE {k:?} must satisfy is_parse");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_PARSE {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(!k.is_watch(), "ONLY_PARSE {k:?} must NOT satisfy is_watch");
+            assert!(!k.is_io(), "ONLY_PARSE {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_figment(),
+                "ONLY_PARSE {k:?} must NOT satisfy is_figment"
+            );
+            assert!(
+                !k.is_extract(),
+                "ONLY_PARSE {k:?} must NOT satisfy is_extract"
+            );
+            assert!(
+                !k.is_validation(),
+                "ONLY_PARSE {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_WATCH.iter().copied() {
+            assert!(k.is_watch(), "ONLY_WATCH {k:?} must satisfy is_watch");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_WATCH {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(!k.is_parse(), "ONLY_WATCH {k:?} must NOT satisfy is_parse");
+            assert!(!k.is_io(), "ONLY_WATCH {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_figment(),
+                "ONLY_WATCH {k:?} must NOT satisfy is_figment"
+            );
+            assert!(
+                !k.is_extract(),
+                "ONLY_WATCH {k:?} must NOT satisfy is_extract"
+            );
+            assert!(
+                !k.is_validation(),
+                "ONLY_WATCH {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_IO.iter().copied() {
+            assert!(k.is_io(), "ONLY_IO {k:?} must satisfy is_io");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_IO {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(!k.is_parse(), "ONLY_IO {k:?} must NOT satisfy is_parse");
+            assert!(!k.is_watch(), "ONLY_IO {k:?} must NOT satisfy is_watch");
+            assert!(!k.is_figment(), "ONLY_IO {k:?} must NOT satisfy is_figment");
+            assert!(!k.is_extract(), "ONLY_IO {k:?} must NOT satisfy is_extract");
+            assert!(
+                !k.is_validation(),
+                "ONLY_IO {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_FIGMENT.iter().copied() {
+            assert!(k.is_figment(), "ONLY_FIGMENT {k:?} must satisfy is_figment");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_FIGMENT {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_parse(),
+                "ONLY_FIGMENT {k:?} must NOT satisfy is_parse"
+            );
+            assert!(
+                !k.is_watch(),
+                "ONLY_FIGMENT {k:?} must NOT satisfy is_watch"
+            );
+            assert!(!k.is_io(), "ONLY_FIGMENT {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_extract(),
+                "ONLY_FIGMENT {k:?} must NOT satisfy is_extract"
+            );
+            assert!(
+                !k.is_validation(),
+                "ONLY_FIGMENT {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_EXTRACT.iter().copied() {
+            assert!(k.is_extract(), "ONLY_EXTRACT {k:?} must satisfy is_extract");
+            assert!(
+                !k.is_not_found(),
+                "ONLY_EXTRACT {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_parse(),
+                "ONLY_EXTRACT {k:?} must NOT satisfy is_parse"
+            );
+            assert!(
+                !k.is_watch(),
+                "ONLY_EXTRACT {k:?} must NOT satisfy is_watch"
+            );
+            assert!(!k.is_io(), "ONLY_EXTRACT {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_figment(),
+                "ONLY_EXTRACT {k:?} must NOT satisfy is_figment"
+            );
+            assert!(
+                !k.is_validation(),
+                "ONLY_EXTRACT {k:?} must NOT satisfy is_validation"
+            );
+        }
+        for k in ShikumiErrorKind::ONLY_VALIDATION.iter().copied() {
+            assert!(
+                k.is_validation(),
+                "ONLY_VALIDATION {k:?} must satisfy is_validation"
+            );
+            assert!(
+                !k.is_not_found(),
+                "ONLY_VALIDATION {k:?} must NOT satisfy is_not_found"
+            );
+            assert!(
+                !k.is_parse(),
+                "ONLY_VALIDATION {k:?} must NOT satisfy is_parse"
+            );
+            assert!(
+                !k.is_watch(),
+                "ONLY_VALIDATION {k:?} must NOT satisfy is_watch"
+            );
+            assert!(!k.is_io(), "ONLY_VALIDATION {k:?} must NOT satisfy is_io");
+            assert!(
+                !k.is_figment(),
+                "ONLY_VALIDATION {k:?} must NOT satisfy is_figment"
+            );
+            assert!(
+                !k.is_extract(),
+                "ONLY_VALIDATION {k:?} must NOT satisfy is_extract"
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_partition_all() {
+        // Septenary partition invariant: the seven per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_NOT_FOUND.len() + ONLY_PARSE.len() + ONLY_WATCH.len() +
+        //  ONLY_IO.len() + ONLY_FIGMENT.len() + ONLY_EXTRACT.len() +
+        //  ONLY_VALIDATION.len() == ALL.len()`.
+        let identity_slices: [&[ShikumiErrorKind]; 7] = [
+            ShikumiErrorKind::ONLY_NOT_FOUND,
+            ShikumiErrorKind::ONLY_PARSE,
+            ShikumiErrorKind::ONLY_WATCH,
+            ShikumiErrorKind::ONLY_IO,
+            ShikumiErrorKind::ONLY_FIGMENT,
+            ShikumiErrorKind::ONLY_EXTRACT,
+            ShikumiErrorKind::ONLY_VALIDATION,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for k in left.iter() {
+                    assert!(
+                        !right.contains(k),
+                        "ShikumiErrorKind::{k:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&k)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "ShikumiErrorKind::{k:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            ShikumiErrorKind::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ShikumiErrorKind::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<ShikumiErrorKind> = ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(ShikumiErrorKind::ONLY_NOT_FOUND, is_not_found);
+        pin!(ShikumiErrorKind::ONLY_PARSE, is_parse);
+        pin!(ShikumiErrorKind::ONLY_WATCH, is_watch);
+        pin!(ShikumiErrorKind::ONLY_IO, is_io);
+        pin!(ShikumiErrorKind::ONLY_FIGMENT, is_figment);
+        pin!(ShikumiErrorKind::ONLY_EXTRACT, is_extract);
+        pin!(ShikumiErrorKind::ONLY_VALIDATION, is_validation);
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all seven per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set.
+        for slice in [
+            ShikumiErrorKind::ONLY_NOT_FOUND,
+            ShikumiErrorKind::ONLY_PARSE,
+            ShikumiErrorKind::ONLY_WATCH,
+            ShikumiErrorKind::ONLY_IO,
+            ShikumiErrorKind::ONLY_FIGMENT,
+            ShikumiErrorKind::ONLY_EXTRACT,
+            ShikumiErrorKind::ONLY_VALIDATION,
+        ] {
+            let mut seen: Vec<ShikumiErrorKind> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ShikumiErrorKind identity slice {slice:?} contains \
+                     duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ShikumiErrorKind::ALL — i.e.,
+        // `ONLY_NOT_FOUND.len() == ALL.iter().filter(is_not_found).count()`
+        // (and symmetric for the six siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all seven halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 + 1 + 1 = 7 = ALL.
+        let counts = [
+            (
+                "is_not_found",
+                ShikumiErrorKind::ONLY_NOT_FOUND.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_not_found())
+                    .count(),
+            ),
+            (
+                "is_parse",
+                ShikumiErrorKind::ONLY_PARSE.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_parse())
+                    .count(),
+            ),
+            (
+                "is_watch",
+                ShikumiErrorKind::ONLY_WATCH.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_watch())
+                    .count(),
+            ),
+            (
+                "is_io",
+                ShikumiErrorKind::ONLY_IO.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_io())
+                    .count(),
+            ),
+            (
+                "is_figment",
+                ShikumiErrorKind::ONLY_FIGMENT.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_figment())
+                    .count(),
+            ),
+            (
+                "is_extract",
+                ShikumiErrorKind::ONLY_EXTRACT.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_extract())
+                    .count(),
+            ),
+            (
+                "is_validation",
+                ShikumiErrorKind::ONLY_VALIDATION.len(),
+                ShikumiErrorKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_validation())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(ShikumiErrorKind::ALL.len(), 7);
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the seven per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_NOT_FOUND_LEN: usize = ShikumiErrorKind::ONLY_NOT_FOUND.len();
+        const ONLY_PARSE_LEN: usize = ShikumiErrorKind::ONLY_PARSE.len();
+        const ONLY_WATCH_LEN: usize = ShikumiErrorKind::ONLY_WATCH.len();
+        const ONLY_IO_LEN: usize = ShikumiErrorKind::ONLY_IO.len();
+        const ONLY_FIGMENT_LEN: usize = ShikumiErrorKind::ONLY_FIGMENT.len();
+        const ONLY_EXTRACT_LEN: usize = ShikumiErrorKind::ONLY_EXTRACT.len();
+        const ONLY_VALIDATION_LEN: usize = ShikumiErrorKind::ONLY_VALIDATION.len();
+        const ALL_LEN: usize = ShikumiErrorKind::ALL.len();
+        assert_eq!(ONLY_NOT_FOUND_LEN, 1);
+        assert_eq!(ONLY_PARSE_LEN, 1);
+        assert_eq!(ONLY_WATCH_LEN, 1);
+        assert_eq!(ONLY_IO_LEN, 1);
+        assert_eq!(ONLY_FIGMENT_LEN, 1);
+        assert_eq!(ONLY_EXTRACT_LEN, 1);
+        assert_eq!(ONLY_VALIDATION_LEN, 1);
+        assert_eq!(
+            ONLY_NOT_FOUND_LEN
+                + ONLY_PARSE_LEN
+                + ONLY_WATCH_LEN
+                + ONLY_IO_LEN
+                + ONLY_FIGMENT_LEN
+                + ONLY_EXTRACT_LEN
+                + ONLY_VALIDATION_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the compound-polarity meta-partition
+        // (FIGMENT_BEARING / NOT_FIGMENT_BEARING). The union of the
+        // two identity singletons on the figment-bearing pole
+        // (ONLY_FIGMENT + ONLY_EXTRACT) equals FIGMENT_BEARING as a
+        // sequence in declaration order, and the union of the five
+        // not-figment-bearing identity singletons (ONLY_NOT_FOUND +
+        // ONLY_PARSE + ONLY_WATCH + ONLY_IO + ONLY_VALIDATION) equals
+        // NOT_FIGMENT_BEARING likewise — the interleaved ALL-order
+        // projection preserved on the not-figment-bearing pole.
+        // A future rearrangement of one meta-partition without the
+        // other (say, reclassifying Validation as figment-bearing
+        // without updating the identity → compound aggregation)
+        // diverges at THIS pin, before drifting through a consumer
+        // that materializes one altitude from the other.
+        let figment_bearing_from_identity: Vec<ShikumiErrorKind> = [
+            ShikumiErrorKind::ONLY_FIGMENT,
+            ShikumiErrorKind::ONLY_EXTRACT,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            figment_bearing_from_identity,
+            ShikumiErrorKind::FIGMENT_BEARING.to_vec(),
+            "identity singleton union on the figment-bearing pole must \
+             reproduce FIGMENT_BEARING in declaration order",
+        );
+        let not_figment_bearing_from_identity: Vec<ShikumiErrorKind> = [
+            ShikumiErrorKind::ONLY_NOT_FOUND,
+            ShikumiErrorKind::ONLY_PARSE,
+            ShikumiErrorKind::ONLY_WATCH,
+            ShikumiErrorKind::ONLY_IO,
+            ShikumiErrorKind::ONLY_VALIDATION,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            not_figment_bearing_from_identity,
+            ShikumiErrorKind::NOT_FIGMENT_BEARING.to_vec(),
+            "identity singleton union on the not-figment-bearing pole \
+             must reproduce NOT_FIGMENT_BEARING in declaration order",
+        );
     }
 
     #[test]
