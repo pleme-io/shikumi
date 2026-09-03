@@ -1162,6 +1162,84 @@ impl HintSurface {
         Self::EnvVar,
     ];
 
+    /// The [`Self::DeadKnob`] pole of the four-way identity
+    /// meta-partition on the coverage-hint surface axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::DeadKnob]` mirroring the sibling boolean predicate
+    /// [`Self::is_dead_knob`] one altitude down.
+    ///
+    /// Second quaternary landing of the per-half meta-partition
+    /// slice-constant discipline on a shikumi-native closed-primitive
+    /// axis, after the first quaternary landing
+    /// [`crate::tiered::ConfigTierKind::ONLY_BARE`] /
+    /// [`crate::tiered::ConfigTierKind::ONLY_DISCOVERED`] /
+    /// [`crate::tiered::ConfigTierKind::ONLY_DEFAULT`] /
+    /// [`crate::tiered::ConfigTierKind::ONLY_CUSTOM`] (commit
+    /// `ff6492b`) on the sealed-fold tier-kind axis. The four poles
+    /// are singletons today (1/1/1/1 identity partition), and the
+    /// same six load-bearing laws — agreement with the boolean
+    /// predicates, pairwise-disjoint-and-covering partition,
+    /// order-preservation against [`Self::ALL`], no-duplicates,
+    /// cardinality-agreement with the boolean-filter counts, and
+    /// const-addressability — reach the slice altitude on the
+    /// coverage-hint surface axis here.
+    ///
+    /// Written as an explicit singleton slice literal in the SAME
+    /// relative declaration order the identity pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the boolean predicate at const-fn altitude — so the
+    /// two declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant
+    /// across the polarity on ONE surface but not the other diverges
+    /// at test time on the first shape where they disagree.
+    ///
+    /// Welded by
+    /// [`tests::hint_surface_identity_slices_agree_with_identity_predicates`],
+    /// [`tests::hint_surface_identity_slices_partition_all`],
+    /// [`tests::hint_surface_identity_slices_preserve_all_order`],
+    /// [`tests::hint_surface_identity_slices_have_no_duplicates`],
+    /// [`tests::hint_surface_identity_slice_lengths_agree_with_boolean_pole_cardinalities`],
+    /// and
+    /// [`tests::hint_surface_identity_slices_are_const_addressable`].
+    pub const ONLY_DEAD_KNOB: &'static [Self] = &[Self::DeadKnob];
+
+    /// The [`Self::StaleEntry`] pole of the four-way identity
+    /// meta-partition on the coverage-hint surface axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::StaleEntry]` mirroring the sibling boolean predicate
+    /// [`Self::is_stale_entry`] one altitude down.
+    ///
+    /// See [`Self::ONLY_DEAD_KNOB`] for the full contract and the
+    /// six load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// four `ONLY_*` singletons share.
+    pub const ONLY_STALE_ENTRY: &'static [Self] = &[Self::StaleEntry];
+
+    /// The [`Self::ValueKey`] pole of the four-way identity
+    /// meta-partition on the coverage-hint surface axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::ValueKey]` mirroring the sibling boolean predicate
+    /// [`Self::is_value_key`] one altitude down.
+    ///
+    /// See [`Self::ONLY_DEAD_KNOB`] for the full contract and the
+    /// six load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// four `ONLY_*` singletons share.
+    pub const ONLY_VALUE_KEY: &'static [Self] = &[Self::ValueKey];
+
+    /// The [`Self::EnvVar`] pole of the four-way identity
+    /// meta-partition on the coverage-hint surface axis at the
+    /// static-slice altitude — the singleton slice
+    /// `&[Self::EnvVar]` mirroring the sibling boolean predicate
+    /// [`Self::is_env_var`] one altitude down.
+    ///
+    /// See [`Self::ONLY_DEAD_KNOB`] for the full contract and the
+    /// six load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins the
+    /// four `ONLY_*` singletons share.
+    pub const ONLY_ENV_VAR: &'static [Self] = &[Self::EnvVar];
+
     /// Returns `true` for [`Self::DeadKnob`]; equivalent to
     /// `self == HintSurface::DeadKnob`.
     ///
@@ -7417,6 +7495,376 @@ tags: []
         assert!(!call_coverage(HintSurface::EnvVar));
         assert!(!call_typo_audit(HintSurface::DeadKnob));
         assert!(!call_typo_audit(HintSurface::StaleEntry));
+    }
+
+    // ── HintSurface::ONLY_* identity-slice pins ─────────────────
+    //
+    // Second quaternary landing of the per-half meta-partition
+    // slice-constant discipline on a shikumi-native closed-primitive
+    // axis, after the first quaternary landing
+    // `ConfigTierKind::ONLY_BARE / ONLY_DISCOVERED / ONLY_DEFAULT /
+    // ONLY_CUSTOM` (`ff6492b`) on the sealed-fold tier-kind axis, and
+    // lifted here onto the four-way coverage-hint surface axis
+    // (DeadKnob × StaleEntry × ValueKey × EnvVar) at 1/1/1/1 today.
+    // The six pins below mirror the exact test set landed for
+    // `ConfigTierKind::ONLY_*` (`ff6492b`), adapted from the
+    // (bare × discovered × default × custom) identity meta-partition
+    // of the tier-kind axis to the (dead-knob × stale-entry ×
+    // value-key × env-var) identity meta-partition of the
+    // coverage-hint surface axis.
+    //
+    // The independent slice literals and the sibling boolean
+    // predicates remain load-bearing witnesses of the same meta-
+    // partition: a future edit that shifts a variant across the
+    // polarity on ONE surface but not the other diverges at the
+    // agreement / partition / cardinality pins on the first shape
+    // where the surfaces disagree.
+
+    #[test]
+    fn hint_surface_identity_slices_agree_with_identity_predicates() {
+        // Four-way agreement pin across the (dead-knob × stale-entry ×
+        // value-key × env-var) identity meta-partition. Every
+        // ONLY_DEAD_KNOB entry satisfies is_dead_knob and none of
+        // is_stale_entry / is_value_key / is_env_var; ONLY_STALE_ENTRY
+        // satisfies is_stale_entry alone; ONLY_VALUE_KEY satisfies
+        // is_value_key alone; ONLY_ENV_VAR satisfies is_env_var alone.
+        // Every HintSurface::ALL cell agrees on membership under each
+        // of the four boolean predicates. Quaternary peer of
+        // `config_tier_kind_identity_slices_agree_with_identity_predicates`
+        // (`ff6492b`).
+        for s in HintSurface::ONLY_DEAD_KNOB.iter().copied() {
+            assert!(
+                s.is_dead_knob(),
+                "HintSurface::ONLY_DEAD_KNOB entry {s:?} must satisfy is_dead_knob()",
+            );
+            assert!(
+                !s.is_stale_entry(),
+                "HintSurface::ONLY_DEAD_KNOB entry {s:?} must NOT satisfy is_stale_entry()",
+            );
+            assert!(
+                !s.is_value_key(),
+                "HintSurface::ONLY_DEAD_KNOB entry {s:?} must NOT satisfy is_value_key()",
+            );
+            assert!(
+                !s.is_env_var(),
+                "HintSurface::ONLY_DEAD_KNOB entry {s:?} must NOT satisfy is_env_var()",
+            );
+        }
+        for s in HintSurface::ONLY_STALE_ENTRY.iter().copied() {
+            assert!(
+                s.is_stale_entry(),
+                "HintSurface::ONLY_STALE_ENTRY entry {s:?} must satisfy is_stale_entry()",
+            );
+            assert!(
+                !s.is_dead_knob(),
+                "HintSurface::ONLY_STALE_ENTRY entry {s:?} must NOT satisfy is_dead_knob()",
+            );
+            assert!(
+                !s.is_value_key(),
+                "HintSurface::ONLY_STALE_ENTRY entry {s:?} must NOT satisfy is_value_key()",
+            );
+            assert!(
+                !s.is_env_var(),
+                "HintSurface::ONLY_STALE_ENTRY entry {s:?} must NOT satisfy is_env_var()",
+            );
+        }
+        for s in HintSurface::ONLY_VALUE_KEY.iter().copied() {
+            assert!(
+                s.is_value_key(),
+                "HintSurface::ONLY_VALUE_KEY entry {s:?} must satisfy is_value_key()",
+            );
+            assert!(
+                !s.is_dead_knob(),
+                "HintSurface::ONLY_VALUE_KEY entry {s:?} must NOT satisfy is_dead_knob()",
+            );
+            assert!(
+                !s.is_stale_entry(),
+                "HintSurface::ONLY_VALUE_KEY entry {s:?} must NOT satisfy is_stale_entry()",
+            );
+            assert!(
+                !s.is_env_var(),
+                "HintSurface::ONLY_VALUE_KEY entry {s:?} must NOT satisfy is_env_var()",
+            );
+        }
+        for s in HintSurface::ONLY_ENV_VAR.iter().copied() {
+            assert!(
+                s.is_env_var(),
+                "HintSurface::ONLY_ENV_VAR entry {s:?} must satisfy is_env_var()",
+            );
+            assert!(
+                !s.is_dead_knob(),
+                "HintSurface::ONLY_ENV_VAR entry {s:?} must NOT satisfy is_dead_knob()",
+            );
+            assert!(
+                !s.is_stale_entry(),
+                "HintSurface::ONLY_ENV_VAR entry {s:?} must NOT satisfy is_stale_entry()",
+            );
+            assert!(
+                !s.is_value_key(),
+                "HintSurface::ONLY_ENV_VAR entry {s:?} must NOT satisfy is_value_key()",
+            );
+        }
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(
+                HintSurface::ONLY_DEAD_KNOB.contains(&s),
+                s.is_dead_knob(),
+                "ONLY_DEAD_KNOB membership must agree with is_dead_knob() on HintSurface::{s:?}",
+            );
+            assert_eq!(
+                HintSurface::ONLY_STALE_ENTRY.contains(&s),
+                s.is_stale_entry(),
+                "ONLY_STALE_ENTRY membership must agree with is_stale_entry() on \
+                 HintSurface::{s:?}",
+            );
+            assert_eq!(
+                HintSurface::ONLY_VALUE_KEY.contains(&s),
+                s.is_value_key(),
+                "ONLY_VALUE_KEY membership must agree with is_value_key() on \
+                 HintSurface::{s:?}",
+            );
+            assert_eq!(
+                HintSurface::ONLY_ENV_VAR.contains(&s),
+                s.is_env_var(),
+                "ONLY_ENV_VAR membership must agree with is_env_var() on HintSurface::{s:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_identity_slices_partition_all() {
+        // Quaternary partition invariant: the four per-half slices
+        // are pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_DEAD_KNOB.len() + ONLY_STALE_ENTRY.len() +
+        // ONLY_VALUE_KEY.len() + ONLY_ENV_VAR.len() == ALL.len()` at
+        // the slice altitude on the coverage-hint surface axis's
+        // identity projection. Quaternary peer of
+        // `config_tier_kind_identity_slices_partition_all`
+        // (`ff6492b`). A variant landing on two slices or on none
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes
+        // the drift.
+        for s in HintSurface::ONLY_DEAD_KNOB {
+            assert!(
+                !HintSurface::ONLY_STALE_ENTRY.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_DEAD_KNOB and ONLY_STALE_ENTRY",
+            );
+            assert!(
+                !HintSurface::ONLY_VALUE_KEY.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_DEAD_KNOB and ONLY_VALUE_KEY",
+            );
+            assert!(
+                !HintSurface::ONLY_ENV_VAR.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_DEAD_KNOB and ONLY_ENV_VAR",
+            );
+        }
+        for s in HintSurface::ONLY_STALE_ENTRY {
+            assert!(
+                !HintSurface::ONLY_VALUE_KEY.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_STALE_ENTRY and ONLY_VALUE_KEY",
+            );
+            assert!(
+                !HintSurface::ONLY_ENV_VAR.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_STALE_ENTRY and ONLY_ENV_VAR",
+            );
+        }
+        for s in HintSurface::ONLY_VALUE_KEY {
+            assert!(
+                !HintSurface::ONLY_ENV_VAR.contains(s),
+                "HintSurface::{s:?} appears in BOTH ONLY_VALUE_KEY and ONLY_ENV_VAR",
+            );
+        }
+        for s in HintSurface::ALL {
+            let in_dead_knob = HintSurface::ONLY_DEAD_KNOB.contains(s);
+            let in_stale_entry = HintSurface::ONLY_STALE_ENTRY.contains(s);
+            let in_value_key = HintSurface::ONLY_VALUE_KEY.contains(s);
+            let in_env_var = HintSurface::ONLY_ENV_VAR.contains(s);
+            let held = usize::from(in_dead_knob)
+                + usize::from(in_stale_entry)
+                + usize::from(in_value_key)
+                + usize::from(in_env_var);
+            assert_eq!(
+                held, 1,
+                "HintSurface::{s:?} must appear in exactly one of ONLY_DEAD_KNOB / \
+                 ONLY_STALE_ENTRY / ONLY_VALUE_KEY / ONLY_ENV_VAR (found in {held})",
+            );
+        }
+        assert_eq!(
+            HintSurface::ONLY_DEAD_KNOB.len()
+                + HintSurface::ONLY_STALE_ENTRY.len()
+                + HintSurface::ONLY_VALUE_KEY.len()
+                + HintSurface::ONLY_ENV_VAR.len(),
+            HintSurface::ALL.len(),
+            "ONLY_DEAD_KNOB + ONLY_STALE_ENTRY + ONLY_VALUE_KEY + ONLY_ENV_VAR slice \
+             lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn hint_surface_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they
+        // appear in HintSurface::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton
+        // halves today, but the shape catches a hypothetical
+        // multi-cell future variant reshuffle on the same axis)
+        // diverges at THIS pin. Quaternary peer of
+        // `config_tier_kind_identity_slices_preserve_all_order`
+        // (`ff6492b`).
+        let dead_knob_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_dead_knob())
+            .collect();
+        assert_eq!(
+            dead_knob_from_all,
+            HintSurface::ONLY_DEAD_KNOB.to_vec(),
+            "ONLY_DEAD_KNOB must be ALL-filtered by is_dead_knob in declaration order",
+        );
+        let stale_entry_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_stale_entry())
+            .collect();
+        assert_eq!(
+            stale_entry_from_all,
+            HintSurface::ONLY_STALE_ENTRY.to_vec(),
+            "ONLY_STALE_ENTRY must be ALL-filtered by is_stale_entry in declaration order",
+        );
+        let value_key_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_value_key())
+            .collect();
+        assert_eq!(
+            value_key_from_all,
+            HintSurface::ONLY_VALUE_KEY.to_vec(),
+            "ONLY_VALUE_KEY must be ALL-filtered by is_value_key in declaration order",
+        );
+        let env_var_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_env_var())
+            .collect();
+        assert_eq!(
+            env_var_from_all,
+            HintSurface::ONLY_ENV_VAR.to_vec(),
+            "ONLY_ENV_VAR must be ALL-filtered by is_env_var in declaration order",
+        );
+    }
+
+    #[test]
+    fn hint_surface_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all four per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Quaternary peer of
+        // `config_tier_kind_identity_slices_have_no_duplicates`
+        // (`ff6492b`).
+        for slice in [
+            HintSurface::ONLY_DEAD_KNOB,
+            HintSurface::ONLY_STALE_ENTRY,
+            HintSurface::ONLY_VALUE_KEY,
+            HintSurface::ONLY_ENV_VAR,
+        ] {
+            let mut seen: Vec<HintSurface> = Vec::with_capacity(slice.len());
+            for s in slice {
+                assert!(
+                    !seen.contains(s),
+                    "HintSurface identity slice {slice:?} contains duplicate entry {s:?}",
+                );
+                seen.push(*s);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn hint_surface_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths
+        // equal the boolean-filter counts on HintSurface::ALL —
+        // i.e., `ONLY_DEAD_KNOB.len() ==
+        // ALL.iter().filter(is_dead_knob).count()` (and symmetric
+        // for the three siblings) — the cardinality projection at
+        // the slice altitude agrees with the boolean-altitude
+        // projection on all four halves. Concrete positions today:
+        // 1 dead-knob + 1 stale-entry + 1 value-key + 1 env-var = 4
+        // = ALL. Quaternary peer of
+        // `config_tier_kind_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`ff6492b`).
+        let dead_knob_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_dead_knob())
+            .count();
+        let stale_entry_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_stale_entry())
+            .count();
+        let value_key_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_value_key())
+            .count();
+        let env_var_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_env_var())
+            .count();
+        assert_eq!(
+            HintSurface::ONLY_DEAD_KNOB.len(),
+            dead_knob_count,
+            "ONLY_DEAD_KNOB.len() must match the is_dead_knob count on ALL",
+        );
+        assert_eq!(
+            HintSurface::ONLY_STALE_ENTRY.len(),
+            stale_entry_count,
+            "ONLY_STALE_ENTRY.len() must match the is_stale_entry count on ALL",
+        );
+        assert_eq!(
+            HintSurface::ONLY_VALUE_KEY.len(),
+            value_key_count,
+            "ONLY_VALUE_KEY.len() must match the is_value_key count on ALL",
+        );
+        assert_eq!(
+            HintSurface::ONLY_ENV_VAR.len(),
+            env_var_count,
+            "ONLY_ENV_VAR.len() must match the is_env_var count on ALL",
+        );
+        assert_eq!(HintSurface::ONLY_DEAD_KNOB.len(), 1);
+        assert_eq!(HintSurface::ONLY_STALE_ENTRY.len(), 1);
+        assert_eq!(HintSurface::ONLY_VALUE_KEY.len(), 1);
+        assert_eq!(HintSurface::ONLY_ENV_VAR.len(), 1);
+        assert_eq!(HintSurface::ALL.len(), 4);
+    }
+
+    #[test]
+    fn hint_surface_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the four per-half slices
+        // are reachable at const evaluation position (a `const`
+        // binding of `.len()`), so a future lift of any constant
+        // behind a `pub fn` (which would drop const-callability)
+        // fails here before drifting through a downstream `const`-
+        // context consumer. Quaternary peer of
+        // `config_tier_kind_identity_slices_are_const_addressable`
+        // (`ff6492b`).
+        const ONLY_DEAD_KNOB_LEN: usize = HintSurface::ONLY_DEAD_KNOB.len();
+        const ONLY_STALE_ENTRY_LEN: usize = HintSurface::ONLY_STALE_ENTRY.len();
+        const ONLY_VALUE_KEY_LEN: usize = HintSurface::ONLY_VALUE_KEY.len();
+        const ONLY_ENV_VAR_LEN: usize = HintSurface::ONLY_ENV_VAR.len();
+        const ALL_LEN: usize = HintSurface::ALL.len();
+        assert_eq!(ONLY_DEAD_KNOB_LEN, 1);
+        assert_eq!(ONLY_STALE_ENTRY_LEN, 1);
+        assert_eq!(ONLY_VALUE_KEY_LEN, 1);
+        assert_eq!(ONLY_ENV_VAR_LEN, 1);
+        assert_eq!(
+            ONLY_DEAD_KNOB_LEN + ONLY_STALE_ENTRY_LEN + ONLY_VALUE_KEY_LEN + ONLY_ENV_VAR_LEN,
+            ALL_LEN,
+        );
     }
 
     #[test]
