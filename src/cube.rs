@@ -661,6 +661,133 @@ impl ModalityClass {
         Self::TiedModalTiedAntimodal,
     ];
 
+    /// The single `ONLY_EMPTY` [`ModalityClass`] variant —
+    /// [`Self::Empty`] (`modality_degree() == (0, 0)`, the
+    /// empty-histogram boundary below every modal and antimodal
+    /// tie/strict branch) — in the SAME relative declaration order it
+    /// occupies in [`Self::ALL`], carrying the *empty-identity* pole
+    /// of the (empty × strict-modal-strict-antimodal ×
+    /// tied-modal-strict-antimodal × strict-modal-tied-antimodal ×
+    /// tied-modal-tied-antimodal) 1/1/1/1/1 identity meta-partition at
+    /// the primitive's OWN altitude on the classifier's five-corner
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_empty`] one altitude down.
+    ///
+    /// Paired with [`Self::ONLY_STRICT_MODAL_STRICT_ANTIMODAL`],
+    /// [`Self::ONLY_TIED_MODAL_STRICT_ANTIMODAL`],
+    /// [`Self::ONLY_STRICT_MODAL_TIED_ANTIMODAL`], and
+    /// [`Self::ONLY_TIED_MODAL_TIED_ANTIMODAL`], the five disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude the
+    /// same way the five shipped identity boolean predicates
+    /// [`Self::is_empty`] / [`Self::is_doubly_strict_unique`] /
+    /// [`Self::is_only_modally_tied`] /
+    /// [`Self::is_only_antimodally_tied`] / [`Self::is_doubly_tied`]
+    /// meta-partition it at the boolean altitude. All five sit in the
+    /// same `impl ModalityClass` block as [`Self::ALL`] and follow the
+    /// same `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the empty pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_empty`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE surface but not the other diverges at test
+    /// time on the first shape where they disagree. Same discipline
+    /// the sibling quinary landing
+    /// [`SupportCardinalityClass::ONLY_EMPTY`] /
+    /// [`SupportCardinalityClass::ONLY_SINGULAR_SUPPORT`] /
+    /// [`SupportCardinalityClass::ONLY_STRICT_PARTIAL_COVER`] /
+    /// [`SupportCardinalityClass::ONLY_SINGULAR_GAP`] /
+    /// [`SupportCardinalityClass::ONLY_FULL_COVER`] (commit `426597c`)
+    /// carries on the orthogonal support-cardinality five-corner
+    /// classifier one primitive over.
+    ///
+    /// The two agreement laws
+    /// (`ONLY_EMPTY.iter().all(|c| c.is_empty())` and no other
+    /// identity pole holds on any of its entries) are pinned by
+    /// [`tests::modality_class_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant with the four sibling slices:
+    /// [`tests::modality_class_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::modality_class_identity_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::modality_class_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::modality_class_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::modality_class_identity_slices_are_const_addressable`].
+    pub const ONLY_EMPTY: &'static [Self] = &[Self::Empty];
+
+    /// The single `ONLY_STRICT_MODAL_STRICT_ANTIMODAL`
+    /// [`ModalityClass`] variant — [`Self::StrictModalStrictAntimodal`]
+    /// (`modality_degree() == (1, 1)`, the dominant cell stands alone
+    /// at the peak and the recessive cell stands alone at the trough)
+    /// — carrying the *doubly-strict-unique-identity* pole of the
+    /// 1/1/1/1/1 identity meta-partition at the primitive's OWN
+    /// altitude on the classifier's five-corner axis, mirroring the
+    /// shipped boolean predicate [`Self::is_doubly_strict_unique`] one
+    /// altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_doubly_strict_unique`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_STRICT_MODAL_STRICT_ANTIMODAL: &'static [Self] =
+        &[Self::StrictModalStrictAntimodal];
+
+    /// The single `ONLY_TIED_MODAL_STRICT_ANTIMODAL`
+    /// [`ModalityClass`] variant — [`Self::TiedModalStrictAntimodal`]
+    /// (`modality_degree() == (k, 1)` with `k >= 2`, the modal level
+    /// set has `k >= 2` members and the trough is uniquely held) —
+    /// carrying the *only-modally-tied-identity* pole of the 1/1/1/1/1
+    /// identity meta-partition at the primitive's OWN altitude on the
+    /// classifier's five-corner axis, mirroring the shipped boolean
+    /// predicate [`Self::is_only_modally_tied`] one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_only_modally_tied`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_TIED_MODAL_STRICT_ANTIMODAL: &'static [Self] = &[Self::TiedModalStrictAntimodal];
+
+    /// The single `ONLY_STRICT_MODAL_TIED_ANTIMODAL`
+    /// [`ModalityClass`] variant — [`Self::StrictModalTiedAntimodal`]
+    /// (`modality_degree() == (1, l)` with `l >= 2`, the peak is
+    /// uniquely held and the antimodal level set has `l >= 2` members)
+    /// — carrying the *only-antimodally-tied-identity* pole of the
+    /// 1/1/1/1/1 identity meta-partition at the primitive's OWN
+    /// altitude on the classifier's five-corner axis, mirroring the
+    /// shipped boolean predicate [`Self::is_only_antimodally_tied`]
+    /// one altitude down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_only_antimodally_tied`]), and the load-bearing
+    /// agreement, partition, order-preservation, no-duplicates,
+    /// cardinality, and const-addressability pins.
+    pub const ONLY_STRICT_MODAL_TIED_ANTIMODAL: &'static [Self] = &[Self::StrictModalTiedAntimodal];
+
+    /// The single `ONLY_TIED_MODAL_TIED_ANTIMODAL`
+    /// [`ModalityClass`] variant — [`Self::TiedModalTiedAntimodal`]
+    /// (`modality_degree() == (k, l)` with `k >= 2` and `l >= 2`, both
+    /// tie-breaks exercised; the canonical uniform-count multi-cell
+    /// shape) — carrying the *doubly-tied-identity* pole of the
+    /// 1/1/1/1/1 identity meta-partition at the primitive's OWN
+    /// altitude on the classifier's five-corner axis, mirroring the
+    /// shipped boolean predicate [`Self::is_doubly_tied`] one altitude
+    /// down.
+    ///
+    /// See [`Self::ONLY_EMPTY`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_doubly_tied`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality, and
+    /// const-addressability pins.
+    pub const ONLY_TIED_MODAL_TIED_ANTIMODAL: &'static [Self] = &[Self::TiedModalTiedAntimodal];
+
     /// `true` exactly on [`Self::Empty`] — the enum-level peer of
     /// [`AxisHistogram::is_empty`] projected from the variant tag.
     ///
@@ -45794,6 +45921,524 @@ mod tests {
                  (got fires={fires}) on class {class:?}",
             );
         }
+    }
+
+    #[test]
+    fn modality_class_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (empty ×
+        // strict-modal-strict-antimodal × tied-modal-strict-antimodal
+        // × strict-modal-tied-antimodal × tied-modal-tied-antimodal)
+        // 1/1/1/1/1 identity meta-partition. Every ONLY_EMPTY entry
+        // satisfies is_empty and none of the four other identity
+        // pole predicates; every ONLY_STRICT_MODAL_STRICT_ANTIMODAL
+        // entry satisfies is_doubly_strict_unique alone; every
+        // ONLY_TIED_MODAL_STRICT_ANTIMODAL entry satisfies
+        // is_only_modally_tied alone; every
+        // ONLY_STRICT_MODAL_TIED_ANTIMODAL entry satisfies
+        // is_only_antimodally_tied alone; every
+        // ONLY_TIED_MODAL_TIED_ANTIMODAL entry satisfies
+        // is_doubly_tied alone. Every ModalityClass::ALL cell agrees
+        // on membership under each of the five boolean predicates.
+        // The two independent declaration surfaces (slice literals +
+        // boolean predicates) diverge at THIS pin on the first shape
+        // where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift. Quinary
+        // peer of the sibling
+        // `support_cardinality_class_identity_slices_agree_with_identity_predicates`
+        // (`426597c`) on the orthogonal support-cardinality
+        // five-corner classifier one primitive over.
+        for k in ModalityClass::ONLY_EMPTY.iter().copied() {
+            assert!(
+                k.is_empty(),
+                "ModalityClass::ONLY_EMPTY entry {k:?} must satisfy is_empty()",
+            );
+            assert!(
+                !k.is_doubly_strict_unique(),
+                "ModalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_doubly_strict_unique()",
+            );
+            assert!(
+                !k.is_only_modally_tied(),
+                "ModalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_only_modally_tied()",
+            );
+            assert!(
+                !k.is_only_antimodally_tied(),
+                "ModalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_only_antimodally_tied()",
+            );
+            assert!(
+                !k.is_doubly_tied(),
+                "ModalityClass::ONLY_EMPTY entry {k:?} must NOT satisfy is_doubly_tied()",
+            );
+        }
+        for k in ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_doubly_strict_unique(),
+                "ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must satisfy is_doubly_strict_unique()",
+            );
+            assert!(
+                !k.is_empty(),
+                "ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_only_modally_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_modally_tied()",
+            );
+            assert!(
+                !k.is_only_antimodally_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_antimodally_tied()",
+            );
+            assert!(
+                !k.is_doubly_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_tied()",
+            );
+        }
+        for k in ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_only_modally_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must satisfy is_only_modally_tied()",
+            );
+            assert!(
+                !k.is_empty(),
+                "ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_doubly_strict_unique(),
+                "ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_strict_unique()",
+            );
+            assert!(
+                !k.is_only_antimodally_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_antimodally_tied()",
+            );
+            assert!(
+                !k.is_doubly_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_tied()",
+            );
+        }
+        for k in ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_only_antimodally_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must satisfy is_only_antimodally_tied()",
+            );
+            assert!(
+                !k.is_empty(),
+                "ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_doubly_strict_unique(),
+                "ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_strict_unique()",
+            );
+            assert!(
+                !k.is_only_modally_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_modally_tied()",
+            );
+            assert!(
+                !k.is_doubly_tied(),
+                "ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_tied()",
+            );
+        }
+        for k in ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL
+            .iter()
+            .copied()
+        {
+            assert!(
+                k.is_doubly_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must satisfy is_doubly_tied()",
+            );
+            assert!(
+                !k.is_empty(),
+                "ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_empty()",
+            );
+            assert!(
+                !k.is_doubly_strict_unique(),
+                "ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_doubly_strict_unique()",
+            );
+            assert!(
+                !k.is_only_modally_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_modally_tied()",
+            );
+            assert!(
+                !k.is_only_antimodally_tied(),
+                "ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL entry {k:?} \
+                 must NOT satisfy is_only_antimodally_tied()",
+            );
+        }
+        for k in ModalityClass::ALL.iter().copied() {
+            assert_eq!(
+                ModalityClass::ONLY_EMPTY.contains(&k),
+                k.is_empty(),
+                "ONLY_EMPTY membership must agree with is_empty() on ModalityClass::{k:?}",
+            );
+            assert_eq!(
+                ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.contains(&k),
+                k.is_doubly_strict_unique(),
+                "ONLY_STRICT_MODAL_STRICT_ANTIMODAL membership must agree with \
+                 is_doubly_strict_unique() on ModalityClass::{k:?}",
+            );
+            assert_eq!(
+                ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.contains(&k),
+                k.is_only_modally_tied(),
+                "ONLY_TIED_MODAL_STRICT_ANTIMODAL membership must agree with \
+                 is_only_modally_tied() on ModalityClass::{k:?}",
+            );
+            assert_eq!(
+                ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.contains(&k),
+                k.is_only_antimodally_tied(),
+                "ONLY_STRICT_MODAL_TIED_ANTIMODAL membership must agree with \
+                 is_only_antimodally_tied() on ModalityClass::{k:?}",
+            );
+            assert_eq!(
+                ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(&k),
+                k.is_doubly_tied(),
+                "ONLY_TIED_MODAL_TIED_ANTIMODAL membership must agree with \
+                 is_doubly_tied() on ModalityClass::{k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_EMPTY.len() + ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len()
+        // + ONLY_TIED_MODAL_STRICT_ANTIMODAL.len() +
+        // ONLY_STRICT_MODAL_TIED_ANTIMODAL.len() +
+        // ONLY_TIED_MODAL_TIED_ANTIMODAL.len() == ALL.len()` at the
+        // slice altitude on the ModalityClass axis's identity
+        // projection. Quinary peer of
+        // `support_cardinality_class_identity_slices_partition_all`
+        // (`426597c`). A variant landing on two slices or on none
+        // breaks the partition here before any consumer that reasons
+        // about the polarity as a covering meta-partition observes the
+        // drift.
+        for k in ModalityClass::ONLY_EMPTY {
+            assert!(
+                !ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH ONLY_EMPTY and \
+                 ONLY_STRICT_MODAL_STRICT_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH ONLY_EMPTY and \
+                 ONLY_TIED_MODAL_STRICT_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH ONLY_EMPTY and \
+                 ONLY_STRICT_MODAL_TIED_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH ONLY_EMPTY and \
+                 ONLY_TIED_MODAL_TIED_ANTIMODAL",
+            );
+        }
+        for k in ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL {
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_STRICT_MODAL_STRICT_ANTIMODAL and \
+                 ONLY_TIED_MODAL_STRICT_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_STRICT_MODAL_STRICT_ANTIMODAL and \
+                 ONLY_STRICT_MODAL_TIED_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_STRICT_MODAL_STRICT_ANTIMODAL and \
+                 ONLY_TIED_MODAL_TIED_ANTIMODAL",
+            );
+        }
+        for k in ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL {
+            assert!(
+                !ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_TIED_MODAL_STRICT_ANTIMODAL and \
+                 ONLY_STRICT_MODAL_TIED_ANTIMODAL",
+            );
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_TIED_MODAL_STRICT_ANTIMODAL and \
+                 ONLY_TIED_MODAL_TIED_ANTIMODAL",
+            );
+        }
+        for k in ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL {
+            assert!(
+                !ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(k),
+                "ModalityClass::{k:?} appears in BOTH \
+                 ONLY_STRICT_MODAL_TIED_ANTIMODAL and \
+                 ONLY_TIED_MODAL_TIED_ANTIMODAL",
+            );
+        }
+        for k in ModalityClass::ALL {
+            let in_empty = ModalityClass::ONLY_EMPTY.contains(k);
+            let in_ssa = ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.contains(k);
+            let in_tsa = ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.contains(k);
+            let in_sta = ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.contains(k);
+            let in_tta = ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.contains(k);
+            let held = usize::from(in_empty)
+                + usize::from(in_ssa)
+                + usize::from(in_tsa)
+                + usize::from(in_sta)
+                + usize::from(in_tta);
+            assert_eq!(
+                held, 1,
+                "ModalityClass::{k:?} must appear in exactly one of ONLY_EMPTY / \
+                 ONLY_STRICT_MODAL_STRICT_ANTIMODAL / ONLY_TIED_MODAL_STRICT_ANTIMODAL / \
+                 ONLY_STRICT_MODAL_TIED_ANTIMODAL / ONLY_TIED_MODAL_TIED_ANTIMODAL \
+                 (found in {held})",
+            );
+        }
+        assert_eq!(
+            ModalityClass::ONLY_EMPTY.len()
+                + ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len()
+                + ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.len()
+                + ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.len()
+                + ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.len(),
+            ModalityClass::ALL.len(),
+            "ONLY_EMPTY + ONLY_STRICT_MODAL_STRICT_ANTIMODAL + \
+             ONLY_TIED_MODAL_STRICT_ANTIMODAL + ONLY_STRICT_MODAL_TIED_ANTIMODAL + \
+             ONLY_TIED_MODAL_TIED_ANTIMODAL slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn modality_class_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in ModalityClass::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin. Quinary peer of
+        // `support_cardinality_class_identity_slices_preserve_all_order`
+        // (`426597c`).
+        let empty_from_all: Vec<ModalityClass> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_empty())
+            .collect();
+        assert_eq!(
+            empty_from_all,
+            ModalityClass::ONLY_EMPTY.to_vec(),
+            "ONLY_EMPTY must be ALL-filtered by is_empty in declaration order",
+        );
+        let ssa_from_all: Vec<ModalityClass> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_doubly_strict_unique())
+            .collect();
+        assert_eq!(
+            ssa_from_all,
+            ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.to_vec(),
+            "ONLY_STRICT_MODAL_STRICT_ANTIMODAL must be ALL-filtered by \
+             is_doubly_strict_unique in declaration order",
+        );
+        let tsa_from_all: Vec<ModalityClass> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_only_modally_tied())
+            .collect();
+        assert_eq!(
+            tsa_from_all,
+            ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.to_vec(),
+            "ONLY_TIED_MODAL_STRICT_ANTIMODAL must be ALL-filtered by \
+             is_only_modally_tied in declaration order",
+        );
+        let sta_from_all: Vec<ModalityClass> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_only_antimodally_tied())
+            .collect();
+        assert_eq!(
+            sta_from_all,
+            ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.to_vec(),
+            "ONLY_STRICT_MODAL_TIED_ANTIMODAL must be ALL-filtered by \
+             is_only_antimodally_tied in declaration order",
+        );
+        let tta_from_all: Vec<ModalityClass> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_doubly_tied())
+            .collect();
+        assert_eq!(
+            tta_from_all,
+            ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.to_vec(),
+            "ONLY_TIED_MODAL_TIED_ANTIMODAL must be ALL-filtered by \
+             is_doubly_tied in declaration order",
+        );
+    }
+
+    #[test]
+    fn modality_class_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set. Quinary peer of
+        // `support_cardinality_class_identity_slices_have_no_duplicates`
+        // (`426597c`).
+        for slice in [
+            ModalityClass::ONLY_EMPTY,
+            ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL,
+            ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL,
+            ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL,
+            ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL,
+        ] {
+            let mut seen: Vec<ModalityClass> = Vec::with_capacity(slice.len());
+            for k in slice {
+                assert!(
+                    !seen.contains(k),
+                    "ModalityClass identity slice {slice:?} contains duplicate entry {k:?}",
+                );
+                seen.push(*k);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn modality_class_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on ModalityClass::ALL — i.e.,
+        // `ONLY_EMPTY.len() == ALL.iter().filter(is_empty).count()`
+        // (and symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 empty + 1 strict-modal-strict-antimodal + 1
+        // tied-modal-strict-antimodal + 1 strict-modal-tied-antimodal
+        // + 1 tied-modal-tied-antimodal = 5 = ALL. Quinary peer of
+        // `support_cardinality_class_identity_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`426597c`).
+        let empty_count = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_empty())
+            .count();
+        let ssa_count = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_doubly_strict_unique())
+            .count();
+        let tsa_count = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_only_modally_tied())
+            .count();
+        let sta_count = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_only_antimodally_tied())
+            .count();
+        let tta_count = ModalityClass::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_doubly_tied())
+            .count();
+        assert_eq!(
+            ModalityClass::ONLY_EMPTY.len(),
+            empty_count,
+            "ONLY_EMPTY.len() must match the is_empty count on ALL",
+        );
+        assert_eq!(
+            ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len(),
+            ssa_count,
+            "ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len() must match the \
+             is_doubly_strict_unique count on ALL",
+        );
+        assert_eq!(
+            ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.len(),
+            tsa_count,
+            "ONLY_TIED_MODAL_STRICT_ANTIMODAL.len() must match the \
+             is_only_modally_tied count on ALL",
+        );
+        assert_eq!(
+            ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.len(),
+            sta_count,
+            "ONLY_STRICT_MODAL_TIED_ANTIMODAL.len() must match the \
+             is_only_antimodally_tied count on ALL",
+        );
+        assert_eq!(
+            ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.len(),
+            tta_count,
+            "ONLY_TIED_MODAL_TIED_ANTIMODAL.len() must match the \
+             is_doubly_tied count on ALL",
+        );
+        assert_eq!(ModalityClass::ONLY_EMPTY.len(), 1);
+        assert_eq!(ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len(), 1);
+        assert_eq!(ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.len(), 1);
+        assert_eq!(ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.len(), 1);
+        assert_eq!(ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.len(), 1);
+        assert_eq!(ModalityClass::ALL.len(), 5);
+    }
+
+    #[test]
+    fn modality_class_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        // Quinary peer of
+        // `support_cardinality_class_identity_slices_are_const_addressable`
+        // (`426597c`).
+        const ONLY_EMPTY_LEN: usize = ModalityClass::ONLY_EMPTY.len();
+        const ONLY_STRICT_MODAL_STRICT_ANTIMODAL_LEN: usize =
+            ModalityClass::ONLY_STRICT_MODAL_STRICT_ANTIMODAL.len();
+        const ONLY_TIED_MODAL_STRICT_ANTIMODAL_LEN: usize =
+            ModalityClass::ONLY_TIED_MODAL_STRICT_ANTIMODAL.len();
+        const ONLY_STRICT_MODAL_TIED_ANTIMODAL_LEN: usize =
+            ModalityClass::ONLY_STRICT_MODAL_TIED_ANTIMODAL.len();
+        const ONLY_TIED_MODAL_TIED_ANTIMODAL_LEN: usize =
+            ModalityClass::ONLY_TIED_MODAL_TIED_ANTIMODAL.len();
+        const ALL_LEN: usize = ModalityClass::ALL.len();
+        assert_eq!(ONLY_EMPTY_LEN, 1);
+        assert_eq!(ONLY_STRICT_MODAL_STRICT_ANTIMODAL_LEN, 1);
+        assert_eq!(ONLY_TIED_MODAL_STRICT_ANTIMODAL_LEN, 1);
+        assert_eq!(ONLY_STRICT_MODAL_TIED_ANTIMODAL_LEN, 1);
+        assert_eq!(ONLY_TIED_MODAL_TIED_ANTIMODAL_LEN, 1);
+        assert_eq!(
+            ONLY_EMPTY_LEN
+                + ONLY_STRICT_MODAL_STRICT_ANTIMODAL_LEN
+                + ONLY_TIED_MODAL_STRICT_ANTIMODAL_LEN
+                + ONLY_STRICT_MODAL_TIED_ANTIMODAL_LEN
+                + ONLY_TIED_MODAL_TIED_ANTIMODAL_LEN,
+            ALL_LEN,
+        );
     }
 
     fn assert_modality_class_empty_is_empty_variant<A>()
