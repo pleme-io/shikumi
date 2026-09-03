@@ -770,6 +770,148 @@ impl SecretOperation {
     /// agreement and partition pins.
     pub const NON_MUTATING: &'static [Self] = &[Self::Get, Self::List, Self::GetVersion];
 
+    /// The single [`Self::Get`] pole of the six-way identity meta-
+    /// partition on the [`SecretClient`] operation axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Get]`
+    /// mirroring the shipped boolean predicate [`Self::is_get`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `op.is_get()`, and no variant outside it does.
+    ///
+    /// Paired with the five siblings ([`Self::ONLY_LIST`],
+    /// [`Self::ONLY_PUT`], [`Self::ONLY_DELETE`], [`Self::ONLY_ROTATE`],
+    /// [`Self::ONLY_GET_VERSION`]), the six disjoint singleton slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates
+    /// ([`Self::is_get`] / [`Self::is_list`] / [`Self::is_put`] /
+    /// [`Self::is_delete`] / [`Self::is_rotate`] /
+    /// [`Self::is_get_version`]) meta-partition it at the boolean
+    /// altitude. All six constants sit in the same `impl SecretOperation`
+    /// block as [`Self::ALL`] / [`Self::MUTATING`] / [`Self::NON_MUTATING`]
+    /// and follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Written as explicit one-variant slice literals in the SAME
+    /// relative declaration order the six identity poles occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the six identity predicates at const-fn altitude — so
+    /// the two declaration surfaces (the slice literals and the
+    /// boolean predicates) remain independent load-bearing witnesses
+    /// of the same identity meta-partition, and a future edit that
+    /// shifts a variant across an identity pole on ONE surface but
+    /// not the other diverges at test time on the first shape where
+    /// they disagree.
+    ///
+    /// Also the first cell of [`Self::NON_MUTATING`] — the two
+    /// witnesses agree here (`ONLY_GET ⊆ NON_MUTATING`) per the
+    /// identity-vs-compound cross-check that pins the six identity
+    /// singletons against the shipped mutation-polarity meta-partition.
+    ///
+    /// **Idiom-peer.** Senary landing of the per-half meta-partition
+    /// slice-constant discipline, matching altitude-for-altitude the
+    /// octonary
+    /// [`crate::secret::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET` (commit `19364e3`), the septenary
+    /// [`SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), the quinary
+    /// [`crate::cli::TierArg::ONLY_BARE`] / … / `ONLY_ENV`
+    /// (commit `f7f5529`), and the quaternary
+    /// [`crate::tiered::ConfigTierKind::ONLY_BARE`] / … /
+    /// `ONLY_CUSTOM` (commit `ff6492b`) — the per-half meta-partition
+    /// slice-constant discipline applied here to the six-way
+    /// [`SecretClient`] operation axis (the first landing on the
+    /// operation-axis primitive), lifting the six identity poles onto
+    /// the slice-constant altitude alongside the shipped compound-
+    /// polarity [`Self::MUTATING`] / [`Self::NON_MUTATING`] pair one
+    /// altitude up.
+    ///
+    /// The six agreement laws (`ONLY_GET.iter().all(|o| o.is_get())`
+    /// and `ONLY_GET.iter().all(|o| !o.is_list() && !o.is_put() &&
+    /// !o.is_delete() && !o.is_rotate() && !o.is_get_version())`,
+    /// symmetric on the five siblings) are pinned by
+    /// [`tests::secret_operation_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant across all six:
+    /// [`tests::secret_operation_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::secret_operation_identity_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::secret_operation_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the six boolean poles:
+    /// [`tests::secret_operation_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::secret_operation_identity_slices_are_const_addressable`].
+    /// Cross-altitude weld with the shipped compound-polarity
+    /// [`Self::MUTATING`] / [`Self::NON_MUTATING`] pair:
+    /// [`tests::secret_operation_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_GET: &'static [Self] = &[Self::Get];
+
+    /// The [`Self::List`] pole of the six-way identity meta-partition
+    /// on the [`SecretClient`] operation axis at the static-slice
+    /// altitude — the singleton slice `&[Self::List]` mirroring the
+    /// shipped boolean predicate [`Self::is_list`] one altitude down.
+    ///
+    /// Also the second cell of [`Self::NON_MUTATING`] — the two
+    /// witnesses agree here (`ONLY_LIST ⊆ NON_MUTATING`).
+    ///
+    /// See [`Self::ONLY_GET`] for the full contract, the discipline
+    /// behind writing the six identity-partition constants as
+    /// explicit slice literals (rather than filters through
+    /// [`Self::is_list`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality,
+    /// and const-addressability pins the six `ONLY_*` singletons
+    /// share.
+    pub const ONLY_LIST: &'static [Self] = &[Self::List];
+
+    /// The [`Self::Put`] pole of the six-way identity meta-partition
+    /// on the [`SecretClient`] operation axis at the static-slice
+    /// altitude — the singleton slice `&[Self::Put]` mirroring the
+    /// shipped boolean predicate [`Self::is_put`] one altitude down.
+    ///
+    /// Also the first cell of [`Self::MUTATING`] — the two witnesses
+    /// agree here (`ONLY_PUT ⊆ MUTATING`).
+    ///
+    /// See [`Self::ONLY_GET`] for the full contract and the load-
+    /// bearing pins the six `ONLY_*` singletons share.
+    pub const ONLY_PUT: &'static [Self] = &[Self::Put];
+
+    /// The [`Self::Delete`] pole of the six-way identity meta-
+    /// partition on the [`SecretClient`] operation axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Delete]`
+    /// mirroring the shipped boolean predicate [`Self::is_delete`]
+    /// one altitude down.
+    ///
+    /// Also the second cell of [`Self::MUTATING`] — the two witnesses
+    /// agree here (`ONLY_DELETE ⊆ MUTATING`).
+    ///
+    /// See [`Self::ONLY_GET`] for the full contract and the load-
+    /// bearing pins the six `ONLY_*` singletons share.
+    pub const ONLY_DELETE: &'static [Self] = &[Self::Delete];
+
+    /// The [`Self::Rotate`] pole of the six-way identity meta-
+    /// partition on the [`SecretClient`] operation axis at the
+    /// static-slice altitude — the singleton slice `&[Self::Rotate]`
+    /// mirroring the shipped boolean predicate [`Self::is_rotate`]
+    /// one altitude down.
+    ///
+    /// Also the third cell of [`Self::MUTATING`] — the two witnesses
+    /// agree here (`ONLY_ROTATE ⊆ MUTATING`).
+    ///
+    /// See [`Self::ONLY_GET`] for the full contract and the load-
+    /// bearing pins the six `ONLY_*` singletons share.
+    pub const ONLY_ROTATE: &'static [Self] = &[Self::Rotate];
+
+    /// The [`Self::GetVersion`] pole of the six-way identity meta-
+    /// partition on the [`SecretClient`] operation axis at the
+    /// static-slice altitude — the singleton slice `&[Self::GetVersion]`
+    /// mirroring the shipped boolean predicate [`Self::is_get_version`]
+    /// one altitude down.
+    ///
+    /// Also the third cell of [`Self::NON_MUTATING`] — the two
+    /// witnesses agree here (`ONLY_GET_VERSION ⊆ NON_MUTATING`).
+    ///
+    /// See [`Self::ONLY_GET`] for the full contract and the load-
+    /// bearing pins the six `ONLY_*` singletons share.
+    pub const ONLY_GET_VERSION: &'static [Self] = &[Self::GetVersion];
+
     /// Canonical operator-facing `snake_case` name — `"get"`, `"list"`,
     /// `"put"`, `"delete"`, `"rotate"`, or `"get_version"`.
     ///
@@ -5969,6 +6111,404 @@ mod tests {
         const NON_MUTATING_LEN: usize = SecretOperation::NON_MUTATING.len();
         assert_eq!(MUTATING_LEN, 3);
         assert_eq!(NON_MUTATING_LEN, 3);
+    }
+
+    // ── SecretOperation — identity meta-partition slice constants ─────
+    //
+    // Senary landing of the per-half meta-partition slice-constant
+    // discipline on the six-way SecretOperation axis (first landing on
+    // the operation-axis primitive). Peer of the octonary
+    // `SecretBackendKind::ONLY_LITERAL` / … / `ONLY_GCP_SECRET` (commit
+    // `19364e3`), the septenary `SecretClientKind::ONLY_MEM` / … /
+    // `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), and the quinary
+    // `TierArg::ONLY_BARE` / … / `ONLY_ENV` (commit `f7f5529`). The six
+    // pins below lock the identity singletons as a coherent
+    // meta-partition at the primitive's altitude alongside the shipped
+    // compound-polarity `MUTATING` / `NON_MUTATING` pair one altitude
+    // up.
+
+    #[test]
+    fn secret_operation_identity_slices_agree_with_identity_predicates() {
+        // Six-way agreement pin across the (get × list × put × delete
+        // × rotate × get_version) identity meta-partition. Every
+        // ONLY_GET entry satisfies is_get and none of the five sibling
+        // predicates; every ONLY_LIST entry satisfies is_list alone;
+        // … and so on across all six halves. The two independent
+        // declaration surfaces (slice literals + boolean predicates)
+        // diverge at THIS pin on the first shape where they disagree,
+        // before a consumer that reads one altitude but not the other
+        // can observe the drift. Senary peer of
+        // `secret_backend_kind_identity_slices_agree_with_identity_predicates`
+        // (commit `19364e3`) two cells narrower.
+        for op in SecretOperation::ONLY_GET.iter().copied() {
+            assert!(op.is_get(), "ONLY_GET {op:?} must satisfy is_get");
+            assert!(!op.is_list(), "ONLY_GET {op:?} must NOT satisfy is_list");
+            assert!(!op.is_put(), "ONLY_GET {op:?} must NOT satisfy is_put");
+            assert!(
+                !op.is_delete(),
+                "ONLY_GET {op:?} must NOT satisfy is_delete"
+            );
+            assert!(
+                !op.is_rotate(),
+                "ONLY_GET {op:?} must NOT satisfy is_rotate"
+            );
+            assert!(
+                !op.is_get_version(),
+                "ONLY_GET {op:?} must NOT satisfy is_get_version"
+            );
+        }
+        for op in SecretOperation::ONLY_LIST.iter().copied() {
+            assert!(op.is_list(), "ONLY_LIST {op:?} must satisfy is_list");
+            assert!(!op.is_get(), "ONLY_LIST {op:?} must NOT satisfy is_get");
+            assert!(!op.is_put(), "ONLY_LIST {op:?} must NOT satisfy is_put");
+            assert!(
+                !op.is_delete(),
+                "ONLY_LIST {op:?} must NOT satisfy is_delete"
+            );
+            assert!(
+                !op.is_rotate(),
+                "ONLY_LIST {op:?} must NOT satisfy is_rotate"
+            );
+            assert!(
+                !op.is_get_version(),
+                "ONLY_LIST {op:?} must NOT satisfy is_get_version"
+            );
+        }
+        for op in SecretOperation::ONLY_PUT.iter().copied() {
+            assert!(op.is_put(), "ONLY_PUT {op:?} must satisfy is_put");
+            assert!(!op.is_get(), "ONLY_PUT {op:?} must NOT satisfy is_get");
+            assert!(!op.is_list(), "ONLY_PUT {op:?} must NOT satisfy is_list");
+            assert!(
+                !op.is_delete(),
+                "ONLY_PUT {op:?} must NOT satisfy is_delete"
+            );
+            assert!(
+                !op.is_rotate(),
+                "ONLY_PUT {op:?} must NOT satisfy is_rotate"
+            );
+            assert!(
+                !op.is_get_version(),
+                "ONLY_PUT {op:?} must NOT satisfy is_get_version"
+            );
+        }
+        for op in SecretOperation::ONLY_DELETE.iter().copied() {
+            assert!(op.is_delete(), "ONLY_DELETE {op:?} must satisfy is_delete");
+            assert!(!op.is_get(), "ONLY_DELETE {op:?} must NOT satisfy is_get");
+            assert!(!op.is_list(), "ONLY_DELETE {op:?} must NOT satisfy is_list");
+            assert!(!op.is_put(), "ONLY_DELETE {op:?} must NOT satisfy is_put");
+            assert!(
+                !op.is_rotate(),
+                "ONLY_DELETE {op:?} must NOT satisfy is_rotate"
+            );
+            assert!(
+                !op.is_get_version(),
+                "ONLY_DELETE {op:?} must NOT satisfy is_get_version"
+            );
+        }
+        for op in SecretOperation::ONLY_ROTATE.iter().copied() {
+            assert!(op.is_rotate(), "ONLY_ROTATE {op:?} must satisfy is_rotate");
+            assert!(!op.is_get(), "ONLY_ROTATE {op:?} must NOT satisfy is_get");
+            assert!(!op.is_list(), "ONLY_ROTATE {op:?} must NOT satisfy is_list");
+            assert!(!op.is_put(), "ONLY_ROTATE {op:?} must NOT satisfy is_put");
+            assert!(
+                !op.is_delete(),
+                "ONLY_ROTATE {op:?} must NOT satisfy is_delete"
+            );
+            assert!(
+                !op.is_get_version(),
+                "ONLY_ROTATE {op:?} must NOT satisfy is_get_version"
+            );
+        }
+        for op in SecretOperation::ONLY_GET_VERSION.iter().copied() {
+            assert!(
+                op.is_get_version(),
+                "ONLY_GET_VERSION {op:?} must satisfy is_get_version"
+            );
+            assert!(
+                !op.is_get(),
+                "ONLY_GET_VERSION {op:?} must NOT satisfy is_get"
+            );
+            assert!(
+                !op.is_list(),
+                "ONLY_GET_VERSION {op:?} must NOT satisfy is_list"
+            );
+            assert!(
+                !op.is_put(),
+                "ONLY_GET_VERSION {op:?} must NOT satisfy is_put"
+            );
+            assert!(
+                !op.is_delete(),
+                "ONLY_GET_VERSION {op:?} must NOT satisfy is_delete"
+            );
+            assert!(
+                !op.is_rotate(),
+                "ONLY_GET_VERSION {op:?} must NOT satisfy is_rotate"
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_identity_slices_partition_all() {
+        // Senary partition invariant: the six per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_GET.len() + ONLY_LIST.len() + ONLY_PUT.len() +
+        //  ONLY_DELETE.len() + ONLY_ROTATE.len() +
+        //  ONLY_GET_VERSION.len() == ALL.len()`.
+        let identity_slices: [&[SecretOperation]; 6] = [
+            SecretOperation::ONLY_GET,
+            SecretOperation::ONLY_LIST,
+            SecretOperation::ONLY_PUT,
+            SecretOperation::ONLY_DELETE,
+            SecretOperation::ONLY_ROTATE,
+            SecretOperation::ONLY_GET_VERSION,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for op in left.iter() {
+                    assert!(
+                        !right.contains(op),
+                        "SecretOperation::{op:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for op in SecretOperation::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&op)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "SecretOperation::{op:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            SecretOperation::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn secret_operation_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in SecretOperation::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at
+        // THIS pin.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<SecretOperation> = SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(SecretOperation::ONLY_GET, is_get);
+        pin!(SecretOperation::ONLY_LIST, is_list);
+        pin!(SecretOperation::ONLY_PUT, is_put);
+        pin!(SecretOperation::ONLY_DELETE, is_delete);
+        pin!(SecretOperation::ONLY_ROTATE, is_rotate);
+        pin!(SecretOperation::ONLY_GET_VERSION, is_get_version);
+    }
+
+    #[test]
+    fn secret_operation_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all six per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set.
+        for slice in [
+            SecretOperation::ONLY_GET,
+            SecretOperation::ONLY_LIST,
+            SecretOperation::ONLY_PUT,
+            SecretOperation::ONLY_DELETE,
+            SecretOperation::ONLY_ROTATE,
+            SecretOperation::ONLY_GET_VERSION,
+        ] {
+            let mut seen: Vec<SecretOperation> = Vec::with_capacity(slice.len());
+            for op in slice {
+                assert!(
+                    !seen.contains(op),
+                    "SecretOperation identity slice {slice:?} contains \
+                     duplicate entry {op:?}",
+                );
+                seen.push(*op);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn secret_operation_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on SecretOperation::ALL — i.e.,
+        // `ONLY_GET.len() == ALL.iter().filter(is_get).count()` (and
+        // symmetric for the five siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all six halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 + 1 = 6 = ALL.
+        let counts = [
+            (
+                "is_get",
+                SecretOperation::ONLY_GET.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_get())
+                    .count(),
+            ),
+            (
+                "is_list",
+                SecretOperation::ONLY_LIST.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_list())
+                    .count(),
+            ),
+            (
+                "is_put",
+                SecretOperation::ONLY_PUT.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_put())
+                    .count(),
+            ),
+            (
+                "is_delete",
+                SecretOperation::ONLY_DELETE.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_delete())
+                    .count(),
+            ),
+            (
+                "is_rotate",
+                SecretOperation::ONLY_ROTATE.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_rotate())
+                    .count(),
+            ),
+            (
+                "is_get_version",
+                SecretOperation::ONLY_GET_VERSION.len(),
+                SecretOperation::ALL
+                    .iter()
+                    .copied()
+                    .filter(|op| op.is_get_version())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(SecretOperation::ALL.len(), 6);
+    }
+
+    #[test]
+    fn secret_operation_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the six per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_GET_LEN: usize = SecretOperation::ONLY_GET.len();
+        const ONLY_LIST_LEN: usize = SecretOperation::ONLY_LIST.len();
+        const ONLY_PUT_LEN: usize = SecretOperation::ONLY_PUT.len();
+        const ONLY_DELETE_LEN: usize = SecretOperation::ONLY_DELETE.len();
+        const ONLY_ROTATE_LEN: usize = SecretOperation::ONLY_ROTATE.len();
+        const ONLY_GET_VERSION_LEN: usize = SecretOperation::ONLY_GET_VERSION.len();
+        const ALL_LEN: usize = SecretOperation::ALL.len();
+        assert_eq!(ONLY_GET_LEN, 1);
+        assert_eq!(ONLY_LIST_LEN, 1);
+        assert_eq!(ONLY_PUT_LEN, 1);
+        assert_eq!(ONLY_DELETE_LEN, 1);
+        assert_eq!(ONLY_ROTATE_LEN, 1);
+        assert_eq!(ONLY_GET_VERSION_LEN, 1);
+        assert_eq!(
+            ONLY_GET_LEN
+                + ONLY_LIST_LEN
+                + ONLY_PUT_LEN
+                + ONLY_DELETE_LEN
+                + ONLY_ROTATE_LEN
+                + ONLY_GET_VERSION_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn secret_operation_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the compound-polarity meta-partition (MUTATING
+        // / NON_MUTATING). The union of the three identity singletons
+        // in the mutating pole (ONLY_PUT + ONLY_DELETE + ONLY_ROTATE)
+        // equals MUTATING as a set in declaration order, and the union
+        // of the three non-mutating identity singletons (ONLY_GET +
+        // ONLY_LIST + ONLY_GET_VERSION) equals NON_MUTATING likewise.
+        // A future rearrangement of one meta-partition without the
+        // other (say, moving `Rotate` into the non-mutating pole
+        // without adding it to the identity → compound aggregation)
+        // diverges at THIS pin, before drifting through a consumer
+        // that materializes one altitude from the other.
+        let mutating_from_identity: Vec<SecretOperation> = [
+            SecretOperation::ONLY_PUT,
+            SecretOperation::ONLY_DELETE,
+            SecretOperation::ONLY_ROTATE,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            mutating_from_identity,
+            SecretOperation::MUTATING.to_vec(),
+            "identity singleton union on the mutating pole must reproduce \
+             MUTATING in declaration order",
+        );
+        let non_mutating_from_identity: Vec<SecretOperation> = [
+            SecretOperation::ONLY_GET,
+            SecretOperation::ONLY_LIST,
+            SecretOperation::ONLY_GET_VERSION,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            non_mutating_from_identity,
+            SecretOperation::NON_MUTATING.to_vec(),
+            "identity singleton union on the non-mutating pole must reproduce \
+             NON_MUTATING in declaration order",
+        );
     }
 
     // ── Capabilities — mutation-capability compound-polarity pair ──────
