@@ -1240,6 +1240,100 @@ impl HintSurface {
     /// four `ONLY_*` singletons share.
     pub const ONLY_ENV_VAR: &'static [Self] = &[Self::EnvVar];
 
+    /// The two-cell `COVERAGE_HINTS` [`HintSurface`] slice —
+    /// [`Self::DeadKnob`] and [`Self::StaleEntry`], the two
+    /// coverage-hint surface arms (the schema-declared knob a config
+    /// didn't consume, and the config-supplied entry the schema
+    /// doesn't name) — in the SAME relative declaration order they
+    /// occupy in [`Self::ALL`], carrying the *coverage-hint* pole of
+    /// the compound-polarity meta-partition at the primitive's OWN
+    /// altitude on the coverage-hint surface axis, mirroring the
+    /// shipped boolean predicate [`Self::is_coverage_hint`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `s.is_coverage_hint()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::TYPO_AUDIT_HINTS`], the two disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude
+    /// the same way the shipped boolean predicates
+    /// [`Self::is_coverage_hint`] and [`Self::is_typo_audit_hint`]
+    /// partition it at the boolean altitude (per
+    /// [`tests::hint_surface_compound_polarity_predicates_are_a_closed_binary_partition`]).
+    /// Compound-polarity peer of the shipped quaternary identity
+    /// [`Self::ONLY_DEAD_KNOB`] / [`Self::ONLY_STALE_ENTRY`] /
+    /// [`Self::ONLY_VALUE_KEY`] / [`Self::ONLY_ENV_VAR`] (commit
+    /// `51fd14a`, the second quaternary landing of the per-half
+    /// meta-partition slice-constant discipline on a shikumi-native
+    /// closed-primitive axis) — this closes the compound-polarity
+    /// binary meta-partition at the same altitude the quaternary
+    /// identity closed the singleton meta-partition, matching the
+    /// ladder shape [`crate::watcher::WatchEventClass::FILE_MUTATIONS`]
+    /// / [`crate::watcher::WatchEventClass::NON_FILE_MUTATIONS`]
+    /// (commit `323d6e2`) closed on the reload-relevance axis and
+    /// [`crate::tiered::DiffLineKind::CHANGED`] /
+    /// [`crate::tiered::DiffLineKind::UNCHANGED`] (commit `3b43a67`)
+    /// closed on the diff-line axis.
+    ///
+    /// Written as an explicit two-cell slice literal in the SAME
+    /// relative declaration order the two coverage-hint arms occupy
+    /// in [`Self::ALL`], rather than derived by filtering
+    /// [`Self::ALL`] through [`Self::is_coverage_hint`] at const-fn
+    /// altitude — so the two declarations (the slice literal and
+    /// the boolean predicate) remain independent load-bearing
+    /// witnesses of the same compound-polarity meta-partition, and
+    /// a future edit that shifts a variant across the polarity on
+    /// ONE declaration surface but not the other diverges at test
+    /// time on the first shape where they disagree.
+    ///
+    /// Consumers that group the two coverage-hint arms as one
+    /// static set (a per-surface remediation-suggestion emitter
+    /// walking only the coverage arms, an operator-facing
+    /// coverage-only histogram column bucketing dead-knob and
+    /// stale-entry counts distinctly from typo-audit noise, a
+    /// structured-log field tagging coverage-hint events versus
+    /// typo-audit events, a per-tenant `ConfigPlane` coverage-gap
+    /// counter) now read the pole as one `&'static [Self]` slice
+    /// lookup — no re-derived `matches!` at the callsite, no
+    /// ALL-filter fold each time.
+    ///
+    /// The compound-polarity agreement laws
+    /// (`COVERAGE_HINTS.iter().all(|s| s.is_coverage_hint())`,
+    /// `!COVERAGE_HINTS.iter().any(|s| s.is_typo_audit_hint())`,
+    /// and the symmetric laws on [`Self::TYPO_AUDIT_HINTS`]) are
+    /// pinned by
+    /// [`tests::hint_surface_coverage_hints_slice_agrees_with_is_coverage_hint_predicate`].
+    /// Compound-polarity partition invariant across both siblings:
+    /// [`tests::hint_surface_coverage_hints_and_typo_audit_hints_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::hint_surface_coverage_hints_and_typo_audit_hints_slices_preserve_all_order`].
+    /// No duplicates on either half:
+    /// [`tests::hint_surface_coverage_hints_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::hint_surface_coverage_hints_and_typo_audit_hints_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::hint_surface_coverage_hints_and_typo_audit_hints_slices_are_const_addressable`].
+    pub const COVERAGE_HINTS: &'static [Self] = &[Self::DeadKnob, Self::StaleEntry];
+
+    /// The two-cell `TYPO_AUDIT_HINTS` [`HintSurface`] slice —
+    /// [`Self::ValueKey`] and [`Self::EnvVar`], the two typo-audit
+    /// surface arms (a user-supplied YAML value key that fuzzy-
+    /// matches a schema field, and a `PREFIX_`-scoped environment
+    /// variable name that fuzzy-matches one) — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], carrying the
+    /// *typo-audit* pole of the compound-polarity meta-partition at
+    /// the primitive's OWN altitude on the coverage-hint surface
+    /// axis, mirroring the shipped boolean predicate
+    /// [`Self::is_typo_audit_hint`] (pointwise complement of
+    /// [`Self::is_coverage_hint`] per
+    /// [`tests::hint_surface_compound_polarity_predicates_are_complement`])
+    /// one altitude down.
+    ///
+    /// See [`Self::COVERAGE_HINTS`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::is_typo_audit_hint`]), and the load-
+    /// bearing agreement, partition, order-preservation, no-
+    /// duplicates, cardinality, and const-addressability pins.
+    pub const TYPO_AUDIT_HINTS: &'static [Self] = &[Self::ValueKey, Self::EnvVar];
+
     /// Returns `true` for [`Self::DeadKnob`]; equivalent to
     /// `self == HintSurface::DeadKnob`.
     ///
@@ -7865,6 +7959,245 @@ tags: []
             ONLY_DEAD_KNOB_LEN + ONLY_STALE_ENTRY_LEN + ONLY_VALUE_KEY_LEN + ONLY_ENV_VAR_LEN,
             ALL_LEN,
         );
+    }
+
+    // ── HintSurface::COVERAGE_HINTS / TYPO_AUDIT_HINTS
+    //    compound-polarity-slice pins ─────────────────────────────
+    //
+    // Compound-polarity lift of the shipped boolean predicates
+    // `is_coverage_hint` / `is_typo_audit_hint` from the boolean
+    // altitude up onto the static-slice altitude on the same
+    // coverage-hint surface axis the identity `ONLY_*` singletons
+    // above landed the quaternary meta-partition on (`51fd14a`).
+    // The six pins below mirror the exact test set landed for the
+    // compound-polarity binary meta-partition on
+    // `WatchEventClass::FILE_MUTATIONS` / `NON_FILE_MUTATIONS`
+    // (`323d6e2`) and `DiffLineKind::CHANGED` / `UNCHANGED`
+    // (`3b43a67`), adapted from those sibling closed-primitive
+    // axes to the coverage-hint surface axis's compound-polarity
+    // projection (coverage-hint × typo-audit).
+    //
+    // The independent slice literals and the sibling boolean
+    // predicates remain load-bearing witnesses of the same
+    // compound-polarity meta-partition: a future edit that shifts
+    // a variant across the polarity on ONE surface but not the
+    // other diverges at the agreement / partition / cardinality
+    // pins on the first shape where the surfaces disagree.
+
+    #[test]
+    fn hint_surface_coverage_hints_slice_agrees_with_is_coverage_hint_predicate() {
+        // Bidirectional weld between the slice literal
+        // `HintSurface::COVERAGE_HINTS` and the boolean predicate
+        // `HintSurface::is_coverage_hint` on the compound-polarity
+        // (coverage-hint × typo-audit) meta-partition. Every slice
+        // entry satisfies the coverage-hint pole (and its complement
+        // `!is_typo_audit_hint`), and every ALL cell agrees on
+        // membership under the boolean predicate on both halves.
+        // Compound-polarity peer of
+        // `watch_event_class_file_mutations_slice_agrees_with_is_file_mutation_predicate`
+        // (`323d6e2`) and
+        // `diff_line_kind_changed_slice_agrees_with_is_changed_predicate`
+        // (`3b43a67`) — the two independent declaration surfaces
+        // (slice literal + boolean predicate) diverge at THIS pin on
+        // the first shape where they disagree, before a consumer that
+        // reads one altitude but not the other can observe the drift.
+        for s in HintSurface::COVERAGE_HINTS.iter().copied() {
+            assert!(
+                s.is_coverage_hint(),
+                "COVERAGE_HINTS entry {s:?} must satisfy is_coverage_hint()",
+            );
+            assert!(
+                !s.is_typo_audit_hint(),
+                "COVERAGE_HINTS entry {s:?} must NOT satisfy is_typo_audit_hint()",
+            );
+        }
+        for s in HintSurface::TYPO_AUDIT_HINTS.iter().copied() {
+            assert!(
+                !s.is_coverage_hint(),
+                "TYPO_AUDIT_HINTS entry {s:?} must NOT satisfy is_coverage_hint()",
+            );
+            assert!(
+                s.is_typo_audit_hint(),
+                "TYPO_AUDIT_HINTS entry {s:?} must satisfy is_typo_audit_hint()",
+            );
+        }
+        for s in HintSurface::ALL.iter().copied() {
+            assert_eq!(
+                HintSurface::COVERAGE_HINTS.contains(&s),
+                s.is_coverage_hint(),
+                "COVERAGE_HINTS membership must agree with is_coverage_hint() on \
+                 HintSurface::{s:?}",
+            );
+            assert_eq!(
+                HintSurface::TYPO_AUDIT_HINTS.contains(&s),
+                s.is_typo_audit_hint(),
+                "TYPO_AUDIT_HINTS membership must agree with is_typo_audit_hint() on \
+                 HintSurface::{s:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_coverage_hints_and_typo_audit_hints_slices_partition_all() {
+        // Compound-polarity partition invariant: the two per-half
+        // slices are disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `COVERAGE_HINTS.len() + TYPO_AUDIT_HINTS.len() == ALL.len()`
+        // at the slice altitude on the coverage-hint surface axis's
+        // compound-polarity meta-partition. Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slices_partition_all`
+        // (`323d6e2`) and
+        // `diff_line_kind_changed_and_unchanged_slices_partition_all`
+        // (`3b43a67`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for s in HintSurface::COVERAGE_HINTS.iter().copied() {
+            assert!(
+                !HintSurface::TYPO_AUDIT_HINTS.contains(&s),
+                "HintSurface::{s:?} appears in BOTH COVERAGE_HINTS and TYPO_AUDIT_HINTS",
+            );
+        }
+        for s in HintSurface::ALL.iter().copied() {
+            let in_cov = HintSurface::COVERAGE_HINTS.contains(&s);
+            let in_typo = HintSurface::TYPO_AUDIT_HINTS.contains(&s);
+            assert!(
+                in_cov || in_typo,
+                "HintSurface::{s:?} is in NEITHER COVERAGE_HINTS nor TYPO_AUDIT_HINTS",
+            );
+            assert!(
+                !(in_cov && in_typo),
+                "HintSurface::{s:?} is in BOTH COVERAGE_HINTS and TYPO_AUDIT_HINTS",
+            );
+        }
+        assert_eq!(
+            HintSurface::COVERAGE_HINTS.len() + HintSurface::TYPO_AUDIT_HINTS.len(),
+            HintSurface::ALL.len(),
+            "COVERAGE_HINTS and TYPO_AUDIT_HINTS slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn hint_surface_coverage_hints_and_typo_audit_hints_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they
+        // appear in HintSurface::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated
+        // reproduces the ALL order once the two polarity groups are
+        // ordered per the coverage-hint surface ranking
+        // (DeadKnob < StaleEntry within COVERAGE_HINTS,
+        // ValueKey < EnvVar within TYPO_AUDIT_HINTS).
+        // Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slices_preserve_all_order`
+        // (`323d6e2`) — a reordering of one slice without the other,
+        // or a reordering of ALL that shuffles the two poles'
+        // variant order without updating the slices, diverges at
+        // THIS pin.
+        let coverage_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_coverage_hint())
+            .collect();
+        assert_eq!(
+            coverage_from_all,
+            HintSurface::COVERAGE_HINTS.to_vec(),
+            "COVERAGE_HINTS must be ALL-filtered by is_coverage_hint in declaration order",
+        );
+        let typo_from_all: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_typo_audit_hint())
+            .collect();
+        assert_eq!(
+            typo_from_all,
+            HintSurface::TYPO_AUDIT_HINTS.to_vec(),
+            "TYPO_AUDIT_HINTS must be ALL-filtered by is_typo_audit_hint in declaration order",
+        );
+    }
+
+    #[test]
+    fn hint_surface_coverage_hints_slices_have_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant
+        // twice into COVERAGE_HINTS, an accidental re-add of the
+        // EnvVar cell into TYPO_AUDIT_HINTS) fails at THIS pin
+        // before drifting through any consumer that iterates the
+        // slice expecting a set. Compound-polarity peer of
+        // `watch_event_class_file_mutations_slice_has_no_duplicates`
+        // (`323d6e2`).
+        for slice in [HintSurface::COVERAGE_HINTS, HintSurface::TYPO_AUDIT_HINTS] {
+            let mut seen: Vec<HintSurface> = Vec::with_capacity(slice.len());
+            for s in slice {
+                assert!(
+                    !seen.contains(s),
+                    "HintSurface compound-polarity slice {slice:?} contains duplicate entry {s:?}",
+                );
+                seen.push(*s);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn hint_surface_coverage_hints_and_typo_audit_hints_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths
+        // equal the boolean-filter counts on HintSurface::ALL —
+        // i.e., `COVERAGE_HINTS.len() ==
+        // ALL.iter().filter(is_coverage_hint).count()` and
+        // `TYPO_AUDIT_HINTS.len() ==
+        // ALL.iter().filter(is_typo_audit_hint).count()` — the
+        // cardinality projection at the slice altitude agrees with
+        // the boolean-altitude projection on both halves. Concrete
+        // positions today: 2 coverage-hint + 2 typo-audit = 4 =
+        // ALL. Compound-polarity peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`323d6e2`).
+        let coverage_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_coverage_hint())
+            .count();
+        let typo_count = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| s.is_typo_audit_hint())
+            .count();
+        assert_eq!(
+            HintSurface::COVERAGE_HINTS.len(),
+            coverage_count,
+            "COVERAGE_HINTS.len() must match the is_coverage_hint count on ALL",
+        );
+        assert_eq!(
+            HintSurface::TYPO_AUDIT_HINTS.len(),
+            typo_count,
+            "TYPO_AUDIT_HINTS.len() must match the is_typo_audit_hint count on ALL",
+        );
+        assert_eq!(HintSurface::COVERAGE_HINTS.len(), 2);
+        assert_eq!(HintSurface::TYPO_AUDIT_HINTS.len(), 2);
+        assert_eq!(HintSurface::ALL.len(), 4);
+    }
+
+    #[test]
+    fn hint_surface_coverage_hints_and_typo_audit_hints_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices
+        // are reachable at const evaluation position (a `const`
+        // binding of `.len()`), so a future lift of either
+        // constant behind a `pub fn` (which would drop const-
+        // callability) fails here before drifting through a
+        // downstream `const`-context consumer. Compound-polarity
+        // peer of
+        // `watch_event_class_file_mutations_and_non_file_mutations_slices_are_const_addressable`
+        // (`323d6e2`).
+        const COVERAGE_HINTS_LEN: usize = HintSurface::COVERAGE_HINTS.len();
+        const TYPO_AUDIT_HINTS_LEN: usize = HintSurface::TYPO_AUDIT_HINTS.len();
+        const ALL_LEN: usize = HintSurface::ALL.len();
+        assert_eq!(COVERAGE_HINTS_LEN, 2);
+        assert_eq!(TYPO_AUDIT_HINTS_LEN, 2);
+        assert_eq!(COVERAGE_HINTS_LEN + TYPO_AUDIT_HINTS_LEN, ALL_LEN);
     }
 
     #[test]
