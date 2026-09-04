@@ -194,6 +194,130 @@ impl Format {
     /// const-addressability pins.
     pub const ALWAYS_AVAILABLE: &'static [Self] = &[Self::Yaml, Self::Toml, Self::Nix];
 
+    /// The three SHIKUMI-PROVIDED [`Format`] variants — [`Self::Lisp`]
+    /// (loaded by [`crate::LispProvider`]), [`Self::Nix`] (loaded by
+    /// [`crate::NixProvider`]), and [`Self::Blue`] (loaded by
+    /// [`crate::blue_provider`]) — in the SAME relative declaration
+    /// order they occupy in [`Self::ALL`], carrying the
+    /// *shikumi-built-provider* pole of the
+    /// (shikumi-provided × figment-builtin-provided) polarity axis at
+    /// the primitive's OWN altitude on the file-format axis, mirroring
+    /// the shipped boolean predicate [`Self::has_shikumi_provider`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `f.has_shikumi_provider()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::FIGMENT_BUILTIN_PROVIDED`], the two disjoint
+    /// slices partition [`Self::ALL`] at the static-slice altitude the
+    /// same way the shipped boolean predicates
+    /// [`Self::has_shikumi_provider`] /
+    /// [`Self::has_figment_builtin_provider`] meta-partition it at the
+    /// boolean altitude (per
+    /// [`tests::format_provider_class_predicates_are_a_closed_binary_partition`]).
+    /// The two constants sit in the same `impl Format` block as
+    /// [`Self::ALL`] / [`Self::FEATURE_GATED`] /
+    /// [`Self::ALWAYS_AVAILABLE`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// **Distinct from the (feature-gated × always-available) polarity
+    /// pair** — the two meta-partitions agree on four cells but disagree
+    /// on [`Self::Nix`]: `has_shikumi_provider(Nix) == true` (a shikumi-
+    /// built provider) while `is_feature_gated(Nix) == false` (Nix
+    /// compiles unconditionally, no cargo feature gates it), so
+    /// `SHIKUMI_PROVIDED = [Lisp, Nix, Blue]` differs from
+    /// `FEATURE_GATED = [Lisp, Blue]` at the middle cell. The two
+    /// meta-partitions witness two independent polarities on the same
+    /// axis: the provider-class polarity names *how figment attribution
+    /// is emitted for values of this format* (metadata-name prefix vs
+    /// `Source::File` path), and the feature-gated polarity names
+    /// *whether the parser compiles unconditionally*.
+    ///
+    /// Written as an explicit three-variant slice literal in the SAME
+    /// relative declaration order the shikumi-provided pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::has_shikumi_provider`] at const-fn altitude — so
+    /// the two declarations (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical sixth variant landing under a new provider class
+    /// (a `Vault` or `Http` provider that is neither figment-builtin
+    /// nor shikumi-built) would first fail the closed-binary partition
+    /// invariant on `has_shikumi_provider` /
+    /// `has_figment_builtin_provider` itself, forcing the new class to
+    /// declare its own predicate and its own partition arm before
+    /// silently landing under the negation of one of the existing two.
+    ///
+    /// Idiom-peer of [`Self::FEATURE_GATED`] on the sibling
+    /// (feature-gated × always-available) axis over the same primitive,
+    /// [`crate::ConfigTierKind::COMPUTED`] (commit `2c0686f`) on the
+    /// tier-kind axis, [`crate::source::ConfigSourceKind::DEFAULTS`]
+    /// on the source-layer axis, and the compound-polarity landings on
+    /// [`crate::WatchEventClass::FILE_MUTATIONS`] and
+    /// [`crate::tiered::DiffLineKind::CHANGED`] — the per-half
+    /// meta-partition slice-constant discipline applied here to the
+    /// five-way file-format axis's provider-class polarity, matching
+    /// the ladder shape already carried on the parallel feature-gated
+    /// polarity one altitude over.
+    ///
+    /// The two agreement laws
+    /// (`SHIKUMI_PROVIDED.iter().all(|f| f.has_shikumi_provider())` and
+    /// `SHIKUMI_PROVIDED.iter().all(|f| !f.has_figment_builtin_provider())`)
+    /// are pinned by
+    /// [`tests::format_shikumi_provided_slice_agrees_with_has_shikumi_provider_predicate`].
+    /// Partition invariant with [`Self::FIGMENT_BUILTIN_PROVIDED`]:
+    /// [`tests::format_shikumi_provided_and_figment_builtin_provided_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::format_shikumi_provided_and_figment_builtin_provided_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::format_shikumi_provided_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::format_shikumi_provided_and_figment_builtin_provided_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::format_shikumi_provided_and_figment_builtin_provided_slices_are_const_addressable`].
+    /// Distinctness from the sibling (feature-gated × always-available)
+    /// pair at [`Self::Nix`]:
+    /// [`tests::format_shikumi_provided_differs_from_feature_gated_at_nix`].
+    pub const SHIKUMI_PROVIDED: &'static [Self] = &[Self::Lisp, Self::Nix, Self::Blue];
+
+    /// The two FIGMENT-BUILTIN-PROVIDED [`Format`] variants —
+    /// [`Self::Yaml`] and [`Self::Toml`] — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], the complement
+    /// pole of [`Self::SHIKUMI_PROVIDED`] on the
+    /// (shikumi-provided × figment-builtin-provided) closed-binary
+    /// polarity at the primitive's OWN altitude on the file-format
+    /// axis. Mirrors the shipped boolean predicate
+    /// [`Self::has_figment_builtin_provider`] one altitude down.
+    ///
+    /// Two prefix cells of [`Self::ALL`] today — [`Self::Yaml`] and
+    /// [`Self::Toml`] occupy the first two [`Self::ALL`] positions,
+    /// with the three shikumi-provided cells ([`Self::Lisp`],
+    /// [`Self::Nix`], [`Self::Blue`]) filling the tail — so
+    /// [`Self::FIGMENT_BUILTIN_PROVIDED`] is a proper prefix of
+    /// [`Self::ALL`] under today's declaration order. A future landing
+    /// that reordered [`Self::ALL`] to interleave the polarity (e.g. a
+    /// new figment-builtin variant slotted between [`Self::Lisp`] and
+    /// [`Self::Nix`]) would extend this slice at the correct
+    /// ALL-declaration-order position rather than at the tail.
+    ///
+    /// The partition invariant with [`Self::SHIKUMI_PROVIDED`] pins the
+    /// whole-set cardinality identity
+    /// `SHIKUMI_PROVIDED.len() + FIGMENT_BUILTIN_PROVIDED.len() ==
+    /// ALL.len()`. Because the axis is a closed binary meta-partition
+    /// by construction today, a future third provider class landing
+    /// would first fail the three-versus-two cardinality pins, then
+    /// fail the partition and cardinality pins on this constant pair
+    /// unless extended in lockstep with the boolean predicates.
+    ///
+    /// See [`Self::SHIKUMI_PROVIDED`] for the full contract, the
+    /// discipline behind the explicit slice literal (rather than a
+    /// filter through [`Self::has_figment_builtin_provider`]), the
+    /// distinctness discussion versus the sibling
+    /// (feature-gated × always-available) polarity, and the
+    /// load-bearing agreement, partition, order-preservation,
+    /// no-duplicates, cardinality, and const-addressability pins.
+    pub const FIGMENT_BUILTIN_PROVIDED: &'static [Self] = &[Self::Yaml, Self::Toml];
+
     /// The single [`Self::Yaml`] pole of the five-way identity meta-
     /// partition on the [`Format`] axis at the static-slice altitude —
     /// the singleton slice `&[Self::Yaml]` mirroring the shipped
@@ -5630,6 +5754,274 @@ mod tests {
         assert_eq!(FEATURE_GATED_LEN, 2);
         assert_eq!(ALWAYS_AVAILABLE_LEN, 3);
         assert_eq!(FEATURE_GATED_LEN + ALWAYS_AVAILABLE_LEN, ALL_LEN);
+    }
+
+    // ── Format — provider-class compound-polarity slice constants ────
+    //
+    // Second compound-polarity slice-constant landing on the five-way
+    // Format axis, on the sibling (shikumi-provided ×
+    // figment-builtin-provided) provider-class meta-partition (peer of
+    // the shipped (feature-gated × always-available) landing above).
+    // The two meta-partitions witness two independent polarities on the
+    // same primitive; they agree on four cells and disagree on
+    // `Format::Nix` (a shikumi-provided but not feature-gated cell), so
+    // the two slice pairs are distinct even at today's cardinalities.
+    // Idiom-peer of every prior compound-polarity landing on the crate
+    // (`WatchEventClass::FILE_MUTATIONS` at `323d6e2`,
+    // `DiffLineKind::CHANGED` at `3b43a67`,
+    // `ConfigSourceKind::DEFAULTS` at `2cd8ef8`,
+    // `ConfigTierKind::COMPUTED` at `2c0686f`,
+    // `SecretOperation::MUTATING` at `b2cfa2a`,
+    // `SecretBackendKind::CLOUD_SECRET_MANAGER` at `04e0f5d`,
+    // `SecretClientKind::CLOUD_SECRET_MANAGER` at `399ee8a`,
+    // `HintSurface::COVERAGE_HINTS` at `749a23c`,
+    // `TierArg::COMPUTED` at `c54c40c`) — the per-half slice-constant
+    // discipline applied here to a second polarity on the file-format
+    // primitive.
+
+    #[test]
+    fn format_shikumi_provided_slice_agrees_with_has_shikumi_provider_predicate() {
+        // Bidirectional weld between the slice literal
+        // `Format::SHIKUMI_PROVIDED` and the boolean predicate
+        // `Format::has_shikumi_provider` on the
+        // (shikumi-provided × figment-builtin-provided) polarity axis.
+        // Every slice entry satisfies the shikumi-provider pole (and
+        // its complement `!has_figment_builtin_provider`), and every
+        // ALL cell agrees on membership under the boolean predicate.
+        // Idiom-peer of
+        // `format_feature_gated_slice_agrees_with_is_feature_gated_predicate`
+        // one polarity over on the same primitive — the two independent
+        // declaration surfaces (slice literal + boolean predicate)
+        // diverge at THIS pin on the first shape where they disagree,
+        // before a consumer that reads one altitude but not the other
+        // can observe the drift.
+        for f in Format::SHIKUMI_PROVIDED.iter().copied() {
+            assert!(
+                f.has_shikumi_provider(),
+                "Format::SHIKUMI_PROVIDED entry {f:?} must satisfy has_shikumi_provider()",
+            );
+            assert!(
+                !f.has_figment_builtin_provider(),
+                "Format::SHIKUMI_PROVIDED entry {f:?} must NOT satisfy \
+                 has_figment_builtin_provider()",
+            );
+        }
+        for f in Format::FIGMENT_BUILTIN_PROVIDED.iter().copied() {
+            assert!(
+                f.has_figment_builtin_provider(),
+                "Format::FIGMENT_BUILTIN_PROVIDED entry {f:?} must satisfy \
+                 has_figment_builtin_provider()",
+            );
+            assert!(
+                !f.has_shikumi_provider(),
+                "Format::FIGMENT_BUILTIN_PROVIDED entry {f:?} must NOT satisfy \
+                 has_shikumi_provider()",
+            );
+        }
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                Format::SHIKUMI_PROVIDED.contains(&f),
+                f.has_shikumi_provider(),
+                "SHIKUMI_PROVIDED membership must agree with has_shikumi_provider() \
+                 on Format::{f:?}",
+            );
+            assert_eq!(
+                Format::FIGMENT_BUILTIN_PROVIDED.contains(&f),
+                f.has_figment_builtin_provider(),
+                "FIGMENT_BUILTIN_PROVIDED membership must agree with \
+                 has_figment_builtin_provider() on Format::{f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_shikumi_provided_and_figment_builtin_provided_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint and
+        // their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `SHIKUMI_PROVIDED.len() + FIGMENT_BUILTIN_PROVIDED.len() ==
+        // ALL.len()` at the slice altitude on the file-format axis's
+        // provider-class polarity. A variant landing on both slices or
+        // on neither breaks the partition here before any consumer that
+        // reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for f in Format::SHIKUMI_PROVIDED.iter().copied() {
+            assert!(
+                !Format::FIGMENT_BUILTIN_PROVIDED.contains(&f),
+                "Format::{f:?} appears in BOTH SHIKUMI_PROVIDED and \
+                 FIGMENT_BUILTIN_PROVIDED",
+            );
+        }
+        for f in Format::ALL.iter().copied() {
+            let in_shikumi = Format::SHIKUMI_PROVIDED.contains(&f);
+            let in_figment = Format::FIGMENT_BUILTIN_PROVIDED.contains(&f);
+            assert!(
+                in_shikumi || in_figment,
+                "Format::{f:?} is in NEITHER SHIKUMI_PROVIDED nor \
+                 FIGMENT_BUILTIN_PROVIDED",
+            );
+            assert!(
+                !(in_shikumi && in_figment),
+                "Format::{f:?} is in BOTH SHIKUMI_PROVIDED and \
+                 FIGMENT_BUILTIN_PROVIDED",
+            );
+        }
+        assert_eq!(
+            Format::SHIKUMI_PROVIDED.len() + Format::FIGMENT_BUILTIN_PROVIDED.len(),
+            Format::ALL.len(),
+            "SHIKUMI_PROVIDED and FIGMENT_BUILTIN_PROVIDED slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn format_shikumi_provided_and_figment_builtin_provided_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in Format::ALL — i.e. the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. The
+        // shikumi-provided pole is a proper suffix of ALL today
+        // ([Lisp, Nix, Blue]) and the figment-builtin pole is a proper
+        // prefix ([Yaml, Toml]); a future landing that inserted a new
+        // figment-builtin variant between Lisp and Nix would force this
+        // pin to move the new cell into FIGMENT_BUILTIN_PROVIDED at the
+        // matching ALL-declaration-order position rather than at the
+        // tail.
+        let shikumi_from_all: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.has_shikumi_provider())
+            .collect();
+        assert_eq!(
+            shikumi_from_all,
+            Format::SHIKUMI_PROVIDED.to_vec(),
+            "SHIKUMI_PROVIDED must be ALL-filtered by has_shikumi_provider in declaration order",
+        );
+        let figment_from_all: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.has_figment_builtin_provider())
+            .collect();
+        assert_eq!(
+            figment_from_all,
+            Format::FIGMENT_BUILTIN_PROVIDED.to_vec(),
+            "FIGMENT_BUILTIN_PROVIDED must be ALL-filtered by has_figment_builtin_provider \
+             in declaration order",
+        );
+    }
+
+    #[test]
+    fn format_shikumi_provided_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into SHIKUMI_PROVIDED, an accidental re-add of an
+        // already-present cell into FIGMENT_BUILTIN_PROVIDED) fails at
+        // THIS pin before drifting through any consumer that iterates
+        // the slice expecting a set.
+        for slice in [Format::SHIKUMI_PROVIDED, Format::FIGMENT_BUILTIN_PROVIDED] {
+            let mut seen: Vec<Format> = Vec::with_capacity(slice.len());
+            for f in slice {
+                assert!(
+                    !seen.contains(f),
+                    "Format slice {slice:?} contains duplicate entry {f:?}",
+                );
+                seen.push(*f);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn format_shikumi_provided_and_figment_builtin_provided_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on Format::ALL — i.e.
+        // `SHIKUMI_PROVIDED.len() ==
+        // ALL.iter().filter(has_shikumi_provider).count()` and
+        // `FIGMENT_BUILTIN_PROVIDED.len() ==
+        // ALL.iter().filter(has_figment_builtin_provider).count()` —
+        // the cardinality projection at the slice altitude agrees with
+        // the boolean-altitude projection on both halves. Concrete
+        // positions today: 3 shikumi-provided + 2 figment-builtin = 5 =
+        // ALL. A future sixth variant lands here in lockstep with the
+        // boolean predicate that admits it.
+        let shikumi_count = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.has_shikumi_provider())
+            .count();
+        let figment_count = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.has_figment_builtin_provider())
+            .count();
+        assert_eq!(
+            Format::SHIKUMI_PROVIDED.len(),
+            shikumi_count,
+            "SHIKUMI_PROVIDED.len() must match the has_shikumi_provider count on ALL",
+        );
+        assert_eq!(
+            Format::FIGMENT_BUILTIN_PROVIDED.len(),
+            figment_count,
+            "FIGMENT_BUILTIN_PROVIDED.len() must match the has_figment_builtin_provider \
+             count on ALL",
+        );
+        assert_eq!(Format::SHIKUMI_PROVIDED.len(), 3);
+        assert_eq!(Format::FIGMENT_BUILTIN_PROVIDED.len(), 2);
+        assert_eq!(Format::ALL.len(), 5);
+    }
+
+    #[test]
+    fn format_shikumi_provided_and_figment_builtin_provided_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer.
+        const SHIKUMI_PROVIDED_LEN: usize = Format::SHIKUMI_PROVIDED.len();
+        const FIGMENT_BUILTIN_PROVIDED_LEN: usize = Format::FIGMENT_BUILTIN_PROVIDED.len();
+        const ALL_LEN: usize = Format::ALL.len();
+        assert_eq!(SHIKUMI_PROVIDED_LEN, 3);
+        assert_eq!(FIGMENT_BUILTIN_PROVIDED_LEN, 2);
+        assert_eq!(SHIKUMI_PROVIDED_LEN + FIGMENT_BUILTIN_PROVIDED_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn format_shikumi_provided_differs_from_feature_gated_at_nix() {
+        // Distinctness pin between the two compound-polarity meta-
+        // partitions on the same primitive. The (shikumi-provided ×
+        // figment-builtin-provided) polarity groups `Nix` with `Lisp`
+        // and `Blue` (all three are shikumi-built providers), while
+        // the (feature-gated × always-available) polarity groups `Nix`
+        // with `Yaml` and `Toml` (all three compile unconditionally).
+        // A future edit that collapsed the two polarities onto the
+        // same slice literals (e.g. by making Nix feature-gated, or by
+        // dropping its shikumi provider in favour of a figment-builtin
+        // one) would silently make consumers of one polarity read the
+        // other; this pin catches that collapse at compile time before
+        // it reaches any downstream reader.
+        assert!(
+            Format::SHIKUMI_PROVIDED.contains(&Format::Nix),
+            "Nix must be in SHIKUMI_PROVIDED — it is loaded by NixProvider",
+        );
+        assert!(
+            !Format::FEATURE_GATED.contains(&Format::Nix),
+            "Nix must NOT be in FEATURE_GATED — it compiles unconditionally today",
+        );
+        assert_ne!(
+            Format::SHIKUMI_PROVIDED,
+            Format::FEATURE_GATED,
+            "the provider-class and feature-gated polarities must remain distinct \
+             slice literals",
+        );
+        assert_ne!(
+            Format::FIGMENT_BUILTIN_PROVIDED,
+            Format::ALWAYS_AVAILABLE,
+            "the provider-class and feature-gated polarities' complement halves \
+             must remain distinct slice literals",
+        );
     }
 
     // ── Format — identity meta-partition slice constants ─────────────
