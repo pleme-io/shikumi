@@ -247,15 +247,118 @@ impl TierArg {
         )
     }
 
+    /// The four COMPUTED-DEFAULTS [`TierArg`] variants —
+    /// [`Self::Bare`] (zero-opinion floor), [`Self::Discovered`]
+    /// (runtime auto-detect), [`Self::Default`] (curated app
+    /// defaults), and [`Self::Env`] (CLI-only dispatch through
+    /// [`crate::ConfigTier::from_env`]) — in the SAME relative
+    /// declaration order they occupy in [`Self::ALL`], carrying the
+    /// *path-independent* pole of the (computed × custom) polarity
+    /// axis at the CLI operator-facing tier tag's OWN altitude,
+    /// mirroring the shipped boolean predicate [`Self::is_computed`]
+    /// one altitude down: every variant in this slice satisfies
+    /// `a.is_computed()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::CUSTOM`], the two disjoint slices partition
+    /// [`Self::ALL`] at the static-slice altitude the same way the
+    /// shipped boolean predicates [`Self::is_computed`] /
+    /// [`Self::is_custom`] meta-partition it at the boolean altitude.
+    /// The two constants sit in the same `impl TierArg` block as
+    /// [`Self::ALL`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit four-variant slice literal in the SAME
+    /// relative declaration order the computed-defaults pole occupies
+    /// in [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_computed`] at const-fn altitude — so the two
+    /// declarations (the slice literal and the boolean predicate)
+    /// remain independent load-bearing witnesses of the same
+    /// meta-partition, and a future edit that shifts a variant across
+    /// the polarity on ONE declaration surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    /// A hypothetical sixth computed-defaults arm (a `Runtime`
+    /// CLI-visible tick-reconciler tier) lands here in lockstep with
+    /// [`Self::is_computed`].
+    ///
+    /// **Directly foreshadowed** by [`Self::ONLY_BARE`]'s doc block:
+    /// "a hypothetical `COMPUTED: &[Self::Bare, Self::Discovered,
+    /// Self::Default, Self::Env]` peer of the CLI compound sibling
+    /// [`Self::is_computed`], mirroring the crate-side pair
+    /// [`crate::ConfigTierKind::COMPUTED`] /
+    /// [`crate::ConfigTierKind::CUSTOM`] at commit `2c0686f`". This
+    /// constant lands that foreshadowed peer — the CLI-side lift of
+    /// the crate-side compound-polarity discipline onto the five-way
+    /// operator-facing tier tag.
+    ///
+    /// Idiom-peer of [`crate::ConfigTierKind::COMPUTED`] on the
+    /// crate-side four-way tier-kind axis (`2c0686f`) — same
+    /// (computed × custom) meta-partition, one cell wider (the
+    /// CLI-only [`Self::Env`] arm sits under the computed pole because
+    /// `TierArg::Env` never carries a path in its own dispatch; see
+    /// [`Self::is_computed`] docs for the classification rationale).
+    /// Peer altitude on the CLI operator surface of
+    /// [`crate::SecretOperation::MUTATING`] (`b2cfa2a`) and
+    /// [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`]
+    /// (`04e0f5d`) on the substrate-facing axes.
+    ///
+    /// The two agreement laws
+    /// (`COMPUTED.iter().all(|a| a.is_computed())` and
+    /// `COMPUTED.iter().all(|a| !a.is_custom())`) are pinned by
+    /// [`tests::tier_arg_computed_slice_agrees_with_is_computed_predicate`].
+    /// Partition invariant with [`Self::CUSTOM`]:
+    /// [`tests::tier_arg_computed_and_custom_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::tier_arg_computed_and_custom_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::tier_arg_computed_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the boolean pole:
+    /// [`tests::tier_arg_computed_and_custom_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::tier_arg_computed_and_custom_slices_are_const_addressable`].
+    pub const COMPUTED: &'static [Self] = &[Self::Bare, Self::Discovered, Self::Default, Self::Env];
+
+    /// The single OPERATOR-SUPPLIED [`TierArg`] variant —
+    /// [`Self::Custom`] (YAML overlay at the `--path` flag on top of
+    /// the app defaults) — the complement pole of [`Self::COMPUTED`]
+    /// on the (computed × custom) polarity axis at the CLI operator-
+    /// facing tier tag's OWN altitude. Mirrors the shipped boolean
+    /// predicate [`Self::is_custom`] one altitude down.
+    ///
+    /// Degenerate one-element slice today (the CLI axis carries
+    /// exactly one operator-supplied variant), so the partition
+    /// invariant with [`Self::COMPUTED`] pins the whole-set cardinality
+    /// identity `COMPUTED.len() + CUSTOM.len() == ALL.len()` — a
+    /// hypothetical second operator-supplied CLI arm (a future
+    /// `File(PathBuf)` for an explicit `--tier file --path <FILE>`
+    /// overlay separate from `Custom`, an `Overlay` for a stack of
+    /// YAML fragments) lands here in lockstep with [`Self::is_custom`],
+    /// and the cardinality-agreement pin catches any drift between
+    /// the slice and the boolean predicate on the same edit.
+    ///
+    /// Today `CUSTOM == ONLY_CUSTOM == &[Self::Custom]` because both
+    /// project to the singleton at present, but the two constants
+    /// stay independent by construction: the identity-partition
+    /// [`Self::ONLY_CUSTOM`] stays a singleton by definition, while
+    /// [`Self::CUSTOM`] grows in lockstep with the compound-polarity
+    /// pole contract if a future operator-supplied variant lands —
+    /// mirroring the same crate-side independence between
+    /// [`crate::ConfigTierKind::CUSTOM`] and
+    /// [`crate::ConfigTierKind::ONLY_CUSTOM`].
+    ///
+    /// See [`Self::COMPUTED`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_custom`]), and the load-bearing agreement and
+    /// partition pins.
+    pub const CUSTOM: &'static [Self] = &[Self::Custom];
+
     /// The [`Self::Bare`] pole of the five-way identity meta-partition
     /// on the CLI operator-facing tier tag at the static-slice
     /// altitude — the singleton slice `&[Self::Bare]` mirroring the
     /// shipped boolean predicate [`Self::is_bare`] one altitude down.
     ///
-    /// Fresh identity-partition constant, kept independent of any
-    /// future compound-polarity slice on this axis (a hypothetical
-    /// `COMPUTED: &[Self::Bare, Self::Discovered, Self::Default,
-    /// Self::Env]` peer of the CLI compound sibling
+    /// Fresh identity-partition constant, kept independent of the
+    /// sibling compound-polarity slice [`Self::COMPUTED`] on this
+    /// axis (the peer of the CLI compound sibling
     /// [`Self::is_computed`], mirroring the crate-side pair
     /// [`crate::ConfigTierKind::COMPUTED`] / [`crate::ConfigTierKind::CUSTOM`]
     /// at commit `2c0686f`): the two partitions stay independent so a
@@ -1068,6 +1171,221 @@ mod tests {
             TierArg::ALL.len(),
             "compound-polarity partition must cover TierArg::ALL exhaustively",
         );
+    }
+
+    // ── TierArg COMPUTED / CUSTOM compound-polarity slice constants
+    //
+    // Static-slice altitude of the (computed × custom) 4/1 compound-
+    // polarity meta-partition on the CLI operator-facing tier tag. The
+    // two slices `COMPUTED / CUSTOM` are the static-slice projection
+    // of the shipped boolean predicates `is_computed / is_custom` one
+    // altitude down.
+    //
+    // Idiom-peer of `ConfigTierKind::COMPUTED / CUSTOM` at
+    // `config_tier_kind_computed_*` (`2c0686f`, the first landing of
+    // the compound-polarity discipline on the crate-side four-way
+    // tier-kind axis and the direct crate-side sibling of this
+    // CLI-side axis on the atomic `(tier, source)` pair one primitive
+    // over), lifted here onto the five-way CLI tier tag. FIRST
+    // compound-polarity landing of the per-half meta-partition slice-
+    // constant discipline on a `cli.rs`-scoped closed-primitive axis
+    // — one cell wider than the crate-side quaternary landing (the
+    // CLI-only `Self::Env` arm, classified under the computed pole
+    // because `TierArg::Env` never carries a path in its own dispatch).
+
+    #[test]
+    fn tier_arg_computed_slice_agrees_with_is_computed_predicate() {
+        // Bidirectional weld between the slice literal `TierArg::COMPUTED`
+        // and the boolean predicate `TierArg::is_computed` on the
+        // (computed × custom) polarity axis. Every slice entry
+        // satisfies the computed pole (and its complement `!is_custom`),
+        // and every ALL cell agrees on membership under the boolean
+        // predicate. Idiom-peer of
+        // `config_tier_kind_computed_slice_agrees_with_is_computed_predicate`
+        // (`2c0686f`) — the two independent declaration surfaces (slice
+        // literal + boolean predicate) diverge at THIS pin on the first
+        // shape where they disagree, before a consumer that reads one
+        // altitude but not the other can observe the drift.
+        for a in TierArg::COMPUTED.iter().copied() {
+            assert!(
+                a.is_computed(),
+                "TierArg::COMPUTED entry {a:?} must satisfy is_computed()",
+            );
+            assert!(
+                !a.is_custom(),
+                "TierArg::COMPUTED entry {a:?} must NOT satisfy is_custom()",
+            );
+        }
+        for a in TierArg::ALL.iter().copied() {
+            assert_eq!(
+                TierArg::COMPUTED.contains(&a),
+                a.is_computed(),
+                "COMPUTED membership must agree with is_computed() on \
+                 TierArg::{a:?}",
+            );
+            assert_eq!(
+                TierArg::CUSTOM.contains(&a),
+                a.is_custom(),
+                "CUSTOM membership must agree with is_custom() on \
+                 TierArg::{a:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_computed_and_custom_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law
+        // `COMPUTED.len() + CUSTOM.len() == ALL.len()` at the slice
+        // altitude on the CLI tier tag. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_partition_all`
+        // (`2c0686f`) — a variant landing on one slice AND the other,
+        // or on neither, breaks the partition here before any consumer
+        // that reasons about the polarity as a covering meta-partition
+        // observes the drift.
+        for a in TierArg::COMPUTED.iter().copied() {
+            assert!(
+                !TierArg::CUSTOM.contains(&a),
+                "TierArg::{a:?} appears in BOTH COMPUTED and CUSTOM",
+            );
+        }
+        for a in TierArg::ALL.iter().copied() {
+            let in_computed = TierArg::COMPUTED.contains(&a);
+            let in_custom = TierArg::CUSTOM.contains(&a);
+            assert!(
+                in_computed || in_custom,
+                "TierArg::{a:?} is in NEITHER COMPUTED nor CUSTOM",
+            );
+            assert!(
+                !(in_computed && in_custom),
+                "TierArg::{a:?} is in BOTH COMPUTED and CUSTOM",
+            );
+        }
+        assert_eq!(
+            TierArg::COMPUTED.len() + TierArg::CUSTOM.len(),
+            TierArg::ALL.len(),
+            "COMPUTED and CUSTOM slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn tier_arg_computed_and_custom_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in TierArg::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise, so a
+        // renderer walking the two half-slices concatenated reproduces
+        // the ALL order once the two polarity groups are ordered per
+        // the operator-facing tier precedence. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_preserve_all_order`
+        // (`2c0686f`) — a reordering of one slice without the other,
+        // or a reordering of ALL that shuffles the two poles' variant
+        // order without updating the slices, diverges at THIS pin.
+        let computed_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_computed())
+            .collect();
+        assert_eq!(
+            computed_from_all,
+            TierArg::COMPUTED.to_vec(),
+            "COMPUTED must be ALL-filtered by is_computed in declaration order",
+        );
+        let custom_from_all: Vec<TierArg> = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_custom())
+            .collect();
+        assert_eq!(
+            custom_from_all,
+            TierArg::CUSTOM.to_vec(),
+            "CUSTOM must be ALL-filtered by is_custom in declaration order",
+        );
+    }
+
+    #[test]
+    fn tier_arg_computed_slice_has_no_duplicates() {
+        // No-duplicates pin on both per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half (a typo copying the SAME variant twice
+        // into COMPUTED, an accidental re-add of an already-present
+        // Custom cell into CUSTOM) fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a set.
+        for slice in [TierArg::COMPUTED, TierArg::CUSTOM] {
+            let deduped_len = {
+                let mut seen: Vec<TierArg> = Vec::with_capacity(slice.len());
+                for a in slice.iter().copied() {
+                    if !seen.contains(&a) {
+                        seen.push(a);
+                    }
+                }
+                seen.len()
+            };
+            assert_eq!(
+                deduped_len,
+                slice.len(),
+                "TierArg slice {slice:?} contains duplicate entries",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_computed_and_custom_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on TierArg::ALL — i.e.,
+        // `COMPUTED.len() == ALL.iter().filter(is_computed).count()`
+        // and `CUSTOM.len() == ALL.iter().filter(is_custom).count()`
+        // — the cardinality projection at the slice altitude agrees
+        // with the boolean-altitude projection on both halves.
+        // Concrete positions today: 4 computed + 1 custom = 5 = ALL.
+        // Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slice_lengths_agree_with_boolean_pole_cardinalities`
+        // (`2c0686f`) on the crate-side sibling tier-kind axis, one
+        // cell wider (the CLI-only Env arm sits under the computed
+        // pole, bringing the computed count from 3 to 4).
+        let computed_count = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_computed())
+            .count();
+        let custom_count = TierArg::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_custom())
+            .count();
+        assert_eq!(
+            TierArg::COMPUTED.len(),
+            computed_count,
+            "COMPUTED.len() must match the is_computed count on ALL",
+        );
+        assert_eq!(
+            TierArg::CUSTOM.len(),
+            custom_count,
+            "CUSTOM.len() must match the is_custom count on ALL",
+        );
+        assert_eq!(TierArg::COMPUTED.len(), 4);
+        assert_eq!(TierArg::CUSTOM.len(), 1);
+        assert_eq!(TierArg::ALL.len(), 5);
+    }
+
+    #[test]
+    fn tier_arg_computed_and_custom_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer. Idiom-peer of
+        // `config_tier_kind_computed_and_custom_slices_are_const_addressable`
+        // (`2c0686f`).
+        const COMPUTED_LEN: usize = TierArg::COMPUTED.len();
+        const CUSTOM_LEN: usize = TierArg::CUSTOM.len();
+        const ALL_LEN: usize = TierArg::ALL.len();
+        assert_eq!(COMPUTED_LEN, 4);
+        assert_eq!(CUSTOM_LEN, 1);
+        assert_eq!(COMPUTED_LEN + CUSTOM_LEN, ALL_LEN);
     }
 
     // ── TierArg ONLY_* five-way identity meta-partition
