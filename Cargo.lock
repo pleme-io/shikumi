@@ -2583,7 +2583,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.783"
+version = "0.1.784"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2840,9 +2840,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.13.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba2077be5cd93c7408c849e45a4ab261b59f923f4bcdee2a724b8ed5a175a77"
+checksum = "22e6cd18156ba6530d7deea039a6c1a6ec4f173dd330a9a53a4ea569fe85abac"
 dependencies = [
  "tinyvec_macros",
 ]
