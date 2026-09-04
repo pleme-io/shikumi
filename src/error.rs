@@ -2207,8 +2207,22 @@ impl AttributionRule {
     /// `attribution_rule_metadata_axis_orthogonal_to_confidence` and
     /// `attribution_rule_metadata_axis_orthogonal_to_layer_kind`
     /// tests pin both orthogonality contracts.
+    ///
+    /// `const`-callable — the five-arm exhaustive match projects
+    /// payload-free `Copy` variants of `Self` into unit variants of
+    /// [`AttributionAxis`] and touches no allocator, `String`, or
+    /// non-const helper on any path, so a compile-time-known rule
+    /// projects its metadata-axis coordinate at compile time too.
+    /// Matches the const-callability altitude the two sibling
+    /// projections on the same `impl` block already occupy —
+    /// [`Self::confidence`] (const since it was introduced) on the
+    /// exact × fallback axis and [`Self::layer_kind`] (const since
+    /// `52c4a20`) on the file × env × defaults axis — closing the
+    /// third-axis parity gap on the (rule → axis × confidence ×
+    /// layer_kind) orthogonal coordinate space. Pinned by
+    /// [`tests::attribution_rule_metadata_axis_is_const_callable`].
     #[must_use]
-    pub fn metadata_axis(self) -> AttributionAxis {
+    pub const fn metadata_axis(self) -> AttributionAxis {
         match self {
             Self::FileBySource | Self::DefaultsByCodeUniqueness => AttributionAxis::MetadataSource,
             Self::FileByMetadataName | Self::EnvByPrefix | Self::EnvByUniqueness => {
@@ -11554,6 +11568,77 @@ mod tests {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.metadata_axis(), rule.metadata_axis());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_is_const_callable() {
+        // Weld the const-callability of the (rule → metadata-axis)
+        // projection `AttributionRule::metadata_axis` with the two
+        // sibling coordinate projections on the same `impl
+        // AttributionRule` block — `AttributionRule::confidence`
+        // (const since it was introduced) and `AttributionRule::layer_kind`
+        // (const since `52c4a20`) — at compile time. Mirrors the
+        // shape of `attribution_rule_layer_kind_is_const_callable`
+        // (`52c4a20`) / `config_tier_name_is_const_callable`
+        // (`29a2f34`) / `provenance_new_seam_is_const_callable`
+        // (`422cc76`) on the shikumi-crate-wide const-callability
+        // discipline over the closed-primitive projection surface: a
+        // compile-time-known `AttributionRule` projects all three
+        // orthogonal coordinates (`metadata_axis` on the
+        // source × name axis, `layer_kind` on the
+        // file × env × defaults axis, `confidence` on the exact ×
+        // fallback axis) at compile time too — the three projections
+        // now live at the same const-callability altitude, so a
+        // static per-rule coordinate table wired through any of the
+        // three stays wired to compile-time evaluation across the
+        // whole triple.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the const-fn `metadata_axis` projection in
+        // const position. The moment `AttributionRule::metadata_axis`
+        // loses its const-ness (a future edit that reaches for a
+        // non-const helper — a lookup through a runtime table, a
+        // `String`-shaped intermediate, an allocator on the mapping
+        // path — inside the five-arm exhaustive match) one of the
+        // five `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection, and the five
+        // pointwise pins catch a future edit that shifted the
+        // rule → axis mapping off the source × name partition
+        // before it drifts through observers that read the projection.
+        const FILE_BY_SOURCE: AttributionAxis = AttributionRule::FileBySource.metadata_axis();
+        const FILE_BY_METADATA_NAME: AttributionAxis =
+            AttributionRule::FileByMetadataName.metadata_axis();
+        const ENV_BY_PREFIX: AttributionAxis = AttributionRule::EnvByPrefix.metadata_axis();
+        const ENV_BY_UNIQUENESS: AttributionAxis = AttributionRule::EnvByUniqueness.metadata_axis();
+        const DEFAULTS_BY_CODE_UNIQUENESS: AttributionAxis =
+            AttributionRule::DefaultsByCodeUniqueness.metadata_axis();
+
+        assert_eq!(FILE_BY_SOURCE, AttributionAxis::MetadataSource);
+        assert_eq!(FILE_BY_METADATA_NAME, AttributionAxis::MetadataName);
+        assert_eq!(ENV_BY_PREFIX, AttributionAxis::MetadataName);
+        assert_eq!(ENV_BY_UNIQUENESS, AttributionAxis::MetadataName);
+        assert_eq!(DEFAULTS_BY_CODE_UNIQUENESS, AttributionAxis::MetadataSource);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every rule in `Self::ALL` to the runtime-side
+        // `rule.metadata_axis()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing
+        // whose const-context weld was forgotten upstream.
+        for (rule, expected) in [
+            (AttributionRule::FileBySource, FILE_BY_SOURCE),
+            (AttributionRule::FileByMetadataName, FILE_BY_METADATA_NAME),
+            (AttributionRule::EnvByPrefix, ENV_BY_PREFIX),
+            (AttributionRule::EnvByUniqueness, ENV_BY_UNIQUENESS),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                DEFAULTS_BY_CODE_UNIQUENESS,
+            ),
+        ] {
+            assert_eq!(rule.metadata_axis(), expected, "rule {rule:?}");
         }
     }
 
