@@ -1074,8 +1074,26 @@ pub struct Provenance {
 
 impl Provenance {
     /// Construct a provenance from an explicit `(tier, source)` pair.
+    ///
+    /// `const`-callable — the body is a struct-literal expression that moves
+    /// the two parameters into the two fields without invoking any allocator
+    /// or non-const helper on the path. A compile-time-known `(tier, source)`
+    /// pair therefore projects to a compile-time-known [`Provenance`],
+    /// closing the const-callability parity gap between this primitive
+    /// pair-shaped constructor and the const-fn projection accessors
+    /// ([`Self::tier`] / [`Self::source`] / [`Self::as_parts`]) that read
+    /// the two fields back out at the exact seam this constructor writes
+    /// them in at. Peer of the const-fn one-hop wrapper [`Self::computed`]
+    /// on the fixed-source [`ConfigSource::Defaults`] row (and the three
+    /// named row-wrappers [`Self::bare`] / [`Self::discovered`] /
+    /// [`Self::prescribed_default`] that route through it), lifted here to
+    /// the pair-shaped seam that admits every `(tier, source)` combination
+    /// including the operator-overlay rows [`ConfigSource::File`] /
+    /// [`ConfigSource::Env`] the fixed-source wrappers cannot express.
+    /// Welded at compile time by
+    /// [`tests::provenance_new_seam_is_const_callable`].
     #[must_use]
-    pub fn new(tier: ConfigTierKind, source: ConfigSource) -> Self {
+    pub const fn new(tier: ConfigTierKind, source: ConfigSource) -> Self {
         Self { tier, source }
     }
 
@@ -75048,6 +75066,69 @@ mod progressive_tests {
             PRESCRIBED_DEFAULT_PROV,
             Provenance::computed(ConfigTierKind::Default)
         );
+    }
+
+    #[test]
+    fn provenance_new_seam_is_const_callable() {
+        // Weld the const-callability of the pair-shaped primitive
+        // constructor `Provenance::new` with the const-fn projection
+        // accessors (`tier` / `source` / `as_parts`) and the const-fn
+        // fixed-source wrapper (`Provenance::computed`) it shares its
+        // atomic-pair primitive with, at compile time. Mirrors the shape
+        // of `provenance_named_constructors_are_const_callable`
+        // (`095a27f`) on the sibling row-wrapper axis of the same
+        // primitive — a `static` binding routes around the drop-check
+        // that rejects a `const Provenance` (the private `source:
+        // ConfigSource` field carries a non-`const`-Drop `PathBuf` /
+        // `String` payload on the operator-overlay rows), and each of
+        // the three payload-free `ConfigSource::Defaults` rows composes
+        // through the const-fn primitive constructor directly on every
+        // tier the seam admits.
+        //
+        // The moment `Provenance::new` loses its const-ness (a future
+        // edit that reaches for a non-const helper — `.to_owned()`,
+        // `.into()`, a validator — inside the two-field struct literal)
+        // one of the three `static` welds below fails to compile at
+        // THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the primitive constructor,
+        // and the three pointwise pins on the resulting `Provenance`
+        // catch a future edit that shifted the primitive constructor
+        // away from the pair-shaped identity `Self { tier, source }`
+        // before it drifts through the whole (tier, source) coordinate
+        // system the crate resolves values through.
+        static BARE_NEW: Provenance = Provenance::new(ConfigTierKind::Bare, ConfigSource::Defaults);
+        static DISCOVERED_NEW: Provenance =
+            Provenance::new(ConfigTierKind::Discovered, ConfigSource::Defaults);
+        static DEFAULT_NEW: Provenance =
+            Provenance::new(ConfigTierKind::Default, ConfigSource::Defaults);
+
+        const BARE_TIER: ConfigTierKind = BARE_NEW.tier();
+        const DISCOVERED_TIER: ConfigTierKind = DISCOVERED_NEW.tier();
+        const DEFAULT_TIER: ConfigTierKind = DEFAULT_NEW.tier();
+
+        assert_eq!(BARE_TIER, ConfigTierKind::Bare);
+        assert_eq!(DISCOVERED_TIER, ConfigTierKind::Discovered);
+        assert_eq!(DEFAULT_TIER, ConfigTierKind::Default);
+
+        // Cross-check: the pair-shaped primitive constructor stays
+        // pointwise equal on the fixed-`Defaults` row to the const-fn
+        // one-hop wrapper `Provenance::computed(_)` (and to the three
+        // row-wrappers `bare` / `discovered` / `prescribed_default`
+        // that route through it), so a future edit that shifted the
+        // primitive constructor to a different source variant or
+        // dropped/renamed a field diverges at the pointwise pin
+        // first, not at a downstream consumer of a stale (tier,
+        // source) pair.
+        assert_eq!(BARE_NEW, Provenance::computed(ConfigTierKind::Bare));
+        assert_eq!(
+            DISCOVERED_NEW,
+            Provenance::computed(ConfigTierKind::Discovered)
+        );
+        assert_eq!(DEFAULT_NEW, Provenance::computed(ConfigTierKind::Default));
+
+        assert_eq!(BARE_NEW, Provenance::bare());
+        assert_eq!(DISCOVERED_NEW, Provenance::discovered());
+        assert_eq!(DEFAULT_NEW, Provenance::prescribed_default());
     }
 
     // ── Provenance::is_defaults / is_env / is_file —
