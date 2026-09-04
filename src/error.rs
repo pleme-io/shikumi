@@ -2107,8 +2107,20 @@ impl AttributionRule {
     /// file-layer attributions differently, a captured-failure
     /// telemetry counter keyed on the layer kind); this collapses that
     /// to one method call at the rule altitude.
+    ///
+    /// `const`-callable — the body is the two-hop composition
+    /// [`Self::layer_kind`] → [`ConfigSourceKind::is_file`], both
+    /// [`pub const fn`] (the first lifted by `52c4a20`, the second
+    /// const since it was introduced). Closes the const-callability
+    /// parity gap on this [`impl AttributionRule`] block: the sibling
+    /// rule-altitude convenience predicate [`Self::is_exact`] on the
+    /// orthogonal (exact × fallback) confidence axis is `pub const fn`,
+    /// and with this change the corresponding (file × env × defaults)
+    /// layer-axis convenience predicate meets it there. Welded at
+    /// compile time by
+    /// [`tests::attribution_rule_layer_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_file_layer(self) -> bool {
+    pub const fn is_file_layer(self) -> bool {
         self.layer_kind().is_file()
     }
 
@@ -2121,8 +2133,12 @@ impl AttributionRule {
     /// ([`Self::EnvByPrefix`] and [`Self::EnvByUniqueness`]) are the
     /// exact inhabitants of this predicate — pinned by
     /// [`tests::attribution_rule_is_env_layer_agrees_with_layer_kind_is_env`].
+    ///
+    /// `const`-callable on the same rationale as [`Self::is_file_layer`];
+    /// welded at compile time by
+    /// [`tests::attribution_rule_layer_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_env_layer(self) -> bool {
+    pub const fn is_env_layer(self) -> bool {
         self.layer_kind().is_env()
     }
 
@@ -2140,8 +2156,12 @@ impl AttributionRule {
     /// [`Self::is_defaults_layer`]) form a closed ternary partition of
     /// [`Self::ALL`] — pinned by
     /// [`tests::attribution_rule_layer_predicates_are_a_closed_ternary_partition`].
+    ///
+    /// `const`-callable on the same rationale as [`Self::is_file_layer`];
+    /// welded at compile time by
+    /// [`tests::attribution_rule_layer_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_defaults_layer(self) -> bool {
+    pub const fn is_defaults_layer(self) -> bool {
         self.layer_kind().is_defaults()
     }
 
@@ -8543,6 +8563,116 @@ mod tests {
             ),
         ] {
             assert_eq!(rule.layer_kind(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_predicates_are_const_callable() {
+        // Weld the const-callability of the three layer-axis
+        // convenience predicates (`AttributionRule::is_file_layer`,
+        // `AttributionRule::is_env_layer`,
+        // `AttributionRule::is_defaults_layer`) with the projection
+        // they route through (`AttributionRule::layer_kind`, lifted
+        // to `const fn` by `52c4a20`) and the three
+        // `ConfigSourceKind::is_*` predicates they delegate to
+        // (const since they were introduced) at compile time.
+        //
+        // Rule-altitude analogue on the (file × env × defaults) axis
+        // of `attribution_rule_confidence_and_confidence_predicates_are_const_callable`
+        // (`5c2add4`) on the orthogonal (exact × fallback) axis. The
+        // two rule-altitude predicate cascades — confidence and
+        // layer-kind — now live at the same const-callability
+        // altitude, and each cell of the 5×3 (variant × predicate)
+        // grid on the layer-axis welds directly through `const`
+        // bindings on the five payload-free variants.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through each of the three delegating predicates in
+        // const position. The moment any of the three predicates (or
+        // the routed `layer_kind` projection, or the routed
+        // downstream `ConfigSourceKind::is_*` predicate) stops being
+        // const-callable, one of the fifteen `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // predicate — a `static PER_RULE: [(bool, bool, bool);
+        // AttributionRule::ALL.len()]` layer-axis diagnostic table,
+        // an attestation manifest carrying per-rule layer-axis
+        // membership at compile time, a `const` sentinel for a
+        // compile-time-known rule's layer-axis polarity.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const IFL_FBS: bool = R_FBS.is_file_layer();
+        const IFL_FBM: bool = R_FBM.is_file_layer();
+        const IFL_EBP: bool = R_EBP.is_file_layer();
+        const IFL_EBU: bool = R_EBU.is_file_layer();
+        const IFL_DBCU: bool = R_DBCU.is_file_layer();
+
+        const IEL_FBS: bool = R_FBS.is_env_layer();
+        const IEL_FBM: bool = R_FBM.is_env_layer();
+        const IEL_EBP: bool = R_EBP.is_env_layer();
+        const IEL_EBU: bool = R_EBU.is_env_layer();
+        const IEL_DBCU: bool = R_DBCU.is_env_layer();
+
+        const IDL_FBS: bool = R_FBS.is_defaults_layer();
+        const IDL_FBM: bool = R_FBM.is_defaults_layer();
+        const IDL_EBP: bool = R_EBP.is_defaults_layer();
+        const IDL_EBU: bool = R_EBU.is_defaults_layer();
+        const IDL_DBCU: bool = R_DBCU.is_defaults_layer();
+
+        // Pointwise: the (file × env × defaults) partition places
+        // each of the five rules under exactly one of the three
+        // layer-axis predicates. The const-context welds above prove
+        // const-callability; the pins below prove the mapping stays
+        // agreed with the exhaustive match in `layer_kind` — a future
+        // edit that shifted a rule off its layer diverges here first,
+        // not at a downstream reader of a stale layer-axis
+        // classification.
+        assert!(IFL_FBS);
+        assert!(IFL_FBM);
+        assert!(!IFL_EBP);
+        assert!(!IFL_EBU);
+        assert!(!IFL_DBCU);
+
+        assert!(!IEL_FBS);
+        assert!(!IEL_FBM);
+        assert!(IEL_EBP);
+        assert!(IEL_EBU);
+        assert!(!IEL_DBCU);
+
+        assert!(!IDL_FBS);
+        assert!(!IDL_FBM);
+        assert!(!IDL_EBP);
+        assert!(!IDL_EBU);
+        assert!(IDL_DBCU);
+
+        // Cross-check: on every rule in `Self::ALL` the const-fn
+        // delegating predicate stays pointwise equal to the two-hop
+        // composition `layer_kind().is_*()` it delegates to — the
+        // const-context welds above only exercise the five variants
+        // named at const-binding sites, but the runtime pin threads
+        // the full closed list through the same delegation to catch
+        // a future variant landing whose const-context weld was
+        // forgotten upstream.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_file_layer(),
+                rule.layer_kind().is_file(),
+                "is_file_layer must route through layer_kind().is_file() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_env_layer(),
+                rule.layer_kind().is_env(),
+                "is_env_layer must route through layer_kind().is_env() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_defaults_layer(),
+                rule.layer_kind().is_defaults(),
+                "is_defaults_layer must route through layer_kind().is_defaults() on {rule:?}",
+            );
         }
     }
 
