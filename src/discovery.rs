@@ -1857,12 +1857,25 @@ impl FormatCoordinates {
     /// inline tuple destructuring), so the recognized-cell predicate
     /// stays one method call regardless of how many formats the
     /// substrate accumulates.
+    ///
+    /// `const`-callable — the diagonal test is expressed as a `match`
+    /// on the two-arm `(FormatProvenance, FormatProvenance)` product so
+    /// the routed `Format::provenance` projection (itself `const fn`
+    /// since commit `3801ad8`) and the pair equality both evaluate in
+    /// const context on rustc 1.94.1, matching the const-callability
+    /// discipline the sibling projection [`Format::format_coordinates`]
+    /// already occupies. `PartialEq::eq` on `FormatProvenance` is not
+    /// const-stable today (`const_trait_impl` remains unstable on this
+    /// toolchain), so the equality is inlined as a match rather than
+    /// spelled `==`; the two forms agree pointwise, and the switch is
+    /// pinned by
+    /// [`tests::format_coordinates_partial_inverse_and_realizability_are_const_callable`].
     #[must_use]
-    pub fn format_or_none(self) -> Option<Format> {
-        if self.format.provenance() == self.provenance {
-            Some(self.format)
-        } else {
-            None
+    pub const fn format_or_none(self) -> Option<Format> {
+        match (self.format.provenance(), self.provenance) {
+            (FormatProvenance::FigmentBuiltin, FormatProvenance::FigmentBuiltin)
+            | (FormatProvenance::ShikumiBuilt, FormatProvenance::ShikumiBuilt) => Some(self.format),
+            _ => None,
         }
     }
 
@@ -1925,8 +1938,14 @@ impl FormatCoordinates {
     /// or partial. The same membership-over-the-recognized-image
     /// contract holds across all four cubes regardless of the
     /// underlying mechanism.
+    ///
+    /// `const`-callable — inherits from the const-fn lift of
+    /// [`Self::format_or_none`] (this run) and the const-stable
+    /// [`Option::is_some`] on the standard library side. Pinned in
+    /// const position by
+    /// [`tests::format_coordinates_partial_inverse_and_realizability_are_const_callable`].
     #[must_use]
-    pub fn is_realizable(self) -> bool {
+    pub const fn is_realizable(self) -> bool {
         self.format_or_none().is_some()
     }
 }
@@ -8865,13 +8884,129 @@ mod tests {
             );
             // Diagonal cell: the const-fn projection always lands on the
             // recognized half of the (format × provenance) cube. Pinned
-            // via runtime `format_or_none` (which is not const-fn yet;
-            // a future lift there would unlock a further const weld here).
+            // via `format_or_none` (also const-fn as of this run; the
+            // full three-hop const weld is exercised by the sibling test
+            // `format_coordinates_partial_inverse_and_realizability_are_const_callable`).
             assert_eq!(
                 f.format_coordinates().format_or_none(),
                 Some(f),
                 "format_coordinates must land on the diagonal (recognized) \
                  cell on {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_partial_inverse_and_realizability_are_const_callable() {
+        // Weld the const-callability of `FormatCoordinates::format_or_none`
+        // AND `FormatCoordinates::is_realizable` at compile time. Both
+        // projections lifted to `const fn` in the same run: `format_or_none`
+        // by expressing the diagonal test as a two-arm `match` over the
+        // `(FormatProvenance, FormatProvenance)` product (routing the
+        // const-fn `Format::provenance` projection through it and avoiding
+        // `PartialEq::eq`, which is not const-stable on rustc 1.94.1
+        // without the still-unstable `const_trait_impl` feature);
+        // `is_realizable` by delegating to `format_or_none().is_some()`,
+        // where `Option::is_some` has been `const fn` stably since
+        // Rust 1.48. This closes the nomination the sibling
+        // delegating-projection commit `f29dfe0` called out for the same
+        // (`format × provenance`) cube: "`FormatCoordinates::format_or_none`
+        // and `FormatCoordinates::is_realizable` remain the next non-const
+        // projections on the same cube — their own const-fn lifts are now
+        // unblocked at zero body-shape change once `Format::provenance`
+        // equality is expressed in a const-eligible form".
+        //
+        // Ten `const _: … = FormatCoordinates::_ ._ ();` bindings — one
+        // per `FormatCoordinates::ALL` cell, per projection — route each
+        // cell through the const-fn projection in const position, so
+        // a future edit that reaches for a non-const helper inside
+        // `format_or_none` (or inside the `Format::provenance` projection
+        // it routes through) fails to compile at THAT line before drifting
+        // through downstream consumers that assumed const-ness through
+        // the projection. `is_realizable` inherits from `format_or_none`
+        // by delegation, so the same fail-early property extends onto
+        // it at zero body-shape change.
+        const CELLS: &[FormatCoordinates] = FormatCoordinates::ALL;
+        const INV_YAML_FB: Option<Format> = CELLS[0].format_or_none();
+        const INV_YAML_SB: Option<Format> = CELLS[1].format_or_none();
+        const INV_TOML_FB: Option<Format> = CELLS[2].format_or_none();
+        const INV_TOML_SB: Option<Format> = CELLS[3].format_or_none();
+        const INV_LISP_FB: Option<Format> = CELLS[4].format_or_none();
+        const INV_LISP_SB: Option<Format> = CELLS[5].format_or_none();
+        const INV_NIX_FB: Option<Format> = CELLS[6].format_or_none();
+        const INV_NIX_SB: Option<Format> = CELLS[7].format_or_none();
+        const INV_BLUE_FB: Option<Format> = CELLS[8].format_or_none();
+        const INV_BLUE_SB: Option<Format> = CELLS[9].format_or_none();
+
+        const RZ_YAML_FB: bool = CELLS[0].is_realizable();
+        const RZ_YAML_SB: bool = CELLS[1].is_realizable();
+        const RZ_TOML_FB: bool = CELLS[2].is_realizable();
+        const RZ_TOML_SB: bool = CELLS[3].is_realizable();
+        const RZ_LISP_FB: bool = CELLS[4].is_realizable();
+        const RZ_LISP_SB: bool = CELLS[5].is_realizable();
+        const RZ_NIX_FB: bool = CELLS[6].is_realizable();
+        const RZ_NIX_SB: bool = CELLS[7].is_realizable();
+        const RZ_BLUE_FB: bool = CELLS[8].is_realizable();
+        const RZ_BLUE_SB: bool = CELLS[9].is_realizable();
+
+        // Pointwise pins for the partial inverse: each const-context
+        // binding equals the diagonal-recovery result the runtime
+        // projection yields — the four recognized cells recover the
+        // format, the four unrecognized cells return `None`. Catches a
+        // future edit that shifted a format off its diagonal cell (or
+        // that shifted the polarity of `Format::provenance` upstream)
+        // before it drifts through observers that read the projection.
+        assert_eq!(INV_YAML_FB, Some(Format::Yaml));
+        assert_eq!(INV_YAML_SB, None);
+        assert_eq!(INV_TOML_FB, Some(Format::Toml));
+        assert_eq!(INV_TOML_SB, None);
+        assert_eq!(INV_LISP_FB, None);
+        assert_eq!(INV_LISP_SB, Some(Format::Lisp));
+        assert_eq!(INV_NIX_FB, None);
+        assert_eq!(INV_NIX_SB, Some(Format::Nix));
+        assert_eq!(INV_BLUE_FB, None);
+        assert_eq!(INV_BLUE_SB, Some(Format::Blue));
+
+        // Pointwise pins for realizability: `is_realizable` is true
+        // exactly on the four diagonal cells and false on the other
+        // four, matching the 4 + 4 partition of the 8-cell cube.
+        assert!(RZ_YAML_FB);
+        assert!(!RZ_YAML_SB);
+        assert!(RZ_TOML_FB);
+        assert!(!RZ_TOML_SB);
+        assert!(!RZ_LISP_FB);
+        assert!(RZ_LISP_SB);
+        assert!(!RZ_NIX_FB);
+        assert!(RZ_NIX_SB);
+        assert!(!RZ_BLUE_FB);
+        assert!(RZ_BLUE_SB);
+
+        // Cross-check: the const-fn `format_or_none` stays pointwise
+        // equal on every cell in `FormatCoordinates::ALL` to the
+        // reference two-hop composition (compare cell.provenance against
+        // cell.format.provenance() via direct pattern match, using
+        // exactly the same `(FormatProvenance, FormatProvenance)` match
+        // shape the const-fn body carries). And the const-fn
+        // `is_realizable` stays pointwise equal to `format_or_none(...).
+        // is_some()`. Together they pin the const-fn projections against
+        // their runtime specifications on every cell of the cube.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let expected = match (cell.format.provenance(), cell.provenance) {
+                (FormatProvenance::FigmentBuiltin, FormatProvenance::FigmentBuiltin)
+                | (FormatProvenance::ShikumiBuilt, FormatProvenance::ShikumiBuilt) => {
+                    Some(cell.format)
+                }
+                _ => None,
+            };
+            assert_eq!(
+                cell.format_or_none(),
+                expected,
+                "format_or_none must equal the diagonal-cell projection on {cell:?}",
+            );
+            assert_eq!(
+                cell.is_realizable(),
+                expected.is_some(),
+                "is_realizable must equal format_or_none(...).is_some() on {cell:?}",
             );
         }
     }
