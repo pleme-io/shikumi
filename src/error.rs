@@ -2364,8 +2364,21 @@ impl AttributionRule {
     /// observable forms, with the cross-thread accessor lifted to
     /// `Option<_>` to track the `Some-iff-attribution` discipline
     /// established for the sibling projection accessors.
+    ///
+    /// `pub const fn` since the body is an exhaustive match on
+    /// [`Self`]'s payload-free variants returning
+    /// `Option<FigmentSourceKind>` (`FigmentSourceKind` is a
+    /// payload-free enum; `Option::Some` construction is a `const`
+    /// operation). The const-callability weld is
+    /// [`tests::attribution_rule_figment_source_kind_is_const_callable`];
+    /// it routes each of the five rule variants through the
+    /// projection in `const` position and pins the partition against
+    /// the exhaustive match at compile time. Peer const-lift of the
+    /// rule-altitude partial-projection cascade on the sibling
+    /// partial projection is [`Self::figment_name_tag_kind`] (still
+    /// `pub fn` — a future landing lifts it in lockstep).
     #[must_use]
-    pub fn figment_source_kind(self) -> Option<FigmentSourceKind> {
+    pub const fn figment_source_kind(self) -> Option<FigmentSourceKind> {
         match self {
             Self::FileBySource => Some(FigmentSourceKind::File),
             Self::DefaultsByCodeUniqueness => Some(FigmentSourceKind::Code),
@@ -11937,6 +11950,76 @@ mod tests {
             "image of figment_source_kind must lie in FigmentSourceKind::ALL; \
              observed: {observed:?}, declared: {declared:?}",
         );
+    }
+
+    #[test]
+    fn attribution_rule_figment_source_kind_is_const_callable() {
+        // Weld the const-callability of the (rule → figment-source-kind)
+        // partial projection at compile time. Peer of the sibling
+        // const-callable welds on the same `impl AttributionRule` block
+        // — `attribution_rule_layer_predicates_are_const_callable`
+        // (layer axis), `attribution_rule_metadata_axis_predicates_are_const_callable`
+        // (metadata axis), `attribution_rule_confidence_is_const_callable`
+        // where present — lifted to the partial-projection altitude
+        // where the codomain is `Option<FigmentSourceKind>` rather than
+        // a `bool`.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the partial projection in const position.
+        // The moment the projection (or the routed
+        // `FigmentSourceKind::{File,Code}` variant construction, or the
+        // routed `Option::{Some,None}` construction) stops being
+        // const-callable, one of the five `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection — a
+        // `static PER_RULE: [Option<FigmentSourceKind>;
+        // AttributionRule::ALL.len()]` per-rule figment-source-kind
+        // lookup, an attestation manifest carrying the (rule →
+        // figment-source-kind) partial map at compile time, a `const`
+        // sentinel for a compile-time-known rule's figment-source-kind
+        // cell.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const FSK_FBS: Option<FigmentSourceKind> = R_FBS.figment_source_kind();
+        const FSK_FBM: Option<FigmentSourceKind> = R_FBM.figment_source_kind();
+        const FSK_EBP: Option<FigmentSourceKind> = R_EBP.figment_source_kind();
+        const FSK_EBU: Option<FigmentSourceKind> = R_EBU.figment_source_kind();
+        const FSK_DBCU: Option<FigmentSourceKind> = R_DBCU.figment_source_kind();
+
+        // Pointwise: the (Some(File), Some(Code), None×3) partition
+        // places each of the five rules under exactly one Option cell
+        // — the two source-axis rules on the `Some` half (naming the
+        // File / Code cells) and the three name-axis rules on the
+        // `None` half. The const-context welds above prove
+        // const-callability; the pins below prove the mapping stays
+        // agreed with the exhaustive match in `figment_source_kind` —
+        // a future edit that shifted a rule off its source-kind
+        // classification diverges here first, not at a downstream
+        // reader of a stale (rule → figment-source-kind) mapping.
+        assert_eq!(FSK_FBS, Some(FigmentSourceKind::File));
+        assert_eq!(FSK_FBM, None);
+        assert_eq!(FSK_EBP, None);
+        assert_eq!(FSK_EBU, None);
+        assert_eq!(FSK_DBCU, Some(FigmentSourceKind::Code));
+
+        // Full-list pin: iterate `AttributionRule::ALL` against the
+        // same expected sequence so a future variant landing on
+        // `AttributionRule` without a corresponding update here fails
+        // at the length check, mirroring the `ALL`-length pins on the
+        // sibling axis-partition tests.
+        let expected: [Option<FigmentSourceKind>; AttributionRule::ALL.len()] =
+            [FSK_FBS, FSK_FBM, FSK_EBP, FSK_EBU, FSK_DBCU];
+        for (rule, expected_kind) in AttributionRule::ALL.iter().copied().zip(expected) {
+            assert_eq!(
+                rule.figment_source_kind(),
+                expected_kind,
+                "rule {rule:?}: figment_source_kind must match its const-context weld",
+            );
+        }
     }
 
     #[test]
