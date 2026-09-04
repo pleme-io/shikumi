@@ -1118,8 +1118,17 @@ impl Provenance {
     /// Lifting it to a named constructor closes one more spot of the
     /// tier-axis constructor grid at one site, mirroring the
     /// [`Self::discovered`] closure on the middle computed-defaults row.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`Self::computed`] constructor with a unit [`ConfigTierKind::Bare`]
+    /// argument, so a compile-time-known bare-tier [`Provenance`] can be
+    /// bound to a `static` binding through this named constructor directly
+    /// instead of open-coding the underlying [`Self::computed`] seam.
+    /// Closes the const-callability parity gap between this named
+    /// wrapper and the const-fn seam it delegates to; pinned at compile
+    /// time by [`tests::provenance_named_constructors_are_const_callable`].
     #[must_use]
-    pub fn bare() -> Self {
+    pub const fn bare() -> Self {
         Self::computed(ConfigTierKind::Bare)
     }
 
@@ -1145,8 +1154,14 @@ impl Provenance {
     /// this constructor is the seam that variant will thread through when
     /// it lands — every caller that today writes `Provenance::discovered()`
     /// inherits the richer source at zero call-site churn.
+    ///
+    /// `const`-callable — see [`Self::bare`] for the full contract; the
+    /// body is a one-hop call into the const-fn [`Self::computed`]
+    /// constructor with a unit [`ConfigTierKind::Discovered`] argument, so
+    /// a compile-time-known discovered-tier [`Provenance`] can be bound to
+    /// a `static` binding through this named constructor directly.
     #[must_use]
-    pub fn discovered() -> Self {
+    pub const fn discovered() -> Self {
         Self::computed(ConfigTierKind::Discovered)
     }
 
@@ -1169,8 +1184,15 @@ impl Provenance {
     /// constructor grid on the computed-defaults row, so the whole row
     /// ([`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`])
     /// now reads through named constructors uniformly.
+    ///
+    /// `const`-callable — see [`Self::bare`] for the full contract; the
+    /// body is a one-hop call into the const-fn [`Self::computed`]
+    /// constructor with a unit [`ConfigTierKind::Default`] argument, so
+    /// a compile-time-known prescribed-default-tier [`Provenance`] can be
+    /// bound to a `static` binding through this named constructor
+    /// directly.
     #[must_use]
-    pub fn prescribed_default() -> Self {
+    pub const fn prescribed_default() -> Self {
         Self::computed(ConfigTierKind::Default)
     }
 
@@ -74901,6 +74923,68 @@ mod progressive_tests {
         assert!(DISCOVERED_IS_DISCOVERED);
         assert!(DEFAULT_IS_DEFAULT);
         assert!(CUSTOM_IS_CUSTOM);
+    }
+
+    #[test]
+    fn provenance_named_constructors_are_const_callable() {
+        // Weld the const-callability of the three computed-defaults-row
+        // named constructors (`Provenance::bare` / `Provenance::discovered`
+        // / `Provenance::prescribed_default`) with the const-callable
+        // `Provenance::computed` seam they each delegate to at compile
+        // time. Mirrors the shape of
+        // `provenance_tier_predicates_are_const_callable` on the sibling
+        // predicate axis of the same primitive — a `static` binding
+        // routes around the drop-check that rejects a `const Provenance`
+        // (the private `source: ConfigSource` field carries a
+        // non-`const`-Drop `PathBuf` / `String` payload), and every
+        // three-way row still composes through the const-fn
+        // `Provenance::computed` seam and the const-fn wrapper it
+        // delegates to. The moment any of the three named constructors
+        // loses its const-ness (a future edit that reaches for a
+        // non-const helper — `.to_owned()`, `.into()`, `.as_str()` on a
+        // borrowed payload — inside `bare` / `discovered` /
+        // `prescribed_default`, or inside the `computed` seam itself)
+        // one of the six welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the wrappers, and the six const-context
+        // predicate reads pin end-to-end that the whole
+        // constructor-then-predicate composition (rather than each half
+        // in isolation) stays const-callable.
+        static BARE_PROV: Provenance = Provenance::bare();
+        static DISCOVERED_PROV: Provenance = Provenance::discovered();
+        static PRESCRIBED_DEFAULT_PROV: Provenance = Provenance::prescribed_default();
+
+        const BARE_TIER: ConfigTierKind = BARE_PROV.tier();
+        const DISCOVERED_TIER: ConfigTierKind = DISCOVERED_PROV.tier();
+        const PRESCRIBED_DEFAULT_TIER: ConfigTierKind = PRESCRIBED_DEFAULT_PROV.tier();
+
+        const BARE_IS_BARE: bool = BARE_PROV.is_bare();
+        const DISCOVERED_IS_DISCOVERED: bool = DISCOVERED_PROV.is_discovered();
+        const PRESCRIBED_DEFAULT_IS_DEFAULT: bool = PRESCRIBED_DEFAULT_PROV.is_default();
+
+        assert_eq!(BARE_TIER, ConfigTierKind::Bare);
+        assert_eq!(DISCOVERED_TIER, ConfigTierKind::Discovered);
+        assert_eq!(PRESCRIBED_DEFAULT_TIER, ConfigTierKind::Default);
+
+        assert!(BARE_IS_BARE);
+        assert!(DISCOVERED_IS_DISCOVERED);
+        assert!(PRESCRIBED_DEFAULT_IS_DEFAULT);
+
+        // Cross-check: the three named constructors are pointwise equal
+        // to the underlying `computed(_)` seam they delegate to, so a
+        // future edit that changed one of the wrappers to a different
+        // tier row (or to a non-`Defaults` source) diverges here first,
+        // before any downstream consumer that reads the projections
+        // one-by-one.
+        assert_eq!(BARE_PROV, Provenance::computed(ConfigTierKind::Bare));
+        assert_eq!(
+            DISCOVERED_PROV,
+            Provenance::computed(ConfigTierKind::Discovered)
+        );
+        assert_eq!(
+            PRESCRIBED_DEFAULT_PROV,
+            Provenance::computed(ConfigTierKind::Default)
+        );
     }
 
     // ── Provenance::is_defaults / is_env / is_file —
