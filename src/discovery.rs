@@ -656,8 +656,27 @@ impl Format {
     /// the provenance partition stays coherent by construction. The
     /// `format_provenance_partitions_every_variant` test pins the
     /// partition is total (every variant maps to exactly one provenance).
+    ///
+    /// `const`-callable — the body is an exhaustive match over the
+    /// five payload-free [`Copy`] variants of [`Self`] projecting into
+    /// unit variants of [`FormatProvenance`], both const-eligible under
+    /// rustc 1.89. Idiom-peer of the sibling per-variant boolean
+    /// projections [`Self::is_yaml`] / [`Self::is_toml`] /
+    /// [`Self::is_lisp`] / [`Self::is_nix`] / [`Self::is_blue`] (all
+    /// const since their landing) and the sibling closed-enum
+    /// projection [`crate::AttributionRule::layer_kind`] (const since
+    /// commit `52c4a20`): the format axis now carries the same
+    /// const-callability discipline on its (format → provenance)
+    /// closed-enum projection that the attribution axis carries on
+    /// its (rule → layer-kind) projection. A compile-time-known
+    /// [`Format`] now projects into [`FormatProvenance`] at compile
+    /// time too, so a `static PROVENANCE: FormatProvenance =
+    /// Format::_.provenance()` diagnostic table can be wired without
+    /// the projection dropping the caller off the const-context edge.
+    /// Welded at compile time by
+    /// [`tests::format_provenance_projection_is_const_callable`].
     #[must_use]
-    pub fn provenance(self) -> FormatProvenance {
+    pub const fn provenance(self) -> FormatProvenance {
         match self {
             Self::Lisp | Self::Nix | Self::Blue => FormatProvenance::ShikumiBuilt,
             Self::Yaml | Self::Toml => FormatProvenance::FigmentBuiltin,
@@ -7542,6 +7561,65 @@ mod tests {
         assert_eq!(Format::Toml.provenance(), FormatProvenance::FigmentBuiltin);
         assert_eq!(Format::Lisp.provenance(), FormatProvenance::ShikumiBuilt);
         assert_eq!(Format::Nix.provenance(), FormatProvenance::ShikumiBuilt);
+    }
+
+    #[test]
+    fn format_provenance_projection_is_const_callable() {
+        // Weld the const-callability of the (format → provenance)
+        // projection `Format::provenance` at compile time. Mirrors the
+        // shape of `attribution_rule_layer_kind_is_const_callable`
+        // (commit `52c4a20`) / `config_tier_name_is_const_callable`
+        // (commit `29a2f34`) on the shikumi-crate-wide const-callability
+        // discipline over the closed-primitive projection surface: a
+        // compile-time-known `Format` now projects into `FormatProvenance`
+        // at compile time too — so a `static` per-format provenance
+        // table wired through the projection stays wired to compile-time
+        // evaluation, and the sibling per-variant boolean projections
+        // on the same axis (`Format::is_yaml`, …, `Format::is_blue`,
+        // all const since their landing) meet this closed-enum
+        // projection at the same const-callability altitude.
+        //
+        // Five `const` bindings — one per `Format` variant — route each
+        // payload-free variant through the const-fn projection in
+        // const position. The moment `Format::provenance` loses its
+        // const-ness (a future edit that reaches for a non-const
+        // helper — a lookup through a runtime table, a `String`-shaped
+        // intermediate, an allocator on the mapping path — inside the
+        // exhaustive match) one of the five `const` welds below fails
+        // to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // projection, and the five pointwise pins catch a future edit
+        // that shifted the format → provenance mapping off the
+        // (figment-builtin × shikumi-built) partition before it
+        // drifts through observers that read the projection.
+        const YAML: FormatProvenance = Format::Yaml.provenance();
+        const TOML: FormatProvenance = Format::Toml.provenance();
+        const LISP: FormatProvenance = Format::Lisp.provenance();
+        const NIX: FormatProvenance = Format::Nix.provenance();
+        const BLUE: FormatProvenance = Format::Blue.provenance();
+
+        assert_eq!(YAML, FormatProvenance::FigmentBuiltin);
+        assert_eq!(TOML, FormatProvenance::FigmentBuiltin);
+        assert_eq!(LISP, FormatProvenance::ShikumiBuilt);
+        assert_eq!(NIX, FormatProvenance::ShikumiBuilt);
+        assert_eq!(BLUE, FormatProvenance::ShikumiBuilt);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `Format::ALL` to the runtime-side
+        // `format.provenance()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing
+        // whose const-context weld was forgotten upstream.
+        for (format, expected) in [
+            (Format::Yaml, YAML),
+            (Format::Toml, TOML),
+            (Format::Lisp, LISP),
+            (Format::Nix, NIX),
+            (Format::Blue, BLUE),
+        ] {
+            assert_eq!(format.provenance(), expected, "format {format:?}");
+        }
     }
 
     #[test]
