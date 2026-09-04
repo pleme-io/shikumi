@@ -616,8 +616,24 @@ impl ConfigTier {
     ///
     /// Delegates to [`ConfigTierKind::as_str`] via [`Self::kind`],
     /// keeping the four tier names at one source of truth.
+    ///
+    /// `const`-callable — the body is a one-hop composition of two
+    /// const-fn seams: [`Self::kind`] (`Copy`-out of the closed variant
+    /// tag) then [`ConfigTierKind::as_str`] (match into a
+    /// `&'static str` literal). Closes the const-callability parity
+    /// gap between this operator-facing renderer and the two const-fn
+    /// primitives it composes — before this seal, a `const NAME: &str
+    /// = tier.name();` binding open-coded the two-hop chain by hand
+    /// (`ConfigTierKind::as_str(ConfigTier::kind(&tier))`) rather than
+    /// composing through the named renderer directly. Pinned at
+    /// compile time by
+    /// [`tests::config_tier_name_is_const_callable`], mirroring the
+    /// shape of
+    /// [`tests::provenance_named_constructors_are_const_callable`]
+    /// (`095a27f`) on the sibling const-parity axis of the sealed
+    /// (tier, source) primitive.
     #[must_use]
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         self.kind().as_str()
     }
 
@@ -31125,6 +31141,53 @@ mod tests {
             ConfigTier::Custom(std::path::PathBuf::from("/x")).name(),
             "custom"
         );
+    }
+
+    #[test]
+    fn config_tier_name_is_const_callable() {
+        // Weld the const-callability of `ConfigTier::name` with the two
+        // const-fn seams it composes (`ConfigTier::kind` and
+        // `ConfigTierKind::as_str`) at compile time. Mirrors the shape
+        // of `provenance_named_constructors_are_const_callable`
+        // (`095a27f`) on the sibling const-parity axis of the same
+        // sealed (tier, source) primitive: a `static` binding routes
+        // around the drop-check that rejects a `const ConfigTier` (the
+        // `Custom(PathBuf)` payload carries a non-`const`-Drop
+        // `PathBuf`), and each of the three payload-free tier
+        // variants composes through the const-fn renderer directly.
+        //
+        // The moment `ConfigTier::name` loses its const-ness (a future
+        // edit that reaches for a non-const helper — `.to_owned()`,
+        // `.into()`, `format!(_)` — inside the body, or inside either
+        // const-fn seam it composes) one of the three `const _: &str =
+        // …` welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the renderer, and the three pointwise pins on the
+        // resulting `&'static str` catch a future edit that shifted
+        // one of the payload-free variants to a different label
+        // before it drifts through operator-facing logs + telemetry.
+        static BARE: ConfigTier = ConfigTier::Bare;
+        static DISCOVERED: ConfigTier = ConfigTier::Discovered;
+        static DEFAULT: ConfigTier = ConfigTier::Default;
+
+        const BARE_NAME: &str = BARE.name();
+        const DISCOVERED_NAME: &str = DISCOVERED.name();
+        const DEFAULT_NAME: &str = DEFAULT.name();
+
+        assert_eq!(BARE_NAME, "bare");
+        assert_eq!(DISCOVERED_NAME, "discovered");
+        assert_eq!(DEFAULT_NAME, "default");
+
+        // Cross-check: the const-fn renderer stays pointwise equal to
+        // the two-hop composition `Self::kind` → `ConfigTierKind::as_str`
+        // it delegates to on every payload-free variant, so a future
+        // edit that shifted the renderer to a different seam (or
+        // shifted `Self::kind` / `ConfigTierKind::as_str` off the
+        // one-source-of-truth row) diverges at the pointwise pin
+        // first, not at a downstream reader of a stale name label.
+        assert_eq!(BARE_NAME, ConfigTier::Bare.kind().as_str());
+        assert_eq!(DISCOVERED_NAME, ConfigTier::Discovered.kind().as_str());
+        assert_eq!(DEFAULT_NAME, ConfigTier::Default.kind().as_str());
     }
 
     #[test]
