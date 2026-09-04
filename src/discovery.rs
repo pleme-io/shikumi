@@ -713,7 +713,7 @@ impl Format {
     /// over the typescape primitive set, both following the same
     /// forward-total / inverse-partial round-trip law.
     #[must_use]
-    pub fn format_coordinates(self) -> FormatCoordinates {
+    pub const fn format_coordinates(self) -> FormatCoordinates {
         FormatCoordinates {
             format: self,
             provenance: self.provenance(),
@@ -8795,6 +8795,86 @@ mod tests {
     }
 
     // ---- FormatCoordinates / Format::format_coordinates / format_or_none ----
+
+    #[test]
+    fn format_coordinates_is_const_callable() {
+        // Weld the const-callability of `Format::format_coordinates` at
+        // compile time. The projection lifted to `const fn` because
+        // both halves of its two-hop body — `Format::provenance` (itself
+        // const-fn since commit `3801ad8`) and the `FormatCoordinates`
+        // struct-literal constructor (already used in const position at
+        // `FormatCoordinates::ALL`) — are const-eligible on every
+        // payload-free variant. This test closes the nomination the
+        // sibling delegating-predicate commit (`4c2a205`) called out:
+        // "the last non-const projection on the same axis — its own
+        // const-fn lift is now unblocked at zero body-shape change".
+        //
+        // The cascade shape mirrors
+        // `format_provider_class_predicates_are_const_callable`
+        // (commit `4c2a205`, the sibling delegating-predicate cascade
+        // on the same (format → provenance → …) axis): each cell routes
+        // through the const-fn projection in const position, so a
+        // future edit that reaches for a non-const helper inside
+        // `Format::format_coordinates` (or inside the `Format::provenance`
+        // projection it routes through, or inside a future
+        // `FormatProvenance` variant whose match arm calls a non-const
+        // helper) fails to compile at THAT line before drifting through
+        // downstream consumers that assumed const-ness through the
+        // projection.
+        //
+        // Five `const _: FormatCoordinates = Format::_.format_coordinates();`
+        // bindings — one per payload-free variant — pin the whole
+        // variant-then-project composition at compile time.
+        const YAML: FormatCoordinates = Format::Yaml.format_coordinates();
+        const TOML: FormatCoordinates = Format::Toml.format_coordinates();
+        const LISP: FormatCoordinates = Format::Lisp.format_coordinates();
+        const NIX: FormatCoordinates = Format::Nix.format_coordinates();
+        const BLUE: FormatCoordinates = Format::Blue.format_coordinates();
+
+        // Pointwise pins: each const-context binding equals the
+        // (format, format.provenance()) pair the runtime projection
+        // yields — i.e. the const cell lands on the diagonal of the
+        // (format × provenance) product cube where `format_or_none`
+        // recovers the original format.
+        assert_eq!(YAML.format, Format::Yaml);
+        assert_eq!(YAML.provenance, FormatProvenance::FigmentBuiltin);
+        assert_eq!(TOML.format, Format::Toml);
+        assert_eq!(TOML.provenance, FormatProvenance::FigmentBuiltin);
+        assert_eq!(LISP.format, Format::Lisp);
+        assert_eq!(LISP.provenance, FormatProvenance::ShikumiBuilt);
+        assert_eq!(NIX.format, Format::Nix);
+        assert_eq!(NIX.provenance, FormatProvenance::ShikumiBuilt);
+        assert_eq!(BLUE.format, Format::Blue);
+        assert_eq!(BLUE.provenance, FormatProvenance::ShikumiBuilt);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every variant in `Format::ALL` to the two-hop composition
+        // `FormatCoordinates { format: f, provenance: f.provenance() }`
+        // it constructs. Catches a future variant landing whose
+        // const-context weld was forgotten upstream, or a future edit
+        // that shifted the projection off the underlying
+        // `Format::provenance` projection.
+        for &f in Format::ALL {
+            assert_eq!(
+                f.format_coordinates(),
+                FormatCoordinates {
+                    format: f,
+                    provenance: f.provenance(),
+                },
+                "format_coordinates must equal (f, f.provenance()) on {f:?}",
+            );
+            // Diagonal cell: the const-fn projection always lands on the
+            // recognized half of the (format × provenance) cube. Pinned
+            // via runtime `format_or_none` (which is not const-fn yet;
+            // a future lift there would unlock a further const weld here).
+            assert_eq!(
+                f.format_coordinates().format_or_none(),
+                Some(f),
+                "format_coordinates must land on the diagonal (recognized) \
+                 cell on {f:?}",
+            );
+        }
+    }
 
     #[test]
     fn format_coordinates_classifies_each_variant() {
