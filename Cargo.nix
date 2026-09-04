@@ -9471,7 +9471,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.784";
+        version = "0.1.785";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10260,9 +10260,9 @@ rec {
       };
       "tinyvec" = rec {
         crateName = "tinyvec";
-        version = "1.13.0";
+        version = "1.13.1";
         edition = "2018";
-        sha256 = "0xss2xdfvf14lzidxg7l4gwmj6r6mfj4b7l4ii0cg4ydwmxhg8hb";
+        sha256 = "1b5bhpz6k9af7ajsjc6k7lblzv56q6k3k87fgl6m79kb2lccvri2";
         authors = [
           "Lokathor <zefria@gmail.com>"
         ];
