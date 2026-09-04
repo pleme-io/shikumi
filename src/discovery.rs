@@ -741,8 +741,24 @@ impl Format {
     /// `self.provenance() == FormatProvenance::ShikumiBuilt`. New code
     /// that needs to distinguish more than the binary should prefer the
     /// typed accessor.
+    ///
+    /// `const`-callable — the body is `matches!(self.provenance(),
+    /// FormatProvenance::ShikumiBuilt)`, and both halves of the
+    /// two-hop composition are const-eligible under rustc 1.94.1:
+    /// [`Self::provenance`] is `const fn` (commit `3801ad8`) and the
+    /// `matches!` expands into a match over payload-free unit variants
+    /// of [`FormatProvenance`] that touches no allocator, `String`, or
+    /// non-const helper. Idiom-peer of the sibling closed-enum
+    /// projection [`Self::provenance`] the delegating predicate routes
+    /// through, and of the rule-altitude analogue
+    /// [`crate::AttributionRule::is_file_layer`] /
+    /// [`crate::AttributionRule::is_env_layer`] /
+    /// [`crate::AttributionRule::is_defaults_layer`] (const since
+    /// commit `4eec3fa`): both altitudes now sit at the same
+    /// const-callability discipline. Welded at compile time by
+    /// [`tests::format_provider_class_predicates_are_const_callable`].
     #[must_use]
-    pub fn has_shikumi_provider(self) -> bool {
+    pub const fn has_shikumi_provider(self) -> bool {
         matches!(self.provenance(), FormatProvenance::ShikumiBuilt)
     }
 
@@ -785,8 +801,16 @@ impl Format {
     /// `self.provenance() == FormatProvenance::FigmentBuiltin`. New code
     /// that needs to distinguish more than the binary should prefer the
     /// typed accessor.
+    ///
+    /// `const`-callable — the body is `matches!(self.provenance(),
+    /// FormatProvenance::FigmentBuiltin)`, const-eligible under the
+    /// same conditions as the sibling [`Self::has_shikumi_provider`]
+    /// (both halves of the two-hop composition are const-fn, and
+    /// [`FormatProvenance`] is a payload-free `Copy` enum). Welded at
+    /// compile time by
+    /// [`tests::format_provider_class_predicates_are_const_callable`].
     #[must_use]
-    pub fn has_figment_builtin_provider(self) -> bool {
+    pub const fn has_figment_builtin_provider(self) -> bool {
         matches!(self.provenance(), FormatProvenance::FigmentBuiltin)
     }
 
@@ -7619,6 +7643,95 @@ mod tests {
             (Format::Blue, BLUE),
         ] {
             assert_eq!(format.provenance(), expected, "format {format:?}");
+        }
+    }
+
+    #[test]
+    fn format_provider_class_predicates_are_const_callable() {
+        // Weld the const-callability of the two sibling provider-class
+        // convenience predicates `Format::has_shikumi_provider` and
+        // `Format::has_figment_builtin_provider` at compile time. Both
+        // delegate to `matches!(self.provenance(), FormatProvenance::…)`,
+        // and the underlying `Format::provenance` projection lifted to
+        // `const fn` in commit `3801ad8` — which explicitly nominated
+        // this sibling pair as unblocked for a one-line const-fn lift
+        // "at zero body-shape change". This test closes that nomination
+        // by pinning the variant-then-delegate composition in const
+        // position on every payload-free variant.
+        //
+        // The cascade shape mirrors
+        // `attribution_rule_layer_predicates_are_const_callable`
+        // (commit `4eec3fa`, the rule-altitude analogue on the sibling
+        // (file × env × defaults) attribution axis): each predicate
+        // routes through a projection that is itself const-callable,
+        // and both altitudes now sit at the same const-fn discipline.
+        //
+        // Ten `const _: bool = Format::_.has_*_provider();` bindings —
+        // one per (variant × predicate) cell of the 5×2 grid over the
+        // five payload-free variants and the two delegating predicates
+        // — route each cell through the const-fn predicate in const
+        // position, so the whole variant-then-delegate composition
+        // (rather than each half in isolation) is pinned const-callable.
+        // The moment either delegating predicate loses its const-ness
+        // (a future edit reaching for a non-const helper inside the
+        // `matches!` body, inside the routed `Format::provenance`
+        // projection, or inside a future `FormatProvenance` variant
+        // whose match arm calls a non-const helper) one of the ten
+        // `const` welds below fails to compile at THAT line before
+        // drifting through downstream consumers that assumed const-ness
+        // through the predicate.
+        const YAML_SHIKUMI: bool = Format::Yaml.has_shikumi_provider();
+        const TOML_SHIKUMI: bool = Format::Toml.has_shikumi_provider();
+        const LISP_SHIKUMI: bool = Format::Lisp.has_shikumi_provider();
+        const NIX_SHIKUMI: bool = Format::Nix.has_shikumi_provider();
+        const BLUE_SHIKUMI: bool = Format::Blue.has_shikumi_provider();
+
+        const YAML_FIGMENT: bool = Format::Yaml.has_figment_builtin_provider();
+        const TOML_FIGMENT: bool = Format::Toml.has_figment_builtin_provider();
+        const LISP_FIGMENT: bool = Format::Lisp.has_figment_builtin_provider();
+        const NIX_FIGMENT: bool = Format::Nix.has_figment_builtin_provider();
+        const BLUE_FIGMENT: bool = Format::Blue.has_figment_builtin_provider();
+
+        // Pointwise partition pins: the two predicates form a closed
+        // binary partition over `Format::ALL` (every variant is exactly
+        // one of shikumi-built or figment-builtin, never neither and
+        // never both), and the const-context bindings above are the
+        // compile-time projection of that partition.
+        assert!(!YAML_SHIKUMI && YAML_FIGMENT, "Yaml: figment-builtin");
+        assert!(!TOML_SHIKUMI && TOML_FIGMENT, "Toml: figment-builtin");
+        assert!(LISP_SHIKUMI && !LISP_FIGMENT, "Lisp: shikumi-built");
+        assert!(NIX_SHIKUMI && !NIX_FIGMENT, "Nix: shikumi-built");
+        assert!(BLUE_SHIKUMI && !BLUE_FIGMENT, "Blue: shikumi-built");
+
+        // Cross-check: the two const-fn delegating predicates stay
+        // pointwise equal on every variant in `Format::ALL` to the
+        // two-hop composition `matches!(f.provenance(), …)` they
+        // delegate to. Catches a future variant landing whose
+        // const-context weld was forgotten upstream, or a future edit
+        // that shifted the (shikumi-built × figment-builtin) partition
+        // off the `Format::provenance` projection.
+        for &f in Format::ALL {
+            assert_eq!(
+                f.has_shikumi_provider(),
+                matches!(f.provenance(), FormatProvenance::ShikumiBuilt),
+                "has_shikumi_provider must equal matches!(provenance(), ShikumiBuilt) on {f:?}",
+            );
+            assert_eq!(
+                f.has_figment_builtin_provider(),
+                matches!(f.provenance(), FormatProvenance::FigmentBuiltin),
+                "has_figment_builtin_provider must equal matches!(provenance(), FigmentBuiltin) \
+                 on {f:?}",
+            );
+            // Closed binary partition: exactly one of the two predicates
+            // is true on every variant. Pins the exhaustiveness of the
+            // (shikumi-built × figment-builtin) partition at the
+            // delegating-predicate altitude, complementing the
+            // provenance-altitude partition pinned by
+            // `format_provenance_partitions_every_variant`.
+            assert!(
+                f.has_shikumi_provider() ^ f.has_figment_builtin_provider(),
+                "closed binary partition: exactly one predicate must be true on {f:?}",
+            );
         }
     }
 
