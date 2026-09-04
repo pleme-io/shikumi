@@ -2059,8 +2059,24 @@ impl AttributionRule {
     /// (file × env × defaults) axis. Together they pin a recognized
     /// rule's coordinates without consumers destructuring specific
     /// variants.
+    ///
+    /// `const`-callable — the body is an exhaustive match over the
+    /// five payload-free [`Copy`] variants of [`Self`] projecting into
+    /// unit variants of [`ConfigSourceKind`], both const-eligible under
+    /// rustc 1.94.1. Closes the const-callability parity gap on this
+    /// [`impl AttributionRule`] block: the sibling coordinate projection
+    /// [`Self::confidence`] (const since it was introduced) already
+    /// evaluates in const context on the (exact × fallback) axis, and
+    /// with this change the orthogonal (file × env × defaults) axis
+    /// projection meets it there — a compile-time-known
+    /// [`AttributionRule`] projects both coordinates at compile time
+    /// too, so a `static PAIR: (ConfigSourceKind, AttributionConfidence)
+    /// = (rule.layer_kind(), rule.confidence())` diagnostic table can be
+    /// wired without either projection dropping the caller off the
+    /// const-context edge. Welded at compile time by
+    /// [`tests::attribution_rule_layer_kind_is_const_callable`].
     #[must_use]
-    pub fn layer_kind(self) -> ConfigSourceKind {
+    pub const fn layer_kind(self) -> ConfigSourceKind {
         match self {
             Self::FileBySource | Self::FileByMetadataName => ConfigSourceKind::File,
             Self::EnvByPrefix | Self::EnvByUniqueness => ConfigSourceKind::Env,
@@ -8460,6 +8476,72 @@ mod tests {
             ),
         ];
         for (rule, expected) in cases {
+            assert_eq!(rule.layer_kind(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_is_const_callable() {
+        // Weld the const-callability of the (rule → layer-kind)
+        // projection `AttributionRule::layer_kind` with the sibling
+        // (rule → confidence) projection `AttributionRule::confidence`
+        // (const since it was introduced) at compile time. Mirrors the
+        // shape of `config_tier_name_is_const_callable`
+        // (`29a2f34`) / `provenance_new_seam_is_const_callable`
+        // (`422cc76`) on the shikumi-crate-wide const-callability
+        // discipline over the closed-primitive projection surface: a
+        // compile-time-known `AttributionRule` projects both
+        // orthogonal coordinates (`layer_kind` on the
+        // file × env × defaults axis, `confidence` on the exact ×
+        // fallback axis) at compile time too — the two projections
+        // now live at the same const-callability altitude, so a
+        // static per-rule coordinate table wired through either
+        // projection stays wired to compile-time evaluation on both.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the const-fn `layer_kind` projection in
+        // const position. The moment `AttributionRule::layer_kind`
+        // loses its const-ness (a future edit that reaches for a
+        // non-const helper — a lookup through a runtime table, a
+        // `String`-shaped intermediate, an allocator on the mapping
+        // path — inside the five-arm exhaustive match) one of the
+        // five `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection, and the five
+        // pointwise pins catch a future edit that shifted the
+        // rule → kind mapping off the file × env × defaults partition
+        // before it drifts through observers that read the projection.
+        const FILE_BY_SOURCE: ConfigSourceKind = AttributionRule::FileBySource.layer_kind();
+        const FILE_BY_METADATA_NAME: ConfigSourceKind =
+            AttributionRule::FileByMetadataName.layer_kind();
+        const ENV_BY_PREFIX: ConfigSourceKind = AttributionRule::EnvByPrefix.layer_kind();
+        const ENV_BY_UNIQUENESS: ConfigSourceKind = AttributionRule::EnvByUniqueness.layer_kind();
+        const DEFAULTS_BY_CODE_UNIQUENESS: ConfigSourceKind =
+            AttributionRule::DefaultsByCodeUniqueness.layer_kind();
+
+        assert_eq!(FILE_BY_SOURCE, ConfigSourceKind::File);
+        assert_eq!(FILE_BY_METADATA_NAME, ConfigSourceKind::File);
+        assert_eq!(ENV_BY_PREFIX, ConfigSourceKind::Env);
+        assert_eq!(ENV_BY_UNIQUENESS, ConfigSourceKind::Env);
+        assert_eq!(DEFAULTS_BY_CODE_UNIQUENESS, ConfigSourceKind::Defaults);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every rule in `Self::ALL` to the runtime-side
+        // `rule.layer_kind()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing
+        // whose const-context weld was forgotten upstream.
+        for (rule, expected) in [
+            (AttributionRule::FileBySource, FILE_BY_SOURCE),
+            (AttributionRule::FileByMetadataName, FILE_BY_METADATA_NAME),
+            (AttributionRule::EnvByPrefix, ENV_BY_PREFIX),
+            (AttributionRule::EnvByUniqueness, ENV_BY_UNIQUENESS),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                DEFAULTS_BY_CODE_UNIQUENESS,
+            ),
+        ] {
             assert_eq!(rule.layer_kind(), expected, "rule {rule:?}");
         }
     }
