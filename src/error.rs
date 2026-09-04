@@ -2375,8 +2375,8 @@ impl AttributionRule {
     /// projection in `const` position and pins the partition against
     /// the exhaustive match at compile time. Peer const-lift of the
     /// rule-altitude partial-projection cascade on the sibling
-    /// partial projection is [`Self::figment_name_tag_kind`] (still
-    /// `pub fn` — a future landing lifts it in lockstep).
+    /// partial projection is [`Self::figment_name_tag_kind`] (now
+    /// `pub const fn` in lockstep).
     #[must_use]
     pub const fn figment_source_kind(self) -> Option<FigmentSourceKind> {
         match self {
@@ -2458,8 +2458,22 @@ impl AttributionRule {
     /// forms, with the cross-thread accessor lifted to `Option<_>` to
     /// track the `Some-iff-attribution` discipline established for the
     /// sibling projection accessors.
+    ///
+    /// `pub const fn` since the body is an exhaustive match on
+    /// [`Self`]'s payload-free variants returning
+    /// `Option<FigmentNameTagKind>` ([`FigmentNameTagKind`] is a
+    /// payload-free enum; [`Option::Some`] construction is a `const`
+    /// operation). The const-callability weld is
+    /// [`tests::attribution_rule_figment_name_tag_kind_is_const_callable`];
+    /// it routes each of the five rule variants through the projection
+    /// in `const` position and pins the partition against the
+    /// exhaustive match at compile time. Sibling const-lift of the
+    /// rule-altitude partial-projection cascade on the source-axis
+    /// partial projection is [`Self::figment_source_kind`] (already
+    /// `pub const fn`), completing the (source-axis, name-axis)
+    /// partial-projection pair at const altitude.
     #[must_use]
-    pub fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
+    pub const fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
         match self {
             Self::FileByMetadataName => Some(FigmentNameTagKind::Format),
             Self::EnvByPrefix | Self::EnvByUniqueness => Some(FigmentNameTagKind::Env),
@@ -12020,6 +12034,104 @@ mod tests {
                 "rule {rule:?}: figment_source_kind must match its const-context weld",
             );
         }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_is_const_callable() {
+        // Sibling of `attribution_rule_figment_source_kind_is_const_callable`
+        // on the figment-`Metadata::name`-axis partial projection: welds
+        // the const-callability of the (rule → figment-name-tag-kind)
+        // projection at compile time. Together they complete the
+        // (source-axis, name-axis) partial-projection pair at const
+        // altitude, mirroring the earlier total-projection welds on the
+        // same `impl AttributionRule` block
+        // (`attribution_rule_layer_predicates_are_const_callable`,
+        // `attribution_rule_metadata_axis_predicates_are_const_callable`)
+        // but lifted to the partial-projection altitude where the
+        // codomain is `Option<FigmentNameTagKind>` rather than a `bool`.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the partial projection in const position.
+        // The moment the projection (or the routed
+        // `FigmentNameTagKind::{Format,Env}` variant construction, or
+        // the routed `Option::{Some,None}` construction) stops being
+        // const-callable, one of the five `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection — a
+        // `static PER_RULE: [Option<FigmentNameTagKind>;
+        // AttributionRule::ALL.len()]` per-rule figment-name-tag-kind
+        // lookup, an attestation manifest carrying the (rule →
+        // figment-name-tag-kind) partial map at compile time, a `const`
+        // sentinel for a compile-time-known rule's figment-name-tag-kind
+        // cell.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const FNTK_FBS: Option<FigmentNameTagKind> = R_FBS.figment_name_tag_kind();
+        const FNTK_FBM: Option<FigmentNameTagKind> = R_FBM.figment_name_tag_kind();
+        const FNTK_EBP: Option<FigmentNameTagKind> = R_EBP.figment_name_tag_kind();
+        const FNTK_EBU: Option<FigmentNameTagKind> = R_EBU.figment_name_tag_kind();
+        const FNTK_DBCU: Option<FigmentNameTagKind> = R_DBCU.figment_name_tag_kind();
+
+        // Pointwise: the (Some(Format), Some(Env)×2, None×2) partition
+        // places each of the five rules under exactly one Option cell
+        // — the three name-axis rules on the `Some` half (with
+        // FileByMetadataName naming the Format cell and both env-axis
+        // rules naming the Env cell) and the two source-axis rules on
+        // the `None` half. Dual of the (Some(File), Some(Code), None×3)
+        // partition pinned by the sibling weld on
+        // `figment_source_kind`: the two Options are strict complements
+        // over the rule space, exactly one `Some` per rule
+        // (`attribution_rule_figment_name_tag_kind_xor_figment_source_kind`
+        // holds this contract at runtime). The const-context welds
+        // above prove const-callability; the pins below prove the
+        // mapping stays agreed with the exhaustive match in
+        // `figment_name_tag_kind` — a future edit that shifted a rule
+        // off its name-tag-kind classification diverges here first, not
+        // at a downstream reader of a stale (rule →
+        // figment-name-tag-kind) mapping.
+        assert_eq!(FNTK_FBS, None);
+        assert_eq!(FNTK_FBM, Some(FigmentNameTagKind::Format));
+        assert_eq!(FNTK_EBP, Some(FigmentNameTagKind::Env));
+        assert_eq!(FNTK_EBU, Some(FigmentNameTagKind::Env));
+        assert_eq!(FNTK_DBCU, None);
+
+        // Full-list pin: iterate `AttributionRule::ALL` against the
+        // same expected sequence so a future variant landing on
+        // `AttributionRule` without a corresponding update here fails
+        // at the length check, mirroring the `ALL`-length pins on the
+        // sibling axis-partition tests.
+        let expected: [Option<FigmentNameTagKind>; AttributionRule::ALL.len()] =
+            [FNTK_FBS, FNTK_FBM, FNTK_EBP, FNTK_EBU, FNTK_DBCU];
+        for (rule, expected_kind) in AttributionRule::ALL.iter().copied().zip(expected) {
+            assert_eq!(
+                rule.figment_name_tag_kind(),
+                expected_kind,
+                "rule {rule:?}: figment_name_tag_kind must match its const-context weld",
+            );
+        }
+
+        // Cross-projection pin: the two partial projections partition
+        // the rule space by the `Some-iff-axis` invariant — exactly
+        // one of (`figment_source_kind`, `figment_name_tag_kind`)
+        // returns `Some` per rule. The two const-context weld arrays
+        // agree with that partition at compile time, so a future edit
+        // that made two variants Some on the same axis (or both None
+        // on both axes) diverges here at the const-context pair
+        // before drifting through the sibling runtime XOR pin.
+        const FSK_FBS: Option<FigmentSourceKind> = R_FBS.figment_source_kind();
+        const FSK_FBM: Option<FigmentSourceKind> = R_FBM.figment_source_kind();
+        const FSK_EBP: Option<FigmentSourceKind> = R_EBP.figment_source_kind();
+        const FSK_EBU: Option<FigmentSourceKind> = R_EBU.figment_source_kind();
+        const FSK_DBCU: Option<FigmentSourceKind> = R_DBCU.figment_source_kind();
+        assert!(FSK_FBS.is_some() ^ FNTK_FBS.is_some());
+        assert!(FSK_FBM.is_some() ^ FNTK_FBM.is_some());
+        assert!(FSK_EBP.is_some() ^ FNTK_EBP.is_some());
+        assert!(FSK_EBU.is_some() ^ FNTK_EBU.is_some());
+        assert!(FSK_DBCU.is_some() ^ FNTK_DBCU.is_some());
     }
 
     #[test]
