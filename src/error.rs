@@ -1535,6 +1535,142 @@ impl AttributionRule {
         Self::EnvByUniqueness,
     ];
 
+    /// The single [`Self::FileBySource`] pole of the five-way identity
+    /// meta-partition on the [`AttributionRule`] axis at the static-
+    /// slice altitude — the singleton slice `&[Self::FileBySource]`
+    /// mirroring the shipped boolean predicate
+    /// [`Self::is_file_by_source`] one altitude down: every variant in
+    /// this slice satisfies `rule.is_file_by_source()`, and no variant
+    /// outside it does.
+    ///
+    /// Paired with the four siblings ([`Self::ONLY_FILE_BY_METADATA_NAME`],
+    /// [`Self::ONLY_ENV_BY_PREFIX`], [`Self::ONLY_ENV_BY_UNIQUENESS`],
+    /// [`Self::ONLY_DEFAULTS_BY_CODE_UNIQUENESS`]), the five disjoint
+    /// singleton slices partition [`Self::ALL`] at the static-slice
+    /// altitude the same way the shipped boolean predicates
+    /// ([`Self::is_file_by_source`] / [`Self::is_file_by_metadata_name`] /
+    /// [`Self::is_env_by_prefix`] / [`Self::is_env_by_uniqueness`] /
+    /// [`Self::is_defaults_by_code_uniqueness`]) meta-partition it at
+    /// the boolean altitude. All five constants sit in the same
+    /// `impl AttributionRule` block as [`Self::ALL`] / [`Self::EXACT`] /
+    /// [`Self::FALLBACK`] / [`Self::LAYER_FILE`] / [`Self::LAYER_ENV`] /
+    /// [`Self::LAYER_DEFAULTS`] / [`Self::METADATA_SOURCE_AXIS`] /
+    /// [`Self::METADATA_NAME_AXIS`] and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the five identity poles occupy in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through the five identity predicates at const-fn altitude — so
+    /// the two declaration surfaces (the slice literals and the boolean
+    /// predicates) remain independent load-bearing witnesses of the same
+    /// identity meta-partition, and a future edit that shifts a variant
+    /// across an identity pole on ONE surface but not the other diverges
+    /// at test time on the first shape where they disagree.
+    ///
+    /// Also the first cell of [`Self::EXACT`], [`Self::LAYER_FILE`], and
+    /// [`Self::METADATA_SOURCE_AXIS`] — the identity singleton agrees
+    /// with all three shipped compound-polarity witnesses at once
+    /// (`ONLY_FILE_BY_SOURCE ⊆ EXACT ∩ LAYER_FILE ∩ METADATA_SOURCE_AXIS`)
+    /// per the identity-vs-compound cross-check that pins the five
+    /// identity singletons against the shipped
+    /// (exact × fallback), (file × env × defaults), and
+    /// (metadata-source × metadata-name) compound-polarity
+    /// meta-partitions.
+    ///
+    /// **Idiom-peer.** Quinary landing of the per-half meta-partition
+    /// slice-constant discipline on a shikumi-native closed-primitive
+    /// axis, matching altitude-for-altitude the quinary
+    /// [`crate::discovery::Format::ONLY_YAML`] / … / `ONLY_BLUE`
+    /// (commit `d880091`), the quinary
+    /// [`crate::secret_client::SecretErrorKind::ONLY_NOT_FOUND`] / … /
+    /// `ONLY_SHIKUMI` (commit `1a4ae14`), the septenary
+    /// [`crate::error::ShikumiErrorKind::ONLY_NOT_FOUND`] / … /
+    /// `ONLY_VALIDATION` (commit `6e74116`), the senary
+    /// [`crate::secret_client::SecretOperation::ONLY_GET`] / … /
+    /// `ONLY_GET_VERSION` (commit `bfe3e24`), the septenary
+    /// [`crate::secret_client::SecretClientKind::ONLY_MEM`] / … /
+    /// `ONLY_GCP_SECRET_MANAGER` (commit `d78ae31`), the octonary
+    /// [`crate::secret::SecretBackendKind::ONLY_LITERAL`] / … /
+    /// `ONLY_GCP_SECRET` (commit `19364e3`), the quinary
+    /// [`crate::cli::TierArg::ONLY_BARE`] / … / `ONLY_ENV` (commit
+    /// `f7f5529`), and the quaternary
+    /// [`crate::tiered::ConfigTierKind::ONLY_BARE`] / … /
+    /// `ONLY_CUSTOM` (commit `ff6492b`) — the per-half meta-partition
+    /// slice-constant discipline applied here to the five-way
+    /// [`AttributionRule`] axis (the first identity-partition landing on
+    /// the rule primitive), lifting the five identity poles onto the
+    /// slice-constant altitude alongside the shipped compound-polarity
+    /// [`Self::EXACT`] / [`Self::FALLBACK`],
+    /// [`Self::LAYER_FILE`] / [`Self::LAYER_ENV`] /
+    /// [`Self::LAYER_DEFAULTS`], and
+    /// [`Self::METADATA_SOURCE_AXIS`] / [`Self::METADATA_NAME_AXIS`]
+    /// witnesses one altitude up.
+    ///
+    /// The five agreement laws
+    /// (`ONLY_FILE_BY_SOURCE.iter().all(|r| r.is_file_by_source())` and
+    /// `ONLY_FILE_BY_SOURCE.iter().all(|r| !r.is_file_by_metadata_name()
+    /// && !r.is_env_by_prefix() && !r.is_env_by_uniqueness()
+    /// && !r.is_defaults_by_code_uniqueness())`, symmetric on the four
+    /// siblings) are pinned by
+    /// [`tests::attribution_rule_identity_slices_agree_with_identity_predicates`].
+    /// Partition invariant across all five:
+    /// [`tests::attribution_rule_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::attribution_rule_identity_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::attribution_rule_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the five boolean poles:
+    /// [`tests::attribution_rule_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::attribution_rule_identity_slices_are_const_addressable`].
+    /// Cross-altitude weld with all three shipped compound-polarity
+    /// witnesses:
+    /// [`tests::attribution_rule_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_FILE_BY_SOURCE: &'static [Self] = &[Self::FileBySource];
+
+    /// The single [`Self::FileByMetadataName`] pole of the five-way
+    /// identity meta-partition on the [`AttributionRule`] axis at the
+    /// static-slice altitude. Also the first cell of
+    /// [`Self::METADATA_NAME_AXIS`] and the second cell of
+    /// [`Self::LAYER_FILE`] and [`Self::EXACT`] — the identity singleton
+    /// agrees with all three shipped compound-polarity witnesses at
+    /// once. See [`Self::ONLY_FILE_BY_SOURCE`] for the full contract,
+    /// load-bearing pins, and idiom-peer landings.
+    pub const ONLY_FILE_BY_METADATA_NAME: &'static [Self] = &[Self::FileByMetadataName];
+
+    /// The single [`Self::EnvByPrefix`] pole of the five-way identity
+    /// meta-partition on the [`AttributionRule`] axis at the static-
+    /// slice altitude. Also the last cell of [`Self::EXACT`] and the
+    /// first cell of [`Self::LAYER_ENV`] and the second cell of
+    /// [`Self::METADATA_NAME_AXIS`] — the identity singleton agrees
+    /// with all three shipped compound-polarity witnesses at once. See
+    /// [`Self::ONLY_FILE_BY_SOURCE`] for the full contract, load-bearing
+    /// pins, and idiom-peer landings.
+    pub const ONLY_ENV_BY_PREFIX: &'static [Self] = &[Self::EnvByPrefix];
+
+    /// The single [`Self::EnvByUniqueness`] pole of the five-way
+    /// identity meta-partition on the [`AttributionRule`] axis at the
+    /// static-slice altitude. Also the first cell of [`Self::FALLBACK`]
+    /// and the last cell of [`Self::LAYER_ENV`] and
+    /// [`Self::METADATA_NAME_AXIS`] — the identity singleton agrees
+    /// with all three shipped compound-polarity witnesses at once. See
+    /// [`Self::ONLY_FILE_BY_SOURCE`] for the full contract, load-bearing
+    /// pins, and idiom-peer landings.
+    pub const ONLY_ENV_BY_UNIQUENESS: &'static [Self] = &[Self::EnvByUniqueness];
+
+    /// The single [`Self::DefaultsByCodeUniqueness`] pole of the five-
+    /// way identity meta-partition on the [`AttributionRule`] axis at
+    /// the static-slice altitude. Also the sole cell of
+    /// [`Self::LAYER_DEFAULTS`] and the last cell of [`Self::FALLBACK`]
+    /// and [`Self::METADATA_SOURCE_AXIS`] — the identity singleton
+    /// agrees with all three shipped compound-polarity witnesses at
+    /// once, and reproduces [`Self::LAYER_DEFAULTS`] exactly on the
+    /// layer-kind projection since the defaults pole is a singleton at
+    /// the layer altitude too. See [`Self::ONLY_FILE_BY_SOURCE`] for the
+    /// full contract, load-bearing pins, and idiom-peer landings.
+    pub const ONLY_DEFAULTS_BY_CODE_UNIQUENESS: &'static [Self] = &[Self::DefaultsByCodeUniqueness];
+
     /// Canonical operator-facing lowercase name of the attribution rule —
     /// [`Self::FileBySource`] renders as `"file-by-source"`,
     /// [`Self::FileByMetadataName`] as `"file-by-metadata-name"`,
@@ -6967,6 +7103,476 @@ mod tests {
         assert_eq!(SOURCE_LEN, 2);
         assert_eq!(NAME_LEN, 3);
         assert_eq!(SOURCE_LEN + NAME_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_agree_with_identity_predicates() {
+        // Five-way agreement pin across the (file_by_source ×
+        // file_by_metadata_name × env_by_prefix × env_by_uniqueness ×
+        // defaults_by_code_uniqueness) identity meta-partition. Every
+        // ONLY_FILE_BY_SOURCE entry satisfies is_file_by_source and
+        // none of the four sibling predicates; every
+        // ONLY_FILE_BY_METADATA_NAME entry satisfies
+        // is_file_by_metadata_name alone; … and so on across all five
+        // halves. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift.
+        // Quinary peer of
+        // `shikumi_error_kind_identity_slices_agree_with_identity_predicates`
+        // (commit `6e74116`) two cells narrower.
+        for r in AttributionRule::ONLY_FILE_BY_SOURCE.iter().copied() {
+            assert!(
+                r.is_file_by_source(),
+                "ONLY_FILE_BY_SOURCE {r:?} must satisfy is_file_by_source"
+            );
+            assert!(
+                !r.is_file_by_metadata_name(),
+                "ONLY_FILE_BY_SOURCE {r:?} must NOT satisfy is_file_by_metadata_name"
+            );
+            assert!(
+                !r.is_env_by_prefix(),
+                "ONLY_FILE_BY_SOURCE {r:?} must NOT satisfy is_env_by_prefix"
+            );
+            assert!(
+                !r.is_env_by_uniqueness(),
+                "ONLY_FILE_BY_SOURCE {r:?} must NOT satisfy is_env_by_uniqueness"
+            );
+            assert!(
+                !r.is_defaults_by_code_uniqueness(),
+                "ONLY_FILE_BY_SOURCE {r:?} must NOT satisfy is_defaults_by_code_uniqueness"
+            );
+        }
+        for r in AttributionRule::ONLY_FILE_BY_METADATA_NAME.iter().copied() {
+            assert!(
+                r.is_file_by_metadata_name(),
+                "ONLY_FILE_BY_METADATA_NAME {r:?} must satisfy is_file_by_metadata_name"
+            );
+            assert!(
+                !r.is_file_by_source(),
+                "ONLY_FILE_BY_METADATA_NAME {r:?} must NOT satisfy is_file_by_source"
+            );
+            assert!(
+                !r.is_env_by_prefix(),
+                "ONLY_FILE_BY_METADATA_NAME {r:?} must NOT satisfy is_env_by_prefix"
+            );
+            assert!(
+                !r.is_env_by_uniqueness(),
+                "ONLY_FILE_BY_METADATA_NAME {r:?} must NOT satisfy is_env_by_uniqueness"
+            );
+            assert!(
+                !r.is_defaults_by_code_uniqueness(),
+                "ONLY_FILE_BY_METADATA_NAME {r:?} must NOT satisfy is_defaults_by_code_uniqueness"
+            );
+        }
+        for r in AttributionRule::ONLY_ENV_BY_PREFIX.iter().copied() {
+            assert!(
+                r.is_env_by_prefix(),
+                "ONLY_ENV_BY_PREFIX {r:?} must satisfy is_env_by_prefix"
+            );
+            assert!(
+                !r.is_file_by_source(),
+                "ONLY_ENV_BY_PREFIX {r:?} must NOT satisfy is_file_by_source"
+            );
+            assert!(
+                !r.is_file_by_metadata_name(),
+                "ONLY_ENV_BY_PREFIX {r:?} must NOT satisfy is_file_by_metadata_name"
+            );
+            assert!(
+                !r.is_env_by_uniqueness(),
+                "ONLY_ENV_BY_PREFIX {r:?} must NOT satisfy is_env_by_uniqueness"
+            );
+            assert!(
+                !r.is_defaults_by_code_uniqueness(),
+                "ONLY_ENV_BY_PREFIX {r:?} must NOT satisfy is_defaults_by_code_uniqueness"
+            );
+        }
+        for r in AttributionRule::ONLY_ENV_BY_UNIQUENESS.iter().copied() {
+            assert!(
+                r.is_env_by_uniqueness(),
+                "ONLY_ENV_BY_UNIQUENESS {r:?} must satisfy is_env_by_uniqueness"
+            );
+            assert!(
+                !r.is_file_by_source(),
+                "ONLY_ENV_BY_UNIQUENESS {r:?} must NOT satisfy is_file_by_source"
+            );
+            assert!(
+                !r.is_file_by_metadata_name(),
+                "ONLY_ENV_BY_UNIQUENESS {r:?} must NOT satisfy is_file_by_metadata_name"
+            );
+            assert!(
+                !r.is_env_by_prefix(),
+                "ONLY_ENV_BY_UNIQUENESS {r:?} must NOT satisfy is_env_by_prefix"
+            );
+            assert!(
+                !r.is_defaults_by_code_uniqueness(),
+                "ONLY_ENV_BY_UNIQUENESS {r:?} must NOT satisfy is_defaults_by_code_uniqueness"
+            );
+        }
+        for r in AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS
+            .iter()
+            .copied()
+        {
+            assert!(
+                r.is_defaults_by_code_uniqueness(),
+                "ONLY_DEFAULTS_BY_CODE_UNIQUENESS {r:?} must satisfy is_defaults_by_code_uniqueness"
+            );
+            assert!(
+                !r.is_file_by_source(),
+                "ONLY_DEFAULTS_BY_CODE_UNIQUENESS {r:?} must NOT satisfy is_file_by_source"
+            );
+            assert!(
+                !r.is_file_by_metadata_name(),
+                "ONLY_DEFAULTS_BY_CODE_UNIQUENESS {r:?} must NOT satisfy is_file_by_metadata_name"
+            );
+            assert!(
+                !r.is_env_by_prefix(),
+                "ONLY_DEFAULTS_BY_CODE_UNIQUENESS {r:?} must NOT satisfy is_env_by_prefix"
+            );
+            assert!(
+                !r.is_env_by_uniqueness(),
+                "ONLY_DEFAULTS_BY_CODE_UNIQUENESS {r:?} must NOT satisfy is_env_by_uniqueness"
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_partition_all() {
+        // Quinary partition invariant: the five per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_FILE_BY_SOURCE.len() + ONLY_FILE_BY_METADATA_NAME.len()
+        //  + ONLY_ENV_BY_PREFIX.len() + ONLY_ENV_BY_UNIQUENESS.len()
+        //  + ONLY_DEFAULTS_BY_CODE_UNIQUENESS.len() == ALL.len()`.
+        let identity_slices: [&[AttributionRule]; 5] = [
+            AttributionRule::ONLY_FILE_BY_SOURCE,
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+            AttributionRule::ONLY_ENV_BY_PREFIX,
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for r in left.iter() {
+                    assert!(
+                        !right.contains(r),
+                        "AttributionRule::{r:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for r in AttributionRule::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&r)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "AttributionRule::{r:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            AttributionRule::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in AttributionRule::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. A future
+        // edit that permuted any pole (impossible for singleton halves
+        // today, but the shape catches a hypothetical multi-cell
+        // future variant reshuffle on the same axis) diverges at THIS
+        // pin.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<AttributionRule> = AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(AttributionRule::ONLY_FILE_BY_SOURCE, is_file_by_source);
+        pin!(
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+            is_file_by_metadata_name
+        );
+        pin!(AttributionRule::ONLY_ENV_BY_PREFIX, is_env_by_prefix);
+        pin!(
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+            is_env_by_uniqueness
+        );
+        pin!(
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS,
+            is_defaults_by_code_uniqueness
+        );
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all five per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting
+        // through any consumer that iterates the slice expecting a
+        // set.
+        for slice in [
+            AttributionRule::ONLY_FILE_BY_SOURCE,
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+            AttributionRule::ONLY_ENV_BY_PREFIX,
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS,
+        ] {
+            let mut seen: Vec<AttributionRule> = Vec::with_capacity(slice.len());
+            for r in slice {
+                assert!(
+                    !seen.contains(r),
+                    "AttributionRule identity slice {slice:?} contains \
+                     duplicate entry {r:?}",
+                );
+                seen.push(*r);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on AttributionRule::ALL — i.e.,
+        // `ONLY_FILE_BY_SOURCE.len() == ALL.iter().filter(is_file_by_source).count()`
+        // (and symmetric for the four siblings) — the cardinality
+        // projection at the slice altitude agrees with the boolean-
+        // altitude projection on all five halves. Concrete positions
+        // today: 1 + 1 + 1 + 1 + 1 = 5 = ALL.
+        let counts = [
+            (
+                "is_file_by_source",
+                AttributionRule::ONLY_FILE_BY_SOURCE.len(),
+                AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.is_file_by_source())
+                    .count(),
+            ),
+            (
+                "is_file_by_metadata_name",
+                AttributionRule::ONLY_FILE_BY_METADATA_NAME.len(),
+                AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.is_file_by_metadata_name())
+                    .count(),
+            ),
+            (
+                "is_env_by_prefix",
+                AttributionRule::ONLY_ENV_BY_PREFIX.len(),
+                AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.is_env_by_prefix())
+                    .count(),
+            ),
+            (
+                "is_env_by_uniqueness",
+                AttributionRule::ONLY_ENV_BY_UNIQUENESS.len(),
+                AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.is_env_by_uniqueness())
+                    .count(),
+            ),
+            (
+                "is_defaults_by_code_uniqueness",
+                AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS.len(),
+                AttributionRule::ALL
+                    .iter()
+                    .copied()
+                    .filter(|r| r.is_defaults_by_code_uniqueness())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(AttributionRule::ALL.len(), 5);
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the five per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_FILE_BY_SOURCE_LEN: usize = AttributionRule::ONLY_FILE_BY_SOURCE.len();
+        const ONLY_FILE_BY_METADATA_NAME_LEN: usize =
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME.len();
+        const ONLY_ENV_BY_PREFIX_LEN: usize = AttributionRule::ONLY_ENV_BY_PREFIX.len();
+        const ONLY_ENV_BY_UNIQUENESS_LEN: usize = AttributionRule::ONLY_ENV_BY_UNIQUENESS.len();
+        const ONLY_DEFAULTS_BY_CODE_UNIQUENESS_LEN: usize =
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS.len();
+        const ALL_LEN: usize = AttributionRule::ALL.len();
+        assert_eq!(ONLY_FILE_BY_SOURCE_LEN, 1);
+        assert_eq!(ONLY_FILE_BY_METADATA_NAME_LEN, 1);
+        assert_eq!(ONLY_ENV_BY_PREFIX_LEN, 1);
+        assert_eq!(ONLY_ENV_BY_UNIQUENESS_LEN, 1);
+        assert_eq!(ONLY_DEFAULTS_BY_CODE_UNIQUENESS_LEN, 1);
+        assert_eq!(
+            ONLY_FILE_BY_SOURCE_LEN
+                + ONLY_FILE_BY_METADATA_NAME_LEN
+                + ONLY_ENV_BY_PREFIX_LEN
+                + ONLY_ENV_BY_UNIQUENESS_LEN
+                + ONLY_DEFAULTS_BY_CODE_UNIQUENESS_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn attribution_rule_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the three shipped compound-polarity
+        // meta-partitions on the same axis:
+        //   (1) confidence:      EXACT / FALLBACK
+        //   (2) layer-kind:      LAYER_FILE / LAYER_ENV / LAYER_DEFAULTS
+        //   (3) metadata-axis:   METADATA_SOURCE_AXIS / METADATA_NAME_AXIS
+        // For every compound-polarity slice, the union of the identity
+        // singletons whose sole variant sits on that pole equals the
+        // shipped slice as a sequence in declaration order. A future
+        // rearrangement of one meta-partition without the others (say,
+        // reclassifying EnvByPrefix as fallback without updating the
+        // identity → compound aggregation) diverges at THIS pin,
+        // before drifting through a consumer that materializes one
+        // altitude from another.
+
+        // (1) confidence — EXACT covers the three equality-based rules
+        // in declaration order (FileBySource, FileByMetadataName,
+        // EnvByPrefix); FALLBACK covers the two uniqueness-based rules
+        // in declaration order (EnvByUniqueness,
+        // DefaultsByCodeUniqueness).
+        let exact_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_FILE_BY_SOURCE,
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+            AttributionRule::ONLY_ENV_BY_PREFIX,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            exact_from_identity,
+            AttributionRule::EXACT.to_vec(),
+            "identity singleton union on the exact pole must reproduce \
+             EXACT in declaration order",
+        );
+        let fallback_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            fallback_from_identity,
+            AttributionRule::FALLBACK.to_vec(),
+            "identity singleton union on the fallback pole must reproduce \
+             FALLBACK in declaration order",
+        );
+
+        // (2) layer-kind — three-way partition. LAYER_DEFAULTS is a
+        // singleton pole, so it agrees with ONLY_DEFAULTS_BY_CODE_UNIQUENESS
+        // as a bare slice equality.
+        let layer_file_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_FILE_BY_SOURCE,
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            layer_file_from_identity,
+            AttributionRule::LAYER_FILE.to_vec(),
+            "identity singleton union on the file-layer pole must reproduce \
+             LAYER_FILE in declaration order",
+        );
+        let layer_env_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_ENV_BY_PREFIX,
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            layer_env_from_identity,
+            AttributionRule::LAYER_ENV.to_vec(),
+            "identity singleton union on the env-layer pole must reproduce \
+             LAYER_ENV in declaration order",
+        );
+        assert_eq!(
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS.to_vec(),
+            AttributionRule::LAYER_DEFAULTS.to_vec(),
+            "the singleton identity slice on DefaultsByCodeUniqueness must \
+             reproduce LAYER_DEFAULTS exactly",
+        );
+
+        // (3) metadata-axis — the interleaved projection. The source
+        // pole holds FileBySource (index 0 in ALL) and
+        // DefaultsByCodeUniqueness (index 4 in ALL), so the union
+        // ONLY_FILE_BY_SOURCE + ONLY_DEFAULTS_BY_CODE_UNIQUENESS
+        // reproduces METADATA_SOURCE_AXIS as a neither-prefix-nor-suffix
+        // projection of ALL. The name pole holds the three
+        // consecutive middle variants FileByMetadataName, EnvByPrefix,
+        // EnvByUniqueness (indices 1..=3 in ALL).
+        let metadata_source_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_FILE_BY_SOURCE,
+            AttributionRule::ONLY_DEFAULTS_BY_CODE_UNIQUENESS,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            metadata_source_from_identity,
+            AttributionRule::METADATA_SOURCE_AXIS.to_vec(),
+            "identity singleton union on the metadata-source pole must \
+             reproduce METADATA_SOURCE_AXIS in declaration order",
+        );
+        let metadata_name_from_identity: Vec<AttributionRule> = [
+            AttributionRule::ONLY_FILE_BY_METADATA_NAME,
+            AttributionRule::ONLY_ENV_BY_PREFIX,
+            AttributionRule::ONLY_ENV_BY_UNIQUENESS,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            metadata_name_from_identity,
+            AttributionRule::METADATA_NAME_AXIS.to_vec(),
+            "identity singleton union on the metadata-name pole must \
+             reproduce METADATA_NAME_AXIS in declaration order",
+        );
     }
 
     #[test]
