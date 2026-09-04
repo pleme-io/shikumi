@@ -544,6 +544,106 @@ impl SecretErrorKind {
         matches!(self, Self::Shikumi)
     }
 
+    /// Returns `true` for the four BACKEND-ORIGIN cells of the five-way
+    /// [`SecretErrorKind`] axis — [`Self::NotFound`] (the backend
+    /// confirmed the secret is absent), [`Self::Unauthorized`] (the
+    /// backend refused on permission), [`Self::Unsupported`] (the
+    /// backend does not advertise the operation in its
+    /// [`Capabilities`]), and [`Self::Backend`] (transport / network /
+    /// serialization failure talking to the backend) — `false` on the
+    /// single host-origin cell [`Self::Shikumi`] (the pass-through
+    /// wrapper for errors originating in the [`crate::secret`] resolver
+    /// layer or in the CLI/shell backends' shikumi-side glue, distinct
+    /// from the backend's own error surface).
+    ///
+    /// Compound-polarity pole of the (backend-origin × host-origin)
+    /// meta-partition on the failure-origin axis of the closed five-way
+    /// [`SecretErrorKind`] primitive. Paired with [`Self::is_host_origin`],
+    /// the two predicates form a closed binary partition of
+    /// [`Self::ALL`] — every kind is *either* backend-origin (the four
+    /// tag-side [`SecretError`] arms emitted by a backend-side
+    /// [`SecretClient`] impl talking to its own store) *or* host-origin
+    /// (the one [`SecretError::Shikumi`] arm carrying a wrapped
+    /// [`crate::ShikumiError`]) — never both, never neither.
+    ///
+    /// **Cross-surface: agreement with [`SecretError::as_shikumi`].**
+    /// A borrowed [`SecretError`] satisfies `err.as_shikumi().is_none()`
+    /// exactly when its kind is backend-origin — the tag-side
+    /// projection returns `Some(&ShikumiError)` on and only on the
+    /// [`SecretError::Shikumi`] arm, so
+    /// `err.as_shikumi().is_none() == err.kind().is_backend_origin()`
+    /// holds for every canonical construction-table cell — pinned by
+    /// [`tests::secret_error_backend_origin_agrees_with_as_shikumi_none_pointwise`].
+    ///
+    /// The compound ↔ complement law (`kind.is_backend_origin() ==
+    /// !kind.is_host_origin()`) is pinned by
+    /// [`tests::secret_error_kind_is_backend_origin_is_complement_of_is_host_origin`].
+    /// The compound ↔ four-arm disjunction law
+    /// (`kind.is_backend_origin() == kind.is_not_found()
+    /// || kind.is_unauthorized() || kind.is_unsupported()
+    /// || kind.is_backend()`) is pinned by
+    /// [`tests::secret_error_kind_is_backend_origin_agrees_with_disjunction_of_backend_siblings`].
+    /// The closed binary partition is pinned by
+    /// [`tests::secret_error_kind_backend_origin_predicates_are_a_closed_binary_partition`].
+    /// The compile-time weld is pinned by
+    /// [`tests::secret_error_kind_is_backend_origin_is_const_callable`].
+    ///
+    /// Peer of the closed-binary-pair discipline the neighbouring
+    /// compound-polarity axes carry —
+    /// [`crate::SecretOperation::is_mutating`] /
+    /// [`crate::SecretOperation::is_non_mutating`] on the six-way
+    /// read-vs-write axis, [`SecretClientKind::is_cloud_secret_manager`]
+    /// / [`SecretClientKind::is_non_cloud_secret_manager`] on the
+    /// seven-way transport axis,
+    /// [`crate::secret::SecretBackendKind::is_cloud_secret_manager`] /
+    /// [`crate::secret::SecretBackendKind::is_non_cloud_secret_manager`]
+    /// on the eight-way payload-carrying backend axis.
+    ///
+    /// A future sixth [`Self`] variant landing without explicit
+    /// origin-polarity assignment collapses the complement law
+    /// immediately: the new variant is either `true` on both
+    /// predicates (impossible) or `false` on both (the polarity axis
+    /// has no answer for it), failing the closed-binary-partition pin
+    /// before drifting through any per-polarity consumer.
+    #[must_use]
+    pub const fn is_backend_origin(self) -> bool {
+        matches!(
+            self,
+            Self::NotFound | Self::Unauthorized | Self::Unsupported | Self::Backend
+        )
+    }
+
+    /// Returns `true` for the single HOST-ORIGIN cell of the five-way
+    /// [`SecretErrorKind`] axis — [`Self::Shikumi`], the pass-through
+    /// wrapper for errors originating in the [`crate::secret`] resolver
+    /// layer or in the CLI/shell backends' shikumi-side glue — `false`
+    /// on the four backend-origin cells ([`Self::NotFound`],
+    /// [`Self::Unauthorized`], [`Self::Unsupported`], [`Self::Backend`]).
+    ///
+    /// Complement pole of [`Self::is_backend_origin`] on the
+    /// backend-vs-host origin meta-partition; equivalent to
+    /// `!self.is_backend_origin()` on today's closed five-way axis and
+    /// to `self.is_shikumi()` on the closed universe today. Named
+    /// separately (rather than left as either negation or an alias)
+    /// so consumers reading the host-origin half of the axis no longer
+    /// negate [`Self::is_backend_origin`] nor spell the identity check
+    /// against [`Self::Shikumi`] — a shape whose polarity a future
+    /// tertiary origin (a hypothetical `Middleware` origin naming a
+    /// pipe stage between the resolver and the backend that neither
+    /// the backend nor the resolver owns, say) would silently flip:
+    /// `!is_backend_origin` would then include the tertiary alongside
+    /// [`Self::Shikumi`] whereas the direct predicate stays true only
+    /// for the declared host-origin cells and forces the tertiary to
+    /// declare its own polarity.
+    ///
+    /// See [`Self::is_backend_origin`] for the full compound-polarity
+    /// contract, the cross-surface [`SecretError::as_shikumi`] agreement
+    /// law, and the load-bearing test suite.
+    #[must_use]
+    pub const fn is_host_origin(self) -> bool {
+        matches!(self, Self::Shikumi)
+    }
+
     /// The single [`Self::NotFound`] pole of the five-way identity
     /// meta-partition on the [`SecretErrorKind`] axis at the static-
     /// slice altitude — the singleton slice `&[Self::NotFound]`
@@ -636,6 +736,116 @@ impl SecretErrorKind {
     /// See [`Self::ONLY_NOT_FOUND`] for the full contract,
     /// load-bearing pins, and idiom-peer landings.
     pub const ONLY_SHIKUMI: &'static [Self] = &[Self::Shikumi];
+
+    /// The four BACKEND-ORIGIN [`SecretErrorKind`] variants —
+    /// [`Self::NotFound`] (the backend confirmed the secret is absent),
+    /// [`Self::Unauthorized`] (the backend refused on permission),
+    /// [`Self::Unsupported`] (the backend does not advertise the
+    /// operation in its [`Capabilities`]), and [`Self::Backend`]
+    /// (transport / network / serialization failure talking to the
+    /// backend) — in the SAME relative declaration order they occupy
+    /// in [`Self::ALL`], carrying the *backend-origin* pole of the
+    /// (backend-origin × host-origin) polarity axis at the secret-
+    /// client error-kind primitive's OWN altitude, mirroring the
+    /// shipped boolean predicate [`Self::is_backend_origin`] one
+    /// altitude down: every variant in this slice satisfies
+    /// `kind.is_backend_origin()`, and no variant outside it does.
+    ///
+    /// Paired with [`Self::HOST_ORIGIN`], the two disjoint slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same
+    /// way the shipped boolean predicates [`Self::is_backend_origin`]
+    /// / [`Self::is_host_origin`] meta-partition it at the boolean
+    /// altitude. The two constants sit in the same
+    /// `impl SecretErrorKind` block as [`Self::ALL`] and the five
+    /// identity singletons [`Self::ONLY_NOT_FOUND`] /
+    /// [`Self::ONLY_UNAUTHORIZED`] / [`Self::ONLY_UNSUPPORTED`] /
+    /// [`Self::ONLY_BACKEND`] / [`Self::ONLY_SHIKUMI`] (commit
+    /// `1a4ae14`), and follow the same
+    /// `pub const &'static [Self]` static-slice discipline.
+    ///
+    /// Written as an explicit four-variant slice literal in the SAME
+    /// relative declaration order the backend-origin pole occupies in
+    /// [`Self::ALL`], rather than derived by filtering [`Self::ALL`]
+    /// through [`Self::is_backend_origin`] at const-fn altitude — so
+    /// the two declaration surfaces (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the
+    /// same meta-partition, and a future edit that shifts a variant
+    /// across the origin polarity on ONE surface but not the other
+    /// diverges at test time on the first shape where they disagree.
+    ///
+    /// **Idiom-peer.** First compound-polarity landing on the
+    /// [`SecretErrorKind`] primitive (the five identity singletons at
+    /// commit `1a4ae14` already carry the identity meta-partition on
+    /// the same primitive). Matches altitude-for-altitude the
+    /// (mutating × non-mutating) pair
+    /// [`crate::SecretOperation::MUTATING`] /
+    /// [`crate::SecretOperation::NON_MUTATING`] (commit `b2cfa2a`) on
+    /// the sibling six-way [`crate::SecretOperation`] primitive, the
+    /// (cloud × non-cloud) pair
+    /// [`SecretClientKind::CLOUD_SECRET_MANAGER`] /
+    /// [`SecretClientKind::NON_CLOUD_SECRET_MANAGER`] on the sibling
+    /// seven-way [`SecretClientKind`] primitive, and the (cloud ×
+    /// non-cloud) pair
+    /// [`crate::secret::SecretBackendKind::CLOUD_SECRET_MANAGER`] /
+    /// [`crate::secret::SecretBackendKind::NON_CLOUD_SECRET_MANAGER`]
+    /// on the sibling eight-way [`crate::secret::SecretBackendKind`]
+    /// primitive.
+    ///
+    /// **Cross-surface: agreement with [`SecretError::as_shikumi`].**
+    /// A borrowed [`SecretError`] satisfies `err.as_shikumi().is_none()`
+    /// exactly when its kind is in this slice — the tag-side
+    /// projection returns `Some(&ShikumiError)` on and only on the
+    /// [`SecretError::Shikumi`] arm — pinned by
+    /// [`tests::secret_error_backend_origin_agrees_with_as_shikumi_none_pointwise`].
+    ///
+    /// The two agreement laws
+    /// (`BACKEND_ORIGIN.iter().all(|k| k.is_backend_origin())` and
+    /// `BACKEND_ORIGIN.iter().all(|k| !k.is_host_origin())`) are pinned
+    /// by
+    /// [`tests::secret_error_kind_backend_origin_slice_agrees_with_is_backend_origin_predicate`].
+    /// Partition invariant with [`Self::HOST_ORIGIN`]:
+    /// [`tests::secret_error_kind_backend_origin_and_host_origin_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::secret_error_kind_backend_origin_and_host_origin_slices_preserve_all_order`].
+    /// No duplicates:
+    /// [`tests::secret_error_kind_backend_origin_slice_has_no_duplicates`].
+    /// Cardinality-agreement with the two boolean poles:
+    /// [`tests::secret_error_kind_backend_origin_and_host_origin_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::secret_error_kind_backend_origin_and_host_origin_slices_are_const_addressable`].
+    pub const BACKEND_ORIGIN: &'static [Self] = &[
+        Self::NotFound,
+        Self::Unauthorized,
+        Self::Unsupported,
+        Self::Backend,
+    ];
+
+    /// The single HOST-ORIGIN [`SecretErrorKind`] variant —
+    /// [`Self::Shikumi`], the pass-through wrapper for errors
+    /// originating in the [`crate::secret`] resolver layer or in the
+    /// CLI/shell backends' shikumi-side glue — in the SAME relative
+    /// declaration position it occupies in [`Self::ALL`], carrying
+    /// the *host-origin* pole of the (backend-origin × host-origin)
+    /// polarity axis at the secret-client error-kind primitive's OWN
+    /// altitude, mirroring the shipped boolean predicate
+    /// [`Self::is_host_origin`] one altitude down.
+    ///
+    /// Complement pole of [`Self::BACKEND_ORIGIN`] on the
+    /// (backend-origin × host-origin) meta-partition; also equal to
+    /// the identity singleton [`Self::ONLY_SHIKUMI`] on today's
+    /// closed five-way axis. Named separately (rather than left as an
+    /// alias) so consumers reading the host-origin half of the axis
+    /// no longer spell the identity singleton at their site — a shape
+    /// whose slice a future tertiary host-origin variant (a
+    /// hypothetical `Middleware` origin between the resolver and the
+    /// backend, say) would silently extend: an alias for
+    /// [`Self::ONLY_SHIKUMI`] would then remain a singleton while
+    /// [`Self::HOST_ORIGIN`] would extend in lockstep with
+    /// [`Self::is_host_origin`].
+    ///
+    /// See [`Self::BACKEND_ORIGIN`] for the full contract, the
+    /// discipline, the load-bearing pins, and idiom-peer landings.
+    pub const HOST_ORIGIN: &'static [Self] = &[Self::Shikumi];
 }
 
 impl crate::ClosedAxis for SecretErrorKind {
@@ -10566,6 +10776,350 @@ mod tests {
                 + ONLY_SHIKUMI_LEN,
             ALL_LEN,
         );
+    }
+
+    // ── SecretErrorKind — BACKEND_ORIGIN / HOST_ORIGIN compound-polarity ──
+    //
+    // First compound-polarity landing on the closed five-way
+    // SecretErrorKind primitive, complementing the five identity
+    // singletons (ONLY_NOT_FOUND / ONLY_UNAUTHORIZED / ONLY_UNSUPPORTED
+    // / ONLY_BACKEND / ONLY_SHIKUMI at commit `1a4ae14`) with the
+    // (backend-origin × host-origin) meta-partition slice pair.
+    // Peer of `SecretOperation::MUTATING / NON_MUTATING` (commit
+    // `b2cfa2a`), `SecretClientKind::CLOUD_SECRET_MANAGER /
+    // NON_CLOUD_SECRET_MANAGER`, and `SecretBackendKind::CLOUD_SECRET_MANAGER
+    // / NON_CLOUD_SECRET_MANAGER` on the sibling closed-enum primitives.
+
+    #[test]
+    fn secret_error_kind_is_backend_origin_true_only_for_backend_origin_variants() {
+        // Positive-and-negative pin: `is_backend_origin` returns true
+        // for the four backend-origin cells (NotFound, Unauthorized,
+        // Unsupported, Backend) and false for the single host-origin
+        // cell (Shikumi). The `matches!` arm in the predicate body
+        // reads directly against this table; the pin catches a future
+        // edit that drops one of the four backend arms or admits the
+        // Shikumi arm without touching the paired boolean sibling.
+        assert!(SecretErrorKind::NotFound.is_backend_origin());
+        assert!(SecretErrorKind::Unauthorized.is_backend_origin());
+        assert!(SecretErrorKind::Unsupported.is_backend_origin());
+        assert!(SecretErrorKind::Backend.is_backend_origin());
+        assert!(!SecretErrorKind::Shikumi.is_backend_origin());
+    }
+
+    #[test]
+    fn secret_error_kind_is_host_origin_true_only_for_shikumi_variant() {
+        // Positive-and-negative pin on the complement pole: only the
+        // single host-origin cell (Shikumi) satisfies `is_host_origin`,
+        // never the four backend-origin cells. `is_host_origin`
+        // coincides with `is_shikumi` on today's closed five-way axis
+        // (both are `matches!(_, Self::Shikumi)`); a future host-
+        // origin variant landing (see `is_host_origin`'s docstring for
+        // the hypothetical `Middleware` shape) would split the two
+        // predicates apart on that variant while this pin still holds.
+        assert!(!SecretErrorKind::NotFound.is_host_origin());
+        assert!(!SecretErrorKind::Unauthorized.is_host_origin());
+        assert!(!SecretErrorKind::Unsupported.is_host_origin());
+        assert!(!SecretErrorKind::Backend.is_host_origin());
+        assert!(SecretErrorKind::Shikumi.is_host_origin());
+    }
+
+    #[test]
+    fn secret_error_kind_is_backend_origin_is_complement_of_is_host_origin() {
+        // Compound ↔ complement law: `k.is_backend_origin()` and
+        // `k.is_host_origin()` are exact negations of each other over
+        // every kind in `SecretErrorKind::ALL`. Direct application of
+        // the closed-binary partition law at the boolean altitude.
+        // A future tertiary origin arm (hypothetical `Middleware`)
+        // added without extending either predicate would fail here on
+        // the tertiary variant (both `false`, so complement broken).
+        for k in SecretErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                k.is_backend_origin(),
+                !k.is_host_origin(),
+                "is_backend_origin must be the complement of is_host_origin on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_is_backend_origin_agrees_with_disjunction_of_backend_siblings() {
+        // Compound ↔ four-arm disjunction law: `k.is_backend_origin()
+        // == k.is_not_found() || k.is_unauthorized() || k.is_unsupported()
+        // || k.is_backend()`. A future edit that adds a fifth backend-
+        // origin arm to the compound predicate without landing a
+        // sibling identity predicate (or vice versa) fails here on
+        // the drifting variant.
+        for k in SecretErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                k.is_backend_origin(),
+                k.is_not_found() || k.is_unauthorized() || k.is_unsupported() || k.is_backend(),
+                "is_backend_origin must equal the disjunction of the four \
+                 backend-side identity predicates on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_predicates_are_a_closed_binary_partition() {
+        // Closed binary partition invariant at the boolean altitude:
+        // every kind satisfies exactly one of the two polarity poles,
+        // never both, never neither. Direct application of the closed-
+        // partition invariant on the (backend-origin × host-origin)
+        // axis. A hypothetical sixth variant that landed without
+        // explicit polarity assignment collapses this pin (both `false`
+        // ⇒ the polarity axis has no answer for the new variant).
+        for k in SecretErrorKind::ALL.iter().copied() {
+            let backend = k.is_backend_origin();
+            let host = k.is_host_origin();
+            assert!(
+                backend ^ host,
+                "SecretErrorKind::{k:?} must satisfy EXACTLY ONE of \
+                 is_backend_origin (={backend}) and is_host_origin (={host})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_is_backend_origin_is_const_callable() {
+        // Compile-time weld: the compound-polarity predicates are
+        // `const fn`, so composition of `k.is_backend_origin()` and
+        // `k.is_host_origin()` remains available at const-evaluation
+        // position. A future edit that dropped the `const` qualifier
+        // on either predicate fails the const-binding here before
+        // drifting through a downstream const-context consumer.
+        const NOT_FOUND_IS_BACKEND_ORIGIN: bool = SecretErrorKind::NotFound.is_backend_origin();
+        const SHIKUMI_IS_HOST_ORIGIN: bool = SecretErrorKind::Shikumi.is_host_origin();
+        const SHIKUMI_IS_BACKEND_ORIGIN: bool = SecretErrorKind::Shikumi.is_backend_origin();
+        assert!(NOT_FOUND_IS_BACKEND_ORIGIN);
+        assert!(SHIKUMI_IS_HOST_ORIGIN);
+        assert!(!SHIKUMI_IS_BACKEND_ORIGIN);
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_slice_agrees_with_is_backend_origin_predicate() {
+        // Bidirectional weld between the slice literal
+        // `SecretErrorKind::BACKEND_ORIGIN` and the boolean predicate
+        // `SecretErrorKind::is_backend_origin` on the (backend-origin ×
+        // host-origin) polarity axis. Every slice entry satisfies the
+        // backend-origin pole (and NOT the host-origin one), every
+        // HOST_ORIGIN entry satisfies the host-origin pole (and NOT
+        // the backend-origin one), and every ALL cell agrees on
+        // membership under the boolean predicate. Idiom-peer of the
+        // `format_shikumi_provided_slice_agrees_with_has_shikumi_provider_predicate`
+        // pattern one primitive over.
+        for k in SecretErrorKind::BACKEND_ORIGIN.iter().copied() {
+            assert!(
+                k.is_backend_origin(),
+                "SecretErrorKind::BACKEND_ORIGIN entry {k:?} must satisfy is_backend_origin()",
+            );
+            assert!(
+                !k.is_host_origin(),
+                "SecretErrorKind::BACKEND_ORIGIN entry {k:?} must NOT satisfy is_host_origin()",
+            );
+        }
+        for k in SecretErrorKind::HOST_ORIGIN.iter().copied() {
+            assert!(
+                k.is_host_origin(),
+                "SecretErrorKind::HOST_ORIGIN entry {k:?} must satisfy is_host_origin()",
+            );
+            assert!(
+                !k.is_backend_origin(),
+                "SecretErrorKind::HOST_ORIGIN entry {k:?} must NOT satisfy is_backend_origin()",
+            );
+        }
+        for k in SecretErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                SecretErrorKind::BACKEND_ORIGIN.contains(&k),
+                k.is_backend_origin(),
+                "BACKEND_ORIGIN membership must agree with is_backend_origin() on {k:?}",
+            );
+            assert_eq!(
+                SecretErrorKind::HOST_ORIGIN.contains(&k),
+                k.is_host_origin(),
+                "HOST_ORIGIN membership must agree with is_host_origin() on {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_and_host_origin_slices_partition_all() {
+        // Partition invariant: the two per-half slices are disjoint
+        // and their union covers ALL. Direct application of the
+        // meta-partition sum law at the slice altitude on the
+        // failure-origin polarity. A variant landing on both slices
+        // or on neither breaks the partition here before any consumer
+        // reasoning about the polarity as a covering meta-partition
+        // observes the drift.
+        for k in SecretErrorKind::BACKEND_ORIGIN.iter().copied() {
+            assert!(
+                !SecretErrorKind::HOST_ORIGIN.contains(&k),
+                "SecretErrorKind::{k:?} appears in BOTH BACKEND_ORIGIN and HOST_ORIGIN",
+            );
+        }
+        for k in SecretErrorKind::ALL.iter().copied() {
+            let in_backend = SecretErrorKind::BACKEND_ORIGIN.contains(&k);
+            let in_host = SecretErrorKind::HOST_ORIGIN.contains(&k);
+            assert!(
+                in_backend || in_host,
+                "SecretErrorKind::{k:?} is in NEITHER BACKEND_ORIGIN nor HOST_ORIGIN",
+            );
+            assert!(
+                !(in_backend && in_host),
+                "SecretErrorKind::{k:?} is in BOTH BACKEND_ORIGIN and HOST_ORIGIN",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_and_host_origin_slices_preserve_all_order() {
+        // Order-preservation invariant: each per-half slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. Written
+        // as explicit slice literals (rather than derived at const-
+        // fn altitude), so the pin catches a future edit that shifts
+        // the declaration order of one surface without the other.
+        let backend_from_all: Vec<SecretErrorKind> = SecretErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_backend_origin())
+            .collect();
+        let host_from_all: Vec<SecretErrorKind> = SecretErrorKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.is_host_origin())
+            .collect();
+        assert_eq!(
+            SecretErrorKind::BACKEND_ORIGIN,
+            backend_from_all.as_slice(),
+            "BACKEND_ORIGIN must equal ALL.iter().filter(is_backend_origin).collect() pointwise",
+        );
+        assert_eq!(
+            SecretErrorKind::HOST_ORIGIN,
+            host_from_all.as_slice(),
+            "HOST_ORIGIN must equal ALL.iter().filter(is_host_origin).collect() pointwise",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_slice_has_no_duplicates() {
+        // No-duplicates invariant: each per-half slice is a set under
+        // the discriminant Eq relation. A slice literal accidentally
+        // repeating a variant would inflate the cardinality-agreement
+        // and break the partition-with-ALL invariant; this pin
+        // catches the duplication at the slice-literal surface first.
+        for slice in [
+            SecretErrorKind::BACKEND_ORIGIN,
+            SecretErrorKind::HOST_ORIGIN,
+        ] {
+            let mut seen: Vec<SecretErrorKind> = Vec::new();
+            for k in slice.iter().copied() {
+                assert!(
+                    !seen.contains(&k),
+                    "duplicate SecretErrorKind::{k:?} in per-half slice {slice:?}",
+                );
+                seen.push(k);
+            }
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_and_host_origin_slice_lengths_agree_with_boolean_pole_cardinalities()
+     {
+        // Cross-altitude cardinality-agreement pin: the per-half slice
+        // lengths equal the boolean-filter counts on
+        // SecretErrorKind::ALL (4 + 1 = 5). A future edit shifting a
+        // variant across the polarity on ONE surface (slice literal
+        // or boolean predicate) diverges here first.
+        let backend_count = SecretErrorKind::ALL
+            .iter()
+            .filter(|k| k.is_backend_origin())
+            .count();
+        let host_count = SecretErrorKind::ALL
+            .iter()
+            .filter(|k| k.is_host_origin())
+            .count();
+        assert_eq!(
+            SecretErrorKind::BACKEND_ORIGIN.len(),
+            backend_count,
+            "BACKEND_ORIGIN.len() must equal count of ALL entries satisfying is_backend_origin()",
+        );
+        assert_eq!(
+            SecretErrorKind::HOST_ORIGIN.len(),
+            host_count,
+            "HOST_ORIGIN.len() must equal count of ALL entries satisfying is_host_origin()",
+        );
+        assert_eq!(SecretErrorKind::BACKEND_ORIGIN.len(), 4);
+        assert_eq!(SecretErrorKind::HOST_ORIGIN.len(), 1);
+        assert_eq!(
+            SecretErrorKind::BACKEND_ORIGIN.len() + SecretErrorKind::HOST_ORIGIN.len(),
+            SecretErrorKind::ALL.len(),
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_backend_origin_and_host_origin_slices_are_const_addressable() {
+        // Const-time addressability pin: the two per-half slices are
+        // reachable at const-evaluation position (a `const` binding
+        // of `.len()`), so a future lift of either constant behind a
+        // `pub fn` (which would drop const-callability) fails here
+        // before drifting through a downstream `const`-context
+        // consumer.
+        const BACKEND_ORIGIN_LEN: usize = SecretErrorKind::BACKEND_ORIGIN.len();
+        const HOST_ORIGIN_LEN: usize = SecretErrorKind::HOST_ORIGIN.len();
+        const ALL_LEN: usize = SecretErrorKind::ALL.len();
+        assert_eq!(BACKEND_ORIGIN_LEN, 4);
+        assert_eq!(HOST_ORIGIN_LEN, 1);
+        assert_eq!(BACKEND_ORIGIN_LEN + HOST_ORIGIN_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn secret_error_kind_host_origin_slice_coincides_with_only_shikumi_today() {
+        // Coincidence-and-distinctness pin on the identity-vs-
+        // compound partition. On today's closed five-way primitive
+        // HOST_ORIGIN and ONLY_SHIKUMI are pointwise equal (both are
+        // `&[SecretErrorKind::Shikumi]`), which is a load-bearing
+        // property of the closed universe today — a future tertiary
+        // host-origin variant landing (see `is_host_origin`'s doc
+        // for the hypothetical `Middleware` shape) would extend
+        // HOST_ORIGIN in lockstep with `is_host_origin` while
+        // ONLY_SHIKUMI stayed a singleton, and this pin would then
+        // fail explicitly — announcing the axis-broadening at exactly
+        // the site where the two witnesses split. That announcement
+        // is the discipline-load-bearing outcome: the two constants
+        // are declared independently (not aliased), so their
+        // divergence is observable at compile time rather than
+        // silent.
+        assert_eq!(
+            SecretErrorKind::HOST_ORIGIN,
+            SecretErrorKind::ONLY_SHIKUMI,
+            "HOST_ORIGIN must coincide with ONLY_SHIKUMI on today's closed \
+             five-way SecretErrorKind axis (a future tertiary host-origin \
+             variant landing must extend HOST_ORIGIN and update this pin)",
+        );
+    }
+
+    #[test]
+    fn secret_error_backend_origin_agrees_with_as_shikumi_none_pointwise() {
+        // Cross-surface bridge: `err.as_shikumi().is_none()` agrees
+        // with `err.kind().is_backend_origin()` over the canonical
+        // construction table. The tag-side projection
+        // `SecretError::as_shikumi` returns `Some(&ShikumiError)`
+        // on and only on the `SecretError::Shikumi` arm, which is
+        // the sole host-origin kind — so a caller distinguishing the
+        // resolver-layer (host-origin) case from the backend-layer
+        // (backend-origin) case can phrase the check on either side.
+        // Peer of `secret_error_kind_shikumi_predicate_agrees_with_as_shikumi_pointwise`
+        // on the sibling (identity) partition of the same primitive.
+        for (err, expected_kind) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.as_shikumi().is_none(),
+                err.kind().is_backend_origin(),
+                "as_shikumi().is_none() must agree with kind().is_backend_origin() on {err:?}",
+            );
+            assert_eq!(
+                err.kind().is_backend_origin(),
+                expected_kind.is_backend_origin()
+            );
+        }
     }
 
     #[test]
