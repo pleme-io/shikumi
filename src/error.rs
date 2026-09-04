@@ -957,6 +957,149 @@ impl FieldPathLocalization {
     /// const-addressability pins.
     pub const NOT_APPLICABLE: &'static [Self] = &[Self::NotApplicable];
 
+    /// The single LOCALIZED [`FieldPathLocalization`] variant —
+    /// [`Self::Localized`] (the figment-attached-dotted-path pole of the
+    /// (localized × figment-unlocalized × not-applicable) identity
+    /// meta-partition on the field-localization axis) — in the SAME
+    /// relative declaration order it occupies in [`Self::ALL`], as a
+    /// `'static` slice constant at the primitive's OWN altitude on the
+    /// three-way field-localization axis. Mirrors the shipped boolean
+    /// predicate [`Self::is_localized`] one altitude down (per-variant
+    /// polarity) and follows the same `pub const &'static [Self]`
+    /// static-slice discipline as [`Self::ALL`].
+    ///
+    /// Paired with [`Self::ONLY_FIGMENT_UNLOCALIZED`] and
+    /// [`Self::ONLY_NOT_APPLICABLE`], the three disjoint singleton slices
+    /// partition [`Self::ALL`] at the static-slice altitude the same way
+    /// the shipped boolean predicates [`Self::is_localized`] /
+    /// [`Self::is_figment_unlocalized`] / [`Self::is_not_applicable`]
+    /// meta-partition it at the boolean altitude (per
+    /// [`tests::field_path_localization_per_variant_predicates_are_a_closed_ternary_partition`]).
+    /// The three constants sit in the same `impl FieldPathLocalization`
+    /// block as [`Self::ALL`] and the shipped compound-polarity
+    /// meta-partition [`Self::APPLICABLE`] / [`Self::NOT_APPLICABLE`],
+    /// and follow the same `pub const &'static [Self]` static-slice
+    /// discipline.
+    ///
+    /// Written as an explicit one-variant slice literal in the SAME
+    /// relative declaration order the localized pole occupies in
+    /// [`Self::ALL`], not derived by filtering [`Self::ALL`] through
+    /// [`Self::is_localized`] at const-fn altitude — so the two
+    /// declaration surfaces (the slice literal and the boolean
+    /// predicate) remain independent load-bearing witnesses of the same
+    /// identity meta-partition, and a future edit that shifts a variant
+    /// across the polarity on ONE surface but not the other diverges
+    /// at test time on the first shape where they disagree.
+    ///
+    /// A per-half consumer iterating [`Self::ONLY_LOCALIZED`] (a
+    /// diagnostics renderer emitting a source-span annotation only when
+    /// the leaf-key path is available; a CLI
+    /// `--filter-localization=localized` walking captured failure
+    /// records; a per-cell alerting bucket on the failure surface; an
+    /// attestation manifest recording the per-cell localization
+    /// histogram of resolved failures; a structured-log field surfacing
+    /// only failures with an attached dotted path) reaches the localized
+    /// pole without a runtime filter through
+    /// `FieldPathLocalization::ALL.iter().filter(|l| l.is_localized())`
+    /// — one static slice reference, const-addressable end-to-end,
+    /// ordered the same way [`Self::ALL`] is.
+    ///
+    /// Ternary peer of the shipped ternary
+    /// [`crate::AttributionRule::LAYER_FILE`] /
+    /// [`crate::AttributionRule::LAYER_ENV`] /
+    /// [`crate::AttributionRule::LAYER_DEFAULTS`] compound-polarity
+    /// meta-partition (commit `fae8271`) and of the shipped ternary
+    /// identity meta-partition
+    /// [`crate::FigmentSourceKind::FILE`] /
+    /// [`crate::FigmentSourceKind::CODE`] /
+    /// [`crate::FigmentSourceKind::CUSTOM`] (commit `723060b`) on the
+    /// figment-Source-axis kind; identity-partition peer of the shipped
+    /// quinary [`crate::AttributionRule::ONLY_FILE_BY_SOURCE`] / …
+    /// (commit `9ac2fcb`) and septenary
+    /// [`crate::ShikumiErrorKind::ONLY_NOT_FOUND`] / … (commit
+    /// `6e74116`) — the per-half meta-partition slice-constant
+    /// discipline applied here to the three-way
+    /// field-path-localization axis's identity meta-partition.
+    ///
+    /// A future quaternary variant (e.g. a `PartiallyLocalized` cell for
+    /// a source that reports a coarse-grained container but no leaf key,
+    /// referenced in [`Self::ALL`]'s docs) landing on [`Self`] must
+    /// either extend one slice in lockstep with the boolean predicate
+    /// that admits it, or introduce a fourth slice; the partition and
+    /// cardinality pins refuse a silent landing under the negation of
+    /// one of the existing three.
+    ///
+    /// The three-way agreement laws
+    /// (`ONLY_LOCALIZED.iter().all(|l| l.is_localized())`,
+    /// `!ONLY_LOCALIZED.iter().any(|l| l.is_figment_unlocalized())`,
+    /// `!ONLY_LOCALIZED.iter().any(|l| l.is_not_applicable())`, and the
+    /// symmetric laws on [`Self::ONLY_FIGMENT_UNLOCALIZED`] and
+    /// [`Self::ONLY_NOT_APPLICABLE`]) are pinned by
+    /// [`tests::field_path_localization_identity_slices_agree_with_identity_predicates`].
+    /// Ternary partition invariant across all three siblings:
+    /// [`tests::field_path_localization_identity_slices_partition_all`].
+    /// Order-preservation against [`Self::ALL`]:
+    /// [`tests::field_path_localization_identity_slices_preserve_all_order`].
+    /// No duplicates on any half:
+    /// [`tests::field_path_localization_identity_slices_have_no_duplicates`].
+    /// Cardinality-agreement with the boolean poles:
+    /// [`tests::field_path_localization_identity_slice_lengths_agree_with_boolean_pole_cardinalities`].
+    /// Const-time addressability:
+    /// [`tests::field_path_localization_identity_slices_are_const_addressable`].
+    /// Cross-altitude weld against the shipped compound-polarity
+    /// [`Self::APPLICABLE`] / [`Self::NOT_APPLICABLE`] meta-partition:
+    /// [`tests::field_path_localization_identity_slices_agree_with_compound_polarity_slices`].
+    pub const ONLY_LOCALIZED: &'static [Self] = &[Self::Localized];
+
+    /// The single FIGMENT-UNLOCALIZED [`FieldPathLocalization`] variant
+    /// — [`Self::FigmentUnlocalized`] (the figment-error-present-but-
+    /// empty-path pole of the identity meta-partition on the
+    /// field-localization axis) — in the SAME relative declaration order
+    /// it occupies in [`Self::ALL`], mirroring the shipped boolean
+    /// predicate [`Self::is_figment_unlocalized`] one altitude down.
+    ///
+    /// See [`Self::ONLY_LOCALIZED`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_figment_unlocalized`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality,
+    /// const-addressability, and cross-altitude weld pins that hold
+    /// uniformly across all three identity-partition halves.
+    pub const ONLY_FIGMENT_UNLOCALIZED: &'static [Self] = &[Self::FigmentUnlocalized];
+
+    /// The single NOT-APPLICABLE [`FieldPathLocalization`] variant —
+    /// [`Self::NotApplicable`] (the no-figment-error-at-all pole of the
+    /// identity meta-partition on the field-localization axis) — in the
+    /// SAME relative declaration order it occupies in [`Self::ALL`],
+    /// mirroring the shipped boolean predicate [`Self::is_not_applicable`]
+    /// one altitude down.
+    ///
+    /// At today's cardinality this singleton coincides pointwise with
+    /// the shipped compound-polarity slice [`Self::NOT_APPLICABLE`]
+    /// because the not-applicable pole of the (applicable ×
+    /// not-applicable) partition currently holds exactly one variant.
+    /// The two constants remain independent declaration surfaces even
+    /// so — one names the identity image of the [`Self::NotApplicable`]
+    /// cell (peer of [`Self::ONLY_LOCALIZED`] /
+    /// [`Self::ONLY_FIGMENT_UNLOCALIZED`] under the ternary identity
+    /// meta-partition), the other names the not-applicable half of the
+    /// coarser binary (applicable × not-applicable) meta-partition
+    /// (peer of [`Self::APPLICABLE`] under the binary applicable-vs-not
+    /// projection). A future variant landing on the not-applicable side
+    /// (e.g. an additional `no-error` cell for a fresh non-figment
+    /// error class) would extend [`Self::NOT_APPLICABLE`] with the new
+    /// variant but leave [`Self::ONLY_NOT_APPLICABLE`] unchanged, and
+    /// the two would diverge at the cross-altitude weld pin
+    /// [`tests::field_path_localization_identity_slices_agree_with_compound_polarity_slices`]
+    /// before drifting through a consumer that materializes one
+    /// altitude from the other.
+    ///
+    /// See [`Self::ONLY_LOCALIZED`] for the full contract, the discipline
+    /// behind the explicit slice literal (rather than a filter through
+    /// [`Self::is_not_applicable`]), and the load-bearing agreement,
+    /// partition, order-preservation, no-duplicates, cardinality,
+    /// const-addressability, and cross-altitude weld pins.
+    pub const ONLY_NOT_APPLICABLE: &'static [Self] = &[Self::NotApplicable];
+
     /// Canonical operator-facing lowercase name of the localization cell —
     /// [`Self::Localized`] renders as `"localized"`,
     /// [`Self::FigmentUnlocalized`] renders as `"figment-unlocalized"`,
@@ -10587,6 +10730,328 @@ mod tests {
         assert_eq!(APPLICABLE_LEN, 2);
         assert_eq!(NOT_APPLICABLE_LEN, 1);
         assert_eq!(APPLICABLE_LEN + NOT_APPLICABLE_LEN, ALL_LEN);
+    }
+
+    // ---- FieldPathLocalization::ONLY_LOCALIZED / ONLY_FIGMENT_UNLOCALIZED
+    // / ONLY_NOT_APPLICABLE identity slice constants ----
+    //
+    // Seven pins mirror the per-half meta-partition slice-constant
+    // discipline that shipped for AttributionRule's own identity
+    // meta-partition (`9ac2fcb`), applied here to the three-way
+    // field-path-localization axis's (localized × figment-unlocalized ×
+    // not-applicable) 1/1/1 identity meta-partition. Ternary peer of the
+    // shipped ternary identity landing on the figment-Source-axis kind
+    // (`FigmentSourceKind::FILE / CODE / CUSTOM`, `723060b`) two altitudes
+    // over and the shipped ternary compound-polarity landing on the
+    // attribution-rule axis (`AttributionRule::LAYER_FILE / LAYER_ENV /
+    // LAYER_DEFAULTS`, `fae8271`) one altitude over. Directly nominated
+    // by the (applicable × not-applicable) compound-polarity APPLICABLE /
+    // NOT_APPLICABLE landing (`9dad33d`) — the identity refinement is the
+    // next rung of the same discipline on this axis.
+
+    #[test]
+    fn field_path_localization_identity_slices_agree_with_identity_predicates() {
+        // Three-way agreement pin across the (localized ×
+        // figment-unlocalized × not-applicable) identity meta-partition.
+        // Every ONLY_LOCALIZED entry satisfies is_localized and neither
+        // is_figment_unlocalized nor is_not_applicable; every
+        // ONLY_FIGMENT_UNLOCALIZED entry satisfies is_figment_unlocalized
+        // alone; every ONLY_NOT_APPLICABLE entry satisfies
+        // is_not_applicable alone. Every FieldPathLocalization::ALL cell
+        // agrees on membership under each of the three boolean
+        // predicates. The two independent declaration surfaces (slice
+        // literals + boolean predicates) diverge at THIS pin on the
+        // first shape where they disagree, before a consumer that reads
+        // one altitude but not the other can observe the drift.
+        for loc in FieldPathLocalization::ONLY_LOCALIZED.iter().copied() {
+            assert!(
+                loc.is_localized(),
+                "ONLY_LOCALIZED {loc:?} must satisfy is_localized",
+            );
+            assert!(
+                !loc.is_figment_unlocalized(),
+                "ONLY_LOCALIZED {loc:?} must NOT satisfy is_figment_unlocalized",
+            );
+            assert!(
+                !loc.is_not_applicable(),
+                "ONLY_LOCALIZED {loc:?} must NOT satisfy is_not_applicable",
+            );
+        }
+        for loc in FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED
+            .iter()
+            .copied()
+        {
+            assert!(
+                loc.is_figment_unlocalized(),
+                "ONLY_FIGMENT_UNLOCALIZED {loc:?} must satisfy is_figment_unlocalized",
+            );
+            assert!(
+                !loc.is_localized(),
+                "ONLY_FIGMENT_UNLOCALIZED {loc:?} must NOT satisfy is_localized",
+            );
+            assert!(
+                !loc.is_not_applicable(),
+                "ONLY_FIGMENT_UNLOCALIZED {loc:?} must NOT satisfy is_not_applicable",
+            );
+        }
+        for loc in FieldPathLocalization::ONLY_NOT_APPLICABLE.iter().copied() {
+            assert!(
+                loc.is_not_applicable(),
+                "ONLY_NOT_APPLICABLE {loc:?} must satisfy is_not_applicable",
+            );
+            assert!(
+                !loc.is_localized(),
+                "ONLY_NOT_APPLICABLE {loc:?} must NOT satisfy is_localized",
+            );
+            assert!(
+                !loc.is_figment_unlocalized(),
+                "ONLY_NOT_APPLICABLE {loc:?} must NOT satisfy is_figment_unlocalized",
+            );
+        }
+        for loc in FieldPathLocalization::ALL.iter().copied() {
+            assert_eq!(
+                FieldPathLocalization::ONLY_LOCALIZED.contains(&loc),
+                loc.is_localized(),
+                "ONLY_LOCALIZED membership must agree with is_localized() on FieldPathLocalization::{loc:?}",
+            );
+            assert_eq!(
+                FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED.contains(&loc),
+                loc.is_figment_unlocalized(),
+                "ONLY_FIGMENT_UNLOCALIZED membership must agree with is_figment_unlocalized() on FieldPathLocalization::{loc:?}",
+            );
+            assert_eq!(
+                FieldPathLocalization::ONLY_NOT_APPLICABLE.contains(&loc),
+                loc.is_not_applicable(),
+                "ONLY_NOT_APPLICABLE membership must agree with is_not_applicable() on FieldPathLocalization::{loc:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_identity_slices_partition_all() {
+        // Ternary partition invariant: the three per-half slices are
+        // pairwise-disjoint and their union covers ALL. Direct
+        // application of the meta-partition sum law
+        // `ONLY_LOCALIZED.len() + ONLY_FIGMENT_UNLOCALIZED.len() +
+        //  ONLY_NOT_APPLICABLE.len() == ALL.len()` at the slice altitude
+        // on the field-localization axis.
+        let identity_slices: [&[FieldPathLocalization]; 3] = [
+            FieldPathLocalization::ONLY_LOCALIZED,
+            FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED,
+            FieldPathLocalization::ONLY_NOT_APPLICABLE,
+        ];
+        for (i, left) in identity_slices.iter().enumerate() {
+            for right in identity_slices.iter().skip(i + 1) {
+                for loc in left.iter() {
+                    assert!(
+                        !right.contains(loc),
+                        "FieldPathLocalization::{loc:?} appears in more than one identity slice",
+                    );
+                }
+            }
+        }
+        for loc in FieldPathLocalization::ALL.iter().copied() {
+            let held: usize = identity_slices
+                .iter()
+                .map(|s| usize::from(s.contains(&loc)))
+                .sum();
+            assert_eq!(
+                held, 1,
+                "FieldPathLocalization::{loc:?} must appear in exactly one identity \
+                 slice (found in {held})",
+            );
+        }
+        let sum: usize = identity_slices.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            sum,
+            FieldPathLocalization::ALL.len(),
+            "identity slice lengths must sum to ALL.len()",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_identity_slices_preserve_all_order() {
+        // Order-preservation pin: each per-half slice lists its
+        // variants in the SAME relative declaration order they appear
+        // in FieldPathLocalization::ALL — i.e., the slice equals
+        // `ALL.iter().filter(polarity).collect()` pointwise. Trivially
+        // true today because each identity slice is a singleton, but
+        // the shape catches a hypothetical multi-cell future variant
+        // reshuffle on the same axis (say a `PartiallyLocalized` cell
+        // landing under is_localized) that landed in an order not
+        // matching ALL's declaration order.
+        macro_rules! pin {
+            ($slice:expr, $predicate:ident) => {{
+                let from_all: Vec<FieldPathLocalization> = FieldPathLocalization::ALL
+                    .iter()
+                    .copied()
+                    .filter(|loc| loc.$predicate())
+                    .collect();
+                assert_eq!(
+                    from_all,
+                    $slice.to_vec(),
+                    concat!(
+                        stringify!($slice),
+                        " must be ALL-filtered by ",
+                        stringify!($predicate),
+                        " in declaration order",
+                    ),
+                );
+            }};
+        }
+        pin!(FieldPathLocalization::ONLY_LOCALIZED, is_localized);
+        pin!(
+            FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED,
+            is_figment_unlocalized
+        );
+        pin!(
+            FieldPathLocalization::ONLY_NOT_APPLICABLE,
+            is_not_applicable
+        );
+    }
+
+    #[test]
+    fn field_path_localization_identity_slices_have_no_duplicates() {
+        // No-duplicates pin on all three per-half slices — the slice
+        // literals are declared as sets under the discriminant `Eq`
+        // relation. A future edit that accidentally double-lists a
+        // variant on one half fails at THIS pin before drifting through
+        // any consumer that iterates the slice expecting a set.
+        for slice in [
+            FieldPathLocalization::ONLY_LOCALIZED,
+            FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED,
+            FieldPathLocalization::ONLY_NOT_APPLICABLE,
+        ] {
+            let mut seen: Vec<FieldPathLocalization> = Vec::with_capacity(slice.len());
+            for loc in slice {
+                assert!(
+                    !seen.contains(loc),
+                    "FieldPathLocalization identity slice {slice:?} contains \
+                     duplicate entry {loc:?}",
+                );
+                seen.push(*loc);
+            }
+            assert_eq!(seen.len(), slice.len());
+        }
+    }
+
+    #[test]
+    fn field_path_localization_identity_slice_lengths_agree_with_boolean_pole_cardinalities() {
+        // Cardinality-agreement pin: the per-half slice lengths equal
+        // the boolean-filter counts on FieldPathLocalization::ALL —
+        // i.e., `ONLY_LOCALIZED.len() ==
+        // ALL.iter().filter(is_localized).count()` (and symmetric for
+        // the two siblings) — the cardinality projection at the slice
+        // altitude agrees with the boolean-altitude projection on all
+        // three halves. Concrete positions today: 1 + 1 + 1 = 3 = ALL.
+        let counts = [
+            (
+                "is_localized",
+                FieldPathLocalization::ONLY_LOCALIZED.len(),
+                FieldPathLocalization::ALL
+                    .iter()
+                    .copied()
+                    .filter(|loc| loc.is_localized())
+                    .count(),
+            ),
+            (
+                "is_figment_unlocalized",
+                FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED.len(),
+                FieldPathLocalization::ALL
+                    .iter()
+                    .copied()
+                    .filter(|loc| loc.is_figment_unlocalized())
+                    .count(),
+            ),
+            (
+                "is_not_applicable",
+                FieldPathLocalization::ONLY_NOT_APPLICABLE.len(),
+                FieldPathLocalization::ALL
+                    .iter()
+                    .copied()
+                    .filter(|loc| loc.is_not_applicable())
+                    .count(),
+            ),
+        ];
+        for (name, slice_len, boolean_count) in counts {
+            assert_eq!(
+                slice_len, boolean_count,
+                "identity slice for {name} must match the {name} count on ALL",
+            );
+            assert_eq!(
+                slice_len, 1,
+                "identity slice for {name} must be a singleton",
+            );
+        }
+        assert_eq!(FieldPathLocalization::ALL.len(), 3);
+    }
+
+    #[test]
+    fn field_path_localization_identity_slices_are_const_addressable() {
+        // Const-time addressability pin: the three per-half slices are
+        // reachable at const evaluation position (a `const` binding of
+        // `.len()`), so a future lift of any constant behind a `pub fn`
+        // (which would drop const-callability) fails here before
+        // drifting through a downstream `const`-context consumer.
+        const ONLY_LOCALIZED_LEN: usize = FieldPathLocalization::ONLY_LOCALIZED.len();
+        const ONLY_FIGMENT_UNLOCALIZED_LEN: usize =
+            FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED.len();
+        const ONLY_NOT_APPLICABLE_LEN: usize = FieldPathLocalization::ONLY_NOT_APPLICABLE.len();
+        const ALL_LEN: usize = FieldPathLocalization::ALL.len();
+        assert_eq!(ONLY_LOCALIZED_LEN, 1);
+        assert_eq!(ONLY_FIGMENT_UNLOCALIZED_LEN, 1);
+        assert_eq!(ONLY_NOT_APPLICABLE_LEN, 1);
+        assert_eq!(
+            ONLY_LOCALIZED_LEN + ONLY_FIGMENT_UNLOCALIZED_LEN + ONLY_NOT_APPLICABLE_LEN,
+            ALL_LEN,
+        );
+    }
+
+    #[test]
+    fn field_path_localization_identity_slices_agree_with_compound_polarity_slices() {
+        // Cross-altitude weld between the identity meta-partition
+        // (ONLY_*) and the shipped compound-polarity meta-partition on
+        // the same axis (APPLICABLE / NOT_APPLICABLE, `9dad33d`). For
+        // every compound-polarity slice, the union of the identity
+        // singletons whose sole variant sits on that pole equals the
+        // shipped slice as a sequence in declaration order. A future
+        // rearrangement of one meta-partition without the other (say,
+        // reclassifying FigmentUnlocalized under the not-applicable
+        // side without updating the identity → compound aggregation)
+        // diverges at THIS pin, before drifting through a consumer that
+        // materializes one altitude from the other.
+
+        // Applicable pole covers the two figment-bearing variants in
+        // declaration order (Localized, FigmentUnlocalized).
+        let applicable_from_identity: Vec<FieldPathLocalization> = [
+            FieldPathLocalization::ONLY_LOCALIZED,
+            FieldPathLocalization::ONLY_FIGMENT_UNLOCALIZED,
+        ]
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+        assert_eq!(
+            applicable_from_identity,
+            FieldPathLocalization::APPLICABLE.to_vec(),
+            "identity singleton union on the applicable pole must reproduce \
+             APPLICABLE in declaration order",
+        );
+
+        // Not-applicable pole is a singleton at today's cardinality, so
+        // the identity singleton ONLY_NOT_APPLICABLE agrees with the
+        // compound-polarity slice NOT_APPLICABLE as bare slice equality
+        // — the same identity ↔ compound coincidence AttributionRule
+        // records between ONLY_DEFAULTS_BY_CODE_UNIQUENESS and
+        // LAYER_DEFAULTS on the ternary layer-kind projection
+        // (`9ac2fcb`). A future variant landing on the not-applicable
+        // side would extend NOT_APPLICABLE but leave ONLY_NOT_APPLICABLE
+        // unchanged, and the two would diverge at THIS pin.
+        assert_eq!(
+            FieldPathLocalization::ONLY_NOT_APPLICABLE.to_vec(),
+            FieldPathLocalization::NOT_APPLICABLE.to_vec(),
+            "the singleton identity slice on NotApplicable must \
+             reproduce NOT_APPLICABLE exactly",
+        );
     }
 
     // ---- AttributionAxis / AttributionRule::metadata_axis tests ----
