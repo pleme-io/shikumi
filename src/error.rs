@@ -2257,8 +2257,22 @@ impl AttributionRule {
     /// visibly stronger than name-axis ones, an attestation manifest
     /// recording the axis-partition histogram); this collapses that to
     /// one method call at the rule altitude.
+    ///
+    /// `const`-callable — the body is the two-hop composition
+    /// [`Self::metadata_axis`] → [`AttributionAxis::is_metadata_source`],
+    /// both [`pub const fn`] (the first lifted by `4f8a185`, the second
+    /// const since it was introduced). Closes the const-callability
+    /// parity gap on the metadata-axis rule-altitude convenience
+    /// predicates so the (source × name) binary partition now meets the
+    /// (file × env × defaults) ternary siblings
+    /// [`Self::is_file_layer`] / [`Self::is_env_layer`] /
+    /// [`Self::is_defaults_layer`] (lifted by `4eec3fa`) and the
+    /// (exact × fallback) sibling [`Self::is_exact`] (const since
+    /// introduced) at the same const-callability altitude on this
+    /// [`impl AttributionRule`] block. Welded at compile time by
+    /// [`tests::attribution_rule_metadata_axis_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_metadata_source_axis(self) -> bool {
+    pub const fn is_metadata_source_axis(self) -> bool {
         self.metadata_axis().is_metadata_source()
     }
 
@@ -2277,8 +2291,12 @@ impl AttributionRule {
     /// [`Self::is_metadata_name_axis`]) form a closed binary partition
     /// of [`Self::ALL`] — pinned by
     /// [`tests::attribution_rule_metadata_axis_predicates_are_a_closed_binary_partition`].
+    ///
+    /// `const`-callable on the same rationale as
+    /// [`Self::is_metadata_source_axis`]; welded at compile time by
+    /// [`tests::attribution_rule_metadata_axis_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_metadata_name_axis(self) -> bool {
+    pub const fn is_metadata_name_axis(self) -> bool {
         self.metadata_axis().is_metadata_name()
     }
 
@@ -8063,6 +8081,100 @@ mod tests {
             assert_eq!(
                 held, 1,
                 "exactly one metadata-axis sibling delegator must hold on {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_predicates_are_const_callable() {
+        // Weld the const-callability of the two metadata-axis
+        // convenience predicates (`AttributionRule::is_metadata_source_axis`,
+        // `AttributionRule::is_metadata_name_axis`) with the projection
+        // they route through (`AttributionRule::metadata_axis`, lifted
+        // to `const fn` by `4f8a185`) and the two
+        // `AttributionAxis::is_metadata_{source,name}` predicates they
+        // delegate to (const since they were introduced) at compile
+        // time.
+        //
+        // Rule-altitude analogue on the (metadata-source × metadata-name)
+        // axis of `attribution_rule_layer_predicates_are_const_callable`
+        // on the (file × env × defaults) layer axis and the
+        // confidence-axis welds on the (exact × fallback) axis: the
+        // three rule-altitude predicate cascades — confidence, layer-kind,
+        // metadata-axis — now live at the same const-callability
+        // altitude, and each cell of the 5×2 (variant × predicate) grid
+        // on the metadata axis welds directly through `const` bindings
+        // on the five payload-free variants.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through each of the two delegating predicates in
+        // const position. The moment any of the two predicates (or the
+        // routed `metadata_axis` projection, or the routed downstream
+        // `AttributionAxis::is_metadata_{source,name}` predicate) stops
+        // being const-callable, one of the ten `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // predicate — a `static PER_RULE: [(bool, bool);
+        // AttributionRule::ALL.len()]` metadata-axis diagnostic table,
+        // an attestation manifest carrying per-rule metadata-axis
+        // membership at compile time, a `const` sentinel for a
+        // compile-time-known rule's metadata-axis polarity.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const IMS_FBS: bool = R_FBS.is_metadata_source_axis();
+        const IMS_FBM: bool = R_FBM.is_metadata_source_axis();
+        const IMS_EBP: bool = R_EBP.is_metadata_source_axis();
+        const IMS_EBU: bool = R_EBU.is_metadata_source_axis();
+        const IMS_DBCU: bool = R_DBCU.is_metadata_source_axis();
+
+        const IMN_FBS: bool = R_FBS.is_metadata_name_axis();
+        const IMN_FBM: bool = R_FBM.is_metadata_name_axis();
+        const IMN_EBP: bool = R_EBP.is_metadata_name_axis();
+        const IMN_EBU: bool = R_EBU.is_metadata_name_axis();
+        const IMN_DBCU: bool = R_DBCU.is_metadata_name_axis();
+
+        // Pointwise: the (metadata-source × metadata-name) partition
+        // places each of the five rules under exactly one of the two
+        // metadata-axis predicates. The const-context welds above
+        // prove const-callability; the pins below prove the mapping
+        // stays agreed with the exhaustive match in `metadata_axis` —
+        // a future edit that shifted a rule off its metadata axis
+        // diverges here first, not at a downstream reader of a stale
+        // metadata-axis classification.
+        assert!(IMS_FBS);
+        assert!(!IMS_FBM);
+        assert!(!IMS_EBP);
+        assert!(!IMS_EBU);
+        assert!(IMS_DBCU);
+
+        assert!(!IMN_FBS);
+        assert!(IMN_FBM);
+        assert!(IMN_EBP);
+        assert!(IMN_EBU);
+        assert!(!IMN_DBCU);
+
+        // Cross-check: on every rule in `Self::ALL` the const-fn
+        // delegating predicate stays pointwise equal to the two-hop
+        // composition `metadata_axis().is_metadata_*()` it delegates
+        // to — the const-context welds above only exercise the five
+        // variants named at const-binding sites, but the runtime pin
+        // threads the full closed list through the same delegation to
+        // catch a future variant landing whose const-context weld was
+        // forgotten upstream.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.is_metadata_source_axis(),
+                rule.metadata_axis().is_metadata_source(),
+                "is_metadata_source_axis must route through metadata_axis().is_metadata_source() on {rule:?}",
+            );
+            assert_eq!(
+                rule.is_metadata_name_axis(),
+                rule.metadata_axis().is_metadata_name(),
+                "is_metadata_name_axis must route through metadata_axis().is_metadata_name() on {rule:?}",
             );
         }
     }
