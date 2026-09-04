@@ -3380,8 +3380,22 @@ impl ErrorLocalizationCoordinates {
     /// (compile-time exhaustive match) and the
     /// `error_localization_coordinates_realizable_partitions_into_8_realizable_and_10_unrealizable`
     /// cardinality split (test-time) to stay in lockstep.
+    ///
+    /// `const`-callable, so a downstream consumer holding a
+    /// compile-time-known coordinate cell — a `static
+    /// REALIZABLE_TABLE: [bool; ErrorLocalizationCoordinates::ALL.len()]`
+    /// per-cell realizability lookup, an attestation manifest
+    /// recording realizable-image membership at compile time, a
+    /// `const` sentinel for a compile-time-known (kind ×
+    /// localization) pair — projects onto the realizability
+    /// predicate at compile time without a runtime call, matching
+    /// the const-callability of the two hop-predicates it
+    /// composes ([`ShikumiErrorKind::is_figment_bearing`] and
+    /// [`FieldPathLocalization::is_applicable`], both `const` since
+    /// introduced). Pinned by
+    /// [`tests::error_localization_coordinates_is_realizable_is_const_callable`].
     #[must_use]
-    pub fn is_realizable(self) -> bool {
+    pub const fn is_realizable(self) -> bool {
         self.kind.is_figment_bearing() == self.localization.is_applicable()
     }
 }
@@ -13485,6 +13499,89 @@ mod tests {
                 cell.is_realizable(),
                 expected,
                 "cell {cell:?}: is_realizable must equal the figment-bearing law",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_is_realizable_is_const_callable() {
+        // Weld the const-callability of the realizability predicate
+        // `ErrorLocalizationCoordinates::is_realizable` and the two
+        // hop-predicates it composes — `ShikumiErrorKind::is_figment_bearing`
+        // (const since introduced) and `FieldPathLocalization::is_applicable`
+        // (const since introduced) — at compile time.
+        //
+        // Coordinate-cube analogue of the rule-altitude const-callability
+        // welds on the sibling `AttributionRule` closed primitive
+        // (`attribution_rule_layer_predicates_are_const_callable`,
+        // `attribution_rule_metadata_axis_predicates_are_const_callable`):
+        // the same discipline lifted to the product-cube altitude, where
+        // realizability is a composition of two closed-axis partition
+        // predicates rather than a single-axis polarity read. Four
+        // representative cells — one from each corner of the
+        // (figment-bearing × applicable) 2×2 realizability truth table —
+        // route each corner through the delegating predicate in const
+        // position, so the two-hop cascade
+        // (kind.is_figment_bearing() == localization.is_applicable())
+        // is pinned const-callable, not each hop in isolation. The
+        // moment `is_realizable` (or either of the two composed
+        // predicates it delegates to) stops being const-callable, one
+        // of the four `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the predicate — a `static REALIZABLE_TABLE:
+        // [bool; ErrorLocalizationCoordinates::ALL.len()]` per-cell
+        // realizability lookup, an attestation manifest recording
+        // realizable-image membership at compile time, a `const`
+        // sentinel for a compile-time-known (kind × localization) pair.
+        const C_FIGMENT_LOCALIZED: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::Figment,
+            localization: FieldPathLocalization::Localized,
+        };
+        const C_FIGMENT_NOT_APPLICABLE: ErrorLocalizationCoordinates =
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Figment,
+                localization: FieldPathLocalization::NotApplicable,
+            };
+        const C_PARSE_LOCALIZED: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::Parse,
+            localization: FieldPathLocalization::Localized,
+        };
+        const C_PARSE_NOT_APPLICABLE: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::Parse,
+            localization: FieldPathLocalization::NotApplicable,
+        };
+
+        const IS_R_FL: bool = C_FIGMENT_LOCALIZED.is_realizable();
+        const IS_R_FN: bool = C_FIGMENT_NOT_APPLICABLE.is_realizable();
+        const IS_R_PL: bool = C_PARSE_LOCALIZED.is_realizable();
+        const IS_R_PN: bool = C_PARSE_NOT_APPLICABLE.is_realizable();
+
+        // Pointwise: the four corners of the 2×2 (figment-bearing ×
+        // applicable) realizability truth table. The const-context
+        // welds above prove const-callability; the pins below prove the
+        // realizability mapping stays agreed with the figment-bearing
+        // law (is_figment_bearing == is_applicable) — a future edit
+        // that shifted either hop-predicate diverges here first, not at
+        // a downstream reader of a stale realizability classification.
+        assert!(IS_R_FL);
+        assert!(!IS_R_FN);
+        assert!(!IS_R_PL);
+        assert!(IS_R_PN);
+
+        // Cross-check: on every cell in `ALL` the const-fn
+        // realizability predicate stays pointwise equal to the two-hop
+        // composition `kind.is_figment_bearing() ==
+        // localization.is_applicable()` it delegates to — the
+        // const-context welds above only exercise the four corner cells
+        // named at const-binding sites, but the runtime pin threads the
+        // full closed 21-cell list through the same delegation to
+        // catch a future variant landing whose const-context weld was
+        // forgotten upstream.
+        for cell in ErrorLocalizationCoordinates::ALL.iter().copied() {
+            assert_eq!(
+                cell.is_realizable(),
+                cell.kind.is_figment_bearing() == cell.localization.is_applicable(),
+                "is_realizable must route through the figment-bearing law on {cell:?}",
             );
         }
     }
