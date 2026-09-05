@@ -5354,8 +5354,39 @@ impl ShikumiError {
     /// [`ShikumiError`] variant landing forces a corresponding
     /// [`ShikumiErrorKind`] variant in lockstep at compile time —
     /// the kind partition stays coherent by construction.
+    ///
+    /// `const fn`: const-callable on any `&ShikumiError` reachable in
+    /// const context (welded by
+    /// [`tests::shikumi_error_kind_is_const_callable`]). The
+    /// exhaustive-match body binds nothing on any arm (`Self::NotFound
+    /// { .. }`, `Self::Parse(_)`, …), so no `Drop`-carrying payload —
+    /// [`Vec<PathBuf>`], [`String`], [`notify::Error`],
+    /// [`std::io::Error`], [`Box<figment::Error>`] — is moved through
+    /// the projection at any const-eval point; the projection reads
+    /// only the enum discriminant and returns a `Copy + Eq + Hash`
+    /// [`ShikumiErrorKind`]. First const-lift on `impl ShikumiError`,
+    /// and the load-bearing one: it unlocks the same const promotion
+    /// for the seven tag-side sibling predicates that thread through
+    /// it ([`Self::is_not_found`] / [`Self::is_parse`] /
+    /// [`Self::is_watch`] / [`Self::is_io`] / [`Self::is_figment`] /
+    /// [`Self::is_extract`] / [`Self::is_validation`]) plus the two
+    /// meta-axis forwarders ([`Self::is_figment_bearing`] /
+    /// [`Self::is_not_figment_bearing`]) — each is one exhaustive-
+    /// match arm's worth of `self.kind()` composed with a const-fn
+    /// [`ShikumiErrorKind`] projection, so lifting `kind` first is
+    /// the const-callability prerequisite for lifting all nine at
+    /// once in a subsequent step. A `const CAPTURED_KIND:
+    /// ShikumiErrorKind = SHIKUMI_ERR.kind()` binding rooted at a
+    /// `static SHIKUMI_ERR: ShikumiError` (the three const-constructible
+    /// variants — [`Self::NotFound`] with an empty `Vec`, [`Self::Parse`]
+    /// / [`Self::Validation`] with an empty `String`) evaluates at
+    /// compile time; a downstream observer that must key on the kind
+    /// axis (a compile-time-known per-kind severity table, a
+    /// per-kind static ordering slice, an attestation manifest keyed
+    /// on the error partition) no longer drops the caller off the
+    /// const-context edge at this projection.
     #[must_use]
-    pub fn kind(&self) -> ShikumiErrorKind {
+    pub const fn kind(&self) -> ShikumiErrorKind {
         match self {
             Self::NotFound { .. } => ShikumiErrorKind::NotFound,
             Self::Parse(_) => ShikumiErrorKind::Parse,
@@ -10053,6 +10084,84 @@ mod tests {
             ShikumiErrorKind::ALL.len(),
             "ShikumiErrorKind::ALL must contain no duplicates",
         );
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_const_callable() {
+        // Weld the const-callability of `ShikumiError::kind` — the
+        // sum-type-to-kind projection over the [`ShikumiError`]
+        // variant space — at compile time. First const-lift on
+        // `impl ShikumiError`; the tag-side septet
+        // (`is_not_found` / `is_parse` / `is_watch` / `is_io` /
+        // `is_figment` / `is_extract` / `is_validation`) plus the
+        // two figment-bearing meta-axis forwarders
+        // (`is_figment_bearing` / `is_not_figment_bearing`) each
+        // route through `self.kind()` composed with a const-fn
+        // [`ShikumiErrorKind`] projection, so this lift is the
+        // const-callability prerequisite for lifting all nine
+        // tag-side forwarders in a subsequent step: the moment
+        // `ShikumiError::kind` loses its const-ness (a future edit
+        // that reaches for a non-const helper on the projection —
+        // an allocator, a heap-owned intermediate, a runtime table
+        // — inside the seven-arm exhaustive match) each of the
+        // three `const` welds below fails to compile at THAT line
+        // before the drift can silently disqualify all nine
+        // downstream forwarders.
+        //
+        // Three variants ([`ShikumiError::NotFound`],
+        // [`ShikumiError::Parse`], [`ShikumiError::Validation`]) are
+        // const-constructible via [`Vec::new`] / [`String::new`]
+        // (both const, both non-allocating); the remaining four
+        // ([`ShikumiError::Watch`], [`ShikumiError::Io`],
+        // [`ShikumiError::Figment`], [`ShikumiError::Extract`])
+        // carry payloads whose constructors ([`notify::Error`],
+        // [`std::io::Error`], [`Box<figment::Error>`]) are not const,
+        // so this weld exercises the three const-constructible arms
+        // in const position and defers the remaining four arms to
+        // the runtime pointwise-agreement pin
+        // `shikumi_error_kind_all_covers_every_constructed_variant`
+        // one test down, whose `one_per_kind()` closure threads all
+        // seven variants through the same projection at runtime. The
+        // enum's `#[non_exhaustive]` on the outer boundary and the
+        // exhaustive-match discipline inside `kind()` together
+        // guarantee a future variant landing on `ShikumiError`
+        // forces both an arm in `kind()` (compile-time) and a row
+        // in `one_per_kind()` (test-time), so the split-altitude
+        // coverage stays sealed.
+        //
+        // The `static` rather than `const` receiver is load-bearing:
+        // `ShikumiError` carries non-`Copy` `Drop`-bearing payloads
+        // (`Vec<PathBuf>`, `String`, etc.), so a `const
+        // SHIKUMI_ERR: ShikumiError = …; const KIND = SHIKUMI_ERR.kind();`
+        // spelling drops the const value after the kind projection
+        // and rejects with `E0493: destructor cannot be evaluated at
+        // compile-time`. A `static SHIKUMI_ERR: ShikumiError` is
+        // never dropped, so borrowing `&SHIKUMI_ERR` for the `&self`
+        // receiver in a `const` initializer stays inside the
+        // const-eval envelope.
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+        static VALIDATION_ERR: ShikumiError = ShikumiError::Validation(String::new());
+        const NOT_FOUND_KIND: ShikumiErrorKind = NOT_FOUND_ERR.kind();
+        const PARSE_KIND: ShikumiErrorKind = PARSE_ERR.kind();
+        const VALIDATION_KIND: ShikumiErrorKind = VALIDATION_ERR.kind();
+
+        assert_eq!(NOT_FOUND_KIND, ShikumiErrorKind::NotFound);
+        assert_eq!(PARSE_KIND, ShikumiErrorKind::Parse);
+        assert_eq!(VALIDATION_KIND, ShikumiErrorKind::Validation);
+
+        // Cross-check: the const-fn projection stays pointwise
+        // agreed with the runtime-side `err.kind()` call over the
+        // three const-welded variants. Redundant with the pointwise
+        // pins downstream, but this pin catches a future edit that
+        // shifted the const-fn body away from the runtime-fn body
+        // on any of the three welded arms — closest sibling to the
+        // pointwise-agreement pattern
+        // `attribution_rule_layer_kind_is_const_callable` (9272)
+        // uses at the rule altitude.
+        assert_eq!(NOT_FOUND_KIND, NOT_FOUND_ERR.kind());
+        assert_eq!(PARSE_KIND, PARSE_ERR.kind());
+        assert_eq!(VALIDATION_KIND, VALIDATION_ERR.kind());
     }
 
     #[test]
