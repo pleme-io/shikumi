@@ -1507,8 +1507,15 @@ impl FormatProvenance {
     /// typescape pins the partition to one site and any new provider
     /// class must declare which file-axis rule (and therefore which
     /// metadata axis) it dispatches through.
+    ///
+    /// `const`-callable — the body is a two-arm exhaustive match over
+    /// the closed-binary provenance axis routing to two payload-free
+    /// [`crate::AttributionRule`] variants, welded at compile time by
+    /// [`tests::format_provenance_file_attribution_rule_and_axis_are_const_callable`]
+    /// in lockstep with the sibling [`Self::file_attribution_axis`]
+    /// composition below.
     #[must_use]
-    pub fn file_attribution_rule(self) -> crate::AttributionRule {
+    pub const fn file_attribution_rule(self) -> crate::AttributionRule {
         match self {
             Self::FigmentBuiltin => crate::AttributionRule::FileBySource,
             Self::ShikumiBuilt => crate::AttributionRule::FileByMetadataName,
@@ -1533,8 +1540,15 @@ impl FormatProvenance {
     /// renamed upstream provider drops out of resolution silently) can
     /// route on this accessor at the file-format level rather than
     /// retaining a captured [`crate::AttributionRule`].
+    ///
+    /// `const`-callable — the body is the two-hop composition
+    /// `self.file_attribution_rule().metadata_axis()` where both hops
+    /// are `const fn` on `Copy` receivers ([`Self::file_attribution_rule`]
+    /// above; [`crate::AttributionRule::metadata_axis`] const since
+    /// commit `4f8a185`). Welded at compile time by
+    /// [`tests::format_provenance_file_attribution_rule_and_axis_are_const_callable`].
     #[must_use]
-    pub fn file_attribution_axis(self) -> crate::AttributionAxis {
+    pub const fn file_attribution_axis(self) -> crate::AttributionAxis {
         self.file_attribution_rule().metadata_axis()
     }
 
@@ -7872,6 +7886,97 @@ mod tests {
                 "{p:?}'s file-axis attribution must be Exact",
             );
         }
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_and_axis_are_const_callable() {
+        // Compile-time weld for both file-axis attribution projections
+        // on the FormatProvenance closed-binary axis: the total map
+        // `file_attribution_rule` (`provenance -> AttributionRule`) and
+        // its two-hop composition `file_attribution_axis` (through
+        // `AttributionRule::metadata_axis`, itself const since `4f8a185`).
+        //
+        // Two `const P_*: FormatProvenance = FormatProvenance::*;` bindings
+        // — one per provenance variant — route each cell through the two
+        // const-fn projections in const position. If a future edit
+        // reaches for a non-const helper on any hop (a runtime lookup
+        // on the two-arm mapping path, an allocator on the composed
+        // axis path, a lost const-lift on `AttributionRule::metadata_axis`
+        // upstream), one of the four const bindings below fails at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness — a `static PER_PROVENANCE:
+        // [AttributionRule; FormatProvenance::ALL.len()]` per-provenance
+        // file-axis rule lookup, an attestation manifest recording the
+        // (provenance -> file-axis rule/axis) partition at compile time,
+        // a `const` sentinel for a compile-time-known provenance's
+        // file-attribution cell.
+        //
+        // First const-callability lift on the FormatProvenance axis
+        // beyond the already-const `as_str` / `formats` / `is_shikumi_built`
+        // / `is_figment_builtin` cluster, extending the const-callability
+        // cascade from the sibling AttributionRule axis
+        // (`layer_kind`/`metadata_axis`/`figment_source_kind`/
+        // `figment_name_tag_kind`/`coordinates`) onto the provenance
+        // primitive's own two file-axis projections. `file_attribution_axis`
+        // routes through `AttributionRule::metadata_axis` (already const),
+        // so the composed weld pins the const-callability contract on
+        // BOTH hops in lockstep — a future edit that lost const-ness on
+        // either hop diverges at its own weld before the composite one
+        // can shadow the drift.
+        const P_FB: FormatProvenance = FormatProvenance::FigmentBuiltin;
+        const P_SB: FormatProvenance = FormatProvenance::ShikumiBuilt;
+
+        const R_FB: crate::AttributionRule = P_FB.file_attribution_rule();
+        const R_SB: crate::AttributionRule = P_SB.file_attribution_rule();
+        const A_FB: crate::AttributionAxis = P_FB.file_attribution_axis();
+        const A_SB: crate::AttributionAxis = P_SB.file_attribution_axis();
+
+        // Pointwise: the two-cell partition places FigmentBuiltin at
+        // (FileBySource, MetadataSource) and ShikumiBuilt at
+        // (FileByMetadataName, MetadataName), agreeing with the
+        // exhaustive matches in `file_attribution_rule` /
+        // `file_attribution_axis`.
+        assert_eq!(R_FB, crate::AttributionRule::FileBySource);
+        assert_eq!(R_SB, crate::AttributionRule::FileByMetadataName);
+        assert_eq!(A_FB, crate::AttributionAxis::MetadataSource);
+        assert_eq!(A_SB, crate::AttributionAxis::MetadataName);
+
+        // Full-list pins over FormatProvenance::ALL catch a future
+        // variant landing whose const-context weld was forgotten upstream,
+        // mirroring the ALL-length pins on the sibling
+        // `format_provenance_file_attribution_axis_mirrors_rule_axis`
+        // and `format_provenance_file_attribution_rule_is_always_exact`.
+        let expected_rule: [crate::AttributionRule; FormatProvenance::ALL.len()] = [R_FB, R_SB];
+        let expected_axis: [crate::AttributionAxis; FormatProvenance::ALL.len()] = [A_FB, A_SB];
+        for ((prov, rule), axis) in FormatProvenance::ALL
+            .iter()
+            .copied()
+            .zip(expected_rule)
+            .zip(expected_axis)
+        {
+            assert_eq!(
+                prov.file_attribution_rule(),
+                rule,
+                "provenance {prov:?}: file_attribution_rule must match its const-context weld",
+            );
+            assert_eq!(
+                prov.file_attribution_axis(),
+                axis,
+                "provenance {prov:?}: file_attribution_axis must match its const-context weld",
+            );
+        }
+
+        // Composition pin: the composed `file_attribution_axis` weld
+        // must agree with fresh const-bound reads of the two hops
+        // (`file_attribution_rule` above, then `metadata_axis` on the
+        // rule) — proving both hops stay const-callable in lockstep.
+        // A future edit that loses const-ness on `metadata_axis` fails
+        // at THIS binding before the composed axis binding can shadow
+        // the drift.
+        const M_FB: crate::AttributionAxis = R_FB.metadata_axis();
+        const M_SB: crate::AttributionAxis = R_SB.metadata_axis();
+        assert_eq!(A_FB, M_FB);
+        assert_eq!(A_SB, M_SB);
     }
 
     #[test]
