@@ -2751,12 +2751,14 @@ impl AttributionRule {
     /// composed total projection on this rule axis is now const-callable
     /// end-to-end. Welded compile-time by
     /// [`tests::attribution_rule_file_provenance_is_const_callable`].
-    /// The two partial unifiers
-    /// [`Self::attribution_source_kind_coordinates`] and
-    /// [`Self::attribution_name_kind_coordinates`] remain
-    /// non-const because they compose through [`Option::map`] with a
-    /// closure, which needs stable const-closure support upstream in
-    /// std before it can follow.
+    /// The partial unifier
+    /// [`Self::attribution_source_kind_coordinates`] joined the cascade
+    /// at the same const-callability altitude by hand-inlining its
+    /// [`Option::map`] closure as a `match`, leaving
+    /// [`Self::attribution_name_kind_coordinates`] as the sole
+    /// non-const peer on this block — its body has the same shape, so
+    /// the same closure-to-match rewrite lifts it too without waiting
+    /// on stable const-closure support upstream in std.
     #[must_use]
     pub const fn file_provenance(self) -> Option<crate::FormatProvenance> {
         match self {
@@ -2814,13 +2816,44 @@ impl AttributionRule {
     /// surface the same joint cell off the borrowed and cross-thread
     /// observable surfaces, with the cross-thread accessor lifted to
     /// the same `Some-iff-source-axis-attribution` discipline.
+    ///
+    /// `pub const fn` since the body is a `match` on
+    /// [`Self::figment_source_kind`]'s `Option<FigmentSourceKind>`
+    /// return that pairs the `Some` half with [`Self::layer_kind`]
+    /// into a plain-struct construction; every atomic component is
+    /// itself const-callable ([`Self::figment_source_kind`] since
+    /// `d382916`, [`Self::layer_kind`] since `52c4a20`) and the
+    /// `Option` / [`AttributionSourceKindCoordinates`] constructors
+    /// are payload-free variant / plain-struct construction that has
+    /// been const-callable since Rust 1.46. The `.map` closure the
+    /// original inhabited was the only obstacle — a hand-inlined
+    /// `match` clears it without waiting on stable const-closure
+    /// support upstream in std. Joins the const-callability cascade
+    /// on the same `impl AttributionRule` block that already covers
+    /// [`Self::confidence`] (const since introduction),
+    /// [`Self::layer_kind`] (const since `52c4a20`),
+    /// [`Self::metadata_axis`] (const since `4f8a185`),
+    /// [`Self::figment_source_kind`] (const since `d382916`),
+    /// [`Self::figment_name_tag_kind`] (const since `ee87837`),
+    /// [`Self::coordinates`] (const since `fdfaa07`), and
+    /// [`Self::file_provenance`] (const since `b71f975`). Welded
+    /// compile-time by
+    /// [`tests::attribution_rule_attribution_source_kind_coordinates_is_const_callable`].
+    /// The sibling partial unifier
+    /// [`Self::attribution_name_kind_coordinates`] remains the sole
+    /// non-const peer on this block — its body has the same shape,
+    /// so the same closure-to-match rewrite lifts it too.
     #[must_use]
-    pub fn attribution_source_kind_coordinates(self) -> Option<AttributionSourceKindCoordinates> {
-        self.figment_source_kind()
-            .map(|figment_source_kind| AttributionSourceKindCoordinates {
+    pub const fn attribution_source_kind_coordinates(
+        self,
+    ) -> Option<AttributionSourceKindCoordinates> {
+        match self.figment_source_kind() {
+            Some(figment_source_kind) => Some(AttributionSourceKindCoordinates {
                 figment_source_kind,
                 layer_kind: self.layer_kind(),
-            })
+            }),
+            None => None,
+        }
     }
 
     /// Forward partial unifier of the two name-axis projections over
@@ -15272,6 +15305,108 @@ mod tests {
                 rule.attribution_source_kind_coordinates(),
                 expected,
                 "rule {rule:?}: attribution_source_kind_coordinates pin",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_source_kind_coordinates_is_const_callable() {
+        // Weld the const-callability of the (rule →
+        // source-axis-joint-cell) partial-unifier projection at
+        // compile time. Peer of the sibling const-callable welds on
+        // the same `impl AttributionRule` block —
+        // `attribution_rule_figment_source_kind_is_const_callable`
+        // (the atomic figment-source-axis half) /
+        // `attribution_rule_layer_kind_is_const_callable` (the atomic
+        // layer-kind half, which the partial unifier pairs into the
+        // joint cell) / `attribution_rule_coordinates_is_const_callable`
+        // (the total-unifier sibling) / `attribution_rule_file_provenance_is_const_callable`
+        // (the last total-projection const-lift on this block) — lifted
+        // to the partial-unifier altitude where the codomain is
+        // `Option<AttributionSourceKindCoordinates>` rather than a
+        // total projection or a `bool`. The lift is not a change in
+        // eligibility: the `.map` closure the original inhabited was
+        // the only obstacle, and a hand-inlined `match` clears it
+        // without waiting on stable const-closure support upstream in
+        // std.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the partial unifier in const position. The
+        // moment the unifier (or the routed
+        // `AttributionSourceKindCoordinates` construction, or the
+        // routed `Option::{Some,None}` construction on either atomic
+        // half) stops being const-callable, one of the five `const`
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the projection — a `static PER_RULE:
+        // [Option<AttributionSourceKindCoordinates>;
+        // AttributionRule::ALL.len()]` per-rule joint-cell lookup, an
+        // attestation manifest carrying the (rule →
+        // source-axis-joint-cell) partial map at compile time, a
+        // `const IS_SOME: bool =
+        // R.attribution_source_kind_coordinates().is_some()` sentinel
+        // for a compile-time-known rule's source-axis attribution
+        // status.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const ASKC_FBS: Option<AttributionSourceKindCoordinates> =
+            R_FBS.attribution_source_kind_coordinates();
+        const ASKC_FBM: Option<AttributionSourceKindCoordinates> =
+            R_FBM.attribution_source_kind_coordinates();
+        const ASKC_EBP: Option<AttributionSourceKindCoordinates> =
+            R_EBP.attribution_source_kind_coordinates();
+        const ASKC_EBU: Option<AttributionSourceKindCoordinates> =
+            R_EBU.attribution_source_kind_coordinates();
+        const ASKC_DBCU: Option<AttributionSourceKindCoordinates> =
+            R_DBCU.attribution_source_kind_coordinates();
+
+        // Pointwise: the (Some((File, File)), Some((Code, Defaults)),
+        // None×3) partition places each of the five rules under exactly
+        // one Option cell — the two source-axis rules on the `Some`
+        // half (naming their joint (figment-source-kind × layer-kind)
+        // cell) and the three name-axis rules on the `None` half. The
+        // const-context welds above prove const-callability; the pins
+        // below prove the mapping stays agreed with the exhaustive
+        // match in `attribution_source_kind_coordinates` — a future
+        // edit that shifted a rule off its source-axis-joint
+        // classification, or that reintroduced a non-const `.map`
+        // closure at the projection site, diverges here first, not at
+        // a downstream reader of a stale (rule →
+        // source-axis-joint-cell) mapping.
+        assert_eq!(
+            ASKC_FBS,
+            Some(AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::File,
+                layer_kind: ConfigSourceKind::File,
+            }),
+        );
+        assert_eq!(ASKC_FBM, None);
+        assert_eq!(ASKC_EBP, None);
+        assert_eq!(ASKC_EBU, None);
+        assert_eq!(
+            ASKC_DBCU,
+            Some(AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::Code,
+                layer_kind: ConfigSourceKind::Defaults,
+            }),
+        );
+
+        // Full-list pin: iterate `AttributionRule::ALL` against the
+        // same expected sequence so a future variant landing on
+        // `AttributionRule` without a corresponding update here fails
+        // at the length check, mirroring the `ALL`-length pins on the
+        // sibling axis-partition tests.
+        let expected: [Option<AttributionSourceKindCoordinates>; AttributionRule::ALL.len()] =
+            [ASKC_FBS, ASKC_FBM, ASKC_EBP, ASKC_EBU, ASKC_DBCU];
+        for (rule, expected_cell) in AttributionRule::ALL.iter().copied().zip(expected) {
+            assert_eq!(
+                rule.attribution_source_kind_coordinates(),
+                expected_cell,
+                "rule {rule:?}: attribution_source_kind_coordinates must match its const-context weld",
             );
         }
     }
