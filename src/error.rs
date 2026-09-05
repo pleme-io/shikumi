@@ -2622,10 +2622,24 @@ impl AttributionRule {
     /// exactly one holds on every name-axis rule, zero hold on every
     /// source-axis rule — pinned by
     /// `attribution_rule_figment_name_tag_kind_predicates_partition_name_axis_rules`.
+    ///
+    /// `const`-callable in stable Rust: the body unrolls the
+    /// [`Option::is_some_and`] pattern to a two-arm `match` on the const
+    /// projection [`Self::figment_name_tag_kind`], dispatching to the
+    /// const sibling [`FigmentNameTagKind::is_format`] on `Some`. The
+    /// unroll preserves the delegation to the sibling polarity source
+    /// (unlike a `matches!(_, Some(Format))` shape, which would inline
+    /// the sibling's partition inside the delegator) while satisfying
+    /// stable const-context constraints — `FnOnce` on a function item is
+    /// not const-callable, so the `Option::is_some_and` composition
+    /// cannot itself be `const`. Welded compile-time by
+    /// [`tests::attribution_rule_figment_name_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_name_format(self) -> bool {
-        self.figment_name_tag_kind()
-            .is_some_and(FigmentNameTagKind::is_format)
+    pub const fn is_figment_name_format(self) -> bool {
+        match self.figment_name_tag_kind() {
+            Some(k) => k.is_format(),
+            None => false,
+        }
     }
 
     /// Returns `true` when [`Self::figment_name_tag_kind`] returns
@@ -2639,10 +2653,18 @@ impl AttributionRule {
     /// [`Self::EnvByUniqueness`]) are the exact inhabitants of this
     /// predicate; pinned by
     /// `attribution_rule_is_figment_name_env_agrees_with_figment_name_tag_kind_is_env`.
+    ///
+    /// `const`-callable in stable Rust for the same reason as
+    /// [`Self::is_figment_name_format`]: two-arm `match` unroll of
+    /// `Option::is_some_and` that dispatches to the const sibling
+    /// [`FigmentNameTagKind::is_env`] on `Some`. Welded compile-time by
+    /// [`tests::attribution_rule_figment_name_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_name_env(self) -> bool {
-        self.figment_name_tag_kind()
-            .is_some_and(FigmentNameTagKind::is_env)
+    pub const fn is_figment_name_env(self) -> bool {
+        match self.figment_name_tag_kind() {
+            Some(k) => k.is_env(),
+            None => false,
+        }
     }
 
     /// Partial inverse of
@@ -12679,6 +12701,108 @@ mod tests {
                 held, expected,
                 "rule {rule:?}: exactly {expected} figment-Name-kind delegator(s) must hold \
                  (Some-iff-name-axis discipline; got held={held})",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_predicates_are_const_callable() {
+        // Weld the const-callability of the two rule-altitude sibling
+        // delegators on the figment-Name-axis partial projection at
+        // compile time. Symmetric peer of
+        // `attribution_rule_figment_source_predicates_are_const_callable`
+        // one polarity over on the sibling partial projection: the
+        // source-axis (3-way) and name-axis (2-way) rule-altitude
+        // delegator groups are now BOTH const-callable at the same
+        // altitude, mirroring their outer-projection welds
+        // (`attribution_rule_figment_source_kind_is_const_callable` and
+        // `attribution_rule_figment_name_tag_kind_is_const_callable`)
+        // one altitude up on Option-space. Sibling of the
+        // total-projection const-callable welds on the same
+        // `impl AttributionRule` block
+        // (`attribution_rule_layer_predicates_are_const_callable`,
+        // `attribution_rule_metadata_axis_predicates_are_const_callable`),
+        // lifted to the partial-projection altitude where each delegator
+        // routes through `Option<FigmentNameTagKind>` before dispatching
+        // to the sibling `FigmentNameTagKind::is_{format,env}` polarity
+        // source.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through each of the two delegators in const
+        // position. The moment any delegator (or the composed
+        // `figment_name_tag_kind` projection, or the
+        // `FigmentNameTagKind::is_*` sibling predicates it dispatches
+        // through) stops being const-callable, one of the ten `const`
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the delegator — a
+        // `const IS_FORMAT_NAME: bool = rule.is_figment_name_format()`
+        // sentinel for a compile-time-known rule, a
+        // `static PER_RULE: [bool; AttributionRule::ALL.len()]` per-rule
+        // predicate lookup, an attestation manifest carrying the
+        // per-cell (rule → bool) map at compile time.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        // Format-corner welds.
+        const N_FBS: bool = R_FBS.is_figment_name_format();
+        const N_FBM: bool = R_FBM.is_figment_name_format();
+        const N_EBP: bool = R_EBP.is_figment_name_format();
+        const N_EBU: bool = R_EBU.is_figment_name_format();
+        const N_DBCU: bool = R_DBCU.is_figment_name_format();
+
+        // Env-corner welds.
+        const E_FBS: bool = R_FBS.is_figment_name_env();
+        const E_FBM: bool = R_FBM.is_figment_name_env();
+        const E_EBP: bool = R_EBP.is_figment_name_env();
+        const E_EBU: bool = R_EBU.is_figment_name_env();
+        const E_DBCU: bool = R_DBCU.is_figment_name_env();
+
+        // Pointwise: only FileByMetadataName pins the Format corner;
+        // only EnvByPrefix and EnvByUniqueness pin the Env corner. The
+        // const-context welds above prove const-callability; the pins
+        // below prove the delegator polarity stays agreed with the
+        // exhaustive match in `figment_name_tag_kind` composed with
+        // the `FigmentNameTagKind::is_{format,env}` predicates.
+        assert!(!N_FBS);
+        assert!(N_FBM);
+        assert!(!N_EBP);
+        assert!(!N_EBU);
+        assert!(!N_DBCU);
+
+        assert!(!E_FBS);
+        assert!(!E_FBM);
+        assert!(E_EBP);
+        assert!(E_EBU);
+        assert!(!E_DBCU);
+
+        // Full-list cross-check: iterate `AttributionRule::ALL` against
+        // the two delegators at runtime and cross-check against the
+        // const-context welds above, so a future variant landing on
+        // `AttributionRule` without corresponding const bindings here
+        // fails at the length check, mirroring the `ALL`-length pins
+        // on the sibling axis-partition tests.
+        let expected_format: [bool; AttributionRule::ALL.len()] =
+            [N_FBS, N_FBM, N_EBP, N_EBU, N_DBCU];
+        let expected_env: [bool; AttributionRule::ALL.len()] = [E_FBS, E_FBM, E_EBP, E_EBU, E_DBCU];
+        for ((rule, ef), ee) in AttributionRule::ALL
+            .iter()
+            .copied()
+            .zip(expected_format)
+            .zip(expected_env)
+        {
+            assert_eq!(
+                rule.is_figment_name_format(),
+                ef,
+                "rule {rule:?}: is_figment_name_format must match its const-context weld",
+            );
+            assert_eq!(
+                rule.is_figment_name_env(),
+                ee,
+                "rule {rule:?}: is_figment_name_env must match its const-context weld",
             );
         }
     }
