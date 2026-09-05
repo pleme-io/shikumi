@@ -5413,8 +5413,26 @@ impl ShikumiError {
     /// the closed-septet partition on the tag-side (exactly one of the
     /// seven predicates holds on every constructed error) is pinned by
     /// [`tests::shikumi_error_predicates_are_a_closed_septet_partition`].
+    ///
+    /// `const fn`: routes through the const-callable projection
+    /// [`Self::kind`] (const since `4b00851`, welded by
+    /// [`tests::shikumi_error_kind_is_const_callable`]) composed
+    /// with a `matches!` arm on the [`Copy`] + `#[repr]`-fixed
+    /// [`ShikumiErrorKind::NotFound`] unit variant — no
+    /// non-const helper, no [`Drop`]-carrying payload moved through
+    /// the projection. First const-lift of the tag-side septet on
+    /// `impl ShikumiError`, opening the const-callability parity
+    /// with the already-const kind-side sibling
+    /// [`ShikumiErrorKind::is_not_found`] (const since the septet
+    /// landed on the kind-side surface). The remaining six
+    /// tag-side siblings ([`Self::is_parse`] / [`Self::is_watch`]
+    /// / [`Self::is_io`] / [`Self::is_figment`] / [`Self::is_extract`]
+    /// / [`Self::is_validation`]) share the same body shape and
+    /// unblock in a subsequent step through the same
+    /// `self.kind()`-composed weld. Const-callability weld:
+    /// [`tests::shikumi_error_is_not_found_is_const_callable`].
     #[must_use]
-    pub fn is_not_found(&self) -> bool {
+    pub const fn is_not_found(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::NotFound)
     }
 
@@ -10162,6 +10180,79 @@ mod tests {
         assert_eq!(NOT_FOUND_KIND, NOT_FOUND_ERR.kind());
         assert_eq!(PARSE_KIND, PARSE_ERR.kind());
         assert_eq!(VALIDATION_KIND, VALIDATION_ERR.kind());
+    }
+
+    #[test]
+    fn shikumi_error_is_not_found_is_const_callable() {
+        // Weld the const-callability of `ShikumiError::is_not_found`
+        // — the tag-side septet's first forwarder over the closed
+        // seven-way [`ShikumiError`] variant space — at compile
+        // time. First tag-side-septet const-lift on
+        // `impl ShikumiError`, routing through the just-const-lifted
+        // `ShikumiError::kind` projection (const since `4b00851`,
+        // welded by `shikumi_error_kind_is_const_callable`) composed
+        // with a `matches!` arm on the [`Copy`] +
+        // `#[repr]`-fixed [`ShikumiErrorKind::NotFound`] unit
+        // variant. A future edit that reintroduces a non-const step
+        // (an allocator on the projection body, a runtime-only
+        // helper on the match discriminant) fails at THIS line
+        // before the six sibling tag-side forwarders — `is_parse`
+        // / `is_watch` / `is_io` / `is_figment` / `is_extract` /
+        // `is_validation` at line 5443 / 5452 / 5461 / 5476 / 5488
+        // / 5498 — pick up the drift.
+        //
+        // Same three const-constructible variants as
+        // `shikumi_error_kind_is_const_callable` above: `NotFound`
+        // (the true corner), `Parse` and `Validation` (two of the
+        // six false corners). The remaining four false corners
+        // (`Watch`, `Io`, `Figment`, `Extract`) carry payloads whose
+        // constructors are not const, and are covered at runtime by
+        // the pointwise pin
+        // `shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_not_found_pointwise`
+        // downstream (routing the kind-side sibling
+        // [`ShikumiErrorKind::is_not_found`] against the tag-side
+        // sibling `ShikumiError::is_not_found` over every row of
+        // the `one_per_kind()` construction table).
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as
+        // `shikumi_error_kind_is_const_callable`.
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+        static VALIDATION_ERR: ShikumiError = ShikumiError::Validation(String::new());
+        const IS_NOT_FOUND_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_not_found();
+        const IS_NOT_FOUND_ON_PARSE: bool = PARSE_ERR.is_not_found();
+        const IS_NOT_FOUND_ON_VALIDATION: bool = VALIDATION_ERR.is_not_found();
+
+        assert!(IS_NOT_FOUND_ON_NOT_FOUND);
+        assert!(!IS_NOT_FOUND_ON_PARSE);
+        assert!(!IS_NOT_FOUND_ON_VALIDATION);
+
+        // Cross-check: the const-fn body stays pointwise agreed
+        // with the runtime-side `err.is_not_found()` call over the
+        // three const-welded variants. Redundant with the pointwise
+        // pins downstream, but this pin catches a future edit that
+        // shifted the const-fn body away from the runtime-fn body
+        // on any of the three welded arms.
+        assert_eq!(IS_NOT_FOUND_ON_NOT_FOUND, NOT_FOUND_ERR.is_not_found());
+        assert_eq!(IS_NOT_FOUND_ON_PARSE, PARSE_ERR.is_not_found());
+        assert_eq!(IS_NOT_FOUND_ON_VALIDATION, VALIDATION_ERR.is_not_found());
+
+        // Cross-check: the tag-side forwarder stays pointwise
+        // agreed with the kind-side sibling
+        // [`ShikumiErrorKind::is_not_found`] (already const, welded
+        // by `shikumi_error_kind_is_const_callable`) — the same
+        // structural bridge the runtime pin
+        // `shikumi_error_kind_not_found_predicate_agrees_with_shikumi_error_is_not_found_pointwise`
+        // holds over the full `one_per_kind()` construction table,
+        // now welded in const context on the three arms that admit
+        // it.
+        const NOT_FOUND_KIND_IS_NOT_FOUND: bool = NOT_FOUND_ERR.kind().is_not_found();
+        const PARSE_KIND_IS_NOT_FOUND: bool = PARSE_ERR.kind().is_not_found();
+        const VALIDATION_KIND_IS_NOT_FOUND: bool = VALIDATION_ERR.kind().is_not_found();
+        assert_eq!(IS_NOT_FOUND_ON_NOT_FOUND, NOT_FOUND_KIND_IS_NOT_FOUND);
+        assert_eq!(IS_NOT_FOUND_ON_PARSE, PARSE_KIND_IS_NOT_FOUND);
+        assert_eq!(IS_NOT_FOUND_ON_VALIDATION, VALIDATION_KIND_IS_NOT_FOUND);
     }
 
     #[test]
