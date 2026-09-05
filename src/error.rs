@@ -4837,8 +4837,29 @@ impl<'a> FailingSourceAttribution<'a> {
     /// it through this accessor (rather than `self.source.kind()`)
     /// surfaces the same kind as a consequence of the rule, not an
     /// independent fact about the source.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_layer_kind_is_const_callable`]).
+    /// The routed body `self.rule.layer_kind()` composes two const-
+    /// callable primitives — the `Copy` field access `self.rule` and the
+    /// underlying [`AttributionRule::layer_kind`] projection (const since
+    /// `52c4a20`) — so a `const ConfigSourceKind` binding produced from
+    /// a `const FailingSourceAttribution<'static>` (or the routed
+    /// `attr.layer_kind().is_file()` short-circuit through the sibling
+    /// [`ConfigSourceKind::is_file`]) evaluates at compile time.
+    /// Second envelope-altitude const-lift on
+    /// [`FailingSourceAttribution`] after
+    /// [`Self::confidence`] (`df3334f`): the envelope now meets the
+    /// rule-altitude cascade on the orthogonal (file × env × defaults)
+    /// layer-kind axis, mirroring the (exact × fallback) confidence
+    /// axis already routed through the envelope at const-time. A
+    /// compile-time-known envelope now projects both coordinates at
+    /// compile time — a `static PAIR: (ConfigSourceKind,
+    /// AttributionConfidence) = (ENV.layer_kind(), ENV.confidence())`
+    /// diagnostic table can be wired through the envelope without
+    /// either projection dropping the caller off the const-context edge.
     #[must_use]
-    pub fn layer_kind(self) -> ConfigSourceKind {
+    pub const fn layer_kind(self) -> ConfigSourceKind {
         self.rule.layer_kind()
     }
 
@@ -9220,6 +9241,110 @@ mod tests {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.layer_kind(), rule.layer_kind());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_layer_kind_is_const_callable() {
+        // Weld the const-callability of the (envelope → layer_kind)
+        // convenience forwarder at compile time. Second envelope-
+        // altitude const-callable weld on [`FailingSourceAttribution`]
+        // after `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f), which welded the sibling (envelope → confidence)
+        // forwarder on the orthogonal (exact × fallback) confidence
+        // axis. The routed body composes two const-callable primitives:
+        // the `Copy` field access `self.rule` on the envelope, and the
+        // underlying `AttributionRule::layer_kind` projection (const
+        // since `52c4a20`, welded at compile time by
+        // `attribution_rule_layer_kind_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // (file × env × defaults) axis: the moment
+        // [`FailingSourceAttribution::layer_kind`] (or the routed
+        // downstream [`AttributionRule::layer_kind`]) stops being
+        // const-callable, one of the `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the envelope —
+        // a `static PER_RULE: [ConfigSourceKind;
+        // AttributionRule::ALL.len()]` per-rule layer-kind lookup
+        // routed through the envelope, a `const IS_FILE: bool =
+        // ENV.layer_kind().is_file()` sentinel for a compile-time-
+        // known envelope's layer pole, or a compile-time attestation
+        // manifest recording the envelope-routed (layer-kind ×
+        // confidence) coordinate pair.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const K_FBS: ConfigSourceKind = ATTR_FBS.layer_kind();
+        const K_FBM: ConfigSourceKind = ATTR_FBM.layer_kind();
+        const K_EBP: ConfigSourceKind = ATTR_EBP.layer_kind();
+        const K_EBU: ConfigSourceKind = ATTR_EBU.layer_kind();
+        const K_DBCU: ConfigSourceKind = ATTR_DBCU.layer_kind();
+
+        // Pointwise: the (File, File, Env, Env, Defaults) partition
+        // places each of the five envelope-routed layer kinds under
+        // the same cell as the underlying rule-routed projection
+        // weld (`attribution_rule_layer_kind_is_const_callable`).
+        // The const-context welds above prove const-callability
+        // through the envelope; the pins below prove the envelope
+        // forwarder stays byte-for-byte agreed with the rule-altitude
+        // primitive it routes through — a future edit that made the
+        // envelope drift from the rule (or reintroduced a non-const
+        // step in the routed body) diverges here first, not at a
+        // downstream reader of a stale (envelope → layer-kind)
+        // projection.
+        assert!(matches!(K_FBS, ConfigSourceKind::File));
+        assert!(matches!(K_FBM, ConfigSourceKind::File));
+        assert!(matches!(K_EBP, ConfigSourceKind::Env));
+        assert!(matches!(K_EBU, ConfigSourceKind::Env));
+        assert!(matches!(K_DBCU, ConfigSourceKind::Defaults));
+
+        // Envelope-vs-rule agreement: every envelope-routed layer
+        // kind must match its rule-altitude projection, pointwise on
+        // `AttributionRule::ALL`, so the const-context welds above and
+        // the runtime mirror pin in
+        // `failing_source_attribution_layer_kind_mirrors_rule_layer_kind`
+        // stay agreed under any future edit to either altitude.
+        let envelope_routed: [ConfigSourceKind; AttributionRule::ALL.len()] =
+            [K_FBS, K_FBM, K_EBP, K_EBU, K_DBCU];
+        for (rule, envelope_layer_kind) in AttributionRule::ALL.iter().copied().zip(envelope_routed)
+        {
+            assert_eq!(
+                envelope_layer_kind,
+                rule.layer_kind(),
+                "rule {rule:?}: envelope-routed layer_kind must match rule-altitude projection",
+            );
         }
     }
 
