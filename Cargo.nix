@@ -3527,7 +3527,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
             features = [ "serde" ];
           }
           {
@@ -3759,7 +3759,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
             features = [ "std" ];
           }
           {
@@ -3831,7 +3831,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
             features = [ "std" ];
           }
           {
@@ -5083,11 +5083,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "serde" "serde-1" "std" ];
       };
-      "indexmap 2.14.1" = rec {
+      "indexmap 2.14.2" = rec {
         crateName = "indexmap";
-        version = "2.14.1";
+        version = "2.14.2";
         edition = "2024";
-        sha256 = "1sq9z90viwfw8053l32rrby563hy67xl8n6k65d92hi22i421ah7";
+        sha256 = "0mf86hbjkkcd82cpq683bblbs0zwa8ndla96ci8p1ji6bl7ijknc";
         dependencies = [
           {
             name = "equivalent";
@@ -9268,7 +9268,7 @@ rec {
           }
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
             rename = "indexmap_2";
             optional = true;
             usesDefaultFeatures = false;
@@ -9407,7 +9407,7 @@ rec {
         dependencies = [
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
           }
           {
             name = "itoa";
@@ -9470,7 +9470,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.804";
+        version = "0.1.805";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10647,7 +10647,7 @@ rec {
         dependencies = [
           {
             name = "indexmap";
-            packageId = "indexmap 2.14.1";
+            packageId = "indexmap 2.14.2";
             features = [ "std" ];
           }
           {
