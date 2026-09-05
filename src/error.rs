@@ -5092,8 +5092,49 @@ impl<'a> FailingSourceAttribution<'a> {
     /// Some-iff-MetadataSource discipline on
     /// [`Self::attribution_source_kind_coordinates`]. Pinned by
     /// `failing_source_attribution_attribution_name_kind_coordinates_mirrors_rule`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_attribution_name_kind_coordinates_is_const_callable`]).
+    /// The routed body `self.rule.attribution_name_kind_coordinates()`
+    /// composes two const-callable primitives — the `Copy` field access
+    /// `self.rule` on the `Copy + #[non_exhaustive]` envelope, and the
+    /// underlying [`AttributionRule::attribution_name_kind_coordinates`]
+    /// forward partial unifier (const since `1621bb3`, welded at compile
+    /// time by
+    /// [`tests::attribution_rule_attribution_name_kind_coordinates_is_const_callable`])
+    /// — so a `const Option<AttributionNameKindCoordinates>` binding
+    /// produced from a `const FailingSourceAttribution<'static>`
+    /// evaluates at compile time. Eighth envelope-altitude const-lift
+    /// on [`FailingSourceAttribution`] after [`Self::confidence`]
+    /// (`df3334f`), [`Self::layer_kind`] (`fc9e0c6`),
+    /// [`Self::metadata_axis`] (`37b71fb`), [`Self::coordinates`]
+    /// (`02c5653`), [`Self::figment_source_kind`] (`b11bca7`),
+    /// [`Self::figment_name_tag_kind`] (`a4692bc`), and
+    /// [`Self::attribution_source_kind_coordinates`] (`d24ec4a`):
+    /// closes the envelope-altitude joint-partial-unifier const-
+    /// callability parity on the (source-axis, name-axis) pair — both
+    /// joint-cell partial unifiers at the envelope's altitude now sit
+    /// at the same const-callability altitude the rule-altitude pair
+    /// [`AttributionRule::attribution_source_kind_coordinates`] /
+    /// [`AttributionRule::attribution_name_kind_coordinates`] already
+    /// occupies (parity itself pinned by
+    /// [`tests::attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`]).
+    /// A downstream observer that carries a `FailingSourceAttribution`
+    /// by value can now key on the (figment-`Metadata::name`-axis kind
+    /// × shikumi-layer-kind) joint cell in const context — a
+    /// `const IS_ENV_NAME_JOINT: bool = matches!(
+    /// ENV.attribution_name_kind_coordinates(),
+    /// Some(AttributionNameKindCoordinates { figment_name_tag_kind:
+    /// FigmentNameTagKind::Env, layer_kind: ConfigSourceKind::Env }))`
+    /// sentinel for a compile-time-known envelope's name-axis joint
+    /// cell resolves at compile time without a runtime projection
+    /// detour, and a
+    /// `static PER_ENV_NAME_JOINT: [Option<AttributionNameKindCoordinates>;
+    /// AttributionRule::ALL.len()]` per-envelope name-joint-cell
+    /// lookup routed through the envelope no longer drops the caller
+    /// off the const-context edge.
     #[must_use]
-    pub fn attribution_name_kind_coordinates(self) -> Option<AttributionNameKindCoordinates> {
+    pub const fn attribution_name_kind_coordinates(self) -> Option<AttributionNameKindCoordinates> {
         self.rule.attribution_name_kind_coordinates()
     }
 
@@ -15398,6 +15439,158 @@ mod tests {
         assert_eq!(
             J_DBCU,
             AttributionRule::DefaultsByCodeUniqueness.attribution_source_kind_coordinates(),
+        );
+    }
+
+    #[test]
+    fn failing_source_attribution_attribution_name_kind_coordinates_is_const_callable() {
+        // Weld the const-callability of the (envelope → name-axis joint
+        // cell) partial unifier at compile time. Eighth envelope-altitude
+        // const-callable weld on [`FailingSourceAttribution`] after
+        // `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f), `failing_source_attribution_layer_kind_is_const_callable`
+        // (fc9e0c6), `failing_source_attribution_metadata_axis_is_const_callable`
+        // (37b71fb), `failing_source_attribution_coordinates_is_const_callable`
+        // (02c5653), `failing_source_attribution_figment_source_kind_is_const_callable`
+        // (b11bca7),
+        // `failing_source_attribution_figment_name_tag_kind_is_const_callable`
+        // (a4692bc), and
+        // `failing_source_attribution_attribution_source_kind_coordinates_is_const_callable`
+        // (d24ec4a): closes the envelope-altitude joint-partial-unifier
+        // const-callability parity on the (source-axis, name-axis)
+        // pair — both envelope-routed joint-cell partial unifiers now
+        // sit at the same const altitude the rule-altitude pair
+        // `AttributionRule::attribution_source_kind_coordinates` /
+        // `AttributionRule::attribution_name_kind_coordinates` already
+        // occupies. The routed body composes two const-callable
+        // primitives: the `Copy` field access `self.rule` on the
+        // `Copy + #[non_exhaustive]` envelope, and the underlying
+        // `AttributionRule::attribution_name_kind_coordinates` forward
+        // partial unifier (const since `1621bb3`, welded at compile
+        // time by
+        // `attribution_rule_attribution_name_kind_coordinates_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // name-axis joint partial unifier: the moment
+        // [`FailingSourceAttribution::attribution_name_kind_coordinates`]
+        // (or the routed downstream
+        // [`AttributionRule::attribution_name_kind_coordinates`])
+        // stops being const-callable, one of the `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // envelope — a `const IS_ENV_NAME_JOINT: bool = matches!(
+        // ENV.attribution_name_kind_coordinates(),
+        // Some(AttributionNameKindCoordinates { figment_name_tag_kind:
+        // FigmentNameTagKind::Env, layer_kind: ConfigSourceKind::Env }))`
+        // sentinel for a compile-time-known envelope's name-axis joint
+        // cell, or a compile-time attestation manifest keyed on the
+        // envelope-routed (figment-name-axis kind × shikumi-layer-kind)
+        // joint cell.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape from
+        // `failing_source_attribution_attribution_source_kind_coordinates_is_const_callable`.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const K_FBS: Option<AttributionNameKindCoordinates> =
+            ATTR_FBS.attribution_name_kind_coordinates();
+        const K_FBM: Option<AttributionNameKindCoordinates> =
+            ATTR_FBM.attribution_name_kind_coordinates();
+        const K_EBP: Option<AttributionNameKindCoordinates> =
+            ATTR_EBP.attribution_name_kind_coordinates();
+        const K_EBU: Option<AttributionNameKindCoordinates> =
+            ATTR_EBU.attribution_name_kind_coordinates();
+        const K_DBCU: Option<AttributionNameKindCoordinates> =
+            ATTR_DBCU.attribution_name_kind_coordinates();
+
+        // Pointwise: each of the five envelope-routed joint-cell
+        // projections must sit under the same cell as the underlying
+        // rule-routed partial unifier weld
+        // (`attribution_rule_attribution_name_kind_coordinates_is_const_callable`).
+        // Some-iff-MetadataName discipline: name-axis rules
+        // (FileByMetadataName → (Format, File), EnvByPrefix /
+        // EnvByUniqueness → (Env, Env)) land on `Some`; source-axis
+        // rules (FileBySource, DefaultsByCodeUniqueness) land on
+        // `None` — the dual of the Some-iff-MetadataSource discipline
+        // welded on the sibling source-axis joint unifier.
+        assert_eq!(K_FBS, None);
+        assert_eq!(
+            K_FBM,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Format,
+                layer_kind: ConfigSourceKind::File,
+            }),
+        );
+        assert_eq!(
+            K_EBP,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            }),
+        );
+        assert_eq!(
+            K_EBU,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            }),
+        );
+        assert_eq!(K_DBCU, None);
+
+        // Envelope-vs-rule agreement: every envelope-routed name-axis
+        // joint-cell projection must match its rule-altitude partial
+        // unifier, welded at const-time across the five-rule partition
+        // — the sibling runtime mirror pin
+        // `failing_source_attribution_attribution_name_kind_coordinates_mirrors_rule`
+        // proves the same equality over the runtime path.
+        assert_eq!(
+            K_FBS,
+            AttributionRule::FileBySource.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(
+            K_FBM,
+            AttributionRule::FileByMetadataName.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(
+            K_EBP,
+            AttributionRule::EnvByPrefix.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(
+            K_EBU,
+            AttributionRule::EnvByUniqueness.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(
+            K_DBCU,
+            AttributionRule::DefaultsByCodeUniqueness.attribution_name_kind_coordinates(),
         );
     }
 
