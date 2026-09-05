@@ -2523,10 +2523,27 @@ impl AttributionRule {
     /// disjoint partition of [`Self::ALL`] — exactly one holds on every
     /// source-axis rule, zero hold on every name-axis rule — pinned by
     /// `attribution_rule_figment_source_kind_predicates_partition_source_axis_rules`.
+    ///
+    /// `const fn` under rustc 1.94: the body is a two-arm `match` on the
+    /// [`Option<FigmentSourceKind>`] the partial projection returns,
+    /// composing the already-`const fn` [`Self::figment_source_kind`]
+    /// with the already-`const fn` [`FigmentSourceKind::is_file`] —
+    /// both have been const-callable since `d382916` (source-kind
+    /// projection) / prior source-kind predicate lift. The explicit
+    /// match preserves the delegation to [`FigmentSourceKind::is_file`]
+    /// (the polarity source), unlike a `matches!(_, Some(File))` form
+    /// that would inline the sibling's partition inside this delegator.
+    /// Trait-based `Option::is_some_and` is not const-callable in
+    /// stable Rust (`FnOnce` on a function item is not const-invocable),
+    /// so the unroll is the only way to lift the delegator without
+    /// duplicating polarity. Const-callability pinned by
+    /// [`tests::attribution_rule_figment_source_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_source_file(self) -> bool {
-        self.figment_source_kind()
-            .is_some_and(FigmentSourceKind::is_file)
+    pub const fn is_figment_source_file(self) -> bool {
+        match self.figment_source_kind() {
+            Some(k) => k.is_file(),
+            None => false,
+        }
     }
 
     /// Returns `true` when [`Self::figment_source_kind`] returns
@@ -2539,10 +2556,16 @@ impl AttributionRule {
     /// [`Self::DefaultsByCodeUniqueness`] — is the exact inhabitant of
     /// this predicate; pinned by
     /// `attribution_rule_is_figment_source_code_agrees_with_figment_source_kind_is_code`.
+    ///
+    /// `const fn` on the same rationale as [`Self::is_figment_source_file`];
+    /// pinned by
+    /// [`tests::attribution_rule_figment_source_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_source_code(self) -> bool {
-        self.figment_source_kind()
-            .is_some_and(FigmentSourceKind::is_code)
+    pub const fn is_figment_source_code(self) -> bool {
+        match self.figment_source_kind() {
+            Some(k) => k.is_code(),
+            None => false,
+        }
     }
 
     /// Returns `true` when [`Self::figment_source_kind`] returns
@@ -2561,10 +2584,16 @@ impl AttributionRule {
     /// future custom-source rule landing extends the image in lockstep
     /// and moves the pin from `never` to per-variant polarity, forcing
     /// the delegator's routing to be re-verified against the new arm.
+    ///
+    /// `const fn` on the same rationale as [`Self::is_figment_source_file`];
+    /// pinned by
+    /// [`tests::attribution_rule_figment_source_predicates_are_const_callable`].
     #[must_use]
-    pub fn is_figment_source_custom(self) -> bool {
-        self.figment_source_kind()
-            .is_some_and(FigmentSourceKind::is_custom)
+    pub const fn is_figment_source_custom(self) -> bool {
+        match self.figment_source_kind() {
+            Some(k) => k.is_custom(),
+            None => false,
+        }
     }
 
     /// Returns `true` when [`Self::figment_name_tag_kind`] returns
@@ -12466,6 +12495,125 @@ mod tests {
                 held, expected,
                 "rule {rule:?}: exactly {expected} figment-Source-kind delegator(s) must hold \
                  (Some-iff-source-axis discipline; got held={held})",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_source_predicates_are_const_callable() {
+        // Weld the const-callability of the three rule-altitude sibling
+        // delegators on the figment-Source-axis partial projection at
+        // compile time. Sibling of the total-projection const-callable
+        // welds on the same `impl AttributionRule` block
+        // (`attribution_rule_layer_predicates_are_const_callable`,
+        // `attribution_rule_metadata_axis_predicates_are_const_callable`),
+        // lifted to the partial-projection altitude where each delegator
+        // routes through `Option<FigmentSourceKind>` before dispatching
+        // to the sibling `FigmentSourceKind::is_{file,code,custom}`
+        // polarity source. Peer of the outer-projection weld
+        // `attribution_rule_figment_source_kind_is_const_callable` one
+        // altitude up on the same axis: the outer weld pins the partial
+        // projection const-callable in Option-space; this weld pins the
+        // three inner delegator predicates const-callable in bool-space.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through each of the three delegators in const
+        // position. The moment any delegator (or the composed
+        // `figment_source_kind` projection, or the `FigmentSourceKind::is_*`
+        // sibling predicates it dispatches through) stops being
+        // const-callable, one of the fifteen `const` welds below fails
+        // to compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the delegator — a
+        // `const IS_FILE_SOURCE: bool = rule.is_figment_source_file()`
+        // sentinel for a compile-time-known rule, a
+        // `static PER_RULE: [bool; AttributionRule::ALL.len()]` per-rule
+        // predicate lookup, an attestation manifest carrying the
+        // per-cell (rule → bool) map at compile time.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        // File-corner welds.
+        const F_FBS: bool = R_FBS.is_figment_source_file();
+        const F_FBM: bool = R_FBM.is_figment_source_file();
+        const F_EBP: bool = R_EBP.is_figment_source_file();
+        const F_EBU: bool = R_EBU.is_figment_source_file();
+        const F_DBCU: bool = R_DBCU.is_figment_source_file();
+
+        // Code-corner welds.
+        const C_FBS: bool = R_FBS.is_figment_source_code();
+        const C_FBM: bool = R_FBM.is_figment_source_code();
+        const C_EBP: bool = R_EBP.is_figment_source_code();
+        const C_EBU: bool = R_EBU.is_figment_source_code();
+        const C_DBCU: bool = R_DBCU.is_figment_source_code();
+
+        // Custom-corner welds.
+        const X_FBS: bool = R_FBS.is_figment_source_custom();
+        const X_FBM: bool = R_FBM.is_figment_source_custom();
+        const X_EBP: bool = R_EBP.is_figment_source_custom();
+        const X_EBU: bool = R_EBU.is_figment_source_custom();
+        const X_DBCU: bool = R_DBCU.is_figment_source_custom();
+
+        // Pointwise: only FileBySource pins the File corner; only
+        // DefaultsByCodeUniqueness pins the Code corner; no recognized
+        // rule pins the Custom corner (see
+        // `attribution_rule_is_figment_source_custom_never_holds`). The
+        // const-context welds above prove const-callability; the pins
+        // below prove the delegator polarity stays agreed with the
+        // exhaustive match in `figment_source_kind` composed with the
+        // `FigmentSourceKind::is_{file,code,custom}` predicates.
+        assert!(F_FBS);
+        assert!(!F_FBM);
+        assert!(!F_EBP);
+        assert!(!F_EBU);
+        assert!(!F_DBCU);
+
+        assert!(!C_FBS);
+        assert!(!C_FBM);
+        assert!(!C_EBP);
+        assert!(!C_EBU);
+        assert!(C_DBCU);
+
+        assert!(!X_FBS);
+        assert!(!X_FBM);
+        assert!(!X_EBP);
+        assert!(!X_EBU);
+        assert!(!X_DBCU);
+
+        // Full-list cross-check: iterate `AttributionRule::ALL` against
+        // the three delegators at runtime and cross-check against the
+        // const-context welds above, so a future variant landing on
+        // `AttributionRule` without corresponding const bindings here
+        // fails at the length check, mirroring the `ALL`-length pins
+        // on the sibling axis-partition tests.
+        let expected_file: [bool; AttributionRule::ALL.len()] =
+            [F_FBS, F_FBM, F_EBP, F_EBU, F_DBCU];
+        let expected_code: [bool; AttributionRule::ALL.len()] =
+            [C_FBS, C_FBM, C_EBP, C_EBU, C_DBCU];
+        let expected_custom: [bool; AttributionRule::ALL.len()] =
+            [X_FBS, X_FBM, X_EBP, X_EBU, X_DBCU];
+        for ((rule, ef), (ec, ex)) in AttributionRule::ALL
+            .iter()
+            .copied()
+            .zip(expected_file)
+            .zip(expected_code.into_iter().zip(expected_custom))
+        {
+            assert_eq!(
+                rule.is_figment_source_file(),
+                ef,
+                "rule {rule:?}: is_figment_source_file must match its const-context weld",
+            );
+            assert_eq!(
+                rule.is_figment_source_code(),
+                ec,
+                "rule {rule:?}: is_figment_source_code must match its const-context weld",
+            );
+            assert_eq!(
+                rule.is_figment_source_custom(),
+                ex,
+                "rule {rule:?}: is_figment_source_custom must match its const-context weld",
             );
         }
     }
