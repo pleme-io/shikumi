@@ -4878,8 +4878,35 @@ impl<'a> FailingSourceAttribution<'a> {
     /// — or attestation manifests that record per-failure attribution
     /// provenance — route on this closed enum instead of inspecting
     /// the rule's name.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_metadata_axis_is_const_callable`]).
+    /// The routed body `self.rule.metadata_axis()` composes two const-
+    /// callable primitives — the `Copy` field access `self.rule` on the
+    /// envelope, and the underlying [`AttributionRule::metadata_axis`]
+    /// projection (const since it was introduced, welded by
+    /// [`tests::attribution_rule_metadata_axis_is_const_callable`]) — so
+    /// a `const AttributionAxis` binding produced from a
+    /// `const FailingSourceAttribution<'static>` (or the routed
+    /// `attr.metadata_axis().is_metadata_source()` short-circuit through
+    /// the sibling [`AttributionAxis::is_metadata_source`]) evaluates at
+    /// compile time. Third envelope-altitude const-lift on
+    /// [`FailingSourceAttribution`] after [`Self::confidence`]
+    /// (`df3334f`) and [`Self::layer_kind`] (`fc9e0c6`): the envelope
+    /// now meets the rule-altitude cascade on all three orthogonal
+    /// coordinate axes — (exact × fallback) confidence, (file × env ×
+    /// defaults) layer-kind, and (source × name) metadata-axis — so a
+    /// compile-time-known envelope projects the full
+    /// (axis × layer-kind × confidence) coordinate triple at compile
+    /// time. A `static PER_ENV: (AttributionAxis, ConfigSourceKind,
+    /// AttributionConfidence) = (ENV.metadata_axis(), ENV.layer_kind(),
+    /// ENV.confidence())` diagnostic table can be wired through the
+    /// envelope without any of the three projections dropping the
+    /// caller off the const-context edge; the follow-up const-lift of
+    /// the joint [`Self::coordinates`] triple accessor is now a
+    /// one-hop composition over three const-callable primitives.
     #[must_use]
-    pub fn metadata_axis(self) -> AttributionAxis {
+    pub const fn metadata_axis(self) -> AttributionAxis {
         self.rule.metadata_axis()
     }
 
@@ -12194,6 +12221,114 @@ mod tests {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.metadata_axis(), rule.metadata_axis());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_metadata_axis_is_const_callable() {
+        // Weld the const-callability of the (envelope → metadata-axis)
+        // convenience forwarder at compile time. Third envelope-
+        // altitude const-callable weld on [`FailingSourceAttribution`]
+        // after `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f) and `failing_source_attribution_layer_kind_is_const_callable`
+        // (fc9e0c6), completing the three-axis envelope-altitude
+        // const-callability parity: the envelope now projects all
+        // three orthogonal coordinates — (source × name) metadata-axis
+        // here, (file × env × defaults) layer-kind on the sibling
+        // weld, (exact × fallback) confidence on the sibling weld
+        // before that — at compile time. The routed body composes
+        // two const-callable primitives: the `Copy` field access
+        // `self.rule` on the envelope, and the underlying
+        // `AttributionRule::metadata_axis` projection (const since
+        // it was introduced, welded at compile time by
+        // `attribution_rule_metadata_axis_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // (source × name) metadata-axis: the moment
+        // [`FailingSourceAttribution::metadata_axis`] (or the routed
+        // downstream [`AttributionRule::metadata_axis`]) stops being
+        // const-callable, one of the `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the envelope —
+        // a `static PER_RULE: [AttributionAxis;
+        // AttributionRule::ALL.len()]` per-rule metadata-axis lookup
+        // routed through the envelope, a `const IS_SOURCE_AXIS:
+        // bool = ENV.metadata_axis().is_metadata_source()` sentinel
+        // for a compile-time-known envelope's axis pole, or a
+        // compile-time attestation manifest recording the envelope-
+        // routed (axis × layer-kind × confidence) coordinate triple.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const A_FBS: AttributionAxis = ATTR_FBS.metadata_axis();
+        const A_FBM: AttributionAxis = ATTR_FBM.metadata_axis();
+        const A_EBP: AttributionAxis = ATTR_EBP.metadata_axis();
+        const A_EBU: AttributionAxis = ATTR_EBU.metadata_axis();
+        const A_DBCU: AttributionAxis = ATTR_DBCU.metadata_axis();
+
+        // Pointwise: the (MetadataSource, MetadataName, MetadataName,
+        // MetadataName, MetadataSource) partition places each of the
+        // five envelope-routed axes under the same cell as the
+        // underlying rule-routed projection weld
+        // (`attribution_rule_metadata_axis_is_const_callable`). The
+        // const-context welds above prove const-callability through
+        // the envelope; the pins below prove the envelope forwarder
+        // stays byte-for-byte agreed with the rule-altitude primitive
+        // it routes through — a future edit that made the envelope
+        // drift from the rule (or reintroduced a non-const step in
+        // the routed body) diverges here first, not at a downstream
+        // reader of a stale (envelope → metadata-axis) projection.
+        assert!(matches!(A_FBS, AttributionAxis::MetadataSource));
+        assert!(matches!(A_FBM, AttributionAxis::MetadataName));
+        assert!(matches!(A_EBP, AttributionAxis::MetadataName));
+        assert!(matches!(A_EBU, AttributionAxis::MetadataName));
+        assert!(matches!(A_DBCU, AttributionAxis::MetadataSource));
+
+        // Envelope-vs-rule agreement: every envelope-routed
+        // metadata-axis must match its rule-altitude projection,
+        // pointwise on `AttributionRule::ALL`, so the const-context
+        // welds above and the runtime mirror pin in
+        // `failing_source_attribution_metadata_axis_mirrors_rule_metadata_axis`
+        // stay agreed under any future edit to either altitude.
+        let envelope_routed: [AttributionAxis; AttributionRule::ALL.len()] =
+            [A_FBS, A_FBM, A_EBP, A_EBU, A_DBCU];
+        for (rule, envelope_axis) in AttributionRule::ALL.iter().copied().zip(envelope_routed) {
+            assert_eq!(
+                envelope_axis,
+                rule.metadata_axis(),
+                "rule {rule:?}: envelope-routed metadata_axis must match rule-altitude projection",
+            );
         }
     }
 
