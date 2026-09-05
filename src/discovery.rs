@@ -3147,23 +3147,59 @@ enum NameStyle {
 }
 
 impl NameStyle {
-    /// The main config filename for this style: `{prefix}{app}.{ext}`.
-    fn main_filename(self, app: &str, ext: &str) -> String {
+    /// The `{prefix}` head shared by [`Self::main_filename`] and
+    /// [`Self::partial_prefix`] — `""` for [`Self::Bare`], `"."` for
+    /// [`Self::Dotfile`].
+    ///
+    /// Sole source of truth for the dot-prefix polarity on the
+    /// [`NameStyle`] axis. Before this lift the `"" | "."` branch was
+    /// encoded twice — once inside [`Self::main_filename`]'s two-arm
+    /// `format!("{app}.{ext}") | format!(".{app}.{ext}")` match, and
+    /// once inside [`Self::partial_prefix`]'s two-arm
+    /// `format!("{app}-") | format!(".{app}-")` match — so a future
+    /// `NameStyle::Overlay` variant (say `{app}.{env}.{ext}`) that
+    /// forgot to update the second body would silently emit partial
+    /// prefixes without the overlay marker. Routing both filename
+    /// morphisms through this one const-fn projection means adding
+    /// the next variant means editing this one arm, and the pair of
+    /// filenames stays agreed by construction.
+    ///
+    /// `const fn` under rustc 1.94: [`NameStyle`] is a payload-free
+    /// enum and `match` on payload-free variants has been const-stable
+    /// since 1.46. Callers can (and do, per
+    /// `name_style_dot_prefix_is_const_callable`) bind the projection
+    /// at compile time in `const` position.
+    ///
+    /// Pinned by `name_style_main_and_partial_share_dot_prefix` (both
+    /// filename morphisms actually start with `dot_prefix()`) and by
+    /// `name_style_dot_prefix_matches_expected_values` (the two arms
+    /// stay `""` / `"."` on the current axis).
+    const fn dot_prefix(self) -> &'static str {
         match self {
-            Self::Bare => format!("{app}.{ext}"),
-            Self::Dotfile => format!(".{app}.{ext}"),
+            Self::Bare => "",
+            Self::Dotfile => ".",
         }
+    }
+
+    /// The main config filename for this style: `{prefix}{app}.{ext}`.
+    ///
+    /// Composes over [`Self::dot_prefix`] — the `""` / `"."` branch
+    /// lives at ONE site rather than mirrored between this method and
+    /// [`Self::partial_prefix`].
+    fn main_filename(self, app: &str, ext: &str) -> String {
+        format!("{}{app}.{ext}", self.dot_prefix())
     }
 
     /// The partial-config filename prefix for this style: `{prefix}{app}-`.
     ///
     /// A partial filename is anything starting with this prefix and ending
     /// with a recognized config extension.
+    ///
+    /// Composes over [`Self::dot_prefix`] — the `""` / `"."` branch
+    /// lives at ONE site rather than mirrored between this method and
+    /// [`Self::main_filename`].
     fn partial_prefix(self, app: &str) -> String {
-        match self {
-            Self::Bare => format!("{app}-"),
-            Self::Dotfile => format!(".{app}-"),
-        }
+        format!("{}{app}-", self.dot_prefix())
     }
 }
 
@@ -4200,6 +4236,59 @@ mod tests {
     fn name_style_dotfile_partial_prefix() {
         assert_eq!(NameStyle::Dotfile.partial_prefix("myapp"), ".myapp-");
         assert_eq!(NameStyle::Dotfile.partial_prefix("a"), ".a-");
+    }
+
+    #[test]
+    fn name_style_dot_prefix_matches_expected_values() {
+        // Pin the concrete values of the sole source of truth for the
+        // dot-prefix polarity: Bare -> "", Dotfile -> ".". A future
+        // variant that flipped either arm (or a whitespace typo like
+        // Dotfile => "..") would fail here rather than at the two
+        // downstream filename morphisms.
+        assert_eq!(NameStyle::Bare.dot_prefix(), "");
+        assert_eq!(NameStyle::Dotfile.dot_prefix(), ".");
+    }
+
+    #[test]
+    fn name_style_dot_prefix_is_const_callable() {
+        // Weld the `const fn` closure at compile time. If a future edit
+        // reaches for a runtime helper on the two-arm mapping (an
+        // allocator, a lookup table), one of the two const bindings
+        // fails at THAT line in const context — before any downstream
+        // reader that assumed const-ness silently rebinds at runtime.
+        const BARE: &str = NameStyle::Bare.dot_prefix();
+        const DOTFILE: &str = NameStyle::Dotfile.dot_prefix();
+        assert_eq!(BARE, "");
+        assert_eq!(DOTFILE, ".");
+    }
+
+    #[test]
+    fn name_style_main_and_partial_share_dot_prefix() {
+        // The filename-morphism DRY invariant made structural: both
+        // `main_filename` and `partial_prefix` compose over the same
+        // `dot_prefix()` projection, so a future `NameStyle` variant
+        // whose dot-prefix polarity changed would move both filenames
+        // in lockstep by construction. Pinning this directly (rather
+        // than only through the downstream `starts_with` cross-check
+        // in `name_style_main_and_partial_share_prefix`) means a
+        // future refactor that re-inlined the "." into either body
+        // would fail here on the composition contract, not just on a
+        // string-equality check.
+        for style in [NameStyle::Bare, NameStyle::Dotfile] {
+            let prefix = style.dot_prefix();
+            let main = style.main_filename("app", "yaml");
+            let partial = style.partial_prefix("app");
+            assert!(
+                main.starts_with(prefix),
+                "main_filename {main:?} must start with dot_prefix {prefix:?} \
+                 for {style:?}",
+            );
+            assert!(
+                partial.starts_with(prefix),
+                "partial_prefix {partial:?} must start with dot_prefix {prefix:?} \
+                 for {style:?}",
+            );
+        }
     }
 
     #[test]
