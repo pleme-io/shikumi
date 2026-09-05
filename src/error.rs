@@ -2849,8 +2849,21 @@ impl AttributionRule {
     /// the cross-thread accessor lifted to `Option<_>` to track the
     /// `Some-iff-attribution` discipline established for the sibling
     /// projection accessors.
+    ///
+    /// `const`-callable — a compile-time-known rule's coordinate
+    /// triple is a compile-time value, so a
+    /// `static PER_RULE: [AttributionCoordinates;
+    /// AttributionRule::ALL.len()]` per-rule coordinate table wires
+    /// straight through to compile-time evaluation without a runtime
+    /// projection, welded by
+    /// [`tests::attribution_rule_coordinates_is_const_callable`]. Lifted
+    /// to `const` alongside the three sibling total projections
+    /// ([`Self::metadata_axis`], [`Self::layer_kind`],
+    /// [`Self::confidence`]) it composes over — the unifier stays at
+    /// the same const-callability altitude as every atomic component
+    /// it reads.
     #[must_use]
-    pub fn coordinates(self) -> AttributionCoordinates {
+    pub const fn coordinates(self) -> AttributionCoordinates {
         AttributionCoordinates {
             axis: self.metadata_axis(),
             layer_kind: self.layer_kind(),
@@ -12865,6 +12878,154 @@ mod tests {
             AttributionRule::ALL.len(),
             "every rule must occupy a distinct coordinate cell; got: {coords:?}"
         );
+    }
+
+    #[test]
+    fn attribution_rule_coordinates_is_const_callable() {
+        // Weld the const-callability of the (rule → coordinate-triple)
+        // total unifier `AttributionRule::coordinates` at compile time.
+        // Composed peer of the three sibling const-callable welds on
+        // the same `impl AttributionRule` block — `metadata_axis`
+        // (`4f8a185`), `layer_kind` (`52c4a20`), and `confidence`
+        // (const since introduction) — lifted to the unifier altitude
+        // where the codomain is the composite `AttributionCoordinates`
+        // struct rather than a single closed enum. The three atomic
+        // projections were already const-callable, so the composite
+        // stays wired to compile-time evaluation across the whole
+        // three-axis triple; a future edit that loses const-ness on
+        // any hop of the composition fails at THAT line in the
+        // const-context weld before drifting through downstream
+        // consumers that assumed const-ness through the unifier — a
+        // `static PER_RULE: [AttributionCoordinates;
+        // AttributionRule::ALL.len()]` per-rule coordinate table, an
+        // attestation manifest recording the (rule → coordinate)
+        // total map at compile time, a `const` sentinel for a
+        // compile-time-known rule's coordinate cell.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const C_FBS: AttributionCoordinates = R_FBS.coordinates();
+        const C_FBM: AttributionCoordinates = R_FBM.coordinates();
+        const C_EBP: AttributionCoordinates = R_EBP.coordinates();
+        const C_EBU: AttributionCoordinates = R_EBU.coordinates();
+        const C_DBCU: AttributionCoordinates = R_DBCU.coordinates();
+
+        // Pointwise: the five recognized cells of the (axis ×
+        // layer_kind × confidence) cube named by the five rule
+        // variants. The const-context welds above prove
+        // const-callability; the pins below prove the mapping stays
+        // agreed with the exhaustive match in `coordinates` — a
+        // future edit that shifted a rule off any of its three
+        // orthogonal coordinates diverges here first, not at a
+        // downstream reader of a stale (rule → coordinate) mapping.
+        assert_eq!(
+            C_FBS,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_FBM,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_EBP,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_EBU,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Fallback,
+            },
+        );
+        assert_eq!(
+            C_DBCU,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::Defaults,
+                confidence: AttributionConfidence::Fallback,
+            },
+        );
+
+        // Full-list pin: iterate `AttributionRule::ALL` against the
+        // const-bound coordinate array so a future variant landing on
+        // `AttributionRule` without a corresponding update here fails
+        // at the length check, mirroring the `ALL`-length pins on the
+        // sibling const-callable welds.
+        let expected: [AttributionCoordinates; AttributionRule::ALL.len()] =
+            [C_FBS, C_FBM, C_EBP, C_EBU, C_DBCU];
+        for (rule, expected_coords) in AttributionRule::ALL.iter().copied().zip(expected) {
+            assert_eq!(
+                rule.coordinates(),
+                expected_coords,
+                "rule {rule:?}: coordinates must match its const-context weld",
+            );
+        }
+
+        // Composition pin: each const-bound coordinate cell must
+        // agree with the tuple of the three sibling const-callable
+        // atomic projections routed through their own const-bound
+        // reads. Welds the (metadata_axis, layer_kind, confidence)
+        // unifier contract at compile-time-derived altitude alongside
+        // the sibling runtime pin
+        // `attribution_rule_coordinates_agrees_with_three_projection_accessors`
+        // — a future edit that unbalances the unifier against any of
+        // the three atomic projections diverges at THIS block, before
+        // the runtime pin fires downstream. Reading each triple
+        // through a fresh `const` weld also proves the three atomic
+        // projections stay const-callable in lockstep with the
+        // composite: if any one loses const-ness the corresponding
+        // atomic binding fails to compile at THAT line, before the
+        // composite binding can shadow the drift.
+        const MA_FBS: AttributionAxis = R_FBS.metadata_axis();
+        const LK_FBS: ConfigSourceKind = R_FBS.layer_kind();
+        const CF_FBS: AttributionConfidence = R_FBS.confidence();
+        assert_eq!(C_FBS.axis, MA_FBS);
+        assert_eq!(C_FBS.layer_kind, LK_FBS);
+        assert_eq!(C_FBS.confidence, CF_FBS);
+
+        const MA_FBM: AttributionAxis = R_FBM.metadata_axis();
+        const LK_FBM: ConfigSourceKind = R_FBM.layer_kind();
+        const CF_FBM: AttributionConfidence = R_FBM.confidence();
+        assert_eq!(C_FBM.axis, MA_FBM);
+        assert_eq!(C_FBM.layer_kind, LK_FBM);
+        assert_eq!(C_FBM.confidence, CF_FBM);
+
+        const MA_EBP: AttributionAxis = R_EBP.metadata_axis();
+        const LK_EBP: ConfigSourceKind = R_EBP.layer_kind();
+        const CF_EBP: AttributionConfidence = R_EBP.confidence();
+        assert_eq!(C_EBP.axis, MA_EBP);
+        assert_eq!(C_EBP.layer_kind, LK_EBP);
+        assert_eq!(C_EBP.confidence, CF_EBP);
+
+        const MA_EBU: AttributionAxis = R_EBU.metadata_axis();
+        const LK_EBU: ConfigSourceKind = R_EBU.layer_kind();
+        const CF_EBU: AttributionConfidence = R_EBU.confidence();
+        assert_eq!(C_EBU.axis, MA_EBU);
+        assert_eq!(C_EBU.layer_kind, LK_EBU);
+        assert_eq!(C_EBU.confidence, CF_EBU);
+
+        const MA_DBCU: AttributionAxis = R_DBCU.metadata_axis();
+        const LK_DBCU: ConfigSourceKind = R_DBCU.layer_kind();
+        const CF_DBCU: AttributionConfidence = R_DBCU.confidence();
+        assert_eq!(C_DBCU.axis, MA_DBCU);
+        assert_eq!(C_DBCU.layer_kind, LK_DBCU);
+        assert_eq!(C_DBCU.confidence, CF_DBCU);
     }
 
     #[test]
