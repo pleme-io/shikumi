@@ -5196,8 +5196,49 @@ impl<'a> FailingSourceAttribution<'a> {
     /// [`AttributionRule::FileBySource`] /
     /// [`AttributionRule::FileByMetadataName`]). Pinned by
     /// `failing_source_attribution_file_provenance_mirrors_rule_file_provenance`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_file_provenance_is_const_callable`]).
+    /// The routed body `self.rule.file_provenance()` composes two
+    /// const-callable primitives — the `Copy` field access `self.rule`
+    /// on the `Copy + #[non_exhaustive]` envelope, and the underlying
+    /// [`AttributionRule::file_provenance`] partial inverse (const since
+    /// `b71f975`, welded at compile time by
+    /// [`tests::attribution_rule_file_provenance_is_const_callable`]) —
+    /// so a `const Option<crate::FormatProvenance>` binding produced
+    /// from a `const FailingSourceAttribution<'static>` evaluates at
+    /// compile time. Ninth envelope-altitude const-lift on
+    /// [`FailingSourceAttribution`] after [`Self::confidence`]
+    /// (`df3334f`), [`Self::layer_kind`] (`fc9e0c6`),
+    /// [`Self::metadata_axis`] (`37b71fb`), [`Self::coordinates`]
+    /// (`02c5653`), [`Self::figment_source_kind`] (`b11bca7`),
+    /// [`Self::figment_name_tag_kind`] (`a4692bc`),
+    /// [`Self::attribution_source_kind_coordinates`] (`d24ec4a`), and
+    /// [`Self::attribution_name_kind_coordinates`] (`0b7e71d`) —
+    /// lifting the file-axis partial-inverse envelope forwarder to the
+    /// same const altitude the rule-altitude
+    /// [`AttributionRule::file_provenance`] partial inverse already
+    /// occupies. Every envelope-altitude projection routed through
+    /// [`Self::rule`] — the three atomic axis accessors, the total
+    /// coordinate unifier, the two figment-metadata-axis partial
+    /// projections, both joint partial unifiers, and now the
+    /// file-axis partial inverse — is const-callable end-to-end. A
+    /// downstream observer that carries a `FailingSourceAttribution`
+    /// by value can now key on the originating provider class
+    /// (`FormatProvenance::FigmentBuiltin` for figment's YAML/TOML
+    /// providers vs `FormatProvenance::ShikumiBuilt` for the
+    /// LispProvider / NixProvider) in const context — a
+    /// `const IS_SHIKUMI_BUILT_FILE: bool = matches!(
+    /// ENV.file_provenance(), Some(FormatProvenance::ShikumiBuilt))`
+    /// sentinel for a compile-time-known envelope's file-axis
+    /// provenance, a
+    /// `static PER_ENV_PROV: [Option<FormatProvenance>;
+    /// AttributionRule::ALL.len()]` per-envelope provenance table
+    /// routed through the envelope, or a compile-time attestation
+    /// manifest keyed on the envelope-routed provider class no longer
+    /// drops the caller off the const-context edge.
     #[must_use]
-    pub fn file_provenance(self) -> Option<crate::FormatProvenance> {
+    pub const fn file_provenance(self) -> Option<crate::FormatProvenance> {
         self.rule.file_provenance()
     }
 }
@@ -13812,6 +13853,125 @@ mod tests {
                  (layer_kind == File)",
             );
         }
+    }
+
+    #[test]
+    fn failing_source_attribution_file_provenance_is_const_callable() {
+        // Weld the const-callability of the (envelope → file-axis
+        // provenance) partial-inverse forwarder at compile time. Ninth
+        // envelope-altitude const-callable weld on
+        // [`FailingSourceAttribution`] after
+        // `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f), `failing_source_attribution_layer_kind_is_const_callable`
+        // (fc9e0c6), `failing_source_attribution_metadata_axis_is_const_callable`
+        // (37b71fb), `failing_source_attribution_coordinates_is_const_callable`
+        // (02c5653), `failing_source_attribution_figment_source_kind_is_const_callable`
+        // (b11bca7), `failing_source_attribution_figment_name_tag_kind_is_const_callable`
+        // (a4692bc), `failing_source_attribution_attribution_source_kind_coordinates_is_const_callable`
+        // (d24ec4a), and
+        // `failing_source_attribution_attribution_name_kind_coordinates_is_const_callable`
+        // (0b7e71d): lifts the file-axis partial-inverse envelope
+        // forwarder onto the same const altitude the rule-altitude
+        // `AttributionRule::file_provenance` partial inverse already
+        // occupies. Every envelope-altitude projection routed through
+        // [`FailingSourceAttribution::rule`] — the three atomic axis
+        // accessors, the total coordinate unifier, the two
+        // figment-metadata-axis partial projections, both joint
+        // partial unifiers, and now the file-axis partial inverse —
+        // is const-callable end-to-end.
+        //
+        // The routed body composes two const-callable primitives: the
+        // `Copy` field access `self.rule` on the
+        // `Copy + #[non_exhaustive]` envelope, and the underlying
+        // `AttributionRule::file_provenance` partial inverse (const
+        // since `b71f975`, welded at compile time by
+        // `attribution_rule_file_provenance_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // file-axis partial inverse: the moment
+        // [`FailingSourceAttribution::file_provenance`] (or the routed
+        // downstream [`AttributionRule::file_provenance`]) stops being
+        // const-callable, one of the `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the envelope — a
+        // `const IS_SHIKUMI_BUILT_FILE: bool = matches!(
+        // ENV.file_provenance(), Some(crate::FormatProvenance::ShikumiBuilt))`
+        // sentinel for a compile-time-known envelope's file-axis
+        // provenance, a
+        // `static PER_ENV_PROV: [Option<crate::FormatProvenance>;
+        // AttributionRule::ALL.len()]` per-envelope provenance table
+        // routed through the envelope, or a compile-time attestation
+        // manifest keyed on the envelope-routed provider class.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const P_FBS: Option<crate::FormatProvenance> = ATTR_FBS.file_provenance();
+        const P_FBM: Option<crate::FormatProvenance> = ATTR_FBM.file_provenance();
+        const P_EBP: Option<crate::FormatProvenance> = ATTR_EBP.file_provenance();
+        const P_EBU: Option<crate::FormatProvenance> = ATTR_EBU.file_provenance();
+        const P_DBCU: Option<crate::FormatProvenance> = ATTR_DBCU.file_provenance();
+
+        // Pointwise: each of the five envelope-routed provenance
+        // projections must sit under the same cell as the underlying
+        // rule-routed partial inverse weld
+        // (`attribution_rule_file_provenance_is_const_callable`). The
+        // two file-axis rules pin their originating provider class
+        // (`FileBySource` → figment-builtin, `FileByMetadataName` →
+        // shikumi-built); the three non-file-axis rules map to `None`
+        // — the Some-iff-file-layer-kind discipline welded on the
+        // rule-altitude partial inverse, surfaced through the
+        // envelope.
+        assert_eq!(P_FBS, Some(crate::FormatProvenance::FigmentBuiltin));
+        assert_eq!(P_FBM, Some(crate::FormatProvenance::ShikumiBuilt));
+        assert_eq!(P_EBP, None);
+        assert_eq!(P_EBU, None);
+        assert_eq!(P_DBCU, None);
+
+        // Envelope-vs-rule agreement: every envelope-routed provenance
+        // projection must match its rule-altitude partial inverse,
+        // welded at const-time across the five-rule partition — the
+        // sibling runtime mirror pin
+        // `failing_source_attribution_file_provenance_mirrors_rule_file_provenance`
+        // proves the same equality over the runtime path.
+        assert_eq!(P_FBS, AttributionRule::FileBySource.file_provenance());
+        assert_eq!(P_FBM, AttributionRule::FileByMetadataName.file_provenance(),);
+        assert_eq!(P_EBP, AttributionRule::EnvByPrefix.file_provenance());
+        assert_eq!(P_EBU, AttributionRule::EnvByUniqueness.file_provenance());
+        assert_eq!(
+            P_DBCU,
+            AttributionRule::DefaultsByCodeUniqueness.file_provenance(),
+        );
     }
 
     #[test]
