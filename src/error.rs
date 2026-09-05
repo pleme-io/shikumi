@@ -3765,8 +3765,24 @@ impl AttributionSourceKindCoordinates {
     /// [`AttributionRule::from_coordinates`] /
     /// [`crate::FormatCoordinates::format_or_none`] on the cubes
     /// where the forward map is injective.
+    ///
+    /// `pub const fn`: the body is a `matches!` over a tuple of two
+    /// `Copy` C-like enums ([`FigmentSourceKind`], [`ConfigSourceKind`]),
+    /// which desugars to a `match` on enum discriminants — const-callable
+    /// since rustc 1.46 introduced const-fn match on enum patterns. No
+    /// hop-predicate composition, so const-callability is unconditional
+    /// on the body itself. Welded at compile time by
+    /// [`tests::attribution_source_kind_coordinates_is_realizable_is_const_callable`];
+    /// closes the four-cube realizability-predicate const-callability
+    /// symmetry alongside
+    /// [`AttributionCoordinates::is_realizable`] (const since `5c42e49`)
+    /// and [`ErrorLocalizationCoordinates::is_realizable`] (const since
+    /// `5232251`) — three of the four cube-altitude realizability
+    /// predicates now share the same const-callability contract, leaving
+    /// [`AttributionNameKindCoordinates::is_realizable`] as the sole
+    /// remaining non-`const` peer.
     #[must_use]
-    pub fn is_realizable(self) -> bool {
+    pub const fn is_realizable(self) -> bool {
         matches!(
             (self.figment_source_kind, self.layer_kind),
             (FigmentSourceKind::File, ConfigSourceKind::File)
@@ -14979,6 +14995,121 @@ mod tests {
                 "cell {cell:?}: is_realizable must equal the source-axis diagonal law",
             );
         }
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_is_realizable_is_const_callable() {
+        // Weld the const-callability of the realizability predicate
+        // `AttributionSourceKindCoordinates::is_realizable` at compile
+        // time. The body is a `matches!` over a tuple of two `Copy`
+        // C-like enums (`FigmentSourceKind`, `ConfigSourceKind`), which
+        // desugars to a `match` on enum discriminants — const-callable
+        // since rustc 1.46 stabilized const-fn match on enum patterns.
+        // No hop-predicate composition, so const-callability is
+        // unconditional on the body itself.
+        //
+        // Coordinate-cube analogue of the sibling const-callability
+        // welds `attribution_coordinates_is_realizable_is_const_callable`
+        // (const since `5c42e49`) and
+        // `error_localization_coordinates_is_realizable_is_const_callable`
+        // (const since `5232251`): the same discipline lifted to the
+        // fourth cube in the four-cube realizability-predicate
+        // typescape primitive set. Two representative cells from the
+        // realizable diagonal (`(File, File)` and `(Code, Defaults)`)
+        // and two representative cells from the unrealizable
+        // complement (one per row of the 3×3 cube not yet routed
+        // through the realizable image) route each corner through the
+        // const-fn predicate in const position, so the whole
+        // realizability partition is pinned const-callable.
+        //
+        // The moment `is_realizable` stops being const-callable —
+        // a future edit reaching for a runtime helper on the tuple
+        // match, an allocator on either enum construction, or a lost
+        // const-lift on the pattern match itself — one of the four
+        // `const` welds below fails to compile at THAT line before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the predicate: a `static REALIZABLE_MASK:
+        // [bool; AttributionSourceKindCoordinates::ALL.len()]`
+        // per-cell realizability lookup, an attestation manifest
+        // recording realizable-image membership at compile time, a
+        // `const IS_R: bool = cell.is_realizable()` sentinel for a
+        // compile-time-known cell.
+        const C_FILE_FILE: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::File,
+        };
+        const C_CODE_DEFAULTS: AttributionSourceKindCoordinates =
+            AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::Code,
+                layer_kind: ConfigSourceKind::Defaults,
+            };
+        const C_FILE_ENV: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::Env,
+        };
+        const C_CUSTOM_FILE: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::File,
+        };
+
+        const IS_R_FILE_FILE: bool = C_FILE_FILE.is_realizable();
+        const IS_R_CODE_DEFAULTS: bool = C_CODE_DEFAULTS.is_realizable();
+        const IS_R_FILE_ENV: bool = C_FILE_ENV.is_realizable();
+        const IS_R_CUSTOM_FILE: bool = C_CUSTOM_FILE.is_realizable();
+
+        // Realizable band: the two structural-diagonal cells that lie
+        // in the image of `AttributionRule::attribution_source_kind_coordinates`
+        // (`FileBySource` → `(File, File)`, `DefaultsByCodeUniqueness`
+        // → `(Code, Defaults)`).
+        assert!(IS_R_FILE_FILE);
+        assert!(IS_R_CODE_DEFAULTS);
+        // Unrealizable band: two representative cells outside the
+        // realizable image. `(File, Env)` sits off the diagonal on
+        // the `File` row; `(Custom, File)` sits on the `Custom` row
+        // (no recognized rule dispatches off `Source::Custom` today).
+        assert!(!IS_R_FILE_ENV);
+        assert!(!IS_R_CUSTOM_FILE);
+
+        // Cross-check: on every cell in `ALL` the const-fn
+        // realizability predicate stays pointwise equal to the
+        // `matches!` diagonal law it delegates to — the const-context
+        // welds above only exercise the four corner cells named at
+        // const-binding sites, but the runtime pin threads the full
+        // closed 9-cell list through the same predicate to catch a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        for cell in AttributionSourceKindCoordinates::ALL.iter().copied() {
+            let expected = matches!(
+                (cell.figment_source_kind, cell.layer_kind),
+                (FigmentSourceKind::File, ConfigSourceKind::File)
+                    | (FigmentSourceKind::Code, ConfigSourceKind::Defaults)
+            );
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: const-fn is_realizable must route through the diagonal law",
+            );
+        }
+
+        // Cardinality pin: the const-fn predicate agrees with the
+        // structural sum on the realizable / unrealizable split, so a
+        // future variant on either sibling axis (`FigmentSourceKind`,
+        // `ConfigSourceKind`) forces an extension of the recognized
+        // image or diagonal law in lockstep with the ALL slice — the
+        // count is derived, not hand-written.
+        let realizable = AttributionSourceKindCoordinates::ALL
+            .iter()
+            .filter(|c| c.is_realizable())
+            .count();
+        assert_eq!(
+            realizable
+                + AttributionSourceKindCoordinates::ALL
+                    .iter()
+                    .filter(|c| !c.is_realizable())
+                    .count(),
+            AttributionSourceKindCoordinates::ALL.len(),
+            "realizable + unrealizable partitions ALL exactly once",
+        );
     }
 
     #[test]
