@@ -5012,8 +5012,33 @@ impl<'a> FailingSourceAttribution<'a> {
     /// — the convenience forwarder stays a thin lift of the
     /// underlying rule's coordinate accessor; the contract is pinned
     /// by `failing_source_attribution_coordinates_mirrors_rule_coordinates`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_coordinates_is_const_callable`]).
+    /// The routed body `self.rule.coordinates()` composes two const-
+    /// callable primitives — the `Copy` field access `self.rule` on the
+    /// `Copy + #[non_exhaustive]` envelope, and the underlying
+    /// [`AttributionRule::coordinates`] unifier (const since it was
+    /// introduced, welded at compile time by
+    /// [`tests::attribution_rule_coordinates_is_const_callable`]) — so a
+    /// `const AttributionCoordinates` binding produced from a
+    /// `const FailingSourceAttribution<'static>` evaluates at compile
+    /// time. Fourth envelope-altitude const-lift on
+    /// [`FailingSourceAttribution`] after [`Self::confidence`] (`df3334f`),
+    /// [`Self::layer_kind`] (`fc9e0c6`), and [`Self::metadata_axis`]
+    /// (`37b71fb`): closes the const-callability parity between the
+    /// envelope's three atomic axis projections and the joint triple
+    /// unifier that composes over them — one-hop composition through
+    /// [`AttributionRule::coordinates`] rather than a three-hop
+    /// re-composition, so a compile-time-known envelope now surfaces
+    /// the whole coordinate triple in the same const context that
+    /// already carries each axis projection. A
+    /// `static PER_ENV_COORDS: [AttributionCoordinates;
+    /// AttributionRule::ALL.len()]` per-envelope coordinate table
+    /// routed through the envelope no longer drops the caller off the
+    /// const-context edge.
     #[must_use]
-    pub fn coordinates(self) -> AttributionCoordinates {
+    pub const fn coordinates(self) -> AttributionCoordinates {
         self.rule.coordinates()
     }
 
@@ -14778,6 +14803,147 @@ mod tests {
             assert_eq!(c.layer_kind, attr.layer_kind());
             assert_eq!(c.confidence, attr.confidence());
         }
+    }
+
+    #[test]
+    fn failing_source_attribution_coordinates_is_const_callable() {
+        // Weld the const-callability of the (envelope → coordinates)
+        // joint-triple forwarder at compile time. Fourth envelope-
+        // altitude const-callable weld on [`FailingSourceAttribution`]
+        // after `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f), `failing_source_attribution_layer_kind_is_const_callable`
+        // (fc9e0c6), and `failing_source_attribution_metadata_axis_is_const_callable`
+        // (37b71fb), closing the const-callability parity between the
+        // envelope's three atomic axis projections and the joint
+        // triple unifier that composes over them. The routed body
+        // composes two const-callable primitives: the `Copy` field
+        // access `self.rule` on the `Copy + #[non_exhaustive]`
+        // envelope, and the underlying `AttributionRule::coordinates`
+        // unifier (const since it was introduced, welded at compile
+        // time by `attribution_rule_coordinates_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // joint (axis × layer-kind × confidence) triple accessor:
+        // the moment [`FailingSourceAttribution::coordinates`] (or
+        // the routed downstream [`AttributionRule::coordinates`])
+        // stops being const-callable, one of the `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // envelope — a `static PER_ENV_COORDS: [AttributionCoordinates;
+        // AttributionRule::ALL.len()]` per-envelope coordinate table
+        // routed through the envelope, a `const IS_EXACT_FILE_SOURCE:
+        // bool = matches!(ENV.coordinates(), AttributionCoordinates {
+        // axis: AttributionAxis::MetadataSource, layer_kind:
+        // ConfigSourceKind::File, confidence: AttributionConfidence::Exact })`
+        // sentinel for a compile-time-known envelope's joint cell, or
+        // a compile-time attestation manifest keyed on the full
+        // envelope-routed coordinate triple.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const C_FBS: AttributionCoordinates = ATTR_FBS.coordinates();
+        const C_FBM: AttributionCoordinates = ATTR_FBM.coordinates();
+        const C_EBP: AttributionCoordinates = ATTR_EBP.coordinates();
+        const C_EBU: AttributionCoordinates = ATTR_EBU.coordinates();
+        const C_DBCU: AttributionCoordinates = ATTR_DBCU.coordinates();
+
+        // Pointwise: each of the five envelope-routed coordinate
+        // triples must sit under the same cell as the underlying
+        // rule-routed unifier weld
+        // (`attribution_rule_coordinates_is_const_callable`). The
+        // const-context bindings above prove const-callability through
+        // the envelope; the pins below prove the envelope forwarder
+        // stays byte-for-byte agreed with the rule-altitude primitive
+        // it routes through — a future edit that made the envelope
+        // drift from the rule (or reintroduced a non-const step in
+        // the routed body) diverges here first, not at a downstream
+        // reader of a stale (envelope → coordinates) projection.
+        assert_eq!(
+            C_FBS,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_FBM,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_EBP,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        assert_eq!(
+            C_EBU,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Fallback,
+            },
+        );
+        assert_eq!(
+            C_DBCU,
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::Defaults,
+                confidence: AttributionConfidence::Fallback,
+            },
+        );
+
+        // Envelope-vs-rule agreement: every envelope-routed
+        // coordinate triple must match its rule-altitude unifier,
+        // welded at const-time across the five-rule partition —
+        // the sibling runtime mirror pin
+        // `failing_source_attribution_coordinates_mirrors_rule_coordinates`
+        // proves the same equality over the runtime path.
+        assert_eq!(C_FBS, AttributionRule::FileBySource.coordinates());
+        assert_eq!(C_FBM, AttributionRule::FileByMetadataName.coordinates());
+        assert_eq!(C_EBP, AttributionRule::EnvByPrefix.coordinates());
+        assert_eq!(C_EBU, AttributionRule::EnvByUniqueness.coordinates());
+        assert_eq!(
+            C_DBCU,
+            AttributionRule::DefaultsByCodeUniqueness.coordinates(),
+        );
     }
 
     #[test]
