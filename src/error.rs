@@ -2975,8 +2975,36 @@ impl AttributionRule {
     /// (no string parsing, no inline tuple destructuring), so the
     /// recognized-cell predicate stays one method call regardless of
     /// how many rules the substrate accumulates.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`AttributionCoordinates`] cell resolves to its rule (or [`None`])
+    /// at compile time, so a
+    /// `const RULE: Option<AttributionRule> = AttributionRule::from_coordinates(cell)`
+    /// sentinel for a compile-time-known cell, a
+    /// `static PER_CELL: [Option<AttributionRule>; AttributionCoordinates::ALL.len()]`
+    /// per-cell rule lookup, an attestation manifest carrying the
+    /// (cell → Option<rule>) partial-inverse partition at compile
+    /// time, or a `const IS_RECOGNIZED: bool =
+    /// AttributionRule::from_coordinates(cell).is_some()` sentinel
+    /// composed over the partial inverse now wire straight through
+    /// without a runtime dispatch, welded by
+    /// [`tests::attribution_rule_from_coordinates_is_const_callable`].
+    /// Lifted to `const` alongside the forward map
+    /// [`Self::coordinates`] (const since `fdfaa07`), closing the
+    /// forward-inverse pair at the same const-callability altitude —
+    /// the recognized-cell round-trip
+    /// `Self::from_coordinates(rule.coordinates()) == Some(rule)`
+    /// (pinned by
+    /// [`tests::attribution_rule_from_coordinates_round_trips_with_coordinates`])
+    /// now routes through const-callable hops end-to-end. Body is
+    /// verbatim; only the signature moves. Const-fn eligibility holds
+    /// under rustc 1.94.1: [`AttributionCoordinates`] is a `Copy`
+    /// payload-free-fields product struct, each of its three fields is
+    /// a payload-free enum, and `match` on a tuple of payload-free
+    /// enum discriminants returning `Option`s of payload-free variants
+    /// has been const-stable since 1.46.
     #[must_use]
-    pub fn from_coordinates(coords: AttributionCoordinates) -> Option<Self> {
+    pub const fn from_coordinates(coords: AttributionCoordinates) -> Option<Self> {
         match (coords.axis, coords.layer_kind, coords.confidence) {
             (
                 AttributionAxis::MetadataSource,
@@ -13397,6 +13425,210 @@ mod tests {
         assert_eq!(C_DBCU.axis, MA_DBCU);
         assert_eq!(C_DBCU.layer_kind, LK_DBCU);
         assert_eq!(C_DBCU.confidence, CF_DBCU);
+    }
+
+    #[test]
+    fn attribution_rule_from_coordinates_is_const_callable() {
+        // Weld the const-callability of the (coordinate-triple -> rule)
+        // partial inverse `AttributionRule::from_coordinates` at compile
+        // time. Sibling forward-direction weld
+        // `attribution_rule_coordinates_is_const_callable` proves
+        // const-callability of `AttributionRule::coordinates` (const
+        // since `fdfaa07`); this weld closes the forward-inverse pair
+        // at the same const-callability altitude on the (axis ×
+        // layer_kind × confidence) cube. The body is a `match` over a
+        // tuple of three payload-free `Copy` enum discriminants
+        // (`AttributionAxis`, `ConfigSourceKind`,
+        // `AttributionConfidence`) returning `Option`s of payload-free
+        // `AttributionRule` variants, all const-stable since Rust 1.46,
+        // so the partial inverse stays wired to compile-time evaluation
+        // across the entire 12-cell cube.
+        //
+        // Two `const` bands cover the whole cube. The recognized band
+        // routes the five occupied cells through the inverse in const
+        // position, each yielding `Some(rule)`; the unrecognized band
+        // routes seven unoccupied cells the same way, each yielding
+        // `None`. The moment `from_coordinates` (or any of the three
+        // sibling enum axes it dispatches over) stops being const-
+        // callable, one of the twelve `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the partial inverse
+        // -- a `const RULE: Option<AttributionRule> =
+        // AttributionRule::from_coordinates(cell)` sentinel for a
+        // compile-time-known coordinate cell, a `static PER_CELL:
+        // [Option<AttributionRule>; AttributionCoordinates::ALL.len()]`
+        // per-cell rule lookup, an attestation manifest carrying the
+        // (cell -> Option<rule>) partition at compile time, a `const
+        // IS_RECOGNIZED: bool = AttributionRule::from_coordinates(cell)
+        // .is_some()` sentinel composed over the partial inverse.
+
+        // Recognized band: the five occupied cells, one per rule
+        // variant. Cell literals mirror the five arms of
+        // `AttributionRule::from_coordinates` in declaration order --
+        // FileBySource / FileByMetadataName / EnvByPrefix /
+        // EnvByUniqueness / DefaultsByCodeUniqueness. Each const-bound
+        // cell threads through the partial inverse under `const` and
+        // must pin to `Some(rule)` for the sibling rule.
+        const CELL_FBS: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_FBM: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_EBP: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_EBU: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const CELL_DBCU: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Fallback,
+        };
+
+        const R_FBS: Option<AttributionRule> = AttributionRule::from_coordinates(CELL_FBS);
+        const R_FBM: Option<AttributionRule> = AttributionRule::from_coordinates(CELL_FBM);
+        const R_EBP: Option<AttributionRule> = AttributionRule::from_coordinates(CELL_EBP);
+        const R_EBU: Option<AttributionRule> = AttributionRule::from_coordinates(CELL_EBU);
+        const R_DBCU: Option<AttributionRule> = AttributionRule::from_coordinates(CELL_DBCU);
+
+        assert_eq!(R_FBS, Some(AttributionRule::FileBySource));
+        assert_eq!(R_FBM, Some(AttributionRule::FileByMetadataName));
+        assert_eq!(R_EBP, Some(AttributionRule::EnvByPrefix));
+        assert_eq!(R_EBU, Some(AttributionRule::EnvByUniqueness));
+        assert_eq!(R_DBCU, Some(AttributionRule::DefaultsByCodeUniqueness));
+
+        // Unrecognized band: the seven cells the rule space does not
+        // occupy. Enumerating each in a const binding pins the partial
+        // range: a future rule variant that landed on one of the seven
+        // and forgot to extend `from_coordinates` would produce `None`
+        // at the const binding here, diverging at THIS test before the
+        // drift reached any downstream reader assuming const-ness
+        // through the partial inverse. Cells named after their (axis,
+        // layer, confidence) triple.
+        const CELL_MS_ENV_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_MS_ENV_FALLBACK: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const CELL_MN_DEFAULTS_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_MN_DEFAULTS_FALLBACK: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const CELL_MS_FILE_FALLBACK: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const CELL_MS_DEFAULTS_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        };
+        const CELL_MN_FILE_FALLBACK: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        };
+
+        const N_MS_ENV_EXACT: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MS_ENV_EXACT);
+        const N_MS_ENV_FALLBACK: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MS_ENV_FALLBACK);
+        const N_MN_DEFAULTS_EXACT: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MN_DEFAULTS_EXACT);
+        const N_MN_DEFAULTS_FALLBACK: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MN_DEFAULTS_FALLBACK);
+        const N_MS_FILE_FALLBACK: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MS_FILE_FALLBACK);
+        const N_MS_DEFAULTS_EXACT: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MS_DEFAULTS_EXACT);
+        const N_MN_FILE_FALLBACK: Option<AttributionRule> =
+            AttributionRule::from_coordinates(CELL_MN_FILE_FALLBACK);
+
+        assert_eq!(N_MS_ENV_EXACT, None);
+        assert_eq!(N_MS_ENV_FALLBACK, None);
+        assert_eq!(N_MN_DEFAULTS_EXACT, None);
+        assert_eq!(N_MN_DEFAULTS_FALLBACK, None);
+        assert_eq!(N_MS_FILE_FALLBACK, None);
+        assert_eq!(N_MS_DEFAULTS_EXACT, None);
+        assert_eq!(N_MN_FILE_FALLBACK, None);
+
+        // Full-cube pin: iterate `AttributionCoordinates::ALL` (the
+        // 12-cell cube) against a set of recognized cells so a future
+        // variant landing on `AttributionRule`, `AttributionAxis`,
+        // `ConfigSourceKind`, or `AttributionConfidence` without a
+        // corresponding update here fails at the count check. Mirrors
+        // the `ALL`-length pins on the sibling const-callable welds --
+        // the count is a structural sum
+        // (`AttributionRule::ALL.len()` recognized +
+        // `AttributionCoordinates::ALL.len() - AttributionRule::ALL.len()`
+        // unrecognized) rather than a hand-derived integer.
+        let mut recognized_count = 0usize;
+        let mut unrecognized_count = 0usize;
+        for coords in AttributionCoordinates::ALL.iter().copied() {
+            match AttributionRule::from_coordinates(coords) {
+                Some(_) => recognized_count += 1,
+                None => unrecognized_count += 1,
+            }
+        }
+        assert_eq!(
+            recognized_count,
+            AttributionRule::ALL.len(),
+            "cube-cover: recognized cells must equal the rule count",
+        );
+        assert_eq!(
+            unrecognized_count,
+            AttributionCoordinates::ALL.len() - AttributionRule::ALL.len(),
+            "cube-cover: unrecognized cells must equal (cube - rule count)",
+        );
+
+        // Round-trip pin at const altitude: for every rule, the
+        // forward-then-inverse composition
+        // `Self::from_coordinates(rule.coordinates())` recovers
+        // `Some(rule)` -- both hops const-callable, so the round-trip
+        // is welded end-to-end at compile time. This closes the same
+        // bijection statement the runtime pin
+        // `attribution_rule_from_coordinates_round_trips_with_coordinates`
+        // pins, but at the const-context altitude where a lost
+        // const-ness on either hop fails at THIS line first.
+        const RT_FBS: Option<AttributionRule> =
+            AttributionRule::from_coordinates(AttributionRule::FileBySource.coordinates());
+        const RT_FBM: Option<AttributionRule> =
+            AttributionRule::from_coordinates(AttributionRule::FileByMetadataName.coordinates());
+        const RT_EBP: Option<AttributionRule> =
+            AttributionRule::from_coordinates(AttributionRule::EnvByPrefix.coordinates());
+        const RT_EBU: Option<AttributionRule> =
+            AttributionRule::from_coordinates(AttributionRule::EnvByUniqueness.coordinates());
+        const RT_DBCU: Option<AttributionRule> = AttributionRule::from_coordinates(
+            AttributionRule::DefaultsByCodeUniqueness.coordinates(),
+        );
+
+        assert_eq!(RT_FBS, Some(AttributionRule::FileBySource));
+        assert_eq!(RT_FBM, Some(AttributionRule::FileByMetadataName));
+        assert_eq!(RT_EBP, Some(AttributionRule::EnvByPrefix));
+        assert_eq!(RT_EBU, Some(AttributionRule::EnvByUniqueness));
+        assert_eq!(RT_DBCU, Some(AttributionRule::DefaultsByCodeUniqueness));
     }
 
     #[test]
