@@ -3266,8 +3266,20 @@ impl AttributionCoordinates {
     /// the partial inverse's [`Some`] domain); on the other two cubes
     /// the predicate is a direct pattern match because the forward
     /// map is non-injective or partial.
+    ///
+    /// `pub const fn`: both hops in the composition are const-callable
+    /// under rustc 1.94.1 — [`AttributionRule::from_coordinates`] const
+    /// since the sibling lift on the same rule-altitude closed set of
+    /// projections, and `Option::is_some` const since 1.48 — so the
+    /// composed predicate lifts to `const fn` verbatim with no body
+    /// change. Welded at compile time by
+    /// [`tests::attribution_coordinates_is_realizable_is_const_callable`];
+    /// mirrors the sibling const-callability weld on the peer
+    /// realizability predicate [`ErrorLocalizationCoordinates::is_realizable`]
+    /// (const since `5232251`), so both cube-altitude realizability
+    /// predicates now share the same const-callability contract.
     #[must_use]
-    pub fn is_realizable(self) -> bool {
+    pub const fn is_realizable(self) -> bool {
         AttributionRule::from_coordinates(self).is_some()
     }
 }
@@ -13984,6 +13996,159 @@ mod tests {
             AttributionRule::ALL.len(),
             "exactly AttributionRule::ALL.len() cells must round-trip; \
              got: {round_tripped}",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_is_realizable_is_const_callable() {
+        // Weld the const-callability of the realizability predicate
+        // `AttributionCoordinates::is_realizable` and the hop it
+        // delegates to — `AttributionRule::from_coordinates` (const
+        // since the sibling rule-altitude lift on the same closed set
+        // of projections) followed by `Option::is_some` (const since
+        // 1.48) — at compile time.
+        //
+        // Peer to the sibling cube-altitude realizability const-fn
+        // weld `error_localization_coordinates_is_realizable_is_const_callable`,
+        // which routes the two-hop
+        // (kind.is_figment_bearing == localization.is_applicable)
+        // cascade through the delegating predicate on the peer
+        // (kind × localization) cube: the same discipline lifted to
+        // the (axis × layer_kind × confidence) cube, where the
+        // predicate collapses to the partial-inverse-is-Some test.
+        // Both cube-altitude realizability predicates now share the
+        // same const-callability contract.
+        //
+        // The moment `is_realizable` (or the `from_coordinates` hop
+        // it delegates to) stops being const-callable, one of the
+        // const bindings below fails to compile at THAT line before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the predicate — a `static REALIZABLE_MASK:
+        // [bool; AttributionCoordinates::ALL.len()]` per-cell
+        // realizability lookup, an attestation manifest recording
+        // realizable-image membership at compile time, a `const
+        // IS_R: bool = cell.is_realizable()` sentinel for a
+        // compile-time-known cell, a `const IS_RECOGNIZED: bool =
+        // AttributionCoordinates { .. }.is_realizable()` per-corner
+        // sentinel routed through the four-cube realizability
+        // symmetry.
+        //
+        // Two bands: recognized (five cells, one per recognized rule)
+        // and unrecognized (four representative cells from the seven-
+        // cell unrecognized complement — one from each corner of the
+        // (axis × confidence) 2×2 that the recognized image does not
+        // fully cover on the `Defaults`/`File`/`Env` layer-kind axis).
+        const C_FILE_BY_SOURCE: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        const C_FILE_BY_NAME: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        const C_ENV_BY_PREFIX: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        };
+        const C_ENV_BY_UNIQUENESS: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const C_DEFAULTS_BY_CODE_UNIQ: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Fallback,
+        };
+
+        const C_UN_SRC_DEFAULTS_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        };
+        const C_UN_SRC_ENV_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        };
+        const C_UN_NAME_FILE_FALLBACK: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        };
+        const C_UN_NAME_DEFAULTS_EXACT: AttributionCoordinates = AttributionCoordinates {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        };
+
+        const IS_R_FBS: bool = C_FILE_BY_SOURCE.is_realizable();
+        const IS_R_FBN: bool = C_FILE_BY_NAME.is_realizable();
+        const IS_R_EBP: bool = C_ENV_BY_PREFIX.is_realizable();
+        const IS_R_EBU: bool = C_ENV_BY_UNIQUENESS.is_realizable();
+        const IS_R_DBC: bool = C_DEFAULTS_BY_CODE_UNIQ.is_realizable();
+
+        const IS_R_UN_SDE: bool = C_UN_SRC_DEFAULTS_EXACT.is_realizable();
+        const IS_R_UN_SEE: bool = C_UN_SRC_ENV_EXACT.is_realizable();
+        const IS_R_UN_NFF: bool = C_UN_NAME_FILE_FALLBACK.is_realizable();
+        const IS_R_UN_NDE: bool = C_UN_NAME_DEFAULTS_EXACT.is_realizable();
+
+        // Pointwise: the five recognized corners route to `true`, the
+        // four unrecognized corners route to `false`. The const-context
+        // welds above prove const-callability; the pins below prove the
+        // realizability mapping stays agreed with the partial-inverse-
+        // is-Some law — a future edit that shifted either hop diverges
+        // here first, not at a downstream reader of a stale
+        // realizability classification.
+        assert!(IS_R_FBS);
+        assert!(IS_R_FBN);
+        assert!(IS_R_EBP);
+        assert!(IS_R_EBU);
+        assert!(IS_R_DBC);
+        assert!(!IS_R_UN_SDE);
+        assert!(!IS_R_UN_SEE);
+        assert!(!IS_R_UN_NFF);
+        assert!(!IS_R_UN_NDE);
+
+        // Cross-check: on every cell in `ALL` the const-fn
+        // realizability predicate stays pointwise equal to the
+        // partial-inverse-is-Some composition it delegates to — the
+        // const-context welds above only exercise the nine
+        // representative cells named at const-binding sites, but the
+        // runtime pin threads the full closed 12-cell cube through
+        // the same delegation to catch a future variant landing whose
+        // const-context weld was forgotten upstream by pinning the
+        // recognized / unrecognized counts against a structural sum
+        // (`AttributionRule::ALL.len()` for recognized;
+        // `AttributionCoordinates::ALL.len() - AttributionRule::ALL.len()`
+        // for unrecognized) rather than hand-derived integers.
+        let mut recognized = 0usize;
+        let mut unrecognized = 0usize;
+        for cell in AttributionCoordinates::ALL.iter().copied() {
+            let expected = AttributionRule::from_coordinates(cell).is_some();
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: is_realizable must equal from_coordinates(_).is_some()",
+            );
+            if cell.is_realizable() {
+                recognized += 1;
+            } else {
+                unrecognized += 1;
+            }
+        }
+        assert_eq!(
+            recognized,
+            AttributionRule::ALL.len(),
+            "recognized cell count must equal AttributionRule::ALL cardinality",
+        );
+        assert_eq!(
+            unrecognized,
+            AttributionCoordinates::ALL.len() - AttributionRule::ALL.len(),
+            "unrecognized cell count must equal cube cardinality minus rule cardinality",
         );
     }
 
