@@ -5440,8 +5440,14 @@ impl ShikumiError {
     /// [`Self::kind`]; equivalent to
     /// `self.kind() == ShikumiErrorKind::Parse`. Tag-side sibling
     /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// `const fn`: routes through the const-callable projection
+    /// [`Self::kind`] composed with a `matches!` arm on the
+    /// [`Copy`] + `#[repr]`-fixed [`ShikumiErrorKind::Parse`]
+    /// unit variant. Weld:
+    /// [`tests::shikumi_error_tag_side_septet_and_meta_axis_pair_are_const_callable`].
     #[must_use]
-    pub fn is_parse(&self) -> bool {
+    pub const fn is_parse(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Parse)
     }
 
@@ -5449,8 +5455,10 @@ impl ShikumiError {
     /// [`Self::kind`]; equivalent to
     /// `self.kind() == ShikumiErrorKind::Watch`. Tag-side sibling
     /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// `const fn`: same routed weld as [`Self::is_parse`].
     #[must_use]
-    pub fn is_watch(&self) -> bool {
+    pub const fn is_watch(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Watch)
     }
 
@@ -5458,8 +5466,10 @@ impl ShikumiError {
     /// [`Self::kind`]; equivalent to
     /// `self.kind() == ShikumiErrorKind::Io`. Tag-side sibling
     /// predicate; see [`Self::is_not_found`] for the full contract.
+    ///
+    /// `const fn`: same routed weld as [`Self::is_parse`].
     #[must_use]
-    pub fn is_io(&self) -> bool {
+    pub const fn is_io(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Io)
     }
 
@@ -5473,8 +5483,10 @@ impl ShikumiError {
     /// (`self.is_figment() || self.is_extract() ==
     /// self.kind().is_figment_bearing()` pointwise, pinned by
     /// [`tests::shikumi_error_figment_extract_siblings_partition_is_figment_bearing`]).
+    ///
+    /// `const fn`: same routed weld as [`Self::is_parse`].
     #[must_use]
-    pub fn is_figment(&self) -> bool {
+    pub const fn is_figment(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Figment)
     }
 
@@ -5485,8 +5497,10 @@ impl ShikumiError {
     ///
     /// Tag-side refinement of [`Self::is_figment_bearing`] — the
     /// other figment-bearing corner, peer of [`Self::is_figment`].
+    ///
+    /// `const fn`: same routed weld as [`Self::is_parse`].
     #[must_use]
-    pub fn is_extract(&self) -> bool {
+    pub const fn is_extract(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Extract)
     }
 
@@ -5495,8 +5509,10 @@ impl ShikumiError {
     /// `self.kind() == ShikumiErrorKind::Validation`. Tag-side
     /// sibling predicate; see [`Self::is_not_found`] for the full
     /// contract.
+    ///
+    /// `const fn`: same routed weld as [`Self::is_parse`].
     #[must_use]
-    pub fn is_validation(&self) -> bool {
+    pub const fn is_validation(&self) -> bool {
         matches!(self.kind(), ShikumiErrorKind::Validation)
     }
 
@@ -5509,8 +5525,13 @@ impl ShikumiError {
     /// borrowed error stop routing through the kind projection at
     /// the two figment-bearing corners
     /// ([`Self::Figment`] / [`Self::Extract`]) named at the type level.
+    ///
+    /// `const fn`: composes the const-callable [`Self::kind`]
+    /// projection with the already-const kind-side
+    /// [`ShikumiErrorKind::is_figment_bearing`]. Weld:
+    /// [`tests::shikumi_error_tag_side_septet_and_meta_axis_pair_are_const_callable`].
     #[must_use]
-    pub fn is_figment_bearing(&self) -> bool {
+    pub const fn is_figment_bearing(&self) -> bool {
         self.kind().is_figment_bearing()
     }
 
@@ -5555,8 +5576,13 @@ impl ShikumiError {
     /// captured error satisfies exactly one, none satisfies both,
     /// none satisfies neither — pinned by
     /// [`tests::shikumi_error_figment_bearing_predicates_are_a_closed_binary_partition`].
+    ///
+    /// `const fn`: composes the const-callable [`Self::kind`]
+    /// projection with the already-const kind-side
+    /// [`ShikumiErrorKind::is_not_figment_bearing`]. Weld:
+    /// [`tests::shikumi_error_tag_side_septet_and_meta_axis_pair_are_const_callable`].
     #[must_use]
-    pub fn is_not_figment_bearing(&self) -> bool {
+    pub const fn is_not_figment_bearing(&self) -> bool {
         self.kind().is_not_figment_bearing()
     }
 
@@ -10253,6 +10279,136 @@ mod tests {
         assert_eq!(IS_NOT_FOUND_ON_NOT_FOUND, NOT_FOUND_KIND_IS_NOT_FOUND);
         assert_eq!(IS_NOT_FOUND_ON_PARSE, PARSE_KIND_IS_NOT_FOUND);
         assert_eq!(IS_NOT_FOUND_ON_VALIDATION, VALIDATION_KIND_IS_NOT_FOUND);
+    }
+
+    #[test]
+    fn shikumi_error_tag_side_septet_and_meta_axis_pair_are_const_callable() {
+        // Weld the const-callability of the SIX remaining tag-side
+        // sibling forwarders — `is_parse` / `is_watch` / `is_io` /
+        // `is_figment` / `is_extract` / `is_validation` — plus the
+        // TWO meta-axis forwarders `is_figment_bearing` /
+        // `is_not_figment_bearing` at compile time. Closes the
+        // tag-side septet const-callability parity opened by
+        // `shikumi_error_is_not_found_is_const_callable`
+        // (`851748e`) and closes the meta-axis pair
+        // const-callability parity opened by
+        // `shikumi_error_kind_is_const_callable` (`4b00851`,
+        // the routed const-callable projection `self.kind()` that
+        // every forwarder here composes with).
+        //
+        // Same three const-constructible receivers as the two
+        // sibling welds above: `NotFound` / `Parse` / `Validation`.
+        // The remaining four `ShikumiError` arms (`Watch`, `Io`,
+        // `Figment`, `Extract`) carry payloads whose constructors
+        // are not const; each of the eight forwarders is welded on
+        // one arm from among the three const-constructible ones
+        // that matches its target (the true corner where such an
+        // arm exists — `Parse` for `is_parse` and `is_not_figment_bearing`,
+        // `Validation` for `is_validation`; `NotFound` as one of
+        // the false corners elsewhere), and cross-checked on at
+        // least one false corner. Full construction-table coverage
+        // is deferred to the pre-existing runtime pointwise pins
+        // downstream (each tag-side sibling's `_agrees_with_..._pointwise`
+        // pin against the kind-side sibling; the closed-septet
+        // partition pin
+        // `shikumi_error_predicates_are_a_closed_septet_partition`;
+        // and the figment-bearing pins named on the docstrings of
+        // the meta-axis pair). The `static` rather than `const`
+        // receiver is load-bearing for the same E0493 reason as
+        // `shikumi_error_kind_is_const_callable`.
+        //
+        // A future edit that reintroduces a non-const step (an
+        // allocator on the projection body, a runtime-only helper
+        // on any match arm, dropping const-fn on `self.kind()`
+        // itself) fails at THIS weld before any downstream reader
+        // (a compile-time-known per-kind severity table, a
+        // per-partition static ordering slice, an attestation
+        // manifest keyed on the figment-bearing axis) drops off
+        // the const-context edge.
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+        static VALIDATION_ERR: ShikumiError = ShikumiError::Validation(String::new());
+
+        // Tag-side septet (six remaining): each in const position
+        // against the true corner (where const-constructible) and
+        // at least one false corner.
+        const IS_PARSE_ON_PARSE: bool = PARSE_ERR.is_parse();
+        const IS_PARSE_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_parse();
+        const IS_WATCH_ON_PARSE: bool = PARSE_ERR.is_watch();
+        const IS_WATCH_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_watch();
+        const IS_IO_ON_PARSE: bool = PARSE_ERR.is_io();
+        const IS_IO_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_io();
+        const IS_FIGMENT_ON_PARSE: bool = PARSE_ERR.is_figment();
+        const IS_FIGMENT_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_figment();
+        const IS_EXTRACT_ON_PARSE: bool = PARSE_ERR.is_extract();
+        const IS_EXTRACT_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_extract();
+        const IS_VALIDATION_ON_VALIDATION: bool = VALIDATION_ERR.is_validation();
+        const IS_VALIDATION_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_validation();
+
+        // Meta-axis pair: both const-callable through the same
+        // `self.kind()` projection composed with the already-const
+        // kind-side sibling.
+        const IS_FIGMENT_BEARING_ON_NOT_FOUND: bool = NOT_FOUND_ERR.is_figment_bearing();
+        const IS_FIGMENT_BEARING_ON_PARSE: bool = PARSE_ERR.is_figment_bearing();
+        const IS_NOT_FIGMENT_BEARING_ON_PARSE: bool = PARSE_ERR.is_not_figment_bearing();
+        const IS_NOT_FIGMENT_BEARING_ON_VALIDATION: bool = VALIDATION_ERR.is_not_figment_bearing();
+
+        // Tag-side septet: true corners hold, false corners don't.
+        assert!(IS_PARSE_ON_PARSE);
+        assert!(!IS_PARSE_ON_NOT_FOUND);
+        assert!(!IS_WATCH_ON_PARSE);
+        assert!(!IS_WATCH_ON_NOT_FOUND);
+        assert!(!IS_IO_ON_PARSE);
+        assert!(!IS_IO_ON_NOT_FOUND);
+        assert!(!IS_FIGMENT_ON_PARSE);
+        assert!(!IS_FIGMENT_ON_NOT_FOUND);
+        assert!(!IS_EXTRACT_ON_PARSE);
+        assert!(!IS_EXTRACT_ON_NOT_FOUND);
+        assert!(IS_VALIDATION_ON_VALIDATION);
+        assert!(!IS_VALIDATION_ON_NOT_FOUND);
+
+        // Meta-axis pair: neither of the three const-constructible
+        // arms is figment-bearing (all three sit on the
+        // non-figment-bearing side of the closed binary partition).
+        assert!(!IS_FIGMENT_BEARING_ON_NOT_FOUND);
+        assert!(!IS_FIGMENT_BEARING_ON_PARSE);
+        assert!(IS_NOT_FIGMENT_BEARING_ON_PARSE);
+        assert!(IS_NOT_FIGMENT_BEARING_ON_VALIDATION);
+
+        // Cross-check: each const-fn body stays byte-for-byte
+        // agreed with its runtime-fn body on the welded arms —
+        // catches a future edit that shifts one but not the other.
+        assert_eq!(IS_PARSE_ON_PARSE, PARSE_ERR.is_parse());
+        assert_eq!(IS_PARSE_ON_NOT_FOUND, NOT_FOUND_ERR.is_parse());
+        assert_eq!(IS_WATCH_ON_PARSE, PARSE_ERR.is_watch());
+        assert_eq!(IS_IO_ON_NOT_FOUND, NOT_FOUND_ERR.is_io());
+        assert_eq!(IS_FIGMENT_ON_PARSE, PARSE_ERR.is_figment());
+        assert_eq!(IS_EXTRACT_ON_NOT_FOUND, NOT_FOUND_ERR.is_extract());
+        assert_eq!(IS_VALIDATION_ON_VALIDATION, VALIDATION_ERR.is_validation());
+        assert_eq!(
+            IS_FIGMENT_BEARING_ON_NOT_FOUND,
+            NOT_FOUND_ERR.is_figment_bearing(),
+        );
+        assert_eq!(
+            IS_NOT_FIGMENT_BEARING_ON_PARSE,
+            PARSE_ERR.is_not_figment_bearing(),
+        );
+
+        // Complement identity on the meta-axis pair holds in const
+        // context on each const-constructible arm — the structural
+        // bridge the runtime pin
+        // `shikumi_error_is_not_figment_bearing_is_complement_of_is_figment_bearing_pointwise`
+        // holds over the full construction table, now welded in
+        // const context on the three arms that admit it.
+        const NOT_FOUND_COMPLEMENT: bool =
+            NOT_FOUND_ERR.is_not_figment_bearing() != NOT_FOUND_ERR.is_figment_bearing();
+        const PARSE_COMPLEMENT: bool =
+            PARSE_ERR.is_not_figment_bearing() != PARSE_ERR.is_figment_bearing();
+        const VALIDATION_COMPLEMENT: bool =
+            VALIDATION_ERR.is_not_figment_bearing() != VALIDATION_ERR.is_figment_bearing();
+        assert!(NOT_FOUND_COMPLEMENT);
+        assert!(PARSE_COMPLEMENT);
+        assert!(VALIDATION_COMPLEMENT);
     }
 
     #[test]
