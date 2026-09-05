@@ -2736,8 +2736,29 @@ impl AttributionRule {
     /// rule slot, so a structured-log replay or attestation manifest
     /// that records a captured failure can recover the originating
     /// provider class without retaining the live [`crate::ShikumiError`].
+    ///
+    /// `pub const fn` since the body is an exhaustive match on
+    /// payload-free variants of [`Self`] returning
+    /// [`Option`]s of payload-free variants of
+    /// [`crate::FormatProvenance`] — const-stable since Rust 1.46. Joins
+    /// the const-callability cascade on the same `impl AttributionRule`
+    /// block that already covers [`Self::confidence`] (const since
+    /// introduction), [`Self::layer_kind`] (const since `52c4a20`),
+    /// [`Self::metadata_axis`] (const since `4f8a185`),
+    /// [`Self::figment_source_kind`] (const since `d382916`),
+    /// [`Self::figment_name_tag_kind`] (const since `ee87837`), and
+    /// [`Self::coordinates`] (const since `fdfaa07`) — every atomic and
+    /// composed total projection on this rule axis is now const-callable
+    /// end-to-end. Welded compile-time by
+    /// [`tests::attribution_rule_file_provenance_is_const_callable`].
+    /// The two partial unifiers
+    /// [`Self::attribution_source_kind_coordinates`] and
+    /// [`Self::attribution_name_kind_coordinates`] remain
+    /// non-const because they compose through [`Option::map`] with a
+    /// closure, which needs stable const-closure support upstream in
+    /// std before it can follow.
     #[must_use]
-    pub fn file_provenance(self) -> Option<crate::FormatProvenance> {
+    pub const fn file_provenance(self) -> Option<crate::FormatProvenance> {
         match self {
             Self::FileBySource => Some(crate::FormatProvenance::FigmentBuiltin),
             Self::FileByMetadataName => Some(crate::FormatProvenance::ShikumiBuilt),
@@ -12863,6 +12884,84 @@ mod tests {
                 attr.metadata_axis().is_metadata_name(),
                 "envelope for rule {rule:?}: figment_name_tag_kind.is_some() must equal \
                  metadata_axis().is_metadata_name()",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_is_const_callable() {
+        // Weld the const-callability of the (rule -> file-provenance)
+        // partial inverse `AttributionRule::file_provenance` at compile
+        // time. Sibling of the atomic const-callable welds already on
+        // the same `impl AttributionRule` block --
+        // `attribution_rule_figment_source_kind_is_const_callable`
+        // (partial-source-kind projection),
+        // `attribution_rule_figment_name_tag_kind_is_const_callable`
+        // (partial-name-tag-kind projection),
+        // `attribution_rule_metadata_axis_predicates_are_const_callable`
+        // (total-metadata projection) -- lifted onto the file-axis
+        // partial-inverse projection whose codomain is
+        // `Option<crate::FormatProvenance>` rather than a metadata
+        // cell. The body is an exhaustive match on payload-free
+        // variants of `AttributionRule` returning `Option`s of
+        // payload-free variants of `crate::FormatProvenance`
+        // (const-stable since Rust 1.46), so the projection stays
+        // wired to compile-time evaluation across the rule axis.
+        //
+        // A `const` binding routes each of the five `AttributionRule`
+        // variants through the projection in const position. The
+        // moment `file_provenance` (or the `crate::FormatProvenance`
+        // variants it names) stops being const-callable, one of the
+        // five `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection -- a
+        // `const PROV: Option<crate::FormatProvenance> = rule.file_provenance()`
+        // sentinel for a compile-time-known rule, a
+        // `static PER_RULE: [Option<crate::FormatProvenance>;
+        // AttributionRule::ALL.len()]` per-rule provenance lookup, an
+        // attestation manifest carrying the per-cell (rule ->
+        // Option<provenance>) map at compile time, a
+        // `const IS_FILE_AXIS: bool = rule.file_provenance().is_some()`
+        // sentinel composed over the partial inverse.
+        const R_FBS: AttributionRule = AttributionRule::FileBySource;
+        const R_FBM: AttributionRule = AttributionRule::FileByMetadataName;
+        const R_EBP: AttributionRule = AttributionRule::EnvByPrefix;
+        const R_EBU: AttributionRule = AttributionRule::EnvByUniqueness;
+        const R_DBCU: AttributionRule = AttributionRule::DefaultsByCodeUniqueness;
+
+        const P_FBS: Option<crate::FormatProvenance> = R_FBS.file_provenance();
+        const P_FBM: Option<crate::FormatProvenance> = R_FBM.file_provenance();
+        const P_EBP: Option<crate::FormatProvenance> = R_EBP.file_provenance();
+        const P_EBU: Option<crate::FormatProvenance> = R_EBU.file_provenance();
+        const P_DBCU: Option<crate::FormatProvenance> = R_DBCU.file_provenance();
+
+        // Pointwise: the two file-axis rules pin their originating
+        // provider class (`FileBySource` -> figment-builtin,
+        // `FileByMetadataName` -> shikumi-built), the three non-file-axis
+        // rules map to `None`. The const-context welds above prove
+        // const-callability; the pins below prove the mapping stays
+        // agreed with the exhaustive match in `file_provenance` --
+        // a future edit that shifted a rule off its file-provenance
+        // classification diverges here first, not at a downstream
+        // reader of a stale (rule -> Option<provenance>) mapping.
+        assert_eq!(P_FBS, Some(crate::FormatProvenance::FigmentBuiltin));
+        assert_eq!(P_FBM, Some(crate::FormatProvenance::ShikumiBuilt));
+        assert_eq!(P_EBP, None);
+        assert_eq!(P_EBU, None);
+        assert_eq!(P_DBCU, None);
+
+        // Full-list pin: iterate `AttributionRule::ALL` against the
+        // const-bound provenance array so a future variant landing on
+        // `AttributionRule` without a corresponding update here fails
+        // at the length check, mirroring the `ALL`-length pins on the
+        // sibling const-callable welds.
+        let expected: [Option<crate::FormatProvenance>; AttributionRule::ALL.len()] =
+            [P_FBS, P_FBM, P_EBP, P_EBU, P_DBCU];
+        for (rule, expected_prov) in AttributionRule::ALL.iter().copied().zip(expected) {
+            assert_eq!(
+                rule.file_provenance(),
+                expected_prov,
+                "rule {rule:?}: file_provenance must match its const-context weld",
             );
         }
     }
