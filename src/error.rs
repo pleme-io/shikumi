@@ -4982,8 +4982,40 @@ impl<'a> FailingSourceAttribution<'a> {
     /// Some-iff-MetadataSource discipline on [`Self::figment_source_kind`].
     /// Pinned by
     /// `failing_source_attribution_figment_name_tag_kind_mirrors_rule_figment_name_tag_kind`.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_figment_name_tag_kind_is_const_callable`]).
+    /// The routed body `self.rule.figment_name_tag_kind()` composes two
+    /// const-callable primitives — the `Copy` field access `self.rule`
+    /// on the `Copy + #[non_exhaustive]` envelope, and the underlying
+    /// [`AttributionRule::figment_name_tag_kind`] partial projection
+    /// (const since it was introduced, welded at compile time by
+    /// [`tests::attribution_rule_figment_name_tag_kind_is_const_callable`])
+    /// — so a `const Option<FigmentNameTagKind>` binding produced from
+    /// a `const FailingSourceAttribution<'static>` evaluates at
+    /// compile time. Sixth envelope-altitude const-lift on
+    /// [`FailingSourceAttribution`] after [`Self::confidence`]
+    /// (`df3334f`), [`Self::layer_kind`] (`fc9e0c6`),
+    /// [`Self::metadata_axis`] (`37b71fb`), [`Self::coordinates`]
+    /// (`02c5653`), and [`Self::figment_source_kind`] (`b11bca7`):
+    /// closes the envelope-altitude partial-projection const-
+    /// callability parity on the (source-axis, name-axis) pair —
+    /// both partial projections at the envelope's altitude now sit at
+    /// the same const-callability altitude the rule-altitude pair
+    /// [`AttributionRule::figment_source_kind`] /
+    /// [`AttributionRule::figment_name_tag_kind`] already occupies.
+    /// The two joint (kind × layer-kind) refinements
+    /// ([`Self::attribution_source_kind_coordinates`] /
+    /// [`Self::attribution_name_kind_coordinates`]) sit one const-lift
+    /// beyond that. A downstream observer that carries a
+    /// `FailingSourceAttribution` by value can now key on the
+    /// figment-`Metadata::name`-axis kind cell in const context — a
+    /// `const IS_ENV_NAME: bool = matches!(ENV.figment_name_tag_kind(),
+    /// Some(FigmentNameTagKind::Env))` sentinel for a compile-time-
+    /// known envelope's name-axis cell resolves at compile time
+    /// without a runtime projection detour.
     #[must_use]
-    pub fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
+    pub const fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
         self.rule.figment_name_tag_kind()
     }
 
@@ -15077,6 +15109,119 @@ mod tests {
         assert_eq!(
             K_DBCU,
             AttributionRule::DefaultsByCodeUniqueness.figment_source_kind(),
+        );
+    }
+
+    #[test]
+    fn failing_source_attribution_figment_name_tag_kind_is_const_callable() {
+        // Weld the const-callability of the (envelope → figment-name-
+        // axis kind) partial projection at compile time. Sixth envelope-
+        // altitude const-callable weld on [`FailingSourceAttribution`]
+        // after `failing_source_attribution_confidence_is_const_callable`
+        // (df3334f), `failing_source_attribution_layer_kind_is_const_callable`
+        // (fc9e0c6), `failing_source_attribution_metadata_axis_is_const_callable`
+        // (37b71fb), `failing_source_attribution_coordinates_is_const_callable`
+        // (02c5653), and
+        // `failing_source_attribution_figment_source_kind_is_const_callable`
+        // (b11bca7): closes the envelope-altitude partial-projection
+        // const-callability parity on the (source-axis, name-axis) pair
+        // — the sibling weld above already proved the source-axis
+        // partial projection const-callable through the envelope; this
+        // one proves the same for its name-axis dual. The routed body
+        // composes two const-callable primitives: the `Copy` field
+        // access `self.rule` on the `Copy + #[non_exhaustive]`
+        // envelope, and the underlying
+        // `AttributionRule::figment_name_tag_kind` partial projection
+        // (const since it was introduced, welded at compile time by
+        // `attribution_rule_figment_name_tag_kind_is_const_callable`).
+        //
+        // Closes the const-callability gap on the envelope-altitude
+        // name-axis partial projection: the moment
+        // [`FailingSourceAttribution::figment_name_tag_kind`] (or the
+        // routed downstream [`AttributionRule::figment_name_tag_kind`])
+        // stops being const-callable, one of the `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // envelope — a `const IS_ENV_NAME: bool =
+        // matches!(ENV.figment_name_tag_kind(), Some(FigmentNameTagKind::Env))`
+        // sentinel for a compile-time-known envelope's name-axis
+        // cell, or a compile-time attestation manifest keyed on the
+        // envelope-routed figment-name-axis kind.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is used
+        // directly (rather than through the non-const `pub(crate) fn
+        // new` constructor) because the `#[non_exhaustive]` discipline
+        // on `FailingSourceAttribution` permits in-crate literal
+        // construction and no const-lift of `new` is needed for this
+        // weld — mirroring the sibling weld shape.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const K_FBS: Option<FigmentNameTagKind> = ATTR_FBS.figment_name_tag_kind();
+        const K_FBM: Option<FigmentNameTagKind> = ATTR_FBM.figment_name_tag_kind();
+        const K_EBP: Option<FigmentNameTagKind> = ATTR_EBP.figment_name_tag_kind();
+        const K_EBU: Option<FigmentNameTagKind> = ATTR_EBU.figment_name_tag_kind();
+        const K_DBCU: Option<FigmentNameTagKind> = ATTR_DBCU.figment_name_tag_kind();
+
+        // Pointwise: each of the five envelope-routed name-axis
+        // projections must sit under the same cell as the underlying
+        // rule-routed partial projection weld
+        // (`attribution_rule_figment_name_tag_kind_is_const_callable`).
+        // Some-iff-MetadataName discipline: name-axis rules
+        // (FileByMetadataName → Format, EnvByPrefix / EnvByUniqueness
+        // → Env) land on `Some`; source-axis rules (FileBySource,
+        // DefaultsByCodeUniqueness) land on `None` — the dual of the
+        // Some-iff-MetadataSource discipline welded on the sibling
+        // source-axis projection.
+        assert_eq!(K_FBS, None);
+        assert_eq!(K_FBM, Some(FigmentNameTagKind::Format));
+        assert_eq!(K_EBP, Some(FigmentNameTagKind::Env));
+        assert_eq!(K_EBU, Some(FigmentNameTagKind::Env));
+        assert_eq!(K_DBCU, None);
+
+        // Envelope-vs-rule agreement: every envelope-routed name-axis
+        // projection must match its rule-altitude partial projection,
+        // welded at const-time across the five-rule partition — the
+        // sibling runtime mirror pin
+        // `failing_source_attribution_figment_name_tag_kind_mirrors_rule_figment_name_tag_kind`
+        // proves the same equality over the runtime path.
+        assert_eq!(K_FBS, AttributionRule::FileBySource.figment_name_tag_kind(),);
+        assert_eq!(
+            K_FBM,
+            AttributionRule::FileByMetadataName.figment_name_tag_kind(),
+        );
+        assert_eq!(K_EBP, AttributionRule::EnvByPrefix.figment_name_tag_kind(),);
+        assert_eq!(
+            K_EBU,
+            AttributionRule::EnvByUniqueness.figment_name_tag_kind(),
+        );
+        assert_eq!(
+            K_DBCU,
+            AttributionRule::DefaultsByCodeUniqueness.figment_name_tag_kind(),
         );
     }
 
