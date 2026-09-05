@@ -4800,8 +4800,28 @@ impl<'a> FailingSourceAttribution<'a> {
     /// [`AttributionRule::confidence`]. One method call answers
     /// "is the named layer attributed by equality or by elimination?"
     /// without destructuring the envelope.
+    ///
+    /// `const fn`: const-callable on `Copy` receivers (welded by
+    /// [`tests::failing_source_attribution_confidence_is_const_callable`]).
+    /// The routed body `self.rule.confidence()` composes two const-
+    /// callable primitives — the `Copy` field access `self.rule` and the
+    /// underlying [`AttributionRule::confidence`] projection (const since
+    /// this crate's initial `AttributionRule` const-callability landing)
+    /// — so a `const AttributionConfidence` binding produced from a
+    /// `const FailingSourceAttribution<'static>` (or the routed
+    /// `attr.confidence().is_exact()` short-circuit through the sibling
+    /// [`AttributionConfidence::is_exact`]) evaluates at compile time.
+    /// First envelope-altitude const-lift: closes the const-callability
+    /// gap between the underlying rule-altitude cascade (fully const
+    /// through the `impl AttributionRule` block after `1621bb3` landed
+    /// the name-axis partial unifier) and the envelope-altitude
+    /// convenience forwarders on [`FailingSourceAttribution`], so a
+    /// downstream observer that carries the envelope by value can now
+    /// route the (envelope → confidence) projection through the same
+    /// compile-time reductions previously available only on the raw
+    /// [`AttributionRule`].
     #[must_use]
-    pub fn confidence(self) -> AttributionConfidence {
+    pub const fn confidence(self) -> AttributionConfidence {
         self.rule.confidence()
     }
 
@@ -6498,6 +6518,114 @@ mod tests {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.confidence(), rule.confidence());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_confidence_is_const_callable() {
+        // Weld the const-callability of the (envelope → confidence)
+        // convenience forwarder at compile time. First envelope-
+        // altitude peer of the rule-altitude const-callable welds on
+        // the sibling `impl AttributionRule` block —
+        // `attribution_rule_confidence_and_confidence_predicates_are_const_callable`
+        // (the underlying rule-altitude projection this envelope-
+        // forwarder routes through) plus the fully const-callable
+        // cascade of `layer_kind` / `metadata_axis` /
+        // `figment_source_kind` / `figment_name_tag_kind` / their
+        // partial unifiers / the total `coordinates` unifier /
+        // `file_provenance`, all const since prior commits on this
+        // trajectory (the last, name-axis partial unifier, welded in
+        // `1621bb3`). Closes the const-callability gap between the
+        // rule altitude (fully const end-to-end) and the envelope
+        // altitude on [`FailingSourceAttribution`]: the moment
+        // [`FailingSourceAttribution::confidence`] (or the routed
+        // downstream [`AttributionRule::confidence`]) stops being
+        // const-callable, one of the `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the envelope —
+        // a `static PER_RULE: [AttributionConfidence;
+        // AttributionRule::ALL.len()]` per-rule confidence lookup
+        // routed through the envelope, a `const IS_EXACT: bool =
+        // ENV.confidence().is_exact()` sentinel for a compile-time-
+        // known envelope's confidence pole, or a compile-time
+        // attestation manifest recording the envelope-routed
+        // confidence histogram.
+        //
+        // A `const` binding constructs a `FailingSourceAttribution<'static>`
+        // from a `const ConfigSource::Defaults` payload plus each of
+        // the five `AttributionRule` variants, then routes each
+        // through the envelope-altitude convenience forwarder in const
+        // position. Struct-literal construction of the envelope is
+        // used directly (rather than through the non-const
+        // `pub(crate) fn new` constructor) because the `#[non_exhaustive]`
+        // discipline on `FailingSourceAttribution` permits in-crate
+        // literal construction and no const-lift of `new` is needed
+        // for this weld — a future envelope-altitude cascade landing
+        // may make `new` const in the same idiom as the rule-altitude
+        // constructors.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileBySource,
+        };
+        const ATTR_FBM: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::FileByMetadataName,
+        };
+        const ATTR_EBP: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByPrefix,
+        };
+        const ATTR_EBU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::EnvByUniqueness,
+        };
+        const ATTR_DBCU: FailingSourceAttribution<'static> = FailingSourceAttribution {
+            source: &SRC,
+            rule: AttributionRule::DefaultsByCodeUniqueness,
+        };
+
+        const C_FBS: AttributionConfidence = ATTR_FBS.confidence();
+        const C_FBM: AttributionConfidence = ATTR_FBM.confidence();
+        const C_EBP: AttributionConfidence = ATTR_EBP.confidence();
+        const C_EBU: AttributionConfidence = ATTR_EBU.confidence();
+        const C_DBCU: AttributionConfidence = ATTR_DBCU.confidence();
+
+        // Pointwise: the (Exact, Exact, Exact, Fallback, Fallback)
+        // partition places each of the five envelope-routed
+        // confidences under the same pole as the underlying
+        // rule-routed projection weld
+        // (`attribution_rule_confidence_and_confidence_predicates_are_const_callable`).
+        // The const-context welds above prove const-callability
+        // through the envelope; the pins below prove the envelope
+        // forwarder stays byte-for-byte agreed with the rule-altitude
+        // primitive it routes through — a future edit that made the
+        // envelope drift from the rule (or reintroduced a non-const
+        // step in the routed body) diverges here first, not at a
+        // downstream reader of a stale (envelope → confidence)
+        // projection.
+        assert!(matches!(C_FBS, AttributionConfidence::Exact));
+        assert!(matches!(C_FBM, AttributionConfidence::Exact));
+        assert!(matches!(C_EBP, AttributionConfidence::Exact));
+        assert!(matches!(C_EBU, AttributionConfidence::Fallback));
+        assert!(matches!(C_DBCU, AttributionConfidence::Fallback));
+
+        // Envelope-vs-rule agreement: every envelope-routed
+        // confidence must match its rule-altitude projection,
+        // pointwise on `AttributionRule::ALL`, so the const-context
+        // welds above and the runtime mirror pin in
+        // `failing_source_attribution_confidence_mirrors_rule_confidence`
+        // stay agreed under any future edit to either altitude.
+        let envelope_routed: [AttributionConfidence; AttributionRule::ALL.len()] =
+            [C_FBS, C_FBM, C_EBP, C_EBU, C_DBCU];
+        for (rule, envelope_confidence) in AttributionRule::ALL.iter().copied().zip(envelope_routed)
+        {
+            assert_eq!(
+                envelope_confidence,
+                rule.confidence(),
+                "rule {rule:?}: envelope-routed confidence must match rule-altitude projection",
+            );
         }
     }
 
