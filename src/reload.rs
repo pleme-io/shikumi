@@ -842,11 +842,55 @@ impl ReloadFailure {
     /// [`Self::coordinates`] drops the source and returns the
     /// (axis × layer-kind × confidence) triple for consumers that
     /// only need the rule's coordinates.
+    ///
+    /// `const fn`: const-callable on `&self` receivers backed by a
+    /// `static ReloadFailure` binding. Closes the last non-const
+    /// projection on `impl ReloadFailure` — the FIRST envelope-altitude
+    /// forwarder on the cross-thread observable envelope that
+    /// *constructs* (rather than projects out of) a borrowed
+    /// [`FailingSourceAttribution`], so lifting it required the
+    /// upstream [`FailingSourceAttribution::new`] constructor to be
+    /// const first (const since `3c99e09`, which named this accessor
+    /// as its immediate downstream compounding target). The routed
+    /// body rewrites the tuple-match spelling
+    /// `match (&self.failing_source, self.attribution_rule)` as a
+    /// nested match — a mixed-by-ref/by-value tuple pattern in
+    /// const context leans on tuple-construction reductions that are
+    /// still unstable under rustc 1.94.1, so the equivalent nested
+    /// match composes cleanly const-supported primitives instead:
+    /// an outer `match &self.failing_source` (a field-borrow that
+    /// only needs the `Option` discriminant read, const since Rust
+    /// 1.46), an inner `match self.attribution_rule` (a `Copy`
+    /// field load on `Option<AttributionRule>`), and the const-fn
+    /// [`FailingSourceAttribution::new`] constructor on the joint
+    /// `Some`-arm. With this lift every envelope-altitude
+    /// projection on [`ReloadFailure`] — the total `Self::kind`,
+    /// the Some-iff-attribution scalar quartet
+    /// [`Self::attribution_confidence`] / [`Self::layer_kind`] /
+    /// [`Self::metadata_axis`] / [`Self::coordinates`], the
+    /// partial figment-metadata-axis pair
+    /// [`Self::figment_source_kind`] /
+    /// [`Self::figment_name_tag_kind`], the joint-cell pair
+    /// [`Self::attribution_source_kind_coordinates`] /
+    /// [`Self::attribution_name_kind_coordinates`], the
+    /// [`Self::file_provenance`] partial, the total
+    /// [`Self::field_path_localization`], the
+    /// [`Self::error_localization_coordinates`] composition, and
+    /// now this envelope constructor — evaluates at compile time.
+    /// The cross-thread observable form now occupies the same const
+    /// altitude the borrowed-envelope side occupied since the
+    /// `fc9e0c6` / `37b71fb` / `b11bca7` / `a4692bc` / `00daccd` /
+    /// `d24ec4a` / `0b7e71d` / `02c5653` / `3c99e09` cascade closed
+    /// on `impl FailingSourceAttribution`. Welded by
+    /// [`tests::reload_failure_failing_attribution_is_const_callable`].
     #[must_use]
-    pub fn failing_attribution(&self) -> Option<FailingSourceAttribution<'_>> {
-        match (&self.failing_source, self.attribution_rule) {
-            (Some(source), Some(rule)) => Some(FailingSourceAttribution::new(source, rule)),
-            _ => None,
+    pub const fn failing_attribution(&self) -> Option<FailingSourceAttribution<'_>> {
+        match &self.failing_source {
+            Some(source) => match self.attribution_rule {
+                Some(rule) => Some(FailingSourceAttribution::new(source, rule)),
+                None => None,
+            },
+            None => None,
         }
     }
 
@@ -4337,6 +4381,146 @@ mod tests {
             VALIDATION_CELL.localization,
             VALIDATION_REL.field_path_localization()
         );
+    }
+
+    #[test]
+    fn reload_failure_failing_attribution_is_const_callable() {
+        // Weld the const-callability of `ReloadFailure::failing_attribution`
+        // — the FIRST envelope-altitude Some-iff-attribution
+        // forwarder on the cross-thread observable envelope that
+        // *constructs* (rather than projects out of) a borrowed
+        // `FailingSourceAttribution`. Closes the last non-const
+        // projection on `impl ReloadFailure`: every envelope-altitude
+        // projection now evaluates at compile time.
+        //
+        // The lift required `FailingSourceAttribution::new` const
+        // first (const since `3c99e09`, whose commit body named this
+        // accessor as its immediate downstream compounding target).
+        // The routed body rewrites the tuple-match spelling
+        // `match (&self.failing_source, self.attribution_rule)` as a
+        // nested match: mixed-by-ref/by-value tuple patterns lean on
+        // tuple-construction reductions still unstable under rustc
+        // 1.94.1, and the equivalent nested match composes
+        // const-supported primitives (an outer field-borrow discriminant
+        // read plus an inner `Copy` field load) with the const-fn
+        // `FailingSourceAttribution::new` on the joint `Some`-arm.
+        //
+        // Weld structure: reuse the same static-binding shape the
+        // sibling Some-iff-attribution welds use — one None-arm plus
+        // one `Some`-attribution arm — with `failing_source` populated
+        // to exercise the joint `(Some, Some)` case that the
+        // sibling welds could not reach (they left `failing_source:
+        // None` because their projections only read
+        // `self.attribution_rule`). `ConfigSource::Defaults` is the
+        // payload-free variant const-constructible in a `static`
+        // binding; `ConfigSource::Env(String::new())` is the second
+        // const-constructible variant (`String::new` is const since
+        // Rust 1.39), pinning the envelope's carried-source lifetime
+        // through a non-payload-free arm.
+        //
+        // The four scenarios cover the 2 × 2 = 4 legal product cells
+        // of the (`failing_source.is_some()` ×
+        // `attribution_rule.is_some()`) cube: the diagonal cells
+        // (both Some → Some, both None → None) and the two off-
+        // diagonal cells (only one Some → None). The off-diagonal
+        // cells pin the structural `Some`-iff-both-populated
+        // discipline at compile-eval time — a future edit that
+        // reversed either match arm's polarity, dropped one of the
+        // nested matches, or short-circuited on `attribution_rule`
+        // alone (forgetting to check `failing_source`) fails to
+        // compile at the pinned `const` binding value rather than
+        // drifting through observers reading
+        // `ConfigStore::last_reload_error`.
+        //
+        // The `static` (rather than `const`) receiver is load-bearing
+        // for the same E0493 reason as
+        // `reload_failure_attribution_confidence_is_const_callable`:
+        // `ReloadFailure` carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`, `Option<ConfigSource>`),
+        // so a `const REL: ReloadFailure = ...` binding drops after
+        // the projection and rejects.
+        static BOTH_NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static ONLY_SOURCE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: None,
+        };
+        static ONLY_RULE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+        static BOTH_DEFAULTS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+        static BOTH_ENV_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: Some(ConfigSource::Env(String::new())),
+            attribution_rule: Some(AttributionRule::EnvByUniqueness),
+        };
+
+        const BOTH_NONE_ATTR: Option<FailingSourceAttribution<'static>> =
+            BOTH_NONE_REL.failing_attribution();
+        const ONLY_SOURCE_ATTR: Option<FailingSourceAttribution<'static>> =
+            ONLY_SOURCE_REL.failing_attribution();
+        const ONLY_RULE_ATTR: Option<FailingSourceAttribution<'static>> =
+            ONLY_RULE_REL.failing_attribution();
+        const BOTH_DEFAULTS_ATTR: Option<FailingSourceAttribution<'static>> =
+            BOTH_DEFAULTS_REL.failing_attribution();
+        const BOTH_ENV_ATTR: Option<FailingSourceAttribution<'static>> =
+            BOTH_ENV_REL.failing_attribution();
+
+        // Some-iff-both-populated discipline holds through the
+        // const-fn body: only the diagonal `(Some, Some)` cells map
+        // to Some(_); the two off-diagonal cells collapse to None
+        // even though one half is populated.
+        assert!(BOTH_NONE_ATTR.is_none());
+        assert!(ONLY_SOURCE_ATTR.is_none());
+        assert!(ONLY_RULE_ATTR.is_none());
+        let both_defaults = BOTH_DEFAULTS_ATTR.expect("both halves populated => envelope some");
+        assert!(matches!(both_defaults.source, ConfigSource::Defaults));
+        assert_eq!(
+            both_defaults.rule,
+            AttributionRule::DefaultsByCodeUniqueness
+        );
+        let both_env = BOTH_ENV_ATTR.expect("both halves populated => envelope some");
+        assert!(matches!(both_env.source, ConfigSource::Env(prefix) if prefix.is_empty()));
+        assert_eq!(both_env.rule, AttributionRule::EnvByUniqueness);
+
+        // Cross-check: the const-fn body stays pointwise agreed with
+        // the runtime-side `rel.failing_attribution()` call over all
+        // five welded arms. Redundant with
+        // `failing_attribution_some_iff_both_halves_populated` and
+        // `failing_attribution_agrees_with_underlying_error_pointwise`
+        // on the runtime path, but this pin catches a future edit
+        // that shifted the const-fn body away from the runtime-fn
+        // body on any of the five welded arms.
+        assert_eq!(BOTH_NONE_ATTR, BOTH_NONE_REL.failing_attribution());
+        assert_eq!(ONLY_SOURCE_ATTR, ONLY_SOURCE_REL.failing_attribution());
+        assert_eq!(ONLY_RULE_ATTR, ONLY_RULE_REL.failing_attribution());
+        assert_eq!(BOTH_DEFAULTS_ATTR, BOTH_DEFAULTS_REL.failing_attribution());
+        assert_eq!(BOTH_ENV_ATTR, BOTH_ENV_REL.failing_attribution());
     }
 
     // ---- attribution_source_kind_coordinates accessor tests ----
