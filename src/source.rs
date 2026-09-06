@@ -28871,8 +28871,22 @@ impl<'a> FigmentNameTag<'a> {
     /// [`crate::AttributionRule::metadata_axis`]) cross-checks the axis
     /// across the three surfaces; consumers see the same axis label
     /// without re-deriving the (typed-source × name-string) partition.
+    ///
+    /// `const`-callable — a compile-time-known [`FigmentNameTag`]
+    /// projects its constant metadata axis at compile time too,
+    /// matching the const-callability altitude the sibling
+    /// projection [`Self::kind`] already occupies on the same
+    /// `impl FigmentNameTag` block, and one altitude down the
+    /// axis-side sibling projection [`crate::AttributionRule::metadata_axis`]
+    /// (const since `4f8a185`) on the resolver-side reading of the same
+    /// metadata axis. Composes with the axis-side sibling predicates
+    /// ([`crate::AttributionAxis::is_metadata_source`] /
+    /// [`crate::AttributionAxis::is_metadata_name`], both `const fn`)
+    /// so a `tag.attribution_axis().is_metadata_name()` composition
+    /// stays const-callable end-to-end. Pinned by
+    /// [`tests::figment_tag_attribution_axis_pair_is_const_callable`].
     #[must_use]
-    pub fn attribution_axis(self) -> crate::AttributionAxis {
+    pub const fn attribution_axis(self) -> crate::AttributionAxis {
         let _ = self.kind();
         crate::AttributionAxis::MetadataName
     }
@@ -29415,8 +29429,22 @@ impl<'a> FigmentSourceTag<'a> {
     /// [`FigmentNameTag`]-shaped attributions, which always sit on
     /// [`crate::AttributionAxis::MetadataName`] by the same structural
     /// argument.
+    ///
+    /// `const`-callable — a compile-time-known [`FigmentSourceTag`]
+    /// projects its constant metadata axis at compile time too,
+    /// matching the const-callability altitude the sibling projection
+    /// [`Self::kind`] already occupies on the same
+    /// `impl FigmentSourceTag` block, and one altitude down the
+    /// axis-side sibling projection [`crate::AttributionRule::metadata_axis`]
+    /// (const since `4f8a185`) on the resolver-side reading of the same
+    /// metadata axis. Composes with the axis-side sibling predicates
+    /// ([`crate::AttributionAxis::is_metadata_source`] /
+    /// [`crate::AttributionAxis::is_metadata_name`], both `const fn`)
+    /// so a `tag.attribution_axis().is_metadata_source()` composition
+    /// stays const-callable end-to-end. Pinned by
+    /// [`tests::figment_tag_attribution_axis_pair_is_const_callable`].
     #[must_use]
-    pub fn attribution_axis(self) -> crate::AttributionAxis {
+    pub const fn attribution_axis(self) -> crate::AttributionAxis {
         let _ = self.kind();
         crate::AttributionAxis::MetadataSource
     }
@@ -99749,6 +99777,108 @@ mod tests {
         assert!(!KIND_ENV_IS_FORMAT);
         assert!(KIND_ENV_IS_ENV);
         assert!(ENV_BARE_KIND_IS_ENV);
+    }
+
+    #[test]
+    fn figment_tag_attribution_axis_pair_is_const_callable() {
+        // Weld the const-callability of the paired constant-axis
+        // projections `FigmentNameTag::attribution_axis` and
+        // `FigmentSourceTag::attribution_axis` at compile time — the
+        // two structural laws that every figment-name-axis attribution
+        // dispatches off `metadata.name` (always
+        // `AttributionAxis::MetadataName`) and every figment-Source-axis
+        // attribution off `metadata.source` (always
+        // `AttributionAxis::MetadataSource`), regardless of which
+        // variant of the underlying borrowed tag fires. Peer of the
+        // two `_predicates_and_kind_are_const_callable` welds above on
+        // the same two `impl` blocks — matches the const-callability
+        // altitude the sibling projection `Self::kind` already occupies
+        // on both tag types (both `pub const fn` since they were
+        // introduced) and one altitude down the resolver-side sibling
+        // `AttributionRule::metadata_axis` (const since `4f8a185`) on
+        // the same metadata-axis coordinate.
+        //
+        // Const bindings pin the const-ness at THIS line so the moment
+        // either `attribution_axis` stops being `const`-callable — a
+        // future edit that reaches for a non-const std helper inside
+        // the body, or that lifts the `self.kind()` exhaustive-match
+        // welder to a non-const helper — the pin fails to compile
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection (a compile-time-known
+        // typescape manifest recording per-tag axis coordinates in a
+        // `static` slot, a `const AXIS: AttributionAxis =
+        // TAG.attribution_axis()` sentinel routed through a static
+        // lookup, a `const IS_NAME: bool =
+        // TAG.attribution_axis().is_metadata_name()` composed with the
+        // already-const axis-side polarity predicates).
+        //
+        // Both projections take `self` on a `Copy` tag with no `Drop`
+        // arm binding, and both hops (`Self::kind` → discarded, and the
+        // returned `AttributionAxis` variant literal) are const-callable
+        // under rustc 1.94.1, so the whole tag-side → axis-side hop
+        // composes end-to-end. The `Env` arm of `FigmentNameTag`
+        // (payload `EnvMetadataTag::Bare` is data-free, trivially
+        // const-constructible) and the `Custom` arm of
+        // `FigmentSourceTag` (payload `&'static str` is trivially
+        // const-constructible) exercise the const-context weld — the
+        // sibling `_predicates_and_kind_are_const_callable` pins on
+        // both tags already document why the other arms cannot be
+        // const-bound at const-initializer position (`Path::new` /
+        // `Location::caller()` limitations under rust 1.89), and the
+        // compiler having accepted the `pub const fn` declaration on
+        // the whole `attribution_axis` body proves every other arm of
+        // the `self.kind()` welder compiles under the same const-checker.
+        const NAME_TAG: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
+        const NAME_AXIS: crate::AttributionAxis = NAME_TAG.attribution_axis();
+        const NAME_AXIS_IS_NAME: bool = NAME_AXIS.is_metadata_name();
+        const NAME_AXIS_IS_SOURCE: bool = NAME_AXIS.is_metadata_source();
+
+        const SOURCE_TAG: FigmentSourceTag<'static> = FigmentSourceTag::Custom("vault://kv/x");
+        const SOURCE_AXIS: crate::AttributionAxis = SOURCE_TAG.attribution_axis();
+        const SOURCE_AXIS_IS_SOURCE: bool = SOURCE_AXIS.is_metadata_source();
+        const SOURCE_AXIS_IS_NAME: bool = SOURCE_AXIS.is_metadata_name();
+
+        // Compile-time value pins on the four const-bound end-to-end
+        // (tag → axis → polarity) compositions: a future edit that
+        // shifted a figment-tag family off its constant metadata axis
+        // (name-tag silently reclassified to MetadataSource, or
+        // source-tag to MetadataName) fails to compile at the
+        // `const {}` block instead of at the runtime cross-check
+        // below, before the drift can reach any downstream observer
+        // reading either constant.
+        const {
+            assert!(matches!(NAME_AXIS, crate::AttributionAxis::MetadataName));
+        }
+        const {
+            assert!(matches!(
+                SOURCE_AXIS,
+                crate::AttributionAxis::MetadataSource
+            ));
+        }
+        const { assert!(NAME_AXIS_IS_NAME) };
+        const { assert!(!NAME_AXIS_IS_SOURCE) };
+        const { assert!(SOURCE_AXIS_IS_SOURCE) };
+        const { assert!(!SOURCE_AXIS_IS_NAME) };
+
+        // Runtime cross-check pins the same two constants against the
+        // documented structural laws — every `FigmentNameTag` variant
+        // maps to MetadataName and every `FigmentSourceTag` variant to
+        // MetadataSource, regardless of the inner borrowed payload
+        // (which the const bindings could not exercise for the
+        // `Format` / `File` / `Code` arms under rust 1.89's
+        // Path::new / Location::caller const limitations). Mirrors
+        // the runtime coverage the two `_predicates_and_kind_are_const_callable`
+        // welds above defer to their sibling `_agrees_with_kind`
+        // pointwise pins.
+        assert_eq!(
+            FigmentNameTag::Env(EnvMetadataTag::Bare).attribution_axis(),
+            crate::AttributionAxis::MetadataName,
+        );
+        assert_eq!(
+            FigmentSourceTag::Custom("vault://kv/x").attribution_axis(),
+            crate::AttributionAxis::MetadataSource,
+        );
+        assert_ne!(NAME_AXIS, SOURCE_AXIS);
     }
 
     // ---- EnvMetadataTagKind / EnvMetadataTag::kind ----
