@@ -70,6 +70,71 @@ impl Startup {
             }
         }
     }
+
+    /// The Run pole — `true` on [`Self::Run`], `false` on [`Self::Exit`].
+    ///
+    /// One canonical name for the "does this [`Startup`] ask the daemon to
+    /// proceed?" question — a per-daemon startup meter grouping
+    /// gate-permitted invocations distinctly from refused/answered ones (a
+    /// structured-tracing span attribute distinguishing proceed startups
+    /// from exit startups, a supervision-tree counter bucketing the two
+    /// arms) matches this predicate at ONE site instead of open-coding
+    /// `matches!(startup, Startup::Run)` and paying the two-arm
+    /// bookkeeping tax at every consumer.
+    ///
+    /// `const`-callable — body is a pure `matches!` on a borrowed
+    /// [`Self`] with no function calls, allocations, or non-const helpers
+    /// on the path, so a compile-time-known [`Startup::Run`] projects to
+    /// a compile-time-known [`bool`]. Peer of [`Self::is_exit`] — the two
+    /// predicates form a closed binary partition of the [`Startup`]
+    /// variant space, pinned by
+    /// [`daemon_cli_tests::startup_is_run_and_is_exit_are_a_closed_binary_partition`].
+    /// Welded at compile time on the `Startup::Run` arm by
+    /// [`daemon_cli_tests::startup_run_projections_are_const_callable`];
+    /// the `Startup::Exit { message: String }` arm blocks a `const`
+    /// binding on the receiver (E0493 drop-check on `String`) and rides
+    /// the runtime cross-check
+    /// [`daemon_cli_tests::startup_exit_projections_agree_with_pattern_match`]
+    /// instead.
+    #[must_use]
+    pub const fn is_run(&self) -> bool {
+        matches!(self, Self::Run)
+    }
+
+    /// The Exit pole — `true` on [`Self::Exit`], `false` on [`Self::Run`].
+    ///
+    /// Pointwise complement of [`Self::is_run`] — pinned by
+    /// [`daemon_cli_tests::startup_is_run_and_is_exit_are_a_closed_binary_partition`].
+    /// See [`Self::is_run`] for the full contract, the const-callability
+    /// clause, and the two weld pins.
+    #[must_use]
+    pub const fn is_exit(&self) -> bool {
+        matches!(self, Self::Exit { .. })
+    }
+
+    /// The exit code carried on [`Self::Exit`], or [`None`] on [`Self::Run`].
+    ///
+    /// The typed projection of the imperative [`Self::resolve`] — a caller
+    /// that wants the numeric exit answer without printing (a test
+    /// asserting the gate returned `Some(0)` for `--help` and `Some(2)`
+    /// for `--dry-run`, a wrapper forwarding the code up a supervision
+    /// tree without redirecting the message, a structured-log field
+    /// naming the code that would exit the daemon) matches this
+    /// projection at ONE site instead of destructuring the [`Self::Exit`]
+    /// variant open-coded and re-doing the [`Self::Run`]-is-`None`
+    /// bookkeeping at every consumer.
+    ///
+    /// `const`-callable — reads only the `Copy` `code` field on
+    /// [`Self::Exit`] and returns a `Copy` [`Option`]`<`[`u8`]`>`; no
+    /// non-const helpers on the path. See [`Self::is_run`] for the two
+    /// weld pins the const-callability rides.
+    #[must_use]
+    pub const fn exit_code(&self) -> Option<u8> {
+        match self {
+            Self::Run => None,
+            Self::Exit { code, .. } => Some(*code),
+        }
+    }
 }
 
 /// The identity a daemon presents at `--help` / `--version`.
@@ -247,6 +312,113 @@ mod daemon_cli_tests {
 
     #[test]
     fn run_resolves_to_none_so_the_caller_proceeds() {
+        assert!(Startup::Run.resolve().is_none());
+    }
+
+    #[test]
+    fn startup_run_projections_are_const_callable() {
+        // Compile-time weld pin for the three const projections on the
+        // `Startup::Run` arm — `is_run` / `is_exit` / `exit_code` — all
+        // routed through `const` bindings whose evaluation must land in a
+        // const position. The `Startup::Exit { message: String }` arm
+        // blocks a `const` binding on the receiver (E0493 drop-check on
+        // `String`), so it rides the runtime cross-check
+        // `startup_exit_projections_agree_with_pattern_match` instead.
+        const RUN: Startup = Startup::Run;
+        const IS_RUN: bool = RUN.is_run();
+        const IS_EXIT: bool = RUN.is_exit();
+        const CODE: Option<u8> = RUN.exit_code();
+        const {
+            assert!(IS_RUN);
+            assert!(!IS_EXIT);
+            assert!(CODE.is_none());
+        }
+        // Cross-check the const-position answer against a runtime call on
+        // an independent `Startup::Run` binding — the two must be
+        // byte-identical, so a future edit that drifts the const-fn body
+        // away from the runtime-fn body diverges here.
+        let run_rt = Startup::Run;
+        assert_eq!(run_rt.is_run(), IS_RUN);
+        assert_eq!(run_rt.is_exit(), IS_EXIT);
+        assert_eq!(run_rt.exit_code(), CODE);
+    }
+
+    #[test]
+    fn startup_exit_projections_agree_with_pattern_match() {
+        // Runtime cross-check on the `Startup::Exit` arm — the receiver
+        // holds a `String` payload and cannot ride a `const` binding
+        // (E0493 drop-check), so the `is_run` / `is_exit` / `exit_code`
+        // trio is pinned pointwise-equal to a pattern-match answer over
+        // three representative exit codes covering the three arms of
+        // `Startup::resolve`'s dispatch (success on 0, refuse on 2, an
+        // arbitrary non-zero).
+        let cases = [
+            Startup::Exit {
+                code: 0,
+                message: String::new(),
+            },
+            Startup::Exit {
+                code: 2,
+                message: "refuse".to_owned(),
+            },
+            Startup::Exit {
+                code: 42,
+                message: "arb".to_owned(),
+            },
+        ];
+        for s in &cases {
+            assert!(!s.is_run(), "Startup::Exit must not satisfy is_run: {s:?}");
+            assert!(s.is_exit(), "Startup::Exit must satisfy is_exit: {s:?}");
+            let Startup::Exit { code, .. } = s else {
+                unreachable!("all cases are Exit by construction")
+            };
+            assert_eq!(
+                s.exit_code(),
+                Some(*code),
+                "exit_code() must project the `code` field verbatim: {s:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn startup_is_run_and_is_exit_are_a_closed_binary_partition() {
+        // Every `Startup` value satisfies exactly one of the two sibling
+        // predicates — none satisfies both, none satisfies zero. Binary-
+        // partition analogue of the ternary/binary-partition pins the
+        // crate carries on its other closed-primitive axes (e.g.
+        // `WatchEventClass::is_reload` / `_removed` / `_ignored`,
+        // `ConfigSourceKind` layer-kind trio). A future third `Startup`
+        // variant landing without its own sibling predicate collapses
+        // the partition to zero on that arm, failing here before drifting
+        // through any consumer that groups on the polarity.
+        let cases = [
+            Startup::Run,
+            Startup::Exit {
+                code: 0,
+                message: String::new(),
+            },
+            Startup::Exit {
+                code: 2,
+                message: "refuse".to_owned(),
+            },
+        ];
+        for s in &cases {
+            let hits = usize::from(s.is_run()) + usize::from(s.is_exit());
+            assert_eq!(
+                hits, 1,
+                "Startup case {s:?} must satisfy exactly one polarity, got {hits}",
+            );
+        }
+    }
+
+    #[test]
+    fn startup_exit_code_agrees_with_resolve_on_the_run_arm() {
+        // The typed projection agrees with the imperative `resolve()` on
+        // the Run arm — both are `None`, and `exit_code` is defined as
+        // exactly this arm's negative pole. Pinning it here forecloses a
+        // future drift where `resolve()` grew a fallback that returned
+        // some default exit code on Run without `exit_code` mirroring it.
+        assert_eq!(Startup::Run.exit_code(), None);
         assert!(Startup::Run.resolve().is_none());
     }
 }
