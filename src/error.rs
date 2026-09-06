@@ -5676,10 +5676,32 @@ impl ShikumiError {
     /// surface: provenance answers "which layer chain contributed?"
     /// while this answers "which field inside the produced value did
     /// the deserializer reject?".
+    ///
+    /// `const`-callable — the body is a `match` over `&Self` whose
+    /// figment-bearing arms name the const-fn inherent [`Vec::as_slice`]
+    /// (stable const since Rust 1.83) on the wrapped
+    /// [`figment::Error::path`] `Vec<String>`, side-stepping the
+    /// non-const `<Vec<T> as Deref>::deref` coercion the original
+    /// `Some(&error.path)` return relied on. `error.path` reaches
+    /// through `Box<figment::Error>` via the compiler-special-cased
+    /// [`Box`] auto-deref, which is const-callable in const contexts
+    /// (verified by the compile-time weld
+    /// [`tests::shikumi_error_field_path_localization_projection_pair_is_const_callable`]).
+    /// Peer of the borrowing-slice-of-Vec projection pair
+    /// [`Self::tried_paths`] / [`Self::sources`] (const since `791db9f`)
+    /// on the two Vec-carrying arms — all three route the same
+    /// `Some(vec.as_slice())` shape around the same non-const `Deref`
+    /// coercion, and this closes the third such projection on the
+    /// [`ShikumiError`] surface. Cross-thread mirror
+    /// [`crate::ReloadFailure::field_path`] was already-const by
+    /// construction (a direct `Vec` field on the captured envelope);
+    /// this lift closes the const-callability parity between the live
+    /// error and its cross-thread mirror on the (raw-segments)
+    /// projection.
     #[must_use]
-    pub fn field_path(&self) -> Option<&[String]> {
+    pub const fn field_path(&self) -> Option<&[String]> {
         match self {
-            Self::Extract { error, .. } | Self::Figment(error) => Some(&error.path),
+            Self::Extract { error, .. } | Self::Figment(error) => Some(error.path.as_slice()),
             _ => None,
         }
     }
@@ -5741,8 +5763,19 @@ impl ShikumiError {
     /// [`crate::ReloadFailure::field_path`] alone collapses
     /// `Some(empty)` and `None` into the same observable; the typed
     /// accessor restores the distinction).
+    ///
+    /// `const`-callable — composes the just-const [`Self::field_path`]
+    /// projection with a `match` whose guard names the const-fn
+    /// inherent `<[T]>::is_empty` (stable const since Rust 1.39); the
+    /// three arms return `Copy` [`FieldPathLocalization`] unit
+    /// variants. Cross-thread mirror
+    /// [`crate::ReloadFailure::field_path_localization`] became const
+    /// in `64de910`; this lift closes the const-callability parity
+    /// between the live error and its cross-thread mirror on the
+    /// (localization) projection. Welded at compile time by
+    /// [`tests::shikumi_error_field_path_localization_projection_pair_is_const_callable`].
     #[must_use]
-    pub fn field_path_localization(&self) -> FieldPathLocalization {
+    pub const fn field_path_localization(&self) -> FieldPathLocalization {
         match self.field_path() {
             Some(path) if !path.is_empty() => FieldPathLocalization::Localized,
             Some(_) => FieldPathLocalization::FigmentUnlocalized,
@@ -5777,8 +5810,21 @@ impl ShikumiError {
     /// captured-failure envelope's projection agrees pointwise with
     /// the source error's, pinning the lossless-capture contract
     /// for the (kind × localization) coordinate plane.
+    ///
+    /// `const`-callable: composes the two const-fn sub-projections
+    /// [`Self::kind`] (const since `4b00851`) and
+    /// [`Self::field_path_localization`] (const since this commit)
+    /// into an [`ErrorLocalizationCoordinates`] struct literal over
+    /// two `Copy` closed-enum fields — the composition itself lands
+    /// no runtime code past the two const sub-calls. Cross-thread
+    /// mirror [`crate::ReloadFailure::error_localization_coordinates`]
+    /// became const in `a1a86e4`; this lift closes the
+    /// const-callability parity between the live error and its
+    /// cross-thread mirror on the (kind × localization) coordinate
+    /// projection. Welded at compile time by
+    /// [`tests::shikumi_error_field_path_localization_projection_pair_is_const_callable`].
     #[must_use]
-    pub fn error_localization_coordinates(&self) -> ErrorLocalizationCoordinates {
+    pub const fn error_localization_coordinates(&self) -> ErrorLocalizationCoordinates {
         ErrorLocalizationCoordinates {
             kind: self.kind(),
             localization: self.field_path_localization(),
@@ -6236,6 +6282,200 @@ mod tests {
         };
         assert_eq!(extract.sources(), Some(chain.as_slice()));
         assert_eq!(extract.tried_paths(), None);
+    }
+
+    #[test]
+    fn shikumi_error_field_path_localization_projection_pair_is_const_callable() {
+        // Weld the const-callability of the three field-path localization
+        // projections on `impl ShikumiError` in one consolidated step:
+        //   - `Self::field_path` — Option<&[String]> over the
+        //     figment-bearing arms; the `Some` arm names the const-fn
+        //     inherent `Vec::as_slice` (const since Rust 1.83) on the
+        //     wrapped `figment::Error::path`, side-stepping the non-const
+        //     `<Vec<T> as Deref>::deref` coercion the original `Some(&
+        //     error.path)` return relied on. `error.path` reaches through
+        //     `Box<figment::Error>` via the compiler-special-cased Box
+        //     auto-deref, which is const-callable in const contexts (this
+        //     weld itself is the load-bearing proof).
+        //   - `Self::field_path_localization` — `FieldPathLocalization`
+        //     over the tri-state (None / Some(empty) / Some(non-empty))
+        //     surfaced by `field_path`; composes the just-const
+        //     `field_path` with a `match` guard naming the const-fn
+        //     inherent `<[T]>::is_empty` (const since Rust 1.39).
+        //   - `Self::error_localization_coordinates` — the
+        //     (kind × localization) coordinate cell; composes the const
+        //     `Self::kind` (const since `4b00851`) with the just-const
+        //     `Self::field_path_localization` into an
+        //     `ErrorLocalizationCoordinates` struct literal over two
+        //     `Copy` closed-enum fields.
+        //
+        // Cross-thread mirror parity: all three projections on the
+        // captured envelope `crate::ReloadFailure` were already-const —
+        // `field_path_localization` since `64de910`,
+        // `error_localization_coordinates` since `a1a86e4`, and the
+        // captured `field_path` is a direct `Vec<String>` field readable
+        // in const via `Vec::as_slice`. This lift closes the
+        // const-callability parity between the live error and its
+        // cross-thread mirror on the entire (raw-segments × localization
+        // × coordinate-cell) error-path-fidelity projection column.
+        //
+        // Weld structure: three `static ShikumiError` bindings on the
+        // non-payload variants pin the `None` arm on `field_path` and the
+        // `FieldPathLocalization::NotApplicable` arm on
+        // `field_path_localization` at compile time. `static` receivers
+        // are load-bearing (rather than `const`) because `ShikumiError`
+        // carries `Drop`-bearing payloads (`Vec<PathBuf>` /
+        // `Vec<ConfigSource>` / `Box<figment::Error>` / `String` /
+        // `notify::Error` / `std::io::Error`) that reject a `const`
+        // binding under the E0493 drop check, matching the load-bearing
+        // pattern used at
+        // `reload::tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`
+        // and the peer `shikumi_error_vec_slice_projection_pair_is_const_callable`
+        // above.
+        //
+        // The moment any of the three projections loses its const-ness
+        // (a future edit reaching for a non-const helper — `.iter()
+        // .collect()`, `.clone()`, an `Option::map` chain — or dropping
+        // back to the `Some(&error.path)` `Deref` coercion) one of the
+        // nine const bindings below fails to compile at THAT line before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the projections. Runtime pointwise
+        // cross-checks re-call each projection on the same input and pin
+        // byte-identical answers between the const-position and
+        // runtime-position calls; a final runtime block exercises the
+        // `Some(_)` arms on `field_path` / `field_path_localization`
+        // (which cannot be reached through a `static` binding because
+        // `Box<figment::Error>` has no const constructor).
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+        static VALIDATION_ERR: ShikumiError = ShikumiError::Validation(String::new());
+
+        const NOT_FOUND_FIELD_PATH: Option<&[String]> = NOT_FOUND_ERR.field_path();
+        const NOT_FOUND_LOCALIZATION: FieldPathLocalization =
+            NOT_FOUND_ERR.field_path_localization();
+        const NOT_FOUND_COORDS: ErrorLocalizationCoordinates =
+            NOT_FOUND_ERR.error_localization_coordinates();
+
+        const PARSE_FIELD_PATH: Option<&[String]> = PARSE_ERR.field_path();
+        const PARSE_LOCALIZATION: FieldPathLocalization = PARSE_ERR.field_path_localization();
+        const PARSE_COORDS: ErrorLocalizationCoordinates =
+            PARSE_ERR.error_localization_coordinates();
+
+        const VALIDATION_FIELD_PATH: Option<&[String]> = VALIDATION_ERR.field_path();
+        const VALIDATION_LOCALIZATION: FieldPathLocalization =
+            VALIDATION_ERR.field_path_localization();
+        const VALIDATION_COORDS: ErrorLocalizationCoordinates =
+            VALIDATION_ERR.error_localization_coordinates();
+
+        assert_eq!(NOT_FOUND_FIELD_PATH, None);
+        assert_eq!(NOT_FOUND_LOCALIZATION, FieldPathLocalization::NotApplicable);
+        assert_eq!(
+            NOT_FOUND_COORDS,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::NotApplicable,
+            },
+        );
+        assert_eq!(PARSE_FIELD_PATH, None);
+        assert_eq!(PARSE_LOCALIZATION, FieldPathLocalization::NotApplicable);
+        assert_eq!(
+            PARSE_COORDS,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Parse,
+                localization: FieldPathLocalization::NotApplicable,
+            },
+        );
+        assert_eq!(VALIDATION_FIELD_PATH, None);
+        assert_eq!(
+            VALIDATION_LOCALIZATION,
+            FieldPathLocalization::NotApplicable,
+        );
+        assert_eq!(
+            VALIDATION_COORDS,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Validation,
+                localization: FieldPathLocalization::NotApplicable,
+            },
+        );
+
+        // Runtime pointwise cross-checks: the const-position calls above
+        // and the runtime-position calls below produce byte-identical
+        // answers, so a future edit that drifted any projection's
+        // behavior (a different arm returning Some, an empty slice
+        // becoming None, a coordinate-cell swap) fires here before
+        // reaching downstream consumers keyed on the (kind × arm) shape
+        // of the projection image.
+        assert_eq!(NOT_FOUND_ERR.field_path(), NOT_FOUND_FIELD_PATH);
+        assert_eq!(
+            NOT_FOUND_ERR.field_path_localization(),
+            NOT_FOUND_LOCALIZATION,
+        );
+        assert_eq!(
+            NOT_FOUND_ERR.error_localization_coordinates(),
+            NOT_FOUND_COORDS,
+        );
+        assert_eq!(PARSE_ERR.field_path(), PARSE_FIELD_PATH);
+        assert_eq!(PARSE_ERR.field_path_localization(), PARSE_LOCALIZATION);
+        assert_eq!(PARSE_ERR.error_localization_coordinates(), PARSE_COORDS);
+        assert_eq!(VALIDATION_ERR.field_path(), VALIDATION_FIELD_PATH);
+        assert_eq!(
+            VALIDATION_ERR.field_path_localization(),
+            VALIDATION_LOCALIZATION,
+        );
+        assert_eq!(
+            VALIDATION_ERR.error_localization_coordinates(),
+            VALIDATION_COORDS,
+        );
+
+        // Figment-bearing arm cross-check: build a `Figment` variant at
+        // runtime (its `Box<figment::Error>` blocks a `static`
+        // initializer) and pin the `Some(error.path.as_slice())` shape
+        // + the corresponding `FieldPathLocalization` +
+        // `ErrorLocalizationCoordinates` cells. Exercises the `Some`
+        // arm on `field_path` and (through the `is_empty` guard) both
+        // the `Localized` and `FigmentUnlocalized` arms on
+        // `field_path_localization` that the const-position welds
+        // cannot reach through a `static` binding.
+        let figment_bare = ShikumiError::Figment(fake_figment_error());
+        // A bare `figment::Error` from `Figment::new().extract()` has
+        // no localized field: the `Some(empty)` arm exercises the
+        // `FigmentUnlocalized` classification.
+        let bare_path = figment_bare
+            .field_path()
+            .expect("Figment always exposes a (possibly empty) field path");
+        assert!(bare_path.is_empty());
+        assert_eq!(
+            figment_bare.field_path_localization(),
+            FieldPathLocalization::FigmentUnlocalized,
+        );
+        assert_eq!(
+            figment_bare.error_localization_coordinates(),
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Figment,
+                localization: FieldPathLocalization::FigmentUnlocalized,
+            },
+        );
+
+        // Extract-with-localized-field: exercises the `Some(non-empty)`
+        // arm on `field_path` and the `Localized` classification on
+        // `field_path_localization` — the third and final arm of the
+        // tri-state that the const-position welds cannot reach.
+        let typed = extract_error_with_typed_field_path();
+        let typed_path = typed
+            .field_path()
+            .expect("Extract with typed field path exposes Some");
+        assert!(!typed_path.is_empty());
+        assert_eq!(
+            typed.field_path_localization(),
+            FieldPathLocalization::Localized,
+        );
+        assert_eq!(
+            typed.error_localization_coordinates(),
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Extract,
+                localization: FieldPathLocalization::Localized,
+            },
+        );
     }
 
     #[test]
