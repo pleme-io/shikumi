@@ -197,9 +197,45 @@ impl ReloadFailure {
     /// named) to give observers the (which-layer × which-kind ×
     /// which-rule × how-confident) attribution quadruple in four
     /// closed-enum reads.
+    ///
+    /// `const fn`: const-callable on `&self` receivers backed by
+    /// `static` bindings (welded by
+    /// [`tests::reload_failure_attribution_confidence_is_const_callable`]).
+    /// The routed body destructures [`Self::attribution_rule`] as an
+    /// explicit `match` — the `Option::map(AttributionRule::confidence)`
+    /// spelling routes through the non-const `Option::map` step —
+    /// and both arms compose const-callable primitives: `None => None`
+    /// is const-constructible, and `Some(rule) => Some(rule.confidence())`
+    /// composes the `Copy` field projection on the `Copy + #[repr]`-fixed
+    /// [`AttributionRule`] variant with the underlying
+    /// [`AttributionRule::confidence`] total projection (const since
+    /// `df3334f`, welded at compile time by
+    /// [`crate::error::tests::attribution_rule_confidence_and_confidence_predicates_are_const_callable`]).
+    /// Second const-lift on `impl ReloadFailure` after
+    /// [`Self::kind`] (`9bc4eb7`, welded by
+    /// [`tests::reload_failure_kind_is_const_callable`]): opens the
+    /// envelope-altitude cascade over the Some-iff-attribution
+    /// forwarders — [`Self::layer_kind`] / [`Self::metadata_axis`] and
+    /// the figment-metadata-axis / joint-coordinate / file-provenance
+    /// siblings each lift by the same `match`-arm rewrite in a
+    /// subsequent step, so this lift is the prerequisite that opens
+    /// the Some-iff-attribution altitude the same way
+    /// [`FailingSourceAttribution::confidence`] (const since
+    /// `df3334f`) opened the corresponding envelope altitude on the
+    /// `FailingSourceAttribution` side. A downstream observer that
+    /// carries a `ReloadFailure` reference through
+    /// [`crate::ConfigStore::last_reload_error`] can now key on the
+    /// exact-vs-fallback confidence axis in const context — a
+    /// `const IS_EXACT: bool = matches!(REL.attribution_confidence(),
+    /// Some(AttributionConfidence::Exact))` sentinel for a
+    /// compile-time-known captured failure resolves at compile time
+    /// without a runtime projection detour.
     #[must_use]
-    pub fn attribution_confidence(&self) -> Option<AttributionConfidence> {
-        self.attribution_rule.map(AttributionRule::confidence)
+    pub const fn attribution_confidence(&self) -> Option<AttributionConfidence> {
+        match self.attribution_rule {
+            Some(rule) => Some(rule.confidence()),
+            None => None,
+        }
     }
 
     /// [`ConfigSourceKind`] of the layer blamed for the failure, or
@@ -1630,6 +1666,168 @@ mod tests {
         assert_eq!(NOT_FOUND_KIND, NOT_FOUND_REL.kind);
         assert_eq!(EXTRACT_KIND, EXTRACT_REL.kind);
         assert_eq!(VALIDATION_KIND, VALIDATION_REL.kind);
+    }
+
+    #[test]
+    fn reload_failure_attribution_confidence_is_const_callable() {
+        // Weld the const-callability of `ReloadFailure::attribution_confidence`
+        // — the Some-iff-attribution confidence projection at the
+        // cross-thread observable envelope altitude — at compile
+        // time. Second const-lift on `impl ReloadFailure` after
+        // `reload_failure_kind_is_const_callable` (kind axis, total
+        // over the envelope; const since `9bc4eb7`); opens the
+        // envelope-altitude cascade over the Some-iff-attribution
+        // forwarders (layer_kind / metadata_axis / figment-metadata-axis
+        // / joint-coordinate / file-provenance) — each lifts by the
+        // same `match`-arm rewrite in a subsequent step.
+        //
+        // Weld across the six attribution scenarios: the `None`
+        // scenario (no attribution recorded) plus one welded scenario
+        // for each of the five `AttributionRule` variants under the
+        // `AttributionRule::ALL`-equivalent enumeration. Each of the
+        // six routes the envelope through the const-fn projection at
+        // compile time; the pointwise pins cross-check the routed
+        // arm against both the runtime-fn projection and the
+        // underlying rule-altitude `AttributionRule::confidence`
+        // total projection (const since `df3334f`, welded by
+        // `attribution_rule_confidence_and_confidence_predicates_are_const_callable`
+        // in `error::tests`).
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as
+        // `reload_failure_kind_is_const_callable`: `ReloadFailure`
+        // carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`,
+        // `Option<ConfigSource>`), so a `const REL: ReloadFailure =
+        // ...; const CONF = REL.attribution_confidence();` spelling
+        // drops the const value after the projection and rejects. A
+        // `static REL: ReloadFailure` is never dropped, so borrowing
+        // `&REL` for the `&self` receiver in a `const` initializer
+        // stays inside the const-eval envelope.
+        static NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static FILE_BY_SOURCE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileBySource),
+        };
+        static FILE_BY_METADATA_NAME_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileByMetadataName),
+        };
+        static ENV_BY_PREFIX_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByPrefix),
+        };
+        static ENV_BY_UNIQUENESS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByUniqueness),
+        };
+        static DEFAULTS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+
+        const NONE_CONF: Option<AttributionConfidence> = NONE_REL.attribution_confidence();
+        const FILE_BY_SOURCE_CONF: Option<AttributionConfidence> =
+            FILE_BY_SOURCE_REL.attribution_confidence();
+        const FILE_BY_METADATA_NAME_CONF: Option<AttributionConfidence> =
+            FILE_BY_METADATA_NAME_REL.attribution_confidence();
+        const ENV_BY_PREFIX_CONF: Option<AttributionConfidence> =
+            ENV_BY_PREFIX_REL.attribution_confidence();
+        const ENV_BY_UNIQUENESS_CONF: Option<AttributionConfidence> =
+            ENV_BY_UNIQUENESS_REL.attribution_confidence();
+        const DEFAULTS_CONF: Option<AttributionConfidence> = DEFAULTS_REL.attribution_confidence();
+
+        // Some-iff-attribution discipline holds through the const-fn
+        // body: only the None-arm envelope maps to None; every
+        // rule-carrying envelope maps to Some(_).
+        assert_eq!(NONE_CONF, None);
+        assert_eq!(FILE_BY_SOURCE_CONF, Some(AttributionConfidence::Exact));
+        assert_eq!(
+            FILE_BY_METADATA_NAME_CONF,
+            Some(AttributionConfidence::Exact)
+        );
+        assert_eq!(ENV_BY_PREFIX_CONF, Some(AttributionConfidence::Exact));
+        assert_eq!(
+            ENV_BY_UNIQUENESS_CONF,
+            Some(AttributionConfidence::Fallback)
+        );
+        assert_eq!(DEFAULTS_CONF, Some(AttributionConfidence::Fallback));
+
+        // Cross-check: the const-fn projection stays pointwise
+        // agreed with the runtime-side `rel.attribution_confidence()`
+        // call and with the underlying rule-altitude
+        // `AttributionRule::confidence` total projection over the
+        // five rule arms. Redundant with the pointwise pin above
+        // (`attribution_confidence_agrees_with_rule_confidence_pointwise`),
+        // but this pin catches a future edit that shifted the
+        // const-fn body away from the runtime-fn body or the
+        // underlying rule-altitude projection on any of the six
+        // welded arms.
+        assert_eq!(NONE_CONF, NONE_REL.attribution_confidence());
+        assert_eq!(
+            FILE_BY_SOURCE_CONF,
+            FILE_BY_SOURCE_REL.attribution_confidence()
+        );
+        assert_eq!(
+            FILE_BY_METADATA_NAME_CONF,
+            FILE_BY_METADATA_NAME_REL.attribution_confidence()
+        );
+        assert_eq!(
+            ENV_BY_PREFIX_CONF,
+            ENV_BY_PREFIX_REL.attribution_confidence()
+        );
+        assert_eq!(
+            ENV_BY_UNIQUENESS_CONF,
+            ENV_BY_UNIQUENESS_REL.attribution_confidence()
+        );
+        assert_eq!(DEFAULTS_CONF, DEFAULTS_REL.attribution_confidence());
+        assert_eq!(
+            FILE_BY_SOURCE_CONF,
+            Some(AttributionRule::FileBySource.confidence())
+        );
+        assert_eq!(
+            FILE_BY_METADATA_NAME_CONF,
+            Some(AttributionRule::FileByMetadataName.confidence())
+        );
+        assert_eq!(
+            ENV_BY_PREFIX_CONF,
+            Some(AttributionRule::EnvByPrefix.confidence())
+        );
+        assert_eq!(
+            ENV_BY_UNIQUENESS_CONF,
+            Some(AttributionRule::EnvByUniqueness.confidence())
+        );
+        assert_eq!(
+            DEFAULTS_CONF,
+            Some(AttributionRule::DefaultsByCodeUniqueness.confidence())
+        );
     }
 
     // ---- FieldPathLocalization tests ----
