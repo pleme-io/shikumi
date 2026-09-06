@@ -3443,9 +3443,9 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.49";
+        version = "0.1.50";
         edition = "2024";
-        sha256 = "1plxmw7kwvgzhnl0zlr0dilphjqgiqj7mxv57rms31mhqa7r6wvj";
+        sha256 = "0ry4s9rqh15n3b036pi0mn00f679k8d65jy20z9r25czwv8wsnf6";
         procMacro = true;
         libName = "gen_macros";
         authors = [
@@ -3470,9 +3470,9 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.49";
+        version = "0.1.50";
         edition = "2024";
-        sha256 = "1xvaf08qcx522qz9cj9h1qh8mv5kkkvil1271jdc9f0wwc8mnx33";
+        sha256 = "1n1x34yfnrj6p2gxd81bizqjb1fx35jndj40xd1d7hqf8alpg2l9";
         libName = "gen_platform";
         authors = [
           "pleme-io"
@@ -3508,9 +3508,9 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.49";
+        version = "0.1.50";
         edition = "2024";
-        sha256 = "0740841212hznsxz6xbq2lpf7s8x6cac6d0al7v8cc6sf0bl1xla";
+        sha256 = "0ij1a17lcyaihjk4wjkq4xi4hpw17868blavq041bmp3m4kwrl1f";
         libName = "gen_types";
         authors = [
           "pleme-io"
@@ -9470,7 +9470,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.827";
+        version = "0.1.828";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
