@@ -264,9 +264,32 @@ impl ReloadFailure {
     /// without destructuring the rule, and weight fallback
     /// attributions visibly via the confidence accessor — both
     /// reads land as one closed-enum match each.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`]).
+    /// The routed body rewrites the non-const
+    /// `Option::<AttributionRule>::map(AttributionRule::layer_kind)`
+    /// spelling — rustc rejects `Option::<T>::map` in const fn with
+    /// E0658 — into an explicit `match self.attribution_rule` whose
+    /// arms compose already-const primitives: the `Copy` field access
+    /// on the `Copy + #[repr]`-fixed `Option<AttributionRule>` slot,
+    /// the `Copy` variant read on the `AttributionRule` payload, and
+    /// the underlying [`AttributionRule::layer_kind`] total projection
+    /// (const since it was introduced). Member of the const-callable
+    /// Some-iff-attribution forwarder quartet
+    /// ([`Self::layer_kind`], [`Self::metadata_axis`],
+    /// [`Self::figment_source_kind`], [`Self::figment_name_tag_kind`])
+    /// unblocked by [`Self::attribution_confidence`] (`6d160c8`) and
+    /// lifted in one consolidated step; peer to
+    /// [`FailingSourceAttribution::layer_kind`] (const since
+    /// `fc9e0c6`) at the corresponding envelope altitude on the
+    /// borrowed-envelope side of the cross-thread observable surface.
     #[must_use]
-    pub fn layer_kind(&self) -> Option<ConfigSourceKind> {
-        self.attribution_rule.map(AttributionRule::layer_kind)
+    pub const fn layer_kind(&self) -> Option<ConfigSourceKind> {
+        match self.attribution_rule {
+            Some(rule) => Some(rule.layer_kind()),
+            None => None,
+        }
     }
 
     /// [`AttributionAxis`] of the rule that named the blamed layer,
@@ -295,9 +318,28 @@ impl ReloadFailure {
     /// weaker than source-axis ones — peer to weighting
     /// [`AttributionConfidence::Fallback`] weaker than
     /// [`AttributionConfidence::Exact`] — read this accessor.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`]).
+    /// The routed body composes the same const-callable Copy field
+    /// access + variant read + underlying
+    /// [`AttributionRule::metadata_axis`] total projection (const
+    /// since it was introduced) that [`Self::layer_kind`] does, so a
+    /// compile-time-known envelope projects both the layer-kind and
+    /// metadata-axis coordinates at compile time — a
+    /// `static PAIR: (Option<ConfigSourceKind>, Option<AttributionAxis>)
+    /// = (REL.layer_kind(), REL.metadata_axis())` diagnostic table
+    /// resolves without either projection dropping the caller off
+    /// the const-context edge. Peer to
+    /// [`FailingSourceAttribution::metadata_axis`] (const since
+    /// `37b71fb`) at the corresponding altitude on the
+    /// borrowed-envelope side.
     #[must_use]
-    pub fn metadata_axis(&self) -> Option<AttributionAxis> {
-        self.attribution_rule.map(AttributionRule::metadata_axis)
+    pub const fn metadata_axis(&self) -> Option<AttributionAxis> {
+        match self.attribution_rule {
+            Some(rule) => Some(rule.metadata_axis()),
+            None => None,
+        }
     }
 
     /// [`FigmentSourceKind`] structurally pinned by
@@ -336,10 +378,29 @@ impl ReloadFailure {
     /// `Some`, `(figment_source_kind, layer_kind) ∈ {(File, File),
     /// (Code, Defaults)}` — pinned by
     /// `figment_source_kind_agrees_with_layer_kind_pointwise_when_some`.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`]).
+    /// The routed body rewrites the non-const
+    /// `Option::<AttributionRule>::and_then(AttributionRule::figment_source_kind)`
+    /// spelling — rustc rejects `Option::<T>::and_then` in const fn
+    /// with E0658 — into an explicit `match self.attribution_rule`
+    /// whose arms compose already-const primitives: the `Copy` field
+    /// access on the `Copy` `Option<AttributionRule>` slot, the
+    /// `Copy` variant read, and the underlying
+    /// [`AttributionRule::figment_source_kind`] partial projection
+    /// (const since it was introduced) that already returns an
+    /// `Option<FigmentSourceKind>` const value on every arm — so no
+    /// extra `Some` wrap is needed on the `Some` arm. Peer to
+    /// [`FailingSourceAttribution::figment_source_kind`] (const since
+    /// `b11bca7`) at the corresponding altitude on the
+    /// borrowed-envelope side.
     #[must_use]
-    pub fn figment_source_kind(&self) -> Option<FigmentSourceKind> {
-        self.attribution_rule
-            .and_then(AttributionRule::figment_source_kind)
+    pub const fn figment_source_kind(&self) -> Option<FigmentSourceKind> {
+        match self.attribution_rule {
+            Some(rule) => rule.figment_source_kind(),
+            None => None,
+        }
     }
 
     /// [`FigmentNameTagKind`] structurally pinned by
@@ -410,10 +471,38 @@ impl ReloadFailure {
     ///
     /// [`FigmentNameTag`]: crate::FigmentNameTag
     /// [`ShikumiError`]: crate::ShikumiError
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`]).
+    /// The routed body composes the same const-callable Copy field
+    /// access + variant read + underlying
+    /// [`AttributionRule::figment_name_tag_kind`] partial projection
+    /// (const since it was introduced) that [`Self::figment_source_kind`]
+    /// does on the source-axis side. Together with its source-axis
+    /// peer, the two accessors now close the const-altitude parity
+    /// between the cross-thread envelope and the borrowed
+    /// [`FailingSourceAttribution`] side ([`Self::figment_name_tag_kind`]'s
+    /// peer const since `a4692bc`) on the figment-metadata kind
+    /// universe: a compile-time-known envelope surfaces the entire
+    /// (figment-Source-axis kind × figment-name-axis kind) partial
+    /// partition at compile time. Closes the const-callable
+    /// Some-iff-attribution forwarder quartet
+    /// ([`Self::layer_kind`], [`Self::metadata_axis`],
+    /// [`Self::figment_source_kind`], [`Self::figment_name_tag_kind`])
+    /// unblocked by [`Self::attribution_confidence`] (`6d160c8`), so
+    /// the four orthogonal projections over the rule space
+    /// (layer-kind × metadata-axis × figment-Source-axis kind ×
+    /// figment-name-axis kind) all evaluate at compile time through
+    /// the envelope. The remaining envelope-altitude forwarders
+    /// (`file_provenance`, `attribution_source_kind_coordinates`,
+    /// `attribution_name_kind_coordinates`, `coordinates`) each lift
+    /// by the same `match`-arm rewrite in a subsequent step.
     #[must_use]
-    pub fn figment_name_tag_kind(&self) -> Option<FigmentNameTagKind> {
-        self.attribution_rule
-            .and_then(AttributionRule::figment_name_tag_kind)
+    pub const fn figment_name_tag_kind(&self) -> Option<FigmentNameTagKind> {
+        match self.attribution_rule {
+            Some(rule) => rule.figment_name_tag_kind(),
+            None => None,
+        }
     }
 
     /// [`crate::FormatProvenance`] of the file layer blamed for the
@@ -1828,6 +1917,190 @@ mod tests {
             DEFAULTS_CONF,
             Some(AttributionRule::DefaultsByCodeUniqueness.confidence())
         );
+    }
+
+    #[test]
+    fn reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable() {
+        // Weld the const-callability of the four remaining
+        // Some-iff-attribution forwarders on `impl ReloadFailure` in
+        // one consolidated step:
+        //   * `Self::layer_kind`
+        //     (file × env × defaults) — non-const
+        //     `Option::<AttributionRule>::map(AttributionRule::layer_kind)`
+        //     rewritten to the same `match self.attribution_rule`
+        //     shape as `Self::attribution_confidence` (`6d160c8`).
+        //   * `Self::metadata_axis`
+        //     (source × name) — parallel `.map(_)` rewrite.
+        //   * `Self::figment_source_kind`
+        //     (partial over source-axis rules) —
+        //     `Option::<AttributionRule>::and_then(_)` rewritten to a
+        //     `match` whose `Some(rule) => rule.figment_source_kind()`
+        //     arm composes an already-`Option`-returning const-fn
+        //     primitive (no extra `Some` wrap on the `Some` arm).
+        //   * `Self::figment_name_tag_kind`
+        //     (partial over name-axis rules) — parallel `.and_then(_)`
+        //     rewrite; closes the source-axis / name-axis parity.
+        //
+        // With these four lifted, the four orthogonal projections
+        // over the rule space (layer-kind × metadata-axis ×
+        // figment-Source-axis kind × figment-name-axis kind) all
+        // evaluate at compile time through the envelope, matching the
+        // const altitude the peer accessors on the borrowed
+        // `FailingSourceAttribution` side already occupy
+        // (`fc9e0c6` / `37b71fb` / `b11bca7` / `a4692bc`).
+        //
+        // Weld structure: six `static ReloadFailure` bindings (one
+        // None-arm plus one per `AttributionRule` variant) route
+        // through all four const-fn projections in const position.
+        // Pointwise pins prove each routed arm stays byte-for-byte
+        // agreed with (a) the runtime-side call on the same envelope
+        // and (b) the underlying rule-altitude const-fn primitive.
+        // The `static` (rather than `const`) receiver is load-bearing
+        // for the same E0493 reason as
+        // `reload_failure_attribution_confidence_is_const_callable`:
+        // `ReloadFailure` carries `Drop`-bearing payloads.
+        static NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static FILE_BY_SOURCE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileBySource),
+        };
+        static FILE_BY_METADATA_NAME_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileByMetadataName),
+        };
+        static ENV_BY_PREFIX_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByPrefix),
+        };
+        static ENV_BY_UNIQUENESS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByUniqueness),
+        };
+        static DEFAULTS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+
+        // ---- layer_kind (Some-iff-attribution, total on Some arm) ----
+        const NONE_LK: Option<ConfigSourceKind> = NONE_REL.layer_kind();
+        const FILE_BY_SOURCE_LK: Option<ConfigSourceKind> = FILE_BY_SOURCE_REL.layer_kind();
+        const FILE_BY_METADATA_NAME_LK: Option<ConfigSourceKind> =
+            FILE_BY_METADATA_NAME_REL.layer_kind();
+        const ENV_BY_PREFIX_LK: Option<ConfigSourceKind> = ENV_BY_PREFIX_REL.layer_kind();
+        const ENV_BY_UNIQUENESS_LK: Option<ConfigSourceKind> = ENV_BY_UNIQUENESS_REL.layer_kind();
+        const DEFAULTS_LK: Option<ConfigSourceKind> = DEFAULTS_REL.layer_kind();
+        assert_eq!(NONE_LK, None);
+        assert_eq!(FILE_BY_SOURCE_LK, Some(ConfigSourceKind::File));
+        assert_eq!(FILE_BY_METADATA_NAME_LK, Some(ConfigSourceKind::File));
+        assert_eq!(ENV_BY_PREFIX_LK, Some(ConfigSourceKind::Env));
+        assert_eq!(ENV_BY_UNIQUENESS_LK, Some(ConfigSourceKind::Env));
+        assert_eq!(DEFAULTS_LK, Some(ConfigSourceKind::Defaults));
+
+        // ---- metadata_axis (Some-iff-attribution, total on Some arm) ----
+        const NONE_MA: Option<AttributionAxis> = NONE_REL.metadata_axis();
+        const FILE_BY_SOURCE_MA: Option<AttributionAxis> = FILE_BY_SOURCE_REL.metadata_axis();
+        const FILE_BY_METADATA_NAME_MA: Option<AttributionAxis> =
+            FILE_BY_METADATA_NAME_REL.metadata_axis();
+        const ENV_BY_PREFIX_MA: Option<AttributionAxis> = ENV_BY_PREFIX_REL.metadata_axis();
+        const ENV_BY_UNIQUENESS_MA: Option<AttributionAxis> = ENV_BY_UNIQUENESS_REL.metadata_axis();
+        const DEFAULTS_MA: Option<AttributionAxis> = DEFAULTS_REL.metadata_axis();
+        assert_eq!(NONE_MA, None);
+        assert_eq!(FILE_BY_SOURCE_MA, Some(AttributionAxis::MetadataSource));
+        assert_eq!(
+            FILE_BY_METADATA_NAME_MA,
+            Some(AttributionAxis::MetadataName)
+        );
+        assert_eq!(ENV_BY_PREFIX_MA, Some(AttributionAxis::MetadataName));
+        assert_eq!(ENV_BY_UNIQUENESS_MA, Some(AttributionAxis::MetadataName));
+        assert_eq!(DEFAULTS_MA, Some(AttributionAxis::MetadataSource));
+
+        // ---- figment_source_kind (partial: source-axis rules only) ----
+        const NONE_FSK: Option<FigmentSourceKind> = NONE_REL.figment_source_kind();
+        const FILE_BY_SOURCE_FSK: Option<FigmentSourceKind> =
+            FILE_BY_SOURCE_REL.figment_source_kind();
+        const FILE_BY_METADATA_NAME_FSK: Option<FigmentSourceKind> =
+            FILE_BY_METADATA_NAME_REL.figment_source_kind();
+        const ENV_BY_PREFIX_FSK: Option<FigmentSourceKind> =
+            ENV_BY_PREFIX_REL.figment_source_kind();
+        const ENV_BY_UNIQUENESS_FSK: Option<FigmentSourceKind> =
+            ENV_BY_UNIQUENESS_REL.figment_source_kind();
+        const DEFAULTS_FSK: Option<FigmentSourceKind> = DEFAULTS_REL.figment_source_kind();
+        assert_eq!(NONE_FSK, None);
+        assert_eq!(FILE_BY_SOURCE_FSK, Some(FigmentSourceKind::File));
+        assert_eq!(FILE_BY_METADATA_NAME_FSK, None);
+        assert_eq!(ENV_BY_PREFIX_FSK, None);
+        assert_eq!(ENV_BY_UNIQUENESS_FSK, None);
+        assert_eq!(DEFAULTS_FSK, Some(FigmentSourceKind::Code));
+
+        // ---- figment_name_tag_kind (partial: name-axis rules only) ----
+        const NONE_FNK: Option<FigmentNameTagKind> = NONE_REL.figment_name_tag_kind();
+        const FILE_BY_SOURCE_FNK: Option<FigmentNameTagKind> =
+            FILE_BY_SOURCE_REL.figment_name_tag_kind();
+        const FILE_BY_METADATA_NAME_FNK: Option<FigmentNameTagKind> =
+            FILE_BY_METADATA_NAME_REL.figment_name_tag_kind();
+        const ENV_BY_PREFIX_FNK: Option<FigmentNameTagKind> =
+            ENV_BY_PREFIX_REL.figment_name_tag_kind();
+        const ENV_BY_UNIQUENESS_FNK: Option<FigmentNameTagKind> =
+            ENV_BY_UNIQUENESS_REL.figment_name_tag_kind();
+        const DEFAULTS_FNK: Option<FigmentNameTagKind> = DEFAULTS_REL.figment_name_tag_kind();
+        assert_eq!(NONE_FNK, None);
+        assert_eq!(FILE_BY_SOURCE_FNK, None);
+        assert_eq!(FILE_BY_METADATA_NAME_FNK, Some(FigmentNameTagKind::Format));
+        assert_eq!(ENV_BY_PREFIX_FNK, Some(FigmentNameTagKind::Env));
+        assert_eq!(ENV_BY_UNIQUENESS_FNK, Some(FigmentNameTagKind::Env));
+        assert_eq!(DEFAULTS_FNK, None);
+
+        // ---- Cross-check parity: const-fn body == runtime call ==
+        //      underlying rule-altitude const-fn primitive.
+        // Walk the five AttributionRule variants once, comparing each
+        // envelope-altitude projection against the same rule's own
+        // const-callable projection.
+        assert_eq!(NONE_LK, NONE_REL.layer_kind());
+        assert_eq!(NONE_MA, NONE_REL.metadata_axis());
+        assert_eq!(NONE_FSK, NONE_REL.figment_source_kind());
+        assert_eq!(NONE_FNK, NONE_REL.figment_name_tag_kind());
+        for (rel, rule) in [
+            (&FILE_BY_SOURCE_REL, AttributionRule::FileBySource),
+            (
+                &FILE_BY_METADATA_NAME_REL,
+                AttributionRule::FileByMetadataName,
+            ),
+            (&ENV_BY_PREFIX_REL, AttributionRule::EnvByPrefix),
+            (&ENV_BY_UNIQUENESS_REL, AttributionRule::EnvByUniqueness),
+            (&DEFAULTS_REL, AttributionRule::DefaultsByCodeUniqueness),
+        ] {
+            assert_eq!(rel.layer_kind(), Some(rule.layer_kind()));
+            assert_eq!(rel.metadata_axis(), Some(rule.metadata_axis()));
+            assert_eq!(rel.figment_source_kind(), rule.figment_source_kind());
+            assert_eq!(rel.figment_name_tag_kind(), rule.figment_name_tag_kind());
+        }
     }
 
     // ---- FieldPathLocalization tests ----
