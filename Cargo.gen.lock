@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "2ec0bceb484e1682e9caa571e8e4e8a6254bbd33b1cc709baa9446c82ae28f2d",
+  "cargo_lock_sha256": "b9fb84b6eebcdb1ad4b1b9d7d7d77e4dcd038657d677e6534c70511fe5e0a9de",
   "manifest_sha256": {
-    "Cargo.toml": "c9c6fbb08b3675c74a33e20ccfd697edf9e769ab9bc68d09cdaac1058165a83a"
+    "Cargo.toml": "32f45d42c3ac6200c72cab8ea7e84629227bd23bf19beead6a9333041e4a634d"
   },
   "target_resolves": {
     "base": {
@@ -303,7 +303,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.49": {
+      "gen-macros-0.1.50": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -342,11 +342,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.49": {
+      "gen-platform-0.1.50": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.49",
+            "package_key": "gen-macros-0.1.50",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -356,7 +356,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.49",
+            "package_key": "gen-types-0.1.50",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -410,7 +410,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.49": {
+      "gen-types-0.1.50": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.826": {
+      "shikumi-0.1.827": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1208,7 +1208,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.49",
+            "package_key": "gen-platform-0.1.50",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1218,7 +1218,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.49",
+            "package_key": "gen-types-0.1.50",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -3861,14 +3861,14 @@
     "fsevent-sys-4.1.0": {
       "edition": "2018"
     },
-    "gen-macros-0.1.49": {
+    "gen-macros-0.1.50": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.49": {
+    "gen-platform-0.1.50": {
       "edition": "2024"
     },
-    "gen-types-0.1.49": {
+    "gen-types-0.1.50": {
       "edition": "2024"
     },
     "getrandom-0.4.3": {
@@ -3992,7 +3992,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.826": {
+    "shikumi-0.1.827": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
