@@ -482,8 +482,27 @@ impl Format {
     /// here automatically makes [`Self::from_extension`], [`Self::from_path`],
     /// [`<Self as std::str::FromStr>`], and [`<Self as TryFrom<&Path>>`]
     /// recognize it — no lockstep edit required.
+    ///
+    /// `const`-callable — a compile-time-known [`Format`] projects its
+    /// extension-alias slice at compile time too. The body is one
+    /// exhaustive match over the payload-free `Copy` variant space
+    /// returning static-slice literals of `&'static str`; every arm is
+    /// const-eligible under rustc 1.94.1 (match on a `Copy` enum with
+    /// no `Drop`-bearing arm bindings, `&'static [&'static str]` slice
+    /// literals reachable in const context since Rust 1.0). Lifts to
+    /// the same const-callability altitude the sibling projections on
+    /// this axis already occupy — [`Self::as_str`] (const since
+    /// landing), [`Self::provenance`] (const since `3801ad8`),
+    /// [`Self::format_coordinates`] (const since `f29dfe0`), and
+    /// [`Self::has_shikumi_provider`] / [`Self::has_figment_builtin_provider`]
+    /// (const since `4c2a205`) — so a `static` per-format
+    /// extension-alias table wired through this projection stays wired
+    /// to compile-time evaluation, and the (format → extensions)
+    /// projection meets the closed-primitive projection surface at
+    /// the same altitude as its peers. Pinned by
+    /// [`tests::format_extensions_is_const_callable`].
     #[must_use]
-    pub fn extensions(self) -> &'static [&'static str] {
+    pub const fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::Yaml => &["yaml", "yml"],
             Self::Toml => &["toml"],
@@ -6847,6 +6866,74 @@ mod tests {
                 extensions[0],
                 f.as_str(),
                 "extensions()[0] must equal as_str() for {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_extensions_is_const_callable() {
+        // Weld the const-callability of the (format → extension-alias
+        // slice) projection `Format::extensions` at compile time.
+        // Mirrors the shape of `format_provenance_projection_is_const_callable`
+        // (commit `3801ad8`) / `format_is_feature_gated_is_const_callable`
+        // (commit `4eec3fa`) on the shikumi-crate-wide const-callability
+        // discipline over the closed-primitive projection surface: a
+        // compile-time-known `Format` now projects into its
+        // `&'static [&'static str]` extension-alias slice at compile
+        // time too — so a `static` per-format extension-alias table
+        // wired through this projection stays wired to compile-time
+        // evaluation, and the sibling closed-axis projections
+        // (`Format::as_str`, `Format::provenance`,
+        // `Format::format_coordinates`, `Format::has_shikumi_provider`,
+        // `Format::has_figment_builtin_provider`, `Format::is_feature_gated`,
+        // `Format::is_always_available` — all const since their
+        // respective landings) meet this projection at the same
+        // const-callability altitude.
+        //
+        // Five `const` bindings — one per `Format` variant — route each
+        // payload-free variant through the const-fn projection in
+        // const position. The moment `Format::extensions` loses its
+        // const-ness (a future edit that reaches for a non-const
+        // helper — a runtime lookup, a heap-allocated slice, a `Vec`
+        // intermediate on the mapping path — inside the exhaustive
+        // match) one of the five `const` welds below fails to compile
+        // at THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the projection, and the
+        // five pointwise pins catch a future edit that shifted the
+        // format → extensions mapping off its slice literal before it
+        // drifts through observers that read the projection.
+        const YAML_EXTS: &[&str] = Format::Yaml.extensions();
+        const TOML_EXTS: &[&str] = Format::Toml.extensions();
+        const LISP_EXTS: &[&str] = Format::Lisp.extensions();
+        const NIX_EXTS: &[&str] = Format::Nix.extensions();
+        const BLUE_EXTS: &[&str] = Format::Blue.extensions();
+
+        assert_eq!(YAML_EXTS, &["yaml", "yml"]);
+        assert_eq!(TOML_EXTS, &["toml"]);
+        assert_eq!(LISP_EXTS, &["lisp", "lsp", "el"]);
+        assert_eq!(NIX_EXTS, &["nix"]);
+        assert_eq!(BLUE_EXTS, &["b"]);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `Format::ALL` to the runtime-side
+        // `format.extensions()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection so a future variant landing that
+        // forgot its const-context weld above is still caught here
+        // by the `Format::ALL` iteration.
+        for f in Format::ALL.iter().copied() {
+            let runtime_exts = f.extensions();
+            let const_exts: &[&str] = match f {
+                Format::Yaml => YAML_EXTS,
+                Format::Toml => TOML_EXTS,
+                Format::Lisp => LISP_EXTS,
+                Format::Nix => NIX_EXTS,
+                Format::Blue => BLUE_EXTS,
+            };
+            assert_eq!(
+                runtime_exts, const_exts,
+                "const-fn Format::extensions must agree with runtime call for {f:?}",
             );
         }
     }
