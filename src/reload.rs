@@ -1613,6 +1613,70 @@ mod tests {
     }
 
     #[test]
+    fn layer_kind_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the (file × env × defaults)
+        // layer-kind axis on the cross-thread observable form: the
+        // captured envelope's layer_kind projection mirrors the source
+        // error's layer_kind byte-for-byte across every constructible
+        // ShikumiError variant. Peer of
+        // `error_localization_coordinates_agrees_with_underlying_error_pointwise`
+        // on the coordinate plane, and of
+        // `figment_source_kind_agrees_with_underlying_error_pointwise` /
+        // `figment_name_tag_kind_agrees_with_underlying_error_pointwise` /
+        // `file_provenance_agrees_with_underlying_error_pointwise` on
+        // the figment-metadata axes — this pin closes the same lossless-
+        // capture contract on the layer-kind axis, so a future refactor
+        // of either side (the live `ShikumiError::layer_kind` accessor
+        // or the captured `ReloadFailure::layer_kind` field-forwarder)
+        // is bound to move the other in lockstep.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.layer_kind(),
+                err.layer_kind(),
+                "captured layer_kind must mirror source layer_kind for {err:?}",
+            );
+        }
+
+        // End-to-end pin on a real Extract failure: the layer-kind
+        // survives capture through `ReloadFailure::from_error` on both
+        // file-axis (FileBySource) and defaults-axis
+        // (DefaultsByCodeUniqueness) attribution resolvers.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_lk_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(f_file.layer_kind(), err_file.layer_kind());
+        assert_eq!(f_file.layer_kind(), Some(ConfigSourceKind::File));
+
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_def = ReloadFailure::from_error(&err_def);
+        assert_eq!(f_def.layer_kind(), err_def.layer_kind());
+        assert_eq!(f_def.layer_kind(), Some(ConfigSourceKind::Defaults));
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the

@@ -5883,6 +5883,61 @@ impl ShikumiError {
             _ => None,
         }
     }
+
+    /// [`ConfigSourceKind`] of the layer blamed for the failure, or
+    /// `None` when no attribution was recorded — strict superset of
+    /// [`Self::failing_attribution`]`.map(|a| a.layer_kind())`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies, structured-log routers) don't re-derive
+    /// the (file × env × defaults) partition at every observation
+    /// site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::failing_attribution`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Equal to
+    /// `self.failing_source().map(ConfigSource::kind)` by construction
+    /// — the cross-primitive
+    /// `attr.rule.layer_kind() == attr.source.kind()` invariant from
+    /// [`FailingSourceAttribution`] propagates through the resolver into
+    /// this accessor. Reading it through this accessor (rather than
+    /// `self.failing_source().map(ConfigSource::kind)`) surfaces the
+    /// layer-kind as a consequence of the resolved rule, not an
+    /// independent fact about the source.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::layer_kind`] on the
+    /// cross-thread observable envelope: the two projections agree
+    /// pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).layer_kind() == err.layer_kind()`
+    /// for every [`ShikumiError`]), pinning the lossless-capture
+    /// contract for the layer-kind axis on the cross-thread mirror.
+    /// Before this accessor, the live-error side of the API forced
+    /// callers to chain through `err.failing_attribution().map(|a|
+    /// a.layer_kind())` (or the equivalent
+    /// `err.failing_source().map(ConfigSource::kind)`) at every
+    /// observation site — a three-hop composition on the live-error
+    /// side against the one-hop accessor on the captured-envelope
+    /// side. The asymmetric surface leaked into consumer code
+    /// (dashboards, alerting policies, structured-log routers) that
+    /// wanted the same one-call access to the layer-kind axis on both
+    /// sides of the capture boundary; this lift closes the API-symmetry
+    /// gap on the (file × env × defaults) axis.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::map`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::layer_kind`] is const because it
+    /// reads a stored `Option<AttributionRule>` field on `Copy` receivers
+    /// through an explicit `match`; the live-error side pays the runtime
+    /// resolver cost on every call, so a caller who reads the axis more
+    /// than once should cache the result or route through the captured
+    /// envelope.
+    #[must_use]
+    pub fn layer_kind(&self) -> Option<ConfigSourceKind> {
+        self.failing_attribution()
+            .map(FailingSourceAttribution::layer_kind)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -10224,6 +10279,115 @@ mod tests {
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
         assert_eq!(attr.confidence(), AttributionConfidence::Fallback);
+    }
+
+    // ---- ShikumiError::layer_kind tests ----
+
+    #[test]
+    fn shikumi_error_layer_kind_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::layer_kind` must equal the
+        // chained composition `self.failing_attribution().map(|a|
+        // a.layer_kind())` on every error whose attribution resolves to
+        // a known layer kind. Pins the API-symmetry contract: the
+        // live-error side one-hop accessor is a pure forwarder of the
+        // envelope-side layer_kind projection, so a future refactor of
+        // either half is bound to move the other in lockstep.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(serde::Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.layer_kind(),
+            err_file
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::layer_kind),
+        );
+        assert_eq!(err_file.layer_kind(), Some(ConfigSourceKind::File));
+
+        // Defaults-axis attribution: figment's Serialized provider
+        // attaches Source::Code; a defaults-only chain dispatches to
+        // DefaultsByCodeUniqueness → Defaults kind.
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        assert_eq!(
+            err_def.layer_kind(),
+            err_def
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::layer_kind),
+        );
+        assert_eq!(err_def.layer_kind(), Some(ConfigSourceKind::Defaults));
+    }
+
+    #[test]
+    fn shikumi_error_layer_kind_agrees_with_failing_source_kind_when_attributed() {
+        // Cross-primitive invariant propagates from FailingSourceAttribution
+        // to the ShikumiError altitude: for every attributed error,
+        // `err.layer_kind() == err.failing_source().map(ConfigSource::kind)`.
+        // Peer of the envelope-altitude test
+        // `layer_kind_agrees_with_failing_source_kind_when_attributed`
+        // in `reload.rs`, closing the same
+        // `attr.rule.layer_kind() == attr.source.kind()` law at the
+        // live-error altitude.
+        let (_dir, err) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err.layer_kind(),
+            err.failing_source().map(ConfigSource::kind),
+        );
+        assert_eq!(err.layer_kind(), Some(ConfigSourceKind::File));
+    }
+
+    #[test]
+    fn shikumi_error_layer_kind_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the layer-kind projection must be None. Peer of the
+        // `failing_source_none_for_non_figment_variants` /
+        // `failing_source_none_for_figment_variant` pair on the same
+        // Some-iff-attribution axis at the ShikumiError altitude.
+        assert!(super::synthetic_parse_error().layer_kind().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .layer_kind()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.layer_kind().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .layer_kind()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .layer_kind()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_layer_kind_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so layer_kind must be None. Peer of
+        // `failing_source_none_when_no_metadata_attached` on the same
+        // resolver-terminates-in-None branch.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(err.layer_kind().is_none(), "no metadata → no attribution");
     }
 
     // ---- ShikumiErrorKind / ShikumiError::kind tests ----
