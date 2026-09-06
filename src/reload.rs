@@ -963,8 +963,16 @@ impl ReloadFailure {
     /// `match`, `HashMap` keys, structured-log payloads, and
     /// attestation manifests without re-reading the two projections
     /// separately.
+    ///
+    /// `const`-callable: composes the two const-fn sub-projections
+    /// [`Self::kind`] (const since `9bc4eb7`) and
+    /// [`Self::field_path_localization`] (const since `64de910`)
+    /// into an [`ErrorLocalizationCoordinates`] struct literal over
+    /// two `Copy` closed-enum fields — the composition itself lands
+    /// no runtime code past the two const sub-calls. Pinned by
+    /// [`tests::reload_failure_error_localization_coordinates_is_const_callable`].
     #[must_use]
-    pub fn error_localization_coordinates(&self) -> ErrorLocalizationCoordinates {
+    pub const fn error_localization_coordinates(&self) -> ErrorLocalizationCoordinates {
         ErrorLocalizationCoordinates {
             kind: self.kind(),
             localization: self.field_path_localization(),
@@ -4181,6 +4189,154 @@ mod tests {
                 "captured coordinate.localization must agree with f.field_path_localization() for {err:?}",
             );
         }
+    }
+
+    #[test]
+    fn reload_failure_error_localization_coordinates_is_const_callable() {
+        // Weld the const-callability of
+        // `ReloadFailure::error_localization_coordinates` — the
+        // envelope-altitude composition of the two const-fn sub-
+        // projections (`Self::kind` / `Self::field_path_localization`)
+        // into an `ErrorLocalizationCoordinates { kind, localization }`
+        // struct literal — at compile time. Sits on `impl
+        // ReloadFailure` alongside the two sub-projections it fuses
+        // (both const since `9bc4eb7` and `64de910` respectively);
+        // this lift closes the composition gap the `64de910` commit
+        // body called out as the immediate next hop: with both
+        // sub-projections const, only the struct-literal spelling
+        // stayed runtime, and this weld pins the composition itself
+        // as const-eligible.
+        //
+        // The struct literal is const-eligible because both named
+        // fields are `Copy` closed-enum types (`ShikumiErrorKind` /
+        // `FieldPathLocalization`), no `Drop`-bearing payload is
+        // constructed by the composition, and `#[non_exhaustive]` on
+        // `ErrorLocalizationCoordinates` does not restrict struct
+        // literals inside the defining crate. Two of the three
+        // `FieldPathLocalization` variants are reachable at
+        // const-eval time (matching the coverage envelope of the
+        // sibling `reload_failure_field_path_localization_is_const_callable`
+        // weld): `NotApplicable` (any non-figment-bearing kind —
+        // `NotFound` / `Validation`) and `FigmentUnlocalized` (the
+        // sole figment-bearing kind `Extract` with an empty
+        // `Vec<String>` field_path, since no const `String` payload
+        // constructor exists). The `Localized` variant is reached
+        // only at runtime through a real figment extraction failure,
+        // covered by the sibling
+        // `error_localization_coordinates_agrees_with_underlying_error_pointwise`
+        // pin; welding the const-callability of the composition
+        // covers the full envelope under the const-fn body identity.
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as the sibling
+        // `reload_failure_field_path_localization_is_const_callable`
+        // weld: `ReloadFailure` carries `Drop`-bearing payloads
+        // (`String`, `Vec<ConfigSource>`, `Vec<String>`,
+        // `Option<ConfigSource>`), so a `const REL: ReloadFailure =
+        // ...; const CELL = REL.error_localization_coordinates();`
+        // spelling drops the const value after the composition and
+        // rejects. A `static REL: ReloadFailure` is never dropped,
+        // so borrowing `&REL` for the `&self` receiver in a `const`
+        // initializer stays inside the const-eval envelope.
+        static NOT_FOUND_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::NotFound,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static EXTRACT_EMPTY_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static VALIDATION_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Validation,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        const NOT_FOUND_CELL: ErrorLocalizationCoordinates =
+            NOT_FOUND_REL.error_localization_coordinates();
+        const EXTRACT_EMPTY_CELL: ErrorLocalizationCoordinates =
+            EXTRACT_EMPTY_REL.error_localization_coordinates();
+        const VALIDATION_CELL: ErrorLocalizationCoordinates =
+            VALIDATION_REL.error_localization_coordinates();
+
+        assert_eq!(
+            NOT_FOUND_CELL,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::NotApplicable,
+            }
+        );
+        assert_eq!(
+            EXTRACT_EMPTY_CELL,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Extract,
+                localization: FieldPathLocalization::FigmentUnlocalized,
+            }
+        );
+        assert_eq!(
+            VALIDATION_CELL,
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Validation,
+                localization: FieldPathLocalization::NotApplicable,
+            }
+        );
+
+        // Cross-check: the const-fn composition stays pointwise
+        // agreed with the runtime-side
+        // `rel.error_localization_coordinates()` call over the three
+        // const-welded arms. Redundant with the pointwise pin
+        // `error_localization_coordinates_agrees_with_underlying_error_pointwise`
+        // (which welds the composition against the underlying
+        // `ShikumiError::error_localization_coordinates`), but this
+        // pin catches a future edit that shifted the const-fn body
+        // away from the runtime-fn body on any of the three welded
+        // arms.
+        assert_eq!(
+            NOT_FOUND_CELL,
+            NOT_FOUND_REL.error_localization_coordinates()
+        );
+        assert_eq!(
+            EXTRACT_EMPTY_CELL,
+            EXTRACT_EMPTY_REL.error_localization_coordinates()
+        );
+        assert_eq!(
+            VALIDATION_CELL,
+            VALIDATION_REL.error_localization_coordinates()
+        );
+
+        // Named-field agreement with the two sibling const-fn
+        // sub-projections. Redundant with
+        // `error_localization_coordinates_mirrors_sibling_accessors_on_capture`
+        // on the runtime path; pins the same lossless-decomposition
+        // contract at const-eval time so a future edit to the
+        // struct-literal field ordering (kind ↔ localization) is
+        // caught at compile-time by the pin rather than at runtime
+        // by the sibling weld.
+        assert_eq!(NOT_FOUND_CELL.kind, NOT_FOUND_REL.kind());
+        assert_eq!(
+            NOT_FOUND_CELL.localization,
+            NOT_FOUND_REL.field_path_localization()
+        );
+        assert_eq!(EXTRACT_EMPTY_CELL.kind, EXTRACT_EMPTY_REL.kind());
+        assert_eq!(
+            EXTRACT_EMPTY_CELL.localization,
+            EXTRACT_EMPTY_REL.field_path_localization()
+        );
+        assert_eq!(VALIDATION_CELL.kind, VALIDATION_REL.kind());
+        assert_eq!(
+            VALIDATION_CELL.localization,
+            VALIDATION_REL.field_path_localization()
+        );
     }
 
     // ---- attribution_source_kind_coordinates accessor tests ----
