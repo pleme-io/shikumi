@@ -1677,6 +1677,70 @@ mod tests {
     }
 
     #[test]
+    fn metadata_axis_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the (`metadata.source` ×
+        // `metadata.name`) axis on the cross-thread observable form:
+        // the captured envelope's metadata_axis projection mirrors the
+        // source error's metadata_axis byte-for-byte across every
+        // constructible ShikumiError variant. Peer of
+        // `layer_kind_agrees_with_underlying_error_pointwise` on the
+        // sibling axis, closing the same lossless-capture contract at
+        // the metadata-axis altitude — a future refactor of either
+        // side (the live `ShikumiError::metadata_axis` accessor or the
+        // captured `ReloadFailure::metadata_axis` field-forwarder) is
+        // bound to move the other in lockstep.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.metadata_axis(),
+                err.metadata_axis(),
+                "captured metadata_axis must mirror source metadata_axis for {err:?}",
+            );
+        }
+
+        // End-to-end pin on a real Extract failure: the metadata-axis
+        // survives capture through `ReloadFailure::from_error` on both
+        // file-axis (FileBySource → MetadataSource) and defaults-axis
+        // (DefaultsByCodeUniqueness → MetadataSource) attribution
+        // resolvers.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_ma_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(f_file.metadata_axis(), err_file.metadata_axis());
+        assert_eq!(
+            f_file.metadata_axis(),
+            Some(AttributionAxis::MetadataSource)
+        );
+
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_def = ReloadFailure::from_error(&err_def);
+        assert_eq!(f_def.metadata_axis(), err_def.metadata_axis());
+        assert_eq!(f_def.metadata_axis(), Some(AttributionAxis::MetadataSource));
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the

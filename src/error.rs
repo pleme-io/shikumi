@@ -5938,6 +5938,63 @@ impl ShikumiError {
         self.failing_attribution()
             .map(FailingSourceAttribution::layer_kind)
     }
+
+    /// [`AttributionAxis`] of the rule that named the blamed layer, or
+    /// `None` when no attribution was recorded — strict superset of
+    /// [`Self::failing_attribution`]`.map(|a| a.metadata_axis())`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, structured-log routers, attestation manifests) don't
+    /// re-derive the (`metadata.source` × `metadata.name`) partition at
+    /// every observation site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::failing_attribution`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Operationally distinguishes
+    /// attributions driven by figment's typed source classification
+    /// (structurally stable — [`AttributionAxis::MetadataSource`]) from
+    /// attributions driven by parsing figment's human-readable
+    /// provider-name string (string-shape-dependent —
+    /// [`AttributionAxis::MetadataName`]). Composes with
+    /// [`Self::layer_kind`] (file × env × defaults) as the second
+    /// orthogonal projection over the rule space, giving observers the
+    /// (axis × layer-kind) coordinates of every attributed live error
+    /// as two closed-enum reads.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::metadata_axis`] on the
+    /// cross-thread observable envelope: the two projections agree
+    /// pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).metadata_axis() ==
+    /// err.metadata_axis()` for every [`ShikumiError`]), pinning the
+    /// lossless-capture contract for the metadata-axis on the
+    /// cross-thread mirror. Before this accessor, the live-error side of
+    /// the API forced callers to chain through
+    /// `err.failing_attribution().map(|a| a.metadata_axis())` (a
+    /// three-hop composition) at every observation site — an asymmetric
+    /// surface against the one-hop accessor on the captured-envelope
+    /// side; this lift closes the API-symmetry gap on the
+    /// (`metadata.source` × `metadata.name`) axis. Second lift in the
+    /// same cascade opened by [`Self::layer_kind`] (`7389572`); the
+    /// four remaining sibling projections (`attribution_confidence`,
+    /// `figment_source_kind`, `figment_name_tag_kind`, `file_provenance`,
+    /// `coordinates`) each still lack a live-error direct peer on
+    /// `impl ShikumiError`.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::map`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::metadata_axis`] is const because
+    /// it reads a stored `Option<AttributionRule>` field on `Copy`
+    /// receivers through an explicit `match`; the live-error side pays
+    /// the runtime resolver cost on every call, so a caller who reads
+    /// the axis more than once should cache the result or route through
+    /// the captured envelope.
+    #[must_use]
+    pub fn metadata_axis(&self) -> Option<AttributionAxis> {
+        self.failing_attribution()
+            .map(FailingSourceAttribution::metadata_axis)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -10388,6 +10445,113 @@ mod tests {
             error: fake_figment_error(),
         };
         assert!(err.layer_kind().is_none(), "no metadata → no attribution");
+    }
+
+    // ---- ShikumiError::metadata_axis tests ----
+
+    #[test]
+    fn shikumi_error_metadata_axis_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::metadata_axis` must equal
+        // the chained composition `self.failing_attribution().map(|a|
+        // a.metadata_axis())` on every error whose attribution resolves
+        // to a known axis. Pins the API-symmetry contract: the live-
+        // error side one-hop accessor is a pure forwarder of the
+        // envelope-side metadata_axis projection, so a future refactor
+        // of either half is bound to move the other in lockstep. Peer of
+        // `shikumi_error_layer_kind_forwards_through_failing_attribution`
+        // on the sibling (`metadata.source` × `metadata.name`) axis.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(serde::Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // File-axis attribution: FileBySource is a source-axis rule, so
+        // the metadata_axis projection lands on MetadataSource.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.metadata_axis(),
+            err_file
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::metadata_axis),
+        );
+        assert_eq!(
+            err_file.metadata_axis(),
+            Some(AttributionAxis::MetadataSource),
+        );
+
+        // Defaults-axis attribution: figment's Serialized provider
+        // attaches Source::Code; a defaults-only chain dispatches to
+        // DefaultsByCodeUniqueness → also a source-axis rule →
+        // MetadataSource.
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        assert_eq!(
+            err_def.metadata_axis(),
+            err_def
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::metadata_axis),
+        );
+        assert_eq!(
+            err_def.metadata_axis(),
+            Some(AttributionAxis::MetadataSource),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_metadata_axis_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the metadata-axis projection must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` on
+        // the sibling axis, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the metadata-axis
+        // side.
+        assert!(super::synthetic_parse_error().metadata_axis().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .metadata_axis()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.metadata_axis().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .metadata_axis()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .metadata_axis()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_metadata_axis_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so metadata_axis must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata`
+        // on the sibling axis, closing the same
+        // resolver-terminates-in-None branch on the metadata-axis side.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.metadata_axis().is_none(),
+            "no metadata → no attribution",
+        );
     }
 
     // ---- ShikumiErrorKind / ShikumiError::kind tests ----
