@@ -47,8 +47,27 @@ pub struct CoverageReport {
 impl CoverageReport {
     /// True iff every declared field is consumed and every consumed entry
     /// is declared.
+    ///
+    /// `const`-callable — reads only the [`Vec::is_empty`] length flag on
+    /// the two hint lists (both const-stable since Rust 1.39), so a
+    /// compile-time-constructible [`CoverageReport`] projects its
+    /// clean/unclean polarity at compile time too. The empty
+    /// baseline — `CoverageReport { dead_knobs: Vec::new(), stale_entries:
+    /// Vec::new() }` — is the canonical clean-report sentinel a `static`
+    /// binding can name and this projection can classify at compile
+    /// time; welded by
+    /// [`tests::coverage_report_is_clean_is_const_callable`]. Matching
+    /// the const-callability discipline of the sibling
+    /// [`HintedCoverageReport::hint_count`] / [`HintedCoverageReport::is_clean`],
+    /// [`EnvVarAudit::hint_count`] / [`EnvVarAudit::is_clean`], and
+    /// [`ValueAudit::hint_count`] / [`ValueAudit::is_clean`] pairs on
+    /// the three peer sub-report types, so the whole
+    /// hint_count/is_clean surface across the four hinted/unhinted
+    /// sub-reports sits at one const-callability altitude and the
+    /// future [`HealthReport::hint_count`] / [`HealthReport::is_clean`]
+    /// lift composes over three const-callable primitives.
     #[must_use]
-    pub fn is_clean(&self) -> bool {
+    pub const fn is_clean(&self) -> bool {
         self.dead_knobs.is_empty() && self.stale_entries.is_empty()
     }
 }
@@ -644,16 +663,34 @@ impl HintedCoverageReport {
     /// surface has the most typos"), report a total-severity number
     /// to a diagnostics endpoint, or gate CI on a hint-count budget
     /// call this directly instead of hand-summing the hint lists.
+    ///
+    /// `const`-callable — reads only [`Vec::len`] on the two hint lists
+    /// (const-stable since Rust 1.39), so a compile-time-constructible
+    /// [`HintedCoverageReport`] projects its scalar hint cardinality at
+    /// compile time too. Welded by
+    /// [`tests::hinted_coverage_report_hint_count_and_is_clean_are_const_callable`].
+    /// Matches the const-callability discipline of the peer
+    /// [`CoverageReport::is_clean`] (single method), [`EnvVarAudit::hint_count`]
+    /// / [`EnvVarAudit::is_clean`], and [`ValueAudit::hint_count`] /
+    /// [`ValueAudit::is_clean`] pairs on the sibling sub-report types,
+    /// so the whole hint_count/is_clean surface sits at one
+    /// const-callability altitude and the future
+    /// [`HealthReport::hint_count`] / [`HealthReport::is_clean`] lift
+    /// composes over three const-callable primitives.
     #[must_use]
-    pub fn hint_count(&self) -> usize {
+    pub const fn hint_count(&self) -> usize {
         self.dead_knobs.len() + self.stale_entries.len()
     }
 
     /// True iff both hint lists are empty — the coverage-clean condition.
     /// Equivalent to `hint_count() == 0`, and delegates to it so the
     /// two peers cannot drift.
+    ///
+    /// `const`-callable — inherits from the const-fn [`Self::hint_count`]
+    /// primitive it delegates to; welded on the empty baseline by
+    /// [`tests::hinted_coverage_report_hint_count_and_is_clean_are_const_callable`].
     #[must_use]
-    pub fn is_clean(&self) -> bool {
+    pub const fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
 
@@ -2339,8 +2376,19 @@ impl EnvVarAudit {
     /// (`is_empty`/`len` shape): `is_clean() ⇔ hint_count() == 0`
     /// holds by construction, since `is_clean` delegates to
     /// `hint_count() == 0`.
+    ///
+    /// `const`-callable — reads only [`Vec::len`] on the single hint
+    /// list (const-stable since Rust 1.39), so a compile-time-
+    /// constructible [`EnvVarAudit`] projects its scalar hint
+    /// cardinality at compile time too. Welded by
+    /// [`tests::env_var_audit_hint_count_and_is_clean_are_const_callable`].
+    /// Matches the sibling const-callability of the peer sub-report
+    /// hint_count/is_clean pairs — [`CoverageReport::is_clean`],
+    /// [`HintedCoverageReport::hint_count`] / [`HintedCoverageReport::is_clean`],
+    /// and [`ValueAudit::hint_count`] / [`ValueAudit::is_clean`] —
+    /// so the whole surface sits at one const-callability altitude.
     #[must_use]
-    pub fn hint_count(&self) -> usize {
+    pub const fn hint_count(&self) -> usize {
         self.unknown.len()
     }
 
@@ -2348,8 +2396,12 @@ impl EnvVarAudit {
     /// operator override in the environment is a real knob.
     /// Equivalent to `hint_count() == 0`, and delegates to it so the
     /// two peers cannot drift.
+    ///
+    /// `const`-callable — inherits from the const-fn [`Self::hint_count`]
+    /// primitive it delegates to; welded on the empty baseline by
+    /// [`tests::env_var_audit_hint_count_and_is_clean_are_const_callable`].
     #[must_use]
-    pub fn is_clean(&self) -> bool {
+    pub const fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
 
@@ -2472,8 +2524,19 @@ impl ValueAudit {
     /// (`is_empty`/`len` shape): `is_clean() ⇔ hint_count() == 0`
     /// holds by construction, since `is_clean` delegates to
     /// `hint_count() == 0`.
+    ///
+    /// `const`-callable — reads only [`Vec::len`] on the single hint
+    /// list (const-stable since Rust 1.39), so a compile-time-
+    /// constructible [`ValueAudit`] projects its scalar hint
+    /// cardinality at compile time too. Welded by
+    /// [`tests::value_audit_hint_count_and_is_clean_are_const_callable`].
+    /// Matches the sibling const-callability of the peer sub-report
+    /// hint_count/is_clean pairs — [`CoverageReport::is_clean`],
+    /// [`HintedCoverageReport::hint_count`] / [`HintedCoverageReport::is_clean`],
+    /// and [`EnvVarAudit::hint_count`] / [`EnvVarAudit::is_clean`] —
+    /// so the whole surface sits at one const-callability altitude.
     #[must_use]
-    pub fn hint_count(&self) -> usize {
+    pub const fn hint_count(&self) -> usize {
         self.unknown.len()
     }
 
@@ -2481,8 +2544,12 @@ impl ValueAudit {
     /// operator override in the config file is a real knob.
     /// Equivalent to `hint_count() == 0`, and delegates to it so the
     /// two peers cannot drift.
+    ///
+    /// `const`-callable — inherits from the const-fn [`Self::hint_count`]
+    /// primitive it delegates to; welded on the empty baseline by
+    /// [`tests::value_audit_hint_count_and_is_clean_are_const_callable`].
     #[must_use]
-    pub fn is_clean(&self) -> bool {
+    pub const fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
 
@@ -9916,5 +9983,144 @@ tags: []
                  in canonical order (coverage → value → env)",
             );
         }
+    }
+
+    // ---- const-callability welds on the four sub-report hint_count /
+    // is_clean primitive pairs ---------------------------------------
+    //
+    // The four sub-report types ([`CoverageReport`], [`HintedCoverageReport`],
+    // [`EnvVarAudit`], [`ValueAudit`]) carry hint_count/is_clean sibling
+    // primitives whose bodies read only [`Vec::len`] / [`Vec::is_empty`]
+    // (both const-stable since Rust 1.39) plus a scalar `== 0` compare
+    // on the is_clean-delegates-to-hint_count arm. All four pairs
+    // (seven methods total; [`CoverageReport`] carries only is_clean
+    // because its unhinted shape's Vec-of-String hint lists roll up
+    // through Vec::is_empty directly without an intermediate scalar
+    // cardinality) are now [`pub const fn`], so a compile-time-
+    // constructible sub-report projects its cardinality/emptiness at
+    // compile time too. The empty baseline — `Vec::new()` on each
+    // Vec-shaped hint list — is the canonical clean-report sentinel a
+    // `static` binding can name and these projections classify at
+    // compile time; the E0493-drop-in-const barrier that blocks a
+    // `const REPORT: Self = …` binding on the Vec<String>-carrying
+    // shape (String's Drop is not const-evaluable) is worked around
+    // by rooting the binding at `static` on the four const-wrappers
+    // below. A runtime cross-check on each pair pins the
+    // `is_clean() ⇔ hint_count() == 0` law that the const bodies
+    // encode by delegation.
+
+    static COVERAGE_REPORT_EMPTY: CoverageReport = CoverageReport {
+        dead_knobs: Vec::new(),
+        stale_entries: Vec::new(),
+    };
+    static HINTED_COVERAGE_REPORT_EMPTY: HintedCoverageReport = HintedCoverageReport {
+        dead_knobs: Vec::new(),
+        stale_entries: Vec::new(),
+    };
+    static ENV_VAR_AUDIT_EMPTY: EnvVarAudit = EnvVarAudit {
+        unknown: Vec::new(),
+    };
+    static VALUE_AUDIT_EMPTY: ValueAudit = ValueAudit {
+        unknown: Vec::new(),
+    };
+
+    #[test]
+    fn coverage_report_is_clean_is_const_callable() {
+        // Compile-time weld: the const-fn projection must land in const
+        // position on the empty baseline. A future edit that reaches for
+        // a non-const helper inside `CoverageReport::is_clean` (a HashMap
+        // lookup, a String-shaped intermediate, an allocator on the
+        // projection path) fails to compile here before drifting through
+        // downstream consumers that assumed const-ness.
+        const IS_CLEAN: bool = COVERAGE_REPORT_EMPTY.is_clean();
+        const {
+            assert!(IS_CLEAN);
+        }
+        // Runtime cross-check: the empty baseline is clean; a non-empty
+        // hint list is not — pinning the `is_clean ⇔ (both lists empty)`
+        // law the const body encodes.
+        assert!(COVERAGE_REPORT_EMPTY.is_clean());
+        let dirty = CoverageReport {
+            dead_knobs: vec!["a".to_owned()],
+            stale_entries: Vec::new(),
+        };
+        assert!(!dirty.is_clean());
+    }
+
+    #[test]
+    fn hinted_coverage_report_hint_count_and_is_clean_are_const_callable() {
+        const HINT_COUNT: usize = HINTED_COVERAGE_REPORT_EMPTY.hint_count();
+        const IS_CLEAN: bool = HINTED_COVERAGE_REPORT_EMPTY.is_clean();
+        const {
+            assert!(HINT_COUNT == 0);
+            assert!(IS_CLEAN);
+        }
+        // Runtime cross-check: `is_clean() ⇔ hint_count() == 0`, on both
+        // the empty baseline and a non-empty case (one hint in each
+        // list), pinning the delegation the const body encodes.
+        assert_eq!(
+            HINTED_COVERAGE_REPORT_EMPTY.is_clean(),
+            HINTED_COVERAGE_REPORT_EMPTY.hint_count() == 0,
+        );
+        let dirty = HintedCoverageReport {
+            dead_knobs: vec![CoverageHint {
+                entry: "a".to_owned(),
+                did_you_mean: None,
+            }],
+            stale_entries: vec![CoverageHint {
+                entry: "b".to_owned(),
+                did_you_mean: None,
+            }],
+        };
+        assert_eq!(dirty.hint_count(), 2);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty.is_clean(), dirty.hint_count() == 0);
+    }
+
+    #[test]
+    fn env_var_audit_hint_count_and_is_clean_are_const_callable() {
+        const HINT_COUNT: usize = ENV_VAR_AUDIT_EMPTY.hint_count();
+        const IS_CLEAN: bool = ENV_VAR_AUDIT_EMPTY.is_clean();
+        const {
+            assert!(HINT_COUNT == 0);
+            assert!(IS_CLEAN);
+        }
+        assert_eq!(
+            ENV_VAR_AUDIT_EMPTY.is_clean(),
+            ENV_VAR_AUDIT_EMPTY.hint_count() == 0,
+        );
+        let dirty = EnvVarAudit {
+            unknown: vec![EnvVarHint {
+                env_var: "MYAPP_XX".to_owned(),
+                normalized_path: "xx".to_owned(),
+                did_you_mean: None,
+            }],
+        };
+        assert_eq!(dirty.hint_count(), 1);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty.is_clean(), dirty.hint_count() == 0);
+    }
+
+    #[test]
+    fn value_audit_hint_count_and_is_clean_are_const_callable() {
+        const HINT_COUNT: usize = VALUE_AUDIT_EMPTY.hint_count();
+        const IS_CLEAN: bool = VALUE_AUDIT_EMPTY.is_clean();
+        const {
+            assert!(HINT_COUNT == 0);
+            assert!(IS_CLEAN);
+        }
+        assert_eq!(
+            VALUE_AUDIT_EMPTY.is_clean(),
+            VALUE_AUDIT_EMPTY.hint_count() == 0,
+        );
+        let dirty = ValueAudit {
+            unknown: vec![ValueKeyHint {
+                path: "a.b".to_owned(),
+                did_you_mean: None,
+            }],
+        };
+        assert_eq!(dirty.hint_count(), 1);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty.is_clean(), dirty.hint_count() == 0);
     }
 }
