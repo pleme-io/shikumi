@@ -28689,8 +28689,19 @@ impl<'a> FigmentNameTag<'a> {
 
     /// Returns the inner [`crate::FormatMetadataTag`] if this is the
     /// [`Self::Format`] variant.
+    ///
+    /// `const`-callable — `self` is `Copy`, the [`Self::Format`] arm's
+    /// bound [`crate::FormatMetadataTag`] payload is itself `Copy` (no
+    /// `Drop` at either arm), and the returned `Option::Some` /
+    /// `Option::None` variants are const-constructible under rustc
+    /// 1.94.1. Peer-consolidated with [`Self::as_env`] and the
+    /// [`FigmentSourceTag`]-side payload extractors
+    /// [`FigmentSourceTag::as_file_path`] /
+    /// [`FigmentSourceTag::as_custom`] on the same lift. See
+    /// [`tests::figment_tag_payload_extractors_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn as_format(self) -> Option<crate::discovery::FormatMetadataTag<'a>> {
+    pub const fn as_format(self) -> Option<crate::discovery::FormatMetadataTag<'a>> {
         match self {
             Self::Format(tag) => Some(tag),
             Self::Env(_) => None,
@@ -28772,8 +28783,19 @@ impl<'a> FigmentNameTag<'a> {
 
     /// Returns the inner [`EnvMetadataTag`] if this is the
     /// [`Self::Env`] variant.
+    ///
+    /// `const`-callable — `self` is `Copy`, the [`Self::Env`] arm's
+    /// bound [`EnvMetadataTag`] payload is itself `Copy` (no `Drop` at
+    /// either arm), and the returned `Option::Some` / `Option::None`
+    /// variants are const-constructible under rustc 1.94.1. Peer-
+    /// consolidated with [`Self::as_format`] and the
+    /// [`FigmentSourceTag`]-side payload extractors
+    /// [`FigmentSourceTag::as_file_path`] /
+    /// [`FigmentSourceTag::as_custom`] on the same lift. See
+    /// [`tests::figment_tag_payload_extractors_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn as_env(self) -> Option<EnvMetadataTag<'a>> {
+    pub const fn as_env(self) -> Option<EnvMetadataTag<'a>> {
         match self {
             Self::Env(tag) => Some(tag),
             Self::Format(_) => None,
@@ -29241,8 +29263,18 @@ impl<'a> FigmentSourceTag<'a> {
     }
 
     /// Returns the file path if this tag is a [`Self::File`].
+    ///
+    /// `const`-callable — `self` is `Copy`, the [`Self::File`] arm's
+    /// bound `&'a Path` payload is `Copy` (no `Drop` at any arm), and
+    /// the returned `Option::Some` / `Option::None` variants are const-
+    /// constructible under rustc 1.94.1. Peer-consolidated with
+    /// [`Self::as_custom`] and the [`FigmentNameTag`]-side payload
+    /// extractors [`FigmentNameTag::as_format`] /
+    /// [`FigmentNameTag::as_env`] on the same lift. See
+    /// [`tests::figment_tag_payload_extractors_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn as_file_path(self) -> Option<&'a Path> {
+    pub const fn as_file_path(self) -> Option<&'a Path> {
         match self {
             Self::File(p) => Some(p),
             _ => None,
@@ -29341,8 +29373,18 @@ impl<'a> FigmentSourceTag<'a> {
     }
 
     /// Returns the custom-source string if this tag is a [`Self::Custom`].
+    ///
+    /// `const`-callable — `self` is `Copy`, the [`Self::Custom`] arm's
+    /// bound `&'a str` payload is `Copy` (no `Drop` at any arm), and
+    /// the returned `Option::Some` / `Option::None` variants are const-
+    /// constructible under rustc 1.94.1. Peer-consolidated with
+    /// [`Self::as_file_path`] and the [`FigmentNameTag`]-side payload
+    /// extractors [`FigmentNameTag::as_format`] /
+    /// [`FigmentNameTag::as_env`] on the same lift. See
+    /// [`tests::figment_tag_payload_extractors_are_const_callable`]
+    /// for the compile-time weld.
     #[must_use]
-    pub fn as_custom(self) -> Option<&'a str> {
+    pub const fn as_custom(self) -> Option<&'a str> {
         match self {
             Self::Custom(c) => Some(c),
             _ => None,
@@ -99879,6 +99921,104 @@ mod tests {
             crate::AttributionAxis::MetadataSource,
         );
         assert_ne!(NAME_AXIS, SOURCE_AXIS);
+    }
+
+    #[test]
+    fn figment_tag_payload_extractors_are_const_callable() {
+        // Weld the const-callability of the peer-consolidated payload-
+        // extractor quartet across both figment-tag reading types at
+        // compile time: `FigmentNameTag::as_format` / `as_env` on the
+        // binary partition, and `FigmentSourceTag::as_file_path` /
+        // `as_custom` on the ternary partition (the `Code` arm has no
+        // payload accessor since its `&'static Location<'static>` is
+        // exposed only through the exhaustive-match `kind()` projection).
+        //
+        // Peer of the two `_predicates_and_kind_are_const_callable`
+        // welds and the `figment_tag_attribution_axis_pair_is_const_callable`
+        // pin above on the same two `impl` blocks — matches the
+        // const-callability altitude every other closed projection on
+        // both `impl FigmentNameTag` and `impl FigmentSourceTag` already
+        // occupies (`Self::kind`, the tag-side sibling predicates
+        // `is_format` / `is_env` / `is_file` / `is_code` / `is_custom`,
+        // and the constant `attribution_axis` projection just lifted
+        // in `5558889`). Before this lift, the four payload extractors
+        // were the last non-const projections on both `impl` blocks;
+        // a consumer wanting a compile-time-known inner payload for a
+        // compile-time-known tag (a `const PAYLOAD: Option<&str> =
+        // TAG.as_custom()` sentinel routed through a static lookup, an
+        // attestation manifest carrying per-tag inner payload at compile
+        // time) had to drop the caller off the const-context edge at
+        // the extractor.
+        //
+        // Const bindings pin the const-ness at THIS line so the moment
+        // any of the four extractors stops being `const`-callable — a
+        // future edit that reaches for a non-const std helper inside
+        // the body (`.to_owned()`, `.to_string()`, `.into()` on the
+        // borrowed payload) — the pin fails to compile before the
+        // drift can reach downstream consumers that assumed
+        // const-ness through the extractor.
+        //
+        // All four extractors take `self` on a `Copy` tag with `Copy`
+        // arm payloads and no `Drop` binding on any arm, and the
+        // returned `Option::Some(payload)` / `Option::None` variants
+        // are const-constructible under rustc 1.94.1, so each
+        // extractor composes end-to-end in const context. The `Env`
+        // arm of `FigmentNameTag` (payload `EnvMetadataTag::Bare` is
+        // data-free) and the `Custom` arm of `FigmentSourceTag`
+        // (payload `&'static str`) exercise the extract-and-return
+        // path in const context; the None-return path is exercised
+        // by the opposite-arm extraction on the same tag. The sibling
+        // `_predicates_and_kind_are_const_callable` pins on both tags
+        // already document why the other arms (`Format`, `File`,
+        // `Code`) cannot be const-bound at const-initializer position
+        // (`Path::new` / `Location::caller()` limitations under rust
+        // 1.89), and the compiler having accepted the `pub const fn`
+        // declaration on all four extractors proves every other arm
+        // compiles under the same const-checker.
+        //
+        // Peer to the payload-extractor const-lift discipline already
+        // carried by the shikumi-source axis
+        // (`ConfigSource::as_path` / `as_env_prefix` are non-const
+        // by reference-arg shape; they are covered by the
+        // predicate-side const seal instead, since the borrowed-arg
+        // pattern crosses a const-fn arg limitation the extractors
+        // here on `Copy` self do not).
+        const NAME_ENV: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
+        const NAME_ENV_AS_FORMAT: Option<crate::discovery::FormatMetadataTag<'static>> =
+            NAME_ENV.as_format();
+        const NAME_ENV_AS_ENV: Option<EnvMetadataTag<'static>> = NAME_ENV.as_env();
+
+        const SOURCE_CUSTOM: FigmentSourceTag<'static> = FigmentSourceTag::Custom("vault://kv/x");
+        const SOURCE_CUSTOM_AS_FILE: Option<&'static Path> = SOURCE_CUSTOM.as_file_path();
+        const SOURCE_CUSTOM_AS_CUSTOM: Option<&'static str> = SOURCE_CUSTOM.as_custom();
+
+        // Compile-time value pins on the four const-bound extractions:
+        // the two Some-hits on the tag-matching arm, and the two
+        // None-misses on the opposite-polarity arm. A future edit
+        // that reversed either arm's polarity (silently returning
+        // Some on the opposite polarity, or None on the matching
+        // polarity) fails to compile at the `const {}` block instead
+        // of at the runtime cross-check below.
+        const { assert!(NAME_ENV_AS_FORMAT.is_none()) };
+        const { assert!(NAME_ENV_AS_ENV.is_some()) };
+        const { assert!(SOURCE_CUSTOM_AS_FILE.is_none()) };
+        const { assert!(SOURCE_CUSTOM_AS_CUSTOM.is_some()) };
+
+        // Runtime cross-check pins the payload identity on the
+        // Some-hit arm (which the const-position `is_some()` welder
+        // could not exercise on the inner payload's value, only on
+        // its presence). Covers the other arms the const-context
+        // weld could not exercise under rust 1.89's `Path::new` /
+        // `Location::caller()` const limitations.
+        assert_eq!(NAME_ENV.as_format(), None);
+        assert_eq!(NAME_ENV.as_env(), Some(EnvMetadataTag::Bare));
+        assert_eq!(SOURCE_CUSTOM.as_file_path(), None);
+        assert_eq!(SOURCE_CUSTOM.as_custom(), Some("vault://kv/x"));
+        assert_eq!(
+            FigmentSourceTag::File(Path::new("/etc/x.yaml")).as_file_path(),
+            Some(Path::new("/etc/x.yaml")),
+        );
+        assert_eq!(FigmentSourceTag::File(Path::new("/x")).as_custom(), None);
     }
 
     // ---- EnvMetadataTagKind / EnvMetadataTag::kind ----
