@@ -6113,6 +6113,73 @@ impl ShikumiError {
         self.failing_attribution()
             .and_then(FailingSourceAttribution::figment_source_kind)
     }
+
+    /// [`FigmentNameTagKind`] structurally pinned by the rule that named
+    /// the blamed layer, or `None` when no attribution was recorded *or*
+    /// when the recorded attribution is source-axis (where the rule's
+    /// identity does not constrain figment's `Metadata::name`) — strict
+    /// superset of
+    /// [`Self::failing_attribution`]`.and_then(|a| a.figment_name_tag_kind())`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, structured-log routers, attestation manifests) don't
+    /// re-derive the (rule → figment-name-tag-kind) partial projection at
+    /// every observation site.
+    ///
+    /// Complementary polarity to [`Self::figment_source_kind`]: the two
+    /// partial projections partition the `Some` cells of
+    /// [`Self::failing_attribution`] along the (source-axis, name-axis)
+    /// boundary — a name-axis rule ([`AttributionRule::FileByMetadataName`]
+    /// / [`AttributionRule::EnvByPrefix`] /
+    /// [`AttributionRule::EnvByUniqueness`]) surfaces a [`Some`] cell
+    /// here and `None` on [`Self::figment_source_kind`], while a
+    /// source-axis rule ([`AttributionRule::FileBySource`] /
+    /// [`AttributionRule::DefaultsByCodeUniqueness`]) surfaces the
+    /// opposite pair. This complements [`Self::layer_kind`]'s total
+    /// [`ConfigSourceKind`] partition (`file` / `env` / `defaults`) by
+    /// reporting the kind of figment's own [`figment::Metadata::name`]
+    /// classification (`format` / `env`) attached to the failing
+    /// attribution — a shikumi-built `Format` layer whose figment metadata
+    /// name identifies it structurally surfaces as
+    /// `(layer_kind=File, figment_name_tag_kind=Format)`, and a
+    /// figment-typed `Env` provider whose prefix is unique across the
+    /// chain surfaces as `(layer_kind=Env, figment_name_tag_kind=Env)`.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::figment_name_tag_kind`]
+    /// on the cross-thread observable envelope: the two projections
+    /// agree pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).figment_name_tag_kind() ==
+    /// err.figment_name_tag_kind()` for every [`ShikumiError`]), pinning
+    /// the lossless-capture contract for the figment-name-tag axis on
+    /// the cross-thread mirror. Before this accessor, the live-error
+    /// side of the API forced callers to chain through
+    /// `err.failing_attribution().and_then(|a| a.figment_name_tag_kind())`
+    /// (a three-hop composition) at every observation site — an
+    /// asymmetric surface against the one-hop accessor on the
+    /// captured-envelope side; this lift closes the API-symmetry gap on
+    /// the (`format` × `env`) figment-name-tag axis. Fifth lift in the
+    /// same cascade opened by [`Self::layer_kind`] (`7389572`) and
+    /// continued by [`Self::metadata_axis`] (`93a15cc`) /
+    /// [`Self::attribution_confidence`] (`2ec51fa`) /
+    /// [`Self::figment_source_kind`] (`5003a49`); the two remaining
+    /// sibling projections (`file_provenance`, `coordinates`) each still
+    /// lack a live-error direct peer on `impl ShikumiError`.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::and_then`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::figment_name_tag_kind`] is const
+    /// because it reads a stored `Option<AttributionRule>` field on
+    /// `Copy` receivers through an explicit `match`; the live-error
+    /// side pays the runtime resolver cost on every call, so a caller
+    /// who reads the axis more than once should cache the result or
+    /// route through the captured envelope.
+    #[must_use]
+    pub fn figment_name_tag_kind(&self) -> Option<FigmentNameTagKind> {
+        self.failing_attribution()
+            .and_then(FailingSourceAttribution::figment_name_tag_kind)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -10935,6 +11002,130 @@ mod tests {
         };
         assert!(
             err.figment_source_kind().is_none(),
+            "no metadata → no attribution",
+        );
+    }
+
+    // ---- ShikumiError::figment_name_tag_kind tests ----
+
+    #[test]
+    fn shikumi_error_figment_name_tag_kind_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::figment_name_tag_kind` must
+        // equal the chained composition
+        // `self.failing_attribution().and_then(|a| a.figment_name_tag_kind())`
+        // on every error whose attribution resolves through a name-axis
+        // rule. Pins the API-symmetry contract: the live-error side
+        // one-hop accessor is a pure forwarder of the envelope-side
+        // figment_name_tag_kind projection, so a future refactor of
+        // either half is bound to move the other in lockstep. Peer of
+        // `shikumi_error_figment_source_kind_forwards_through_failing_attribution`
+        // on the complementary source-axis, closing the same forwarder
+        // contract on the (`format` × `env`) name-axis. Distinct from
+        // the total-projection siblings (`layer_kind`, `metadata_axis`,
+        // `attribution_confidence`) in the composition primitive: this
+        // projection is partial at the rule layer (source-axis rules
+        // like `FileBySource` / `DefaultsByCodeUniqueness` yield `None`
+        // even when the outer attribution is `Some`), so the forwarder
+        // is `and_then`, not `map`.
+
+        // Name-axis attribution: EnvByPrefix is a name-axis rule whose
+        // figment_name_tag_kind projection lands on Env.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        assert_eq!(
+            err_env.figment_name_tag_kind(),
+            err_env
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::figment_name_tag_kind),
+        );
+        assert_eq!(
+            err_env.figment_name_tag_kind(),
+            Some(FigmentNameTagKind::Env),
+        );
+
+        // Source-axis attribution: FileBySource is a source-axis rule
+        // whose figment_name_tag_kind is None at the rule layer even
+        // though failing_attribution is Some. The forwarder must
+        // reproduce the None on the live-error side without collapsing
+        // it into the outer None-when-unattributed branch — the
+        // complementary boundary case to the name-axis probe carried
+        // by `shikumi_error_figment_source_kind_forwards_through_failing_attribution`.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert!(err_file.failing_attribution().is_some());
+        assert_eq!(err_file.figment_name_tag_kind(), None);
+        assert_eq!(
+            err_file.figment_name_tag_kind(),
+            err_file
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::figment_name_tag_kind),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_figment_name_tag_kind_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the figment_name_tag_kind projection must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants` /
+        // `shikumi_error_attribution_confidence_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_non_extract_variants`
+        // on the sibling axes, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the figment-name-tag
+        // axis (with the extra caveat that Some-attribution is a
+        // necessary-but-not-sufficient condition here: source-axis rules
+        // also yield None).
+        assert!(
+            super::synthetic_parse_error()
+                .figment_name_tag_kind()
+                .is_none()
+        );
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .figment_name_tag_kind()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.figment_name_tag_kind().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .figment_name_tag_kind()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .figment_name_tag_kind()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_figment_name_tag_kind_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so figment_name_tag_kind must be None.
+        // Peer of
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata` /
+        // `shikumi_error_metadata_axis_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_attribution_confidence_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_extract_without_metadata`
+        // on the sibling axes, closing the same resolver-terminates-in-
+        // None branch on the figment-name-tag axis.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.figment_name_tag_kind().is_none(),
             "no metadata → no attribution",
         );
     }

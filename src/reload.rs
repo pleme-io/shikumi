@@ -1910,6 +1910,99 @@ mod tests {
     }
 
     #[test]
+    fn figment_name_tag_kind_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the (`format` × `env`)
+        // figment-name-tag axis on the cross-thread observable form: the
+        // captured envelope's figment_name_tag_kind projection mirrors
+        // the source error's `ShikumiError::figment_name_tag_kind`
+        // (the direct live-error accessor added alongside this test)
+        // byte-for-byte across every constructible ShikumiError variant.
+        // Peer of `figment_source_kind_agrees_with_underlying_error_pointwise`
+        // /
+        // `layer_kind_agrees_with_underlying_error_pointwise` /
+        // `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // on the sibling axes, closing the same lossless-capture
+        // contract at the figment-name-tag-axis altitude — a future
+        // refactor of either side (the live
+        // `ShikumiError::figment_name_tag_kind` accessor or the captured
+        // `ReloadFailure::figment_name_tag_kind` field-forwarder) is
+        // bound to move the other in lockstep. Distinct from the
+        // existing sibling `figment_name_tag_kind_agrees_with_underlying_error_pointwise`
+        // test (which routes through `err.failing_attribution().and_then(...)`
+        // for the underlying side): this pin routes through the
+        // one-hop `ShikumiError::figment_name_tag_kind` accessor
+        // directly, closing the API-symmetry contract on the
+        // (`format` × `env`) name-axis peer of the cascade.
+        //
+        // Exercises the two source-axis / name-axis boundary cases the
+        // pointwise contract must reproduce on both sides of the
+        // capture boundary: (a) a source-axis FileBySource attribution
+        // whose figment_name_tag_kind is None at the rule layer even
+        // though failing_attribution is Some (Some outer, None inner);
+        // (b) a name-axis EnvByPrefix attribution whose
+        // figment_name_tag_kind lands on Env.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.figment_name_tag_kind(),
+                err.figment_name_tag_kind(),
+                "captured figment_name_tag_kind must mirror source \
+                 figment_name_tag_kind for {err:?}",
+            );
+        }
+
+        // End-to-end pin on the source-axis branch: a real FileBySource
+        // Extract failure resolves to Some(rule) with
+        // figment_name_tag_kind == None on both sides — the Some
+        // outer / None inner cell that distinguishes the
+        // (attribution absent → outer None) and (attribution present
+        // but rule is source-axis → inner None) branches on the
+        // captured / live-error sides of the boundary.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fntk_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err_file = crate::provider::ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert!(err_file.failing_attribution().is_some());
+        assert_eq!(
+            f_file.figment_name_tag_kind(),
+            err_file.figment_name_tag_kind()
+        );
+        assert_eq!(f_file.figment_name_tag_kind(), None);
+
+        // End-to-end pin on the name-axis branch: an EnvByPrefix
+        // Extract failure resolves to Some(rule) with
+        // figment_name_tag_kind == Some(Env) on both sides — the Some
+        // outer / Some inner cell that anchors the name-axis half of
+        // the (source-axis, name-axis) partition of the attribution
+        // surface.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        let f_env = ReloadFailure::from_error(&err_env);
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(
+            f_env.figment_name_tag_kind(),
+            err_env.figment_name_tag_kind()
+        );
+        assert_eq!(f_env.figment_name_tag_kind(), Some(FigmentNameTagKind::Env));
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the
