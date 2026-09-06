@@ -5613,10 +5613,21 @@ impl ShikumiError {
     }
 
     /// Returns the list of paths that were tried, if this is a `NotFound` error.
+    ///
+    /// `const`-callable — the body is a `match` over `&Self` whose `Some`
+    /// arm names the const-fn inherent [`Vec::as_slice`] (stable const
+    /// since Rust 1.83) on the recorded `Vec<PathBuf>`, side-stepping the
+    /// non-const `<Vec<T> as Deref>::deref` coercion the original
+    /// `Some(tried)` return relied on. Peer of the borrowing-slice-of-Vec
+    /// projection [`Self::sources`] on the [`Self::Extract`] arm — both
+    /// route the same `Some(vec.as_slice())` shape around the same
+    /// non-const `Deref` coercion, and the closure lands them at the same
+    /// const-callability altitude in one step. Welded at compile time by
+    /// [`tests::shikumi_error_vec_slice_projection_pair_is_const_callable`].
     #[must_use]
-    pub fn tried_paths(&self) -> Option<&[PathBuf]> {
+    pub const fn tried_paths(&self) -> Option<&[PathBuf]> {
         match self {
-            Self::NotFound { tried } => Some(tried),
+            Self::NotFound { tried } => Some(tried.as_slice()),
             _ => None,
         }
     }
@@ -5626,10 +5637,22 @@ impl ShikumiError {
     /// Currently populated only by [`ShikumiError::Extract`]; future
     /// variants may attach a chain too. Callers should treat `None` as
     /// "no provenance recorded," not "no sources contributed."
+    ///
+    /// `const`-callable — the body is a `match` over `&Self` whose `Some`
+    /// arm names the const-fn inherent [`Vec::as_slice`] (stable const
+    /// since Rust 1.83) on the recorded `Vec<ConfigSource>`,
+    /// side-stepping the non-const `<Vec<T> as Deref>::deref` coercion
+    /// the original `Some(sources)` return relied on. Peer of the
+    /// borrowing-slice-of-Vec projection [`Self::tried_paths`] on the
+    /// [`Self::NotFound`] arm — both route the same `Some(vec.as_slice())`
+    /// shape around the same non-const `Deref` coercion, and the closure
+    /// lands them at the same const-callability altitude in one step.
+    /// Welded at compile time by
+    /// [`tests::shikumi_error_vec_slice_projection_pair_is_const_callable`].
     #[must_use]
-    pub fn sources(&self) -> Option<&[ConfigSource]> {
+    pub const fn sources(&self) -> Option<&[ConfigSource]> {
         match self {
-            Self::Extract { sources, .. } => Some(sources),
+            Self::Extract { sources, .. } => Some(sources.as_slice()),
             _ => None,
         }
     }
@@ -6131,6 +6154,88 @@ mod tests {
                 .sources()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn shikumi_error_vec_slice_projection_pair_is_const_callable() {
+        // Weld the const-callability of the two Vec-slice projections on
+        // `impl ShikumiError` — `Self::tried_paths` (NotFound-arm-only)
+        // and `Self::sources` (Extract-arm-only) — in one consolidated
+        // step. Both `pub fn -> Option<&[T]>` accessors were previously
+        // non-const because their `Some(vec)` return relied on the
+        // non-const `<Vec<T> as Deref>::deref` coercion to reach the
+        // `&[T]` return type; the pair now names the const-fn inherent
+        // `Vec::as_slice` (stable const since Rust 1.83) on the `Some`
+        // arm, side-stepping the coercion at the same seam on both
+        // projections and lifting both to `pub const fn` in one step.
+        //
+        // Weld structure: two `static ShikumiError` bindings (one per
+        // Vec-carrying variant) route through the projections in
+        // `const` position; a third `static` on a synthetic non-payload
+        // variant pins the `None` arm on both projections at compile
+        // time. `static` receivers are load-bearing (rather than
+        // `const`) because `ShikumiError` carries `Drop`-bearing
+        // payloads (`Vec<PathBuf>` / `Vec<ConfigSource>` /
+        // `Box<figment::Error>` / `String` / `notify::Error` /
+        // `std::io::Error`) that reject a `const` binding under the
+        // E0493 drop check, matching the load-bearing pattern used at
+        // `reload::tests::reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`.
+        //
+        // The moment either projection loses its const-ness (a future
+        // edit reaching for a non-const helper — `.iter().collect()`,
+        // `.clone()`, an `Option::map` chain — or dropping back to the
+        // `Some(vec)` `Deref` coercion) one of the four const bindings
+        // below fails to compile at THAT line before the drift can
+        // reach downstream consumers that assumed const-ness through
+        // the projections. Runtime pointwise cross-checks re-call each
+        // projection on the same input and pin byte-identical answers
+        // between the const-position and runtime-position calls.
+        // NOTE: `Extract` cannot back a `static` initializer here
+        // because its `Box<figment::Error>` field is a heap-allocated
+        // foreign type with no const constructor; the `Some(_) =>
+        // Some(sources.as_slice())` arm on `sources()` is exercised at
+        // runtime in the final block below. The two constructible-in-
+        // `static` variants below cover the const-position welds on
+        // both projections: `NotFound` (the `Some` arm on `tried_paths`
+        // + the `None` arm on `sources`) and `Parse` (the `None` arm
+        // on both).
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+
+        const NOT_FOUND_TRIED: Option<&[PathBuf]> = NOT_FOUND_ERR.tried_paths();
+        const NOT_FOUND_SOURCES: Option<&[ConfigSource]> = NOT_FOUND_ERR.sources();
+        const PARSE_TRIED: Option<&[PathBuf]> = PARSE_ERR.tried_paths();
+        const PARSE_SOURCES: Option<&[ConfigSource]> = PARSE_ERR.sources();
+
+        assert_eq!(NOT_FOUND_TRIED, Some(&[] as &[PathBuf]));
+        assert_eq!(NOT_FOUND_SOURCES, None);
+        assert_eq!(PARSE_TRIED, None);
+        assert_eq!(PARSE_SOURCES, None);
+
+        // Runtime pointwise cross-checks: the const-position calls
+        // above and the runtime-position calls below produce
+        // byte-identical answers, so a future edit that drifted
+        // either projection's behavior (a different arm returning
+        // Some, an empty slice becoming None) fires here before
+        // reaching downstream consumers keyed on the (kind × arm)
+        // shape of the projection image.
+        assert_eq!(NOT_FOUND_ERR.tried_paths(), NOT_FOUND_TRIED);
+        assert_eq!(NOT_FOUND_ERR.sources(), NOT_FOUND_SOURCES);
+        assert_eq!(PARSE_ERR.tried_paths(), PARSE_TRIED);
+        assert_eq!(PARSE_ERR.sources(), PARSE_SOURCES);
+
+        // Extract-arm cross-check: build an `Extract` at runtime
+        // (its `Box<figment::Error>` blocks a `static` initializer)
+        // and pin the `Some(sources.as_slice())` shape. Non-empty
+        // sources exercise the len ≥ 1 path the const-position
+        // welds cannot reach through a `static Extract` binding.
+        let chain = vec![ConfigSource::Defaults, ConfigSource::Env("APP_".to_owned())];
+        let extract = ShikumiError::Extract {
+            sources: chain.clone(),
+            error: fake_figment_error(),
+        };
+        assert_eq!(extract.sources(), Some(chain.as_slice()));
+        assert_eq!(extract.tried_paths(), None);
     }
 
     #[test]
