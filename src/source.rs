@@ -43,8 +43,16 @@ impl ConfigSource {
     }
 
     /// Returns the env-var prefix if this source is a [`ConfigSource::Env`].
+    ///
+    /// `const`-callable — the body extracts the borrowed prefix slice via
+    /// [`String::as_str`] (const-stable since Rust 1.87) and returns the
+    /// const-constructible `Option::Some` / `Option::None`. Peer-consolidated
+    /// with [`Self::env_prefix_kind`] on the same env-arm projection lift;
+    /// see [`tests::config_source_env_projections_are_const_callable`] for
+    /// the compile-time weld. The sibling [`Self::as_path`] remains
+    /// non-const only because [`PathBuf::as_path`] is not yet const-stable.
     #[must_use]
-    pub fn as_env_prefix(&self) -> Option<&str> {
+    pub const fn as_env_prefix(&self) -> Option<&str> {
         match self {
             Self::Env(prefix) => Some(prefix.as_str()),
             _ => None,
@@ -270,8 +278,16 @@ impl ConfigSource {
     /// recognized extensions, [`Self::env_prefix_kind`] on `Env` layers
     /// regardless of prefix shape) — a structural partition the trait-
     /// default histograms now expose as three aggregate projections.
+    ///
+    /// `const`-callable — the body reads the prefix's emptiness via
+    /// [`String::is_empty`] (const-stable since Rust 1.87) and returns the
+    /// const-constructible `Option::Some(EnvMetadataTagKind::…)` /
+    /// `Option::None`. Peer-consolidated with [`Self::as_env_prefix`] on
+    /// the same env-arm projection lift; see
+    /// [`tests::config_source_env_projections_are_const_callable`] for the
+    /// compile-time weld.
     #[must_use]
-    pub fn env_prefix_kind(&self) -> Option<EnvMetadataTagKind> {
+    pub const fn env_prefix_kind(&self) -> Option<EnvMetadataTagKind> {
         match self {
             Self::Env(prefix) if prefix.is_empty() => Some(EnvMetadataTagKind::Bare),
             Self::Env(_) => Some(EnvMetadataTagKind::Prefixed),
@@ -30170,6 +30186,78 @@ mod tests {
             ConfigSource::File(PathBuf::from("/x")).as_env_prefix(),
             None
         );
+    }
+
+    #[test]
+    fn config_source_env_projections_are_const_callable() {
+        // Weld the const-callability of the peer-consolidated env-arm
+        // projection pair on `impl ConfigSource`: `Self::as_env_prefix`
+        // (borrowed prefix payload) and `Self::env_prefix_kind`
+        // (`EnvMetadataTagKind` sub-axis discriminant). Both key on the
+        // `Env(String)` variant and return `None` for `Defaults` /
+        // `File`.
+        //
+        // Peer of the tag-side quartet weld
+        // `figment_tag_payload_extractors_are_const_callable` on
+        // `FigmentNameTag` / `FigmentSourceTag`. Before this lift, the
+        // two projections were the last non-const `&self` projections
+        // on `impl ConfigSource` whose bodies were not blocked by a
+        // non-const std helper: `Self::as_env_prefix` composed
+        // `String::as_str` (const-stable since Rust 1.87 — verified on
+        // rustc 1.94.1), and `Self::env_prefix_kind` composed
+        // `String::is_empty` (same window). The sibling comment above
+        // the tag-side quartet weld claimed both were "non-const by
+        // reference-arg shape", which held before Rust 1.87 (when the
+        // `const_vec_string_slice` feature stabilized `String::as_str`
+        // and `String::is_empty` as const) but no longer does on the
+        // current toolchain — the declared MSRV `1.89.0` is
+        // comfortably above the 1.87 threshold, so this lift does not
+        // bump MSRV. This weld pins the corrected altitude so a future
+        // edit that reaches for a
+        // non-const std helper inside either body (`.to_owned()`,
+        // `.to_string()`, `.into()` on the borrowed prefix) fails at
+        // this pin before the drift can reach downstream consumers
+        // that assume const-ness through the projection.
+        //
+        // `ConfigSource::Defaults` is the sole data-free variant whose
+        // const binding survives the destructor-in-const check (both
+        // `Env(String)` and `File(PathBuf)` carry a `Drop`-tail
+        // payload whose destructor is not evaluable in const
+        // initializers under rustc 1.94.1), so the None-return path
+        // on both projections binds at const-initializer position;
+        // the `Env(...)` Some-return path exercises the
+        // extract-and-return arm at runtime, and the `File(...)`
+        // None-return path exercises the second false arm at runtime.
+        const DEFAULTS: ConfigSource = ConfigSource::Defaults;
+        const DEFAULTS_PREFIX: Option<&str> = DEFAULTS.as_env_prefix();
+        const DEFAULTS_KIND: Option<EnvMetadataTagKind> = DEFAULTS.env_prefix_kind();
+
+        // Compile-time value pins on the two const-bound None-returns.
+        // A future edit that reversed the arm polarity (silently
+        // returning Some on `Defaults`) fails at the `const {}` block
+        // instead of at the runtime cross-check below.
+        const { assert!(DEFAULTS_PREFIX.is_none()) };
+        const { assert!(DEFAULTS_KIND.is_none()) };
+
+        // Runtime cross-check on the Env-arm Some-return paths (which
+        // the const-position binding could not exercise on `String`'s
+        // destructor-tail payload), plus the File-arm None-return
+        // path the const-context weld could not bind under
+        // `PathBuf`'s destructor.
+        let bare = ConfigSource::Env(String::new());
+        let prefixed = ConfigSource::Env("APP_".to_owned());
+        let file = ConfigSource::File(PathBuf::from("/etc/app/app.yaml"));
+
+        assert_eq!(bare.as_env_prefix(), Some(""));
+        assert_eq!(prefixed.as_env_prefix(), Some("APP_"));
+        assert_eq!(file.as_env_prefix(), None);
+
+        assert_eq!(bare.env_prefix_kind(), Some(EnvMetadataTagKind::Bare));
+        assert_eq!(
+            prefixed.env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(file.env_prefix_kind(), None);
     }
 
     #[test]
@@ -99977,12 +100065,17 @@ mod tests {
         // compiles under the same const-checker.
         //
         // Peer to the payload-extractor const-lift discipline already
-        // carried by the shikumi-source axis
-        // (`ConfigSource::as_path` / `as_env_prefix` are non-const
-        // by reference-arg shape; they are covered by the
-        // predicate-side const seal instead, since the borrowed-arg
-        // pattern crosses a const-fn arg limitation the extractors
-        // here on `Copy` self do not).
+        // carried by the shikumi-source axis. `ConfigSource::as_env_prefix`
+        // and `ConfigSource::env_prefix_kind` now share the same
+        // const-callable altitude — the peer weld
+        // `config_source_env_projections_are_const_callable` pins their
+        // lift under `String::as_str` / `String::is_empty` (const-stable
+        // since Rust 1.87 via `const_vec_string_slice`). Only
+        // `ConfigSource::as_path` remains
+        // non-const, blocked at `PathBuf::as_path` — the last non-const
+        // std helper on the shikumi-source axis' &self projection
+        // surface, kept covered by the predicate-side const seal
+        // (`ConfigSource::is_file` / `Self::kind`).
         const NAME_ENV: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
         const NAME_ENV_AS_FORMAT: Option<crate::discovery::FormatMetadataTag<'static>> =
             NAME_ENV.as_format();
