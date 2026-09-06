@@ -494,9 +494,15 @@ impl ReloadFailure {
     /// (layer-kind × metadata-axis × figment-Source-axis kind ×
     /// figment-name-axis kind) all evaluate at compile time through
     /// the envelope. The remaining envelope-altitude forwarders
-    /// (`file_provenance`, `attribution_source_kind_coordinates`,
-    /// `attribution_name_kind_coordinates`, `coordinates`) each lift
-    /// by the same `match`-arm rewrite in a subsequent step.
+    /// ([`Self::file_provenance`],
+    /// [`Self::attribution_source_kind_coordinates`],
+    /// [`Self::attribution_name_kind_coordinates`],
+    /// [`Self::coordinates`]) closed the second — and last — quartet
+    /// by the same `match`-arm rewrite in the next step, welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable`].
+    /// Every envelope-altitude Some-iff-attribution forwarder on
+    /// `impl ReloadFailure` now occupies the const-callability altitude
+    /// its peer on the borrowed [`FailingSourceAttribution`] side does.
     #[must_use]
     pub const fn figment_name_tag_kind(&self) -> Option<FigmentNameTagKind> {
         match self.attribution_rule {
@@ -553,10 +559,33 @@ impl ReloadFailure {
     /// manifest, or per-format alerting policy that routes on both
     /// halves no longer reaches for the rule slot and projects through
     /// it inline.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable`]).
+    /// The routed body rewrites the non-const
+    /// `Option::<AttributionRule>::and_then(AttributionRule::file_provenance)`
+    /// spelling — rustc rejects `Option::<T>::and_then` in const fn
+    /// with E0658 — into an explicit `match self.attribution_rule`
+    /// whose `Some(rule) => rule.file_provenance()` arm composes an
+    /// already-`Option`-returning const-fn primitive
+    /// ([`AttributionRule::file_provenance`], const since `b71f975`)
+    /// with the const-constructible `None => None` arm; no extra
+    /// `Some` wrap on the `Some` arm. Member of the const-callable
+    /// Some-iff-attribution forwarder *last* quartet
+    /// ([`Self::file_provenance`],
+    /// [`Self::attribution_source_kind_coordinates`],
+    /// [`Self::attribution_name_kind_coordinates`],
+    /// [`Self::coordinates`]) unblocked by the earlier quartet
+    /// (`51975c3`) and lifted in one consolidated step; peer to
+    /// [`FailingSourceAttribution::file_provenance`] (const since
+    /// `00daccd`) at the corresponding envelope altitude on the
+    /// borrowed-envelope side.
     #[must_use]
-    pub fn file_provenance(&self) -> Option<crate::FormatProvenance> {
-        self.attribution_rule
-            .and_then(AttributionRule::file_provenance)
+    pub const fn file_provenance(&self) -> Option<crate::FormatProvenance> {
+        match self.attribution_rule {
+            Some(rule) => rule.file_provenance(),
+            None => None,
+        }
     }
 
     /// Joint (figment-Source-axis kind × shikumi-layer-kind) cell
@@ -597,10 +626,28 @@ impl ReloadFailure {
     /// contract for the source-axis joint cell on the cross-thread
     /// observable form. Pinned by
     /// `attribution_source_kind_coordinates_agrees_with_paired_projections_pointwise`.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable`]).
+    /// The routed body composes the same const-callable Copy field
+    /// access + variant read + underlying
+    /// [`AttributionRule::attribution_source_kind_coordinates`]
+    /// partial projection (const since `0f23c22`) that
+    /// [`Self::figment_source_kind`] does at the source-axis joint-cell
+    /// altitude — the joint-cell partial projection lifts under the
+    /// exact same closure-to-match rewrite as the underlying figment-
+    /// Source-axis kind projection. Peer to
+    /// [`FailingSourceAttribution::attribution_source_kind_coordinates`]
+    /// (const since `d24ec4a`) at the corresponding envelope altitude
+    /// on the borrowed-envelope side.
     #[must_use]
-    pub fn attribution_source_kind_coordinates(&self) -> Option<AttributionSourceKindCoordinates> {
-        self.attribution_rule
-            .and_then(AttributionRule::attribution_source_kind_coordinates)
+    pub const fn attribution_source_kind_coordinates(
+        &self,
+    ) -> Option<AttributionSourceKindCoordinates> {
+        match self.attribution_rule {
+            Some(rule) => rule.attribution_source_kind_coordinates(),
+            None => None,
+        }
     }
 
     /// Joint (figment-`Metadata::name`-axis kind × shikumi-layer-kind)
@@ -650,10 +697,31 @@ impl ReloadFailure {
     /// contract for the name-axis joint cell on the cross-thread
     /// observable form. Pinned by
     /// `attribution_name_kind_coordinates_agrees_with_paired_projections_pointwise`.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable`]).
+    /// The routed body composes the same const-callable Copy field
+    /// access + variant read + underlying
+    /// [`AttributionRule::attribution_name_kind_coordinates`] partial
+    /// projection (const since `1621bb3`) that
+    /// [`Self::figment_name_tag_kind`] does at the name-axis joint-cell
+    /// altitude — the joint-cell partial projection lifts under the
+    /// exact same closure-to-match rewrite as the underlying figment-
+    /// `Metadata::name`-axis kind projection, so the source-axis /
+    /// name-axis symmetry [`Self::attribution_source_kind_coordinates`]
+    /// opened on the joint-cell surface stays const-preserving on
+    /// both halves. Peer to
+    /// [`FailingSourceAttribution::attribution_name_kind_coordinates`]
+    /// (const since `0b7e71d`) at the corresponding envelope altitude
+    /// on the borrowed-envelope side.
     #[must_use]
-    pub fn attribution_name_kind_coordinates(&self) -> Option<AttributionNameKindCoordinates> {
-        self.attribution_rule
-            .and_then(AttributionRule::attribution_name_kind_coordinates)
+    pub const fn attribution_name_kind_coordinates(
+        &self,
+    ) -> Option<AttributionNameKindCoordinates> {
+        match self.attribution_rule {
+            Some(rule) => rule.attribution_name_kind_coordinates(),
+            None => None,
+        }
     }
 
     /// Coordinate triple of [`Self::attribution_rule`], or `None` when
@@ -688,9 +756,35 @@ impl ReloadFailure {
     /// rule identity from its coordinates without retaining the
     /// originating [`crate::ShikumiError`]. The bijection is pinned by
     /// `coordinates_round_trip_through_from_coordinates`.
+    ///
+    /// `const fn`: const-callable through the envelope (welded by
+    /// [`tests::reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable`]).
+    /// The routed body rewrites the non-const
+    /// `Option::<AttributionRule>::map(AttributionRule::coordinates)`
+    /// spelling — rustc rejects `Option::<T>::map` in const fn with
+    /// E0658 — into an explicit `match self.attribution_rule` whose
+    /// `Some(rule) => Some(rule.coordinates())` arm composes the
+    /// `Copy` variant read on the `AttributionRule` payload with the
+    /// underlying [`AttributionRule::coordinates`] total projection
+    /// (const since `02c5653`) and wraps the total return in
+    /// `Some(_)`; the `None => None` arm is const-constructible.
+    /// A compile-time-known captured envelope now folds through
+    /// [`Self::coordinates`] and [`AttributionRule::from_coordinates`]
+    /// without either projection dropping the caller off the
+    /// const-context edge — a `const REL_TRIPLE: Option<AttributionCoordinates>
+    /// = REL.coordinates()` cell followed by `const REL_RULE:
+    /// Option<AttributionRule> = match REL_TRIPLE { Some(t) =>
+    /// AttributionRule::from_coordinates(t), None => None }` re-hydrates
+    /// the originating rule at compile time. Peer to
+    /// [`FailingSourceAttribution::coordinates`] (const since
+    /// `02c5653`) at the corresponding envelope altitude on the
+    /// borrowed-envelope side.
     #[must_use]
-    pub fn coordinates(&self) -> Option<AttributionCoordinates> {
-        self.attribution_rule.map(AttributionRule::coordinates)
+    pub const fn coordinates(&self) -> Option<AttributionCoordinates> {
+        match self.attribution_rule {
+            Some(rule) => Some(rule.coordinates()),
+            None => None,
+        }
     }
 
     /// Borrowed [`FailingSourceAttribution`] envelope fused from the
@@ -2100,6 +2194,264 @@ mod tests {
             assert_eq!(rel.metadata_axis(), Some(rule.metadata_axis()));
             assert_eq!(rel.figment_source_kind(), rule.figment_source_kind());
             assert_eq!(rel.figment_name_tag_kind(), rule.figment_name_tag_kind());
+        }
+    }
+
+    #[test]
+    fn reload_failure_some_iff_attribution_forwarder_last_quartet_is_const_callable() {
+        // Weld the const-callability of the last remaining four
+        // Some-iff-attribution forwarders on `impl ReloadFailure` in
+        // one consolidated step, closing the envelope-altitude
+        // cascade opened by
+        // `reload_failure_some_iff_attribution_forwarder_quartet_is_const_callable`:
+        //   * `Self::file_provenance`
+        //     (partial: file-axis rules only) — non-const
+        //     `Option::<AttributionRule>::and_then(AttributionRule::file_provenance)`
+        //     rewritten to a `match` whose
+        //     `Some(rule) => rule.file_provenance()` arm composes an
+        //     already-`Option`-returning const-fn primitive; peer to
+        //     `FailingSourceAttribution::file_provenance` (const since
+        //     `00daccd`).
+        //   * `Self::attribution_source_kind_coordinates`
+        //     (partial: source-axis rules only) — parallel `.and_then(_)`
+        //     rewrite on the (figment-Source-axis kind × shikumi-
+        //     layer-kind) joint-cell surface; peer to
+        //     `FailingSourceAttribution::attribution_source_kind_coordinates`
+        //     (const since `d24ec4a`).
+        //   * `Self::attribution_name_kind_coordinates`
+        //     (partial: name-axis rules only) — parallel `.and_then(_)`
+        //     rewrite on the (figment-`Metadata::name`-axis kind ×
+        //     shikumi-layer-kind) joint-cell surface, closing the
+        //     source-axis / name-axis parity on the joint-cell surface;
+        //     peer to
+        //     `FailingSourceAttribution::attribution_name_kind_coordinates`
+        //     (const since `0b7e71d`).
+        //   * `Self::coordinates`
+        //     (Some-iff-attribution, total on Some arm) — non-const
+        //     `Option::<AttributionRule>::map(AttributionRule::coordinates)`
+        //     rewritten to the same `match self.attribution_rule`
+        //     shape as `Self::attribution_confidence` (`6d160c8`); peer
+        //     to `FailingSourceAttribution::coordinates` (const since
+        //     `02c5653`).
+        //
+        // With these four lifted, every envelope-altitude
+        // Some-iff-attribution forwarder on `impl ReloadFailure` is
+        // const-callable — the cross-thread observable envelope now
+        // occupies the same const altitude as the borrowed
+        // `FailingSourceAttribution` envelope on every one of its
+        // sibling projections
+        // (`fc9e0c6` / `37b71fb` / `b11bca7` / `a4692bc` / `00daccd`
+        // / `d24ec4a` / `0b7e71d` / `02c5653`).
+        //
+        // Weld structure: reuse the same six `static ReloadFailure`
+        // bindings the prior quartet used (one None-arm plus one per
+        // `AttributionRule` variant). The `static` (rather than
+        // `const`) receiver is load-bearing for the same E0493 reason
+        // as `reload_failure_attribution_confidence_is_const_callable`:
+        // `ReloadFailure` carries `Drop`-bearing payloads.
+        static NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static FILE_BY_SOURCE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileBySource),
+        };
+        static FILE_BY_METADATA_NAME_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileByMetadataName),
+        };
+        static ENV_BY_PREFIX_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByPrefix),
+        };
+        static ENV_BY_UNIQUENESS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::EnvByUniqueness),
+        };
+        static DEFAULTS_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+
+        // ---- file_provenance (partial: file-axis rules only) ----
+        const NONE_FP: Option<crate::FormatProvenance> = NONE_REL.file_provenance();
+        const FILE_BY_SOURCE_FP: Option<crate::FormatProvenance> =
+            FILE_BY_SOURCE_REL.file_provenance();
+        const FILE_BY_METADATA_NAME_FP: Option<crate::FormatProvenance> =
+            FILE_BY_METADATA_NAME_REL.file_provenance();
+        const ENV_BY_PREFIX_FP: Option<crate::FormatProvenance> =
+            ENV_BY_PREFIX_REL.file_provenance();
+        const ENV_BY_UNIQUENESS_FP: Option<crate::FormatProvenance> =
+            ENV_BY_UNIQUENESS_REL.file_provenance();
+        const DEFAULTS_FP: Option<crate::FormatProvenance> = DEFAULTS_REL.file_provenance();
+        assert_eq!(NONE_FP, None);
+        assert_eq!(
+            FILE_BY_SOURCE_FP,
+            Some(crate::FormatProvenance::FigmentBuiltin)
+        );
+        assert_eq!(
+            FILE_BY_METADATA_NAME_FP,
+            Some(crate::FormatProvenance::ShikumiBuilt)
+        );
+        assert_eq!(ENV_BY_PREFIX_FP, None);
+        assert_eq!(ENV_BY_UNIQUENESS_FP, None);
+        assert_eq!(DEFAULTS_FP, None);
+
+        // ---- attribution_source_kind_coordinates (partial: source-axis rules only) ----
+        const NONE_ASKC: Option<AttributionSourceKindCoordinates> =
+            NONE_REL.attribution_source_kind_coordinates();
+        const FILE_BY_SOURCE_ASKC: Option<AttributionSourceKindCoordinates> =
+            FILE_BY_SOURCE_REL.attribution_source_kind_coordinates();
+        const FILE_BY_METADATA_NAME_ASKC: Option<AttributionSourceKindCoordinates> =
+            FILE_BY_METADATA_NAME_REL.attribution_source_kind_coordinates();
+        const ENV_BY_PREFIX_ASKC: Option<AttributionSourceKindCoordinates> =
+            ENV_BY_PREFIX_REL.attribution_source_kind_coordinates();
+        const ENV_BY_UNIQUENESS_ASKC: Option<AttributionSourceKindCoordinates> =
+            ENV_BY_UNIQUENESS_REL.attribution_source_kind_coordinates();
+        const DEFAULTS_ASKC: Option<AttributionSourceKindCoordinates> =
+            DEFAULTS_REL.attribution_source_kind_coordinates();
+        assert_eq!(NONE_ASKC, None);
+        assert_eq!(
+            FILE_BY_SOURCE_ASKC,
+            Some(AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::File,
+                layer_kind: ConfigSourceKind::File,
+            })
+        );
+        assert_eq!(FILE_BY_METADATA_NAME_ASKC, None);
+        assert_eq!(ENV_BY_PREFIX_ASKC, None);
+        assert_eq!(ENV_BY_UNIQUENESS_ASKC, None);
+        assert_eq!(
+            DEFAULTS_ASKC,
+            Some(AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::Code,
+                layer_kind: ConfigSourceKind::Defaults,
+            })
+        );
+
+        // ---- attribution_name_kind_coordinates (partial: name-axis rules only) ----
+        const NONE_ANKC: Option<AttributionNameKindCoordinates> =
+            NONE_REL.attribution_name_kind_coordinates();
+        const FILE_BY_SOURCE_ANKC: Option<AttributionNameKindCoordinates> =
+            FILE_BY_SOURCE_REL.attribution_name_kind_coordinates();
+        const FILE_BY_METADATA_NAME_ANKC: Option<AttributionNameKindCoordinates> =
+            FILE_BY_METADATA_NAME_REL.attribution_name_kind_coordinates();
+        const ENV_BY_PREFIX_ANKC: Option<AttributionNameKindCoordinates> =
+            ENV_BY_PREFIX_REL.attribution_name_kind_coordinates();
+        const ENV_BY_UNIQUENESS_ANKC: Option<AttributionNameKindCoordinates> =
+            ENV_BY_UNIQUENESS_REL.attribution_name_kind_coordinates();
+        const DEFAULTS_ANKC: Option<AttributionNameKindCoordinates> =
+            DEFAULTS_REL.attribution_name_kind_coordinates();
+        assert_eq!(NONE_ANKC, None);
+        assert_eq!(FILE_BY_SOURCE_ANKC, None);
+        assert_eq!(
+            FILE_BY_METADATA_NAME_ANKC,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Format,
+                layer_kind: ConfigSourceKind::File,
+            })
+        );
+        assert_eq!(
+            ENV_BY_PREFIX_ANKC,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            })
+        );
+        assert_eq!(
+            ENV_BY_UNIQUENESS_ANKC,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            })
+        );
+        assert_eq!(DEFAULTS_ANKC, None);
+
+        // ---- coordinates (Some-iff-attribution, total on Some arm) ----
+        const NONE_CO: Option<AttributionCoordinates> = NONE_REL.coordinates();
+        const FILE_BY_SOURCE_CO: Option<AttributionCoordinates> = FILE_BY_SOURCE_REL.coordinates();
+        const FILE_BY_METADATA_NAME_CO: Option<AttributionCoordinates> =
+            FILE_BY_METADATA_NAME_REL.coordinates();
+        const ENV_BY_PREFIX_CO: Option<AttributionCoordinates> = ENV_BY_PREFIX_REL.coordinates();
+        const ENV_BY_UNIQUENESS_CO: Option<AttributionCoordinates> =
+            ENV_BY_UNIQUENESS_REL.coordinates();
+        const DEFAULTS_CO: Option<AttributionCoordinates> = DEFAULTS_REL.coordinates();
+        assert_eq!(NONE_CO, None);
+        assert_eq!(
+            FILE_BY_SOURCE_CO,
+            Some(AttributionRule::FileBySource.coordinates())
+        );
+        assert_eq!(
+            FILE_BY_METADATA_NAME_CO,
+            Some(AttributionRule::FileByMetadataName.coordinates())
+        );
+        assert_eq!(
+            ENV_BY_PREFIX_CO,
+            Some(AttributionRule::EnvByPrefix.coordinates())
+        );
+        assert_eq!(
+            ENV_BY_UNIQUENESS_CO,
+            Some(AttributionRule::EnvByUniqueness.coordinates())
+        );
+        assert_eq!(
+            DEFAULTS_CO,
+            Some(AttributionRule::DefaultsByCodeUniqueness.coordinates())
+        );
+
+        // ---- Cross-check parity: const-fn body == runtime call ==
+        //      underlying rule-altitude const-fn primitive.
+        // Walk the five AttributionRule variants once, comparing each
+        // envelope-altitude projection against the same rule's own
+        // const-callable projection.
+        assert_eq!(NONE_FP, NONE_REL.file_provenance());
+        assert_eq!(NONE_ASKC, NONE_REL.attribution_source_kind_coordinates());
+        assert_eq!(NONE_ANKC, NONE_REL.attribution_name_kind_coordinates());
+        assert_eq!(NONE_CO, NONE_REL.coordinates());
+        for (rel, rule) in [
+            (&FILE_BY_SOURCE_REL, AttributionRule::FileBySource),
+            (
+                &FILE_BY_METADATA_NAME_REL,
+                AttributionRule::FileByMetadataName,
+            ),
+            (&ENV_BY_PREFIX_REL, AttributionRule::EnvByPrefix),
+            (&ENV_BY_UNIQUENESS_REL, AttributionRule::EnvByUniqueness),
+            (&DEFAULTS_REL, AttributionRule::DefaultsByCodeUniqueness),
+        ] {
+            assert_eq!(rel.file_provenance(), rule.file_provenance());
+            assert_eq!(
+                rel.attribution_source_kind_coordinates(),
+                rule.attribution_source_kind_coordinates()
+            );
+            assert_eq!(
+                rel.attribution_name_kind_coordinates(),
+                rule.attribution_name_kind_coordinates()
+            );
+            assert_eq!(rel.coordinates(), Some(rule.coordinates()));
         }
     }
 
