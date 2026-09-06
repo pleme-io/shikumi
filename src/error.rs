@@ -4792,7 +4792,33 @@ pub struct FailingSourceAttribution<'a> {
 }
 
 impl<'a> FailingSourceAttribution<'a> {
-    pub(crate) fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
+    /// Wrap a borrowed [`ConfigSource`] plus its [`AttributionRule`] into
+    /// the paired envelope. The one canonical constructor — every
+    /// production site ([`resolve_failing_source`]) and every test that
+    /// builds an envelope from a live rule/source pair routes through
+    /// here, so a future field addition on the `#[non_exhaustive]`
+    /// struct lands additively at exactly one call site.
+    ///
+    /// `const fn`: const-callable on `Copy`-shaped inputs (the borrowed
+    /// `&'a ConfigSource` reference and the `Copy` [`AttributionRule`]).
+    /// Composes two trivially const-callable primitives — a reference
+    /// bind and a `Copy` scalar bind into the struct literal — so a
+    /// `const FailingSourceAttribution<'static>` binding produced from
+    /// a `const &'static ConfigSource` plus a `const AttributionRule`
+    /// evaluates at compile time. Envelope-altitude prerequisite for
+    /// const-lifting [`crate::ReloadFailure::failing_attribution`] —
+    /// the last envelope-altitude Some-iff-attribution forwarder on
+    /// the cross-thread observable [`crate::ReloadFailure`] surface
+    /// that constructs (rather than projects out of) a borrowed
+    /// [`FailingSourceAttribution`], and the one gap between the
+    /// borrowed-envelope side (fully const through the `impl
+    /// FailingSourceAttribution` block after the `fc9e0c6` / `37b71fb`
+    /// / `b11bca7` / `a4692bc` / `00daccd` / `d24ec4a` / `0b7e71d` /
+    /// `02c5653` / `ca8bd8f` / `c502503` / `5c42e49` / `457dc61` /
+    /// `b71f975` / `44ba5cd` / `0989f7f` const-callability cascade)
+    /// and the cross-thread envelope side. Welded by
+    /// [`tests::failing_source_attribution_new_is_const_callable`].
+    pub(crate) const fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
         Self { source, rule }
     }
 
@@ -6953,6 +6979,93 @@ mod tests {
                 envelope_confidence,
                 rule.confidence(),
                 "rule {rule:?}: envelope-routed confidence must match rule-altitude projection",
+            );
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_new_is_const_callable() {
+        // Weld the const-callability of the one canonical
+        // envelope-altitude CONSTRUCTOR — `FailingSourceAttribution::new`.
+        // Every other envelope-altitude projection on
+        // `impl FailingSourceAttribution` is already const
+        // (`confidence` / `layer_kind` / `metadata_axis` /
+        // `figment_source_kind` / `figment_name_tag_kind` /
+        // `file_provenance` / `attribution_source_kind_coordinates` /
+        // `attribution_name_kind_coordinates` / `coordinates`, const
+        // since `df3334f` / `fc9e0c6` / `37b71fb` / `b11bca7` /
+        // `a4692bc` / `00daccd` / `d24ec4a` / `0b7e71d` / `02c5653`);
+        // the constructor was the last remaining rule-side gap on the
+        // borrowed-envelope side. Envelope-altitude prerequisite for
+        // const-lifting `crate::ReloadFailure::failing_attribution` —
+        // the last non-const Some-iff-attribution forwarder on
+        // `impl ReloadFailure` that CONSTRUCTS (rather than projects
+        // out of) a borrowed `FailingSourceAttribution`, and the one
+        // remaining const-callability gap between the cross-thread
+        // observable envelope and the borrowed-envelope surface after
+        // the `57bb750` last-quartet close.
+        //
+        // The weld structure mirrors
+        // `failing_source_attribution_confidence_is_const_callable`
+        // above: a `const SRC: ConfigSource::Defaults` receiver, five
+        // per-rule bindings, but here BUILT via the const-lifted
+        // `FailingSourceAttribution::new` constructor (rather than
+        // the struct-literal fallback the confidence weld used when
+        // `new` was non-const). Pointwise agreement with the
+        // struct-literal form is pinned to keep the constructor a thin
+        // paint-by-numbers wrapper — a future edit that added a
+        // computed default or a validation step to `new` would drift
+        // the two forms and fail these assertions before any downstream
+        // consumer of a stale (rule, source) → envelope construction
+        // reads it.
+        //
+        // Const-callability specifically: struct-literal construction
+        // is trivially const on `Copy`-shaped inputs, so the weld's
+        // load-bearing evidence is that ROUTING through `new` still
+        // produces a `const FailingSourceAttribution<'static>` — i.e.
+        // the constructor introduces no non-const step in its body.
+        const SRC: ConfigSource = ConfigSource::Defaults;
+
+        const ATTR_FBS: FailingSourceAttribution<'static> =
+            FailingSourceAttribution::new(&SRC, AttributionRule::FileBySource);
+        const ATTR_FBM: FailingSourceAttribution<'static> =
+            FailingSourceAttribution::new(&SRC, AttributionRule::FileByMetadataName);
+        const ATTR_EBP: FailingSourceAttribution<'static> =
+            FailingSourceAttribution::new(&SRC, AttributionRule::EnvByPrefix);
+        const ATTR_EBU: FailingSourceAttribution<'static> =
+            FailingSourceAttribution::new(&SRC, AttributionRule::EnvByUniqueness);
+        const ATTR_DBCU: FailingSourceAttribution<'static> =
+            FailingSourceAttribution::new(&SRC, AttributionRule::DefaultsByCodeUniqueness);
+
+        // Rule field agrees pointwise with the input rule: the
+        // constructor stores the passed `AttributionRule` verbatim on
+        // the struct's `rule` slot without any transformation.
+        assert!(matches!(ATTR_FBS.rule, AttributionRule::FileBySource));
+        assert!(matches!(ATTR_FBM.rule, AttributionRule::FileByMetadataName));
+        assert!(matches!(ATTR_EBP.rule, AttributionRule::EnvByPrefix));
+        assert!(matches!(ATTR_EBU.rule, AttributionRule::EnvByUniqueness));
+        assert!(matches!(
+            ATTR_DBCU.rule,
+            AttributionRule::DefaultsByCodeUniqueness
+        ));
+
+        // Constructor-vs-literal agreement: every `new`-routed envelope
+        // equals the struct-literal form the pre-const-lift confidence
+        // weld used. A future edit that added a computed default,
+        // validation branch, or field reordering to `new` diverges here
+        // first, not at the many production call sites in
+        // `resolve_failing_source` or the many test helpers.
+        for (envelope, rule) in [
+            (ATTR_FBS, AttributionRule::FileBySource),
+            (ATTR_FBM, AttributionRule::FileByMetadataName),
+            (ATTR_EBP, AttributionRule::EnvByPrefix),
+            (ATTR_EBU, AttributionRule::EnvByUniqueness),
+            (ATTR_DBCU, AttributionRule::DefaultsByCodeUniqueness),
+        ] {
+            let literal = FailingSourceAttribution { source: &SRC, rule };
+            assert_eq!(
+                envelope, literal,
+                "rule {rule:?}: `new`-constructed envelope must equal struct-literal form",
             );
         }
     }
