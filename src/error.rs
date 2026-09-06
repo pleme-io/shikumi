@@ -6051,6 +6051,68 @@ impl ShikumiError {
         self.failing_attribution()
             .map(FailingSourceAttribution::confidence)
     }
+
+    /// [`FigmentSourceKind`] structurally pinned by the rule that named
+    /// the blamed layer, or `None` when no attribution was recorded *or*
+    /// when the recorded attribution is name-axis (where the rule's
+    /// identity does not constrain [`figment::Source`]) — strict
+    /// superset of
+    /// [`Self::failing_attribution`]`.and_then(|a| a.figment_source_kind())`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, structured-log routers, attestation manifests) don't
+    /// re-derive the (rule → figment-source-kind) partial projection at
+    /// every observation site.
+    ///
+    /// Distinct from [`Self::layer_kind`]: `layer_kind` reports the
+    /// [`ConfigSourceKind`] of the blamed shikumi
+    /// [`ConfigSource`] entry (`file` / `env` / `defaults` — total over
+    /// [`AttributionRule`]), while this accessor reports the kind of
+    /// figment's own [`figment::Source`] attached to the failing metadata
+    /// (`file` / `code` / `custom` — partial: [`None`] on name-axis
+    /// rules like [`AttributionRule::FileByMetadataName`] /
+    /// [`AttributionRule::EnvByPrefix`] whose identity does not pin
+    /// figment's source classification). The distinction matters when
+    /// diagnosing shikumi-built providers whose figment layer type is
+    /// `Serialized` (recorded as [`FigmentSourceKind::Code`]) yet whose
+    /// [`ConfigSource`] is [`ConfigSource::File`] — a defaults-layered
+    /// file surfaces as `(layer_kind=File, figment_source_kind=Code)`.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::figment_source_kind`]
+    /// on the cross-thread observable envelope: the two projections
+    /// agree pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).figment_source_kind() ==
+    /// err.figment_source_kind()` for every [`ShikumiError`]), pinning
+    /// the lossless-capture contract for the figment-source-axis on
+    /// the cross-thread mirror. Before this accessor, the live-error
+    /// side of the API forced callers to chain through
+    /// `err.failing_attribution().and_then(|a| a.figment_source_kind())`
+    /// (a three-hop composition) at every observation site — an
+    /// asymmetric surface against the one-hop accessor on the
+    /// captured-envelope side; this lift closes the API-symmetry gap
+    /// on the (`file` × `code` × `custom`) figment-source axis. Fourth
+    /// lift in the same cascade opened by [`Self::layer_kind`]
+    /// (`7389572`) and continued by [`Self::metadata_axis`] (`93a15cc`)
+    /// / [`Self::attribution_confidence`] (`2ec51fa`); the three
+    /// remaining sibling projections
+    /// (`figment_name_tag_kind`, `file_provenance`, `coordinates`) each
+    /// still lack a live-error direct peer on `impl ShikumiError`.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::and_then`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::figment_source_kind`] is const
+    /// because it reads a stored `Option<AttributionRule>` field on
+    /// `Copy` receivers through an explicit `match`; the live-error
+    /// side pays the runtime resolver cost on every call, so a caller
+    /// who reads the axis more than once should cache the result or
+    /// route through the captured envelope.
+    #[must_use]
+    pub fn figment_source_kind(&self) -> Option<FigmentSourceKind> {
+        self.failing_attribution()
+            .and_then(FailingSourceAttribution::figment_source_kind)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -10727,6 +10789,152 @@ mod tests {
         };
         assert!(
             err.attribution_confidence().is_none(),
+            "no metadata → no attribution",
+        );
+    }
+
+    // ---- ShikumiError::figment_source_kind tests ----
+
+    #[test]
+    fn shikumi_error_figment_source_kind_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::figment_source_kind` must
+        // equal the chained composition
+        // `self.failing_attribution().and_then(|a| a.figment_source_kind())`
+        // on every error whose attribution resolves through a source-
+        // axis rule. Pins the API-symmetry contract: the live-error
+        // side one-hop accessor is a pure forwarder of the envelope-
+        // side figment_source_kind projection, so a future refactor of
+        // either half is bound to move the other in lockstep. Peer of
+        // `shikumi_error_layer_kind_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_metadata_axis_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_attribution_confidence_forwards_through_failing_attribution`
+        // on the sibling (`file` × `code` × `custom`) axis. Distinct
+        // from those siblings in the composition primitive: this
+        // projection is partial (name-axis rules produce `None` at the
+        // rule layer), so the forwarder is `and_then`, not `map`.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(serde::Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // File-axis attribution: FileBySource is a source-axis rule
+        // whose figment_source_kind projection lands on File.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.figment_source_kind(),
+            err_file
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::figment_source_kind),
+        );
+        assert_eq!(
+            err_file.figment_source_kind(),
+            Some(FigmentSourceKind::File)
+        );
+
+        // Defaults-axis attribution: figment's Serialized provider
+        // attaches Source::Code; DefaultsByCodeUniqueness is a
+        // source-axis rule whose figment_source_kind lands on Code.
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        assert_eq!(
+            err_def.figment_source_kind(),
+            err_def
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::figment_source_kind),
+        );
+        assert_eq!(err_def.figment_source_kind(), Some(FigmentSourceKind::Code));
+
+        // Name-axis attribution: EnvByPrefix is a name-axis rule whose
+        // figment_source_kind is None at the rule layer even though
+        // failing_attribution is Some. The forwarder must reproduce the
+        // None on the live-error side without collapsing it into the
+        // outer None-when-unattributed branch.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(err_env.figment_source_kind(), None);
+        assert_eq!(
+            err_env.figment_source_kind(),
+            err_env
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::figment_source_kind),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_figment_source_kind_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the figment_source_kind projection must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants` /
+        // `shikumi_error_attribution_confidence_none_for_non_extract_variants`
+        // on the sibling axis, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the figment-source
+        // axis (with the extra caveat that Some-attribution is a
+        // necessary-but-not-sufficient condition here: name-axis rules
+        // also yield None).
+        assert!(
+            super::synthetic_parse_error()
+                .figment_source_kind()
+                .is_none()
+        );
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .figment_source_kind()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.figment_source_kind().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .figment_source_kind()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .figment_source_kind()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_figment_source_kind_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so figment_source_kind must be None.
+        // Peer of
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata` /
+        // `shikumi_error_metadata_axis_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_attribution_confidence_none_for_extract_without_metadata`
+        // on the sibling axis, closing the same
+        // resolver-terminates-in-None branch on the figment-source
+        // axis.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.figment_source_kind().is_none(),
             "no metadata → no attribution",
         );
     }

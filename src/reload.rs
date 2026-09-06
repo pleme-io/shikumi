@@ -1817,6 +1817,99 @@ mod tests {
     }
 
     #[test]
+    fn figment_source_kind_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the
+        // (`file` × `code` × `custom`) figment-source axis on the
+        // cross-thread observable form: the captured envelope's
+        // figment_source_kind projection mirrors the source error's
+        // figment_source_kind byte-for-byte across every constructible
+        // ShikumiError variant. Peer of
+        // `layer_kind_agrees_with_underlying_error_pointwise` /
+        // `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // on the sibling axes, closing the same lossless-capture
+        // contract at the figment-source-axis altitude — a future
+        // refactor of either side (the live
+        // `ShikumiError::figment_source_kind` accessor or the captured
+        // `ReloadFailure::figment_source_kind` field-forwarder) is
+        // bound to move the other in lockstep.
+        //
+        // Adds a name-axis probe on top of the source-axis file /
+        // defaults probes carried by the sibling agreement tests: a
+        // real EnvByPrefix Extract failure resolves to a Some(rule)
+        // attribution whose figment_source_kind is None at the rule
+        // layer, so the pointwise contract must reproduce that None on
+        // both sides of the capture boundary without collapsing it
+        // into the outer None-when-unattributed branch.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.figment_source_kind(),
+                err.figment_source_kind(),
+                "captured figment_source_kind must mirror source \
+                 figment_source_kind for {err:?}",
+            );
+        }
+
+        // End-to-end pin on real Extract failures across the two
+        // source-axis figment-source cells: FileBySource → File and
+        // DefaultsByCodeUniqueness → Code both survive capture through
+        // `ReloadFailure::from_error` byte-for-byte.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fsk_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(f_file.figment_source_kind(), err_file.figment_source_kind());
+        assert_eq!(f_file.figment_source_kind(), Some(FigmentSourceKind::File));
+
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_def = ReloadFailure::from_error(&err_def);
+        assert_eq!(f_def.figment_source_kind(), err_def.figment_source_kind());
+        assert_eq!(f_def.figment_source_kind(), Some(FigmentSourceKind::Code));
+
+        // End-to-end pin on the name-axis branch: an EnvByPrefix
+        // Extract failure resolves to Some(rule) with
+        // figment_source_kind == None on both sides — a Some outer /
+        // None inner cell that the source-axis probes above never
+        // reach, distinguishing the (attribution absent → outer None)
+        // and (attribution present but rule is name-axis → inner None)
+        // branches on both sides of the capture boundary.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        let f_env = ReloadFailure::from_error(&err_env);
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(f_env.figment_source_kind(), err_env.figment_source_kind());
+        assert_eq!(f_env.figment_source_kind(), None);
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the
