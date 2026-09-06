@@ -152,8 +152,34 @@ impl ReloadFailure {
     /// surface. The kind axis is the only one of the three that is
     /// always populated; the other two answer
     /// `None` for non-attributed failures.
+    ///
+    /// `const fn` — trivial [`Copy`] field read of
+    /// [`Self::kind`] (`ShikumiErrorKind` is `Copy + #[repr]`-fixed),
+    /// so the projection lifts to `const` at the envelope altitude
+    /// verbatim with no body change. First const-lift on
+    /// `impl ReloadFailure`, mirroring altitude-for-altitude the
+    /// first const-lift on `impl ShikumiError`
+    /// ([`ShikumiError::kind`], const since `4b00851`): the two
+    /// altitudes now share the const-callability parity on the
+    /// sum-type-to-kind projection surface.
+    ///
+    /// Weld: [`tests::reload_failure_kind_is_const_callable`]. Every
+    /// other envelope-altitude forwarder on
+    /// `impl ReloadFailure` — [`Self::attribution_confidence`] /
+    /// [`Self::layer_kind`] / [`Self::metadata_axis`] and the
+    /// figment-metadata-axis / joint-coordinate / file-provenance
+    /// siblings — currently routes through non-const
+    /// [`Option::map`] / [`Option::and_then`] over the recorded
+    /// [`Self::attribution_rule`] slot; each lifts in a subsequent
+    /// step by rewriting the routed body as an explicit `match`
+    /// (whose arms compose already-const rule-altitude projections
+    /// with the const-constructible `None` arm), so the kind
+    /// forwarder is the const-callability prerequisite that opens
+    /// the cascade at this altitude the same way `ShikumiError::kind`
+    /// opened the tag-side septet + meta-axis pair at the tag
+    /// altitude.
     #[must_use]
-    pub fn kind(&self) -> ShikumiErrorKind {
+    pub const fn kind(&self) -> ShikumiErrorKind {
         self.kind
     }
 
@@ -1513,6 +1539,97 @@ mod tests {
         let g = f.clone();
         assert_eq!(g.kind(), ShikumiErrorKind::Parse);
         assert_eq!(g.kind(), f.kind());
+    }
+
+    #[test]
+    fn reload_failure_kind_is_const_callable() {
+        // Weld the const-callability of `ReloadFailure::kind` — the
+        // sum-type-to-kind projection at the cross-thread observable
+        // envelope altitude — at compile time. First const-lift on
+        // `impl ReloadFailure`, mirroring altitude-for-altitude the
+        // first const-lift on `impl ShikumiError`
+        // (`ShikumiError::kind`, const since `4b00851`, welded by
+        // `shikumi_error_kind_is_const_callable` in `error::tests`):
+        // the two altitudes now share the const-callability parity
+        // on the sum-type-to-kind projection surface. A future edit
+        // that reaches for a non-const helper on the projection body
+        // (an allocator, a runtime-only accessor over the Copy
+        // field) fails at THIS line before drifting into the every
+        // remaining envelope-altitude forwarder that will lift on
+        // top of it in a subsequent step.
+        //
+        // Const-constructibility on `ReloadFailure` in const context
+        // is load-bearing: every payload-carrying field has a
+        // const-constructible degenerate (`String::new()`,
+        // `Vec::new()`, `None`), so a `static` root binding holds
+        // the envelope in const-eval scope. Exercised across three
+        // kind arms of `ShikumiErrorKind` (`NotFound` — a
+        // non-figment-bearing kind that never carries attribution;
+        // `Extract` — the sole figment-bearing kind that can carry a
+        // recorded chain; `Validation` — a non-figment-bearing
+        // kind that carries neither chain nor path). Each thread
+        // through the same `Self::kind` projection at compile time
+        // and cross-checks against the underlying `Copy` field
+        // read.
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as
+        // `shikumi_error_kind_is_const_callable`: `ReloadFailure`
+        // carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`,
+        // `Option<ConfigSource>`), so a `const REL: ReloadFailure =
+        // ...; const KIND = REL.kind();` spelling drops the const
+        // value after the kind projection and rejects. A `static
+        // REL: ReloadFailure` is never dropped, so borrowing `&REL`
+        // for the `&self` receiver in a `const` initializer stays
+        // inside the const-eval envelope.
+        static NOT_FOUND_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::NotFound,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static EXTRACT_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static VALIDATION_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Validation,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        const NOT_FOUND_KIND: ShikumiErrorKind = NOT_FOUND_REL.kind();
+        const EXTRACT_KIND: ShikumiErrorKind = EXTRACT_REL.kind();
+        const VALIDATION_KIND: ShikumiErrorKind = VALIDATION_REL.kind();
+
+        assert_eq!(NOT_FOUND_KIND, ShikumiErrorKind::NotFound);
+        assert_eq!(EXTRACT_KIND, ShikumiErrorKind::Extract);
+        assert_eq!(VALIDATION_KIND, ShikumiErrorKind::Validation);
+
+        // Cross-check: the const-fn projection stays pointwise
+        // agreed with the runtime-side `rel.kind()` call and with
+        // the underlying `rel.kind` Copy field read over the three
+        // const-welded arms. Redundant with the pointwise pins
+        // above (`kind_accessor_agrees_with_field_pointwise`,
+        // `kind_agrees_with_underlying_error_kind_pointwise`), but
+        // this pin catches a future edit that shifted the const-fn
+        // body away from the runtime-fn body or the field read on
+        // any of the three welded arms.
+        assert_eq!(NOT_FOUND_KIND, NOT_FOUND_REL.kind());
+        assert_eq!(EXTRACT_KIND, EXTRACT_REL.kind());
+        assert_eq!(VALIDATION_KIND, VALIDATION_REL.kind());
+        assert_eq!(NOT_FOUND_KIND, NOT_FOUND_REL.kind);
+        assert_eq!(EXTRACT_KIND, EXTRACT_REL.kind);
+        assert_eq!(VALIDATION_KIND, VALIDATION_REL.kind);
     }
 
     // ---- FieldPathLocalization tests ----
