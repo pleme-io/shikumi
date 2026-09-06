@@ -2003,6 +2003,95 @@ mod tests {
     }
 
     #[test]
+    fn file_provenance_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the
+        // (`FigmentBuiltin` × `ShikumiBuilt`) file-provenance axis on
+        // the cross-thread observable form: the captured envelope's
+        // file_provenance projection mirrors the source error's
+        // `ShikumiError::file_provenance` (the direct live-error
+        // accessor added alongside this test) byte-for-byte across
+        // every constructible ShikumiError variant. Peer of
+        // `figment_source_kind_agrees_with_underlying_error_pointwise`
+        // /
+        // `figment_name_tag_kind_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `layer_kind_agrees_with_underlying_error_pointwise` /
+        // `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // on the sibling axes, closing the same lossless-capture
+        // contract at the file-provenance-axis altitude — a future
+        // refactor of either side (the live
+        // `ShikumiError::file_provenance` accessor or the captured
+        // `ReloadFailure::file_provenance` field-forwarder) is bound to
+        // move the other in lockstep.
+        //
+        // Exercises the two file-axis / non-file-axis boundary cases
+        // the pointwise contract must reproduce on both sides of the
+        // capture boundary: (a) a file-axis FileBySource attribution
+        // whose file_provenance lands on FigmentBuiltin (Some outer,
+        // Some inner); (b) a non-file-axis EnvByPrefix attribution
+        // whose file_provenance is None at the rule layer even though
+        // failing_attribution is Some (Some outer, None inner).
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.file_provenance(),
+                err.file_provenance(),
+                "captured file_provenance must mirror source \
+                 file_provenance for {err:?}",
+            );
+        }
+
+        // End-to-end pin on the file-axis branch: a real FileBySource
+        // Extract failure resolves to Some(rule) with
+        // file_provenance == Some(FigmentBuiltin) on both sides —
+        // figment's built-in YAML provider attaches metadata.source as
+        // a File source, so the resolver dispatches to FileBySource on
+        // the MetadataSource axis and the file-provenance projection
+        // recovers the originating provider class through the captured
+        // rule slot.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fp_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err_file = crate::provider::ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert!(err_file.failing_attribution().is_some());
+        assert_eq!(f_file.file_provenance(), err_file.file_provenance());
+        assert_eq!(
+            f_file.file_provenance(),
+            Some(crate::FormatProvenance::FigmentBuiltin),
+        );
+
+        // End-to-end pin on the non-file-axis branch: an EnvByPrefix
+        // Extract failure resolves to Some(rule) with
+        // file_provenance == None on both sides — a Some outer / None
+        // inner cell that the file-axis probe above never reaches,
+        // distinguishing the (attribution absent → outer None) and
+        // (attribution present but rule is non-file-axis → inner None)
+        // branches on both sides of the capture boundary.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        let f_env = ReloadFailure::from_error(&err_env);
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(f_env.file_provenance(), err_env.file_provenance());
+        assert_eq!(f_env.file_provenance(), None);
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the

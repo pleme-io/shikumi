@@ -6180,6 +6180,76 @@ impl ShikumiError {
         self.failing_attribution()
             .and_then(FailingSourceAttribution::figment_name_tag_kind)
     }
+
+    /// [`crate::FormatProvenance`] structurally pinned by the rule that
+    /// named the blamed layer, or `None` when no attribution was recorded
+    /// *or* when the recorded attribution is not file-axis (env-axis and
+    /// defaults-axis rules do not pin a file provenance) — strict superset
+    /// of
+    /// [`Self::failing_attribution`]`.and_then(|a| a.file_provenance())`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, structured-log routers, attestation manifests) don't
+    /// re-derive the (rule → file-provenance) partial projection at every
+    /// observation site.
+    ///
+    /// Complementary polarity to the two figment-metadata-axis partial
+    /// projections ([`Self::figment_source_kind`] /
+    /// [`Self::figment_name_tag_kind`]): `file_provenance` partitions the
+    /// `Some` cells of [`Self::failing_attribution`] along the
+    /// (file-layer, non-file-layer) boundary — every file-axis rule
+    /// ([`AttributionRule::FileBySource`] →
+    /// [`crate::FormatProvenance::FigmentBuiltin`],
+    /// [`AttributionRule::FileByMetadataName`] →
+    /// [`crate::FormatProvenance::ShikumiBuilt`]) surfaces a [`Some`] cell
+    /// here regardless of the source × name axis it lives on, while every
+    /// non-file-axis rule ([`AttributionRule::EnvByPrefix`],
+    /// [`AttributionRule::EnvByUniqueness`],
+    /// [`AttributionRule::DefaultsByCodeUniqueness`]) surfaces [`None`].
+    /// The projection is [`Some`] iff [`Self::layer_kind`] returns
+    /// [`Some(ConfigSourceKind::File)`] — the file-axis slice of the
+    /// layer-kind total projection — reported here as the finer
+    /// (`FigmentBuiltin` × `ShikumiBuilt`) provider-class partition of
+    /// the file sub-cube.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::file_provenance`] on
+    /// the cross-thread observable envelope: the two projections agree
+    /// pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).file_provenance() ==
+    /// err.file_provenance()` for every [`ShikumiError`]), pinning the
+    /// lossless-capture contract for the file-provenance axis on the
+    /// cross-thread mirror. Before this accessor, the live-error side
+    /// of the API forced callers to chain through
+    /// `err.failing_attribution().and_then(|a| a.file_provenance())`
+    /// (a three-hop composition) at every observation site — an
+    /// asymmetric surface against the one-hop accessor on the
+    /// captured-envelope side; this lift closes the API-symmetry gap on
+    /// the (`FigmentBuiltin` × `ShikumiBuilt`) file-provenance axis.
+    /// Sixth lift in the same cascade opened by [`Self::layer_kind`]
+    /// (`7389572`) and continued by [`Self::metadata_axis`] (`93a15cc`)
+    /// / [`Self::attribution_confidence`] (`2ec51fa`) /
+    /// [`Self::figment_source_kind`] (`5003a49`) /
+    /// [`Self::figment_name_tag_kind`] (`fa3bee7`); the three remaining
+    /// sibling projections (`coordinates`,
+    /// `attribution_source_kind_coordinates`,
+    /// `attribution_name_kind_coordinates`) each still lack a live-error
+    /// direct peer on `impl ShikumiError`.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::and_then`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::file_provenance`] is const because
+    /// it reads a stored `Option<AttributionRule>` field on `Copy`
+    /// receivers through an explicit `match`; the live-error side pays
+    /// the runtime resolver cost on every call, so a caller who reads
+    /// the axis more than once should cache the result or route through
+    /// the captured envelope.
+    #[must_use]
+    pub fn file_provenance(&self) -> Option<crate::FormatProvenance> {
+        self.failing_attribution()
+            .and_then(FailingSourceAttribution::file_provenance)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -11126,6 +11196,131 @@ mod tests {
         };
         assert!(
             err.figment_name_tag_kind().is_none(),
+            "no metadata → no attribution",
+        );
+    }
+
+    // ---- ShikumiError::file_provenance tests ----
+
+    #[test]
+    fn shikumi_error_file_provenance_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::file_provenance` must equal
+        // the chained composition
+        // `self.failing_attribution().and_then(|a| a.file_provenance())`
+        // on every error whose attribution resolves through a file-axis
+        // rule. Pins the API-symmetry contract: the live-error side
+        // one-hop accessor is a pure forwarder of the envelope-side
+        // file_provenance projection, so a future refactor of either
+        // half is bound to move the other in lockstep. Peer of
+        // `shikumi_error_figment_name_tag_kind_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_figment_source_kind_forwards_through_failing_attribution`
+        // on the sibling partial projections. Composition primitive is
+        // `and_then`, not `map`: file_provenance is partial at the rule
+        // layer (env / defaults rules yield `None` even when the outer
+        // attribution is `Some`), the same polarity as the two
+        // figment-metadata-axis partial siblings.
+
+        // File-axis attribution: FileBySource is a file-axis rule whose
+        // file_provenance projection lands on FigmentBuiltin (figment's
+        // built-in YAML provider attaches metadata.source as a File
+        // source, so the resolver dispatches to FileBySource on the
+        // MetadataSource axis).
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.file_provenance(),
+            err_file
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::file_provenance),
+        );
+        assert_eq!(
+            err_file.file_provenance(),
+            Some(crate::FormatProvenance::FigmentBuiltin),
+        );
+
+        // Non-file-axis attribution: EnvByPrefix is an env-axis rule
+        // whose file_provenance is None at the rule layer even though
+        // failing_attribution is Some. The forwarder must reproduce the
+        // None on the live-error side without collapsing it into the
+        // outer None-when-unattributed branch — the complementary
+        // boundary case to the file-axis probe.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(err_env.file_provenance(), None);
+        assert_eq!(
+            err_env.file_provenance(),
+            err_env
+                .failing_attribution()
+                .and_then(super::FailingSourceAttribution::file_provenance),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_file_provenance_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the file_provenance projection must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants` /
+        // `shikumi_error_attribution_confidence_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_figment_name_tag_kind_none_for_non_extract_variants`
+        // on the sibling axes, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the file-provenance
+        // axis (with the extra caveat that Some-attribution is a
+        // necessary-but-not-sufficient condition here: non-file-axis
+        // rules also yield None).
+        assert!(super::synthetic_parse_error().file_provenance().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .file_provenance()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.file_provenance().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .file_provenance()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .file_provenance()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_file_provenance_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so file_provenance must be None. Peer
+        // of
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata` /
+        // `shikumi_error_metadata_axis_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_attribution_confidence_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_figment_name_tag_kind_none_for_extract_without_metadata`
+        // on the sibling axes, closing the same resolver-terminates-in-
+        // None branch on the file-provenance axis.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.file_provenance().is_none(),
             "no metadata → no attribution",
         );
     }
