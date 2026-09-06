@@ -82,8 +82,26 @@ impl WatchEventClass {
     /// [`Self::Ignored`]. Pure in the event kind — no I/O, no clock — so
     /// the trigger semantics are unit-testable without the
     /// timing-sensitive watcher harness.
+    ///
+    /// `const`-callable — the body is pure pattern matching over a
+    /// borrowed [`notify::EventKind`] with no function calls, allocations,
+    /// or non-const helpers on the path, and the returned unit variants
+    /// ([`Self::Reload`] / [`Self::Removed`] / [`Self::Ignored`]) are
+    /// const-constructible. Lets a compile-time-known event kind project
+    /// to a compile-time-known [`WatchEventClass`], so the const-fn
+    /// closed-partition predicate quartet ([`Self::is_reload`] /
+    /// [`Self::is_removed`] / [`Self::is_ignored`] / [`Self::is_file_mutation`])
+    /// composes with this classifier end-to-end in const positions — a
+    /// downstream `const IS_RELOAD: bool = WatchEventClass::classify(&KIND).is_reload();`
+    /// binding needs no runtime call. Peer of the tag-side classifier
+    /// [`crate::FigmentSourceTag::classify`] (const since `d29a3f9`) and
+    /// the tag-side classifier [`crate::FigmentNameTag::classify`] (const
+    /// since `d29a3f9`) — the classify-side of the closed-partition axis
+    /// now lands in const positions on the reload-relevance axis too.
+    /// Welded at compile time by
+    /// [`tests::watch_event_class_classify_is_const_callable`].
     #[must_use]
-    pub fn classify(kind: &notify::EventKind) -> Self {
+    pub const fn classify(kind: &notify::EventKind) -> Self {
         use notify::EventKind;
         use notify::event::{DataChange, MetadataKind, ModifyKind};
 
@@ -1581,6 +1599,62 @@ mod tests {
         assert_eq!(FILE_MUTATIONS_LEN, 2);
         assert_eq!(NON_FILE_MUTATIONS_LEN, 1);
         assert_eq!(FILE_MUTATIONS_LEN + NON_FILE_MUTATIONS_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn watch_event_class_classify_is_const_callable() {
+        // Compile-time weld pin: `WatchEventClass::classify(&kind)` is
+        // reachable at const-evaluation position across all three arms of
+        // the reload-relevance ternary partition, and composes with the
+        // const-fn predicate quartet `is_reload` / `is_removed` /
+        // `is_ignored` / `is_file_mutation` end-to-end in const positions.
+        // A future edit that drops const-fn on `classify` (e.g. inlining a
+        // non-const helper into the body) fails here before drifting
+        // through any const-context downstream consumer. Class-side peer
+        // of the tag-side classifier-const pin
+        // `figment_source_tag_classify_and_projections_are_const_callable`
+        // (`d29a3f9`).
+        const CREATE_ANY: notify::EventKind =
+            notify::EventKind::Create(notify::event::CreateKind::Any);
+        const MODIFY_CONTENT: notify::EventKind = notify::EventKind::Modify(
+            notify::event::ModifyKind::Data(notify::event::DataChange::Content),
+        );
+        const MODIFY_WRITE_TIME: notify::EventKind = notify::EventKind::Modify(
+            notify::event::ModifyKind::Metadata(notify::event::MetadataKind::WriteTime),
+        );
+        const MODIFY_RENAME: notify::EventKind = notify::EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
+        );
+        const REMOVE_ANY: notify::EventKind =
+            notify::EventKind::Remove(notify::event::RemoveKind::Any);
+        const ANY: notify::EventKind = notify::EventKind::Any;
+
+        const CREATE_CLASS: WatchEventClass = WatchEventClass::classify(&CREATE_ANY);
+        const MODIFY_CONTENT_CLASS: WatchEventClass = WatchEventClass::classify(&MODIFY_CONTENT);
+        const MODIFY_WRITE_TIME_CLASS: WatchEventClass =
+            WatchEventClass::classify(&MODIFY_WRITE_TIME);
+        const MODIFY_RENAME_CLASS: WatchEventClass = WatchEventClass::classify(&MODIFY_RENAME);
+        const REMOVE_CLASS: WatchEventClass = WatchEventClass::classify(&REMOVE_ANY);
+        const ANY_CLASS: WatchEventClass = WatchEventClass::classify(&ANY);
+
+        // Compose with the const-fn predicate quartet in const positions,
+        // so any future lift of a predicate away from const-fn also fails
+        // here — the two seams weld into one compile-time pin.
+        const CREATE_IS_RELOAD: bool = CREATE_CLASS.is_reload();
+        const MODIFY_CONTENT_IS_RELOAD: bool = MODIFY_CONTENT_CLASS.is_reload();
+        const MODIFY_WRITE_TIME_IS_RELOAD: bool = MODIFY_WRITE_TIME_CLASS.is_reload();
+        const MODIFY_RENAME_IS_IGNORED: bool = MODIFY_RENAME_CLASS.is_ignored();
+        const REMOVE_IS_REMOVED: bool = REMOVE_CLASS.is_removed();
+        const REMOVE_IS_FILE_MUTATION: bool = REMOVE_CLASS.is_file_mutation();
+        const ANY_IS_IGNORED: bool = ANY_CLASS.is_ignored();
+
+        const { assert!(CREATE_IS_RELOAD) };
+        const { assert!(MODIFY_CONTENT_IS_RELOAD) };
+        const { assert!(MODIFY_WRITE_TIME_IS_RELOAD) };
+        const { assert!(MODIFY_RENAME_IS_IGNORED) };
+        const { assert!(REMOVE_IS_REMOVED) };
+        const { assert!(REMOVE_IS_FILE_MUTATION) };
+        const { assert!(ANY_IS_IGNORED) };
     }
 
     #[test]
