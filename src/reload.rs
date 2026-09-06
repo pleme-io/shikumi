@@ -1741,6 +1741,82 @@ mod tests {
     }
 
     #[test]
+    fn attribution_confidence_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the (exact × fallback)
+        // confidence axis on the cross-thread observable form: the
+        // captured envelope's attribution_confidence projection mirrors
+        // the source error's attribution_confidence byte-for-byte
+        // across every constructible ShikumiError variant. Peer of
+        // `layer_kind_agrees_with_underlying_error_pointwise` and
+        // `metadata_axis_agrees_with_underlying_error_pointwise` on the
+        // sibling axes, closing the same lossless-capture contract at
+        // the confidence-axis altitude — a future refactor of either
+        // side (the live `ShikumiError::attribution_confidence`
+        // accessor or the captured `ReloadFailure::attribution_confidence`
+        // field-forwarder) is bound to move the other in lockstep.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.attribution_confidence(),
+                err.attribution_confidence(),
+                "captured attribution_confidence must mirror source \
+                 attribution_confidence for {err:?}",
+            );
+        }
+
+        // End-to-end pin on real Extract failures across both
+        // confidence classes: FileBySource → Exact and
+        // DefaultsByCodeUniqueness → Fallback both survive capture
+        // through `ReloadFailure::from_error` byte-for-byte, so the
+        // captured envelope observes the same weighting as the live
+        // error.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_ac_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(
+            f_file.attribution_confidence(),
+            err_file.attribution_confidence(),
+        );
+        assert_eq!(
+            f_file.attribution_confidence(),
+            Some(AttributionConfidence::Exact),
+        );
+
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_def = ReloadFailure::from_error(&err_def);
+        assert_eq!(
+            f_def.attribution_confidence(),
+            err_def.attribution_confidence(),
+        );
+        assert_eq!(
+            f_def.attribution_confidence(),
+            Some(AttributionConfidence::Fallback),
+        );
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the

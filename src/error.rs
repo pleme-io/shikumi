@@ -5995,6 +5995,62 @@ impl ShikumiError {
         self.failing_attribution()
             .map(FailingSourceAttribution::metadata_axis)
     }
+
+    /// [`AttributionConfidence`] of the rule that named the blamed layer,
+    /// or `None` when no attribution was recorded — strict superset of
+    /// [`Self::failing_attribution`]`.map(|a| a.confidence())`, surfaced
+    /// as a typed accessor so observers (dashboards, alerting policies,
+    /// structured-log routers, attestation manifests) don't re-derive
+    /// the (exact × fallback) partition at every observation site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::failing_attribution`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Operationally distinguishes
+    /// attributions decided by direct source-classification equality
+    /// ([`AttributionConfidence::Exact`], structurally driven) from
+    /// attributions inferred by uniqueness/elimination
+    /// ([`AttributionConfidence::Fallback`], weaker signal). Composes
+    /// with [`Self::layer_kind`] (file × env × defaults) and
+    /// [`Self::metadata_axis`] (source × name) as the third orthogonal
+    /// projection over the rule space, giving observers the
+    /// (axis × layer-kind × confidence) coordinates of every attributed
+    /// live error as three closed-enum reads.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::attribution_confidence`]
+    /// on the cross-thread observable envelope: the two projections
+    /// agree pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).attribution_confidence() ==
+    /// err.attribution_confidence()` for every [`ShikumiError`]),
+    /// pinning the lossless-capture contract for the confidence axis
+    /// on the cross-thread mirror. Before this accessor, the live-error
+    /// side of the API forced callers to chain through
+    /// `err.failing_attribution().map(|a| a.confidence())` (a
+    /// three-hop composition) at every observation site — an
+    /// asymmetric surface against the one-hop accessor on the
+    /// captured-envelope side; this lift closes the API-symmetry gap
+    /// on the (exact × fallback) axis. Third lift in the same cascade
+    /// opened by [`Self::layer_kind`] (`7389572`) and continued by
+    /// [`Self::metadata_axis`] (`93a15cc`); the three remaining
+    /// sibling projections (`figment_source_kind`,
+    /// `figment_name_tag_kind`, `file_provenance`, `coordinates`) each
+    /// still lack a live-error direct peer on `impl ShikumiError`.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::map`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::attribution_confidence`] is const
+    /// because it reads a stored `Option<AttributionRule>` field on
+    /// `Copy` receivers through an explicit `match`; the live-error
+    /// side pays the runtime resolver cost on every call, so a caller
+    /// who reads the axis more than once should cache the result or
+    /// route through the captured envelope.
+    #[must_use]
+    pub fn attribution_confidence(&self) -> Option<AttributionConfidence> {
+        self.failing_attribution()
+            .map(FailingSourceAttribution::confidence)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -10550,6 +10606,127 @@ mod tests {
         };
         assert!(
             err.metadata_axis().is_none(),
+            "no metadata → no attribution",
+        );
+    }
+
+    // ---- ShikumiError::attribution_confidence tests ----
+
+    #[test]
+    fn shikumi_error_attribution_confidence_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::attribution_confidence`
+        // must equal the chained composition
+        // `self.failing_attribution().map(|a| a.confidence())` on every
+        // error whose attribution resolves to a known confidence. Pins
+        // the API-symmetry contract: the live-error side one-hop
+        // accessor is a pure forwarder of the envelope-side confidence
+        // projection, so a future refactor of either half is bound to
+        // move the other in lockstep. Peer of
+        // `shikumi_error_layer_kind_forwards_through_failing_attribution`
+        // and
+        // `shikumi_error_metadata_axis_forwards_through_failing_attribution`
+        // on the sibling (exact × fallback) axis.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(serde::Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // File-axis attribution: FileBySource resolves at Exact
+        // confidence — figment's typed Source::File pins the layer by
+        // direct equality, not by uniqueness/elimination.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.attribution_confidence(),
+            err_file
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::confidence),
+        );
+        assert_eq!(
+            err_file.attribution_confidence(),
+            Some(AttributionConfidence::Exact),
+        );
+
+        // Defaults-axis attribution: DefaultsByCodeUniqueness resolves
+        // at Fallback confidence — figment attaches Source::Code
+        // (generic to any code-serialized provider), so the rule that
+        // names the defaults layer is code-uniqueness-based, not a
+        // direct source-equality match.
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        assert_eq!(
+            err_def.attribution_confidence(),
+            err_def
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::confidence),
+        );
+        assert_eq!(
+            err_def.attribution_confidence(),
+            Some(AttributionConfidence::Fallback),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_attribution_confidence_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the confidence projection must be None. Peer of
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants`
+        // on the sibling axis, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the (exact ×
+        // fallback) confidence side.
+        assert!(
+            super::synthetic_parse_error()
+                .attribution_confidence()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .attribution_confidence()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.attribution_confidence().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .attribution_confidence()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .attribution_confidence()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_attribution_confidence_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so attribution_confidence must be
+        // None. Peer of
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_metadata_axis_none_for_extract_without_metadata`
+        // on the sibling axis, closing the same
+        // resolver-terminates-in-None branch on the confidence-axis
+        // side.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.attribution_confidence().is_none(),
             "no metadata → no attribution",
         );
     }
