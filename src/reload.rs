@@ -886,8 +886,17 @@ impl ReloadFailure {
     /// classification at every consumer's exhaustive match, in
     /// lockstep with the partition surfaced on
     /// [`crate::ShikumiError`].
+    ///
+    /// `const`-callable — the projection body reads the `Copy`
+    /// [`Self::kind`] field through the already-`const`
+    /// [`ShikumiErrorKind::is_figment_bearing`] predicate and probes
+    /// [`Self::field_path`] with the `const` [`Vec::is_empty`]
+    /// primitive (stabilized const in Rust 1.87, below this crate's
+    /// 1.89 MSRV), so no runtime allocator or trait-object dispatch is
+    /// reached on any of the three branches. Welded by
+    /// [`tests::reload_failure_field_path_localization_is_const_callable`].
     #[must_use]
-    pub fn field_path_localization(&self) -> FieldPathLocalization {
+    pub const fn field_path_localization(&self) -> FieldPathLocalization {
         if self.kind.is_figment_bearing() {
             if self.field_path.is_empty() {
                 FieldPathLocalization::FigmentUnlocalized
@@ -2550,6 +2559,106 @@ mod tests {
                 "captured localization must mirror source localization for {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn reload_failure_field_path_localization_is_const_callable() {
+        // Weld the const-callability of `ReloadFailure::field_path_localization`
+        // — the tri-state closed-enum classification over the
+        // (kind × field_path.is_empty()) pair at the cross-thread
+        // observable envelope altitude — at compile time. Sits on
+        // `impl ReloadFailure` alongside `Self::kind`
+        // (kind axis, const since `9bc4eb7`) and the four Some-iff-
+        // attribution forwarders (rule / layer_kind / metadata_axis /
+        // confidence, const-lifted through the `d29a3f9` and
+        // `57bb750` quartet welds); this lift extends the const-
+        // callability envelope on the same `impl` block from the
+        // `Copy`-field-only projections onto the ONE projection that
+        // reaches for a `Vec::is_empty` probe on `Self::field_path`.
+        //
+        // The `Vec::is_empty` primitive stabilized as `const fn` in
+        // Rust 1.87 (below this crate's 1.89 MSRV per Cargo.toml),
+        // so the body — a nested `if` over `kind.is_figment_bearing()`
+        // (const since `4b00851` on the underlying `ShikumiErrorKind`
+        // partition) and `field_path.is_empty()` — is const-eligible
+        // on every path. Distinct from every prior envelope-altitude
+        // const-lift, which touched only `Copy` scalar fields
+        // (`self.kind`, `self.attribution_rule`, `self.failing_source`):
+        // this is the first envelope-altitude projection that probes
+        // a `Vec` field through a const-fn primitive.
+        //
+        // Two of the three `FieldPathLocalization` variants are
+        // reachable at const-eval time: `NotApplicable` (a non-
+        // figment-bearing kind — `NotFound` / `Validation`) and
+        // `FigmentUnlocalized` (the sole figment-bearing kind `Extract`
+        // with an empty `Vec<String>` field_path, since `String::new()`
+        // stays const-constructible but a non-empty `Vec<String>` does
+        // not — no const `String` payloads). The third variant,
+        // `Localized`, is reached only at runtime through a real
+        // figment extraction failure — pinned by the sibling test
+        // `field_path_localization_localized_for_real_yaml_extract`;
+        // welding the const-callability of the projection function
+        // covers all three branches under the const-fn body identity.
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as the sibling
+        // `reload_failure_kind_is_const_callable` weld:
+        // `ReloadFailure` carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`, `Option<ConfigSource>`),
+        // so a `const REL: ReloadFailure = ...; const LOC =
+        // REL.field_path_localization();` spelling drops the const
+        // value after the localization projection and rejects. A
+        // `static REL: ReloadFailure` is never dropped, so borrowing
+        // `&REL` for the `&self` receiver in a `const` initializer
+        // stays inside the const-eval envelope.
+        static NOT_FOUND_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::NotFound,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static EXTRACT_EMPTY_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static VALIDATION_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Validation,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        const NOT_FOUND_LOC: FieldPathLocalization = NOT_FOUND_REL.field_path_localization();
+        const EXTRACT_EMPTY_LOC: FieldPathLocalization =
+            EXTRACT_EMPTY_REL.field_path_localization();
+        const VALIDATION_LOC: FieldPathLocalization = VALIDATION_REL.field_path_localization();
+
+        assert_eq!(NOT_FOUND_LOC, FieldPathLocalization::NotApplicable);
+        assert_eq!(EXTRACT_EMPTY_LOC, FieldPathLocalization::FigmentUnlocalized);
+        assert_eq!(VALIDATION_LOC, FieldPathLocalization::NotApplicable);
+
+        // Cross-check: the const-fn projection stays pointwise agreed
+        // with the runtime-side `rel.field_path_localization()` call
+        // over the three const-welded arms. Redundant with the
+        // pointwise pin
+        // `field_path_localization_agrees_with_underlying_error_pointwise`
+        // (which welds the const-fn projection against the underlying
+        // `ShikumiError::field_path_localization`), but this pin
+        // catches a future edit that shifted the const-fn body away
+        // from the runtime-fn body on any of the three welded arms.
+        assert_eq!(NOT_FOUND_LOC, NOT_FOUND_REL.field_path_localization());
+        assert_eq!(
+            EXTRACT_EMPTY_LOC,
+            EXTRACT_EMPTY_REL.field_path_localization()
+        );
+        assert_eq!(VALIDATION_LOC, VALIDATION_REL.field_path_localization());
     }
 
     #[test]
