@@ -1497,7 +1497,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             optional = true;
             usesDefaultFeatures = false;
           }
@@ -4424,7 +4424,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             usesDefaultFeatures = false;
           }
           {
@@ -4460,7 +4460,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             usesDefaultFeatures = false;
             features = [ "tls12" ];
           }
@@ -7630,7 +7630,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -7746,7 +7746,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -8110,7 +8110,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             optional = true;
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
@@ -8527,11 +8527,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "log" "logging" "tls12" ];
       };
-      "rustls 0.23.43" = rec {
+      "rustls 0.23.44" = rec {
         crateName = "rustls";
-        version = "0.23.43";
+        version = "0.23.44";
         edition = "2021";
-        sha256 = "01nsagj78r88pifaz55ln1rw31py5n00h7bnw58h3g1aw1n3i0q2";
+        sha256 = "1fmjgb3b4liqm066ir13cr533zpasi2y2f8i0bphlfic7xn5j9b7";
         dependencies = [
           {
             name = "aws-lc-rs";
@@ -9470,7 +9470,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.854";
+        version = "0.1.855";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10484,7 +10484,7 @@ rec {
         dependencies = [
           {
             name = "rustls";
-            packageId = "rustls 0.23.43";
+            packageId = "rustls 0.23.44";
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
