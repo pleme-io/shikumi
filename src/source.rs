@@ -29642,6 +29642,66 @@ impl<'a> FigmentSourceTag<'a> {
         }
     }
 
+    /// The canonical lowercase label of this tag —
+    /// `"file"` for [`Self::File`] regardless of the inner borrowed
+    /// [`Path`] payload, `"code"` for [`Self::Code`] regardless of the
+    /// inner `&'static Location<'static>` payload, `"custom"` for
+    /// [`Self::Custom`] regardless of the inner borrowed string payload.
+    /// Matches the canonical labels carried by
+    /// [`FigmentSourceKind::as_str`] one altitude down on the same
+    /// figment-Source axis.
+    ///
+    /// Tag-side sibling of [`FigmentSourceKind::as_str`]: the payload-
+    /// bearing [`FigmentSourceTag`] value projects to the same
+    /// `&'static str` canonical label as its kind-side variant tag,
+    /// without paying the [`Self::kind`] hop at the call site. Direct-
+    /// match discipline (no `self.kind().as_str()` delegation in the
+    /// body) so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → label) projection — a future edit that
+    /// shifts the mapping on ONE declaration surface (this tag-side
+    /// match, the kind-side inherent match, the canonical wire form)
+    /// but not the others diverges at the pointwise-agreement pin
+    /// [`tests::figment_source_tag_as_str_agrees_with_kind_as_str_pointwise`]
+    /// on the first variant where they disagree, catching drift at
+    /// test time rather than at whichever consumer happened to be
+    /// observed first. Peer of the tag-side label projection on the
+    /// sibling shikumi-side [`ConfigSource::as_str`] (`6132ad6`) at the
+    /// payload-bearing altitude of the sealed `(tier, source)` pair's
+    /// source axis — the two ternary shapes (shikumi-source and
+    /// figment-source) now match on tag-side label projection as well
+    /// as on tag-side ordinal projection (`12cabdb`), cardinality,
+    /// closure discipline, and the tag-side sibling-predicate trio.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::File`] regardless of inner path content, every
+    /// [`Self::Code`] regardless of the inner location, and every
+    /// [`Self::Custom`] regardless of inner string content — is what
+    /// the pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the payload, and a future edit that changed any
+    /// payload-bearing arm here to inspect the inner value would
+    /// diverge from the kind-side and fail the pin. Distinct from the
+    /// payload-aware rendering of a full `figment::Source` (which
+    /// would print the inner path or string on `File(_)` / `Custom(_)`);
+    /// this projection is the canonical class label alone.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`FigmentSourceKind::as_str`], the peer tag-side sibling
+    /// on the shikumi-source axis [`ConfigSource::as_str`], and every
+    /// other projection already carried on this `impl FigmentSourceTag`
+    /// block ([`Self::kind`], [`Self::ordinal`], [`Self::is_file`] /
+    /// [`Self::is_code`] / [`Self::is_custom`], [`Self::as_file_path`] /
+    /// [`Self::as_custom`], [`Self::attribution_axis`], all
+    /// `pub const fn`). Pinned by
+    /// [`tests::figment_source_tag_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::File(_) => "file",
+            Self::Code(_) => "code",
+            Self::Custom(_) => "custom",
+        }
+    }
+
     /// [`crate::AttributionAxis`] of this tag — constant
     /// [`crate::AttributionAxis::MetadataSource`] for every variant,
     /// since [`FigmentSourceTag`] *is* the typed reading of
@@ -98081,6 +98141,148 @@ mod tests {
         let custom = figment::Source::Custom("http://x/y".to_owned());
         let custom_tag = FigmentSourceTag::classify(&custom).expect("Custom must classify");
         assert_eq!(ordinal_of(custom_tag), 2);
+    }
+
+    #[test]
+    fn figment_source_tag_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → canonical label)
+        // projection at the payload-bearing altitude of the figment-
+        // Source axis: `tag.as_str() == tag.kind().as_str()` for every
+        // FigmentSourceTag value, across every canonical sample shape.
+        // Peer of `config_source_as_str_agrees_with_kind_as_str_pointwise`
+        // one primitive over on the sibling shikumi-source axis, and
+        // idiom-peer of `figment_source_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one projection over on the same tag-side altitude. The
+        // kind-side has no payload visibility, so a future edit that
+        // peeked at the inner borrowed Path / Location / str on either
+        // declaration surface would diverge here on the first shape
+        // where the tag-side and kind-side disagree. Also pins the
+        // payload-independence contract: the answer is the same for
+        // every `File(path)` regardless of the inner borrowed path,
+        // every `Code(loc)` regardless of the inner location, and
+        // every `Custom(s)` regardless of the inner borrowed string,
+        // so the tag-side declaration is forbidden from consulting
+        // any payload.
+        for src in figment_source_tag_canonical_samples() {
+            let tag =
+                FigmentSourceTag::classify(&src).expect("every canonical sample must classify");
+            assert_eq!(
+                tag.as_str(),
+                tag.kind().as_str(),
+                "as_str must agree tag ↔ kind for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_tag_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the (variant → canonical label)
+        // projection at the payload-bearing altitude: `File(_)` yields
+        // "file", `Code(_)` yields "code", `Custom(_)` yields "custom"
+        // regardless of the inner borrowed payload. Payload-independence
+        // sub-pin on the File arm: three representative path payloads
+        // (absolute, relative, empty) all yield the same label ("file").
+        // Payload-independence sub-pin on the Custom arm: three
+        // representative string payloads (empty, URL-shaped, arbitrary
+        // text) all yield the same label ("custom"). The Code arm is
+        // exercised through the canonical sample above, since a
+        // `&'static Location<'static>` cannot be synthesized in a test
+        // — `figment::providers::Serialized` attaches one via its
+        // `Provider::metadata`. Peer of
+        // `figment_source_kind_as_str_yields_canonical_lowercase_names`
+        // one altitude down on the same axis, plus
+        // `config_source_as_str_yields_canonical_lowercase_names` one
+        // primitive over on the sibling shikumi-source axis. Guards
+        // against a swap in the tag-side match arms that would still
+        // pass the pointwise-agreement pin if the kind-side inherent
+        // match was edited in the same drift.
+        for path in ["/etc/app/app.yaml", "relative/path.toml", ""] {
+            let src = figment::Source::File(PathBuf::from(path));
+            let tag = FigmentSourceTag::classify(&src).expect("File must classify");
+            assert_eq!(
+                tag.as_str(),
+                "file",
+                "File({path:?}) label must be \"file\" regardless of payload",
+            );
+        }
+        // Code arm through the Serialized-provider round trip: the
+        // metadata's Source::Code is the only construction path for a
+        // `&'static Location` in shikumi.
+        {
+            use figment::Provider;
+            let serialized =
+                figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+            let src = serialized
+                .metadata()
+                .source
+                .as_ref()
+                .expect("Serialized attaches a Source::Code")
+                .clone();
+            let tag = FigmentSourceTag::classify(&src).expect("Code must classify");
+            assert_eq!(tag.as_str(), "code", "Code(_) label must be \"code\"");
+        }
+        for s in ["", "http://x/y", "vault://kv/app"] {
+            let src = figment::Source::Custom(s.to_owned());
+            let tag = FigmentSourceTag::classify(&src).expect("Custom must classify");
+            assert_eq!(
+                tag.as_str(),
+                "custom",
+                "Custom({s:?}) label must be \"custom\" regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_tag_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side canonical label is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`FigmentSourceKind::as_str`) and its peer tag-side
+        // projection on the sibling shikumi-source axis of the sealed
+        // (tier, source) primitive (`ConfigSource::as_str`, `6132ad6`).
+        //
+        // A `const fn label_of(FigmentSourceTag<'_>) -> &'static str`
+        // wrapper delegating to `tag.as_str()` pins the const-fn
+        // signature at the language level: the moment
+        // `FigmentSourceTag::as_str` loses its `const` qualifier (a
+        // future edit that reaches for a non-const helper inside the
+        // three-arm exhaustive match — an allocator, a runtime lookup,
+        // a borrowed Path / str / Location inspection on any payload-
+        // bearing arm) the wrapper below fails to compile at THAT line
+        // before the drift can reach downstream const-context consumers
+        // that assumed const-ness through this projection (a `const`
+        // per-figment-source label lookup table sized by
+        // `axis_cardinality::<FigmentSourceKind>()` and indexed by the
+        // tag-side altitude without a `.kind()` hop, a `static`
+        // log-field constant for a compile-time-known tag's canonical
+        // name, an attestation manifest whose per-figment-source label
+        // slots on the tag-side altitude are initialized under `const`).
+        const fn label_of(tag: FigmentSourceTag<'_>) -> &'static str {
+            tag.as_str()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream. Includes payload-bearing `File(_)`,
+        // `Code(_)`, and `Custom(_)` cases so the const-ness of every
+        // payload arm cannot regress without failing here.
+        let file = figment::Source::File(PathBuf::from("/x.yaml"));
+        let file_tag = FigmentSourceTag::classify(&file).expect("File must classify");
+        assert_eq!(label_of(file_tag), "file");
+        {
+            use figment::Provider;
+            let serialized =
+                figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+            let code = serialized
+                .metadata()
+                .source
+                .as_ref()
+                .expect("Serialized attaches a Source::Code")
+                .clone();
+            let code_tag = FigmentSourceTag::classify(&code).expect("Code must classify");
+            assert_eq!(label_of(code_tag), "code");
+        }
+        let custom = figment::Source::Custom("http://x/y".to_owned());
+        let custom_tag = FigmentSourceTag::classify(&custom).expect("Custom must classify");
+        assert_eq!(label_of(custom_tag), "custom");
     }
 
     // ---- FigmentNameTag::classify ----
