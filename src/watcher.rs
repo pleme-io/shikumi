@@ -132,6 +132,57 @@ impl WatchEventClass {
         }
     }
 
+    /// Event-level peer of [`Self::classify`] — classify a raw
+    /// [`notify::Event`] into its reload-relevance class by projecting
+    /// through the event's `kind` field.
+    ///
+    /// Pointwise equal to `Self::classify(&event.kind)` — pinned by
+    /// [`tests::classify_event_agrees_with_classify_of_event_kind_pointwise`]
+    /// — so a caller with an [`notify::Event`] in hand reaches for the
+    /// reload-relevance class at the event's own altitude, without the
+    /// `.kind` projection every event-level call site previously wrote by
+    /// hand. `Self::classify` remains the kind-side entry (a caller with
+    /// only an [`notify::EventKind`], no [`notify::Event`], keeps calling
+    /// through it); the two form a projection pair on the event → kind
+    /// axis at the classifier surface, mirroring the same event-side ↔
+    /// kind-side pair the fleet-idiom sibling ladders carry on their own
+    /// primitives.
+    ///
+    /// One source of truth for the "classify an [`notify::Event`]" step
+    /// every watcher-driven [`crate::ConfigStore`] closure body performed
+    /// as `Self::classify(&event.kind)`: the crate-internal
+    /// [`should_reload_on_event`] helper now routes through this
+    /// event-level entry, and a future watcher-driven consumer — a
+    /// broadcast-subscription reload variant, a per-tenant reload variant,
+    /// the [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+    /// push-side reload variant — that owns its own dispatch closure
+    /// classifies the incoming [`notify::Event`] at this one site instead
+    /// of open-coding the `.kind` projection at each. The classifier
+    /// itself remains the pure function on [`notify::EventKind`]; the
+    /// event-level shortcut adds no semantic surface, only the
+    /// altitude-appropriate name for the classify step at the raw
+    /// [`notify::Event`] altitude.
+    ///
+    /// `const`-callable — the body is a single call to the sibling
+    /// const-fn [`Self::classify`] on a borrowed [`notify::EventKind`]
+    /// field access, both of which the const-fn discipline the classifier
+    /// surface already carries permits. Composes with the const-fn
+    /// predicate quartet ([`Self::is_reload`] / [`Self::is_removed`] /
+    /// [`Self::is_ignored`] / [`Self::is_file_mutation`]) end-to-end in
+    /// const positions, at the event's altitude the same way the shipped
+    /// [`Self::classify`] already composes at the kind's altitude — a
+    /// downstream `const IS_RELOAD: bool =
+    /// WatchEventClass::classify_event(&EVENT).is_reload();` binding needs
+    /// no runtime call, once [`notify::Event`] itself is const-
+    /// constructible (`notify::Event::new` is not const today, so the
+    /// end-to-end weld pin lives on `Self::classify`; the classifier arm
+    /// this shortcut adds carries its own const-fn discipline forward for
+    /// that day).
+    #[must_use]
+    pub const fn classify_event(event: &notify::Event) -> Self {
+        Self::classify(&event.kind)
+    }
+
     /// Whether this class warrants re-reading the config — `true` exactly
     /// on [`Self::Reload`].
     ///
@@ -572,7 +623,7 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
 /// performed — so the substrate lift adds zero per-call overhead the
 /// compiler cannot inline away.
 pub(crate) fn should_reload_on_event(event: &notify::Event) -> bool {
-    match WatchEventClass::classify(&event.kind) {
+    match WatchEventClass::classify_event(event) {
         WatchEventClass::Reload => {}
         WatchEventClass::Removed => {
             info!("config file removed, continuing to watch for replacement...");
@@ -946,6 +997,114 @@ mod tests {
             EventKind::Remove(RemoveKind::Other),
         ] {
             assert_eq!(WatchEventClass::classify(&kind), WatchEventClass::Removed);
+        }
+    }
+
+    #[test]
+    fn classify_event_agrees_with_classify_of_event_kind_pointwise() {
+        // Event-level ↔ kind-level classifier agreement pin: for every
+        // kind the closed-partition classifier reasons about, the shortcut
+        // `WatchEventClass::classify_event(&notify::Event::new(kind))`
+        // returns exactly what `WatchEventClass::classify(&kind)` returns.
+        //
+        // The event-level entry is a pure `.kind`-projected call through
+        // the sibling `Self::classify`; a future edit that drifted it
+        // (short-circuited on `event.paths.is_empty()`, inspected
+        // `event.attrs`, or classified partially without recursing through
+        // the kind-level classifier) diverges here on the first kind the
+        // two disagree on, before drifting through the crate-internal
+        // `should_reload_on_event` helper the two watcher-driven
+        // `ConfigStore` constructors dispatch through.
+        //
+        // Kind coverage exercises every arm of the reload-relevance
+        // ternary partition — every `DataChange` precision on the widened
+        // Linux/inotify-safe reload arm (`Any`, `Content`, `Size`,
+        // `Other`), the write-time `MetadataKind` alone on the metadata
+        // reload arm, the non-write metadata precisions and rename Modify
+        // arm on the Ignored side, every `CreateKind` and `RemoveKind`
+        // precision on their own arms, and the catch-alls `EventKind::Any`
+        // and `EventKind::Other`. Idiom-peer of the tag-side pointwise
+        // agreement pins already carried on the classify surface (e.g.
+        // `should_reload_on_event_agrees_with_classify_should_reload`).
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Create(CreateKind::Other),
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Other)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Ownership)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Other)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Modify(ModifyKind::Other),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Remove(RemoveKind::Other),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind);
+            let via_event = WatchEventClass::classify_event(&event);
+            let via_kind = WatchEventClass::classify(&kind);
+            assert_eq!(
+                via_event, via_kind,
+                "classify_event must agree with classify(&event.kind) on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn classify_event_agreement_is_invariant_across_carried_paths_and_attrs() {
+        // The event-level shortcut classifies purely on the projected
+        // `event.kind` field — the class does NOT depend on which of
+        // `event.paths` the notify backend attached, on whether those
+        // paths resolve as symlinks, or on any `event.attrs` payload. Pins
+        // the projection contract at the event's altitude: a future edit
+        // that widened the shortcut to inspect `event.paths` or
+        // `event.attrs` (e.g. a "was any path a symlink?" side-condition
+        // on the reload arm) would drift the return from the kind-level
+        // classifier on the same event, and the invariance breaks here
+        // before drifting through any watcher-driven `ConfigStore`
+        // constructor dispatch site.
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("target.yaml");
+        fs::write(&target, "key: value").unwrap();
+        let link = dir.path().join("link.yaml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+        ] {
+            let expected = WatchEventClass::classify(&kind);
+            // Zero paths.
+            let bare = notify::Event::new(kind);
+            // One regular-file path.
+            let with_regular = notify::Event::new(kind).add_path(target.clone());
+            // One symlink path.
+            let with_link = notify::Event::new(kind).add_path(link.clone());
+            // Mixed regular + symlink paths.
+            let with_mixed = notify::Event::new(kind)
+                .add_path(target.clone())
+                .add_path(link.clone());
+            for event in [&bare, &with_regular, &with_link, &with_mixed] {
+                assert_eq!(
+                    WatchEventClass::classify_event(event),
+                    expected,
+                    "classify_event on {kind:?} must not depend on carried paths",
+                );
+            }
         }
     }
 
