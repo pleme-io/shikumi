@@ -531,6 +531,50 @@ impl WatchEventClass {
             Self::Ignored => "ignored",
         }
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this reload-relevance
+    /// class — `0` for [`Self::Reload`], `1` for [`Self::Removed`], `2` for
+    /// [`Self::Ignored`]. The declaration order carried by [`Self::ALL`],
+    /// which is also the derived `Ord` lex order over [`Self::ALL`]
+    /// (`Reload < Removed < Ignored`) pinned by
+    /// [`tests::watch_event_class_ord_matches_all_declaration_order`].
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over this
+    /// closed axis. `axis_ordinal` is not `const` (it delegates to
+    /// [`Iterator::position`] over a generic [`crate::ClosedAxis`] bound,
+    /// both non-`const` on stable Rust today), so a caller wanting the
+    /// reload-relevance ordinal in a `const` context — a compile-time-
+    /// selected reload-dispatch table keyed on the event class, a `const`
+    /// per-class bitset sized by `axis_cardinality::<WatchEventClass>()`,
+    /// an attestation manifest whose per-class slots are initialized under
+    /// `const` — reached through a `let` binding at runtime instead of the
+    /// inherent seam. This `match`-based inherent, keyed on the three
+    /// closed variants directly, gives the same `usize` answer under
+    /// `const` — pinned pointwise across every variant by
+    /// [`tests::watch_event_class_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a `usize`
+    /// precedence position), both delegate the declaration-order source of
+    /// truth to [`Self::ALL`], and together they name the reload-relevance
+    /// class's scalar label and scalar position under `const`.
+    ///
+    /// Idiom-peer of [`crate::ConfigSourceKind::ordinal`] on the source-
+    /// layer axis and [`crate::ConfigTierKind::ordinal`] on the tier axis
+    /// of the sealed `(tier, source)` primitive — same `match`-on-`Self`
+    /// shape, same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract. First landing of the ordinal-projection
+    /// idiom on a `watcher.rs`-scoped closed-primitive axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Reload => 0,
+            Self::Removed => 1,
+            Self::Ignored => 2,
+        }
+    }
 }
 
 impl ClosedAxis for WatchEventClass {
@@ -2196,6 +2240,117 @@ mod tests {
         assert_eq!(WatchEventClass::Reload.as_str(), "reload");
         assert_eq!(WatchEventClass::Removed.as_str(), "removed");
         assert_eq!(WatchEventClass::Ignored.as_str(), "ignored");
+    }
+
+    #[test]
+    fn watch_event_class_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the three
+        // declared positions verbatim, in strictly ascending declaration
+        // order (Reload → Removed → Ignored). Guards against a swap in
+        // the match arms that would still pass
+        // `watch_event_class_ordinal_agrees_with_axis_ordinal_pointwise`
+        // if the `WatchEventClass::ALL` slice was edited in the same
+        // drift. Peer of `config_source_kind_ordinal_reuses_declaration_order`
+        // on the sibling source-kind axis.
+        assert_eq!(WatchEventClass::Reload.ordinal(), 0);
+        assert_eq!(WatchEventClass::Removed.ordinal(), 1);
+        assert_eq!(WatchEventClass::Ignored.ordinal(), 2);
+    }
+
+    #[test]
+    fn watch_event_class_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `WatchEventClass::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `WatchEventClass::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Idiom-peer of
+        // `config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling source-kind axis.
+        for &class in WatchEventClass::ALL {
+            assert_eq!(
+                class.ordinal(),
+                crate::axis_ordinal(class),
+                "inherent ordinal must agree with axis_ordinal for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_ordinal_agrees_with_all_index_pointwise() {
+        // Second independent witness: the inherent ordinal equals the
+        // index in `WatchEventClass::ALL` at every declared position.
+        // A future edit that shifts the match arms without shifting
+        // `ALL` (or vice versa) diverges here on the first variant
+        // where they disagree — catching the drift at test time
+        // rather than at whichever downstream consumer happened to
+        // observe the ordinal first.
+        for (i, &class) in WatchEventClass::ALL.iter().enumerate() {
+            assert_eq!(
+                class.ordinal(),
+                i,
+                "inherent ordinal must equal ALL-index for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_ordinal_agrees_with_ord_lex_over_all_pairwise() {
+        // Cross-axis agreement pin: since `WatchEventClass::ALL` is
+        // strictly increasing under the derived `Ord` (per
+        // `watch_event_class_ord_matches_all_declaration_order`) and
+        // the inherent `ordinal` equals the `ALL`-index (per
+        // `watch_event_class_ordinal_agrees_with_all_index_pointwise`),
+        // the ordinal totally orders every pair the same way `Ord`
+        // does. This closes the (Ord × ordinal × ALL-index) triangle
+        // at one named pin so a future drift on any single leg cannot
+        // survive the other two.
+        use std::cmp::Ordering;
+        for &a in WatchEventClass::ALL {
+            for &b in WatchEventClass::ALL {
+                let expected = a.ordinal().cmp(&b.ordinal());
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "Ord must agree with ordinal.cmp for ({a:?}, {b:?})",
+                );
+                if a.ordinal() == b.ordinal() {
+                    assert_eq!(
+                        a, b,
+                        "equal ordinals must witness equal variants ({a:?} vs {b:?})",
+                    );
+                    assert_eq!(a.cmp(&b), Ordering::Equal);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn watch_event_class_ordinal_is_const_callable() {
+        // Weld the const-callability of the inherent `ordinal` at
+        // compile time: a runtime call would still compile if this
+        // method lost its `const` qualifier, but a `const _: usize
+        // = WatchEventClass::_.ordinal()` weld fails to compile at
+        // THAT line before the drift can reach downstream `const`
+        // consumers (a compile-time-selected reload-dispatch table
+        // keyed on the event class, a `const` per-class bitset sized
+        // by `axis_cardinality::<WatchEventClass>()`, an attestation
+        // manifest whose per-class slots are initialized under
+        // `const`). Mirrors the shape of
+        // `config_source_kind_ordinal_is_const_callable` on the
+        // sibling source-kind axis.
+        const RELOAD_ORD: usize = WatchEventClass::Reload.ordinal();
+        const REMOVED_ORD: usize = WatchEventClass::Removed.ordinal();
+        const IGNORED_ORD: usize = WatchEventClass::Ignored.ordinal();
+
+        assert_eq!(RELOAD_ORD, 0);
+        assert_eq!(REMOVED_ORD, 1);
+        assert_eq!(IGNORED_ORD, 2);
     }
 
     #[test]
