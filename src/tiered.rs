@@ -23352,6 +23352,59 @@ impl DiffLineKind {
     pub const fn is_context(self) -> bool {
         matches!(self, Self::Context)
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this diff-cell
+    /// kind — `0` for [`Self::Removed`], `1` for [`Self::Added`], `2`
+    /// for [`Self::Context`]. The declaration order of [`Self::ALL`],
+    /// which is also the operator-facing rendering order the unified-
+    /// diff renderer emits within a hunk (removed lines first, then
+    /// added, then context) and the stable sort key
+    /// [`ConfigDiff::render_unified`] relies on for deterministic
+    /// per-tier attestation manifests.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both of which are non-`const` in stable Rust today), so
+    /// a caller wanting the diff-cell-kind ordinal in a `const` context
+    /// reached through a `let` binding at runtime instead of the
+    /// inherent seam. This `match`-based inherent, keyed on the three
+    /// closed variants directly, gives the same `usize` answer under
+    /// `const` — pinned pointwise across every variant by
+    /// [`tests::diff_line_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] and
+    /// [`Self::glyph`] on the same primitive: all three are `Copy`-
+    /// taking `const fn`s that project the closed-enum tag to a scalar,
+    /// all three delegate the declaration-order source of truth to
+    /// [`Self::ALL`], and together they name the diff-cell kind's
+    /// scalar label, scalar glyph, and scalar precedence position under
+    /// `const`. Peer of [`crate::ConfigTierKind::ordinal`] on the
+    /// tier-kind closed axis and [`crate::ConfigSourceKind::ordinal`]
+    /// on the source-kind closed axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same const-
+    /// callability contract, closed for the FIRST time on a
+    /// `tiered.rs`-scoped diff-cell closed-primitive axis by this
+    /// landing.
+    ///
+    /// Consumers that need the diff-cell kind position under `const`
+    /// (a compile-time-selected per-kind dispatch keyed on the ordinal,
+    /// a `const` per-diff-cell-kind bitset sized by
+    /// `axis_cardinality::<DiffLineKind>()`, a `const` attestation
+    /// manifest whose per-cell slots are initialized in declaration
+    /// order at compile time, a dense per-kind histogram indexed by
+    /// ordinal without a `HashMap<DiffLineKind, usize>` per call site)
+    /// inherit const-callability at zero call-site churn now that the
+    /// inherent projection is const from birth.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Removed => 0,
+            Self::Added => 1,
+            Self::Context => 2,
+        }
+    }
 }
 
 impl crate::ClosedAxis for DiffLineKind {
@@ -32707,6 +32760,70 @@ mod tests {
         assert_eq!(DiffLineKind::Removed.glyph(), '-');
         assert_eq!(DiffLineKind::Added.glyph(), '+');
         assert_eq!(DiffLineKind::Context.glyph(), ' ');
+    }
+
+    #[test]
+    fn diff_line_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `DiffLineKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `DiffLineKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Peer of `config_tier_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the tier-kind axis and
+        // `config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the source-kind axis — same contract lifted to the
+        // diff-cell axis.
+        for &kind in DiffLineKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the three
+        // declared positions verbatim, in strictly ascending diff-cell
+        // rendering precedence (removed → added → context). Guards
+        // against a swap in the match arms that would still pass
+        // `..._agrees_with_axis_ordinal_pointwise` if the
+        // `DiffLineKind::ALL` slice was edited in the same drift.
+        assert_eq!(DiffLineKind::Removed.ordinal(), 0);
+        assert_eq!(DiffLineKind::Added.ordinal(), 1);
+        assert_eq!(DiffLineKind::Context.ordinal(), 2);
+    }
+
+    #[test]
+    fn diff_line_kind_ordinal_is_const_callable() {
+        // Weld the const-callability of the inherent `ordinal` at
+        // compile time: a runtime call would still compile if this
+        // method lost its `const` qualifier, but a `const _: usize
+        // = DiffLineKind::_.ordinal()` weld fails to compile at
+        // THAT line before the drift can reach downstream `const`
+        // consumers (a compile-time-selected per-diff-cell-kind
+        // dispatch keyed on the ordinal, a `const` per-kind bitset
+        // sized by `axis_cardinality::<DiffLineKind>()`, an
+        // attestation manifest whose per-kind slots are initialized
+        // under `const`). Mirrors the shape of
+        // `config_source_kind_ordinal_is_const_callable` on the
+        // source-kind axis and
+        // `config_tier_kind_ordinal_is_const_callable` on the
+        // tier-kind axis.
+        const REMOVED_ORD: usize = DiffLineKind::Removed.ordinal();
+        const ADDED_ORD: usize = DiffLineKind::Added.ordinal();
+        const CONTEXT_ORD: usize = DiffLineKind::Context.ordinal();
+
+        assert_eq!(REMOVED_ORD, 0);
+        assert_eq!(ADDED_ORD, 1);
+        assert_eq!(CONTEXT_ORD, 2);
     }
 
     #[test]
