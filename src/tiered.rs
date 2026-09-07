@@ -22897,6 +22897,59 @@ impl DiffLine {
             Self::Context(_) => ' ',
         }
     }
+
+    /// Canonical operator-facing lowercase name of the diff-line cell —
+    /// `"removed"` for [`Self::Removed`], `"added"` for [`Self::Added`],
+    /// `"context"` for [`Self::Context`] — regardless of the inner
+    /// [`String`] payload; tag-side sibling of [`DiffLineKind::as_str`].
+    ///
+    /// One source of truth for the (variant → label) projection at the
+    /// payload-bearing [`DiffLine`] altitude, closing the tag ↔ kind
+    /// projection pair on the label axis alongside the existing
+    /// `is_*` predicate quintet ([`Self::is_removed`] /
+    /// [`Self::is_added`] / [`Self::is_context`] / [`Self::is_changed`]
+    /// / [`Self::is_unchanged`]) and the [`Self::glyph`] projection —
+    /// both of which already carry the tag ↔ kind projection pair. Before
+    /// this lift, every operator-facing consumer with a [`DiffLine`] in
+    /// hand had to route the label through the `.kind()` projection first
+    /// — a per-line structured-log emitter tagging each line with its
+    /// diff-cell class name, a per-tier attestation manifest recording
+    /// the diff-cell kind histogram between two config tiers, a
+    /// Markdown-fenced diff renderer prefixing each line with its
+    /// operator-facing class — would repeat the two-hop
+    /// `line.kind().as_str()` projection. With this primitive, the
+    /// tag-side call site reads `line.as_str()` at one hop.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Removed(text)` / `Added(text)` / `Context(text)` regardless of
+    /// text content — is what the pointwise-agreement pin locks in: the
+    /// kind-side has no [`String`] visibility, so a future edit that
+    /// peeked at the inner payload would diverge from
+    /// [`DiffLineKind::as_str`] on the same line and fail
+    /// [`tests::diff_line_as_str_agrees_with_kind_as_str_pointwise`].
+    ///
+    /// `const`-callable — the body is pure pattern matching over a
+    /// borrowed [`Self`] returning `&'static str` literals, so a
+    /// compile-time-known [`DiffLine`] projects to a compile-time-known
+    /// label. Peer of [`DiffLineKind::as_str`] (const since introduction)
+    /// at the payload-bearing altitude. Welded at compile time by
+    /// [`tests::diff_line_as_str_is_const_callable`].
+    ///
+    /// Idiom-peer of [`Self::glyph`] one axis over: same direct-match
+    /// discipline (no `.kind()` delegation in the body) so the tag-side
+    /// declaration is an independent load-bearing witness of the
+    /// (variant → label) projection, and a future edit that shifts the
+    /// mapping on ONE declaration surface but not the other diverges at
+    /// the pointwise-agreement pin on the first shape where they
+    /// disagree.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Removed(_) => "removed",
+            Self::Added(_) => "added",
+            Self::Context(_) => "context",
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -33378,6 +33431,85 @@ mod tests {
         assert_eq!(glyph_of(&DiffLine::Removed(String::new())), '-');
         assert_eq!(glyph_of(&DiffLine::Added(String::new())), '+');
         assert_eq!(glyph_of(&DiffLine::Context(String::new())), ' ');
+    }
+
+    #[test]
+    fn diff_line_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → label) projection:
+        // `line.as_str() == line.kind().as_str()` for every payload-
+        // bearing DiffLine value, across a payload-shape sweep that
+        // covers empty strings, whitespace-only, ASCII, multi-line,
+        // and non-ASCII text. Mirror of the tag ↔ kind pin
+        // `diff_line_glyph_agrees_with_kind_glyph_pointwise` one
+        // axis over. The kind-side has no String visibility, so a
+        // future edit that peeked at the payload on either
+        // declaration surface would diverge here on the first shape
+        // where the tag-side and kind-side disagree. Also pins the
+        // payload-independence contract: the answer is the same for
+        // every `Removed(text)` / `Added(text)` / `Context(text)`
+        // regardless of text content, so the tag-side declaration is
+        // forbidden from consulting the payload.
+        let lines = [
+            DiffLine::Removed("name: ''".into()),
+            DiffLine::Added("name: default-name".into()),
+            DiffLine::Context("size: 42".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Removed("  leading spaces".into()),
+            DiffLine::Added("multi\nline\nblob".into()),
+            DiffLine::Context("unicode: 仕組み".into()),
+        ];
+        for line in &lines {
+            assert_eq!(
+                line.as_str(),
+                line.kind().as_str(),
+                "as_str must agree tag ↔ kind for {line:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_as_str_yields_canonical_lowercase_names() {
+        // Per-variant polarity pin on the (variant → label)
+        // projection at the payload-bearing altitude: `Removed(_)`
+        // renders as `"removed"`, `Added(_)` as `"added"`, `Context(_)`
+        // as `"context"`, regardless of the inner String payload.
+        // Payload-independence sub-pin: empty, short, and whitespace-
+        // only text all render the same label. Peer of
+        // `diff_line_kind_as_str_yields_canonical_lowercase_names` one
+        // altitude down.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert_eq!(DiffLine::Removed(payload.into()).as_str(), "removed");
+            assert_eq!(DiffLine::Added(payload.into()).as_str(), "added");
+            assert_eq!(DiffLine::Context(payload.into()).as_str(), "context");
+        }
+    }
+
+    #[test]
+    fn diff_line_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side as_str is `pub const fn`,
+        // matching its kind-side sibling one altitude down. A
+        // `const fn label_of(&DiffLine) -> &'static str` wrapper
+        // delegating to `line.as_str()` pins the const-fn signature
+        // at the language level: the moment `DiffLine::as_str` loses
+        // its `const` qualifier (a future edit that reaches for a
+        // non-const helper inside the three-arm exhaustive match)
+        // the wrapper below fails to compile at THAT line before the
+        // drift can reach downstream const-context consumers that
+        // assumed const-ness through this projection. Peer of the
+        // kind-side sibling: `DiffLineKind::as_str` has been const
+        // since introduction; this pin puts the payload-bearing
+        // tag-side sibling on the same altitude.
+        const fn label_of(line: &DiffLine) -> &'static str {
+            line.as_str()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        assert_eq!(label_of(&DiffLine::Removed(String::new())), "removed");
+        assert_eq!(label_of(&DiffLine::Added(String::new())), "added");
+        assert_eq!(label_of(&DiffLine::Context(String::new())), "context");
     }
 
     #[test]
