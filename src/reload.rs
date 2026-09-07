@@ -2316,6 +2316,110 @@ mod tests {
     }
 
     #[test]
+    fn coordinates_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the coordinate triple
+        // (axis × layer-kind × confidence) projection on the
+        // cross-thread observable form: the captured envelope's
+        // `ReloadFailure::coordinates` projection mirrors the source
+        // error's `ShikumiError::coordinates` (the direct live-error
+        // accessor added alongside this test) byte-for-byte across
+        // every constructible ShikumiError variant. Peer of
+        // `attribution_name_kind_coordinates_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `attribution_source_kind_coordinates_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `file_provenance_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `figment_source_kind_agrees_with_underlying_error_pointwise`
+        // /
+        // `figment_name_tag_kind_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `layer_kind_agrees_with_underlying_error_pointwise` /
+        // `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // on the sibling axes, closing the same lossless-capture
+        // contract at the total-triple altitude — a future refactor of
+        // either side (the live `ShikumiError::coordinates` accessor or
+        // the captured `ReloadFailure::coordinates` field-forwarder) is
+        // bound to move the other in lockstep. This landing completes
+        // the cascade: every projection on the captured envelope
+        // `ReloadFailure` now has a matching one-hop accessor at the
+        // same altitude on the live-error side, and every accessor
+        // pair carries a pointwise-agreement pin.
+        //
+        // Exercises the two rule-axis boundary cases the pointwise
+        // contract must reproduce on both sides of the capture
+        // boundary: (a) a source-axis FileBySource attribution whose
+        // coordinate triple lands on
+        // (MetadataSource, File, Exact); (b) a name-axis EnvByPrefix
+        // attribution whose coordinate triple lands on the name-axis
+        // rule's own three coordinates. Unlike the partial joint-cell
+        // pointwise pins, both axes here surface Some — the total-map
+        // polarity of `coordinates` means the pointwise contract
+        // covers the Some-outer / Some-inner cell across both rule
+        // axes with no inner-None branch to distinguish.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.coordinates(),
+                err.coordinates(),
+                "captured coordinates must mirror source coordinates \
+                 for {err:?}",
+            );
+        }
+
+        // End-to-end pin on the source-axis branch: a real FileBySource
+        // Extract failure resolves to Some(rule) with
+        // coordinates == Some(FileBySource.coordinates()) on both
+        // sides — figment's built-in YAML provider attaches
+        // metadata.source as a File source, so the resolver dispatches
+        // to FileBySource on the MetadataSource axis and the
+        // total-triple projection recovers the rule's three
+        // coordinates through the captured rule slot.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_coords_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err_file = crate::provider::ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert!(err_file.failing_attribution().is_some());
+        assert_eq!(f_file.coordinates(), err_file.coordinates());
+        assert_eq!(
+            f_file.coordinates(),
+            Some(AttributionRule::FileBySource.coordinates()),
+        );
+
+        // End-to-end pin on the name-axis branch: an EnvByPrefix
+        // Extract failure resolves to Some(rule) with
+        // coordinates == Some(EnvByPrefix.coordinates()) on both sides.
+        // Both boundary probes surface Some here (unlike the partial
+        // joint-cell pins), pinning that neither rule axis collapses
+        // into the outer None-when-unattributed branch.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        let f_env = ReloadFailure::from_error(&err_env);
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(f_env.coordinates(), err_env.coordinates());
+        assert_eq!(
+            f_env.coordinates(),
+            Some(AttributionRule::EnvByPrefix.coordinates()),
+        );
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the

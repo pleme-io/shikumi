@@ -6412,6 +6412,82 @@ impl ShikumiError {
         self.failing_attribution()
             .and_then(FailingSourceAttribution::attribution_name_kind_coordinates)
     }
+
+    /// Coordinate triple [`AttributionCoordinates`]
+    /// (axis × layer-kind × confidence) of the rule that named the
+    /// blamed layer, or `None` when no attribution was recorded —
+    /// strict superset of
+    /// [`Self::failing_attribution`]`.map(FailingSourceAttribution::coordinates)`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, structured-log routers, attestation manifests) don't
+    /// re-derive the (rule → coordinate triple) total projection at
+    /// every observation site.
+    ///
+    /// Composes [`Self::metadata_axis`], [`Self::layer_kind`], and
+    /// [`Self::attribution_confidence`] into one [`Copy`] typescape
+    /// value (`Copy + Eq + Hash`) usable as a `HashMap` key, log label,
+    /// or attestation-manifest payload without consumers re-deriving
+    /// the triple at every observation site. The triple is total on
+    /// `Some(attribution)` (unlike the source-axis / name-axis joint
+    /// cells, which project through partial rule accessors) — Some
+    /// exactly when [`Self::failing_attribution`] is Some.
+    ///
+    /// Pairs with [`AttributionRule::from_coordinates`]: an observer
+    /// that captured the [`AttributionCoordinates`] of a previous
+    /// failure (e.g. into a structured-log line) can re-hydrate the
+    /// originating rule by one method call, recovering the closed-enum
+    /// rule identity from its coordinates without retaining the
+    /// originating [`ShikumiError`]. The bijection is pinned by
+    /// [`crate::reload::tests::coordinates_round_trips_through_from_coordinates`]
+    /// on the envelope side.
+    ///
+    /// Live-error peer of [`crate::ReloadFailure::coordinates`] on the
+    /// cross-thread observable envelope: the two projections agree
+    /// pointwise across the error → envelope capture boundary
+    /// (`ReloadFailure::from_error(&err).coordinates() ==
+    /// err.coordinates()` for every [`ShikumiError`]), pinning the
+    /// lossless-capture contract for the coordinate triple on the
+    /// cross-thread mirror. Before this accessor, the live-error side
+    /// of the API forced callers to chain through
+    /// `err.failing_attribution().map(|a| a.coordinates())` (a
+    /// three-hop composition) at every observation site — an
+    /// asymmetric surface against the one-hop accessor on the
+    /// captured-envelope side; this lift closes the API-symmetry gap
+    /// on the coordinate-triple projection. Ninth and final lift in
+    /// the cascade opened by [`Self::layer_kind`] (`7389572`) and
+    /// continued by [`Self::metadata_axis`] (`93a15cc`) /
+    /// [`Self::attribution_confidence`] (`2ec51fa`) /
+    /// [`Self::figment_source_kind`] (`5003a49`) /
+    /// [`Self::figment_name_tag_kind`] (`fa3bee7`) /
+    /// [`Self::file_provenance`] (`cace3be`) /
+    /// [`Self::attribution_source_kind_coordinates`] (`0699298`) /
+    /// [`Self::attribution_name_kind_coordinates`] (`1e5d93f`): with
+    /// this landing every projection on the captured envelope
+    /// [`crate::ReloadFailure`] has a matching one-hop accessor at the
+    /// same altitude on the live-error side.
+    ///
+    /// Composition primitive is `map`, not `and_then`: the projection
+    /// is total at the rule layer ([`FailingSourceAttribution::coordinates`]
+    /// returns [`AttributionCoordinates`], not
+    /// [`Option<AttributionCoordinates>`]), the complementary polarity
+    /// of the sibling partial joint-cell projections.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::map`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::coordinates`] is const because it
+    /// reads a stored `Option<AttributionRule>` field on `Copy`
+    /// receivers through an explicit `match`; the live-error side pays
+    /// the runtime resolver cost on every call, so a caller who reads
+    /// the axis more than once should cache the result or route
+    /// through the captured envelope.
+    #[must_use]
+    pub fn coordinates(&self) -> Option<AttributionCoordinates> {
+        self.failing_attribution()
+            .map(FailingSourceAttribution::coordinates)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -11783,6 +11859,157 @@ mod tests {
             err.attribution_name_kind_coordinates().is_none(),
             "no metadata → no attribution",
         );
+    }
+
+    // ---- ShikumiError::coordinates tests ----
+
+    #[test]
+    fn shikumi_error_coordinates_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::coordinates` must equal
+        // the chained composition
+        // `self.failing_attribution().map(|a| a.coordinates())` on
+        // every error whose attribution resolves. Pins the API-symmetry
+        // contract: the live-error side one-hop accessor is a pure
+        // forwarder of the envelope-side coordinates projection, so a
+        // future refactor of either half is bound to move the other in
+        // lockstep. Peer of
+        // `shikumi_error_attribution_name_kind_coordinates_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_attribution_source_kind_coordinates_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_file_provenance_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_figment_name_tag_kind_forwards_through_failing_attribution`
+        // /
+        // `shikumi_error_figment_source_kind_forwards_through_failing_attribution`
+        // on the sibling projections. Composition primitive is `map`,
+        // not `and_then`: the underlying
+        // `FailingSourceAttribution::coordinates` returns a total
+        // `AttributionCoordinates` (not `Option<AttributionCoordinates>`),
+        // so the one-hop live-error accessor is Some exactly when
+        // `failing_attribution` is Some — the complementary polarity of
+        // the sibling partial joint-cell forwarders.
+
+        // Source-axis attribution: FileBySource resolves to the total
+        // coordinate triple
+        // (MetadataSource, File, Exact) — figment's built-in YAML
+        // provider attaches metadata.source as a File source, so the
+        // resolver dispatches to FileBySource on the MetadataSource
+        // axis and the total-triple projection recovers the rule's
+        // three coordinates through the captured rule slot.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.coordinates(),
+            err_file
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::coordinates),
+        );
+        assert_eq!(
+            err_file.coordinates(),
+            Some(super::AttributionRule::FileBySource.coordinates()),
+        );
+
+        // Name-axis attribution: EnvByPrefix also resolves to the total
+        // coordinate triple (its own three coordinates). The one-hop
+        // forwarder must reproduce the Some on the live-error side for
+        // every attributed rule, regardless of axis — the total-triple
+        // projection is Some-iff-attribution, unlike the partial
+        // joint-cell projections whose polarity depends on rule axis.
+        // The two axis-boundary probes together pin that no rule-axis
+        // branch collapses into the outer None-when-unattributed
+        // branch.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(
+            err_env.coordinates(),
+            err_env
+                .failing_attribution()
+                .map(super::FailingSourceAttribution::coordinates),
+        );
+        assert_eq!(
+            err_env.coordinates(),
+            Some(super::AttributionRule::EnvByPrefix.coordinates()),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_coordinates_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the coordinates projection must be None. Peer of
+        // `shikumi_error_attribution_name_kind_coordinates_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_attribution_source_kind_coordinates_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_file_provenance_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_figment_name_tag_kind_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_non_extract_variants`
+        // /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants` /
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_attribution_confidence_none_for_non_extract_variants`
+        // on the sibling axes, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the coordinate
+        // triple projection. Stronger than the joint-cell peers here:
+        // `coordinates` is a total map at the rule layer, so
+        // Some-attribution is necessary AND sufficient for a Some
+        // outer — a rule-axis branch could not add a second inner-None
+        // dimension even in principle.
+        assert!(super::synthetic_parse_error().coordinates().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .coordinates()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.coordinates().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .coordinates()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .coordinates()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_coordinates_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so coordinates must be None. Peer of
+        // `shikumi_error_attribution_name_kind_coordinates_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_attribution_source_kind_coordinates_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_file_provenance_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_figment_name_tag_kind_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_figment_source_kind_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_metadata_axis_none_for_extract_without_metadata`
+        // /
+        // `shikumi_error_layer_kind_none_for_extract_without_metadata` /
+        // `shikumi_error_attribution_confidence_none_for_extract_without_metadata`
+        // on the sibling axes, closing the same resolver-terminates-in-
+        // None branch on the total-triple projection.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(err.coordinates().is_none(), "no metadata → no attribution");
     }
 
     // ---- ShikumiErrorKind / ShikumiError::kind tests ----
