@@ -183,6 +183,64 @@ impl ReloadFailure {
         self.kind
     }
 
+    /// [`AttributionRule`] recorded for the blamed layer, or `None`
+    /// when no attribution was resolved — convenience method-form
+    /// accessor over [`Self::attribution_rule`] (the public field). One
+    /// hop, one closed-enum read.
+    ///
+    /// The primitive projection over the attribution surface — every
+    /// other rule-side projection ([`Self::attribution_confidence`],
+    /// [`Self::layer_kind`], [`Self::metadata_axis`],
+    /// [`Self::figment_source_kind`], [`Self::figment_name_tag_kind`],
+    /// [`Self::file_provenance`],
+    /// [`Self::attribution_source_kind_coordinates`],
+    /// [`Self::attribution_name_kind_coordinates`],
+    /// [`Self::coordinates`]) is a composition over this slot's
+    /// [`AttributionRule`] payload. Callers that want the whole rule
+    /// value (routing by rule identity for per-rule remediation
+    /// runbooks, attestation-logging the closed-enum tag, feeding
+    /// [`AttributionRule::from_coordinates`] round-trip probes) read
+    /// it here in method form so a future field-to-getter migration
+    /// or a shape change on the underlying [`Option<AttributionRule>`]
+    /// slot lands at one call-side surface without every observer
+    /// re-writing `.attribution_rule` field-accesses.
+    ///
+    /// Structural peer of [`Self::kind`] on the "method-form accessor
+    /// over a public field" idiom the envelope establishes: both
+    /// projections are trivial [`Copy`] reads of the corresponding
+    /// public field, and both surface a method form callers can hold
+    /// as `fn(&ReloadFailure) -> _` (a per-observation-site function
+    /// pointer, a `HashMap` key over projected values, an iterator's
+    /// `map` closure) without leaking the field-access syntax into
+    /// the caller's shape.
+    ///
+    /// Live-error peer of the [`crate::ShikumiError::attribution_rule`]
+    /// one-hop accessor on the source-error side of the cross-thread
+    /// capture boundary: the two projections agree pointwise
+    /// (`ReloadFailure::from_error(&err).attribution_rule() ==
+    /// err.attribution_rule()` for every [`ShikumiError`]), pinning
+    /// the lossless-capture contract for the primitive rule axis on
+    /// the cross-thread mirror.
+    ///
+    /// `const fn`: trivial [`Copy`] field read of
+    /// [`Self::attribution_rule`] — `Option<AttributionRule>` is
+    /// `Copy` because [`AttributionRule`] is a payload-free `Copy`
+    /// enum — so the projection lifts to `const` at the envelope
+    /// altitude verbatim with no body change. Peer of [`Self::kind`]
+    /// (const since `9bc4eb7`) on the trivial-field-forwarder
+    /// altitude; opens const-context access to the primitive rule
+    /// axis without routing through the derived projections' `match`
+    /// arms — a `const HAS_RULE: bool = REL.attribution_rule().is_some()`
+    /// sentinel for a compile-time-known captured failure resolves at
+    /// compile time without a runtime projection detour, and a
+    /// `const RULE: Option<AttributionRule> = REL.attribution_rule()`
+    /// binding threads the whole rule identity through const context
+    /// for downstream per-rule static tables.
+    #[must_use]
+    pub const fn attribution_rule(&self) -> Option<AttributionRule> {
+        self.attribution_rule
+    }
+
     /// Confidence class of [`Self::attribution_rule`], or `None`
     /// when no attribution was recorded — strict superset of
     /// [`Self::attribution_rule`]`.map(AttributionRule::confidence)`,
@@ -2526,6 +2584,89 @@ mod tests {
     }
 
     #[test]
+    fn attribution_rule_accessor_agrees_with_field_pointwise() {
+        // The `attribution_rule()` method-form accessor and the
+        // `attribution_rule` public field must agree on every captured
+        // ReloadFailure — one is a pure forwarder of the other. Peer
+        // of `kind_accessor_agrees_with_field_pointwise` on the
+        // trivial-field-forwarder altitude: both accessors are
+        // `pub const fn`s that read a `Copy` public field verbatim,
+        // and both surface a method form callers can hold as a
+        // function pointer without leaking the field-access syntax
+        // into the caller's shape. Exercised across every
+        // ShikumiError kind — including the five non-Extract kinds,
+        // where both the field and the accessor return `None`, so the
+        // agreement covers both polarities of the
+        // `Option<AttributionRule>` slot.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(f.attribution_rule(), f.attribution_rule);
+        }
+    }
+
+    #[test]
+    fn attribution_rule_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the primitive rule-only axis
+        // on the cross-thread observable form: the captured envelope's
+        // `attribution_rule` projection mirrors the source error's
+        // `attribution_rule` byte-for-byte across every constructible
+        // ShikumiError variant, and end-to-end on a real Extract
+        // failure that resolves to a source-axis rule (FileBySource).
+        // Peer of `layer_kind_agrees_with_underlying_error_pointwise`
+        // / `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // / `figment_source_kind_agrees_with_underlying_error_pointwise`
+        // / `file_provenance_agrees_with_shikumi_error_accessor_pointwise`
+        // / `coordinates_agrees_with_shikumi_error_accessor_pointwise`
+        // on the derived projections — this pin closes the same
+        // lossless-capture contract on the primitive rule axis every
+        // derived projection composes over, so a future refactor of
+        // either side (the live `ShikumiError::attribution_rule`
+        // accessor or the captured `ReloadFailure::attribution_rule`
+        // field / method-form accessor) is bound to move the other in
+        // lockstep. With this landing every projection on the captured
+        // envelope has a matching lossless-capture pin on the source
+        // error side.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.attribution_rule(),
+                err.attribution_rule(),
+                "captured attribution_rule must mirror source attribution_rule for {err:?}",
+            );
+        }
+
+        // End-to-end pin on a real Extract failure: the rule identity
+        // survives capture through `ReloadFailure::from_error` on the
+        // FileBySource file-axis attribution resolver — byte-for-byte
+        // across the error → envelope boundary. Distinguishes an
+        // attributed Extract (Some(FileBySource) on both sides) from
+        // the unattributed Extract cell exercised by `one_per_kind()`
+        // above (None on both sides), pinning the Some-side of the
+        // Some-iff-attribution partition.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_ar_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(f_file.attribution_rule(), err_file.attribution_rule());
+        assert_eq!(
+            f_file.attribution_rule(),
+            Some(AttributionRule::FileBySource),
+        );
+    }
+
+    #[test]
     fn kind_is_total_no_option_at_capture_site() {
         // Distinct from the attribution_* accessors (which return
         // Option<_>), kind is total: every captured ReloadFailure has
@@ -2717,6 +2858,83 @@ mod tests {
         assert_eq!(NOT_FOUND_KIND, NOT_FOUND_REL.kind);
         assert_eq!(EXTRACT_KIND, EXTRACT_REL.kind);
         assert_eq!(VALIDATION_KIND, VALIDATION_REL.kind);
+    }
+
+    #[test]
+    fn reload_failure_attribution_rule_is_const_callable() {
+        // Weld the const-callability of
+        // `ReloadFailure::attribution_rule` — the primitive rule-only
+        // projection at the cross-thread observable envelope
+        // altitude — at compile time. Peer of
+        // `reload_failure_kind_is_const_callable` on the
+        // trivial-field-forwarder altitude: both accessors are
+        // `pub const fn`s that read a `Copy` public field verbatim
+        // (`ShikumiErrorKind` for `kind`, `Option<AttributionRule>`
+        // for `attribution_rule`), so both lift to `const` on the
+        // same idiomatic body shape without routing through the
+        // derived Some-iff-attribution forwarders'
+        // `match self.attribution_rule` arms. A future edit that
+        // reached for a non-const helper on the projection body
+        // — an allocator, a runtime-only accessor, an `Option::map`
+        // spelling that rustc rejects with E0658 — fails at THIS line
+        // before drifting into any of the eight derived projections
+        // that compose over this atomic axis.
+        //
+        // Exercised across the two attribution scenarios: the `None`
+        // scenario (no attribution recorded — the polarity every
+        // non-Extract kind and every attribution-less Extract lands
+        // in) and one welded `Some(rule)` scenario (a concrete
+        // `AttributionRule` variant surfacing through the envelope's
+        // `attribution_rule` slot). Each routes the envelope through
+        // the const-fn projection at compile time; the pointwise pins
+        // cross-check the routed arm against both the runtime-fn
+        // projection and the underlying `Copy` field read.
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as
+        // `reload_failure_kind_is_const_callable`: `ReloadFailure`
+        // carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`, `Option<ConfigSource>`),
+        // so a `const REL: ReloadFailure = ...; const RULE =
+        // REL.attribution_rule();` spelling drops the const value
+        // after the projection and rejects. A `static REL:
+        // ReloadFailure` is never dropped, so borrowing `&REL` for
+        // the `&self` receiver in a `const` initializer stays inside
+        // the const-eval envelope.
+        static NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::NotFound,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static SOME_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileBySource),
+        };
+        const NONE_RULE: Option<AttributionRule> = NONE_REL.attribution_rule();
+        const SOME_RULE: Option<AttributionRule> = SOME_REL.attribution_rule();
+
+        assert_eq!(NONE_RULE, None);
+        assert_eq!(SOME_RULE, Some(AttributionRule::FileBySource));
+
+        // Cross-check: the const-fn projection stays pointwise agreed
+        // with the runtime-side `rel.attribution_rule()` call and
+        // with the underlying `rel.attribution_rule` Copy field read
+        // over both welded arms. Redundant with the pointwise pin
+        // above (`attribution_rule_accessor_agrees_with_field_pointwise`),
+        // but this pin catches a future edit that shifted the
+        // const-fn body away from the runtime-fn body or the field
+        // read on either welded arm.
+        assert_eq!(NONE_RULE, NONE_REL.attribution_rule());
+        assert_eq!(SOME_RULE, SOME_REL.attribution_rule());
+        assert_eq!(NONE_RULE, NONE_REL.attribution_rule);
+        assert_eq!(SOME_RULE, SOME_REL.attribution_rule);
     }
 
     #[test]

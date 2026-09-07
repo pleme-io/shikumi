@@ -6488,6 +6488,71 @@ impl ShikumiError {
         self.failing_attribution()
             .map(FailingSourceAttribution::coordinates)
     }
+
+    /// [`AttributionRule`] recorded for the blamed layer, or `None` when
+    /// no attribution was resolved — strict superset of
+    /// [`Self::failing_attribution`]`.map(|a| a.rule)`, surfaced as a
+    /// typed accessor so observers (dashboards, alerting policies,
+    /// structured-log routers, attestation manifests) don't re-derive
+    /// the rule-only projection at every observation site.
+    ///
+    /// The primitive projection over the attribution surface — the
+    /// [`AttributionRule`] slot is the atomic axis every other rule-side
+    /// projection ([`Self::metadata_axis`], [`Self::layer_kind`],
+    /// [`Self::attribution_confidence`],
+    /// [`Self::figment_source_kind`], [`Self::figment_name_tag_kind`],
+    /// [`Self::file_provenance`],
+    /// [`Self::attribution_source_kind_coordinates`],
+    /// [`Self::attribution_name_kind_coordinates`],
+    /// [`Self::coordinates`]) composes over. Callers that want the
+    /// entire rule value — to route by rule identity for per-rule
+    /// remediation runbooks, to attestation-log the closed-enum tag,
+    /// or to feed [`AttributionRule::from_coordinates`] round-trip
+    /// probes — read it here in one hop instead of destructuring the
+    /// full [`FailingSourceAttribution`] envelope (which forces a
+    /// borrow of the underlying [`ConfigSource`] slot the caller does
+    /// not need).
+    ///
+    /// Returns `Some(_)` exactly when [`Self::failing_attribution`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Composition primitive is `map`,
+    /// not `and_then`: the projection is total at the rule layer
+    /// (`FailingSourceAttribution::rule` is a `Copy`
+    /// [`AttributionRule`], not `Option<AttributionRule>`), the same
+    /// polarity as [`Self::coordinates`] and the complementary polarity
+    /// of the partial joint-cell projections.
+    ///
+    /// Live-error peer of the [`crate::ReloadFailure::attribution_rule`]
+    /// public field on the cross-thread observable envelope: the two
+    /// projections agree pointwise across the error → envelope capture
+    /// boundary (`ReloadFailure::from_error(&err).attribution_rule() ==
+    /// err.attribution_rule()` for every [`ShikumiError`]), pinning the
+    /// lossless-capture contract for the primitive rule axis on the
+    /// cross-thread mirror. Before this accessor, the live-error side
+    /// of the API forced callers to chain through
+    /// `err.failing_attribution().map(|a| a.rule)` (a three-hop
+    /// composition) at every observation site — an asymmetric surface
+    /// against the one-hop field read on the captured-envelope side;
+    /// this lift closes the API-symmetry gap on the primitive
+    /// rule-only projection, the atomic axis every derived projection
+    /// on the sibling cascade composes over.
+    ///
+    /// Not `const`-callable: routes through the non-const
+    /// [`Self::failing_attribution`] (which calls the non-const
+    /// [`resolve_failing_source`] helper that reads figment metadata
+    /// through `Option::and_then` and `FigmentSourceTag::classify` on
+    /// `&str`) and the non-const [`Option::map`]. The cross-thread
+    /// mirror [`crate::ReloadFailure::attribution_rule`] (public field
+    /// + [`crate::ReloadFailure::attribution_rule`] const-fn accessor)
+    /// is const because it reads a stored [`Option<AttributionRule>`]
+    /// field on `Copy` receivers directly; the live-error side pays
+    /// the runtime resolver cost on every call, so a caller who reads
+    /// the axis more than once should cache the result or route
+    /// through the captured envelope.
+    #[must_use]
+    pub fn attribution_rule(&self) -> Option<AttributionRule> {
+        self.failing_attribution().map(|a| a.rule)
+    }
 }
 
 /// Placeholder message body for the canonical "synthetic non-`Extract`
@@ -12010,6 +12075,129 @@ mod tests {
             error: fake_figment_error(),
         };
         assert!(err.coordinates().is_none(), "no metadata → no attribution");
+    }
+
+    // ---- ShikumiError::attribution_rule tests ----
+
+    #[test]
+    fn shikumi_error_attribution_rule_forwards_through_failing_attribution() {
+        // The direct accessor `ShikumiError::attribution_rule` must
+        // equal the chained composition
+        // `self.failing_attribution().map(|a| a.rule)` on every error
+        // whose attribution resolves. Pins the API-symmetry contract:
+        // the live-error side one-hop rule-only accessor is a pure
+        // forwarder of the field-form access on `FailingSourceAttribution`,
+        // so a future refactor of either half is bound to move the
+        // other in lockstep. Peer of
+        // `shikumi_error_coordinates_forwards_through_failing_attribution`
+        // / `shikumi_error_file_provenance_forwards_through_failing_attribution`
+        // / `shikumi_error_figment_source_kind_forwards_through_failing_attribution`
+        // on the sibling projections, and the primitive projection the
+        // eight derived projections in the cascade all compose over.
+        // Composition primitive is `map`, not `and_then`:
+        // `FailingSourceAttribution::rule` is a `Copy`
+        // [`AttributionRule`] (not `Option<AttributionRule>`), so the
+        // one-hop live-error accessor is Some exactly when
+        // `failing_attribution` is Some — the same polarity as
+        // `coordinates`, and the complementary polarity of the
+        // partial joint-cell forwarders.
+
+        // Source-axis attribution: FileBySource surfaces the primitive
+        // rule identity — the atomic axis all derived projections
+        // (`metadata_axis`, `layer_kind`, `attribution_confidence`,
+        // `figment_source_kind`, `file_provenance`, `coordinates`) all
+        // compose over.
+        let (_dir, err_file) = extract_error_with_file_path_failure();
+        assert_eq!(
+            err_file.attribution_rule(),
+            err_file.failing_attribution().map(|a| a.rule),
+        );
+        assert_eq!(
+            err_file.attribution_rule(),
+            Some(super::AttributionRule::FileBySource),
+        );
+
+        // Name-axis attribution: EnvByPrefix surfaces on the same
+        // one-hop primitive-rule projection regardless of axis — Some
+        // for every attributed rule, pinning the resolver's
+        // Some-iff-attribution polarity for the rule slot itself
+        // (the complementary polarity of the partial joint-cell
+        // forwarders whose polarity depends on rule axis).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(
+            err_env.attribution_rule(),
+            err_env.failing_attribution().map(|a| a.rule),
+        );
+        assert_eq!(
+            err_env.attribution_rule(),
+            Some(super::AttributionRule::EnvByPrefix),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_attribution_rule_none_for_non_extract_variants() {
+        // Every non-Extract variant carries no attribution surface, so
+        // the rule-only projection must be None. Peer of
+        // `shikumi_error_coordinates_none_for_non_extract_variants` /
+        // `shikumi_error_metadata_axis_none_for_non_extract_variants` /
+        // `shikumi_error_layer_kind_none_for_non_extract_variants` /
+        // `shikumi_error_attribution_confidence_none_for_non_extract_variants`
+        // on the sibling axes, closing the same Some-iff-attribution
+        // partition at the ShikumiError altitude on the primitive
+        // rule-only projection. Stronger than the joint-cell peers:
+        // `attribution_rule` is a total map at the rule layer (the
+        // rule slot is a total `Copy` field on
+        // `FailingSourceAttribution`, not `Option<AttributionRule>`),
+        // so Some-attribution is necessary AND sufficient for a Some
+        // outer — a rule-axis branch could not add a second inner-None
+        // dimension even in principle.
+        assert!(super::synthetic_parse_error().attribution_rule().is_none(),);
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }
+            .attribution_rule()
+            .is_none(),
+        );
+        let io_err: ShikumiError = std::io::Error::new(std::io::ErrorKind::NotFound, "x").into();
+        assert!(io_err.attribution_rule().is_none());
+        assert!(
+            ShikumiError::Watch(notify::Error::generic("w"))
+                .attribution_rule()
+                .is_none(),
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .attribution_rule()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn shikumi_error_attribution_rule_none_for_extract_without_metadata() {
+        // Extract-variant with a metadata-less figment error carries no
+        // resolvable attribution, so the rule-only projection must be
+        // None. Peer of
+        // `shikumi_error_coordinates_none_for_extract_without_metadata`
+        // / `shikumi_error_layer_kind_none_for_extract_without_metadata`
+        // on the sibling axes, closing the same resolver-terminates-in-
+        // None branch on the primitive rule-only projection.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.attribution_rule().is_none(),
+            "no metadata → no attribution",
+        );
     }
 
     // ---- ShikumiErrorKind / ShikumiError::kind tests ----
