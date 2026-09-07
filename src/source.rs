@@ -177,6 +177,61 @@ impl ConfigSource {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this source —
+    /// `0` for [`Self::Defaults`], `1` for [`Self::Env`] regardless of
+    /// the inner prefix payload, `2` for [`Self::File`] regardless of
+    /// the inner [`PathBuf`] payload. Matches the declaration order
+    /// carried by [`ConfigSourceKind::ALL`], which is also the
+    /// operator-facing [`crate::ProviderChain`] precedence within the
+    /// [`crate::ConfigTierKind::Custom`] row (layers
+    /// `Defaults → Env → File`, later overriding earlier).
+    ///
+    /// Tag-side sibling of [`ConfigSourceKind::ordinal`]: the payload-
+    /// bearing [`ConfigSource`] value projects to the same `usize`
+    /// precedence position as its kind-side variant tag, without
+    /// paying the `.kind()` hop at the call site. Direct-match
+    /// discipline (no `self.kind().ordinal()` delegation in the body)
+    /// so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → ordinal) projection — a future edit
+    /// that shifts the mapping on ONE declaration surface (this
+    /// tag-side match, the kind-side inherent match, the
+    /// [`ConfigSourceKind::ALL`] slice) but not the others diverges at
+    /// the pointwise-agreement pin
+    /// [`tests::config_source_ordinal_agrees_with_kind_ordinal_pointwise`]
+    /// on the first variant where they disagree, catching drift at
+    /// test time rather than at whichever consumer happened to be
+    /// observed first. Peer of the tag-side projection pair on
+    /// [`crate::ConfigTier`] (`kind`, `ordinal`) at the sibling tier
+    /// axis of the atomic `(tier, source)` primitive one axis over,
+    /// and mirrors the direct-match discipline the tag-side
+    /// projection triple on [`crate::DiffLine`] already carries
+    /// (`glyph`, `as_str`, `ordinal`) at the same altitude on the
+    /// diff-cell axis.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Env(prefix)` regardless of the inner string and for every
+    /// `File(path)` regardless of the inner path — is what the
+    /// pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the payload, and a future edit that changed
+    /// either payload-bearing arm here to inspect the inner value
+    /// would diverge from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`ConfigSourceKind::ordinal`] and of the peer tag-side
+    /// projections [`Self::kind`] / [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] / [`Self::is_overlay`] on
+    /// the same primitive, so a `source.ordinal()` composition stays
+    /// const-callable end-to-end at every consumer site. Pinned by
+    /// [`tests::config_source_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::Defaults => 0,
+            Self::Env(_) => 1,
+            Self::File(_) => 2,
+        }
+    }
+
     /// Construct a [`Self::File`] source from any path-like value.
     ///
     /// One source of truth for the `(path → ConfigSource::File(<PathBuf>))`
@@ -95772,6 +95827,112 @@ mod tests {
         assert_eq!(DEFAULTS_ORD, 0);
         assert_eq!(ENV_ORD, 1);
         assert_eq!(FILE_ORD, 2);
+    }
+
+    #[test]
+    fn config_source_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection at
+        // the payload-bearing altitude of the sealed (tier, source)
+        // pair's source axis: `source.ordinal() == source.kind().ordinal()`
+        // for every ConfigSource value, across a payload sweep that covers
+        // the no-payload Defaults variant plus every representative
+        // Env(prefix) and File(path) payload shape (empty prefix, ASCII
+        // prefix, mixed-case prefix; absolute path, relative path, empty
+        // path). Peer of `config_tier_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one primitive over on the sibling tier axis of the same
+        // atomic (tier, source) pair. The kind-side has no payload
+        // visibility, so a future edit that peeked at the inner
+        // String / PathBuf on either declaration surface would diverge
+        // here on the first shape where the tag-side and kind-side
+        // disagree. Also pins the payload-independence contract: the
+        // answer is the same for every `Env(prefix)` regardless of the
+        // inner string and every `File(path)` regardless of the inner
+        // path, so the tag-side declaration is forbidden from consulting
+        // either payload.
+        let sources = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("MYAPP_".to_string()),
+            ConfigSource::Env("mixed_case_".to_string()),
+            ConfigSource::File(PathBuf::from("/etc/app/app.yaml")),
+            ConfigSource::File(PathBuf::from("./local.toml")),
+            ConfigSource::File(PathBuf::new()),
+        ];
+        for source in &sources {
+            assert_eq!(
+                source.ordinal(),
+                source.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {source:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection at
+        // the payload-bearing altitude: `Defaults` at 0, `Env(_)` at 1,
+        // `File(_)` at 2 regardless of the inner payload. Payload-
+        // independence sub-pin: empty prefix, ASCII prefix, and mixed-
+        // case prefix all yield the same ordinal (1) on the Env arm;
+        // absolute path, relative path, and the empty path all yield
+        // the same ordinal (2) on the File arm. Peer of
+        // `config_source_kind_ordinal_reuses_declaration_order` one
+        // altitude down on the same axis, plus
+        // `config_tier_ordinal_reuses_declaration_order` one primitive
+        // over on the sibling tier axis. Guards against a swap in the
+        // tag-side match arms that would still pass the pointwise-
+        // agreement pin if the kind-side inherent match was edited in
+        // the same drift.
+        assert_eq!(ConfigSource::Defaults.ordinal(), 0);
+        for prefix in ["", "MYAPP_", "mixed_case_"] {
+            assert_eq!(
+                ConfigSource::Env(prefix.to_string()).ordinal(),
+                1,
+                "Env({prefix:?}) ordinal must be 1 regardless of payload",
+            );
+        }
+        for path in ["/etc/app/app.yaml", "./local.toml", ""] {
+            assert_eq!(
+                ConfigSource::File(PathBuf::from(path)).ordinal(),
+                2,
+                "File({path:?}) ordinal must be 2 regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`ConfigSourceKind::ordinal`) and its peer tag-side
+        // projection on the sibling tier axis of the same atomic
+        // (tier, source) primitive (`ConfigTier::ordinal`).
+        //
+        // A `const fn ordinal_of(&ConfigSource) -> usize` wrapper
+        // delegating to `source.ordinal()` pins the const-fn signature
+        // at the language level: the moment `ConfigSource::ordinal`
+        // loses its `const` qualifier (a future edit that reaches for
+        // a non-const helper inside the three-arm exhaustive match —
+        // an allocator, a runtime lookup, a `String` or `PathBuf`
+        // inspection on either payload-bearing arm) the wrapper below
+        // fails to compile at THAT line before the drift can reach
+        // downstream const-context consumers that assumed const-ness
+        // through this projection (a `const` per-source-kind bitset
+        // sized by `axis_cardinality::<ConfigSourceKind>()` and indexed
+        // by the tag-side ordinal without a `.kind()` hop, an
+        // attestation manifest whose per-source slots on the tag-side
+        // altitude are initialized under `const`).
+        const fn ordinal_of(source: &ConfigSource) -> usize {
+            source.ordinal()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream. Includes payload-bearing `Env(_)` and
+        // `File(_)` cases so the const-ness of both payload arms
+        // cannot regress without failing here.
+        assert_eq!(ordinal_of(&ConfigSource::Defaults), 0);
+        assert_eq!(ordinal_of(&ConfigSource::Env("APP_".to_string())), 1);
+        assert_eq!(ordinal_of(&ConfigSource::File(PathBuf::from("/x.yaml"))), 2,);
     }
 
     #[test]
