@@ -1947,9 +1947,30 @@ impl ProviderChain {
     /// list is the structural record of which layers contributed to the
     /// final configuration; consumers can show it in errors, debug
     /// dumps, or attestation manifests.
+    ///
+    /// `const`-callable — the body names the const-fn inherent
+    /// [`Vec::as_slice`] (stable const since Rust 1.83) on the recorded
+    /// `Vec<ConfigSource>`, side-stepping the non-const
+    /// `<Vec<T> as Deref>::deref` coercion the original `&self.sources`
+    /// return relied on. Structural peer of the
+    /// [`crate::ShikumiError::sources`] / [`crate::ShikumiError::tried_paths`]
+    /// / [`crate::ShikumiError::field_path`] borrowing-slice-of-Vec
+    /// projections (all `pub const fn` since `791db9f` / `64de910`), and
+    /// the first such lift on the `ProviderChain` builder surface —
+    /// closing the (build-time × failure-time) parity on the
+    /// borrowing-slice-of-`Vec<ConfigSource>` projection axis so a
+    /// const-context consumer reading provenance out of a live chain
+    /// pays the same const-callability altitude the error-side projections
+    /// already pay. `ProviderChain` itself is not `static`-constructible
+    /// (its `figment::Figment` field has no const constructor), so the
+    /// weld [`tests::provider_chain_sources_is_const_callable`] pins
+    /// const-callability by exercising the accessor from a `const fn`
+    /// helper body — the compile-time drop-back to `pub fn` fires at the
+    /// helper's call site before any downstream consumer that assumed
+    /// const-ness through this projection.
     #[must_use]
-    pub fn sources(&self) -> &[ConfigSource] {
-        &self.sources
+    pub const fn sources(&self) -> &[ConfigSource] {
+        self.sources.as_slice()
     }
 
     /// Extract the final configuration along with the recorded
@@ -2987,6 +3008,56 @@ mod tests {
         // build() consumes; recorded survives.
         let _ = chain.build();
         assert_eq!(recorded.len(), 2);
+    }
+
+    #[test]
+    fn provider_chain_sources_is_const_callable() {
+        // Weld the const-callability of the borrowing-slice-of-Vec
+        // projection `ProviderChain::sources` — the first such lift on
+        // the builder surface. Prior to this lift the accessor read
+        // `&self.sources` and relied on the non-const
+        // `<Vec<T> as Deref>::deref` coercion to reach `&[ConfigSource]`;
+        // the lift names the const-fn inherent `Vec::as_slice` (stable
+        // const since Rust 1.83), the same seam the error-side
+        // projections (`ShikumiError::sources` / `ShikumiError::tried_paths`
+        // / `ShikumiError::field_path`) already route through since
+        // `791db9f` / `64de910`.
+        //
+        // `ProviderChain` cannot back a `static` initializer — its
+        // `figment::Figment` field has no const constructor — so the
+        // usual `static X: Ty = …; const Y: _ = X.method();` weld shape
+        // used across `error.rs` and `reload.rs` does not apply here.
+        // A `const fn` helper body that calls `sources()` is instead the
+        // compile-time weld: if a future edit drops `pub const fn` back
+        // to `pub fn`, the helper stops compiling at the call site
+        // (E0015: "cannot call non-const fn in constant functions")
+        // before any downstream `const fn` consumer keyed on the lift
+        // observes the drift. The runtime cross-check then re-calls both
+        // the const-position helper and the direct method on the same
+        // receiver and pins byte-identical answers.
+        const fn sources_via_const_fn(chain: &ProviderChain) -> &[ConfigSource] {
+            chain.sources()
+        }
+
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let empty = ProviderChain::new();
+        assert!(sources_via_const_fn(&empty).is_empty());
+        assert_eq!(sources_via_const_fn(&empty), empty.sources());
+
+        let populated = ProviderChain::new()
+            .with_defaults(&TestConfig::default())
+            .with_env("APP_")
+            .with_file(&file);
+        let via_helper: &[ConfigSource] = sources_via_const_fn(&populated);
+        let via_method: &[ConfigSource] = populated.sources();
+        assert_eq!(via_helper.len(), 3);
+        assert_eq!(via_helper, via_method);
+        assert!(via_helper[0].is_defaults());
+        assert!(via_helper[1].is_env());
+        assert!(via_helper[2].is_file());
     }
 
     // ---- extract_with_sources / source-annotated error tests ----
