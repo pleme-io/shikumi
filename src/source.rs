@@ -232,6 +232,63 @@ impl ConfigSource {
         }
     }
 
+    /// The canonical operator-facing lowercase name of this source —
+    /// `"defaults"` for [`Self::Defaults`], `"env"` for [`Self::Env`]
+    /// regardless of the inner prefix payload, `"file"` for
+    /// [`Self::File`] regardless of the inner [`PathBuf`] payload.
+    /// Matches the strings carried by [`ConfigSourceKind::as_str`],
+    /// which are the labels an operator would type into an env var,
+    /// CLI flag, or structured-log field naming the failing layer's
+    /// class.
+    ///
+    /// Tag-side sibling of [`ConfigSourceKind::as_str`]: the payload-
+    /// bearing [`ConfigSource`] value projects to the same
+    /// `&'static str` label as its kind-side variant tag, without
+    /// paying the `.kind()` hop at the call site. Direct-match
+    /// discipline (no `self.kind().as_str()` delegation in the body)
+    /// so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → label) projection — a future edit
+    /// that shifts the mapping on ONE declaration surface (this
+    /// tag-side match, the kind-side inherent match, the
+    /// [`ConfigSourceKind::ALL`] slice) but not the others diverges
+    /// at the pointwise-agreement pin
+    /// [`tests::config_source_as_str_agrees_with_kind_as_str_pointwise`]
+    /// on the first variant where they disagree, catching drift at
+    /// test time rather than at whichever consumer happened to be
+    /// observed first. Peer of the tag-side projection triple on
+    /// [`crate::DiffLine`] (`glyph`, `as_str`, `ordinal`) at the
+    /// diff-cell altitude, and closes the (`as_str` × `ordinal`)
+    /// tag-side pair on `ConfigSource` matching the same pair already
+    /// shipped on [`crate::DiffLine`] one axis over.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Env(prefix)` regardless of the inner string and for every
+    /// `File(path)` regardless of the inner path — is what
+    /// distinguishes this projection from the payload-aware
+    /// [`fmt::Display`] impl on [`Self`], which renders `env(prefix)`
+    /// / `file(path)` when the payload is non-empty. The
+    /// pointwise-agreement pin locks the payload-independence in: the
+    /// kind-side inherent cannot see the payload, and a future edit
+    /// that changed either payload-bearing arm here to inspect the
+    /// inner value would diverge from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`ConfigSourceKind::as_str`] and of the peer tag-side
+    /// projections [`Self::kind`] / [`Self::ordinal`] /
+    /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`] /
+    /// [`Self::is_overlay`] on the same primitive, so a
+    /// `source.as_str()` composition stays const-callable end-to-end
+    /// at every consumer site. Pinned by
+    /// [`tests::config_source_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Defaults => "defaults",
+            Self::Env(_) => "env",
+            Self::File(_) => "file",
+        }
+    }
+
     /// Construct a [`Self::File`] source from any path-like value.
     ///
     /// One source of truth for the `(path → ConfigSource::File(<PathBuf>))`
@@ -95933,6 +95990,125 @@ mod tests {
         assert_eq!(ordinal_of(&ConfigSource::Defaults), 0);
         assert_eq!(ordinal_of(&ConfigSource::Env("APP_".to_string())), 1);
         assert_eq!(ordinal_of(&ConfigSource::File(PathBuf::from("/x.yaml"))), 2,);
+    }
+
+    #[test]
+    fn config_source_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → label) projection at
+        // the payload-bearing altitude of the sealed (tier, source)
+        // pair's source axis: `source.as_str() == source.kind().as_str()`
+        // for every ConfigSource value, across a payload sweep that
+        // covers the no-payload Defaults variant plus every
+        // representative Env(prefix) and File(path) payload shape
+        // (empty prefix, ASCII prefix, mixed-case prefix; absolute
+        // path, relative path, empty path). Peer of
+        // `config_source_ordinal_agrees_with_kind_ordinal_pointwise`
+        // on the same tag/kind pair one projection over. The
+        // kind-side has no payload visibility, so a future edit that
+        // peeked at the inner String / PathBuf on either declaration
+        // surface would diverge here on the first shape where the
+        // tag-side and kind-side disagree. Also pins the payload-
+        // independence contract: the answer is the same for every
+        // `Env(prefix)` regardless of the inner string and every
+        // `File(path)` regardless of the inner path, so the tag-side
+        // declaration is forbidden from consulting either payload —
+        // this is what distinguishes `as_str` from the payload-aware
+        // `fmt::Display` impl on the same primitive.
+        let sources = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("MYAPP_".to_string()),
+            ConfigSource::Env("mixed_case_".to_string()),
+            ConfigSource::File(PathBuf::from("/etc/app/app.yaml")),
+            ConfigSource::File(PathBuf::from("./local.toml")),
+            ConfigSource::File(PathBuf::new()),
+        ];
+        for source in &sources {
+            assert_eq!(
+                source.as_str(),
+                source.kind().as_str(),
+                "as_str must agree tag ↔ kind for {source:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the (variant → label) projection
+        // at the payload-bearing altitude: `Defaults` → `"defaults"`,
+        // `Env(_)` → `"env"`, `File(_)` → `"file"` regardless of the
+        // inner payload. Payload-independence sub-pin: empty prefix,
+        // ASCII prefix, and mixed-case prefix all yield the same
+        // label (`"env"`) on the Env arm; absolute path, relative
+        // path, and the empty path all yield the same label
+        // (`"file"`) on the File arm. Peer of
+        // `config_source_kind_as_str_yields_canonical_lowercase_names`
+        // one altitude down on the same axis, plus
+        // `config_source_ordinal_reuses_declaration_order` on the
+        // sibling ordinal projection at this altitude. Guards
+        // against a swap in the tag-side match arms that would
+        // still pass the pointwise-agreement pin if the kind-side
+        // inherent match was edited in the same drift.
+        assert_eq!(ConfigSource::Defaults.as_str(), "defaults");
+        for prefix in ["", "MYAPP_", "mixed_case_"] {
+            assert_eq!(
+                ConfigSource::Env(prefix.to_string()).as_str(),
+                "env",
+                "Env({prefix:?}) as_str must be \"env\" regardless of payload",
+            );
+        }
+        for path in ["/etc/app/app.yaml", "./local.toml", ""] {
+            assert_eq!(
+                ConfigSource::File(PathBuf::from(path)).as_str(),
+                "file",
+                "File({path:?}) as_str must be \"file\" regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side as_str is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the
+        // same axis (`ConfigSourceKind::as_str`) and its peer
+        // tag-side projection on the same primitive
+        // (`ConfigSource::ordinal`, also `pub const fn`).
+        //
+        // A `const fn label_of(&ConfigSource) -> &'static str`
+        // wrapper delegating to `source.as_str()` pins the const-fn
+        // signature at the language level: the moment
+        // `ConfigSource::as_str` loses its `const` qualifier (a
+        // future edit that reaches for a non-const helper inside
+        // the three-arm exhaustive match — an allocator, a runtime
+        // lookup, a `String` or `PathBuf` inspection on either
+        // payload-bearing arm) the wrapper below fails to compile
+        // at THAT line before the drift can reach downstream
+        // const-context consumers that assumed const-ness through
+        // this projection (a `const` per-source-kind label lookup
+        // table sized by `axis_cardinality::<ConfigSourceKind>()`
+        // and indexed by the tag-side altitude without a `.kind()`
+        // hop, an attestation manifest whose per-source label slots
+        // on the tag-side altitude are initialized under `const`).
+        const fn label_of(source: &ConfigSource) -> &'static str {
+            source.as_str()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream. Includes payload-bearing `Env(_)` and
+        // `File(_)` cases so the const-ness of both payload arms
+        // cannot regress without failing here.
+        assert_eq!(label_of(&ConfigSource::Defaults), "defaults");
+        assert_eq!(label_of(&ConfigSource::Env("APP_".to_string())), "env");
+        assert_eq!(
+            label_of(&ConfigSource::File(PathBuf::from("/x.yaml"))),
+            "file",
+        );
+        // Compile-time weld: the `const fn` wrapper composes into a
+        // `const` binding at compile time — a static per-variant
+        // label table on the tag-side altitude stays initializable
+        // under `const` at every consumer site.
+        const DEFAULTS_LABEL: &str = label_of(&ConfigSource::Defaults);
+        assert_eq!(DEFAULTS_LABEL, "defaults");
     }
 
     #[test]
