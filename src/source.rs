@@ -29004,6 +29004,114 @@ impl<'a> FigmentNameTag<'a> {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this tag —
+    /// `0` for [`Self::Format`] regardless of the inner borrowed
+    /// [`crate::FormatMetadataTag`] envelope, `1` for [`Self::Env`]
+    /// regardless of the inner [`EnvMetadataTag`] prefix. Matches the
+    /// declaration order carried by [`FigmentNameTagKind::ALL`], which is
+    /// also the [`crate::ClosedAxis`] precedence position projected by
+    /// [`FigmentNameTagKind::ordinal`] one altitude down on the same
+    /// figment-Name axis.
+    ///
+    /// Tag-side sibling of [`FigmentNameTagKind::ordinal`]: the payload-
+    /// bearing [`FigmentNameTag`] value projects to the same `usize`
+    /// precedence position as its kind-side variant tag, without paying
+    /// the [`Self::kind`] hop at the call site. Direct-match discipline
+    /// (no `self.kind().ordinal()` delegation in the body) so the
+    /// tag-side declaration is an independent load-bearing witness of
+    /// the (variant → ordinal) projection — a future edit that shifts
+    /// the mapping on ONE declaration surface (this tag-side match, the
+    /// kind-side inherent match, the [`FigmentNameTagKind::ALL`] slice)
+    /// but not the others diverges at the pointwise-agreement pin
+    /// [`tests::figment_name_tag_ordinal_agrees_with_kind_ordinal_pointwise`]
+    /// on the first variant where they disagree, catching drift at test
+    /// time rather than at whichever consumer happened to be observed
+    /// first. Peer of the tag-side ordinal projection on the sibling
+    /// figment-Source axis [`FigmentSourceTag::ordinal`] and one
+    /// primitive over on the sibling shikumi-source axis
+    /// [`ConfigSource::ordinal`] — the three payload-bearing tag axes
+    /// (shikumi-source, figment-Source, figment-Name) now match on
+    /// tag-side ordinal projection as well as on cardinality and closure
+    /// discipline.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Format`] regardless of the inner borrowed
+    /// [`crate::FormatMetadataTag`] envelope, and every [`Self::Env`]
+    /// regardless of the inner [`EnvMetadataTag`] prefix — is what the
+    /// pointwise-agreement pin locks in: the kind-side inherent cannot
+    /// see the payload, and a future edit that changed either payload-
+    /// bearing arm here to inspect the inner value would diverge from
+    /// the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`FigmentNameTagKind::ordinal`] (const since `482c027`),
+    /// the peer tag-side sibling on the figment-Source axis
+    /// [`FigmentSourceTag::ordinal`], and every other projection already
+    /// carried on this `impl FigmentNameTag` block ([`Self::kind`],
+    /// [`Self::is_format`] / [`Self::is_env`], [`Self::as_format`] /
+    /// [`Self::as_env`], [`Self::attribution_axis`], all
+    /// `pub const fn`). Pinned by
+    /// [`tests::figment_name_tag_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Format(_) => 0,
+            Self::Env(_) => 1,
+        }
+    }
+
+    /// The canonical lowercase label of this tag —
+    /// `"format"` for [`Self::Format`] regardless of the inner borrowed
+    /// [`crate::FormatMetadataTag`] envelope, `"env"` for [`Self::Env`]
+    /// regardless of the inner [`EnvMetadataTag`] prefix. Matches the
+    /// canonical labels carried by [`FigmentNameTagKind::as_str`] one
+    /// altitude down on the same figment-Name axis.
+    ///
+    /// Tag-side sibling of [`FigmentNameTagKind::as_str`]: the payload-
+    /// bearing [`FigmentNameTag`] value projects to the same
+    /// `&'static str` canonical label as its kind-side variant tag,
+    /// without paying the [`Self::kind`] hop at the call site. Direct-
+    /// match discipline (no `self.kind().as_str()` delegation in the
+    /// body) so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → label) projection — a future edit that
+    /// shifts the mapping on ONE declaration surface (this tag-side
+    /// match, the kind-side inherent match, the canonical wire form)
+    /// but not the others diverges at the pointwise-agreement pin
+    /// [`tests::figment_name_tag_as_str_agrees_with_kind_as_str_pointwise`]
+    /// on the first variant where they disagree, catching drift at test
+    /// time rather than at whichever consumer happened to be observed
+    /// first. Peer of the tag-side label projection on the sibling
+    /// figment-Source axis [`FigmentSourceTag::as_str`] and one primitive
+    /// over on the sibling shikumi-source axis [`ConfigSource::as_str`]
+    /// — the three payload-bearing tag axes now match on tag-side label
+    /// projection as well as on tag-side ordinal projection, cardinality,
+    /// and closure discipline.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Format`] regardless of the inner borrowed
+    /// [`crate::FormatMetadataTag`] envelope, and every [`Self::Env`]
+    /// regardless of the inner [`EnvMetadataTag`] prefix — is what the
+    /// pointwise-agreement pin locks in: the kind-side inherent cannot
+    /// see the payload, and a future edit that changed either payload-
+    /// bearing arm here to inspect the inner value would diverge from
+    /// the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`FigmentNameTagKind::as_str`], the peer tag-side sibling
+    /// on the figment-Source axis [`FigmentSourceTag::as_str`], and
+    /// every other projection already carried on this `impl FigmentNameTag`
+    /// block ([`Self::kind`], [`Self::ordinal`], [`Self::is_format`] /
+    /// [`Self::is_env`], [`Self::as_format`] / [`Self::as_env`],
+    /// [`Self::attribution_axis`], all `pub const fn`). Pinned by
+    /// [`tests::figment_name_tag_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Format(_) => "format",
+            Self::Env(_) => "env",
+        }
+    }
+
     /// [`crate::AttributionAxis`] of this tag — constant
     /// [`crate::AttributionAxis::MetadataName`] for every variant, since
     /// [`FigmentNameTag`] *is* the typed reading of
@@ -100870,6 +100978,261 @@ mod tests {
         assert!(!KIND_ENV_IS_FORMAT);
         assert!(KIND_ENV_IS_ENV);
         assert!(ENV_BARE_KIND_IS_ENV);
+    }
+
+    #[test]
+    fn figment_name_tag_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection at
+        // the payload-bearing altitude of the figment-Name axis:
+        // `tag.ordinal() == tag.kind().ordinal()` for every
+        // FigmentNameTag value, across every canonical sample shape.
+        // Peer of `figment_source_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one primitive over on the sibling figment-Source axis, and
+        // `config_source_ordinal_agrees_with_kind_ordinal_pointwise` one
+        // primitive over on the sibling shikumi-source axis. The
+        // kind-side has no payload visibility, so a future edit that
+        // peeked at the inner borrowed FormatMetadataTag envelope or
+        // EnvMetadataTag prefix on either declaration surface would
+        // diverge here on the first shape where the tag-side and
+        // kind-side disagree. Also pins the payload-independence
+        // contract: the answer is the same for every `Format(env)`
+        // regardless of the inner envelope, and every `Env(pfx)`
+        // regardless of the inner prefix, so the tag-side declaration
+        // is forbidden from consulting any payload.
+        for (name, _) in canonical_figment_name_tag_kind_samples() {
+            let tag =
+                FigmentNameTag::classify(&name).expect("every canonical sample must classify");
+            assert_eq!(
+                tag.ordinal(),
+                tag.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection at
+        // the payload-bearing altitude: `Format(_)` at 0 regardless of
+        // the inner FormatMetadataTag envelope, `Env(_)` at 1 regardless
+        // of the inner EnvMetadataTag prefix. Payload-independence sub-
+        // pin on the Format arm: every shikumi-built provider format
+        // (Yaml, Toml, and the feature-gated Lisp/Nix/Blue variants) all
+        // yield the same ordinal (0). Payload-independence sub-pin on
+        // the Env arm: prefixed and bare payloads both yield the same
+        // ordinal (1). Peer of `figment_name_tag_kind_ordinal_reuses_declaration_order`
+        // one altitude down on the same axis, plus
+        // `figment_source_tag_ordinal_reuses_declaration_order` on the
+        // sibling figment-Source axis. Guards against a swap in the
+        // tag-side match arms that would still pass the pointwise-
+        // agreement pin if the kind-side inherent match was edited in
+        // the same drift.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
+            let tag = FigmentNameTag::classify(&name).expect("Format must classify");
+            assert_eq!(
+                tag.ordinal(),
+                0,
+                "Format({f:?}) ordinal must be 0 regardless of envelope",
+            );
+        }
+        for prefix in ["", "MYAPP_", "SVC_", "LONGER_PREFIX_"] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = FigmentNameTag::classify(&name).expect("Env must classify");
+            assert_eq!(
+                tag.ordinal(),
+                1,
+                "Env({prefix:?}) ordinal must be 1 regardless of prefix",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`FigmentNameTagKind::ordinal`, const since `482c027`)
+        // and its peer tag-side projection on the sibling figment-Source
+        // axis (`FigmentSourceTag::ordinal`) and one primitive over on
+        // the sibling shikumi-source axis (`ConfigSource::ordinal`).
+        //
+        // A `const fn ordinal_of(FigmentNameTag<'_>) -> usize` wrapper
+        // delegating to `tag.ordinal()` pins the const-fn signature at
+        // the language level: the moment `FigmentNameTag::ordinal`
+        // loses its `const` qualifier (a future edit that reaches for a
+        // non-const helper inside the two-arm exhaustive match — an
+        // allocator, a runtime lookup, a borrowed FormatMetadataTag /
+        // EnvMetadataTag inspection on either payload-bearing arm) the
+        // wrapper below fails to compile at THAT line before the drift
+        // can reach downstream const-context consumers that assumed
+        // const-ness through this projection (a `const` per-name-kind
+        // bitset sized by `axis_cardinality::<FigmentNameTagKind>()`
+        // and indexed by the tag-side ordinal without a `.kind()` hop,
+        // an attestation manifest whose per-figment-name slots on the
+        // tag-side altitude are initialized under `const`).
+        //
+        // The `Format` arm needs a `FormatMetadataTag<'static>` whose
+        // inner `&'static Path` uses `Path::new`, which is not stable-
+        // const on rust 1.89 (issue rust-lang/rust#143874); the sibling
+        // `figment_name_tag_predicates_and_kind_are_const_callable` pin
+        // above documents the same limitation. This pin therefore welds
+        // the `Env` arm through const bindings — its inner payload
+        // `EnvMetadataTag::Bare` carries no data and is trivially const-
+        // constructible — but the compiler having accepted the
+        // `pub const fn` declaration on `FigmentNameTag::ordinal`
+        // proves the `Format` arm compiles under the same const-checker,
+        // so const-callability of the whole match is covered without a
+        // synthetic `Path`.
+        const fn ordinal_of(tag: FigmentNameTag<'_>) -> usize {
+            tag.ordinal()
+        }
+        const ENV_BARE: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
+        const ENV_BARE_ORDINAL: usize = ENV_BARE.ordinal();
+        const {
+            assert!(ENV_BARE_ORDINAL == 1);
+        }
+        // Runtime cross-check across both variants: catches a future
+        // variant landing whose const-context weld was forgotten
+        // upstream. Includes the payload-bearing `Format(_)` case so
+        // the const-ness of that arm cannot regress without failing
+        // the compiler-side acceptance above.
+        let fmt_name = crate::discovery::Format::Lisp.metadata_name(Path::new("/etc/app/app.lisp"));
+        let fmt_tag = FigmentNameTag::classify(&fmt_name).expect("Format must classify");
+        assert_eq!(ordinal_of(fmt_tag), 0);
+        let env_name = ConfigSource::env_metadata_name("MYAPP_");
+        let env_tag = FigmentNameTag::classify(&env_name).expect("Env must classify");
+        assert_eq!(ordinal_of(env_tag), 1);
+        assert_eq!(ordinal_of(ENV_BARE), 1);
+    }
+
+    #[test]
+    fn figment_name_tag_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → canonical label)
+        // projection at the payload-bearing altitude of the figment-
+        // Name axis: `tag.as_str() == tag.kind().as_str()` for every
+        // FigmentNameTag value, across every canonical sample shape.
+        // Peer of `figment_source_tag_as_str_agrees_with_kind_as_str_pointwise`
+        // one primitive over on the sibling figment-Source axis, and
+        // `config_source_as_str_agrees_with_kind_as_str_pointwise` one
+        // primitive over on the sibling shikumi-source axis. Idiom-peer
+        // of `figment_name_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one projection over on the same tag-side altitude. The kind-
+        // side has no payload visibility, so a future edit that peeked
+        // at the inner borrowed FormatMetadataTag envelope or
+        // EnvMetadataTag prefix on either declaration surface would
+        // diverge here on the first shape where the tag-side and
+        // kind-side disagree. Also pins the payload-independence
+        // contract: the answer is the same for every `Format(env)`
+        // regardless of the inner envelope, and every `Env(pfx)`
+        // regardless of the inner prefix.
+        for (name, _) in canonical_figment_name_tag_kind_samples() {
+            let tag =
+                FigmentNameTag::classify(&name).expect("every canonical sample must classify");
+            assert_eq!(
+                tag.as_str(),
+                tag.kind().as_str(),
+                "as_str must agree tag ↔ kind for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the (variant → canonical label)
+        // projection at the payload-bearing altitude: `Format(_)`
+        // yields "format" regardless of the inner FormatMetadataTag
+        // envelope, `Env(_)` yields "env" regardless of the inner
+        // EnvMetadataTag prefix. Payload-independence sub-pin on the
+        // Format arm: every shikumi-built provider format yields the
+        // same label ("format"). Payload-independence sub-pin on the
+        // Env arm: prefixed and bare payloads both yield the same
+        // label ("env"). Peer of `figment_name_tag_kind_as_str_yields_canonical_lowercase_names`
+        // one altitude down on the same axis, and
+        // `figment_source_tag_as_str_yields_canonical_lowercase_names`
+        // on the sibling figment-Source axis. Guards against a swap in
+        // the tag-side match arms that would still pass the pointwise-
+        // agreement pin if the kind-side inherent match was edited in
+        // the same drift.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
+            let tag = FigmentNameTag::classify(&name).expect("Format must classify");
+            assert_eq!(
+                tag.as_str(),
+                "format",
+                "Format({f:?}) label must be \"format\" regardless of envelope",
+            );
+        }
+        for prefix in ["", "MYAPP_", "SVC_", "LONGER_PREFIX_"] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = FigmentNameTag::classify(&name).expect("Env must classify");
+            assert_eq!(
+                tag.as_str(),
+                "env",
+                "Env({prefix:?}) label must be \"env\" regardless of prefix",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side canonical label is
+        // `pub const fn`, matching its kind-side sibling one altitude
+        // down on the same axis (`FigmentNameTagKind::as_str`) and its
+        // peer tag-side projection on the sibling figment-Source axis
+        // (`FigmentSourceTag::as_str`) and one primitive over on the
+        // sibling shikumi-source axis (`ConfigSource::as_str`).
+        //
+        // A `const fn label_of(FigmentNameTag<'_>) -> &'static str`
+        // wrapper delegating to `tag.as_str()` pins the const-fn
+        // signature at the language level: the moment
+        // `FigmentNameTag::as_str` loses its `const` qualifier (a
+        // future edit that reaches for a non-const helper inside the
+        // two-arm exhaustive match — an allocator, a runtime lookup,
+        // a borrowed FormatMetadataTag / EnvMetadataTag inspection on
+        // either payload-bearing arm) the wrapper below fails to
+        // compile at THAT line before the drift can reach downstream
+        // const-context consumers that assumed const-ness through this
+        // projection (a `const` per-figment-name label lookup table
+        // sized by `axis_cardinality::<FigmentNameTagKind>()` and
+        // indexed by the tag-side altitude without a `.kind()` hop, a
+        // `static` log-field constant for a compile-time-known tag's
+        // canonical name).
+        //
+        // The `Format` arm's payload-bearing const-context reachability
+        // is the same as for `ordinal_is_const_callable` above (limited
+        // by `Path::new` non-const on rust 1.89, rust-lang/rust#143874);
+        // this pin welds the `Env` arm through const bindings, and the
+        // compiler having accepted the `pub const fn` declaration on
+        // `FigmentNameTag::as_str` proves the `Format` arm compiles
+        // under the same const-checker.
+        const fn label_of(tag: FigmentNameTag<'_>) -> &'static str {
+            tag.as_str()
+        }
+        const ENV_BARE: FigmentNameTag<'static> = FigmentNameTag::Env(EnvMetadataTag::Bare);
+        const ENV_BARE_LABEL: &str = ENV_BARE.as_str();
+        const {
+            // Byte-length pin — a future edit that shifted the `Env`
+            // arm's label away from the canonical `"env"` triple would
+            // fail here before any downstream observer that keyed on
+            // the label length. Byte-slice `matches!` on `b"env"` is
+            // const-callable under rust 1.94.1 and pins the exact
+            // three-byte content, not just the length.
+            assert!(matches!(ENV_BARE_LABEL.as_bytes(), b"env"));
+        }
+        // Runtime cross-check across both variants: catches a future
+        // variant landing whose const-context weld was forgotten
+        // upstream. Includes the payload-bearing `Format(_)` case so
+        // the const-ness of that arm cannot regress without failing
+        // the compiler-side acceptance above.
+        let fmt_name = crate::discovery::Format::Lisp.metadata_name(Path::new("/etc/app/app.lisp"));
+        let fmt_tag = FigmentNameTag::classify(&fmt_name).expect("Format must classify");
+        assert_eq!(label_of(fmt_tag), "format");
+        let env_name = ConfigSource::env_metadata_name("MYAPP_");
+        let env_tag = FigmentNameTag::classify(&env_name).expect("Env must classify");
+        assert_eq!(label_of(env_tag), "env");
+        assert_eq!(label_of(ENV_BARE), "env");
     }
 
     #[test]
