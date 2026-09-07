@@ -183,6 +183,56 @@ impl ReloadFailure {
         self.kind
     }
 
+    /// [`ConfigSource`] blamed for the failure, or `None` when no
+    /// attribution was resolved — convenience method-form accessor
+    /// over [`Self::failing_source`] (the public field), borrowing
+    /// into the captured envelope rather than owning a fresh clone.
+    /// One hop, one field read.
+    ///
+    /// Structural peer of [`Self::kind`] and [`Self::attribution_rule`]
+    /// on the "method-form accessor over a public field" idiom the
+    /// envelope establishes: each of the three surfaces a method form
+    /// callers can hold as `fn(&ReloadFailure) -> _` (a
+    /// per-observation-site function pointer, a `HashMap` key over
+    /// projected values, an iterator's `map` closure) without leaking
+    /// the field-access syntax into the caller's shape. Where [`Self::kind`]
+    /// and [`Self::attribution_rule`] read [`Copy`] fields by value,
+    /// this accessor borrows through the underlying
+    /// `Option<ConfigSource>` slot — [`ConfigSource`] carries a
+    /// [`PathBuf`] / owned `String` for its file / env / custom arms
+    /// and is deliberately not [`Copy`] — surfacing `Option<&ConfigSource>`
+    /// so observers inspect the blamed layer without consuming or
+    /// cloning it.
+    ///
+    /// Live-error peer of the [`crate::ShikumiError::failing_source`]
+    /// one-hop accessor on the source-error side of the cross-thread
+    /// capture boundary: the two projections agree pointwise
+    /// (`ReloadFailure::from_error(&err).failing_source() ==
+    /// err.failing_source()` for every [`ShikumiError`]), pinning the
+    /// lossless-capture contract for the blamed-source axis on the
+    /// cross-thread mirror. Pairs with [`Self::attribution_rule`] to
+    /// give observers the (which-layer × why-blamed) pair in two
+    /// one-hop reads — the same information the live-error side
+    /// surfaces via [`crate::ShikumiError::failing_attribution`] as one
+    /// two-field envelope, decomposed across the two envelope-side
+    /// accessors.
+    ///
+    /// `const fn`: the body is an explicit `match` over the borrowed
+    /// [`Self::failing_source`] slot — `Some(source) => Some(source)`,
+    /// `None => None` — sidestepping the [`Option::as_ref`] coercion
+    /// on the composition side so the projection lands at the same
+    /// const-callability altitude as its trivial-`Copy`-field peers
+    /// [`Self::kind`] and [`Self::attribution_rule`] with no toolchain
+    /// version dependency on when the underlying
+    /// [`Option::as_ref`] shipped as `const`.
+    #[must_use]
+    pub const fn failing_source(&self) -> Option<&ConfigSource> {
+        match &self.failing_source {
+            Some(source) => Some(source),
+            None => None,
+        }
+    }
+
     /// [`AttributionRule`] recorded for the blamed layer, or `None`
     /// when no attribution was resolved — convenience method-form
     /// accessor over [`Self::attribution_rule`] (the public field). One
@@ -2664,6 +2714,161 @@ mod tests {
             f_file.attribution_rule(),
             Some(AttributionRule::FileBySource),
         );
+    }
+
+    #[test]
+    fn failing_source_accessor_agrees_with_field_pointwise() {
+        // The `failing_source()` method-form accessor and the
+        // `failing_source` public field must agree on every captured
+        // ReloadFailure — one is a pure borrowing forwarder of the
+        // other. Peer of `kind_accessor_agrees_with_field_pointwise` /
+        // `attribution_rule_accessor_agrees_with_field_pointwise` on
+        // the trivial-field-forwarder altitude: all three accessors
+        // are `pub const fn`s that project a public field verbatim
+        // (`ShikumiErrorKind` by value for `kind`,
+        // `Option<AttributionRule>` by value for `attribution_rule`,
+        // `Option<&ConfigSource>` by borrow for `failing_source`), and
+        // each surfaces a method form callers can hold as a function
+        // pointer without leaking the field-access syntax into the
+        // caller's shape. Exercised across every ShikumiError kind —
+        // including the five non-Extract kinds, where both the field
+        // and the accessor return `None`, so the agreement covers
+        // both polarities of the `Option<ConfigSource>` slot.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(f.failing_source(), f.failing_source.as_ref());
+        }
+    }
+
+    #[test]
+    fn failing_source_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the blamed-source axis on the
+        // cross-thread observable form: the captured envelope's
+        // `failing_source` projection mirrors the source error's
+        // `failing_source` byte-for-byte across every constructible
+        // ShikumiError variant, and end-to-end on a real Extract
+        // failure that resolves to a source-axis rule (FileBySource).
+        // Peer of `attribution_rule_agrees_with_shikumi_error_accessor_pointwise`
+        // on the primitive-projection altitude — where that pin closes
+        // the lossless-capture contract on the rule half of the
+        // (which-layer × why-blamed) pair, this pin closes it on the
+        // which-layer half, so a future refactor of either side (the
+        // live `ShikumiError::failing_source` accessor or the captured
+        // `ReloadFailure::failing_source` field / method-form
+        // accessor) is bound to move the other in lockstep.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.failing_source(),
+                err.failing_source(),
+                "captured failing_source must mirror source failing_source for {err:?}",
+            );
+        }
+
+        // End-to-end pin on a real Extract failure: the blamed
+        // ConfigSource survives capture through
+        // `ReloadFailure::from_error` on the FileBySource file-axis
+        // attribution resolver — the file path threads through the
+        // error → envelope boundary intact. Distinguishes an
+        // attributed Extract (`Some(File { path, .. })` on both sides)
+        // from the unattributed Extract cell exercised by
+        // `one_per_kind()` above (None on both sides), pinning the
+        // Some-side of the Some-iff-attribution partition.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fs_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert_eq!(f_file.failing_source(), err_file.failing_source());
+        assert_eq!(
+            f_file.failing_source().and_then(ConfigSource::as_path),
+            Some(file.as_path()),
+        );
+    }
+
+    #[test]
+    fn reload_failure_failing_source_is_const_callable() {
+        // Weld the const-callability of `ReloadFailure::failing_source`
+        // — the borrowing method-form accessor over the public
+        // `failing_source` field at the cross-thread observable
+        // envelope altitude — at compile time. Peer of
+        // `reload_failure_kind_is_const_callable` /
+        // `reload_failure_attribution_rule_is_const_callable` on the
+        // trivial-field-forwarder altitude: all three accessors are
+        // `pub const fn`s that project a public field verbatim, but
+        // where `kind` and `attribution_rule` read `Copy` fields by
+        // value, this projects the non-`Copy`
+        // `Option<ConfigSource>` slot as an `Option<&ConfigSource>`
+        // borrow. The routed body is an explicit
+        // `match &self.failing_source { Some(s) => Some(s), None => None }`
+        // rather than the non-const `Option::as_ref` coercion, so the
+        // projection lifts to `const` on the same idiomatic body shape
+        // as its peers without a toolchain-version dependency.
+        //
+        // Exercised across the two attribution scenarios: the `None`
+        // scenario (no attribution recorded — the polarity every
+        // non-Extract kind and every attribution-less Extract lands
+        // in) and one welded `Some(source)` scenario (a concrete
+        // `ConfigSource::Defaults` variant surfacing through the
+        // envelope's `failing_source` slot). Each routes the envelope
+        // through the const-fn projection at compile time; the
+        // cross-checks pin the routed arm against both the runtime-fn
+        // projection and the underlying `Option::as_ref` field read.
+        //
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 reason as the peer const welds:
+        // `ReloadFailure` carries `Drop`-bearing payloads (`String`,
+        // `Vec<ConfigSource>`, `Vec<String>`,
+        // `Option<ConfigSource>`), so a `const REL: ReloadFailure =
+        // ...; const SRC = REL.failing_source();` spelling drops the
+        // const value after the projection and rejects. A `static
+        // REL: ReloadFailure` is never dropped, so borrowing `&REL`
+        // for the `&self` receiver in a `const` initializer stays
+        // inside the const-eval envelope.
+        static NONE_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::NotFound,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: None,
+            attribution_rule: None,
+        };
+        static SOME_REL: ReloadFailure = ReloadFailure {
+            message: String::new(),
+            kind: ShikumiErrorKind::Extract,
+            sources: Vec::new(),
+            field_path: Vec::new(),
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+        const NONE_SRC: Option<&ConfigSource> = NONE_REL.failing_source();
+        const SOME_SRC: Option<&ConfigSource> = SOME_REL.failing_source();
+
+        assert_eq!(NONE_SRC, None);
+        assert_eq!(SOME_SRC, Some(&ConfigSource::Defaults));
+
+        // Cross-check: the const-fn projection stays pointwise agreed
+        // with the runtime-side `rel.failing_source()` call and with
+        // the underlying `rel.failing_source.as_ref()` field read over
+        // both welded arms. Redundant with the pointwise pin above
+        // (`failing_source_accessor_agrees_with_field_pointwise`), but
+        // this pin catches a future edit that shifted the const-fn
+        // body away from the runtime-fn body or the field read on
+        // either welded arm.
+        assert_eq!(NONE_SRC, NONE_REL.failing_source());
+        assert_eq!(SOME_SRC, SOME_REL.failing_source());
+        assert_eq!(NONE_SRC, NONE_REL.failing_source.as_ref());
+        assert_eq!(SOME_SRC, SOME_REL.failing_source.as_ref());
     }
 
     #[test]
