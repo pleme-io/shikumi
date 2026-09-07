@@ -22838,6 +22838,65 @@ impl DiffLine {
     pub const fn is_unchanged(&self) -> bool {
         matches!(self, Self::Context(_))
     }
+
+    /// Canonical unified-diff prefix character on the payload-bearing
+    /// [`DiffLine`] — `'-'` for [`Self::Removed`], `'+'` for
+    /// [`Self::Added`], `' '` for [`Self::Context`] — regardless of
+    /// the inner [`String`] payload; tag-side sibling of
+    /// [`DiffLineKind::glyph`].
+    ///
+    /// One source of truth for the (variant → glyph) projection at the
+    /// payload-bearing [`DiffLine`] altitude, closing the tag ↔ kind
+    /// projection pair on the glyph axis alongside the existing
+    /// `is_*` predicate quintet ([`Self::is_removed`] /
+    /// [`Self::is_added`] / [`Self::is_context`] / [`Self::is_changed`]
+    /// / [`Self::is_unchanged`]) that already carries the tag ↔ kind
+    /// projection pair on the boolean-predicate axis. Before this lift,
+    /// every renderer with a [`DiffLine`] in hand had to route the
+    /// glyph through the `.kind()` projection first — the
+    /// [`ConfigDiff::render_unified`] surface open-coded
+    /// `line.kind().glyph()` at its per-line push, and any future
+    /// alternative renderer (a Markdown-fenced diff, a color-coded
+    /// terminal renderer routing glyph through a palette, a per-line
+    /// structured-log emitter tagging each line with its unified-diff
+    /// prefix) would repeat the two-hop projection. With this
+    /// primitive, the tag-side call site reads `line.glyph()` at one
+    /// hop, and the crate-internal renderer [`ConfigDiff::render_unified`]
+    /// now routes through this sibling directly.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Removed(text)` / `Added(text)` / `Context(text)` regardless
+    /// of text content — is what the pointwise-agreement pin locks in:
+    /// the kind-side has no [`String`] visibility, so a future edit
+    /// that peeked at the inner payload would diverge from
+    /// [`DiffLineKind::glyph`] on the same line and fail
+    /// [`tests::diff_line_glyph_agrees_with_kind_glyph_pointwise`].
+    ///
+    /// `const`-callable — the body is pure pattern matching over a
+    /// borrowed [`Self`] returning const-constructible `char`
+    /// literals, so a compile-time-known [`DiffLine`] projects to a
+    /// compile-time-known glyph. Peer of [`DiffLineKind::glyph`]
+    /// (const since introduction) at the payload-bearing altitude.
+    /// Welded at compile time by
+    /// [`tests::diff_line_glyph_is_const_callable`].
+    ///
+    /// Idiom-peer of the tag-side lift the same file already carries
+    /// on the boolean-predicate axis for [`DiffLine`] against
+    /// [`DiffLineKind`]: same direct-match discipline (no `.kind()`
+    /// delegation in the body) so the tag-side declaration is an
+    /// independent load-bearing witness of the (variant → glyph)
+    /// projection, and a future edit that shifts the mapping on ONE
+    /// declaration surface but not the other diverges at the
+    /// pointwise-agreement pin on the first shape where they
+    /// disagree.
+    #[must_use]
+    pub const fn glyph(&self) -> char {
+        match self {
+            Self::Removed(_) => '-',
+            Self::Added(_) => '+',
+            Self::Context(_) => ' ',
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -23308,16 +23367,22 @@ impl ConfigDiff {
     /// Render as a unified-diff-like string for CLI display.
     /// `-` prefix for Removed, `+` for Added, ` ` for Context.
     ///
-    /// Routes the per-kind glyph through [`DiffLineKind::glyph`] and
+    /// Routes the per-line glyph through the tag-side sibling
+    /// [`DiffLine::glyph`] (which itself is pointwise equal to
+    /// [`DiffLineKind::glyph`] via
+    /// [`tests::diff_line_glyph_agrees_with_kind_glyph_pointwise`]) and
     /// the payload through [`DiffLine::text`], so the three magic
     /// `'-' / '+' / ' '` characters live at one site
-    /// ([`DiffLineKind::glyph`]) instead of being re-stated at every
-    /// renderer's three-arm match.
+    /// ([`DiffLineKind::glyph`], with [`DiffLine::glyph`] as its
+    /// tag-side sibling) instead of being re-stated at every
+    /// renderer's three-arm match. Replaces the pre-lift
+    /// `line.kind().glyph()` two-hop projection at this call site
+    /// with the one-hop [`DiffLine::glyph`] sibling.
     #[must_use]
     pub fn render_unified(&self) -> String {
         let mut out = String::new();
         for line in &self.lines {
-            out.push(line.kind().glyph());
+            out.push(line.glyph());
             out.push_str(line.text());
             out.push('\n');
         }
@@ -33231,6 +33296,88 @@ mod tests {
                 "is_unchanged must agree tag ↔ kind for {line:?}",
             );
         }
+    }
+
+    #[test]
+    fn diff_line_glyph_agrees_with_kind_glyph_pointwise() {
+        // Tag ↔ kind agreement on the (variant → glyph) projection:
+        // `line.glyph() == line.kind().glyph()` for every payload-
+        // bearing DiffLine value, across a payload-shape sweep that
+        // covers empty strings, whitespace-only, ASCII, multi-line,
+        // and non-ASCII text. Mirror of the boolean-predicate tag ↔
+        // kind pin `diff_line_agrees_with_kind_predicates_pointwise`
+        // one axis over. The kind-side has no String visibility, so
+        // a future edit that peeked at the payload on either
+        // declaration surface would diverge here on the first shape
+        // where the tag-side and kind-side disagree. Also pins the
+        // payload-independence contract: the answer is the same for
+        // every `Removed(text)` / `Added(text)` / `Context(text)`
+        // regardless of text content, so the tag-side declaration is
+        // forbidden from consulting the payload.
+        let lines = [
+            DiffLine::Removed("name: ''".into()),
+            DiffLine::Added("name: default-name".into()),
+            DiffLine::Context("size: 42".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Removed("  leading spaces".into()),
+            DiffLine::Added("multi\nline\nblob".into()),
+            DiffLine::Context("unicode: 仕組み".into()),
+        ];
+        for line in &lines {
+            assert_eq!(
+                line.glyph(),
+                line.kind().glyph(),
+                "glyph must agree tag ↔ kind for {line:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_glyph_yields_canonical_unified_diff_prefixes() {
+        // Per-variant polarity pin on the (variant → glyph)
+        // projection at the payload-bearing altitude: `Removed(_)`
+        // renders as `-`, `Added(_)` as `+`, `Context(_)` as space,
+        // regardless of the inner String payload. Payload-
+        // independence sub-pin: empty, short, and whitespace-only
+        // text all render the same glyph. Peer of
+        // `diff_line_kind_glyph_yields_canonical_unified_diff_prefixes`
+        // one altitude down.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert_eq!(DiffLine::Removed(payload.into()).glyph(), '-');
+            assert_eq!(DiffLine::Added(payload.into()).glyph(), '+');
+            assert_eq!(DiffLine::Context(payload.into()).glyph(), ' ');
+        }
+    }
+
+    #[test]
+    fn diff_line_glyph_is_const_callable() {
+        // Compile-time weld — the tag-side glyph is `pub const fn`,
+        // matching its kind-side sibling one altitude down. A
+        // `const fn glyph_of(&DiffLine) -> char` wrapper delegating
+        // to `line.glyph()` pins the const-fn signature at the
+        // language level: the moment `DiffLine::glyph` loses its
+        // `const` qualifier (a future edit that reaches for a
+        // non-const helper — an allocator, a `String` intermediate
+        // on the payload, a runtime lookup — inside the three-arm
+        // exhaustive match) the wrapper below fails to compile at
+        // THAT line before the drift can reach downstream const-
+        // context consumers that assumed const-ness through this
+        // projection. Peer of the kind-side sibling: `DiffLineKind::glyph`
+        // has been const since introduction; this pin puts the
+        // payload-bearing tag-side sibling on the same altitude.
+        const fn glyph_of(line: &DiffLine) -> char {
+            line.glyph()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream, mirroring the runtime pointwise
+        // cross-check on `attribution_rule_metadata_axis_is_const_callable`
+        // one axis over.
+        assert_eq!(glyph_of(&DiffLine::Removed(String::new())), '-');
+        assert_eq!(glyph_of(&DiffLine::Added(String::new())), '+');
+        assert_eq!(glyph_of(&DiffLine::Context(String::new())), ' ');
     }
 
     #[test]
