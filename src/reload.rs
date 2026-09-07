@@ -2203,6 +2203,119 @@ mod tests {
     }
 
     #[test]
+    fn attribution_name_kind_coordinates_agrees_with_shikumi_error_accessor_pointwise() {
+        // Lossless-capture contract for the name-axis joint-cell
+        // (figment-`Metadata::name`-axis kind × shikumi-layer-kind)
+        // projection on the cross-thread observable form: the captured
+        // envelope's attribution_name_kind_coordinates projection
+        // mirrors the source error's
+        // `ShikumiError::attribution_name_kind_coordinates` (the direct
+        // live-error accessor added alongside this test) byte-for-byte
+        // across every constructible ShikumiError variant. Peer of
+        // `attribution_source_kind_coordinates_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `file_provenance_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `figment_source_kind_agrees_with_underlying_error_pointwise`
+        // /
+        // `figment_name_tag_kind_agrees_with_shikumi_error_accessor_pointwise`
+        // /
+        // `layer_kind_agrees_with_underlying_error_pointwise` /
+        // `metadata_axis_agrees_with_underlying_error_pointwise` /
+        // `attribution_confidence_agrees_with_underlying_error_pointwise`
+        // on the sibling axes, closing the same lossless-capture
+        // contract at the name-axis joint-cell altitude — a future
+        // refactor of either side (the live
+        // `ShikumiError::attribution_name_kind_coordinates` accessor or
+        // the captured `ReloadFailure::attribution_name_kind_coordinates`
+        // field-forwarder) is bound to move the other in lockstep.
+        // Distinct from the pre-existing
+        // `attribution_name_kind_coordinates_agrees_with_rule_pointwise`
+        // test (which routed through
+        // `err.failing_attribution().and_then(|a| a.attribution_name_kind_coordinates())`
+        // for the underlying side): this pin routes through the
+        // one-hop `ShikumiError::attribution_name_kind_coordinates`
+        // accessor directly.
+        //
+        // Exercises the two name-axis / source-axis boundary cases the
+        // pointwise contract must reproduce on both sides of the
+        // capture boundary: (a) a name-axis EnvByPrefix attribution
+        // whose joint cell lands on (Env, Env) (Some outer, Some
+        // inner); (b) a source-axis FileBySource attribution whose
+        // attribution_name_kind_coordinates is None at the rule layer
+        // even though failing_attribution is Some (Some outer, None
+        // inner).
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.attribution_name_kind_coordinates(),
+                err.attribution_name_kind_coordinates(),
+                "captured attribution_name_kind_coordinates must \
+                 mirror source attribution_name_kind_coordinates for \
+                 {err:?}",
+            );
+        }
+
+        // End-to-end pin on the name-axis branch: an EnvByPrefix
+        // Extract failure resolves to Some(rule) with
+        // attribution_name_kind_coordinates == Some((Env, Env)) on
+        // both sides — figment's env-shaped Metadata::name and the
+        // chain's single Env source route the resolver to EnvByPrefix
+        // on the MetadataName axis and the joint-cell projection
+        // recovers the name-axis rule's paired identity through the
+        // captured rule slot.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain,
+            error: crate::source::synthetic_env_metadata_error("MYAPP_"),
+        };
+        let f_env = ReloadFailure::from_error(&err_env);
+        assert!(err_env.failing_attribution().is_some());
+        assert_eq!(
+            f_env.attribution_name_kind_coordinates(),
+            err_env.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(
+            f_env.attribution_name_kind_coordinates(),
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            }),
+        );
+
+        // End-to-end pin on the source-axis branch: a real FileBySource
+        // Extract failure resolves to Some(rule) with
+        // attribution_name_kind_coordinates == None on both sides — a
+        // Some outer / None inner cell that the name-axis probe above
+        // never reaches, distinguishing the (attribution absent →
+        // outer None) and (attribution present but rule is source-axis
+        // → inner None) branches on both sides of the capture
+        // boundary.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_ankc_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err_file = crate::provider::ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        assert!(err_file.failing_attribution().is_some());
+        assert_eq!(
+            f_file.attribution_name_kind_coordinates(),
+            err_file.attribution_name_kind_coordinates(),
+        );
+        assert_eq!(f_file.attribution_name_kind_coordinates(), None);
+    }
+
+    #[test]
     fn layer_kind_orthogonal_to_attribution_confidence() {
         // The layer_kind / attribution_confidence pair are orthogonal
         // projections over the rule space along the
