@@ -29283,6 +29283,56 @@ impl FigmentNameTagKind {
     /// through [`Self::is_format`]), and the load-bearing agreement
     /// and partition pins.
     pub const ENV: &'static [Self] = &[Self::Env];
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this
+    /// figment-Name-axis kind — `0` for [`Self::Format`], `1` for
+    /// [`Self::Env`]. Matches the declaration order carried by
+    /// [`Self::ALL`].
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both of which are non-`const` in stable Rust today), so
+    /// a caller wanting the figment-Name-axis kind's ordinal in a
+    /// `const` context — a compile-time-selected per-kind dispatch
+    /// table keyed on the name-kind ordinal, a `const` per-kind
+    /// bitset sized by `axis_cardinality::<FigmentNameTagKind>()`, an
+    /// attestation manifest whose per-kind slots are initialized under
+    /// `const` — reached through a `let` binding at runtime instead of
+    /// the inherent seam. This `match`-based inherent, keyed on the
+    /// two closed variants directly, gives the same `usize` answer
+    /// under `const` — pinned pointwise across every variant by
+    /// [`tests::figment_name_tag_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a
+    /// `usize` precedence position), both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the figment-Name-axis kind's scalar label and scalar
+    /// precedence position under `const`.
+    ///
+    /// Idiom-peer of [`FigmentSourceKind::ordinal`] on the sibling
+    /// figment-Source-axis kind (both figment-metadata sub-axis kinds
+    /// now carry the const-fn ordinal projection at the same altitude),
+    /// [`ConfigSourceKind::ordinal`] on the shikumi-side layer-kind
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier-kind axis of
+    /// the atomic `(tier, source)` pair, and
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis — same
+    /// `match`-on-`Self` shape, same [`crate::axis_ordinal`]-agreement
+    /// discipline, same const-callability contract. Closes the
+    /// (`as_str` × `ordinal`) pair on [`FigmentNameTagKind`] matching
+    /// the same pair already carried by [`FigmentSourceKind`],
+    /// [`ConfigSourceKind`], [`crate::ConfigTierKind`], and
+    /// [`crate::DiffLineKind`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Format => 0,
+            Self::Env => 1,
+        }
+    }
 }
 
 impl crate::ClosedAxis for FigmentNameTagKind {
@@ -100459,6 +100509,67 @@ mod tests {
         // layer ↔ figment-Env-name resolution boundary.
         assert_eq!(FigmentNameTagKind::Format.as_str(), "format");
         assert_eq!(FigmentNameTagKind::Env.as_str(), "env");
+    }
+
+    #[test]
+    fn figment_name_tag_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `FigmentNameTagKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `FigmentNameTagKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Peer of `figment_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling figment-Source-axis kind, and of
+        // `config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the shikumi-side layer-kind axis.
+        for &kind in FigmentNameTagKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending declaration
+        // order (format → env) — the same order carried by
+        // `FigmentNameTagKind::ALL`. Guards against a swap in the match
+        // arms that would still pass
+        // `..._agrees_with_axis_ordinal_pointwise` if the
+        // `FigmentNameTagKind::ALL` slice was edited in the same drift.
+        assert_eq!(FigmentNameTagKind::Format.ordinal(), 0);
+        assert_eq!(FigmentNameTagKind::Env.ordinal(), 1);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_ordinal_is_const_callable() {
+        // Weld the const-callability of the inherent `ordinal` at
+        // compile time: a runtime call would still compile if this
+        // method lost its `const` qualifier, but a `const _: usize
+        // = FigmentNameTagKind::_.ordinal()` weld fails to compile at
+        // THAT line before the drift can reach downstream `const`
+        // consumers (a compile-time-selected per-kind dispatch keyed
+        // on the name-kind ordinal, a `const` per-kind bitset sized
+        // by `axis_cardinality::<FigmentNameTagKind>()`, an
+        // attestation manifest whose per-kind slots are initialized
+        // under `const`). Mirrors the shape of
+        // `figment_source_kind_ordinal_is_const_callable` on the
+        // sibling figment-Source-axis kind, and of
+        // `config_source_kind_ordinal_is_const_callable` on the
+        // shikumi-side layer-kind axis.
+        const FORMAT_ORD: usize = FigmentNameTagKind::Format.ordinal();
+        const ENV_ORD: usize = FigmentNameTagKind::Env.ordinal();
+
+        assert_eq!(FORMAT_ORD, 0);
+        assert_eq!(ENV_ORD, 1);
     }
 
     #[test]
