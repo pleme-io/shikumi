@@ -600,6 +600,64 @@ impl Format {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this file-format
+    /// — `0` for [`Self::Yaml`], `1` for [`Self::Toml`], `2` for
+    /// [`Self::Lisp`], `3` for [`Self::Nix`], `4` for [`Self::Blue`]. The
+    /// declaration order carried by [`Self::ALL`], mirroring the
+    /// [`ProviderChain`]-facing file-provider try-order (YAML first
+    /// because it is both the crate default and the operator-facing
+    /// canonical extension, then TOML as the second figment-builtin
+    /// format, then the three shikumi-built formats — Lisp, Nix, Blue —
+    /// in the order the providers were introduced).
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the file-format ordinal in a `const` context — a
+    /// compile-time-selected per-format dispatch table keyed on the
+    /// format, a `const` per-format bitset sized by
+    /// `axis_cardinality::<Format>()`, an attestation manifest whose
+    /// per-format slots are initialized under `const` — reached through
+    /// a `let` binding at runtime instead of the inherent seam. This
+    /// `match`-based inherent, keyed on the five closed variants
+    /// directly, gives the same `usize` answer under `const` — pinned
+    /// pointwise across every variant by
+    /// [`tests::format_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a
+    /// `usize` precedence position), both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the file-format's scalar label and scalar position under
+    /// `const`.
+    ///
+    /// Idiom-peer of [`crate::ConfigSourceKind::ordinal`] on the
+    /// source-layer axis, [`crate::ConfigTierKind::ordinal`] on the
+    /// tier axis of the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis, [`crate::source::FigmentSourceKind::ordinal`]
+    /// on the figment-Source axis, [`crate::source::FigmentNameTagKind::ordinal`]
+    /// on the figment-Name axis, and
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract. First landing of the
+    /// ordinal-projection idiom on the file-format axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Yaml => 0,
+            Self::Toml => 1,
+            Self::Lisp => 2,
+            Self::Nix => 3,
+            Self::Blue => 4,
+        }
+    }
+
     /// Operator-facing English message stating this format's top-level
     /// dict-required contract — the prefix the shikumi-built providers
     /// (`crate::LispProvider`, `crate::NixProvider`) emit when a parsed
@@ -6826,6 +6884,109 @@ mod tests {
         assert_eq!(Format::Toml.as_str(), "toml");
         assert_eq!(Format::Lisp.as_str(), "lisp");
         assert_eq!(Format::Nix.as_str(), "nix");
+    }
+
+    #[test]
+    fn format_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `Format::ordinal` and the trait-uniform
+        // free-function projection `crate::axis_ordinal` are two
+        // spellings of the same closed-axis position lookup; pin them
+        // pointwise across every variant so a future edit to either
+        // the inherent match or the `Format::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that `axis_ordinal` does not (it delegates
+        // to non-const `Iterator::position` over a generic trait
+        // bound); this test guards the equal-answer contract that
+        // keeps the two seams substitutable. Idiom-peer of
+        // `config_source_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling source-kind axis and
+        // `watch_event_class_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the reload-relevance axis — same contract lifted to the
+        // file-format axis.
+        for &format in Format::ALL {
+            assert_eq!(
+                format.ordinal(),
+                crate::axis_ordinal(format),
+                "inherent ordinal must agree with axis_ordinal for {format:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Yaml → Toml → Lisp → Nix → Blue).
+        // A future swap in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `Format::ALL` on both sides)
+        // fails here first.
+        assert_eq!(Format::Yaml.ordinal(), 0);
+        assert_eq!(Format::Toml.ordinal(), 1);
+        assert_eq!(Format::Lisp.ordinal(), 2);
+        assert_eq!(Format::Nix.ordinal(), 3);
+        assert_eq!(Format::Blue.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `Format::ALL` at every declared position. A future
+        // edit that shifts the match arms without shifting the slice
+        // literal in lockstep fails here on the first drifted position.
+        for (index, &format) in Format::ALL.iter().enumerate() {
+            assert_eq!(
+                format.ordinal(),
+                index,
+                "ordinal must reuse Format::ALL index for {format:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_ordinal_is_const_callable() {
+        // Compile-time weld: the (format → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projections (`Format::as_str`,
+        // `Format::provenance`, `Format::extensions`, all const since
+        // their respective landings). A drop of the `const` qualifier
+        // on `Format::ordinal` fails this test to compile. Idiom-peer
+        // of `watch_event_class_ordinal_is_const_callable`,
+        // `config_source_kind_ordinal_is_const_callable`, and the
+        // corresponding `_is_const_callable` seals on every other
+        // ordinal-carrying closed-axis primitive in the crate.
+        //
+        // Five `const` bindings — one per `Format` variant — route
+        // each payload-free variant through the const-fn projection
+        // in const position. The moment `Format::ordinal` loses its
+        // const-ness one of the five `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const YAML: usize = Format::Yaml.ordinal();
+        const TOML: usize = Format::Toml.ordinal();
+        const LISP: usize = Format::Lisp.ordinal();
+        const NIX: usize = Format::Nix.ordinal();
+        const BLUE: usize = Format::Blue.ordinal();
+
+        assert_eq!(YAML, 0);
+        assert_eq!(TOML, 1);
+        assert_eq!(LISP, 2);
+        assert_eq!(NIX, 3);
+        assert_eq!(BLUE, 4);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `Format::ALL` to the runtime-side
+        // `format.ordinal()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (format, expected) in [
+            (Format::Yaml, YAML),
+            (Format::Toml, TOML),
+            (Format::Lisp, LISP),
+            (Format::Nix, NIX),
+            (Format::Blue, BLUE),
+        ] {
+            assert_eq!(format.ordinal(), expected, "format {format:?}");
+        }
     }
 
     #[test]
