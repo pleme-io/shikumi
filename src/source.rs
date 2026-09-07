@@ -28458,6 +28458,103 @@ impl EnvMetadataTag<'_> {
     pub const fn is_bare(self) -> bool {
         matches!(self.kind(), EnvMetadataTagKind::Bare)
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this borrowed
+    /// env-metadata tag — `0` for [`Self::Prefixed`] regardless of the
+    /// inner borrowed prefix slice, `1` for [`Self::Bare`]. Matches the
+    /// declaration order carried by [`EnvMetadataTagKind::ALL`] one
+    /// altitude down on the same env-name sub-axis.
+    ///
+    /// Tag-side sibling of [`EnvMetadataTagKind::ordinal`]: the payload-
+    /// bearing [`EnvMetadataTag`] value projects to the same `usize`
+    /// ordinal as its kind-side variant tag, without paying the
+    /// [`Self::kind`] hop at the call site. Direct-match discipline (no
+    /// `self.kind().ordinal()` delegation in the body) so the tag-side
+    /// declaration is an independent load-bearing witness of the
+    /// (variant → ordinal) projection — a future edit that shifts the
+    /// mapping on ONE declaration surface (this tag-side match, the
+    /// kind-side inherent match, the [`EnvMetadataTagKind::ALL`]
+    /// declaration order) but not the others diverges at the pointwise-
+    /// agreement pin
+    /// [`tests::env_metadata_tag_ordinal_agrees_with_kind_ordinal_pointwise`]
+    /// on the first variant where they disagree, catching drift at test
+    /// time rather than at whichever consumer happened to be observed
+    /// first. Peer of the tag-side ordinal projection on the sibling
+    /// figment-Name axis [`FigmentNameTag::ordinal`] and one primitive
+    /// over on the sibling figment-Source axis
+    /// [`FigmentSourceTag::ordinal`] — the three borrowed figment-
+    /// metadata sub-axes now all carry the tag-side ordinal projection at
+    /// the same const-callability altitude.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Prefixed`] regardless of the inner borrowed prefix — is
+    /// what the pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the payload, and a future edit that changed the
+    /// payload-bearing arm here to inspect the inner slice would diverge
+    /// from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`EnvMetadataTagKind::ordinal`] (const since `8eef08a`),
+    /// the peer tag-side sibling on the figment-Name axis
+    /// [`FigmentNameTag::ordinal`], and every other projection already
+    /// carried on this `impl EnvMetadataTag` block ([`Self::kind`],
+    /// [`Self::is_prefixed`] / [`Self::is_bare`], all `pub const fn`).
+    /// Pinned by [`tests::env_metadata_tag_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Prefixed(_) => 0,
+            Self::Bare => 1,
+        }
+    }
+
+    /// The canonical lowercase label of this tag —
+    /// `"prefixed"` for [`Self::Prefixed`] regardless of the inner
+    /// borrowed prefix, `"bare"` for [`Self::Bare`]. Matches the
+    /// canonical labels carried by [`EnvMetadataTagKind::as_str`] one
+    /// altitude down on the same env-name sub-axis.
+    ///
+    /// Tag-side sibling of [`EnvMetadataTagKind::as_str`]: the payload-
+    /// bearing [`EnvMetadataTag`] value projects to the same
+    /// `&'static str` canonical label as its kind-side variant tag,
+    /// without paying the [`Self::kind`] hop at the call site. Direct-
+    /// match discipline (no `self.kind().as_str()` delegation in the
+    /// body) so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → label) projection — a future edit that
+    /// shifts the mapping on ONE declaration surface (this tag-side
+    /// match, the kind-side inherent match, the canonical wire form) but
+    /// not the others diverges at the pointwise-agreement pin
+    /// [`tests::env_metadata_tag_as_str_agrees_with_kind_as_str_pointwise`]
+    /// on the first variant where they disagree, catching drift at test
+    /// time rather than at whichever consumer happened to be observed
+    /// first. Peer of the tag-side label projection on the sibling
+    /// figment-Name axis [`FigmentNameTag::as_str`] and one primitive
+    /// over on the sibling figment-Source axis [`FigmentSourceTag::as_str`]
+    /// — the three borrowed figment-metadata sub-axes now match on
+    /// tag-side label projection as well as on tag-side ordinal
+    /// projection, cardinality, and closure discipline.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// [`Self::Prefixed`] regardless of the inner borrowed prefix — is
+    /// what the pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the payload, and a future edit that changed the
+    /// payload-bearing arm here to inspect the inner slice would diverge
+    /// from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`EnvMetadataTagKind::as_str`], the peer tag-side sibling
+    /// on the figment-Name axis [`FigmentNameTag::as_str`], and every
+    /// other projection already carried on this `impl EnvMetadataTag`
+    /// block ([`Self::kind`], [`Self::ordinal`], [`Self::is_prefixed`] /
+    /// [`Self::is_bare`], all `pub const fn`). Pinned by
+    /// [`tests::env_metadata_tag_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prefixed(_) => "prefixed",
+            Self::Bare => "bare",
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`EnvMetadataTag`]: the kind of
@@ -102273,6 +102370,230 @@ mod tests {
         assert!(KIND_BARE_IS_BARE);
         assert!(PREFIXED_KIND_IS_PREFIXED);
         assert!(BARE_KIND_IS_BARE);
+    }
+
+    #[test]
+    fn env_metadata_tag_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection at
+        // the borrowed altitude of the env-name sub-axis:
+        // `tag.ordinal() == tag.kind().ordinal()` for every
+        // EnvMetadataTag value, across every canonical sample shape.
+        // Peer of `figment_name_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one primitive over on the sibling figment-Name axis, and
+        // `figment_source_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // on the sibling figment-Source axis. The kind-side has no
+        // payload visibility, so a future edit that peeked at the inner
+        // borrowed prefix slice on either declaration surface would
+        // diverge here on the first shape where the tag-side and kind-
+        // side disagree. Also pins the payload-independence contract:
+        // the answer is the same for every `Prefixed(pfx)` regardless
+        // of the inner prefix, so the tag-side declaration is forbidden
+        // from consulting any payload.
+        for (name, _) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("every canonical sample must classify");
+            assert_eq!(
+                tag.ordinal(),
+                tag.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the borrowed altitude: `Prefixed(_)` at 0 regardless of
+        // the inner prefix slice, `Bare` at 1 (constant, data-free).
+        // Payload-independence sub-pin on the Prefixed arm: uppercase,
+        // mixed-case, one-char, and long prefixes all yield the same
+        // ordinal (0). Peer of `env_metadata_tag_kind_ordinal_reuses_declaration_order`
+        // one altitude down on the same axis, plus
+        // `figment_name_tag_ordinal_reuses_declaration_order` on the
+        // sibling figment-Name axis. Guards against a swap in the tag-
+        // side match arms that would still pass the pointwise-
+        // agreement pin if the kind-side inherent match was edited in
+        // the same drift.
+        for prefix in [
+            "MYAPP_",
+            "TOBIRA_",
+            "AyaTsuri_",
+            "X_",
+            "VERY_LONG_PREFIX_UNDERSCORE_",
+        ] {
+            let tag = EnvMetadataTag::Prefixed(prefix);
+            assert_eq!(
+                tag.ordinal(),
+                0,
+                "Prefixed({prefix:?}) ordinal must be 0 regardless of prefix",
+            );
+        }
+        assert_eq!(EnvMetadataTag::Bare.ordinal(), 1);
+        // Classify-side reconstruction cross-check: the empty-prefix
+        // env-metadata name round-trips through the parser to Bare and
+        // hits the same declared ordinal.
+        let bare_name = ConfigSource::env_metadata_name("");
+        let bare_tag = ConfigSource::strip_env_metadata_name(&bare_name)
+            .expect("bare env-metadata name must classify");
+        assert_eq!(bare_tag.ordinal(), 1);
+    }
+
+    #[test]
+    fn env_metadata_tag_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`EnvMetadataTagKind::ordinal`, const since `8eef08a`)
+        // and its peer tag-side projection on the sibling figment-Name
+        // axis (`FigmentNameTag::ordinal`) and one primitive over on
+        // the sibling figment-Source axis (`FigmentSourceTag::ordinal`).
+        //
+        // A `const fn ordinal_of(EnvMetadataTag<'_>) -> usize` wrapper
+        // delegating to `tag.ordinal()` pins the const-fn signature at
+        // the language level: the moment `EnvMetadataTag::ordinal`
+        // loses its `const` qualifier (a future edit that reaches for
+        // a non-const helper inside the two-arm exhaustive match — an
+        // allocator, a runtime lookup, a borrowed prefix inspection on
+        // the payload-bearing arm) the wrapper below fails to compile
+        // at THAT line before the drift can reach downstream const-
+        // context consumers that assumed const-ness through this
+        // projection (a `const` per-env-name-kind bitset sized by
+        // `axis_cardinality::<EnvMetadataTagKind>()` indexed by the
+        // tag-side ordinal without a `.kind()` hop, an attestation
+        // manifest whose per-env-name slots on the tag-side altitude
+        // are initialized under `const`).
+        //
+        // Both variants weld directly from const positions: `Bare` is
+        // data-free, and `Prefixed(&'static str)` accepts a string
+        // literal in const context — unlike the peer figment-Name and
+        // figment-Source seals, which had to route through their
+        // data-free arms because their payloads use `Path::new` (not
+        // stable-const on rust 1.89 per rust-lang/rust#143874).
+        const fn ordinal_of(tag: EnvMetadataTag<'_>) -> usize {
+            tag.ordinal()
+        }
+        const PREFIXED: EnvMetadataTag<'static> = EnvMetadataTag::Prefixed("MYAPP_");
+        const BARE: EnvMetadataTag<'static> = EnvMetadataTag::Bare;
+        const PREFIXED_ORDINAL: usize = PREFIXED.ordinal();
+        const BARE_ORDINAL: usize = BARE.ordinal();
+        const {
+            assert!(PREFIXED_ORDINAL == 0);
+            assert!(BARE_ORDINAL == 1);
+        }
+        assert_eq!(ordinal_of(PREFIXED), 0);
+        assert_eq!(ordinal_of(BARE), 1);
+    }
+
+    #[test]
+    fn env_metadata_tag_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → canonical label)
+        // projection at the borrowed altitude of the env-name sub-axis:
+        // `tag.as_str() == tag.kind().as_str()` for every EnvMetadataTag
+        // value, across every canonical sample shape. Peer of
+        // `figment_name_tag_as_str_agrees_with_kind_as_str_pointwise`
+        // one primitive over on the sibling figment-Name axis, and
+        // `figment_source_tag_as_str_agrees_with_kind_as_str_pointwise`
+        // on the sibling figment-Source axis. Idiom-peer of
+        // `env_metadata_tag_ordinal_agrees_with_kind_ordinal_pointwise`
+        // one projection over on the same tag-side altitude. The kind-
+        // side has no payload visibility, so a future edit that peeked
+        // at the inner borrowed prefix slice on either declaration
+        // surface would diverge here on the first shape where the tag-
+        // side and kind-side disagree. Also pins the payload-
+        // independence contract: the answer is the same for every
+        // `Prefixed(pfx)` regardless of the inner prefix.
+        for (name, _) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("every canonical sample must classify");
+            assert_eq!(
+                tag.as_str(),
+                tag.kind().as_str(),
+                "as_str must agree tag ↔ kind for {tag:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the (variant → canonical label)
+        // projection at the borrowed altitude: `Prefixed(_)` yields
+        // "prefixed" regardless of the inner prefix slice, `Bare`
+        // yields "bare" (constant, data-free). Payload-independence
+        // sub-pin on the Prefixed arm: uppercase, mixed-case, one-char,
+        // and long prefixes all yield the same label ("prefixed").
+        // Peer of `env_metadata_tag_kind_as_str_yields_canonical_lowercase_names`
+        // one altitude down on the same axis, and
+        // `figment_name_tag_as_str_yields_canonical_lowercase_names`
+        // on the sibling figment-Name axis. Guards against a swap in
+        // the tag-side match arms that would still pass the pointwise-
+        // agreement pin if the kind-side inherent match was edited in
+        // the same drift.
+        for prefix in [
+            "MYAPP_",
+            "TOBIRA_",
+            "AyaTsuri_",
+            "X_",
+            "VERY_LONG_PREFIX_UNDERSCORE_",
+        ] {
+            let tag = EnvMetadataTag::Prefixed(prefix);
+            assert_eq!(
+                tag.as_str(),
+                "prefixed",
+                "Prefixed({prefix:?}) label must be \"prefixed\" regardless of prefix",
+            );
+        }
+        assert_eq!(EnvMetadataTag::Bare.as_str(), "bare");
+        // Classify-side reconstruction cross-check: the empty-prefix
+        // env-metadata name round-trips through the parser to Bare and
+        // hits the same declared label.
+        let bare_name = ConfigSource::env_metadata_name("");
+        let bare_tag = ConfigSource::strip_env_metadata_name(&bare_name)
+            .expect("bare env-metadata name must classify");
+        assert_eq!(bare_tag.as_str(), "bare");
+    }
+
+    #[test]
+    fn env_metadata_tag_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side canonical label is
+        // `pub const fn`, matching its kind-side sibling one altitude
+        // down on the same axis (`EnvMetadataTagKind::as_str`) and its
+        // peer tag-side projection on the sibling figment-Name axis
+        // (`FigmentNameTag::as_str`) and one primitive over on the
+        // sibling figment-Source axis (`FigmentSourceTag::as_str`).
+        //
+        // A `const fn label_of(EnvMetadataTag<'_>) -> &'static str`
+        // wrapper delegating to `tag.as_str()` pins the const-fn
+        // signature at the language level: the moment
+        // `EnvMetadataTag::as_str` loses its `const` qualifier (a
+        // future edit that reaches for a non-const helper inside the
+        // two-arm exhaustive match — an allocator, a runtime lookup,
+        // a borrowed prefix inspection on the payload-bearing arm)
+        // the wrapper below fails to compile at THAT line before the
+        // drift can reach downstream const-context consumers that
+        // assumed const-ness through this projection (a `const` per-
+        // env-name label lookup table sized by
+        // `axis_cardinality::<EnvMetadataTagKind>()` and indexed by
+        // the tag-side altitude without a `.kind()` hop, a `static`
+        // log-field constant for a compile-time-known tag's canonical
+        // name).
+        //
+        // Both variants weld directly from const positions: `Bare` is
+        // data-free, and `Prefixed(&'static str)` accepts a string
+        // literal in const context — unlike the peer figment-Name and
+        // figment-Source seals, which had to route through their
+        // data-free arms.
+        const fn label_of(tag: EnvMetadataTag<'_>) -> &'static str {
+            tag.as_str()
+        }
+        const PREFIXED: EnvMetadataTag<'static> = EnvMetadataTag::Prefixed("MYAPP_");
+        const BARE: EnvMetadataTag<'static> = EnvMetadataTag::Bare;
+        const PREFIXED_LABEL: &str = PREFIXED.as_str();
+        const BARE_LABEL: &str = BARE.as_str();
+        const {
+            assert!(matches!(PREFIXED_LABEL.as_bytes(), b"prefixed"));
+            assert!(matches!(BARE_LABEL.as_bytes(), b"bare"));
+        }
+        assert_eq!(label_of(PREFIXED), "prefixed");
+        assert_eq!(label_of(BARE), "bare");
     }
 
     #[test]
