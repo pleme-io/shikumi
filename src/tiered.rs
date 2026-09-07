@@ -22950,6 +22950,60 @@ impl DiffLine {
             Self::Context(_) => "context",
         }
     }
+
+    /// The [`crate::ClosedAxis`] precedence ordinal of this diff line's
+    /// cell kind — `0` for [`Self::Removed`], `1` for [`Self::Added`],
+    /// `2` for [`Self::Context`] — regardless of the inner [`String`]
+    /// payload; tag-side sibling of [`DiffLineKind::ordinal`].
+    ///
+    /// One source of truth for the (variant → ordinal) projection at the
+    /// payload-bearing [`DiffLine`] altitude, closing the tag ↔ kind
+    /// projection pair on the ordinal axis alongside [`Self::as_str`]
+    /// (label axis) and [`Self::glyph`] (glyph axis) — both of which
+    /// already carry the tag ↔ kind projection pair. Before this lift,
+    /// every payload-bearing consumer wanting the diff-cell ordinal — a
+    /// per-line structured-log emitter tagging each line with its
+    /// declaration-order position, a per-tier attestation manifest
+    /// recording the diff-cell ordinal histogram between two config
+    /// tiers, a dense per-line-kind renderer indexing into a fixed-size
+    /// array by ordinal without the intermediate `HashMap<DiffLineKind,
+    /// T>` — had to route through the `.kind()` projection first via a
+    /// two-hop `line.kind().ordinal()` call. With this primitive, the
+    /// tag-side call site reads `line.ordinal()` at one hop.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Removed(text)` / `Added(text)` / `Context(text)` regardless of
+    /// text content — is what the pointwise-agreement pin locks in: the
+    /// kind-side has no [`String`] visibility, so a future edit that
+    /// peeked at the inner payload would diverge from
+    /// [`DiffLineKind::ordinal`] on the same line and fail
+    /// [`tests::diff_line_ordinal_agrees_with_kind_ordinal_pointwise`].
+    ///
+    /// `const`-callable — the body is pure pattern matching over a
+    /// borrowed [`Self`] returning `usize` literals, so a compile-time-
+    /// known [`DiffLine`] projects to a compile-time-known ordinal.
+    /// Peer of [`DiffLineKind::ordinal`] (const since introduction) at
+    /// the payload-bearing altitude. Welded at compile time by
+    /// [`tests::diff_line_ordinal_is_const_callable`].
+    ///
+    /// Idiom-peer of [`Self::glyph`] and [`Self::as_str`] one axis over:
+    /// same direct-match discipline (no `.kind()` delegation in the
+    /// body) so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → ordinal) projection, and a future edit
+    /// that shifts the mapping on ONE declaration surface but not the
+    /// other diverges at the pointwise-agreement pin on the first shape
+    /// where they disagree. Together, the projection triple (`glyph`,
+    /// `as_str`, `ordinal`) closes tag-side parity with the kind-side
+    /// projection triple on the same three axes — the diff-cell axis
+    /// now carries a full tag ↔ kind projection triple.
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::Removed(_) => 0,
+            Self::Added(_) => 1,
+            Self::Context(_) => 2,
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -33627,6 +33681,94 @@ mod tests {
         assert_eq!(label_of(&DiffLine::Removed(String::new())), "removed");
         assert_eq!(label_of(&DiffLine::Added(String::new())), "added");
         assert_eq!(label_of(&DiffLine::Context(String::new())), "context");
+    }
+
+    #[test]
+    fn diff_line_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection:
+        // `line.ordinal() == line.kind().ordinal()` for every payload-
+        // bearing DiffLine value, across a payload-shape sweep that
+        // covers empty strings, whitespace-only, ASCII, multi-line,
+        // and non-ASCII text. Mirror of the tag ↔ kind pins
+        // `diff_line_glyph_agrees_with_kind_glyph_pointwise` and
+        // `diff_line_as_str_agrees_with_kind_as_str_pointwise` one and
+        // two axes over. The kind-side has no String visibility, so a
+        // future edit that peeked at the payload on either declaration
+        // surface would diverge here on the first shape where the tag-
+        // side and kind-side disagree. Also pins the payload-
+        // independence contract: the answer is the same for every
+        // `Removed(text)` / `Added(text)` / `Context(text)` regardless
+        // of text content, so the tag-side declaration is forbidden
+        // from consulting the payload.
+        let lines = [
+            DiffLine::Removed("name: ''".into()),
+            DiffLine::Added("name: default-name".into()),
+            DiffLine::Context("size: 42".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Removed("  leading spaces".into()),
+            DiffLine::Added("multi\nline\nblob".into()),
+            DiffLine::Context("unicode: 仕組み".into()),
+        ];
+        for line in &lines {
+            assert_eq!(
+                line.ordinal(),
+                line.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {line:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_ordinal_reuses_declaration_order() {
+        // Per-variant position pin on the (variant → ordinal)
+        // projection at the payload-bearing altitude: `Removed(_)` at
+        // 0, `Added(_)` at 1, `Context(_)` at 2, regardless of the
+        // inner String payload. Payload-independence sub-pin: empty,
+        // short, and whitespace-only text all yield the same ordinal.
+        // Peer of `diff_line_kind_ordinal_reuses_declaration_order` one
+        // altitude down, plus `diff_line_glyph_yields_canonical_unified_diff_prefixes`
+        // and `diff_line_as_str_yields_canonical_lowercase_names` one
+        // and two axes over. Guards against a swap in the tag-side
+        // match arms that would still pass the pointwise-agreement pin
+        // if the kind-side inherent match was edited in the same drift.
+        for payload in ["", "x", "name: value", "  leading spaces"] {
+            assert_eq!(DiffLine::Removed(payload.into()).ordinal(), 0);
+            assert_eq!(DiffLine::Added(payload.into()).ordinal(), 1);
+            assert_eq!(DiffLine::Context(payload.into()).ordinal(), 2);
+        }
+    }
+
+    #[test]
+    fn diff_line_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down. A
+        // `const fn ordinal_of(&DiffLine) -> usize` wrapper delegating
+        // to `line.ordinal()` pins the const-fn signature at the
+        // language level: the moment `DiffLine::ordinal` loses its
+        // `const` qualifier (a future edit that reaches for a non-const
+        // helper inside the three-arm exhaustive match — an allocator,
+        // a `String` intermediate on the payload, a runtime lookup)
+        // the wrapper below fails to compile at THAT line before the
+        // drift can reach downstream const-context consumers that
+        // assumed const-ness through this projection. Peer of the
+        // kind-side sibling: `DiffLineKind::ordinal` has been const
+        // since introduction; this pin puts the payload-bearing tag-
+        // side sibling on the same altitude, and joins
+        // `diff_line_glyph_is_const_callable` and
+        // `diff_line_as_str_is_const_callable` one and two axes over
+        // to close the const-callability contract on the full tag-side
+        // projection triple for the diff-cell axis.
+        const fn ordinal_of(line: &DiffLine) -> usize {
+            line.ordinal()
+        }
+        // Runtime cross-check across all three variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        assert_eq!(ordinal_of(&DiffLine::Removed(String::new())), 0);
+        assert_eq!(ordinal_of(&DiffLine::Added(String::new())), 1);
+        assert_eq!(ordinal_of(&DiffLine::Context(String::new())), 2);
     }
 
     #[test]
