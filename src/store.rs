@@ -1904,8 +1904,20 @@ mod tests {
     #[test]
     fn load_and_watch_increments_generation_on_manual_reload() {
         // The watcher closure routes through swap_in too. Verify via the
-        // (always-deterministic) manual reload path; the watcher's own
-        // event delivery is timing-sensitive on CI.
+        // manual reload path, which is the deterministic one.
+        //
+        // The generation assertion is a LOWER BOUND, not an equality.
+        // This store holds a live watcher on the same file the test
+        // writes, so the watcher's own reload legitimately races the
+        // manual one and an exact count is not a property of this code.
+        // The equality this replaced only held while the watcher was
+        // inert on Linux (every `Modify(Data(Any))` misclassified
+        // `Ignored`, see
+        // `watcher::tests::classify_every_data_change_precision_is_reload`);
+        // repairing the classifier made the race real. What IS a
+        // property of the code — and what this test exists to pin — is
+        // that a manual `reload()` advances the generation past its
+        // starting value and publishes the new value.
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("gen_watch.yaml");
         fs::write(&file, "name: w0\n").unwrap();
@@ -1920,7 +1932,11 @@ mod tests {
 
         fs::write(&file, "name: w1\n").unwrap();
         store.reload().unwrap();
-        assert_eq!(store.generation(), 1);
+        assert!(
+            store.generation() >= 1,
+            "a manual reload on a watched store must advance the generation"
+        );
+        assert_eq!(store.get().name.as_deref(), Some("w1"));
     }
 
     // ---- last_reload_error() / shared_last_reload_error() tests ----
@@ -3107,11 +3123,16 @@ mod tests {
         fs::write(&file, "count: not_a_number\n").unwrap();
         assert!(store.reload().is_err());
 
-        assert_eq!(
-            store.failure_count(),
-            1,
+        // Lower bound, not equality: this store holds a live watcher on
+        // the file the test just corrupted, so the watcher's own failing
+        // reload legitimately races the manual one and an exact count is
+        // not a property of this code. See the same reasoning on
+        // `load_and_watch_increments_generation_on_manual_reload`.
+        assert!(
+            store.failure_count() >= 1,
             "watcher constructor's manual reload must thread through record_failure",
         );
+        assert!(store.last_reload_error().is_some());
     }
 
     #[test]
@@ -3377,8 +3398,21 @@ mod hotswap_tests {
         let path = dir.path().join("hotcfg.yaml");
         write_cfg(&path, "info", "0.0.0.0:8080");
 
-        let store =
-            ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_TEST_", |_| {}).unwrap();
+        // Unwatched on purpose. This test drives `reload_hotswap()`
+        // SYNCHRONOUSLY and asserts exact generation counts, so a live
+        // watcher on the same file is a race: the watcher's own reload
+        // fires on the very writes this test makes and bumps generation
+        // underneath the assertions. It used to construct through
+        // `load_and_watch_hotswap` and pass anyway — on Linux because
+        // the watcher was inert (every `Modify(Data(Any))` was
+        // misclassified `Ignored`, see
+        // `watcher::tests::classify_every_data_change_precision_is_reload`),
+        // and on macOS because FSEvents' delivery latency exceeds this
+        // test's runtime. Repairing the classifier made the race real
+        // and this test fail. A synchronous test of the manual reload
+        // path has no need of a watcher at all; `load` supplies the same
+        // store with `_watcher: None`.
+        let store = ConfigStore::<HotCfg>::load(&path, "HOTCFG_TEST_").unwrap();
         assert_eq!(store.get().log_level, "info");
         assert_eq!(store.generation(), 0);
         assert!(store.pending_restart().is_none());
@@ -3514,8 +3548,10 @@ mod hotswap_tests {
         let path = dir.path().join("hotcfg_proof.yaml");
         write_cfg(&path, "info", "0.0.0.0:8080");
 
-        let store =
-            ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_PROOF_", |_| {}).unwrap();
+        // Unwatched: synchronous `reload_hotswap()` assertions must not
+        // race a live watcher on the same file. See the note on
+        // `reload_hotswap_applies_free_holds_restart_and_survives_invalid_candidate`.
+        let store = ConfigStore::<HotCfg>::load(&path, "HOTCFG_PROOF_").unwrap();
         let before = store.sync_proof();
 
         write_cfg(&path, "debug", "0.0.0.0:8080");
@@ -3549,12 +3585,10 @@ mod hotswap_tests {
         let path = dir.path().join("hotcfg_proof_free_moves.yaml");
         write_cfg(&path, "info", "0.0.0.0:8080");
 
-        let store = ConfigStore::<HotCfg>::load_and_watch_hotswap(
-            &path,
-            "HOTCFG_PROOF_FREE_MOVES_",
-            |_| {},
-        )
-        .unwrap();
+        // Unwatched: synchronous `reload_hotswap()` assertions must not
+        // race a live watcher on the same file. See the note on
+        // `reload_hotswap_applies_free_holds_restart_and_survives_invalid_candidate`.
+        let store = ConfigStore::<HotCfg>::load(&path, "HOTCFG_PROOF_FREE_MOVES_").unwrap();
         let before = store.sync_proof();
 
         write_cfg(&path, "debug", "0.0.0.0:8080");
@@ -3593,12 +3627,10 @@ mod hotswap_tests {
         let path = dir.path().join("hotcfg_proof_rr_blocked.yaml");
         write_cfg(&path, "info", "0.0.0.0:8080");
 
-        let store = ConfigStore::<HotCfg>::load_and_watch_hotswap(
-            &path,
-            "HOTCFG_PROOF_RR_BLOCKED_",
-            |_| {},
-        )
-        .unwrap();
+        // Unwatched: synchronous `reload_hotswap()` assertions must not
+        // race a live watcher on the same file. See the note on
+        // `reload_hotswap_applies_free_holds_restart_and_survives_invalid_candidate`.
+        let store = ConfigStore::<HotCfg>::load(&path, "HOTCFG_PROOF_RR_BLOCKED_").unwrap();
         let before = store.sync_proof();
         assert!(store.pending_restart().is_none());
 

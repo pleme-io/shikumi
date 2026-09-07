@@ -76,12 +76,29 @@ impl WatchEventClass {
     /// class — the single source of truth for the hot-reload trigger
     /// predicate.
     ///
-    /// `Modify` with a content data-change or a write-time metadata
+    /// `Modify` with **any** data-change or a write-time metadata
     /// change, and every `Create`, map to [`Self::Reload`]; every
     /// `Remove` maps to [`Self::Removed`]; all other kinds map to
     /// [`Self::Ignored`]. Pure in the event kind — no I/O, no clock — so
     /// the trigger semantics are unit-testable without the
     /// timing-sensitive watcher harness.
+    ///
+    /// **`DataChange::Any` is load-bearing, not a widening.** The arm
+    /// originally named only [`DataChange::Content`], which is what
+    /// macOS/FSEvents reports for a plain file write. Linux/inotify has
+    /// no content-vs-size discrimination on `IN_MODIFY`, so `notify`
+    /// reports the same write as `Modify(Data(Any))` — which fell to the
+    /// `_ => Ignored` catch-all. The effect was that **every**
+    /// [`crate::ConfigStore::load_and_watch`] /
+    /// `load_and_watch_hotswap` consumer on Linux silently never
+    /// reloaded: the watcher registered, delivered events, and dropped
+    /// every one of them at this match. `Any` and `Content` denote the
+    /// same fact — the file's *data* changed — differing only in how
+    /// precisely the backend can describe it, so both belong on the
+    /// reload arm. Metadata precision is deliberately NOT widened the
+    /// same way: only `MetadataKind::WriteTime` reloads, so a `chmod` /
+    /// `chown` / atime touch still classifies [`Self::Ignored`] rather
+    /// than triggering a spurious re-read.
     ///
     /// `const`-callable — the body is pure pattern matching over a
     /// borrowed [`notify::EventKind`] with no function calls, allocations,
@@ -103,12 +120,11 @@ impl WatchEventClass {
     #[must_use]
     pub const fn classify(kind: &notify::EventKind) -> Self {
         use notify::EventKind;
-        use notify::event::{DataChange, MetadataKind, ModifyKind};
+        use notify::event::{MetadataKind, ModifyKind};
 
         match kind {
             EventKind::Modify(
-                ModifyKind::Metadata(MetadataKind::WriteTime)
-                | ModifyKind::Data(DataChange::Content),
+                ModifyKind::Metadata(MetadataKind::WriteTime) | ModifyKind::Data(_),
             )
             | EventKind::Create(_) => Self::Reload,
             EventKind::Remove(_) => Self::Removed,
@@ -845,6 +861,84 @@ mod tests {
     }
 
     #[test]
+    fn classify_every_data_change_precision_is_reload() {
+        // Regression pin for the Linux hot-reload outage.
+        //
+        // `classify` originally named only `DataChange::Content` on the
+        // reload arm. That is what macOS/FSEvents reports for a plain
+        // file write, so the crate's headline hot-reload guarantee held
+        // on the author's darwin workstation. Linux/inotify cannot
+        // distinguish content from size on `IN_MODIFY` and so reports
+        // the very same write as `Modify(Data(Any))`, which fell through
+        // to the `_ => Ignored` catch-all — meaning every
+        // `ConfigStore::load_and_watch` / `load_and_watch_hotswap`
+        // consumer on Linux registered a watcher, received its events,
+        // and silently discarded all of them. The store never reloaded.
+        //
+        // The bug survived because the sibling
+        // `classify_non_reload_modify_and_other_kinds_are_ignored`
+        // asserted `Data(Any)` and `Data(Size)` were `Ignored` — the
+        // unit test encoded the defect, so the only test that could
+        // observe it end-to-end
+        // (`store::hotswap_tests::on_free_reload_callback_only_fires_on_free_swaps`)
+        // was the one that failed, and was written off as a
+        // timing-sensitive watcher flake for ~8 consecutive red CI runs
+        // on `main`.
+        //
+        // Every `DataChange` precision asserts the same underlying fact
+        // — the file's data changed — so all of them reload. A future
+        // edit that re-narrows this arm to one backend's spelling fails
+        // here rather than silently disabling hot-reload on whichever
+        // platform is not the author's.
+        for precision in [
+            DataChange::Any,
+            DataChange::Content,
+            DataChange::Size,
+            DataChange::Other,
+        ] {
+            let kind = EventKind::Modify(ModifyKind::Data(precision));
+            assert_eq!(
+                WatchEventClass::classify(&kind),
+                WatchEventClass::Reload,
+                "{kind:?} is a data change and must reload"
+            );
+            assert!(
+                WatchEventClass::classify(&kind).should_reload(),
+                "{kind:?} must pass the reload-trigger predicate"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_metadata_precision_is_not_widened_with_data_precision() {
+        // The complement of the regression above: widening the DATA arm
+        // to every precision must NOT drag the METADATA arm along with
+        // it. Only a write-time change is a reload signal; a permission,
+        // ownership, or unspecified-metadata touch must stay `Ignored`
+        // so a `chmod` on a watched config never triggers a spurious
+        // re-read. Pins the asymmetry the fix deliberately preserves.
+        assert_eq!(
+            WatchEventClass::classify(&EventKind::Modify(ModifyKind::Metadata(
+                MetadataKind::WriteTime
+            ))),
+            WatchEventClass::Reload
+        );
+        for precision in [
+            MetadataKind::Any,
+            MetadataKind::Permissions,
+            MetadataKind::Ownership,
+            MetadataKind::Other,
+        ] {
+            let kind = EventKind::Modify(ModifyKind::Metadata(precision));
+            assert_eq!(
+                WatchEventClass::classify(&kind),
+                WatchEventClass::Ignored,
+                "{kind:?} is not a write and must not reload"
+            );
+        }
+    }
+
+    #[test]
     fn classify_remove_is_removed() {
         for kind in [
             EventKind::Remove(RemoveKind::File),
@@ -857,10 +951,13 @@ mod tests {
 
     #[test]
     fn classify_non_reload_modify_and_other_kinds_are_ignored() {
-        // Modify variants that are not a content or write-time change.
+        // Modify variants that are neither a DATA change nor a
+        // write-time change. `Data(_)` is deliberately absent from this
+        // list: every `DataChange` precision — `Any` (Linux/inotify),
+        // `Content` (macOS/FSEvents), `Size`, `Other` — asserts the same
+        // fact, that the file's data changed, and all four reload. See
+        // `classify_every_data_change_precision_is_reload` below.
         for kind in [
-            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
-            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
             EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
             EventKind::Modify(ModifyKind::Metadata(MetadataKind::Ownership)),
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
@@ -1360,6 +1457,9 @@ mod tests {
             EventKind::Create(CreateKind::File),
             EventKind::Create(CreateKind::Any),
             EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            // `Data(Any)` is the shape Linux/inotify reports for a plain
+            // write; it is as much a mutation as macOS's `Data(Content)`.
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
             EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
             EventKind::Remove(RemoveKind::File),
             EventKind::Remove(RemoveKind::Any),
@@ -1371,7 +1471,6 @@ mod tests {
         }
         // Non-mutation EventKinds must classify to the Ignored cell.
         for kind in [
-            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
             EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
             EventKind::Access(AccessKind::Any),
