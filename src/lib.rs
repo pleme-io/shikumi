@@ -159,7 +159,7 @@ pub use tiered::{
     ProvenanceMapPaths, ProvenanceMapProvenances, ProvenanceMapSourceKinds, ProvenanceMapSources,
     ProvenanceMapTiers, TieredConfig,
 };
-pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};
+pub use watcher::{ConfigWatcher, WatchEventClass, classify_event_with_preamble, symlink_target};
 
 #[cfg(test)]
 mod check_cfg_tests {

@@ -623,21 +623,73 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
 /// performed — so the substrate lift adds zero per-call overhead the
 /// compiler cannot inline away.
 pub(crate) fn should_reload_on_event(event: &notify::Event) -> bool {
-    match WatchEventClass::classify_event(event) {
-        WatchEventClass::Reload => {}
+    classify_event_with_preamble(event).is_reload()
+}
+
+/// The typed peer of [`should_reload_on_event`] — classify a raw
+/// [`notify::Event`] through [`WatchEventClass::classify_event`], run the
+/// identical operator-facing log preamble the crate's watcher-driven
+/// [`crate::ConfigStore`] constructors have shared since the classify
+/// + log-preamble lift, and return the classified
+/// [`WatchEventClass`] rather than collapsing the ternary partition to
+/// the reload-only [`bool`].
+///
+/// The boolean `should_reload_on_event` is retained as the imperative
+/// operator-facing "should we reload?" question and now routes through
+/// this typed peer (`classify_event_with_preamble(event).is_reload()`);
+/// the two surfaces cannot drift because the boolean is a pointwise
+/// projection of the typed peer's return value, pinned by
+/// [`tests::should_reload_on_event_agrees_with_classify_event_with_preamble_is_reload`].
+///
+/// # Why the typed peer
+///
+/// A future watcher-driven consumer — a broadcast-subscription reload
+/// variant, a per-tenant reload variant, the
+/// [ConfigPlane](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+/// push-side reload variant, a per-class watcher-event histogram, a
+/// debounce-window guard grouping the two mutation cells before the
+/// guard's window opens, a structured-tracing span attribute
+/// distinguishing acted-on events from dropped ones — reaches the
+/// event's reload-relevance class AND the preamble side-effects at ONE
+/// site instead of calling `should_reload_on_event` for the preamble
+/// and then re-calling [`WatchEventClass::classify_event`] on the same
+/// event to recover the class the boolean discarded. That
+/// double-classify is the drift-class the crate's shared-substrate
+/// lifts (`record_failure_and_log`, `should_reload_on_event` itself,
+/// the `merge_*_layer` tier helpers) spend to close on other seams.
+///
+/// # Return-value pointwise equivalence
+///
+/// The returned [`WatchEventClass`] is pointwise equal to
+/// [`WatchEventClass::classify_event`] on the same event — the preamble
+/// side-effects (the removed-arm log line, the reload-arm symlink-target
+/// walk) never change the classify verdict, only what tracing sees.
+/// Pinned by
+/// [`tests::classify_event_with_preamble_agrees_with_classify_event_pointwise`].
+///
+/// # Zero-cost by construction
+///
+/// The body is exactly the same [`WatchEventClass::classify_event`]
+/// dispatch, the same two [`tracing::info`] emits, and the same
+/// `event.paths` walk the pre-lift open-coded bodies performed — so
+/// naming the class-preserving peer adds zero per-call overhead the
+/// compiler cannot inline away.
+pub fn classify_event_with_preamble(event: &notify::Event) -> WatchEventClass {
+    let class = WatchEventClass::classify_event(event);
+    match class {
+        WatchEventClass::Reload => {
+            for path in &event.paths {
+                if symlink_target(path).is_some() {
+                    info!("symlink target changed for {}", path.display());
+                }
+            }
+        }
         WatchEventClass::Removed => {
             info!("config file removed, continuing to watch for replacement...");
-            return false;
         }
-        WatchEventClass::Ignored => return false,
+        WatchEventClass::Ignored => {}
     }
-
-    for path in &event.paths {
-        if symlink_target(path).is_some() {
-            info!("symlink target changed for {}", path.display());
-        }
-    }
-    true
+    class
 }
 
 /// A symlink-aware config file watcher.
@@ -884,6 +936,191 @@ mod tests {
         // Mixed regular + symlink paths.
         let event_mixed = notify::Event::new(kind).add_path(regular).add_path(link);
         assert!(should_reload_on_event(&event_mixed));
+    }
+
+    // ── classify_event_with_preamble ─────────────────────────────────
+    //
+    // The class-preserving typed peer of `should_reload_on_event`. The
+    // boolean helper now routes through this typed peer; a consumer that
+    // wants both the reload verdict AND the classified arm reaches for
+    // this one to avoid double-classifying (the drift-class the crate's
+    // shared-substrate lifts spend to close).
+
+    #[test]
+    fn classify_event_with_preamble_agrees_with_classify_event_pointwise() {
+        // The typed peer's return value is pointwise equal to
+        // `WatchEventClass::classify_event` on the same event across
+        // every kind the classifier partitions on. A future edit to the
+        // preamble side-effect body that accidentally shifted the
+        // returned class (e.g. re-classified on the symlink-log branch)
+        // fails here before drifting through either watcher-driven
+        // `ConfigStore` constructor. Idiom-peer of the shipped
+        // `should_reload_on_event_agrees_with_classify_should_reload`
+        // pointwise-agreement pin one altitude down.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Create(CreateKind::Other),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Modify(ModifyKind::Other),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Remove(RemoveKind::Other),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert_eq!(
+                classify_event_with_preamble(&event),
+                WatchEventClass::classify_event(&event),
+                "classify_event_with_preamble must return the same class \
+                 as classify_event on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn should_reload_on_event_agrees_with_classify_event_with_preamble_is_reload() {
+        // The boolean helper is now a pointwise projection of the typed
+        // peer's return value through `WatchEventClass::is_reload`. A
+        // future edit that re-open-coded `should_reload_on_event`'s body
+        // in a way that drifted from `classify_event_with_preamble(e).is_reload()`
+        // fails here before reaching either watcher-driven `ConfigStore`
+        // call site. Together with
+        // `classify_event_with_preamble_agrees_with_classify_event_pointwise`
+        // above, the two pins compose: the boolean helper is exactly
+        // `WatchEventClass::classify_event(e).is_reload()`, at ONE
+        // source of truth (the typed peer) rather than two.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert_eq!(
+                should_reload_on_event(&event),
+                classify_event_with_preamble(&event).is_reload(),
+                "should_reload_on_event must equal \
+                 classify_event_with_preamble(&event).is_reload() on {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn classify_event_with_preamble_returns_reload_on_reload_arm() {
+        // Concrete-position pin on the Reload arm: the typed peer
+        // returns `WatchEventClass::Reload` on a Reload-class kind and
+        // is invariant across the paths carried on the event (zero, a
+        // regular file, a symlink, and a mix) — the symlink-log walk is
+        // a side-effect on the arm, never the return-value carrier.
+        let dir = TempDir::new().unwrap();
+        let regular = dir.path().join("regular.yaml");
+        fs::write(&regular, "key: value").unwrap();
+        let target = dir.path().join("target.yaml");
+        fs::write(&target, "key: value").unwrap();
+        let link = dir.path().join("link.yaml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let kind = EventKind::Modify(ModifyKind::Data(DataChange::Content));
+        let event_bare = notify::Event::new(kind.clone());
+        assert_eq!(
+            classify_event_with_preamble(&event_bare),
+            WatchEventClass::Reload,
+        );
+        let event_regular = notify::Event::new(kind.clone()).add_path(regular.clone());
+        assert_eq!(
+            classify_event_with_preamble(&event_regular),
+            WatchEventClass::Reload,
+        );
+        let event_link = notify::Event::new(kind.clone()).add_path(link.clone());
+        assert_eq!(
+            classify_event_with_preamble(&event_link),
+            WatchEventClass::Reload,
+        );
+        let event_mixed = notify::Event::new(kind).add_path(regular).add_path(link);
+        assert_eq!(
+            classify_event_with_preamble(&event_mixed),
+            WatchEventClass::Reload,
+        );
+    }
+
+    #[test]
+    fn classify_event_with_preamble_returns_removed_and_ignored_on_their_arms() {
+        // Concrete-position pin on the Removed and Ignored arms — the
+        // two arms the boolean `should_reload_on_event` collapses to
+        // one `false`, but the typed peer preserves. This is the
+        // information-preserving property a per-class watcher-event
+        // histogram or a ConfigPlane broadcast-reload counter buckets
+        // on: `Removed` events (a nix-darwin atomic swap's transient
+        // mid-swap unlink) count into a different bin from `Ignored`
+        // events (access, rename, permissions touches, `Any` / `Other`
+        // catch-alls) even though both return `false` from the boolean
+        // helper.
+        for kind in [
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Remove(RemoveKind::Other),
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert_eq!(
+                classify_event_with_preamble(&event),
+                WatchEventClass::Removed,
+                "Remove-class kind {kind:?} must classify as Removed",
+            );
+        }
+        for kind in [
+            EventKind::Access(AccessKind::Any),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            let event = notify::Event::new(kind.clone());
+            assert_eq!(
+                classify_event_with_preamble(&event),
+                WatchEventClass::Ignored,
+                "non-reload/non-removed kind {kind:?} must classify as Ignored",
+            );
+        }
+    }
+
+    #[test]
+    fn classify_event_with_preamble_is_lib_reexport() {
+        // Re-export pin — the typed peer is a `pub` surface reachable at
+        // `crate::classify_event_with_preamble` for future watcher-driven
+        // consumers (a broadcast-subscription reload variant, a
+        // per-tenant reload variant, the ConfigPlane push-side reload
+        // variant) that live outside this module. A future edit to
+        // `src/lib.rs` that dropped this re-export would collapse the
+        // preamble surface back to `pub(crate)`-only reachability and
+        // force the double-classify at every external call site; this
+        // pin fails at that edit rather than at every consumer site.
+        // Composes with the pointwise-agreement pin above: the
+        // re-exported function IS the peer and returns the same class
+        // as `WatchEventClass::classify_event`.
+        let event = notify::Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Any)));
+        assert_eq!(
+            crate::classify_event_with_preamble(&event),
+            WatchEventClass::Reload,
+        );
     }
 
     #[test]
