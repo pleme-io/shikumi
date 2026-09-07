@@ -711,6 +711,77 @@ impl ConfigTier {
         }
     }
 
+    /// The canonical operator-facing lowercase name of this tier —
+    /// `"bare"` for [`Self::Bare`], `"discovered"` for
+    /// [`Self::Discovered`], `"default"` for [`Self::Default`],
+    /// `"custom"` for [`Self::Custom`] regardless of the inner
+    /// [`std::path::PathBuf`] payload. Matches the strings carried by
+    /// [`ConfigTierKind::as_str`], which are the labels
+    /// [`ConfigTier::from_str_or_default`] / [`ConfigTier::from_env`]
+    /// recognize (case-insensitive) as canonical tier names.
+    ///
+    /// Tag-side sibling of [`ConfigTierKind::as_str`]: the payload-
+    /// bearing [`ConfigTier`] value projects to the same
+    /// `&'static str` label as its kind-side variant tag, without
+    /// paying the `.kind()` hop at the call site. Direct-match
+    /// discipline (no `self.kind().as_str()` delegation in the body)
+    /// so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → label) projection — a future edit
+    /// that shifts the mapping on ONE declaration surface (this
+    /// tag-side match, the kind-side inherent match, the
+    /// [`ConfigTierKind::ALL`] slice, or the [`Self::name`]
+    /// delegation) but not the others diverges at the pointwise-
+    /// agreement pin
+    /// [`tests::config_tier_as_str_agrees_with_kind_as_str_pointwise`]
+    /// on the first variant where they disagree, catching drift at
+    /// test time rather than at whichever consumer happened to be
+    /// observed first. Peer of the tag-side projection pair on
+    /// [`crate::ConfigSource`] (`as_str`, `ordinal`) at the sibling
+    /// source axis of the atomic `(tier, source)` primitive one axis
+    /// over, and closes the (`as_str` × `ordinal`) direct-match tag-
+    /// side pair on `ConfigTier` matching the same pair already
+    /// shipped on [`crate::ConfigSource`] and on [`crate::DiffLine`]
+    /// (which also carries `glyph`) one primitive over on the diff-
+    /// cell axis.
+    ///
+    /// Distinct from [`Self::name`] on the same primitive by
+    /// declaration surface: `name` delegates through
+    /// `self.kind().as_str()` (two-hop composition), while this
+    /// projection matches on `self` directly (one-hop). Both return
+    /// the same `&'static str` for every variant — pinned pointwise
+    /// by [`tests::config_tier_as_str_agrees_with_name_pointwise`] —
+    /// but the direct-match declaration adds an independent
+    /// structural witness so drift on any one of the three
+    /// declaration surfaces (this tag-side match, the [`Self::name`]
+    /// delegation, the kind-side inherent match) cannot silently
+    /// propagate to every caller: at least one of the two agreement
+    /// pins fails on the first variant that drifts.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Custom(path)` regardless of the inner path — is what the
+    /// pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the [`std::path::PathBuf`], and a future edit that
+    /// changed the `Custom(_)` arm here to inspect the path would
+    /// diverge from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`ConfigTierKind::as_str`] and of the peer tag-side
+    /// projections [`Self::name`] / [`Self::ordinal`] / [`Self::kind`]
+    /// / [`Self::is_bare`] / [`Self::is_discovered`] /
+    /// [`Self::is_default`] / [`Self::is_custom`] on the same
+    /// primitive, so a `tier.as_str()` composition stays const-
+    /// callable end-to-end at every consumer site. Pinned by
+    /// [`tests::config_tier_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bare => "bare",
+            Self::Discovered => "discovered",
+            Self::Default => "default",
+            Self::Custom(_) => "custom",
+        }
+    }
+
     /// Returns `true` for [`Self::Bare`]; the tag-side sibling of
     /// [`ConfigTierKind::is_bare`] (auto-derived via
     /// `gen_platform::IsVariant`).
@@ -32016,6 +32087,165 @@ mod tests {
             ordinal_of(&ConfigTier::Custom(std::path::PathBuf::from("/x.yaml"))),
             3,
         );
+    }
+
+    #[test]
+    fn config_tier_as_str_agrees_with_kind_as_str_pointwise() {
+        // Tag ↔ kind agreement on the (variant → label) projection at
+        // the payload-bearing altitude of the sealed (tier, source)
+        // pair's tier axis: `tier.as_str() == tier.kind().as_str()`
+        // for every ConfigTier value, across a payload sweep that
+        // covers the three no-payload variants and every representative
+        // Custom(path) shape (absolute path, relative path, empty
+        // path). Peer of
+        // `config_tier_ordinal_agrees_with_kind_ordinal_pointwise` on
+        // the same tag/kind pair one projection over, and mirror of
+        // `config_source_as_str_agrees_with_kind_as_str_pointwise` on
+        // the sibling source axis of the atomic `(tier, source)` pair.
+        // The kind-side has no PathBuf visibility, so a future edit
+        // that peeked at the payload on either declaration surface
+        // would diverge here on the first shape where the tag-side and
+        // kind-side disagree. Also pins the payload-independence
+        // contract: the answer is the same for every `Custom(path)`
+        // regardless of the inner path, so the tag-side declaration is
+        // forbidden from consulting the payload.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/etc/app/app.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("./local.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.as_str(),
+                tier.kind().as_str(),
+                "as_str must agree tag ↔ kind for {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the (variant → label) projection at
+        // the payload-bearing altitude: `Bare` → `"bare"`,
+        // `Discovered` → `"discovered"`, `Default` → `"default"`,
+        // `Custom(_)` → `"custom"` regardless of the inner PathBuf
+        // payload. Payload-independence sub-pin: absolute paths,
+        // relative paths, and the empty path all yield the same label
+        // (`"custom"`) on the Custom arm. Peer of
+        // `config_tier_kind_as_str_yields_canonical_lowercase_names`
+        // one altitude down on the same axis (guarded via the
+        // round-trip pin
+        // `config_tier_kind_from_str_round_trips_with_as_str`), and
+        // peer of `config_tier_ordinal_reuses_declaration_order` on
+        // the sibling ordinal projection at this altitude. Guards
+        // against a swap in the tag-side match arms that would still
+        // pass the pointwise-agreement pin if the kind-side inherent
+        // match was edited in the same drift.
+        assert_eq!(ConfigTier::Bare.as_str(), "bare");
+        assert_eq!(ConfigTier::Discovered.as_str(), "discovered");
+        assert_eq!(ConfigTier::Default.as_str(), "default");
+        for path in ["/etc/app/app.yaml", "./local.toml", ""] {
+            assert_eq!(
+                ConfigTier::Custom(std::path::PathBuf::from(path)).as_str(),
+                "custom",
+                "Custom({path:?}) as_str must be \"custom\" regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_as_str_agrees_with_name_pointwise() {
+        // Cross-declaration-surface agreement pin: the direct-match
+        // `Self::as_str` and the two-hop delegation
+        // `Self::name` (which routes through `Self::kind` and then
+        // `ConfigTierKind::as_str`) return the same `&'static str` for
+        // every ConfigTier value, across the same payload sweep. The
+        // two live at different declaration surfaces on the same
+        // primitive: `name` is one hop closer to the kind-side inherent
+        // (it *is* that composition), while `as_str` is an independent
+        // match on `self`. Together with the tag ↔ kind pin
+        // (`config_tier_as_str_agrees_with_kind_as_str_pointwise`)
+        // they close the drift-detection triangle across the three
+        // declaration surfaces (tag-side direct match, kind-side
+        // inherent, name delegation): a future edit that changed the
+        // mapping on ONE surface diverges at the first variant where
+        // the surface that held still disagrees.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/etc/app/app.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("./local.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.as_str(),
+                tier.name(),
+                "as_str must agree with name for {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_as_str_is_const_callable() {
+        // Compile-time weld — the tag-side as_str is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`ConfigTierKind::as_str`) and its peer tag-side
+        // projections on the same primitive (`ConfigTier::ordinal`,
+        // `ConfigTier::name`, both `pub const fn`), plus the
+        // `ConfigSource::as_str` sibling one axis over on the atomic
+        // `(tier, source)` pair.
+        //
+        // A `const fn label_of(&ConfigTier) -> &'static str` wrapper
+        // delegating to `tier.as_str()` pins the const-fn signature at
+        // the language level: the moment `ConfigTier::as_str` loses
+        // its `const` qualifier (a future edit that reaches for a
+        // non-const helper inside the four-arm exhaustive match — an
+        // allocator, a runtime lookup, a `PathBuf` inspection on the
+        // `Custom(_)` arm) the wrapper below fails to compile at THAT
+        // line before the drift can reach downstream const-context
+        // consumers that assumed const-ness through this projection (a
+        // `const` per-tier-kind label table sized by
+        // `axis_cardinality::<ConfigTierKind>()` and indexed by the
+        // tag-side altitude without a `.kind()` hop, an attestation
+        // manifest whose per-tier label slots on the tag-side altitude
+        // are initialized under `const`).
+        const fn label_of(tier: &ConfigTier) -> &'static str {
+            tier.as_str()
+        }
+        // Runtime cross-check across all four variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream. Includes a payload-bearing `Custom(_)`
+        // case so the const-ness of the payload arm cannot regress
+        // without failing here.
+        assert_eq!(label_of(&ConfigTier::Bare), "bare");
+        assert_eq!(label_of(&ConfigTier::Discovered), "discovered");
+        assert_eq!(label_of(&ConfigTier::Default), "default");
+        assert_eq!(
+            label_of(&ConfigTier::Custom(std::path::PathBuf::from("/x.yaml"))),
+            "custom",
+        );
+        // Compile-time weld: the `const fn` wrapper composes into a
+        // `const` binding at compile time on each payload-free variant
+        // — a static per-variant label table on the tag-side altitude
+        // stays initializable under `const` at every consumer site. A
+        // `static` binding routes around the drop-check that rejects a
+        // `const ConfigTier::Custom(PathBuf)` (the `PathBuf` payload
+        // carries a non-`const`-Drop) so the const-context weld covers
+        // the three payload-free variants directly.
+        static BARE: ConfigTier = ConfigTier::Bare;
+        static DISCOVERED: ConfigTier = ConfigTier::Discovered;
+        static DEFAULT: ConfigTier = ConfigTier::Default;
+        const BARE_LABEL: &str = label_of(&BARE);
+        const DISCOVERED_LABEL: &str = label_of(&DISCOVERED);
+        const DEFAULT_LABEL: &str = label_of(&DEFAULT);
+        assert_eq!(BARE_LABEL, "bare");
+        assert_eq!(DISCOVERED_LABEL, "discovered");
+        assert_eq!(DEFAULT_LABEL, "default");
     }
 
     #[test]
