@@ -658,6 +658,59 @@ impl ConfigTier {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this tier —
+    /// `0` for [`Self::Bare`], `1` for [`Self::Discovered`], `2` for
+    /// [`Self::Default`], `3` for [`Self::Custom`] regardless of the
+    /// inner [`std::path::PathBuf`] payload. Matches the declaration
+    /// order carried by [`ConfigTierKind::ALL`], which is also the
+    /// sealed-fold precedence `bare → discovered → prescribed_default
+    /// → custom` (per `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5
+    /// — a higher ordinal wins in the progressive fold).
+    ///
+    /// Tag-side sibling of [`ConfigTierKind::ordinal`]: the payload-
+    /// bearing [`ConfigTier`] value projects to the same `usize`
+    /// precedence position as its kind-side variant tag, without
+    /// paying the `.kind()` hop at the call site. Direct-match
+    /// discipline (no `self.kind().ordinal()` delegation in the body)
+    /// so the tag-side declaration is an independent load-bearing
+    /// witness of the (variant → ordinal) projection — a future edit
+    /// that shifts the mapping on ONE declaration surface (this
+    /// tag-side match, the kind-side inherent match, the
+    /// [`ConfigTierKind::ALL`] slice) but not the others diverges at
+    /// the pointwise-agreement pin
+    /// [`tests::config_tier_ordinal_agrees_with_kind_ordinal_pointwise`]
+    /// on the first variant where they disagree, catching drift at
+    /// test time rather than at whichever consumer happened to be
+    /// observed first. Mirrors the direct-match discipline the
+    /// tag-side projection triple on [`crate::DiffLine`] already
+    /// carries (`glyph`, `as_str`, `ordinal`) at the same altitude on
+    /// the diff-cell axis.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Custom(path)` regardless of the inner path — is what the
+    /// pointwise-agreement pin locks in: the kind-side inherent
+    /// cannot see the [`std::path::PathBuf`], and a future edit that
+    /// changed the `Custom(_)` arm here to inspect the path would
+    /// diverge from the kind-side and fail the pin.
+    ///
+    /// `const`-callable — matching the `const`-ness of the kind-side
+    /// sibling [`ConfigTierKind::ordinal`] and of the peer tag-side
+    /// projections [`Self::name`] (label) / [`Self::is_bare`] /
+    /// [`Self::is_discovered`] / [`Self::is_default`] /
+    /// [`Self::is_custom`] / [`Self::is_computed`] on the same
+    /// primitive, so a `tier.ordinal()` composition stays const-
+    /// callable end-to-end at every consumer site. Pinned by
+    /// [`tests::config_tier_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::Bare => 0,
+            Self::Discovered => 1,
+            Self::Default => 2,
+            Self::Custom(_) => 3,
+        }
+    }
+
     /// Returns `true` for [`Self::Bare`]; the tag-side sibling of
     /// [`ConfigTierKind::is_bare`] (auto-derived via
     /// `gen_platform::IsVariant`).
@@ -31864,6 +31917,105 @@ mod tests {
                 "is_custom must agree tag ↔ kind for {tier:?}",
             );
         }
+    }
+
+    #[test]
+    fn config_tier_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection at
+        // the payload-bearing altitude of the sealed (tier, source)
+        // pair's tier axis: `tier.ordinal() == tier.kind().ordinal()` for
+        // every ConfigTier value, across a payload sweep that covers the
+        // three no-payload variants and every representative Custom(path)
+        // shape (absolute path, relative path, empty path). Mirror of the
+        // tag ↔ kind pins carried by the DiffLine projection triple
+        // (`diff_line_ordinal_agrees_with_kind_ordinal_pointwise`,
+        // `diff_line_glyph_agrees_with_kind_glyph_pointwise`,
+        // `diff_line_as_str_agrees_with_kind_as_str_pointwise`) one
+        // altitude over on the diff-cell axis. The kind-side has no
+        // PathBuf visibility, so a future edit that peeked at the payload
+        // on either declaration surface would diverge here on the first
+        // shape where the tag-side and kind-side disagree. Also pins the
+        // payload-independence contract: the answer is the same for every
+        // `Custom(path)` regardless of the inner path, so the tag-side
+        // declaration is forbidden from consulting the payload.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/etc/app/app.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("./local.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.ordinal(),
+                tier.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection at
+        // the payload-bearing altitude: `Bare` at 0, `Discovered` at 1,
+        // `Default` at 2, `Custom(_)` at 3 regardless of the inner
+        // PathBuf payload. Payload-independence sub-pin: absolute paths,
+        // relative paths, and the empty path all yield the same ordinal
+        // (3). Peer of `config_tier_kind_ordinal_reuses_declaration_order`
+        // one altitude down on the same axis, plus
+        // `diff_line_ordinal_reuses_declaration_order` one primitive over
+        // on the diff-cell axis. Guards against a swap in the tag-side
+        // match arms that would still pass the pointwise-agreement pin
+        // if the kind-side inherent match was edited in the same drift.
+        assert_eq!(ConfigTier::Bare.ordinal(), 0);
+        assert_eq!(ConfigTier::Discovered.ordinal(), 1);
+        assert_eq!(ConfigTier::Default.ordinal(), 2);
+        for path in ["/etc/app/app.yaml", "./local.toml", ""] {
+            assert_eq!(
+                ConfigTier::Custom(std::path::PathBuf::from(path)).ordinal(),
+                3,
+                "Custom({path:?}) ordinal must be 3 regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`ConfigTierKind::ordinal`) and its peer tag-side
+        // projection triple one primitive over on the diff-cell axis
+        // (`DiffLine::glyph` / `DiffLine::as_str` / `DiffLine::ordinal`).
+        //
+        // A `const fn ordinal_of(&ConfigTier) -> usize` wrapper
+        // delegating to `tier.ordinal()` pins the const-fn signature at
+        // the language level: the moment `ConfigTier::ordinal` loses its
+        // `const` qualifier (a future edit that reaches for a non-const
+        // helper inside the four-arm exhaustive match — an allocator, a
+        // runtime lookup, a `PathBuf` inspection on the `Custom(_)` arm)
+        // the wrapper below fails to compile at THAT line before the
+        // drift can reach downstream const-context consumers that
+        // assumed const-ness through this projection (a `const` per-
+        // tier bitset sized by `axis_cardinality::<ConfigTierKind>()`
+        // and indexed by the tag-side ordinal without a `.kind()` hop,
+        // an attestation manifest whose per-tier slots on the tag-side
+        // altitude are initialized under `const`).
+        const fn ordinal_of(tier: &ConfigTier) -> usize {
+            tier.ordinal()
+        }
+        // Runtime cross-check across all four variants: catches a
+        // future variant landing whose const-context weld was
+        // forgotten upstream. Includes a payload-bearing `Custom(_)`
+        // case so the const-ness of the payload arm cannot regress
+        // without failing here.
+        assert_eq!(ordinal_of(&ConfigTier::Bare), 0);
+        assert_eq!(ordinal_of(&ConfigTier::Discovered), 1);
+        assert_eq!(ordinal_of(&ConfigTier::Default), 2);
+        assert_eq!(
+            ordinal_of(&ConfigTier::Custom(std::path::PathBuf::from("/x.yaml"))),
+            3,
+        );
     }
 
     #[test]
