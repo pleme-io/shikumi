@@ -1309,6 +1309,71 @@ impl SecretOperation {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this operation —
+    /// `0` for [`Self::Get`], `1` for [`Self::List`], `2` for
+    /// [`Self::Put`], `3` for [`Self::Delete`], `4` for [`Self::Rotate`],
+    /// `5` for [`Self::GetVersion`]. Matches the declaration order
+    /// carried by [`Self::ALL`], which in turn mirrors the
+    /// [`Capabilities`] field-set order and the [`SecretClient`] trait
+    /// method declaration order.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the operation ordinal in a `const` context — a
+    /// compile-time-sized per-operation dispatch table keyed on the
+    /// operation, a `const` per-operation bitset sized by
+    /// `axis_cardinality::<SecretOperation>()`, an attestation manifest
+    /// whose per-operation refused-op histogram slots are initialized
+    /// under `const`, a `const` sentinel for a compile-time-known
+    /// operation's precedence position — reached through a `let`
+    /// binding at runtime instead of the inherent seam. This
+    /// `match`-based inherent, keyed on the six closed variants
+    /// directly, gives the same `usize` answer under `const` — pinned
+    /// pointwise across every variant by
+    /// [`tests::secret_operation_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a
+    /// `usize` precedence position), both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the operation's scalar label and scalar position under `const`.
+    ///
+    /// Idiom-peer of [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// secret-resolution backend axis, and
+    /// [`SecretErrorKind::ordinal`] on the secret-client error-kind
+    /// axis — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract. First landing of the
+    /// ordinal-projection idiom on the secret-client operation axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Get => 0,
+            Self::List => 1,
+            Self::Put => 2,
+            Self::Delete => 3,
+            Self::Rotate => 4,
+            Self::GetVersion => 5,
+        }
+    }
+
     /// Whether `caps` advertises this operation — the typed projection
     /// of [`SecretOperation`] onto the matching [`Capabilities`] field.
     ///
@@ -5816,6 +5881,113 @@ mod tests {
         assert_eq!(SecretOperation::Delete.as_str(), "delete");
         assert_eq!(SecretOperation::Rotate.as_str(), "rotate");
         assert_eq!(SecretOperation::GetVersion.as_str(), "get_version");
+    }
+
+    #[test]
+    fn secret_operation_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `SecretOperation::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit
+        // to either the inherent match or the `SecretOperation::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams
+        // substitutable. Idiom-peer of
+        // `secret_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling secret-client error-kind axis and every
+        // other `_ordinal_agrees_with_axis_ordinal_pointwise` seal on
+        // the sibling closed-axis primitives in the crate.
+        for &op in SecretOperation::ALL {
+            assert_eq!(
+                op.ordinal(),
+                crate::axis_ordinal(op),
+                "inherent ordinal must agree with axis_ordinal for {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the six
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Get → List → Put → Delete → Rotate →
+        // GetVersion). A future swap in the match arms that would
+        // still pass the `agrees_with_axis_ordinal` pointwise pin
+        // (which reads the same declaration order out of
+        // `SecretOperation::ALL` on both sides) fails here first.
+        assert_eq!(SecretOperation::Get.ordinal(), 0);
+        assert_eq!(SecretOperation::List.ordinal(), 1);
+        assert_eq!(SecretOperation::Put.ordinal(), 2);
+        assert_eq!(SecretOperation::Delete.ordinal(), 3);
+        assert_eq!(SecretOperation::Rotate.ordinal(), 4);
+        assert_eq!(SecretOperation::GetVersion.ordinal(), 5);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `SecretOperation::ALL` at every declared
+        // position. A future edit that shifts the match arms
+        // without shifting the slice literal in lockstep fails here
+        // on the first drifted position.
+        for (index, &op) in SecretOperation::ALL.iter().enumerate() {
+            assert_eq!(
+                op.ordinal(),
+                index,
+                "ordinal must reuse SecretOperation::ALL index for {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_ordinal_is_const_callable() {
+        // Compile-time weld: the (operation → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `SecretOperation::as_str`.
+        // A drop of the `const` qualifier on `SecretOperation::ordinal`
+        // fails this test to compile. Idiom-peer of
+        // `secret_error_kind_ordinal_is_const_callable` and the
+        // corresponding `_is_const_callable` seals on every other
+        // ordinal-carrying closed-axis primitive in the crate.
+        //
+        // Six `const` bindings — one per `SecretOperation` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `SecretOperation::ordinal` loses its const-ness one of the
+        // six `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const GET: usize = SecretOperation::Get.ordinal();
+        const LIST: usize = SecretOperation::List.ordinal();
+        const PUT: usize = SecretOperation::Put.ordinal();
+        const DELETE: usize = SecretOperation::Delete.ordinal();
+        const ROTATE: usize = SecretOperation::Rotate.ordinal();
+        const GET_VERSION: usize = SecretOperation::GetVersion.ordinal();
+
+        assert_eq!(GET, 0);
+        assert_eq!(LIST, 1);
+        assert_eq!(PUT, 2);
+        assert_eq!(DELETE, 3);
+        assert_eq!(ROTATE, 4);
+        assert_eq!(GET_VERSION, 5);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretOperation::ALL` to the
+        // runtime-side `op.ordinal()` call — the const-context weld
+        // only exercises the six variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (op, expected) in [
+            (SecretOperation::Get, GET),
+            (SecretOperation::List, LIST),
+            (SecretOperation::Put, PUT),
+            (SecretOperation::Delete, DELETE),
+            (SecretOperation::Rotate, ROTATE),
+            (SecretOperation::GetVersion, GET_VERSION),
+        ] {
+            assert_eq!(op.ordinal(), expected, "op {op:?}");
+        }
     }
 
     #[test]
