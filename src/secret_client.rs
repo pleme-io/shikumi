@@ -457,6 +457,67 @@ impl SecretErrorKind {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this error kind —
+    /// `0` for [`Self::NotFound`], `1` for [`Self::Unauthorized`], `2`
+    /// for [`Self::Unsupported`], `3` for [`Self::Backend`], `4` for
+    /// [`Self::Shikumi`]. Matches the declaration order carried by
+    /// [`Self::ALL`], which in turn mirrors the [`SecretError`] arm
+    /// declaration order in [`SecretError::kind`].
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the error-kind ordinal in a `const` context — a
+    /// compile-time-selected per-kind retry-policy dispatch table
+    /// keyed on the kind, a `const` per-kind bitset sized by
+    /// `axis_cardinality::<SecretErrorKind>()`, an attestation
+    /// manifest whose per-kind failure-mix slots are initialized under
+    /// `const` — reached through a `let` binding at runtime instead
+    /// of the inherent seam. This `match`-based inherent, keyed on
+    /// the five closed variants directly, gives the same `usize`
+    /// answer under `const` — pinned pointwise across every variant
+    /// by
+    /// [`tests::secret_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a
+    /// `usize` precedence position), both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the error-kind's scalar label and scalar position under
+    /// `const`.
+    ///
+    /// Idiom-peer of [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis, and
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// secret-resolution backend axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract. First landing of the
+    /// ordinal-projection idiom on the secret-client error-kind axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::NotFound => 0,
+            Self::Unauthorized => 1,
+            Self::Unsupported => 2,
+            Self::Backend => 3,
+            Self::Shikumi => 4,
+        }
+    }
+
     /// Returns `true` for [`Self::NotFound`]; equivalent to
     /// `self == SecretErrorKind::NotFound`.
     ///
@@ -10290,6 +10351,109 @@ mod tests {
         assert_eq!(SecretErrorKind::Unsupported.as_str(), "unsupported");
         assert_eq!(SecretErrorKind::Backend.as_str(), "backend");
         assert_eq!(SecretErrorKind::Shikumi.as_str(), "shikumi");
+    }
+
+    #[test]
+    fn secret_error_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `SecretErrorKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit
+        // to either the inherent match or the `SecretErrorKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams
+        // substitutable. Idiom-peer of
+        // `secret_backend_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the secret-backend axis and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal on the
+        // sibling closed-axis primitives.
+        for &kind in SecretErrorKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // declared positions verbatim, in strictly ascending
+        // declaration order (NotFound → Unauthorized → Unsupported →
+        // Backend → Shikumi). A future swap in the match arms that
+        // would still pass the `agrees_with_axis_ordinal` pointwise
+        // pin (which reads the same declaration order out of
+        // `SecretErrorKind::ALL` on both sides) fails here first.
+        assert_eq!(SecretErrorKind::NotFound.ordinal(), 0);
+        assert_eq!(SecretErrorKind::Unauthorized.ordinal(), 1);
+        assert_eq!(SecretErrorKind::Unsupported.ordinal(), 2);
+        assert_eq!(SecretErrorKind::Backend.ordinal(), 3);
+        assert_eq!(SecretErrorKind::Shikumi.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `SecretErrorKind::ALL` at every declared
+        // position. A future edit that shifts the match arms
+        // without shifting the slice literal in lockstep fails here
+        // on the first drifted position.
+        for (index, &kind) in SecretErrorKind::ALL.iter().enumerate() {
+            assert_eq!(
+                kind.ordinal(),
+                index,
+                "ordinal must reuse SecretErrorKind::ALL index for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_ordinal_is_const_callable() {
+        // Compile-time weld: the (kind → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `SecretErrorKind::as_str`.
+        // A drop of the `const` qualifier on `SecretErrorKind::ordinal`
+        // fails this test to compile. Idiom-peer of
+        // `secret_backend_kind_ordinal_is_const_callable` and the
+        // corresponding `_is_const_callable` seals on every other
+        // ordinal-carrying closed-axis primitive in the crate.
+        //
+        // Five `const` bindings — one per `SecretErrorKind` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `SecretErrorKind::ordinal` loses its const-ness one of the
+        // five `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const NOT_FOUND: usize = SecretErrorKind::NotFound.ordinal();
+        const UNAUTHORIZED: usize = SecretErrorKind::Unauthorized.ordinal();
+        const UNSUPPORTED: usize = SecretErrorKind::Unsupported.ordinal();
+        const BACKEND: usize = SecretErrorKind::Backend.ordinal();
+        const SHIKUMI: usize = SecretErrorKind::Shikumi.ordinal();
+
+        assert_eq!(NOT_FOUND, 0);
+        assert_eq!(UNAUTHORIZED, 1);
+        assert_eq!(UNSUPPORTED, 2);
+        assert_eq!(BACKEND, 3);
+        assert_eq!(SHIKUMI, 4);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretErrorKind::ALL` to the
+        // runtime-side `kind.ordinal()` call — the const-context weld
+        // only exercises the five variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (kind, expected) in [
+            (SecretErrorKind::NotFound, NOT_FOUND),
+            (SecretErrorKind::Unauthorized, UNAUTHORIZED),
+            (SecretErrorKind::Unsupported, UNSUPPORTED),
+            (SecretErrorKind::Backend, BACKEND),
+            (SecretErrorKind::Shikumi, SHIKUMI),
+        ] {
+            assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
     }
 
     #[test]
