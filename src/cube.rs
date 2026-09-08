@@ -1183,6 +1183,62 @@ impl ModalityClass {
             .copied()
             .find(|v| v.as_str().eq_ignore_ascii_case(s))
     }
+
+    /// Dense zero-based position of the variant in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the five-cell modality-class axis.
+    ///
+    /// `0` for [`Self::Empty`], `1` for [`Self::StrictModalStrictAntimodal`],
+    /// `2` for [`Self::TiedModalStrictAntimodal`], `3` for
+    /// [`Self::StrictModalTiedAntimodal`], `4` for
+    /// [`Self::TiedModalTiedAntimodal`] — matching the declaration order
+    /// carried by [`Self::ALL`] pointwise. The peer-agreement law
+    /// `v.ordinal() == Self::ALL.iter().position(|&x| x == v).unwrap()`
+    /// is pinned by
+    /// [`tests::modality_class_ordinal_agrees_with_all_position_pointwise`].
+    ///
+    /// Idiom-peer of [`Self::as_str`] on the same primitive — both
+    /// project the variant tag to a small scalar at one inherent
+    /// `const` call. Where [`PartitionFace::ordinal`],
+    /// [`crate::ShikumiErrorKind::ordinal`],
+    /// [`crate::secret::SecretBackendKind::ordinal`],
+    /// [`crate::tiered::ConfigTierKind::ordinal`], and every other
+    /// ordinal-carrying [`ClosedAxis`] primitive in the crate can
+    /// additionally pin pointwise agreement against the trait-uniform
+    /// free-function projection [`crate::axis_ordinal`], [`ModalityClass`]
+    /// stays off the [`ClosedAxis`] trait surface (the
+    /// substrate-observation invariant gates [`ClosedAxis`] on
+    /// substrate axes only — an [`AxisHistogram<ModalityClass>`] is
+    /// well-typed but semantically inverted), so the agreement law is
+    /// pinned against [`Self::ALL`] position directly instead.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] and every peer variant-tag
+    /// projection on [`ModalityClass`]. Consumers wanting a compile-
+    /// time-selected per-classifier-corner dispatch table (e.g. a
+    /// `const [usize; 5]` weight vector keyed by ordinal, or a `const`
+    /// per-corner label indexed by ordinal) route through the projection
+    /// under `const` without dropping through a runtime `let` binding.
+    /// Pinned by [`tests::modality_class_ordinal_is_const_callable`].
+    ///
+    /// **Consumers** — a fleet-wide per-corner rollup dashboard that
+    /// backs a fixed-size array indexed by ordinal (rather than a
+    /// `HashMap<ModalityClass, T>`) picks the right slot without a
+    /// per-emitter `match` on the variant tag. The
+    /// declaration-order-preservation pin
+    /// ([`tests::modality_class_ordinal_reuses_declaration_order`])
+    /// guards the concrete positions so a future reorder of the
+    /// variant declarations shifts both the match and [`Self::ALL`]
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::StrictModalStrictAntimodal => 1,
+            Self::TiedModalStrictAntimodal => 2,
+            Self::StrictModalTiedAntimodal => 3,
+            Self::TiedModalTiedAntimodal => 4,
+        }
+    }
 }
 
 /// Typed parse failure of [`<ModalityClass as
@@ -47276,6 +47332,119 @@ mod tests {
             ModalityClass::TiedModalTiedAntimodal.as_str(),
             "tied-modal-tied-antimodal",
         );
+    }
+
+    #[test]
+    fn modality_class_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `ModalityClass::ordinal` and the
+        // linear-scan projection `Self::ALL.iter().position(|&v| v == self)`
+        // are two spellings of the same closed-slice position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `ModalityClass::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that the linear-scan
+        // seam does not (`Iterator::position` is not const); this test
+        // guards the equal-answer contract that keeps the two seams
+        // substitutable at every non-const consumer site.
+        //
+        // Idiom-peer of every
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate applied here at the non-`ClosedAxis` altitude — the
+        // substrate-observation invariant gates `ClosedAxis` on
+        // substrate axes only, so `ModalityClass` (a histogram-side
+        // classifier, semantically inverted for
+        // `AxisHistogram<ModalityClass>`) stays off the trait surface
+        // and the pointwise-agreement law targets `Self::ALL` position
+        // directly rather than `crate::axis_ordinal`.
+        for &class in ModalityClass::ALL {
+            let expected = ModalityClass::ALL
+                .iter()
+                .position(|&v| v == class)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                class.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // declared positions verbatim, in strictly ascending declaration
+        // order (Empty → StrictModalStrictAntimodal →
+        // TiedModalStrictAntimodal → StrictModalTiedAntimodal →
+        // TiedModalTiedAntimodal). A future swap in the match arms that
+        // would still pass the `agrees_with_all_position` pointwise pin
+        // (which reads the same declaration order out of
+        // `ModalityClass::ALL` on both sides) fails here first.
+        assert_eq!(ModalityClass::Empty.ordinal(), 0);
+        assert_eq!(ModalityClass::StrictModalStrictAntimodal.ordinal(), 1);
+        assert_eq!(ModalityClass::TiedModalStrictAntimodal.ordinal(), 2);
+        assert_eq!(ModalityClass::StrictModalTiedAntimodal.ordinal(), 3);
+        assert_eq!(ModalityClass::TiedModalTiedAntimodal.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `ModalityClass::ALL` at every declared position. A
+        // future edit that shifts the match arms without shifting the
+        // slice literal in lockstep fails here on the first drifted
+        // position.
+        for (index, &class) in ModalityClass::ALL.iter().enumerate() {
+            assert_eq!(
+                class.ordinal(),
+                index,
+                "ordinal must reuse ModalityClass::ALL index for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_ordinal_is_const_callable() {
+        // Compile-time weld: the (class → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `ModalityClass::as_str` and
+        // the sibling boolean-partition projections
+        // `ModalityClass::is_empty` / `ModalityClass::is_modally_tied`
+        // / `ModalityClass::is_antimodally_tied`, etc. A drop of the
+        // `const` qualifier on `ModalityClass::ordinal` fails this
+        // test to compile.
+        //
+        // Five `const` bindings — one per `ModalityClass` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `ModalityClass::ordinal` loses its const-ness one of the
+        // five `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const EMPTY: usize = ModalityClass::Empty.ordinal();
+        const STRICT_STRICT: usize = ModalityClass::StrictModalStrictAntimodal.ordinal();
+        const TIED_STRICT: usize = ModalityClass::TiedModalStrictAntimodal.ordinal();
+        const STRICT_TIED: usize = ModalityClass::StrictModalTiedAntimodal.ordinal();
+        const TIED_TIED: usize = ModalityClass::TiedModalTiedAntimodal.ordinal();
+
+        assert_eq!(EMPTY, 0);
+        assert_eq!(STRICT_STRICT, 1);
+        assert_eq!(TIED_STRICT, 2);
+        assert_eq!(STRICT_TIED, 3);
+        assert_eq!(TIED_TIED, 4);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `ModalityClass::ALL` to the runtime-side
+        // `class.ordinal()` call — the const-context weld only
+        // exercises the five variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (class, expected) in [
+            (ModalityClass::Empty, EMPTY),
+            (ModalityClass::StrictModalStrictAntimodal, STRICT_STRICT),
+            (ModalityClass::TiedModalStrictAntimodal, TIED_STRICT),
+            (ModalityClass::StrictModalTiedAntimodal, STRICT_TIED),
+            (ModalityClass::TiedModalTiedAntimodal, TIED_TIED),
+        ] {
+            assert_eq!(class.ordinal(), expected, "class {class:?}");
+        }
     }
 
     #[test]
