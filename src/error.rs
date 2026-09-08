@@ -4772,6 +4772,84 @@ impl AttributionAxis {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this metadata
+    /// axis — `0` for [`Self::MetadataSource`], `1` for
+    /// [`Self::MetadataName`]. Matches the declaration order carried by
+    /// [`Self::ALL`], which in turn mirrors the arm order in
+    /// [`AttributionRule::metadata_axis`] (the source-pole rules land
+    /// first, the name-pole rules second) on the source-altitude
+    /// projection through the (source × name) metadata partition.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the metadata-axis ordinal in a `const` context — a
+    /// compile-time-selected per-axis dispatch table keyed on the
+    /// metadata axis, a `const` per-axis bitset sized by
+    /// `axis_cardinality::<AttributionAxis>()`, an attestation manifest
+    /// whose per-axis failure-class slots are initialized under
+    /// `const`, a `const` sentinel for a compile-time-known metadata
+    /// axis's precedence position, a `const` weight-vector indexed by
+    /// ordinal that weights name-axis attributions visibly weaker than
+    /// source-axis ones — reached through a `let` binding at runtime
+    /// instead of the inherent seam. This `match`-based inherent,
+    /// keyed on the two closed variants directly, gives the same
+    /// [`usize`] answer under `const` — pinned pointwise across every
+    /// variant by
+    /// [`tests::attribution_axis_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to
+    /// a scalar (a `&'static str` label and a `usize` precedence
+    /// position), both delegate the declaration-order source of
+    /// truth to [`Self::ALL`], and together they name the metadata
+    /// axis's scalar label and scalar position under `const`.
+    ///
+    /// Sibling of [`AttributionConfidence::ordinal`] (commit
+    /// `165f579`) one impl block over on the confidence axis of the
+    /// attribution resolver — the two form a `(axis, confidence)`
+    /// closed-binary pair the resolver-altitude `(axis × layer_kind ×
+    /// confidence)` cube [`AttributionCoordinates`] partitions, and
+    /// now both surfaces name the primitive's OWN altitude scalar-
+    /// ordinal projection under the same `const fn` discipline.
+    ///
+    /// Idiom-peer of [`ShikumiErrorKind::ordinal`] on the shikumi
+    /// error-kind axis, [`AttributionConfidence::ordinal`] on the
+    /// confidence axis, [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the secret-client
+    /// error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and [`crate::SecretClientKind::ordinal`] on
+    /// the runtime-client kind axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract, applied here to the (source ×
+    /// name) metadata axis of the attribution resolver.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::MetadataSource => 0,
+            Self::MetadataName => 1,
+        }
+    }
+
     /// Returns `true` for [`Self::MetadataSource`]; equivalent to
     /// `self == AttributionAxis::MetadataSource`.
     ///
@@ -10429,6 +10507,104 @@ mod tests {
         // and FigmentSourceKind.
         assert_eq!(AttributionAxis::MetadataSource.as_str(), "metadata-source");
         assert_eq!(AttributionAxis::MetadataName.as_str(), "metadata-name");
+    }
+
+    #[test]
+    fn attribution_axis_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `AttributionAxis::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `AttributionAxis::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Idiom-peer of
+        // `attribution_confidence_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`165f579`) on the confidence axis one impl block over,
+        // `shikumi_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`2026956`), and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate.
+        for &axis in AttributionAxis::ALL {
+            assert_eq!(
+                axis.ordinal(),
+                crate::axis_ordinal(axis),
+                "inherent ordinal must agree with axis_ordinal for {axis:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (MetadataSource → MetadataName). A future
+        // swap in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `AttributionAxis::ALL` on
+        // both sides) fails here first. Peer of
+        // `attribution_confidence_ordinal_reuses_declaration_order`
+        // (`165f579`) on the confidence axis and
+        // `shikumi_error_kind_ordinal_reuses_declaration_order`
+        // (`2026956`) on the shikumi error-kind axis.
+        assert_eq!(AttributionAxis::MetadataSource.ordinal(), 0);
+        assert_eq!(AttributionAxis::MetadataName.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `AttributionAxis::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &axis) in AttributionAxis::ALL.iter().enumerate() {
+            assert_eq!(
+                axis.ordinal(),
+                index,
+                "ordinal must reuse AttributionAxis::ALL index for {axis:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_ordinal_is_const_callable() {
+        // Compile-time weld: the (axis → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `AttributionAxis::as_str` and
+        // the sibling `AttributionConfidence::ordinal` (commit
+        // `165f579`) one impl block over. A drop of the `const`
+        // qualifier on `AttributionAxis::ordinal` fails this test to
+        // compile. Idiom-peer of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate.
+        //
+        // Two `const` bindings — one per `AttributionAxis` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `AttributionAxis::ordinal` loses its const-ness one of the
+        // two `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const METADATA_SOURCE: usize = AttributionAxis::MetadataSource.ordinal();
+        const METADATA_NAME: usize = AttributionAxis::MetadataName.ordinal();
+
+        assert_eq!(METADATA_SOURCE, 0);
+        assert_eq!(METADATA_NAME, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `AttributionAxis::ALL` to the
+        // runtime-side `axis.ordinal()` call — the const-context weld
+        // only exercises the two variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (axis, expected) in [
+            (AttributionAxis::MetadataSource, METADATA_SOURCE),
+            (AttributionAxis::MetadataName, METADATA_NAME),
+        ] {
+            assert_eq!(axis.ordinal(), expected, "axis {axis:?}");
+        }
     }
 
     #[test]
