@@ -2030,6 +2030,89 @@ impl AttributionRule {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this
+    /// attribution-rule variant — `0` for [`Self::FileBySource`], `1`
+    /// for [`Self::FileByMetadataName`], `2` for [`Self::EnvByPrefix`],
+    /// `3` for [`Self::EnvByUniqueness`], `4` for
+    /// [`Self::DefaultsByCodeUniqueness`] — delivered as the index the
+    /// variant occupies in [`Self::ALL`] under a `const`-callable
+    /// inherent match, keyed on the closed five-cell variant set
+    /// directly.
+    ///
+    /// Equal-answer sibling of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the rule-axis ordinal in a `const` context — a
+    /// compile-time-selected per-rule dispatch table keyed on the
+    /// rule axis, a `const` per-rule bitset sized by
+    /// `axis_cardinality::<AttributionRule>()`, an attestation
+    /// manifest whose per-rule provenance slots are initialized under
+    /// `const`, a `const` sentinel for a compile-time-known rule's
+    /// precedence position, a `const` weight-vector indexed by
+    /// ordinal that weights fallback-based attributions
+    /// (`EnvByUniqueness`, `DefaultsByCodeUniqueness`) visibly
+    /// differently than equality-based ones (`FileBySource`,
+    /// `FileByMetadataName`, `EnvByPrefix`) — reached through a `let`
+    /// binding at runtime instead of the inherent seam. This
+    /// `match`-based inherent, keyed on the five closed variants
+    /// directly, gives the same [`usize`] answer under `const` —
+    /// pinned pointwise across every variant by
+    /// [`tests::attribution_rule_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to
+    /// a scalar (a `&'static str` label and a `usize` precedence
+    /// position), both delegate the declaration-order source of
+    /// truth to [`Self::ALL`], and together they name the
+    /// attribution-rule axis's scalar label and scalar position
+    /// under `const`.
+    ///
+    /// Idiom-peer of [`ShikumiErrorKind::ordinal`] on the shikumi
+    /// error-kind axis, [`AttributionConfidence::ordinal`] on the
+    /// confidence axis, [`AttributionAxis::ordinal`] on the (source
+    /// × name) metadata axis, [`FieldPathLocalization::ordinal`] on
+    /// the tri-state field-path localization axis in the same
+    /// module, [`crate::Format::ordinal`] on the file-format axis,
+    /// [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the secret-client
+    /// error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and [`crate::SecretClientKind::ordinal`] on
+    /// the runtime-client kind axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract, applied here to the five-cell
+    /// (`FileBySource` × `FileByMetadataName` × `EnvByPrefix` ×
+    /// `EnvByUniqueness` × `DefaultsByCodeUniqueness`)
+    /// attribution-rule axis of the shikumi error-attribution
+    /// resolver.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::FileBySource => 0,
+            Self::FileByMetadataName => 1,
+            Self::EnvByPrefix => 2,
+            Self::EnvByUniqueness => 3,
+            Self::DefaultsByCodeUniqueness => 4,
+        }
+    }
+
     /// Confidence class of this rule: [`AttributionConfidence::Exact`]
     /// for equality-based attributions ([`Self::FileBySource`],
     /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
@@ -11075,6 +11158,123 @@ mod tests {
             <AttributionRule as ClosedAxisLabel>::from_canonical_str("file-by"),
             None,
         );
+    }
+
+    #[test]
+    fn attribution_rule_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `AttributionRule::ordinal` and the
+        // trait-uniform free-function projection
+        // `crate::axis_ordinal` are two spellings of the same
+        // closed-axis position lookup; pin them pointwise across
+        // every variant so a future edit to either the inherent
+        // match or the `AttributionRule::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that `axis_ordinal` does not (it
+        // delegates to non-const `Iterator::position` over a generic
+        // trait bound); this test guards the equal-answer contract
+        // that keeps the two seams substitutable. Idiom-peer of
+        // `field_path_localization_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`79bc366`) on the tri-state localization axis one impl
+        // block over,
+        // `attribution_axis_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`2c69c6d`) on the (source × name) metadata axis, and
+        // every other `_ordinal_agrees_with_axis_ordinal_pointwise`
+        // seal in the crate.
+        for &rule in AttributionRule::ALL {
+            assert_eq!(
+                rule.ordinal(),
+                crate::axis_ordinal(rule),
+                "inherent ordinal must agree with axis_ordinal for {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the
+        // five declared positions verbatim, in strictly ascending
+        // declaration order (FileBySource → FileByMetadataName →
+        // EnvByPrefix → EnvByUniqueness → DefaultsByCodeUniqueness).
+        // A future swap in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `AttributionRule::ALL` on
+        // both sides) fails here first. Peer of
+        // `field_path_localization_ordinal_reuses_declaration_order`
+        // (`79bc366`) on the tri-state localization axis and
+        // `attribution_axis_ordinal_reuses_declaration_order`
+        // (`2c69c6d`) on the (source × name) metadata axis.
+        assert_eq!(AttributionRule::FileBySource.ordinal(), 0);
+        assert_eq!(AttributionRule::FileByMetadataName.ordinal(), 1);
+        assert_eq!(AttributionRule::EnvByPrefix.ordinal(), 2);
+        assert_eq!(AttributionRule::EnvByUniqueness.ordinal(), 3);
+        assert_eq!(AttributionRule::DefaultsByCodeUniqueness.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `AttributionRule::ALL` at every declared
+        // position. A future edit that shifts the match arms
+        // without shifting the slice literal in lockstep fails here
+        // on the first drifted position.
+        for (index, &rule) in AttributionRule::ALL.iter().enumerate() {
+            assert_eq!(
+                rule.ordinal(),
+                index,
+                "ordinal must reuse AttributionRule::ALL index for {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_ordinal_is_const_callable() {
+        // Compile-time weld: the (rule → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `AttributionRule::as_str`
+        // and the sibling `FieldPathLocalization::ordinal`
+        // (`79bc366`) one impl block over. A drop of the `const`
+        // qualifier on `AttributionRule::ordinal` fails this test
+        // to compile. Idiom-peer of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate.
+        //
+        // Five `const` bindings — one per `AttributionRule`
+        // variant — route each payload-free variant through the
+        // const-fn projection in const position. The moment
+        // `AttributionRule::ordinal` loses its const-ness one of
+        // the five `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers
+        // that assumed const-ness through the projection.
+        const FILE_BY_SOURCE: usize = AttributionRule::FileBySource.ordinal();
+        const FILE_BY_METADATA_NAME: usize = AttributionRule::FileByMetadataName.ordinal();
+        const ENV_BY_PREFIX: usize = AttributionRule::EnvByPrefix.ordinal();
+        const ENV_BY_UNIQUENESS: usize = AttributionRule::EnvByUniqueness.ordinal();
+        const DEFAULTS_BY_CODE_UNIQUENESS: usize =
+            AttributionRule::DefaultsByCodeUniqueness.ordinal();
+
+        assert_eq!(FILE_BY_SOURCE, 0);
+        assert_eq!(FILE_BY_METADATA_NAME, 1);
+        assert_eq!(ENV_BY_PREFIX, 2);
+        assert_eq!(ENV_BY_UNIQUENESS, 3);
+        assert_eq!(DEFAULTS_BY_CODE_UNIQUENESS, 4);
+
+        // Cross-check: the const-fn projection stays pointwise
+        // equal on every variant in `AttributionRule::ALL` to the
+        // runtime-side `rule.ordinal()` call — the const-context
+        // weld only exercises the five variants named at
+        // const-binding sites, but the runtime pin threads the
+        // full closed list through the same projection to catch a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        for (rule, expected) in [
+            (AttributionRule::FileBySource, FILE_BY_SOURCE),
+            (AttributionRule::FileByMetadataName, FILE_BY_METADATA_NAME),
+            (AttributionRule::EnvByPrefix, ENV_BY_PREFIX),
+            (AttributionRule::EnvByUniqueness, ENV_BY_UNIQUENESS),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                DEFAULTS_BY_CODE_UNIQUENESS,
+            ),
+        ] {
+            assert_eq!(rule.ordinal(), expected, "rule {rule:?}");
+        }
     }
 
     #[test]
