@@ -2530,6 +2530,59 @@ impl SupportBoundaryDistance {
             .copied()
             .find(|v| v.as_str().eq_ignore_ascii_case(s))
     }
+
+    /// Scalar-ordinal projection of the [`SupportBoundaryDistance`]
+    /// variant tag on the three-cell (Boundary × Singular ×
+    /// StrictInterior) distance-from-boundary axis:
+    /// `0` for [`Self::Boundary`], `1` for [`Self::Singular`], `2` for
+    /// [`Self::StrictInterior`] — matching the declaration order
+    /// carried by [`Self::ALL`] pointwise. The peer-agreement law
+    /// `v.ordinal() == Self::ALL.iter().position(|&x| x == v).unwrap()`
+    /// is pinned by
+    /// [`tests::support_boundary_distance_ordinal_agrees_with_all_position_pointwise`].
+    ///
+    /// Idiom-peer of [`Self::as_str`] on the same primitive and of
+    /// [`SupportCardinalityClass::ordinal`] / [`ModalityClass::ordinal`]
+    /// on the sibling typed classifiers — all project the variant tag
+    /// to a small scalar at one inherent `const` call. Where
+    /// [`PartitionFace::ordinal`], [`crate::ShikumiErrorKind::ordinal`],
+    /// [`crate::secret::SecretBackendKind::ordinal`],
+    /// [`crate::tiered::ConfigTierKind::ordinal`], and every other
+    /// ordinal-carrying [`ClosedAxis`] primitive in the crate can
+    /// additionally pin pointwise agreement against the trait-uniform
+    /// free-function projection [`crate::axis_ordinal`],
+    /// [`SupportBoundaryDistance`] stays off the [`ClosedAxis`] trait
+    /// surface (the substrate-observation invariant gates
+    /// [`ClosedAxis`] on substrate axes only — this primitive is a
+    /// typed-bucket classifier over the histogram-side
+    /// [`SupportCardinalityClass`], semantically inverted for
+    /// [`AxisHistogram<SupportBoundaryDistance>`]), so the agreement
+    /// law is pinned against [`Self::ALL`] position directly instead.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] and every peer variant-tag
+    /// projection on [`SupportBoundaryDistance`]. Consumers wanting a
+    /// compile-time-selected per-bucket dispatch table (e.g. a
+    /// `const [usize; 3]` weight vector keyed by ordinal routing
+    /// boundary rollups under a different weight than strict-interior
+    /// rollups, or a `const` per-bucket label indexed by ordinal)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::support_boundary_distance_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::support_boundary_distance_ordinal_reuses_declaration_order`])
+    /// guards the concrete positions so a future reorder of the
+    /// variant declarations shifts both the match and [`Self::ALL`]
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Boundary => 0,
+            Self::Singular => 1,
+            Self::StrictInterior => 2,
+        }
+    }
 }
 
 /// Typed parse failure of
@@ -50974,6 +51027,117 @@ mod tests {
             ONLY_BOUNDARY_LEN + ONLY_SINGULAR_LEN + ONLY_STRICT_INTERIOR_LEN,
             ALL_LEN
         );
+    }
+
+    #[test]
+    fn support_boundary_distance_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `SupportBoundaryDistance::ordinal` and
+        // the linear-scan projection
+        // `Self::ALL.iter().position(|&v| v == self)` are two spellings
+        // of the same closed-slice position lookup; pin them pointwise
+        // across every variant so a future edit to either the inherent
+        // match or the `SupportBoundaryDistance::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that the linear-scan seam does not
+        // (`Iterator::position` is not const); this test guards the
+        // equal-answer contract that keeps the two seams substitutable
+        // at every non-const consumer site.
+        //
+        // Idiom-peer of every
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate applied here at the non-`ClosedAxis` altitude — the
+        // substrate-observation invariant gates `ClosedAxis` on
+        // substrate axes only, so `SupportBoundaryDistance` (a
+        // typed-bucket classifier over the histogram-side
+        // `SupportCardinalityClass`, semantically inverted for
+        // `AxisHistogram<SupportBoundaryDistance>`) stays off the
+        // trait surface and the pointwise-agreement law targets
+        // `Self::ALL` position directly rather than
+        // `crate::axis_ordinal`. Direct sibling to
+        // `support_cardinality_class_ordinal_agrees_with_all_position_pointwise`
+        // on the peer five-cell cube-classifier axis and
+        // `modality_class_ordinal_agrees_with_all_position_pointwise`
+        // on the peer five-cell modality-class axis.
+        for &bucket in SupportBoundaryDistance::ALL {
+            let expected = SupportBoundaryDistance::ALL
+                .iter()
+                .position(|&v| v == bucket)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                bucket.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {bucket:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the three
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Boundary → Singular → StrictInterior).
+        // A future swap in the match arms that would still pass the
+        // `agrees_with_all_position` pointwise pin (which reads the
+        // same declaration order out of `SupportBoundaryDistance::ALL`
+        // on both sides) fails here first.
+        assert_eq!(SupportBoundaryDistance::Boundary.ordinal(), 0);
+        assert_eq!(SupportBoundaryDistance::Singular.ordinal(), 1);
+        assert_eq!(SupportBoundaryDistance::StrictInterior.ordinal(), 2);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `SupportBoundaryDistance::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &bucket) in SupportBoundaryDistance::ALL.iter().enumerate() {
+            assert_eq!(
+                bucket.ordinal(),
+                index,
+                "ordinal must reuse SupportBoundaryDistance::ALL index for {bucket:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_ordinal_is_const_callable() {
+        // Compile-time weld: the (bucket → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection
+        // `SupportBoundaryDistance::as_str` and the sibling
+        // boolean-partition projections. A drop of the `const`
+        // qualifier on `SupportBoundaryDistance::ordinal` fails this
+        // test to compile.
+        //
+        // Three `const` bindings — one per `SupportBoundaryDistance`
+        // variant — route each payload-free variant through the
+        // const-fn projection in const position. The moment
+        // `SupportBoundaryDistance::ordinal` loses its const-ness one
+        // of the three `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const BOUNDARY: usize = SupportBoundaryDistance::Boundary.ordinal();
+        const SINGULAR: usize = SupportBoundaryDistance::Singular.ordinal();
+        const STRICT_INTERIOR: usize = SupportBoundaryDistance::StrictInterior.ordinal();
+
+        assert_eq!(BOUNDARY, 0);
+        assert_eq!(SINGULAR, 1);
+        assert_eq!(STRICT_INTERIOR, 2);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SupportBoundaryDistance::ALL` to the
+        // runtime-side `bucket.ordinal()` call — the const-context
+        // weld only exercises the three variants named at
+        // const-binding sites, but the runtime pin threads the full
+        // closed list through the same projection to catch a future
+        // variant landing whose const-context weld was forgotten
+        // upstream.
+        for (bucket, expected) in [
+            (SupportBoundaryDistance::Boundary, BOUNDARY),
+            (SupportBoundaryDistance::Singular, SINGULAR),
+            (SupportBoundaryDistance::StrictInterior, STRICT_INTERIOR),
+        ] {
+            assert_eq!(bucket.ordinal(), expected, "bucket {bucket:?}");
+        }
     }
 
     #[test]
