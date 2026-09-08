@@ -178,6 +178,66 @@ impl SecretError {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this error at
+    /// the payload-bearing altitude of the secret-client error-kind
+    /// axis — `0` for [`Self::NotFound`], `1` for [`Self::Unauthorized`],
+    /// `2` for [`Self::Unsupported`], `3` for [`Self::Backend`], `4` for
+    /// [`Self::Shikumi`], regardless of the inner payload. Matches the
+    /// declaration order carried by [`SecretErrorKind::ALL`] and the
+    /// [`SecretError`] arm order in [`Self::kind`].
+    ///
+    /// Tag-side sibling of [`SecretErrorKind::ordinal`] one altitude
+    /// down on the same closed five-way axis. Direct-match discipline
+    /// on the five variants (no `self.kind().ordinal()` delegation in
+    /// the body) so the tag-side declaration is an independent
+    /// load-bearing witness of the (variant → ordinal) projection at
+    /// the payload-bearing altitude, matching the shape of the
+    /// shipped [`ShikumiError::ordinal`] (`ce89cf9`) tag-side sibling
+    /// one crate module over on the shikumi error-kind axis, and of
+    /// [`crate::ConfigSource::ordinal`] (`480b79a`) /
+    /// [`crate::ConfigTier::ordinal`] (`ffc4a53`) on the sibling axes
+    /// of the sealed `(tier, source)` primitive.
+    ///
+    /// Const-fn eligibility: the five-arm exhaustive match binds
+    /// nothing on any arm (`Self::NotFound { .. }`,
+    /// `Self::Unauthorized { .. }`, `Self::Unsupported { .. }`,
+    /// `Self::Backend(_)`, `Self::Shikumi(_)`), so no `Drop`-carrying
+    /// payload — the inner `String` names / owned `String` message /
+    /// owned `String` backend transport blob / wrapped
+    /// [`ShikumiError`] — is moved through the projection at any
+    /// const-eval point; the projection reads only the enum
+    /// discriminant and returns a `Copy` `usize`. Same const-fn
+    /// eligibility argument as the sibling [`Self::kind`] projection.
+    ///
+    /// Payload-independence: the answer is the same for every
+    /// `NotFound { name }` regardless of the inner `String` name, for
+    /// every `Unauthorized { message }` regardless of the inner
+    /// message, for every `Unsupported { backend, operation }`
+    /// regardless of the `backend`/`operation` static-string pair, for
+    /// every `Backend(msg)` regardless of the inner `String`, and for
+    /// every `Shikumi(inner)` regardless of the wrapped
+    /// [`ShikumiError`] variant — the tag-side declaration is
+    /// forbidden from consulting any payload.
+    ///
+    /// Pointwise-agreement bridge with the kind-side sibling
+    /// [`SecretErrorKind::ordinal`] is pinned by
+    /// [`tests::secret_error_ordinal_agrees_with_kind_ordinal_pointwise`];
+    /// the concrete-position pin (five declaration positions with
+    /// payload-independence sub-pins) is pinned by
+    /// [`tests::secret_error_ordinal_reuses_declaration_order`]; the
+    /// const-callability weld is pinned by
+    /// [`tests::secret_error_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::NotFound { .. } => 0,
+            Self::Unauthorized { .. } => 1,
+            Self::Unsupported { .. } => 2,
+            Self::Backend(_) => 3,
+            Self::Shikumi(_) => 4,
+        }
+    }
+
     /// Borrow the underlying [`ShikumiError`] if this is a
     /// [`Self::Shikumi`] pass-through, else `None`.
     ///
@@ -11741,6 +11801,234 @@ mod tests {
                 "is_shikumi must agree with as_shikumi().is_some() on {err:?}",
             );
         }
+    }
+
+    #[test]
+    fn secret_error_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection
+        // at the payload-bearing altitude of the secret-client
+        // error-kind axis: `err.ordinal() == err.kind().ordinal()` for
+        // every SecretError value in the `one_per_secret_error_kind()`
+        // construction table. Peer of
+        // `shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`ce89cf9`) one crate module over on the shikumi error-kind
+        // axis, and `config_source_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`480b79a`) / `config_tier_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`ffc4a53`) on the sibling axes of the sealed (tier,
+        // source) primitive. The kind-side has no payload visibility,
+        // so a future edit that peeked at the inner `String` name /
+        // owned message / backend-transport blob / wrapped
+        // [`ShikumiError`] on either declaration surface diverges
+        // here on the first variant where the tag-side and kind-side
+        // disagree. Threads all five variants — including the four
+        // payload-bearing ones the const-callability weld downstream
+        // cannot cover cheaply — through the same projection at
+        // runtime, so a future variant landing whose const-context
+        // weld is forgotten upstream still fails the pointwise-
+        // agreement pin.
+        for (err, _) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.ordinal(),
+                err.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the payload-bearing altitude: `NotFound { .. }` at 0,
+        // `Unauthorized { .. }` at 1, `Unsupported { .. }` at 2,
+        // `Backend(_)` at 3, `Shikumi(_)` at 4 regardless of the
+        // inner payload. Payload-independence sub-pin: three
+        // representative `Backend(msg)` payload shapes (empty, ASCII,
+        // multi-word) all yield ordinal 3 on the Backend arm; three
+        // `NotFound { name }` shapes all yield ordinal 0 on the
+        // NotFound arm; three `Unauthorized { message }` shapes all
+        // yield ordinal 1 on the Unauthorized arm; three
+        // `Shikumi(inner)` shapes across three ShikumiError variants
+        // all yield ordinal 4 on the Shikumi arm.
+        //
+        // Peer of `shikumi_error_ordinal_reuses_declaration_order`
+        // (`ce89cf9`) one crate module over. Guards against a swap
+        // in the tag-side match arms that would still pass the
+        // pointwise-agreement pin if the kind-side inherent match was
+        // edited in the same drift.
+        for msg in ["", "backend down", "connection refused after 3 retries"] {
+            assert_eq!(
+                SecretError::Backend(msg.to_owned()).ordinal(),
+                3,
+                "Backend({msg:?}) ordinal must be 3 regardless of payload",
+            );
+        }
+        for name in ["", "db_pwd", "uam-shared-key"] {
+            let err = SecretError::NotFound {
+                name: name.to_owned(),
+            };
+            assert_eq!(
+                err.ordinal(),
+                0,
+                "NotFound {{ name: {name:?} }} ordinal must be 0 regardless of payload",
+            );
+        }
+        for message in ["", "no token", "403 forbidden"] {
+            let err = SecretError::Unauthorized {
+                message: message.to_owned(),
+            };
+            assert_eq!(
+                err.ordinal(),
+                1,
+                "Unauthorized {{ message: {message:?} }} ordinal must be 1 regardless of payload",
+            );
+        }
+        for inner in [
+            ShikumiError::NotFound { tried: Vec::new() },
+            ShikumiError::Parse(String::new()),
+            ShikumiError::Validation("bad".to_owned()),
+        ] {
+            let err = SecretError::Shikumi(inner);
+            assert_eq!(
+                err.ordinal(),
+                4,
+                "Shikumi(_) ordinal must be 4 regardless of wrapped ShikumiError variant ({err:?})",
+            );
+        }
+        // Unsupported is a `{ backend, operation }` cell with two
+        // `&'static str` fields — three representative pairs yield the
+        // same ordinal 2 regardless of the operation/backend axis
+        // through which the failure was raised.
+        for (backend, operation) in [("sops", "list"), ("vault", "rotate"), ("shell", "put")] {
+            assert_eq!(
+                SecretError::Unsupported { backend, operation }.ordinal(),
+                2,
+                "Unsupported {{ backend: {backend:?}, operation: {operation:?} }} \
+                 ordinal must be 2 regardless of payload",
+            );
+        }
+        // Concrete-position pin over one representative of each of
+        // the five arms via the same `one_per_secret_error_kind()`
+        // construction table that anchors the classification and
+        // pointwise-agreement pins above — no hand-rolled construction
+        // duplicated at this pin.
+        let expected: std::collections::HashMap<SecretErrorKind, usize> = [
+            (SecretErrorKind::NotFound, 0),
+            (SecretErrorKind::Unauthorized, 1),
+            (SecretErrorKind::Unsupported, 2),
+            (SecretErrorKind::Backend, 3),
+            (SecretErrorKind::Shikumi, 4),
+        ]
+        .into_iter()
+        .collect();
+        for (err, kind) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.ordinal(),
+                expected[&kind],
+                "concrete-position ordinal for {kind:?} ({err:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the
+        // same axis (`SecretErrorKind::ordinal`, a66d92e) and the
+        // shipped tag-side ordinal projections
+        // `ShikumiError::ordinal` (`ce89cf9`),
+        // `ConfigSource::ordinal` (`480b79a`), and
+        // `ConfigTier::ordinal` (`ffc4a53`) on the sibling closed-axis
+        // primitives. A `const fn ordinal_of(&SecretError) -> usize`
+        // wrapper delegating to `err.ordinal()` pins the const-fn
+        // signature at the language level: the moment
+        // `SecretError::ordinal` loses its `const` qualifier (a
+        // future edit that reaches for a non-const helper inside the
+        // five-arm exhaustive match — an allocator, a payload
+        // inspection on any of the five payload-bearing arms, a
+        // runtime lookup) the wrapper below fails to compile at
+        // THAT line before the drift can reach downstream
+        // const-context consumers that assumed const-ness through
+        // this projection.
+        const fn ordinal_of(err: &SecretError) -> usize {
+            err.ordinal()
+        }
+        // The `static` rather than `const` receiver is load-bearing
+        // for the same E0493 (`destructor cannot be evaluated at
+        // compile-time`) reason as `secret_error_kind_is_const_callable`
+        // / `shikumi_error_ordinal_is_const_callable`: `SecretError`
+        // carries non-`Copy` `Drop`-bearing payloads (`String`,
+        // `ShikumiError` with its own `Vec<PathBuf>` / `String`
+        // arms), so a `const SECRET_ERR: SecretError = …;
+        // const ORD = SECRET_ERR.ordinal();` spelling drops the
+        // const value after the ordinal projection and rejects with
+        // E0493. A `static SECRET_ERR: SecretError` is never
+        // dropped, so borrowing `&SECRET_ERR` for the `&self`
+        // receiver in a `const` initializer stays inside the
+        // const-eval envelope.
+        //
+        // Three variants (`NotFound` with empty `String`,
+        // `Unauthorized` with empty `String`, `Backend` with empty
+        // `String`) are const-constructible via `String::new`; the
+        // `Unsupported` variant is also const-constructible via
+        // `&'static str` fields; the remaining `Shikumi(_)` arm
+        // wraps a `ShikumiError` whose `NotFound { tried: Vec::new() }`
+        // is const-constructible and the `Vec::new`/const wrapping
+        // holds in `static` position. The full five-arm coverage is
+        // welded in const context below.
+        static NOT_FOUND_ERR: SecretError = SecretError::NotFound {
+            name: String::new(),
+        };
+        static UNAUTHORIZED_ERR: SecretError = SecretError::Unauthorized {
+            message: String::new(),
+        };
+        static UNSUPPORTED_ERR: SecretError = SecretError::Unsupported {
+            backend: "sops",
+            operation: "rotate",
+        };
+        static BACKEND_ERR: SecretError = SecretError::Backend(String::new());
+        static SHIKUMI_ERR: SecretError =
+            SecretError::Shikumi(ShikumiError::NotFound { tried: Vec::new() });
+        const NOT_FOUND_ORD: usize = NOT_FOUND_ERR.ordinal();
+        const UNAUTHORIZED_ORD: usize = UNAUTHORIZED_ERR.ordinal();
+        const UNSUPPORTED_ORD: usize = UNSUPPORTED_ERR.ordinal();
+        const BACKEND_ORD: usize = BACKEND_ERR.ordinal();
+        const SHIKUMI_ORD: usize = SHIKUMI_ERR.ordinal();
+
+        assert_eq!(NOT_FOUND_ORD, 0);
+        assert_eq!(UNAUTHORIZED_ORD, 1);
+        assert_eq!(UNSUPPORTED_ORD, 2);
+        assert_eq!(BACKEND_ORD, 3);
+        assert_eq!(SHIKUMI_ORD, 4);
+
+        // Runtime cross-check across the same five receivers via the
+        // const-fn wrapper — catches a future edit that shifted the
+        // const-fn body away from the runtime-fn body on any of the
+        // five const-welded arms.
+        assert_eq!(ordinal_of(&NOT_FOUND_ERR), 0);
+        assert_eq!(ordinal_of(&UNAUTHORIZED_ERR), 1);
+        assert_eq!(ordinal_of(&UNSUPPORTED_ERR), 2);
+        assert_eq!(ordinal_of(&BACKEND_ERR), 3);
+        assert_eq!(ordinal_of(&SHIKUMI_ERR), 4);
+
+        // Cross-check: the tag-side ordinal stays pointwise agreed
+        // with the kind-side sibling `SecretErrorKind::ordinal`
+        // (already const, welded by
+        // `secret_error_kind_ordinal_is_const_callable`) — the same
+        // structural bridge the runtime pin
+        // `secret_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // holds over the full `one_per_secret_error_kind()`
+        // construction table, now welded in const context on the
+        // five arms.
+        const NOT_FOUND_KIND_ORD: usize = NOT_FOUND_ERR.kind().ordinal();
+        const UNAUTHORIZED_KIND_ORD: usize = UNAUTHORIZED_ERR.kind().ordinal();
+        const UNSUPPORTED_KIND_ORD: usize = UNSUPPORTED_ERR.kind().ordinal();
+        const BACKEND_KIND_ORD: usize = BACKEND_ERR.kind().ordinal();
+        const SHIKUMI_KIND_ORD: usize = SHIKUMI_ERR.kind().ordinal();
+        assert_eq!(NOT_FOUND_ORD, NOT_FOUND_KIND_ORD);
+        assert_eq!(UNAUTHORIZED_ORD, UNAUTHORIZED_KIND_ORD);
+        assert_eq!(UNSUPPORTED_ORD, UNSUPPORTED_KIND_ORD);
+        assert_eq!(BACKEND_ORD, BACKEND_KIND_ORD);
+        assert_eq!(SHIKUMI_ORD, SHIKUMI_KIND_ORD);
     }
 
     // ── SecretErrorKind — Ord / Display / FromStr / serde ───────────
