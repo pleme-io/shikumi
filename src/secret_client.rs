@@ -3227,6 +3227,77 @@ impl SecretClientKind {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this runtime-client
+    /// kind — `0` for [`Self::Mem`], `1` for [`Self::Command`], `2` for
+    /// [`Self::Akeyless`], `3` for [`Self::AwsSecretsManager`], `4` for
+    /// [`Self::OpConnect`], `5` for [`Self::Vault`], `6` for
+    /// [`Self::GcpSecretManager`]. Matches the declaration order carried
+    /// by [`Self::ALL`], which in turn mirrors the concrete `impl
+    /// SecretClient` declaration order across the runtime-client space
+    /// (`MemClient`, `CommandClient`, `AkeylessClient`, `AwsClient`,
+    /// `OpConnectClient`, `VaultClient`, `GcpSecretClient`).
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the client-kind ordinal in a `const` context — a
+    /// compile-time-selected per-client dispatch table keyed on the
+    /// runtime-client kind, a `const` per-kind bitset sized by
+    /// `axis_cardinality::<SecretClientKind>()`, an attestation manifest
+    /// whose per-client transport-mix slots are initialized under
+    /// `const`, a `const` sentinel for a compile-time-known client's
+    /// precedence position — reached through a `let` binding at runtime
+    /// instead of the inherent seam. This `match`-based inherent, keyed
+    /// on the seven closed variants directly, gives the same `usize`
+    /// answer under `const` — pinned pointwise across every variant by
+    /// [`tests::secret_client_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the same
+    /// primitive: both are `Copy`-taking `const fn`s that project the
+    /// closed-enum tag to a scalar (a `&'static str` label and a
+    /// `usize` precedence position), both delegate the declaration-
+    /// order source of truth to [`Self::ALL`], and together they name
+    /// the client-kind's scalar label and scalar position under `const`.
+    ///
+    /// Idiom-peer of [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of the
+    /// sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`SecretErrorKind::ordinal`] on the secret-client error-kind axis,
+    /// and [`SecretOperation::ordinal`] on the secret-client operation
+    /// axis — same `match`-on-`Self` shape, same [`crate::axis_ordinal`]-
+    /// agreement discipline, same const-callability contract. First
+    /// landing of the ordinal-projection idiom on the runtime-client
+    /// kind axis, and — after this commit — the last unshipped
+    /// closed-axis kind primitive in the crate. Together the (`as_str`
+    /// × `ordinal`) `const fn` scalar-projection pair now covers every
+    /// closed-axis primitive uniformly.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Mem => 0,
+            Self::Command => 1,
+            Self::Akeyless => 2,
+            Self::AwsSecretsManager => 3,
+            Self::OpConnect => 4,
+            Self::Vault => 5,
+            Self::GcpSecretManager => 6,
+        }
+    }
+
     /// Returns `true` for [`Self::Mem`]; equivalent to
     /// `self == SecretClientKind::Mem`. Per-variant sibling predicate
     /// on the closed seven-way runtime-client kind partition.
@@ -12208,6 +12279,120 @@ mod tests {
             SecretClientKind::GcpSecretManager.as_str(),
             "gcp-secret-manager",
         );
+    }
+
+    #[test]
+    fn secret_client_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `SecretClientKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `SecretClientKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams
+        // substitutable. Idiom-peer of
+        // `secret_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // and `secret_operation_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling closed-axis primitives, and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate.
+        for &kind in SecretClientKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the seven
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Mem → Command → Akeyless →
+        // AwsSecretsManager → OpConnect → Vault → GcpSecretManager). A
+        // future swap in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `SecretClientKind::ALL` on
+        // both sides) fails here first.
+        assert_eq!(SecretClientKind::Mem.ordinal(), 0);
+        assert_eq!(SecretClientKind::Command.ordinal(), 1);
+        assert_eq!(SecretClientKind::Akeyless.ordinal(), 2);
+        assert_eq!(SecretClientKind::AwsSecretsManager.ordinal(), 3);
+        assert_eq!(SecretClientKind::OpConnect.ordinal(), 4);
+        assert_eq!(SecretClientKind::Vault.ordinal(), 5);
+        assert_eq!(SecretClientKind::GcpSecretManager.ordinal(), 6);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `SecretClientKind::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &kind) in SecretClientKind::ALL.iter().enumerate() {
+            assert_eq!(
+                kind.ordinal(),
+                index,
+                "ordinal must reuse SecretClientKind::ALL index for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_ordinal_is_const_callable() {
+        // Compile-time weld: the (kind → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `SecretClientKind::as_str`. A
+        // drop of the `const` qualifier on `SecretClientKind::ordinal`
+        // fails this test to compile. Idiom-peer of
+        // `secret_error_kind_ordinal_is_const_callable` and
+        // `secret_operation_ordinal_is_const_callable` on the sibling
+        // closed-axis primitives, and every other `_is_const_callable`
+        // seal on ordinal-carrying closed-axis primitives in the crate.
+        //
+        // Seven `const` bindings — one per `SecretClientKind` variant
+        // — route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `SecretClientKind::ordinal` loses its const-ness one of the
+        // seven `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const MEM: usize = SecretClientKind::Mem.ordinal();
+        const COMMAND: usize = SecretClientKind::Command.ordinal();
+        const AKEYLESS: usize = SecretClientKind::Akeyless.ordinal();
+        const AWS_SECRETS_MANAGER: usize = SecretClientKind::AwsSecretsManager.ordinal();
+        const OP_CONNECT: usize = SecretClientKind::OpConnect.ordinal();
+        const VAULT: usize = SecretClientKind::Vault.ordinal();
+        const GCP_SECRET_MANAGER: usize = SecretClientKind::GcpSecretManager.ordinal();
+
+        assert_eq!(MEM, 0);
+        assert_eq!(COMMAND, 1);
+        assert_eq!(AKEYLESS, 2);
+        assert_eq!(AWS_SECRETS_MANAGER, 3);
+        assert_eq!(OP_CONNECT, 4);
+        assert_eq!(VAULT, 5);
+        assert_eq!(GCP_SECRET_MANAGER, 6);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretClientKind::ALL` to the
+        // runtime-side `kind.ordinal()` call — the const-context weld
+        // only exercises the seven variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (kind, expected) in [
+            (SecretClientKind::Mem, MEM),
+            (SecretClientKind::Command, COMMAND),
+            (SecretClientKind::Akeyless, AKEYLESS),
+            (SecretClientKind::AwsSecretsManager, AWS_SECRETS_MANAGER),
+            (SecretClientKind::OpConnect, OP_CONNECT),
+            (SecretClientKind::Vault, VAULT),
+            (SecretClientKind::GcpSecretManager, GCP_SECRET_MANAGER),
+        ] {
+            assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
     }
 
     #[test]
