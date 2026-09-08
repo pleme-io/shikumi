@@ -12081,6 +12081,101 @@ impl ProofRelationKind {
         }
     }
 
+    /// The scalar-ordinal projection on the fused-sum quinary kind axis
+    /// — the tag-side sibling of the shipped scalar-label projection
+    /// [`Self::name`], and the fused-sum lift of the two half-side
+    /// ordinal receivers [`SameStoreConsistencyKind::ordinal`] (three-
+    /// cell consistency half, commit `3ba703d`) and
+    /// [`SameStoreImpossibilityKind::ordinal`] (two-cell impossibility
+    /// half, commit `7f86581`) onto the fused altitude the receiver
+    /// family already carries. Returns a dense `usize` in `0..5` whose
+    /// value equals the position of the corresponding cell in
+    /// [`Self::VARIANTS`] — `0` on
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Stationary`]`)`,
+    /// `1` on
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::IdentityRepublish`]`)`,
+    /// `2` on
+    /// [`Self::Consistent`]`(`[`SameStoreConsistencyKind::Progression`]`)`,
+    /// `3` on
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::Regressed`]`)`,
+    /// and `4` on
+    /// [`Self::Impossible`]`(`[`SameStoreImpossibilityKind::CrossStore`]`)`.
+    ///
+    /// **Delegation through the two half-side ordinals plus a fixed
+    /// offset.** Body is a two-arm outer `match` that projects the
+    /// [`Self::Consistent`] arm directly through the half-side
+    /// [`SameStoreConsistencyKind::ordinal`] and the [`Self::Impossible`]
+    /// arm through `SameStoreConsistencyKind::VARIANTS.len() +
+    /// k.ordinal()` — the consistent-half cardinality carried by the
+    /// sibling [`SameStoreConsistencyKind::VARIANTS`] slice, `const`-
+    /// accessible via `<[T]>::len` under rustc 1.94.1. The fused-altitude
+    /// ordinal on any [`Self::Impossible`] cell is thus its half-side
+    /// ordinal shifted by the consistent-half cardinality (three), so a
+    /// hypothetical fourth consistent corner OR a third impossibility
+    /// corner extends the fused ordinal axis by ONE cell without a
+    /// second edit on THIS receiver — the offset is pulled from the
+    /// half-side cardinality constant, not open-coded as a literal
+    /// `3`. Both branches are `const` under rustc 1.94.1 because the
+    /// half-side ordinals are `const fn`, `<[T]>::len` is `const`, and
+    /// `usize` addition is `const` on payload-free `Copy` inputs.
+    ///
+    /// **Compounding welded by the two half-side ordinals.** Before
+    /// this landing, every consumer wanting the fused corner's dense
+    /// ordinal — a `const` per-corner counter-slot index in an
+    /// attestation manifest, a `const`-sized per-corner bitset (five
+    /// bits, one per corner), a `const`-selected per-corner dispatch
+    /// table keyed by ordinal, a `const` sentinel for a compile-time-
+    /// known corner's precedence position — had to route through
+    /// `ProofRelationKind::VARIANTS.iter().position(|v| *v == self)`,
+    /// a runtime `Iterator::position` scan over the five-cell slice
+    /// dropping const-callability at the seam. The receiver here
+    /// discharges the projection at the primitive's OWN altitude,
+    /// `const`-callable, closing the (label, ordinal, boolean-half)
+    /// scalar-projection triple on the fused-sum quinary axis to
+    /// match the same triple the two half-side kinds and the sibling
+    /// closed-axis primitives already carry.
+    ///
+    /// **Cross-altitude same-answer with the two half-side ordinals.**
+    /// For every consistent `k` in
+    /// [`SameStoreConsistencyKind::VARIANTS`],
+    /// `ProofRelationKind::Consistent(k).ordinal() == k.ordinal()`;
+    /// for every impossibility `k` in
+    /// [`SameStoreImpossibilityKind::VARIANTS`],
+    /// `ProofRelationKind::Impossible(k).ordinal() ==
+    /// SameStoreConsistencyKind::VARIANTS.len() + k.ordinal()`. The
+    /// fused-altitude ordinal is a LOSSLESS projection of the pair of
+    /// half-side ordinals shifted by the consistent-half cardinality,
+    /// matching the round-trip identities the pair-side receivers
+    /// already carry ([`Self::name`] against the two half-side names,
+    /// [`Self::is_consistent`] against
+    /// [`Self::consistency`]`.is_some()`, and [`Self::is_impossible`]
+    /// against [`Self::impossibility`]`.is_some()`).
+    ///
+    /// Idiom-peer of [`SameStoreConsistencyKind::ordinal`] on the
+    /// three-cell consistency-half kind axis (commit `3ba703d`) and
+    /// [`SameStoreImpossibilityKind::ordinal`] on the two-cell
+    /// impossibility-half kind axis (commit `7f86581`), lifted here
+    /// onto the fused-sum quinary axis both half-side kinds project
+    /// into. Third `ordinal` landing on `hotswap.rs`'s
+    /// `SameStoreImpossibilityKind` / `SameStoreConsistencyKind` /
+    /// `ProofRelationKind` classification lattice, welding the
+    /// discipline across BOTH halves and the fused sum in lockstep.
+    ///
+    /// The declaration-order agreement, concrete-position, half-side
+    /// delegation, and const-callability laws are pinned by
+    /// [`variants_tests::proof_relation_kind_ordinal_agrees_with_variants_position_pointwise`],
+    /// [`variants_tests::proof_relation_kind_ordinal_reuses_declaration_order`],
+    /// [`variants_tests::proof_relation_kind_ordinal_delegates_to_half_side_ordinals`],
+    /// and
+    /// [`variants_tests::proof_relation_kind_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Consistent(k) => k.ordinal(),
+            Self::Impossible(k) => SameStoreConsistencyKind::VARIANTS.len() + k.ordinal(),
+        }
+    }
+
     /// The closed set of variant values in declaration order — the
     /// fused-arm sibling of [`SameStoreConsistencyKind::VARIANTS`]
     /// and [`SameStoreImpossibilityKind::VARIANTS`]. An ordered slice
@@ -39340,6 +39435,148 @@ mod variants_tests {
         assert_eq!(STATIONARY_ORDINAL, 0);
         assert_eq!(IDENTITY_REPUBLISH_ORDINAL, 1);
         assert_eq!(PROGRESSION_ORDINAL, 2);
+    }
+
+    // ---------- ProofRelationKind::ordinal — fused-sum scalar
+    // ordinal projection welded to Self::VARIANTS declaration order on
+    // the quinary fused kind axis, delegating through the two half-side
+    // ordinals plus the consistent-half cardinality offset.
+
+    #[test]
+    fn proof_relation_kind_ordinal_agrees_with_variants_position_pointwise() {
+        // The inherent ProofRelationKind::ordinal projection and the
+        // position of the corresponding cell in Self::VARIANTS are two
+        // independent load-bearing witnesses of the SAME declaration-
+        // order partition on the fused-sum quinary kind axis. This test
+        // pins their pointwise agreement across every Self::VARIANTS
+        // entry: a future edit that shifts the (variant → ordinal)
+        // mapping on ONE surface (the inherent match, the half-side
+        // ordinals it delegates through, or the Self::VARIANTS
+        // declaration order) but not the others diverges here on the
+        // first variant where they disagree, catching drift at test time
+        // before any downstream const-context consumer of
+        // ProofRelationKind::ordinal reads a stale ordinal for a live
+        // fused corner. Quinary-cardinality peer of
+        // same_store_consistency_kind_ordinal_agrees_with_variants_position_pointwise
+        // (three-cell consistency half) and
+        // same_store_impossibility_kind_ordinal_agrees_with_variants_position_pointwise
+        // (two-cell impossibility half) on the fused sum both halves
+        // project into.
+        for (i, &k) in ProofRelationKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.ordinal(),
+                i,
+                "ProofRelationKind::{k:?}.ordinal() should match its position in Self::VARIANTS",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the fused-sum quinary kind axis:
+        // Consistent(Stationary) at 0, Consistent(IdentityRepublish) at
+        // 1, Consistent(Progression) at 2, Impossible(Regressed) at 3,
+        // Impossible(CrossStore) at 4 — the declaration order the
+        // sibling Self::NAMES slice literal ["stationary",
+        // "identity_republish", "progression", "regressed",
+        // "cross_store"] carries and the fused Self::VARIANTS literal
+        // depends on. A second independent witness of the same partition
+        // beyond the Self::VARIANTS-position pin above: this pin fires
+        // even if a future edit reorders Self::VARIANTS to keep the
+        // position agreement superficially intact, catching an ordinal-
+        // swap that shifted both surfaces in lockstep away from the
+        // declared partition.
+        assert_eq!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary).ordinal(),
+            0,
+        );
+        assert_eq!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish).ordinal(),
+            1,
+        );
+        assert_eq!(
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression).ordinal(),
+            2,
+        );
+        assert_eq!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed).ordinal(),
+            3,
+        );
+        assert_eq!(
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore).ordinal(),
+            4,
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_ordinal_delegates_to_half_side_ordinals() {
+        // The fused-altitude ordinal is a LOSSLESS projection of the
+        // pair of half-side ordinals shifted by the consistent-half
+        // cardinality. For every consistent cell k in
+        // SameStoreConsistencyKind::VARIANTS,
+        // ProofRelationKind::Consistent(k).ordinal() equals k.ordinal();
+        // for every impossibility cell k in
+        // SameStoreImpossibilityKind::VARIANTS,
+        // ProofRelationKind::Impossible(k).ordinal() equals
+        // SameStoreConsistencyKind::VARIANTS.len() + k.ordinal(). A
+        // future edit that broke either half of the delegation (e.g.
+        // open-coded a literal `3` in the impossibility arm's offset and
+        // a fourth consistent corner shifted the real offset to `4`, or
+        // reordered the two arm bodies against the fused Self::VARIANTS
+        // partition) diverges here on the first cell where the fused-
+        // altitude ordinal disagrees with its half-side projection,
+        // pinning the same cross-altitude same-answer discipline the
+        // sibling name / consistency / impossibility / is_consistent /
+        // is_impossible receivers already carry.
+        for &k in SameStoreConsistencyKind::VARIANTS {
+            assert_eq!(
+                ProofRelationKind::Consistent(k).ordinal(),
+                k.ordinal(),
+                "ProofRelationKind::Consistent({k:?}).ordinal() should equal the half-side \
+                 SameStoreConsistencyKind::{k:?}.ordinal()",
+            );
+        }
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            assert_eq!(
+                ProofRelationKind::Impossible(k).ordinal(),
+                SameStoreConsistencyKind::VARIANTS.len() + k.ordinal(),
+                "ProofRelationKind::Impossible({k:?}).ordinal() should equal the consistent-half \
+                 cardinality plus the half-side \
+                 SameStoreImpossibilityKind::{k:?}.ordinal()",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_ordinal_is_const_callable() {
+        // The scalar-ordinal projection on the fused-sum quinary kind
+        // axis is const-callable, so a compile-time consumer (a const
+        // per-corner counter-slot index in an attestation manifest, a
+        // const-selected per-corner dispatch table keyed by fused
+        // ordinal, a static assertion pinning a compile-time-known
+        // fused corner's ordinal, a const-sized five-bit per-corner
+        // bitset) resolves the ordinal at compile time. The five const-
+        // block welds below make the closure load-bearing at crate
+        // compile time: a future edit that dropped the `const` qualifier
+        // on ProofRelationKind::ordinal (or on either half-side ordinal
+        // the fused arm delegates through, or on <[T]>::len for the
+        // offset) fails at `cargo build` here, not just at runtime,
+        // before drift reaches downstream const-context consumers.
+        const CONSISTENT_STATIONARY_ORDINAL: usize =
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary).ordinal();
+        const CONSISTENT_IDENTITY_REPUBLISH_ORDINAL: usize =
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish).ordinal();
+        const CONSISTENT_PROGRESSION_ORDINAL: usize =
+            ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression).ordinal();
+        const IMPOSSIBLE_REGRESSED_ORDINAL: usize =
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed).ordinal();
+        const IMPOSSIBLE_CROSS_STORE_ORDINAL: usize =
+            ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore).ordinal();
+        assert_eq!(CONSISTENT_STATIONARY_ORDINAL, 0);
+        assert_eq!(CONSISTENT_IDENTITY_REPUBLISH_ORDINAL, 1);
+        assert_eq!(CONSISTENT_PROGRESSION_ORDINAL, 2);
+        assert_eq!(IMPOSSIBLE_REGRESSED_ORDINAL, 3);
+        assert_eq!(IMPOSSIBLE_CROSS_STORE_ORDINAL, 4);
     }
 
     #[test]
