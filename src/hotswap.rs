@@ -3040,6 +3040,95 @@ impl SameStoreImpossibilityKind {
         matches!(*self, Self::CrossStore)
     }
 
+    /// The declaration-order ordinal of this impossibility corner on the
+    /// two-cell (regressed × cross_store) impossibility-half kind axis —
+    /// `0` for [`Self::Regressed`], `1` for [`Self::CrossStore`]. Matches
+    /// the declaration order carried by [`Self::VARIANTS`] and
+    /// [`Self::NAMES`] pointwise.
+    ///
+    /// **Tag-side scalar-projection peer of [`Self::name`].** The
+    /// (`name`, `ordinal`, `is_regressed`/`is_cross_store`) triple now
+    /// spans the closed two-cell impossibility-half kind axis at the
+    /// primitive's OWN altitude with three orthogonal scalar projections:
+    /// a stable snake-case identifier (a `&'static str` for a metrics
+    /// label / log field / attester JSON key), a dense `usize` precedence
+    /// position (a `const` per-corner bitset index, a `const`-selected
+    /// per-corner dispatch table slot, an attestation manifest whose
+    /// per-corner counter slots are initialized under `const`, a `const`
+    /// sentinel for a compile-time-known corner's ordinal), and the two
+    /// boolean-half polarity predicates. Before this landing, every
+    /// consumer wanting the corner's dense ordinal had to route through
+    /// `SameStoreImpossibilityKind::VARIANTS.iter().position(|v| *v ==
+    /// self)`  — a runtime `Iterator::position` scan over the two-cell
+    /// slice — dropping const-callability at the seam.
+    ///
+    /// **Two independent load-bearing witnesses of the same
+    /// declaration-order.** The two surfaces — this inherent `match` and
+    /// the [`Self::VARIANTS`] slice literal declaration order — remain
+    /// independent so a future edit that shifts the (variant → ordinal)
+    /// mapping on ONE surface but not the other diverges at test time on
+    /// the first variant where they disagree, matching the
+    /// two-independent-surfaces discipline the sibling
+    /// [`Self::ONLY_REGRESSED`] / [`Self::ONLY_CROSS_STORE`] singletons
+    /// already carry against [`Self::is_regressed`] / [`Self::is_cross_store`]
+    /// on the same primitive.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreImpossibilityKind`] projects its precedence ordinal at
+    /// compile time too, matching the `const`-ness the rest of the
+    /// receiver-family on this primitive ([`Self::name`],
+    /// [`Self::is_regressed`], [`Self::is_cross_store`],
+    /// [`Self::is_watermark_moved`], [`Self::is_watermark_stationary`],
+    /// [`Self::is_generation_advanced`], [`Self::variants`],
+    /// [`Self::names`]) already carries.
+    ///
+    /// Idiom-peer of [`crate::PartitionFace::ordinal`] on the two-cell
+    /// (realizable × unrealizable) cube-cell partition-face axis (commit
+    /// `5a838d1`), [`crate::AttributionConfidence::ordinal`] on the
+    /// two-cell (exact × fallback) confidence axis (commit `165f579`),
+    /// [`crate::ShikumiErrorKind::ordinal`] on the seven-cell shikumi
+    /// error-kind axis, [`crate::SecretBackendKind::ordinal`] on the
+    /// eight-cell config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the five-cell secret-client
+    /// error-kind axis, [`crate::SecretOperation::ordinal`] on the
+    /// six-cell secret-client operation axis,
+    /// [`crate::SecretClientKind::ordinal`] on the seven-cell runtime-
+    /// client kind axis, [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of the
+    /// sealed `(tier, source)` primitive,
+    /// [`crate::ConfigSourceKind::ordinal`] on the source-layer axis,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the reload-
+    /// relevance axis, [`crate::source::FigmentSourceKind::ordinal`] on
+    /// the figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the figment-Name
+    /// axis, and [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis — same `match`-on-`Self` shape, same
+    /// declaration-order-agreement discipline against the primitive's
+    /// closed-set slice ([`Self::VARIANTS`] here, `Self::ALL` on the
+    /// [`crate::ClosedAxis`]-bound siblings), same const-callability
+    /// contract, applied here to the (regressed × cross_store)
+    /// impossibility-half kind axis in `hotswap.rs`. First `ordinal`
+    /// landing on `hotswap.rs`'s `SameStoreImpossibilityKind` /
+    /// `SameStoreConsistencyKind` / `ProofRelationKind` classification
+    /// lattice, seeding the same shape for a future one-line lift on
+    /// the ternary consistent-half `SameStoreConsistencyKind::ordinal`
+    /// and the fused-sum quinary `ProofRelationKind::ordinal`.
+    ///
+    /// The declaration-order agreement, concrete-position, and
+    /// const-callability laws are pinned by
+    /// [`variants_tests::same_store_impossibility_kind_ordinal_agrees_with_variants_position_pointwise`],
+    /// [`variants_tests::same_store_impossibility_kind_ordinal_reuses_declaration_order`],
+    /// and
+    /// [`variants_tests::same_store_impossibility_kind_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Regressed => 0,
+            Self::CrossStore => 1,
+        }
+    }
+
     /// Whether this impossibility corner witnessed the class-scoped watermark
     /// move — `true` on [`Self::CrossStore`] (watermark moved at unchanged
     /// generation counter — the moved-watermark impossibility corner, the
@@ -40478,6 +40567,69 @@ mod variants_tests {
             ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed)
                 .is_watermark_stationary()
         );
+    }
+
+    // ---------- SameStoreImpossibilityKind::ordinal — tag-side scalar
+    // ordinal projection welded to Self::VARIANTS declaration order.
+
+    #[test]
+    fn same_store_impossibility_kind_ordinal_agrees_with_variants_position_pointwise() {
+        // The inherent SameStoreImpossibilityKind::ordinal projection and
+        // the position of the corresponding cell in Self::VARIANTS are two
+        // independent load-bearing witnesses of the SAME declaration-order
+        // partition on the (regressed × cross_store) impossibility-half kind
+        // axis. This test pins their pointwise agreement across every
+        // Self::VARIANTS entry: a future edit that shifts the (variant →
+        // ordinal) mapping on ONE surface (the inherent match or the
+        // Self::VARIANTS declaration order) but not the other diverges here
+        // on the first variant where they disagree, catching drift at test
+        // time before any downstream const-context consumer of
+        // SameStoreImpossibilityKind::ordinal (a const per-corner metric
+        // slot index, a const-sized per-corner bitset, a const-selected
+        // dispatch table) reads a stale ordinal for a live variant.
+        for (i, &k) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.ordinal(),
+                i,
+                "SameStoreImpossibilityKind::{k:?}.ordinal() should match its position in \
+                 Self::VARIANTS",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the two-cell impossibility-half kind
+        // axis: Regressed at position 0, CrossStore at position 1 — the
+        // declaration order the sibling Self::NAMES slice literal
+        // ["regressed", "cross_store"] carries and the fused-sum
+        // ProofRelationKind::VARIANTS Impossible-half tail depends on.
+        // A second independent witness of the same partition beyond the
+        // Self::VARIANTS-position pin above: this pin fires even if a
+        // future edit reorders Self::VARIANTS to keep the position agreement
+        // superficially intact, catching an ordinal-swap that shifted both
+        // surfaces in lockstep away from the declared partition.
+        assert_eq!(SameStoreImpossibilityKind::Regressed.ordinal(), 0);
+        assert_eq!(SameStoreImpossibilityKind::CrossStore.ordinal(), 1);
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_ordinal_is_const_callable() {
+        // The scalar-ordinal projection on the two-cell impossibility-half
+        // kind axis is const-callable, so a compile-time consumer (a const
+        // per-corner counter-slot index in an attestation manifest, a
+        // const-selected per-corner dispatch table keyed by ordinal, a
+        // static assertion pinning a compile-time-known corner's ordinal)
+        // resolves the ordinal at compile time. The two const-block welds
+        // below make the closure load-bearing at crate compile time: a
+        // future edit that dropped the `const` qualifier on
+        // SameStoreImpossibilityKind::ordinal fails at `cargo build` here,
+        // not just at runtime, before drift reaches downstream const-context
+        // consumers of the ordinal.
+        const REGRESSED_ORDINAL: usize = SameStoreImpossibilityKind::Regressed.ordinal();
+        const CROSS_STORE_ORDINAL: usize = SameStoreImpossibilityKind::CrossStore.ordinal();
+        assert_eq!(REGRESSED_ORDINAL, 0);
+        assert_eq!(CROSS_STORE_ORDINAL, 1);
     }
 }
 
