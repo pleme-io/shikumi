@@ -17614,6 +17614,95 @@ impl ProofRelationWire {
         }
     }
 
+    /// The scalar-ordinal projection at the wire-classification
+    /// altitude — the dense `0..5` position of `self`'s fused corner in
+    /// the shared axis order carried by [`ProofRelationKind::VARIANTS`]:
+    /// `Stationary` at 0, `IdentityRepublish { .. }` at 1,
+    /// `Progression { .. }` at 2, `Regressed { .. }` at 3, and
+    /// `CrossStore { .. }` at 4. The wire-side sibling of
+    /// [`ProofRelation::ordinal`] (commit `5073304`) at the value-
+    /// classification altitude and of [`ProofRelationKind::ordinal`]
+    /// (commit `9ed4d86`) at the kind-side altitude, closing the
+    /// (variant → ordinal) projection at the same altitude the wire
+    /// fused kind receiver [`Self::kind`] already answers the
+    /// (variant → kind) projection.
+    ///
+    /// **Same-answer invariant with [`ProofRelation::ordinal`].** For
+    /// every legitimate value/wire pair the two accessors agree
+    /// pointwise: whenever `relation.ordinal()` returns `n`,
+    /// `relation.to_wire().ordinal()` returns the same `n`. The wire is
+    /// a lossless channel for the scalar-ordinal question the value-side
+    /// sibling answers, so a `/healthz/config` consumer holding a
+    /// freshly deserialized [`ProofRelationWire`] reaches the same
+    /// dense-corner index as a value-side consumer holding the parsed
+    /// [`ProofRelation`], without routing through a
+    /// [`ProofRelation::try_from_wire`] that pays for the
+    /// [`MovedWatermarkDelta::try_from_wire`] and
+    /// [`std::num::NonZeroU64::new`] parse-time welds a tag-only
+    /// scalar-ordinal question never touches.
+    ///
+    /// **Pointwise-agreement with [`Self::kind`]`.ordinal()`.** For
+    /// every [`ProofRelationWire`] value the identity
+    /// `self.ordinal() == self.kind().ordinal()` holds, welded by
+    /// [`variants_tests::proof_relation_wire_ordinal_agrees_with_kind_ordinal_pointwise`].
+    /// A future edit that shifts the mapping on ONE surface (this
+    /// tag-side match at the wire altitude, the sibling match in
+    /// [`ProofRelation::ordinal`] one altitude up, the kind-side match
+    /// in [`ProofRelationKind::ordinal`], or the fused declaration
+    /// order carried by [`ProofRelationKind::VARIANTS`]) but not the
+    /// others diverges at the pin on the first variant where the two
+    /// disagree before drift reaches downstream consumers that assumed
+    /// the three altitudes agree.
+    ///
+    /// **Direct-match discipline (no `self.kind().ordinal()`
+    /// delegation).** The body is a five-arm exhaustive match on
+    /// `&Self`. The wire-side declaration is an independent load-bearing
+    /// witness of the (variant → ordinal) projection at this altitude,
+    /// matching the shape of the shipped tag-side siblings
+    /// [`ProofRelation::ordinal`] (commit `5073304`),
+    /// [`crate::error::ShikumiError::ordinal`] (commit `ce89cf9`),
+    /// [`crate::secret_client::SecretError::ordinal`] (commit `dba25d6`),
+    /// [`crate::ConfigSource::ordinal`] (commit `480b79a`), and
+    /// [`crate::ConfigTier::ordinal`] (commit `ffc4a53`) on the sibling
+    /// closed-axis primitives. A hypothetical edit that peeked at any
+    /// payload on the wire-side arm diverges before the pointwise pin
+    /// carries the drift downstream.
+    ///
+    /// **The tag alone is sufficient.** Unlike a hypothetical wire
+    /// consumer routing through [`ProofRelation::try_from_wire`] to
+    /// reach the value-altitude ordinal, no payload field participates
+    /// in this projection — no parse-time weld is even conceptually
+    /// involved. A wire consumer reaches the dense-corner ordinal
+    /// without deserializing the payload portion of a tagged JSON blob,
+    /// matching the low-cost "route on `kind` alone" seam
+    /// [`ProofRelationWire`]'s internally-tagged serde encoding
+    /// establishes and that [`Self::kind`] / [`Self::stationary`] /
+    /// [`Self::same_store_consistent`] already exploit.
+    ///
+    /// `const fn`: the body is a five-arm exhaustive match on `&Self`
+    /// whose arms return const-constructible [`usize`] literals and
+    /// bind nothing on any arm (`Self::IdentityRepublish { .. }`,
+    /// `Self::Progression { .. }`, `Self::CrossStore { .. }`,
+    /// `Self::Regressed { .. }`), so no payload — the
+    /// [`WatermarkDeltaWire`] on the two payload-carrying arms, the
+    /// [`u64`] on the three generation-carrying arms — is moved
+    /// through the projection at any const-eval point. The projection
+    /// reads only the enum discriminant and returns a [`Copy`]
+    /// [`usize`], matching the const-callability contract on
+    /// [`Self::kind`] one receiver up and on every classification
+    /// accessor in this impl. Welded at compile time by
+    /// [`variants_tests::proof_relation_wire_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::Stationary => 0,
+            Self::IdentityRepublish { .. } => 1,
+            Self::Progression { .. } => 2,
+            Self::Regressed { .. } => 3,
+            Self::CrossStore { .. } => 4,
+        }
+    }
+
     /// True iff the wire classification is the null hypothesis — the
     /// [`Self::Stationary`] variant. The wire-side receiver-sibling of
     /// [`ProofRelation::stationary`], closing the (value, wire) ×
@@ -39953,6 +40042,327 @@ mod variants_tests {
         const PROGRESSION_KIND_ORD: usize = PROGRESSION.kind().ordinal();
         const REGRESSED_KIND_ORD: usize = REGRESSED.kind().ordinal();
         const CROSS_STORE_KIND_ORD: usize = CROSS_STORE.kind().ordinal();
+        assert_eq!(STATIONARY_ORD, STATIONARY_KIND_ORD);
+        assert_eq!(IDENTITY_REPUBLISH_ORD, IDENTITY_REPUBLISH_KIND_ORD);
+        assert_eq!(PROGRESSION_ORD, PROGRESSION_KIND_ORD);
+        assert_eq!(REGRESSED_ORD, REGRESSED_KIND_ORD);
+        assert_eq!(CROSS_STORE_ORD, CROSS_STORE_KIND_ORD);
+    }
+
+    // ─── proof_relation_wire_ordinal_* ─────────────────────────────────
+    // Wire-side sibling of `ProofRelation::ordinal` (commit `5073304`)
+    // and kind-side sibling of `ProofRelationKind::ordinal` (commit
+    // `9ed4d86`), lifted onto the wire-classification altitude. The
+    // triple below folds through a five-row construction table
+    // `one_per_proof_relation_wire_kind()` so a future variant addition
+    // on either half of the classification lattice extends the tag-side,
+    // value-side, and wire-side pins in lockstep.
+
+    /// The five wire-side [`ProofRelationWire`] representatives — one
+    /// per fused corner, each with a canonical wire payload — reused
+    /// across the three `proof_relation_wire_ordinal_*` tests. Guards
+    /// against drift between the wire-side match arms and the fused
+    /// kind axis by providing a construction table the pointwise-
+    /// agreement, concrete-position, and const-callability pins all
+    /// fold over. Wire-side peer of `one_per_proof_relation_kind()` one
+    /// altitude up; each row's `ProofRelationWire` is the
+    /// [`ProofRelation::to_wire`] projection of the corresponding value-
+    /// side row so a cross-altitude round-trip pin holds pointwise.
+    fn one_per_proof_relation_wire_kind() -> [(ProofRelationWire, ProofRelationKind); 5] {
+        // Any wire watermark shape will do — the wire ordinal projection
+        // is payload-independent by construction. Use a wire form that
+        // corresponds to a legitimate `MovedWatermarkDelta` witness so
+        // the row is round-trippable through `ProofRelation::try_from_wire`.
+        let moved_wire = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: false,
+        };
+        [
+            (
+                ProofRelationWire::Stationary,
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+            ),
+            (
+                ProofRelationWire::IdentityRepublish { generations: 1 },
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+            ),
+            (
+                ProofRelationWire::Progression {
+                    watermark: moved_wire,
+                    generations: 1,
+                },
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+            ),
+            (
+                ProofRelationWire::Regressed { by: 7 },
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+            ),
+            (
+                ProofRelationWire::CrossStore {
+                    watermark: moved_wire,
+                },
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+            ),
+        ]
+    }
+
+    #[test]
+    fn proof_relation_wire_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Wire tag ↔ kind agreement on the (variant → ordinal)
+        // projection at the wire-classification altitude of the
+        // fused-sum quinary kind axis: `w.ordinal() == w.kind().ordinal()`
+        // for every `ProofRelationWire` value in the
+        // `one_per_proof_relation_wire_kind()` construction table.
+        // Wire-side peer of
+        // `proof_relation_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`5073304`) at the value-classification altitude — same
+        // tag-side ↔ kind-side pointwise-agreement discipline, one
+        // altitude down.
+        //
+        // Additionally cross-altitude peer: for every legitimate
+        // (value, wire) pair `v.ordinal() == v.to_wire().ordinal()`,
+        // welded here by projecting the sibling value-side ordinal
+        // through the same fused kind axis and asserting the wire
+        // ordinal reads the same corner. A future edit that shifts the
+        // (variant → ordinal) mapping on ONE surface (this wire-side
+        // match, the value-side match in `ProofRelation::ordinal`, the
+        // kind-side match in `ProofRelationKind::ordinal`, either
+        // half-side `SameStore{Consistency,Impossibility}Kind::ordinal`
+        // the kind-side delegates through, or the fused
+        // `ProofRelationKind::VARIANTS` declaration order) but not the
+        // others diverges here on the first variant where they disagree
+        // — before drift reaches a downstream `/healthz/config` consumer
+        // that reads one altitude and assumed the other agreed.
+        for (w, expected_kind) in one_per_proof_relation_wire_kind() {
+            assert_eq!(
+                w.kind(),
+                expected_kind,
+                "kind() must match the expected fused corner for {w:?}",
+            );
+            assert_eq!(
+                w.ordinal(),
+                w.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {w:?}",
+            );
+        }
+        // Cross-altitude same-answer pin: the value-side ordinal and
+        // the wire-side ordinal agree pointwise on every legitimate
+        // (value, wire) pair. Threaded through the value-side
+        // construction table so a future variant addition extends both
+        // sides in lockstep.
+        for (r, _) in one_per_proof_relation_kind() {
+            assert_eq!(
+                r.ordinal(),
+                r.to_wire().ordinal(),
+                "value-altitude and wire-altitude ordinals must agree \
+                 pointwise for {r:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_wire_ordinal_reuses_kind_axis_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the wire-classification altitude: `Stationary` at 0,
+        // `IdentityRepublish { .. }` at 1, `Progression { .. }` at 2,
+        // `Regressed { .. }` at 3, `CrossStore { .. }` at 4 —
+        // matching the fused `ProofRelationKind::VARIANTS` declaration
+        // order the kind-side sibling `ProofRelationKind::ordinal`
+        // reuses (commit `9ed4d86`) and the value-side sibling
+        // `ProofRelation::ordinal` mirrors (commit `5073304`), NOT the
+        // wire-side declaration order the `ProofRelationWire` enum
+        // literal itself carries (which has `CrossStore` before
+        // `Regressed`). The wire-side ordinal is a projection of the
+        // kind axis, not of the wire-side declaration; the kind axis's
+        // alphabet is the load-bearing one every consumer routing on
+        // wire ordinal reads through.
+        //
+        // Payload-independence sub-pin: three representative wire
+        // payloads per payload-bearing arm all yield the same ordinal
+        // regardless of the inner `u64` / `WatermarkDeltaWire` shape.
+        // Guards against a swap in the wire-side match arms that would
+        // still pass the pointwise-agreement pin if the kind-side was
+        // edited in the same drift, and against a hypothetical edit
+        // that peeked at any payload on the wire-side arms.
+        let moved_wire_1 = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: false,
+        };
+        let moved_wire_2 = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: false,
+        };
+        let moved_wire_3 = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: true,
+            free_moved: true,
+        };
+
+        assert_eq!(ProofRelationWire::Stationary.ordinal(), 0);
+        for gens in [1_u64, 2, 42] {
+            assert_eq!(
+                ProofRelationWire::IdentityRepublish { generations: gens }.ordinal(),
+                1,
+                "IdentityRepublish {{ generations: {gens} }} wire ordinal \
+                 must be 1 regardless of payload",
+            );
+        }
+        for (gens, watermark) in [(1_u64, moved_wire_1), (2, moved_wire_2), (7, moved_wire_3)] {
+            assert_eq!(
+                ProofRelationWire::Progression {
+                    watermark,
+                    generations: gens,
+                }
+                .ordinal(),
+                2,
+                "Progression {{ watermark: {watermark:?}, generations: {gens} }} \
+                 wire ordinal must be 2 regardless of payload",
+            );
+        }
+        for by in [1_u64, 3, 99] {
+            assert_eq!(
+                ProofRelationWire::Regressed { by }.ordinal(),
+                3,
+                "Regressed {{ by: {by} }} wire ordinal must be 3 regardless of payload",
+            );
+        }
+        for watermark in [moved_wire_1, moved_wire_2, moved_wire_3] {
+            assert_eq!(
+                ProofRelationWire::CrossStore { watermark }.ordinal(),
+                4,
+                "CrossStore {{ watermark: {watermark:?} }} wire ordinal \
+                 must be 4 regardless of payload",
+            );
+        }
+
+        // Concrete-position sweep against the same
+        // `one_per_proof_relation_wire_kind()` construction table the
+        // pointwise-agreement pin above threads, keyed by fused kind
+        // so a future variant addition on either half of the
+        // classification lattice reaches this pin by extending both
+        // the table and the expected-map in lockstep.
+        let expected: std::collections::HashMap<ProofRelationKind, usize> = [
+            (
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Stationary),
+                0,
+            ),
+            (
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::IdentityRepublish),
+                1,
+            ),
+            (
+                ProofRelationKind::Consistent(SameStoreConsistencyKind::Progression),
+                2,
+            ),
+            (
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::Regressed),
+                3,
+            ),
+            (
+                ProofRelationKind::Impossible(SameStoreImpossibilityKind::CrossStore),
+                4,
+            ),
+        ]
+        .into_iter()
+        .collect();
+        for (w, kind) in one_per_proof_relation_wire_kind() {
+            assert_eq!(
+                w.ordinal(),
+                expected[&kind],
+                "concrete-position wire ordinal for {kind:?} ({w:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_wire_ordinal_is_const_callable() {
+        // Compile-time weld — the wire-side ordinal at the wire-
+        // classification altitude is `pub const fn`, matching its
+        // value-side sibling one altitude up on the same fused axis
+        // (`ProofRelation::ordinal`, `5073304`), its kind-side sibling
+        // (`ProofRelationKind::ordinal`, `9ed4d86`), and the shipped
+        // tag-side ordinal projections on the sibling payload-bearing
+        // primitives (`SecretError::ordinal`, `dba25d6`;
+        // `ShikumiError::ordinal`, `ce89cf9`).
+        //
+        // A `const fn ordinal_of(&ProofRelationWire) -> usize` wrapper
+        // delegating to `w.ordinal()` pins the const-fn signature at
+        // the language level: the moment `ProofRelationWire::ordinal`
+        // loses its `const` qualifier (a future edit that reaches for
+        // a non-const helper inside the five-arm exhaustive match — an
+        // allocator, a payload inspection on any of the four
+        // payload-bearing arms, a runtime lookup) the wrapper below
+        // fails to compile at THAT line before the drift can reach
+        // downstream const-context consumers that assumed const-ness
+        // through this projection.
+        const fn ordinal_of(w: &ProofRelationWire) -> usize {
+            w.ordinal()
+        }
+
+        // Five `const` bindings over `static` receivers cover every
+        // arm. `ProofRelationWire` carries a `u64` payload on three
+        // arms and a `WatermarkDeltaWire` on two, all of which are
+        // `Copy` — but the const-eval pathway does not need to move
+        // the receiver, so a `&Self` borrow of a `static` binding
+        // stays inside the const-eval envelope on every arm, matching
+        // the shape `proof_relation_ordinal_is_const_callable` uses
+        // one altitude up.
+        static STATIONARY_WIRE: ProofRelationWire = ProofRelationWire::Stationary;
+        static IDENTITY_REPUBLISH_WIRE: ProofRelationWire =
+            ProofRelationWire::IdentityRepublish { generations: 1 };
+        static MOVED_WIRE_CONTENT: WatermarkDeltaWire = WatermarkDeltaWire {
+            full_moved: true,
+            restart_required_moved: false,
+            free_moved: false,
+        };
+        static PROGRESSION_WIRE: ProofRelationWire = ProofRelationWire::Progression {
+            watermark: MOVED_WIRE_CONTENT,
+            generations: 1,
+        };
+        static REGRESSED_WIRE: ProofRelationWire = ProofRelationWire::Regressed { by: 1 };
+        static CROSS_STORE_WIRE: ProofRelationWire = ProofRelationWire::CrossStore {
+            watermark: MOVED_WIRE_CONTENT,
+        };
+
+        const STATIONARY_ORD: usize = STATIONARY_WIRE.ordinal();
+        const IDENTITY_REPUBLISH_ORD: usize = IDENTITY_REPUBLISH_WIRE.ordinal();
+        const PROGRESSION_ORD: usize = PROGRESSION_WIRE.ordinal();
+        const REGRESSED_ORD: usize = REGRESSED_WIRE.ordinal();
+        const CROSS_STORE_ORD: usize = CROSS_STORE_WIRE.ordinal();
+
+        assert_eq!(STATIONARY_ORD, 0);
+        assert_eq!(IDENTITY_REPUBLISH_ORD, 1);
+        assert_eq!(PROGRESSION_ORD, 2);
+        assert_eq!(REGRESSED_ORD, 3);
+        assert_eq!(CROSS_STORE_ORD, 4);
+
+        // Runtime cross-check across the same five receivers via the
+        // const-fn wrapper — catches a future edit that shifted the
+        // const-fn body away from the runtime-fn body on any of the
+        // five const-welded arms.
+        assert_eq!(ordinal_of(&STATIONARY_WIRE), 0);
+        assert_eq!(ordinal_of(&IDENTITY_REPUBLISH_WIRE), 1);
+        assert_eq!(ordinal_of(&PROGRESSION_WIRE), 2);
+        assert_eq!(ordinal_of(&REGRESSED_WIRE), 3);
+        assert_eq!(ordinal_of(&CROSS_STORE_WIRE), 4);
+
+        // Cross-altitude const-weld: the wire-side ordinal stays
+        // pointwise agreed with the kind-side sibling
+        // `ProofRelationKind::ordinal` (already const, welded by
+        // `proof_relation_kind_ordinal_is_const_callable` above) —
+        // the same structural bridge the runtime pin
+        // `proof_relation_wire_ordinal_agrees_with_kind_ordinal_pointwise`
+        // holds over the full `one_per_proof_relation_wire_kind()`
+        // construction table, now welded in const context on the
+        // five arms.
+        const STATIONARY_KIND_ORD: usize = STATIONARY_WIRE.kind().ordinal();
+        const IDENTITY_REPUBLISH_KIND_ORD: usize = IDENTITY_REPUBLISH_WIRE.kind().ordinal();
+        const PROGRESSION_KIND_ORD: usize = PROGRESSION_WIRE.kind().ordinal();
+        const REGRESSED_KIND_ORD: usize = REGRESSED_WIRE.kind().ordinal();
+        const CROSS_STORE_KIND_ORD: usize = CROSS_STORE_WIRE.kind().ordinal();
         assert_eq!(STATIONARY_ORD, STATIONARY_KIND_ORD);
         assert_eq!(IDENTITY_REPUBLISH_ORD, IDENTITY_REPUBLISH_KIND_ORD);
         assert_eq!(PROGRESSION_ORD, PROGRESSION_KIND_ORD);
