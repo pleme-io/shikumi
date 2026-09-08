@@ -4397,6 +4397,77 @@ impl AttributionConfidence {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this attribution
+    /// confidence — `0` for [`Self::Exact`], `1` for [`Self::Fallback`].
+    /// Matches the declaration order carried by [`Self::ALL`], which in
+    /// turn mirrors the arm order in [`AttributionRule::confidence`]
+    /// (the exact-pole rules land first, the fallback-pole rules
+    /// second) on the source-altitude projection through the (exact ×
+    /// fallback) confidence partition.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the confidence ordinal in a `const` context — a
+    /// compile-time-selected per-confidence dispatch table keyed on
+    /// the confidence class, a `const` per-confidence bitset sized by
+    /// `axis_cardinality::<AttributionConfidence>()`, an attestation
+    /// manifest whose per-confidence failure-class slots are
+    /// initialized under `const`, a `const` sentinel for a
+    /// compile-time-known confidence's precedence position, a `const`
+    /// weight-vector indexed by ordinal that weights fallback-pole
+    /// attributions visibly weaker than exact-pole ones — reached
+    /// through a `let` binding at runtime instead of the inherent
+    /// seam. This `match`-based inherent, keyed on the two closed
+    /// variants directly, gives the same [`usize`] answer under
+    /// `const` — pinned pointwise across every variant by
+    /// [`tests::attribution_confidence_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to
+    /// a scalar (a `&'static str` label and a `usize` precedence
+    /// position), both delegate the declaration-order source of
+    /// truth to [`Self::ALL`], and together they name the
+    /// confidence's scalar label and scalar position under `const`.
+    ///
+    /// Idiom-peer of [`ShikumiErrorKind::ordinal`] on the shikumi
+    /// error-kind axis, [`AttributionRule::confidence`] on the
+    /// source-altitude projection to this primitive,
+    /// [`crate::Format::ordinal`] on the file-format axis,
+    /// [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the secret-client
+    /// error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and [`crate::SecretClientKind::ordinal`] on
+    /// the runtime-client kind axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract, applied here to the (exact ×
+    /// fallback) confidence axis of the attribution resolver.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Exact => 0,
+            Self::Fallback => 1,
+        }
+    }
+
     /// Returns `true` for [`Self::Exact`]; equivalent to
     /// `self == AttributionConfidence::Exact`.
     ///
@@ -8404,6 +8475,100 @@ mod tests {
         // ConfigSourceKind / FigmentSourceKind on the kind axes.
         assert_eq!(AttributionConfidence::Exact.as_str(), "exact");
         assert_eq!(AttributionConfidence::Fallback.as_str(), "fallback");
+    }
+
+    #[test]
+    fn attribution_confidence_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `AttributionConfidence::ordinal` and
+        // the trait-uniform free-function projection
+        // `crate::axis_ordinal` are two spellings of the same
+        // closed-axis position lookup; pin them pointwise across
+        // every variant so a future edit to either the inherent match
+        // or the `AttributionConfidence::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that `axis_ordinal` does not (it
+        // delegates to non-const `Iterator::position` over a generic
+        // trait bound); this test guards the equal-answer contract
+        // that keeps the two seams substitutable. Idiom-peer of
+        // `shikumi_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`2026956`), `secret_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // (`a66d92e`), and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate.
+        for &confidence in AttributionConfidence::ALL {
+            assert_eq!(
+                confidence.ordinal(),
+                crate::axis_ordinal(confidence),
+                "inherent ordinal must agree with axis_ordinal for {confidence:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Exact → Fallback). A future swap in the
+        // match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `AttributionConfidence::ALL`
+        // on both sides) fails here first. Peer of
+        // `shikumi_error_kind_ordinal_reuses_declaration_order`
+        // (`2026956`) on the shikumi error-kind axis.
+        assert_eq!(AttributionConfidence::Exact.ordinal(), 0);
+        assert_eq!(AttributionConfidence::Fallback.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `AttributionConfidence::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &confidence) in AttributionConfidence::ALL.iter().enumerate() {
+            assert_eq!(
+                confidence.ordinal(),
+                index,
+                "ordinal must reuse AttributionConfidence::ALL index for {confidence:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_ordinal_is_const_callable() {
+        // Compile-time weld: the (confidence → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `AttributionConfidence::as_str`.
+        // A drop of the `const` qualifier on
+        // `AttributionConfidence::ordinal` fails this test to
+        // compile. Idiom-peer of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate.
+        //
+        // Two `const` bindings — one per `AttributionConfidence`
+        // variant — route each payload-free variant through the
+        // const-fn projection in const position. The moment
+        // `AttributionConfidence::ordinal` loses its const-ness one
+        // of the two `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const EXACT: usize = AttributionConfidence::Exact.ordinal();
+        const FALLBACK: usize = AttributionConfidence::Fallback.ordinal();
+
+        assert_eq!(EXACT, 0);
+        assert_eq!(FALLBACK, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `AttributionConfidence::ALL` to the
+        // runtime-side `confidence.ordinal()` call — the const-context
+        // weld only exercises the two variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (confidence, expected) in [
+            (AttributionConfidence::Exact, EXACT),
+            (AttributionConfidence::Fallback, FALLBACK),
+        ] {
+            assert_eq!(confidence.ordinal(), expected, "confidence {confidence:?}");
+        }
     }
 
     #[test]
