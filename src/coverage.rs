@@ -1533,6 +1533,61 @@ impl HintSurface {
     pub const fn is_typo_audit_hint(self) -> bool {
         matches!(self, Self::ValueKey | Self::EnvVar)
     }
+
+    /// The scalar ordinal of this surface in [`Self::ALL`] — the
+    /// dense `0..HintSurface::ALL.len()` index every consumer that
+    /// keys per-surface data by position (a `const [T; N]` dispatch
+    /// table sized to [`Self::ALL`] with `HintSurface::ALL.len()` = 4,
+    /// a per-surface bitset, a compile-time-materialized column layout
+    /// keyed by ordinal) previously reached through
+    /// `Self::ALL.iter().position(|&v| v == self)` — a linear scan
+    /// through the closed slice, non-const, allocation-free but not
+    /// `const`-callable.
+    ///
+    /// Body is a four-arm exhaustive match returning `0..=3`, matching
+    /// the declaration order carried by [`Self::ALL`] and the
+    /// (dead-knob × stale-entry × value-key × env-var) canonical
+    /// yield order [`HealthReport::hint_iter`] uses. The
+    /// pointwise-agreement pin
+    /// ([`tests::hint_surface_ordinal_agrees_with_all_position_pointwise`])
+    /// keeps the inherent match and the linear-scan projection
+    /// substitutable at every consumer site so a future edit to
+    /// either the match or the [`Self::ALL`] declaration order cannot
+    /// silently drift them apart. Since [`HintSurface`] is not a
+    /// [`crate::ClosedAxis`] primitive (no `ALL`-shaped substrate-
+    /// axis trait constant is declared on it), the agreement law is
+    /// pinned against [`Self::ALL`] position directly rather than
+    /// through [`crate::axis_ordinal`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of every peer variant-tag projection already
+    /// carried on this `impl HintSurface` block ([`Self::is_dead_knob`],
+    /// [`Self::is_stale_entry`], [`Self::is_value_key`],
+    /// [`Self::is_env_var`], [`Self::is_coverage_hint`], and
+    /// [`Self::is_typo_audit_hint`], all `pub const fn`). Consumers
+    /// wanting a compile-time-selected per-surface dispatch table
+    /// (e.g. a `const [usize; HintSurface::ALL.len()]` weight vector
+    /// keyed by ordinal routing coverage rollups under a different
+    /// weight than typo-audit rollups, or a `const` per-surface label
+    /// indexed by ordinal) route through the projection under
+    /// `const` without dropping through a runtime `let` binding.
+    /// Pinned by
+    /// [`tests::hint_surface_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::hint_surface_ordinal_reuses_declaration_order`])
+    /// guards the concrete positions so a future reorder of the
+    /// variant declarations shifts both the match and [`Self::ALL`]
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::DeadKnob => 0,
+            Self::StaleEntry => 1,
+            Self::ValueKey => 2,
+            Self::EnvVar => 3,
+        }
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -8265,6 +8320,111 @@ tags: []
         assert_eq!(COVERAGE_HINTS_LEN, 2);
         assert_eq!(TYPO_AUDIT_HINTS_LEN, 2);
         assert_eq!(COVERAGE_HINTS_LEN + TYPO_AUDIT_HINTS_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn hint_surface_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `HintSurface::ordinal` and the
+        // linear-scan projection `Self::ALL.iter().position(|&v| v ==
+        // self)` are two spellings of the same closed-slice position
+        // lookup; pin them pointwise across every variant so a future
+        // edit to either the inherent match or the `HintSurface::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that the linear-scan
+        // seam does not (`Iterator::position` is not const); this
+        // test guards the equal-answer contract that keeps the two
+        // seams substitutable at every non-const consumer site.
+        //
+        // `HintSurface` is not a `ClosedAxis` primitive (no
+        // `ALL`-shaped substrate-axis trait constant is declared on
+        // it), so the pointwise-agreement law targets `Self::ALL`
+        // position directly rather than `crate::axis_ordinal` —
+        // idiom-peer of `support_boundary_distance_ordinal_agrees_with_all_position_pointwise`
+        // and `support_magnitude_direction_ordinal_agrees_with_all_position_pointwise`
+        // on the sibling non-`ClosedAxis` cube-classifier axes.
+        for &surface in HintSurface::ALL {
+            let expected = HintSurface::ALL
+                .iter()
+                .position(|&v| v == surface)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                surface.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {surface:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the four
+        // declared positions verbatim, in strictly ascending
+        // declaration order (DeadKnob → StaleEntry → ValueKey →
+        // EnvVar). A future swap in the match arms that would still
+        // pass the `agrees_with_all_position` pointwise pin (which
+        // reads the same declaration order out of `HintSurface::ALL`
+        // on both sides) fails here first.
+        assert_eq!(HintSurface::DeadKnob.ordinal(), 0);
+        assert_eq!(HintSurface::StaleEntry.ordinal(), 1);
+        assert_eq!(HintSurface::ValueKey.ordinal(), 2);
+        assert_eq!(HintSurface::EnvVar.ordinal(), 3);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `HintSurface::ALL` at every declared position. A
+        // future edit that shifts the match arms without shifting the
+        // slice literal in lockstep fails here on the first drifted
+        // position.
+        for (index, &surface) in HintSurface::ALL.iter().enumerate() {
+            assert_eq!(
+                surface.ordinal(),
+                index,
+                "ordinal must reuse HintSurface::ALL index for {surface:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_ordinal_is_const_callable() {
+        // Compile-time weld: the (surface → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the `impl
+        // HintSurface` block (`is_dead_knob`, `is_stale_entry`,
+        // `is_value_key`, `is_env_var`, `is_coverage_hint`,
+        // `is_typo_audit_hint`). A drop of the `const` qualifier on
+        // `HintSurface::ordinal` fails this test to compile.
+        //
+        // Four `const` bindings — one per `HintSurface` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `HintSurface::ordinal` loses its const-ness one of the four
+        // `const` welds below fails to compile at THAT line before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const DEAD_KNOB: usize = HintSurface::DeadKnob.ordinal();
+        const STALE_ENTRY: usize = HintSurface::StaleEntry.ordinal();
+        const VALUE_KEY: usize = HintSurface::ValueKey.ordinal();
+        const ENV_VAR: usize = HintSurface::EnvVar.ordinal();
+
+        assert_eq!(DEAD_KNOB, 0);
+        assert_eq!(STALE_ENTRY, 1);
+        assert_eq!(VALUE_KEY, 2);
+        assert_eq!(ENV_VAR, 3);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `HintSurface::ALL` to the runtime-side
+        // `surface.ordinal()` call — the const-context weld only
+        // exercises the four variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (surface, expected) in [
+            (HintSurface::DeadKnob, DEAD_KNOB),
+            (HintSurface::StaleEntry, STALE_ENTRY),
+            (HintSurface::ValueKey, VALUE_KEY),
+            (HintSurface::EnvVar, ENV_VAR),
+        ] {
+            assert_eq!(surface.ordinal(), expected, "surface {surface:?}");
+        }
     }
 
     #[test]
