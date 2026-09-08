@@ -9142,6 +9142,78 @@ impl SameStoreConsistencyKind {
         matches!(*self, Self::Progression)
     }
 
+    /// The dense precedence position of this legitimate corner on the
+    /// three-cell consistency-half kind axis — `0` for [`Self::Stationary`],
+    /// `1` for [`Self::IdentityRepublish`], `2` for [`Self::Progression`],
+    /// matching the declaration order carried by the sibling
+    /// [`Self::VARIANTS`] and [`Self::NAMES`] constants and by the arm
+    /// order the [`ProofRelation::consistency_kind`] projection pins
+    /// (per [`variants_tests::same_store_consistency_kind_ordinal_agrees_with_variants_position_pointwise`]).
+    ///
+    /// **The scalar-ordinal peer of [`Self::name`] on the same axis.**
+    /// The receiver-family (`name`, `ordinal`,
+    /// `is_stationary`/`is_identity_republish`/`is_progression`,
+    /// `is_generation_advanced`/`is_watermark_stationary`/`is_watermark_moved`)
+    /// now carries three orthogonal scalar projections at the primitive's
+    /// OWN altitude: a stable snake-case identifier (a `&'static str` for
+    /// a metrics label / log field / attester JSON key), a dense `usize`
+    /// precedence position (a `const` per-corner bitset index, a `const`-
+    /// selected per-corner dispatch table slot, an attestation manifest
+    /// whose per-corner counter slots are initialized under `const`, a
+    /// `const` sentinel for a compile-time-known corner's ordinal), and
+    /// the boolean-half polarity predicates. Before this landing, every
+    /// consumer wanting the corner's dense ordinal had to route through
+    /// `SameStoreConsistencyKind::VARIANTS.iter().position(|v| *v == self)`
+    /// — a runtime [`Iterator::position`] scan over the three-cell slice —
+    /// dropping const-callability at the seam.
+    ///
+    /// **Two independent load-bearing witnesses of the same
+    /// declaration-order.** The two surfaces — this inherent `match` and
+    /// the [`Self::VARIANTS`] slice literal declaration order — remain
+    /// independent so a future edit that shifts the (variant → ordinal)
+    /// mapping on ONE surface but not the other diverges at test time on
+    /// the first variant where they disagree, matching the
+    /// two-independent-surfaces discipline the sibling
+    /// [`Self::ONLY_STATIONARY`] / [`Self::ONLY_IDENTITY_REPUBLISH`] /
+    /// [`Self::ONLY_PROGRESSION`] singletons already carry against
+    /// [`Self::is_stationary`] / [`Self::is_identity_republish`] /
+    /// [`Self::is_progression`] on the same primitive.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`SameStoreConsistencyKind`] projects its precedence ordinal at
+    /// compile time too, matching the `const`-ness the rest of the
+    /// receiver-family on this primitive ([`Self::name`],
+    /// [`Self::is_stationary`], [`Self::is_identity_republish`],
+    /// [`Self::is_progression`], [`Self::is_generation_advanced`],
+    /// [`Self::is_watermark_stationary`], [`Self::is_watermark_moved`])
+    /// already carries.
+    ///
+    /// Idiom-peer of [`SameStoreImpossibilityKind::ordinal`] on the
+    /// two-cell impossibility-half kind axis (commit `7f86581`) — same
+    /// `match`-on-`Self` shape, same declaration-order-agreement
+    /// discipline against the primitive's closed-set slice
+    /// [`Self::VARIANTS`], same const-callability contract, applied here
+    /// to the ternary consistent-half kind axis. Second `ordinal`
+    /// landing on `hotswap.rs`'s `SameStoreImpossibilityKind` /
+    /// `SameStoreConsistencyKind` / `ProofRelationKind` classification
+    /// lattice, seeding the same one-line shape for the fused-sum
+    /// quinary `ProofRelationKind::ordinal` still to come.
+    ///
+    /// The declaration-order agreement, concrete-position, and
+    /// const-callability laws are pinned by
+    /// [`variants_tests::same_store_consistency_kind_ordinal_agrees_with_variants_position_pointwise`],
+    /// [`variants_tests::same_store_consistency_kind_ordinal_reuses_declaration_order`],
+    /// and
+    /// [`variants_tests::same_store_consistency_kind_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Stationary => 0,
+            Self::IdentityRepublish => 1,
+            Self::Progression => 2,
+        }
+    }
+
     /// The closed set of variant values in declaration order — the
     /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
     /// consistent half of the classification. An ordered slice of
@@ -39196,6 +39268,78 @@ mod variants_tests {
         const _: () = assert!(!SameStoreConsistencyKind::Stationary.is_watermark_moved());
         const _: () = assert!(!SameStoreConsistencyKind::IdentityRepublish.is_watermark_moved());
         const _: () = assert!(SameStoreConsistencyKind::Progression.is_watermark_moved());
+    }
+
+    // ---------- SameStoreConsistencyKind::ordinal — tag-side scalar
+    // ordinal projection welded to Self::VARIANTS declaration order on
+    // the three-cell consistency-half kind axis.
+
+    #[test]
+    fn same_store_consistency_kind_ordinal_agrees_with_variants_position_pointwise() {
+        // The inherent SameStoreConsistencyKind::ordinal projection and
+        // the position of the corresponding cell in Self::VARIANTS are
+        // two independent load-bearing witnesses of the SAME
+        // declaration-order partition on the (stationary × identity_republish
+        // × progression) consistency-half kind axis. This test pins their
+        // pointwise agreement across every Self::VARIANTS entry: a future
+        // edit that shifts the (variant → ordinal) mapping on ONE surface
+        // (the inherent match or the Self::VARIANTS declaration order) but
+        // not the other diverges here on the first variant where they
+        // disagree, catching drift at test time before any downstream
+        // const-context consumer of SameStoreConsistencyKind::ordinal (a
+        // const per-corner metric slot index, a const-sized per-corner
+        // bitset, a const-selected dispatch table) reads a stale ordinal
+        // for a live variant. Ternary-cardinality peer of
+        // same_store_impossibility_kind_ordinal_agrees_with_variants_position_pointwise
+        // on the two-cell impossibility half.
+        for (i, &k) in SameStoreConsistencyKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                k.ordinal(),
+                i,
+                "SameStoreConsistencyKind::{k:?}.ordinal() should match its position in \
+                 Self::VARIANTS",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the three-cell consistency-half kind
+        // axis: Stationary at position 0, IdentityRepublish at position
+        // 1, Progression at position 2 — the declaration order the sibling
+        // Self::NAMES slice literal ["stationary", "identity_republish",
+        // "progression"] carries and the fused-sum ProofRelationKind::VARIANTS
+        // Consistent-half prefix depends on. A second independent witness
+        // of the same partition beyond the Self::VARIANTS-position pin
+        // above: this pin fires even if a future edit reorders
+        // Self::VARIANTS to keep the position agreement superficially
+        // intact, catching an ordinal-swap that shifted both surfaces in
+        // lockstep away from the declared partition.
+        assert_eq!(SameStoreConsistencyKind::Stationary.ordinal(), 0);
+        assert_eq!(SameStoreConsistencyKind::IdentityRepublish.ordinal(), 1);
+        assert_eq!(SameStoreConsistencyKind::Progression.ordinal(), 2);
+    }
+
+    #[test]
+    fn same_store_consistency_kind_ordinal_is_const_callable() {
+        // The scalar-ordinal projection on the three-cell consistency-half
+        // kind axis is const-callable, so a compile-time consumer (a const
+        // per-corner counter-slot index in an attestation manifest, a
+        // const-selected per-corner dispatch table keyed by ordinal, a
+        // static assertion pinning a compile-time-known corner's ordinal)
+        // resolves the ordinal at compile time. The three const-block
+        // welds below make the closure load-bearing at crate compile
+        // time: a future edit that dropped the `const` qualifier on
+        // SameStoreConsistencyKind::ordinal fails at `cargo build` here,
+        // not just at runtime, before drift reaches downstream const-
+        // context consumers of the ordinal.
+        const STATIONARY_ORDINAL: usize = SameStoreConsistencyKind::Stationary.ordinal();
+        const IDENTITY_REPUBLISH_ORDINAL: usize =
+            SameStoreConsistencyKind::IdentityRepublish.ordinal();
+        const PROGRESSION_ORDINAL: usize = SameStoreConsistencyKind::Progression.ordinal();
+        assert_eq!(STATIONARY_ORDINAL, 0);
+        assert_eq!(IDENTITY_REPUBLISH_ORDINAL, 1);
+        assert_eq!(PROGRESSION_ORDINAL, 2);
     }
 
     #[test]
