@@ -1079,6 +1079,71 @@ impl SecretBackendKind {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this backend
+    /// kind — `0` for [`Self::Literal`], `1` for [`Self::Command`],
+    /// `2` for [`Self::Op`], `3` for [`Self::Sops`], `4` for
+    /// [`Self::Akeyless`], `5` for [`Self::Vault`], `6` for
+    /// [`Self::AwsSecret`], `7` for [`Self::GcpSecret`]. Matches the
+    /// declaration order carried by [`Self::ALL`], which in turn
+    /// mirrors the [`SecretBackend`] variant declaration order.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the backend-kind ordinal in a `const` context — a
+    /// compile-time-selected per-backend dispatch table keyed on the
+    /// kind, a `const` per-backend bitset sized by
+    /// `axis_cardinality::<SecretBackendKind>()`, an attestation
+    /// manifest whose per-backend slots are initialized under
+    /// `const` — reached through a `let` binding at runtime instead
+    /// of the inherent seam. This `match`-based inherent, keyed on
+    /// the eight closed variants directly, gives the same `usize`
+    /// answer under `const` — pinned pointwise across every variant
+    /// by
+    /// [`tests::secret_backend_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the
+    /// [`Self::ALL`] declaration order drifts. Peer of [`Self::as_str`]
+    /// on the same primitive: both are `Copy`-taking `const fn`s
+    /// that project the closed-enum tag to a scalar (a `&'static str`
+    /// label and a `usize` precedence position), both delegate the
+    /// declaration-order source of truth to [`Self::ALL`], and
+    /// together they name the backend-kind's scalar label and
+    /// scalar position under `const`.
+    ///
+    /// Idiom-peer of [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis, and
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract. First landing of the
+    /// ordinal-projection idiom on the secret-backend-kind axis
+    /// — the largest closed kind axis in the crate (eight cells)
+    /// and the first with a cardinality above five.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Literal => 0,
+            Self::Command => 1,
+            Self::Op => 2,
+            Self::Sops => 3,
+            Self::Akeyless => 4,
+            Self::Vault => 5,
+            Self::AwsSecret => 6,
+            Self::GcpSecret => 7,
+        }
+    }
+
     /// Returns `true` for [`Self::Literal`]; equivalent to
     /// `self == SecretBackendKind::Literal`.
     ///
@@ -3185,6 +3250,123 @@ mod tests {
         assert_eq!(SecretBackendKind::Vault.as_str(), "vault");
         assert_eq!(SecretBackendKind::AwsSecret.as_str(), "aws_secret");
         assert_eq!(SecretBackendKind::GcpSecret.as_str(), "gcp_secret");
+    }
+
+    #[test]
+    fn secret_backend_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `SecretBackendKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit
+        // to either the inherent match or the `SecretBackendKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams
+        // substitutable. Idiom-peer of
+        // `format_ordinal_agrees_with_axis_ordinal_pointwise` on
+        // the file-format axis and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal on the
+        // sibling closed-axis primitives.
+        for &kind in SecretBackendKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the
+        // eight declared positions verbatim, in strictly ascending
+        // declaration order (Literal → Command → Op → Sops →
+        // Akeyless → Vault → AwsSecret → GcpSecret). A future swap
+        // in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `SecretBackendKind::ALL` on
+        // both sides) fails here first.
+        assert_eq!(SecretBackendKind::Literal.ordinal(), 0);
+        assert_eq!(SecretBackendKind::Command.ordinal(), 1);
+        assert_eq!(SecretBackendKind::Op.ordinal(), 2);
+        assert_eq!(SecretBackendKind::Sops.ordinal(), 3);
+        assert_eq!(SecretBackendKind::Akeyless.ordinal(), 4);
+        assert_eq!(SecretBackendKind::Vault.ordinal(), 5);
+        assert_eq!(SecretBackendKind::AwsSecret.ordinal(), 6);
+        assert_eq!(SecretBackendKind::GcpSecret.ordinal(), 7);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `SecretBackendKind::ALL` at every declared
+        // position. A future edit that shifts the match arms
+        // without shifting the slice literal in lockstep fails here
+        // on the first drifted position.
+        for (index, &kind) in SecretBackendKind::ALL.iter().enumerate() {
+            assert_eq!(
+                kind.ordinal(),
+                index,
+                "ordinal must reuse SecretBackendKind::ALL index for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_ordinal_is_const_callable() {
+        // Compile-time weld: the (kind → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `SecretBackendKind::as_str`.
+        // A drop of the `const` qualifier on
+        // `SecretBackendKind::ordinal` fails this test to compile.
+        // Idiom-peer of `format_ordinal_is_const_callable`,
+        // `config_source_kind_ordinal_is_const_callable`, and the
+        // corresponding `_is_const_callable` seals on every other
+        // ordinal-carrying closed-axis primitive in the crate.
+        //
+        // Eight `const` bindings — one per `SecretBackendKind`
+        // variant — route each payload-free variant through the
+        // const-fn projection in const position. The moment
+        // `SecretBackendKind::ordinal` loses its const-ness one of
+        // the eight `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const LITERAL: usize = SecretBackendKind::Literal.ordinal();
+        const COMMAND: usize = SecretBackendKind::Command.ordinal();
+        const OP: usize = SecretBackendKind::Op.ordinal();
+        const SOPS: usize = SecretBackendKind::Sops.ordinal();
+        const AKEYLESS: usize = SecretBackendKind::Akeyless.ordinal();
+        const VAULT: usize = SecretBackendKind::Vault.ordinal();
+        const AWS_SECRET: usize = SecretBackendKind::AwsSecret.ordinal();
+        const GCP_SECRET: usize = SecretBackendKind::GcpSecret.ordinal();
+
+        assert_eq!(LITERAL, 0);
+        assert_eq!(COMMAND, 1);
+        assert_eq!(OP, 2);
+        assert_eq!(SOPS, 3);
+        assert_eq!(AKEYLESS, 4);
+        assert_eq!(VAULT, 5);
+        assert_eq!(AWS_SECRET, 6);
+        assert_eq!(GCP_SECRET, 7);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretBackendKind::ALL` to the
+        // runtime-side `kind.ordinal()` call — the const-context weld
+        // only exercises the eight variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (kind, expected) in [
+            (SecretBackendKind::Literal, LITERAL),
+            (SecretBackendKind::Command, COMMAND),
+            (SecretBackendKind::Op, OP),
+            (SecretBackendKind::Sops, SOPS),
+            (SecretBackendKind::Akeyless, AKEYLESS),
+            (SecretBackendKind::Vault, VAULT),
+            (SecretBackendKind::AwsSecret, AWS_SECRET),
+            (SecretBackendKind::GcpSecret, GCP_SECRET),
+        ] {
+            assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
     }
 
     #[test]
