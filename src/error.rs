@@ -375,6 +375,75 @@ impl ShikumiErrorKind {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this shikumi
+    /// error kind — `0` for [`Self::NotFound`], `1` for [`Self::Parse`],
+    /// `2` for [`Self::Watch`], `3` for [`Self::Io`], `4` for
+    /// [`Self::Figment`], `5` for [`Self::Extract`], `6` for
+    /// [`Self::Validation`]. Matches the declaration order carried by
+    /// [`Self::ALL`], which in turn mirrors the arm order in
+    /// [`ShikumiError::kind`].
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. `axis_ordinal` is not `const` (it delegates
+    /// to [`Iterator::position`] over a generic [`crate::ClosedAxis`]
+    /// bound, both non-`const` on stable Rust today), so a caller
+    /// wanting the error-kind ordinal in a `const` context — a
+    /// compile-time-selected per-kind dispatch table keyed on the
+    /// error kind, a `const` per-kind bitset sized by
+    /// `axis_cardinality::<ShikumiErrorKind>()`, an attestation
+    /// manifest whose per-kind failure-class slots are initialized
+    /// under `const`, a `const` sentinel for a compile-time-known
+    /// kind's precedence position — reached through a `let` binding
+    /// at runtime instead of the inherent seam. This `match`-based
+    /// inherent, keyed on the seven closed variants directly, gives
+    /// the same [`usize`] answer under `const` — pinned pointwise
+    /// across every variant by
+    /// [`tests::shikumi_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts. Peer of [`Self::as_str`] on the
+    /// same primitive: both are `Copy`-taking `const fn`s that
+    /// project the closed-enum tag to a scalar (a `&'static str`
+    /// label and a `usize` precedence position), both delegate the
+    /// declaration-order source of truth to [`Self::ALL`], and
+    /// together they name the error-kind's scalar label and scalar
+    /// position under `const`.
+    ///
+    /// Idiom-peer of [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`crate::ConfigTierKind::ordinal`] on the tier axis of
+    /// the sealed `(tier, source)` primitive,
+    /// [`crate::DiffLineKind::ordinal`] on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the secret-client
+    /// error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and [`crate::SecretClientKind::ordinal`] on
+    /// the runtime-client kind axis — same `match`-on-`Self` shape,
+    /// same [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::NotFound => 0,
+            Self::Parse => 1,
+            Self::Watch => 2,
+            Self::Io => 3,
+            Self::Figment => 4,
+            Self::Extract => 5,
+            Self::Validation => 6,
+        }
+    }
+
     /// Returns `true` for [`Self::NotFound`]; equivalent to
     /// `self == ShikumiErrorKind::NotFound`.
     ///
@@ -12560,6 +12629,114 @@ mod tests {
             ShikumiErrorKind::ALL.len(),
             "ShikumiErrorKind::ALL must contain no duplicates",
         );
+    }
+
+    #[test]
+    fn shikumi_error_kind_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `ShikumiErrorKind::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `ShikumiErrorKind::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams
+        // substitutable. Idiom-peer of every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate.
+        for &kind in ShikumiErrorKind::ALL {
+            assert_eq!(
+                kind.ordinal(),
+                crate::axis_ordinal(kind),
+                "inherent ordinal must agree with axis_ordinal for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the
+        // seven declared positions verbatim, in strictly ascending
+        // declaration order (NotFound → Parse → Watch → Io → Figment
+        // → Extract → Validation). A future swap in the match arms
+        // that would still pass the `agrees_with_axis_ordinal`
+        // pointwise pin (which reads the same declaration order out
+        // of `ShikumiErrorKind::ALL` on both sides) fails here first.
+        assert_eq!(ShikumiErrorKind::NotFound.ordinal(), 0);
+        assert_eq!(ShikumiErrorKind::Parse.ordinal(), 1);
+        assert_eq!(ShikumiErrorKind::Watch.ordinal(), 2);
+        assert_eq!(ShikumiErrorKind::Io.ordinal(), 3);
+        assert_eq!(ShikumiErrorKind::Figment.ordinal(), 4);
+        assert_eq!(ShikumiErrorKind::Extract.ordinal(), 5);
+        assert_eq!(ShikumiErrorKind::Validation.ordinal(), 6);
+
+        // Second independent witness: the inherent ordinal equals
+        // the index in `ShikumiErrorKind::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &kind) in ShikumiErrorKind::ALL.iter().enumerate() {
+            assert_eq!(
+                kind.ordinal(),
+                index,
+                "ordinal must reuse ShikumiErrorKind::ALL index for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_ordinal_is_const_callable() {
+        // Compile-time weld: the (kind → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `ShikumiErrorKind::as_str`.
+        // A drop of the `const` qualifier on `ShikumiErrorKind::ordinal`
+        // fails this test to compile. Idiom-peer of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate.
+        //
+        // Seven `const` bindings — one per `ShikumiErrorKind` variant
+        // — route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `ShikumiErrorKind::ordinal` loses its const-ness one of the
+        // seven `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const NOT_FOUND: usize = ShikumiErrorKind::NotFound.ordinal();
+        const PARSE: usize = ShikumiErrorKind::Parse.ordinal();
+        const WATCH: usize = ShikumiErrorKind::Watch.ordinal();
+        const IO: usize = ShikumiErrorKind::Io.ordinal();
+        const FIGMENT: usize = ShikumiErrorKind::Figment.ordinal();
+        const EXTRACT: usize = ShikumiErrorKind::Extract.ordinal();
+        const VALIDATION: usize = ShikumiErrorKind::Validation.ordinal();
+
+        assert_eq!(NOT_FOUND, 0);
+        assert_eq!(PARSE, 1);
+        assert_eq!(WATCH, 2);
+        assert_eq!(IO, 3);
+        assert_eq!(FIGMENT, 4);
+        assert_eq!(EXTRACT, 5);
+        assert_eq!(VALIDATION, 6);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `ShikumiErrorKind::ALL` to the
+        // runtime-side `kind.ordinal()` call — the const-context weld
+        // only exercises the seven variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (kind, expected) in [
+            (ShikumiErrorKind::NotFound, NOT_FOUND),
+            (ShikumiErrorKind::Parse, PARSE),
+            (ShikumiErrorKind::Watch, WATCH),
+            (ShikumiErrorKind::Io, IO),
+            (ShikumiErrorKind::Figment, FIGMENT),
+            (ShikumiErrorKind::Extract, EXTRACT),
+            (ShikumiErrorKind::Validation, VALIDATION),
+        ] {
+            assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
     }
 
     #[test]
