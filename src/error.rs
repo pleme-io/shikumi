@@ -5681,6 +5681,98 @@ impl ShikumiError {
         self.kind().is_not_figment_bearing()
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this error's kind
+    /// on the seven-cell [`ShikumiErrorKind`] axis — `0` for
+    /// [`Self::NotFound`], `1` for [`Self::Parse`], `2` for
+    /// [`Self::Watch`], `3` for [`Self::Io`], `4` for [`Self::Figment`],
+    /// `5` for [`Self::Extract`], `6` for [`Self::Validation`]. Matches
+    /// the declaration order carried by [`ShikumiErrorKind::ALL`], which
+    /// in turn mirrors the arm order in [`Self::kind`].
+    ///
+    /// Tag-side sibling of the shipped kind-side
+    /// [`ShikumiErrorKind::ordinal`] on the [`ShikumiError`] variant
+    /// space. Payload-bearing consumers holding the borrowed error
+    /// (`&ShikumiError`) — a structured-log emitter tagging each
+    /// captured failure with its axis position without materializing
+    /// the [`ShikumiErrorKind`] first, a per-kind bitset indexed by
+    /// tag-side ordinal without a `.kind()` hop, an attestation
+    /// manifest whose per-kind slots on the tag-side altitude are
+    /// initialized under `const` — reach the same [`usize`] scalar at
+    /// one hop rather than routing through the two-hop
+    /// `err.kind().ordinal()` composition.
+    ///
+    /// Direct-match discipline: the body destructures on `&Self`
+    /// directly (`Self::NotFound { .. }`, `Self::Parse(_)`, …) rather
+    /// than delegating to `self.kind().ordinal()`, so the tag-side
+    /// declaration is an independent load-bearing witness of the
+    /// (variant → ordinal) projection at the payload-bearing altitude.
+    /// Mirrors the shape of the shipped [`ConfigSource::ordinal`]
+    /// (commit `480b79a`) tag-side sibling one primitive over on the
+    /// sibling source axis of the sealed `(tier, source)` pair, and
+    /// the shipped [`ConfigTier::ordinal`] (commit `ffc4a53`) tag-side
+    /// sibling on the tier axis of the same atomic pair. A future edit
+    /// that shifts the (variant → ordinal) mapping on ONE declaration
+    /// surface (the tag-side match here, the kind-side match in
+    /// [`ShikumiErrorKind::ordinal`], the declaration order in
+    /// [`ShikumiErrorKind::ALL`], or the classification match in
+    /// [`Self::kind`]) but not the others diverges at the pointwise-
+    /// agreement pin
+    /// [`tests::shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise`]
+    /// on the first variant where they disagree.
+    ///
+    /// Payload-independence: the answer is the same for every
+    /// `Parse(msg)` regardless of the inner [`String`], for every
+    /// `Watch(err)` regardless of the inner [`notify::Error`], for
+    /// every `Io(err)` regardless of the inner [`std::io::Error`], for
+    /// every `Figment(err)` and `Extract { .. }` regardless of the
+    /// boxed [`figment::Error`] and recorded [`ConfigSource`] chain,
+    /// for every `Validation(msg)` regardless of the inner [`String`],
+    /// and for every `NotFound { tried }` regardless of the inner
+    /// [`Vec<PathBuf>`]. The tag-side declaration is forbidden from
+    /// consulting any payload — the projection reads only the enum
+    /// discriminant, matching the payload-independence contract on
+    /// the shipped tag-side siblings.
+    ///
+    /// `const fn`: the body is a seven-arm exhaustive `match` on
+    /// `&Self` whose arms return const-constructible [`usize`]
+    /// literals and bind nothing on any arm (`Self::NotFound { .. }`,
+    /// `Self::Parse(_)`, …), so no [`Drop`]-carrying payload —
+    /// [`Vec<PathBuf>`], [`String`], [`notify::Error`],
+    /// [`std::io::Error`], [`Box<figment::Error>`],
+    /// [`Vec<ConfigSource>`] — is moved through the projection at any
+    /// const-eval point. The projection reads only the enum
+    /// discriminant and returns a [`Copy`] [`usize`]. Same const-fn
+    /// eligibility argument as the shipped [`Self::kind`] projection
+    /// (const since `4b00851`), and the tag-side declaration inherits
+    /// const-callability at zero call-site churn for a future
+    /// `const`-context consumer indexing a per-kind renderer table on
+    /// the tag-side altitude.
+    ///
+    /// Idiom-peer of [`ConfigSource::ordinal`] on the source axis and
+    /// [`ConfigTier::ordinal`] on the tier axis of the atomic
+    /// `(tier, source)` primitive, [`crate::DiffLine::ordinal`] on
+    /// the diff-cell axis, [`crate::watcher::WatchEventClass::ordinal`]
+    /// on the reload-relevance axis,
+    /// [`crate::source::FigmentSourceTag::ordinal`] on the figment-Source
+    /// axis, [`crate::source::FigmentNameTag::ordinal`] on the
+    /// figment-Name axis, and
+    /// [`crate::source::EnvMetadataTag::ordinal`] on the env-metadata
+    /// axis — same direct-match discipline at the payload-bearing
+    /// altitude, same pointwise-agreement pin against the kind-side
+    /// sibling, same const-callability contract.
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::NotFound { .. } => 0,
+            Self::Parse(_) => 1,
+            Self::Watch(_) => 2,
+            Self::Io(_) => 3,
+            Self::Figment(_) => 4,
+            Self::Extract { .. } => 5,
+            Self::Validation(_) => 6,
+        }
+    }
+
     /// Returns the list of paths that were tried, if this is a `NotFound` error.
     ///
     /// `const`-callable — the body is a `match` over `&Self` whose `Some`
@@ -12737,6 +12829,179 @@ mod tests {
         ] {
             assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
         }
+    }
+
+    #[test]
+    fn shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise() {
+        // Tag ↔ kind agreement on the (variant → ordinal) projection at
+        // the payload-bearing altitude of the shikumi error-kind axis:
+        // `err.ordinal() == err.kind().ordinal()` for every ShikumiError
+        // value in the `one_per_kind()` construction table. Peer of
+        // `config_source_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`480b79a`) one primitive over on the source axis of the
+        // sealed (tier, source) pair, and
+        // `config_tier_ordinal_agrees_with_kind_ordinal_pointwise`
+        // (`ffc4a53`) two primitives over on the tier axis. The
+        // kind-side has no payload visibility, so a future edit that
+        // peeked at the inner `Vec<PathBuf>` / `String` /
+        // `notify::Error` / `std::io::Error` / `Box<figment::Error>` /
+        // `Vec<ConfigSource>` on either declaration surface would
+        // diverge here on the first variant where the tag-side and
+        // kind-side disagree. Threads all seven variants — including
+        // the four payload-bearing ones the const-callability weld
+        // downstream cannot cover — through the same projection at
+        // runtime, so a future variant landing whose const-context
+        // weld is forgotten upstream still fails the pointwise-
+        // agreement pin.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.ordinal(),
+                err.kind().ordinal(),
+                "ordinal must agree tag ↔ kind for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the payload-bearing altitude: `NotFound { .. }` at 0,
+        // `Parse(_)` at 1, `Watch(_)` at 2, `Io(_)` at 3, `Figment(_)`
+        // at 4, `Extract { .. }` at 5, `Validation(_)` at 6 regardless
+        // of the inner payload. Payload-independence sub-pin: three
+        // representative `Parse(msg)` payload shapes (empty, ASCII,
+        // multi-word) all yield ordinal 1 on the Parse arm; three
+        // `Validation(msg)` shapes all yield ordinal 6 on the
+        // Validation arm; three `NotFound { tried }` shapes (empty
+        // vec, single path, multi path) all yield ordinal 0 on the
+        // NotFound arm. Peer of
+        // `shikumi_error_kind_ordinal_reuses_declaration_order` one
+        // altitude down on the same axis, plus
+        // `config_source_ordinal_reuses_declaration_order` (`480b79a`)
+        // one primitive over. Guards against a swap in the tag-side
+        // match arms that would still pass the pointwise-agreement
+        // pin if the kind-side inherent match was edited in the same
+        // drift.
+        for msg in ["", "bad", "field `port` out of range"] {
+            assert_eq!(
+                ShikumiError::Parse(msg.to_owned()).ordinal(),
+                1,
+                "Parse({msg:?}) ordinal must be 1 regardless of payload",
+            );
+            assert_eq!(
+                ShikumiError::Validation(msg.to_owned()).ordinal(),
+                6,
+                "Validation({msg:?}) ordinal must be 6 regardless of payload",
+            );
+        }
+        for tried in [
+            Vec::<PathBuf>::new(),
+            vec![PathBuf::from("/a")],
+            vec![PathBuf::from("/a"), PathBuf::from("/b")],
+        ] {
+            let err = ShikumiError::NotFound { tried };
+            assert_eq!(
+                err.ordinal(),
+                0,
+                "NotFound {{ .. }} ordinal must be 0 regardless of payload ({err:?})",
+            );
+        }
+        // Concrete-position pin over one representative of each of the
+        // four remaining payload-bearing arms via the same
+        // `one_per_kind()` construction table that anchors the
+        // classification and pointwise-agreement pins above — no
+        // hand-rolled `notify::Error` / `io::Error` / figment error
+        // constructor duplicated at this pin.
+        let expected: std::collections::HashMap<ShikumiErrorKind, usize> = [
+            (ShikumiErrorKind::NotFound, 0),
+            (ShikumiErrorKind::Parse, 1),
+            (ShikumiErrorKind::Watch, 2),
+            (ShikumiErrorKind::Io, 3),
+            (ShikumiErrorKind::Figment, 4),
+            (ShikumiErrorKind::Extract, 5),
+            (ShikumiErrorKind::Validation, 6),
+        ]
+        .into_iter()
+        .collect();
+        for (kind, err) in one_per_kind() {
+            assert_eq!(
+                err.ordinal(),
+                expected[&kind],
+                "concrete-position ordinal for {kind:?} ({err:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_ordinal_is_const_callable() {
+        // Compile-time weld — the tag-side ordinal is `pub const fn`,
+        // matching its kind-side sibling one altitude down on the same
+        // axis (`ShikumiErrorKind::ordinal`) and the shipped tag-side
+        // ordinal projections `ConfigSource::ordinal` (`480b79a`) and
+        // `ConfigTier::ordinal` (`ffc4a53`) on the sibling axes of the
+        // sealed (tier, source) pair. A `const fn ordinal_of(&ShikumiError)
+        // -> usize` wrapper delegating to `err.ordinal()` pins the
+        // const-fn signature at the language level: the moment
+        // `ShikumiError::ordinal` loses its `const` qualifier (a future
+        // edit that reaches for a non-const helper inside the seven-arm
+        // exhaustive match — an allocator, a payload inspection on any
+        // of the four payload-bearing arms, a runtime lookup) the
+        // wrapper below fails to compile at THAT line before the drift
+        // can reach downstream const-context consumers that assumed
+        // const-ness through this projection (a `const` per-kind
+        // renderer table indexed by tag-side ordinal without a
+        // `.kind()` hop, a `static` attestation manifest recording the
+        // captured-failure ordinal distribution on the tag-side
+        // altitude).
+        const fn ordinal_of(err: &ShikumiError) -> usize {
+            err.ordinal()
+        }
+        // The `static` rather than `const` receiver is load-bearing for
+        // the same E0493 (`destructor cannot be evaluated at
+        // compile-time`) reason as `shikumi_error_kind_is_const_callable`
+        // and `shikumi_error_is_not_found_is_const_callable`: the three
+        // const-constructible arms (`NotFound` with an empty
+        // `Vec<PathBuf>`, `Parse` / `Validation` with empty `String`)
+        // are the only variants whose payloads admit a `const`
+        // initializer under stable Rust today; the four payload-bearing
+        // arms (`Watch`, `Io`, `Figment`, `Extract`) are covered at
+        // runtime by the pointwise-agreement pin
+        // `shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // over the same `one_per_kind()` table.
+        static NOT_FOUND_ERR: ShikumiError = ShikumiError::NotFound { tried: Vec::new() };
+        static PARSE_ERR: ShikumiError = ShikumiError::Parse(String::new());
+        static VALIDATION_ERR: ShikumiError = ShikumiError::Validation(String::new());
+        const NOT_FOUND_ORD: usize = NOT_FOUND_ERR.ordinal();
+        const PARSE_ORD: usize = PARSE_ERR.ordinal();
+        const VALIDATION_ORD: usize = VALIDATION_ERR.ordinal();
+
+        assert_eq!(NOT_FOUND_ORD, 0);
+        assert_eq!(PARSE_ORD, 1);
+        assert_eq!(VALIDATION_ORD, 6);
+
+        // Runtime cross-check across the same three receivers via the
+        // const-fn wrapper — catches a future edit that shifted the
+        // const-fn body away from the runtime-fn body on any of the
+        // three const-welded arms.
+        assert_eq!(ordinal_of(&NOT_FOUND_ERR), 0);
+        assert_eq!(ordinal_of(&PARSE_ERR), 1);
+        assert_eq!(ordinal_of(&VALIDATION_ERR), 6);
+
+        // Cross-check: the tag-side ordinal stays pointwise agreed
+        // with the kind-side sibling `ShikumiErrorKind::ordinal`
+        // (already const, welded by
+        // `shikumi_error_kind_ordinal_is_const_callable`) — the same
+        // structural bridge the runtime pin
+        // `shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // holds over the full `one_per_kind()` construction table,
+        // now welded in const context on the three arms that admit
+        // it.
+        const NOT_FOUND_KIND_ORD: usize = NOT_FOUND_ERR.kind().ordinal();
+        const PARSE_KIND_ORD: usize = PARSE_ERR.kind().ordinal();
+        const VALIDATION_KIND_ORD: usize = VALIDATION_ERR.kind().ordinal();
+        assert_eq!(NOT_FOUND_ORD, NOT_FOUND_KIND_ORD);
+        assert_eq!(PARSE_ORD, PARSE_KIND_ORD);
+        assert_eq!(VALIDATION_ORD, VALIDATION_KIND_ORD);
     }
 
     #[test]
