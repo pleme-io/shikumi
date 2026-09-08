@@ -2212,6 +2212,66 @@ impl SupportCardinalityClass {
             .copied()
             .find(|v| v.as_str().eq_ignore_ascii_case(s))
     }
+
+    /// Dense zero-based position of the variant in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the five-cell support-cardinality
+    /// axis.
+    ///
+    /// `0` for [`Self::Empty`], `1` for [`Self::SingularSupport`], `2`
+    /// for [`Self::StrictPartialCover`], `3` for [`Self::SingularGap`],
+    /// `4` for [`Self::FullCover`] — matching the declaration order
+    /// carried by [`Self::ALL`] pointwise. The peer-agreement law
+    /// `v.ordinal() == Self::ALL.iter().position(|&x| x == v).unwrap()`
+    /// is pinned by
+    /// [`tests::support_cardinality_class_ordinal_agrees_with_all_position_pointwise`].
+    ///
+    /// Idiom-peer of [`Self::as_str`] on the same primitive and of
+    /// [`ModalityClass::ordinal`] on the sibling typed classifier —
+    /// both project the variant tag to a small scalar at one inherent
+    /// `const` call. Where [`PartitionFace::ordinal`],
+    /// [`crate::ShikumiErrorKind::ordinal`],
+    /// [`crate::secret::SecretBackendKind::ordinal`],
+    /// [`crate::tiered::ConfigTierKind::ordinal`], and every other
+    /// ordinal-carrying [`ClosedAxis`] primitive in the crate can
+    /// additionally pin pointwise agreement against the trait-uniform
+    /// free-function projection [`crate::axis_ordinal`],
+    /// [`SupportCardinalityClass`] stays off the [`ClosedAxis`] trait
+    /// surface (the substrate-observation invariant gates [`ClosedAxis`]
+    /// on substrate axes only — an
+    /// [`AxisHistogram<SupportCardinalityClass>`] is well-typed but
+    /// semantically inverted), so the agreement law is pinned against
+    /// [`Self::ALL`] position directly instead.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] and every peer variant-tag
+    /// projection on [`SupportCardinalityClass`]. Consumers wanting a
+    /// compile-time-selected per-corner dispatch table (e.g. a
+    /// `const [usize; 5]` weight vector keyed by ordinal routing
+    /// empty-boundary rollups under a different weight than
+    /// full-cover rollups, or a `const` per-corner label indexed by
+    /// ordinal) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::support_cardinality_class_ordinal_is_const_callable`].
+    ///
+    /// **Consumers** — a fleet-wide per-corner support-cardinality
+    /// dashboard that backs a fixed-size array indexed by ordinal
+    /// (rather than a `HashMap<SupportCardinalityClass, T>`) picks the
+    /// right slot without a per-emitter `match` on the variant tag.
+    /// The declaration-order-preservation pin
+    /// ([`tests::support_cardinality_class_ordinal_reuses_declaration_order`])
+    /// guards the concrete positions so a future reorder of the
+    /// variant declarations shifts both the match and [`Self::ALL`]
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::SingularSupport => 1,
+            Self::StrictPartialCover => 2,
+            Self::SingularGap => 3,
+            Self::FullCover => 4,
+        }
+    }
 }
 
 /// Typed parse failure of
@@ -48863,6 +48923,125 @@ mod tests {
     #[test]
     fn support_cardinality_class_from_canonical_str_rejects_empty_string() {
         assert_eq!(SupportCardinalityClass::from_canonical_str(""), None);
+    }
+
+    #[test]
+    fn support_cardinality_class_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `SupportCardinalityClass::ordinal` and
+        // the linear-scan projection
+        // `Self::ALL.iter().position(|&v| v == self)` are two spellings
+        // of the same closed-slice position lookup; pin them pointwise
+        // across every variant so a future edit to either the inherent
+        // match or the `SupportCardinalityClass::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that the linear-scan seam does not
+        // (`Iterator::position` is not const); this test guards the
+        // equal-answer contract that keeps the two seams substitutable
+        // at every non-const consumer site.
+        //
+        // Idiom-peer of every
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate applied here at the non-`ClosedAxis` altitude — the
+        // substrate-observation invariant gates `ClosedAxis` on
+        // substrate axes only, so `SupportCardinalityClass` (a
+        // histogram-side classifier, semantically inverted for
+        // `AxisHistogram<SupportCardinalityClass>`) stays off the
+        // trait surface and the pointwise-agreement law targets
+        // `Self::ALL` position directly rather than
+        // `crate::axis_ordinal`. Direct sibling to
+        // `modality_class_ordinal_agrees_with_all_position_pointwise`
+        // on the peer five-cell cube-classifier axis.
+        for &class in SupportCardinalityClass::ALL {
+            let expected = SupportCardinalityClass::ALL
+                .iter()
+                .position(|&v| v == class)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                class.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Empty → SingularSupport →
+        // StrictPartialCover → SingularGap → FullCover). A future
+        // swap in the match arms that would still pass the
+        // `agrees_with_all_position` pointwise pin (which reads the
+        // same declaration order out of `SupportCardinalityClass::ALL`
+        // on both sides) fails here first.
+        assert_eq!(SupportCardinalityClass::Empty.ordinal(), 0);
+        assert_eq!(SupportCardinalityClass::SingularSupport.ordinal(), 1);
+        assert_eq!(SupportCardinalityClass::StrictPartialCover.ordinal(), 2);
+        assert_eq!(SupportCardinalityClass::SingularGap.ordinal(), 3);
+        assert_eq!(SupportCardinalityClass::FullCover.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `SupportCardinalityClass::ALL` at every declared
+        // position. A future edit that shifts the match arms without
+        // shifting the slice literal in lockstep fails here on the
+        // first drifted position.
+        for (index, &class) in SupportCardinalityClass::ALL.iter().enumerate() {
+            assert_eq!(
+                class.ordinal(),
+                index,
+                "ordinal must reuse SupportCardinalityClass::ALL index for {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_ordinal_is_const_callable() {
+        // Compile-time weld: the (class → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection
+        // `SupportCardinalityClass::as_str` and the sibling
+        // boolean-partition projections. A drop of the `const`
+        // qualifier on `SupportCardinalityClass::ordinal` fails this
+        // test to compile.
+        //
+        // Five `const` bindings — one per `SupportCardinalityClass`
+        // variant — route each payload-free variant through the
+        // const-fn projection in const position. The moment
+        // `SupportCardinalityClass::ordinal` loses its const-ness one
+        // of the five `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const EMPTY: usize = SupportCardinalityClass::Empty.ordinal();
+        const SINGULAR_SUPPORT: usize = SupportCardinalityClass::SingularSupport.ordinal();
+        const STRICT_PARTIAL_COVER: usize = SupportCardinalityClass::StrictPartialCover.ordinal();
+        const SINGULAR_GAP: usize = SupportCardinalityClass::SingularGap.ordinal();
+        const FULL_COVER: usize = SupportCardinalityClass::FullCover.ordinal();
+
+        assert_eq!(EMPTY, 0);
+        assert_eq!(SINGULAR_SUPPORT, 1);
+        assert_eq!(STRICT_PARTIAL_COVER, 2);
+        assert_eq!(SINGULAR_GAP, 3);
+        assert_eq!(FULL_COVER, 4);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SupportCardinalityClass::ALL` to the
+        // runtime-side `class.ordinal()` call — the const-context
+        // weld only exercises the five variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (class, expected) in [
+            (SupportCardinalityClass::Empty, EMPTY),
+            (SupportCardinalityClass::SingularSupport, SINGULAR_SUPPORT),
+            (
+                SupportCardinalityClass::StrictPartialCover,
+                STRICT_PARTIAL_COVER,
+            ),
+            (SupportCardinalityClass::SingularGap, SINGULAR_GAP),
+            (SupportCardinalityClass::FullCover, FULL_COVER),
+        ] {
+            assert_eq!(class.ordinal(), expected, "class {class:?}");
+        }
     }
 
     #[test]
