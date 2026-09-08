@@ -1883,6 +1883,72 @@ impl SecretRefShape {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this extraction
+    /// shape — `0` for [`Self::Whole`], `1` for [`Self::Field`]. Matches
+    /// the declaration order carried by [`Self::ALL`] (which
+    /// [`<Self as crate::ClosedAxis>::ALL`] delegates to at
+    /// `impl crate::ClosedAxis for SecretRefShape` below) and the
+    /// bare-payload-first / explicit-field-second declaration order the
+    /// [`SopsRef`] and [`VaultRef`] variant lists share pointwise on the
+    /// extraction-shape axis.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over
+    /// this closed axis. [`crate::axis_ordinal`] is not `const` (it
+    /// delegates to [`Iterator::position`] over a generic
+    /// [`crate::ClosedAxis`] bound, both non-`const` on stable Rust
+    /// today), so a caller wanting the shape-axis ordinal in a `const`
+    /// context — a compile-time-selected per-shape dispatch table keyed
+    /// on the shape tag, a `const` per-shape bitset sized by
+    /// [`crate::axis_cardinality::<SecretRefShape>()`], an attestation
+    /// manifest whose per-shape resolved-secret slots are initialized
+    /// under `const`, a `const` weight-vector indexed by ordinal that
+    /// weights whole-payload reads visibly differently than field
+    /// extractions (since the whole shape decrypts a larger payload
+    /// than a single-key lookup), a `const` sentinel for a
+    /// compile-time-known shape's precedence position — had to route
+    /// through the non-`const` free-function seam via a runtime `let`
+    /// binding, dropping const-callability at the call site.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to
+    /// a scalar (a `&'static str` label and a `usize` precedence
+    /// position), both delegate the declaration-order source of truth
+    /// to [`Self::ALL`], and together they name the shape's scalar
+    /// label and scalar position under `const`. Peer also of the
+    /// sibling boolean-partition projections [`Self::is_whole`] /
+    /// [`Self::is_field`], closing the (label, ordinal, boolean-half)
+    /// scalar-projection triple on the extraction-shape axis at the
+    /// primitive's own altitude.
+    ///
+    /// Idiom-peer of [`crate::PartitionFace::ordinal`] on the
+    /// (realizable × unrealizable) cube-cell face axis (commit
+    /// `5a838d1`), [`crate::AttributionConfidence::ordinal`] on the
+    /// (exact × fallback) confidence axis (commit `165f579`),
+    /// [`crate::AttributionAxis::ordinal`] on the (source × name)
+    /// metadata axis (commit `2c69c6d`),
+    /// [`crate::AttributionRule::ordinal`] on the five-cell
+    /// attribution-rule axis (commit `14c4e5f`),
+    /// [`crate::FieldPathLocalization::ordinal`] on the three-cell
+    /// field-path-localization axis (commit `79bc366`),
+    /// [`crate::ShikumiErrorKind::ordinal`] on the seven-cell error-kind
+    /// axis, [`SecretBackendKind::ordinal`] on the config-author
+    /// secret-backend axis, [`crate::SecretErrorKind::ordinal`] on the
+    /// secret-client error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and [`crate::SecretClientKind::ordinal`] on the
+    /// runtime-client kind axis — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same
+    /// const-callability contract, applied here to the
+    /// (whole × field) secret-ref extraction-shape axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Whole => 0,
+            Self::Field => 1,
+        }
+    }
+
     /// Returns `true` for [`Self::Whole`]; equivalent to
     /// `self == SecretRefShape::Whole`.
     ///
@@ -6742,6 +6808,94 @@ mod tests {
         assert_eq!(WHOLE_LEN, 1);
         assert_eq!(FIELD_LEN, 1);
         assert_eq!(WHOLE_LEN + FIELD_LEN, ALL_LEN);
+    }
+
+    #[test]
+    fn secret_ref_shape_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `SecretRefShape::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `SecretRefShape::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams substitutable
+        // at every consumer site. Idiom-peer of
+        // `secret_backend_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the sibling backend-axis kind primitive in this same
+        // module, and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal on the
+        // closed-axis primitives across the crate.
+        for &shape in SecretRefShape::ALL {
+            assert_eq!(
+                shape.ordinal(),
+                crate::axis_ordinal(shape),
+                "inherent ordinal must agree with axis_ordinal for {shape:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Whole → Field). A future swap in the
+        // match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `SecretRefShape::ALL` on both
+        // sides) fails here first. Idiom-peer of
+        // `secret_backend_kind_ordinal_reuses_declaration_order`.
+        assert_eq!(SecretRefShape::Whole.ordinal(), 0);
+        assert_eq!(SecretRefShape::Field.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `SecretRefShape::ALL` at every declared position. A
+        // future edit that shifts the match arms without shifting the
+        // slice literal in lockstep fails here on the first drifted
+        // position.
+        for (index, &shape) in SecretRefShape::ALL.iter().enumerate() {
+            assert_eq!(
+                shape.ordinal(),
+                index,
+                "ordinal must reuse SecretRefShape::ALL index for {shape:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_ordinal_is_const_callable() {
+        // Compile-time weld: the (shape → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `SecretRefShape::as_str` and
+        // the sibling boolean predicates `SecretRefShape::is_whole` /
+        // `SecretRefShape::is_field`. A drop of the `const` qualifier
+        // on `SecretRefShape::ordinal` fails this test to compile at
+        // one of the two const bindings below before drift reaches
+        // downstream const-context consumers. Idiom-peer of
+        // `secret_backend_kind_ordinal_is_const_callable` and every
+        // other `_ordinal_is_const_callable` seal on the sibling
+        // closed-axis primitives.
+        const WHOLE: usize = SecretRefShape::Whole.ordinal();
+        const FIELD: usize = SecretRefShape::Field.ordinal();
+
+        assert_eq!(WHOLE, 0);
+        assert_eq!(FIELD, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretRefShape::ALL` to the
+        // runtime-side `shape.ordinal()` call — the const-context
+        // weld only exercises the two variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (shape, expected) in [
+            (SecretRefShape::Whole, WHOLE),
+            (SecretRefShape::Field, FIELD),
+        ] {
+            assert_eq!(shape.ordinal(), expected, "shape {shape:?}");
+        }
     }
 
     // ── SecretBackendKind — Ord / Display / FromStr / serde ──────────
