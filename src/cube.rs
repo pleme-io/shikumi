@@ -14380,6 +14380,83 @@ impl PartitionFace {
             Self::Unrealizable => "unrealizable",
         }
     }
+
+    /// The [`ClosedAxis`] precedence ordinal of this partition face —
+    /// `0` for [`Self::Realizable`], `1` for [`Self::Unrealizable`].
+    /// Matches the declaration order carried by [`Self::ALL`] (which
+    /// [`<Self as ClosedAxis>::ALL`] delegates to at
+    /// `impl ClosedAxis for PartitionFace` below) and the arm order in
+    /// [`PartitionOrdinal::face`] (the recognized-image pole lands
+    /// first, the cross-axis consistency-violation complement second)
+    /// on the cube-cell partition-face projection.
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`axis_ordinal::<Self>`] free-function projection over this
+    /// closed axis. `axis_ordinal` is not `const` (it delegates to
+    /// [`Iterator::position`] over a generic [`ClosedAxis`] bound, both
+    /// non-`const` on stable Rust today), so a caller wanting the
+    /// partition-face ordinal in a `const` context — a
+    /// compile-time-selected per-face dispatch table keyed on the
+    /// face tag, a `const` per-face bitset sized by
+    /// `axis_cardinality::<PartitionFace>()`, an attestation manifest
+    /// whose per-face cell-count slots are initialized under `const`,
+    /// a `const` sentinel for a compile-time-known face's precedence
+    /// position, a `const` weight-vector indexed by ordinal that
+    /// weights the recognized-image pole visibly stronger than the
+    /// unrealizable complement — reached through a `let` binding at
+    /// runtime instead of the inherent seam. This `match`-based
+    /// inherent, keyed on the two closed variants directly, gives the
+    /// same [`usize`] answer under `const` — pinned pointwise across
+    /// every variant by
+    /// [`tests::partition_face_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to
+    /// a scalar (a `&'static str` label and a `usize` precedence
+    /// position), both delegate the declaration-order source of
+    /// truth to [`Self::ALL`], and together they name the face's
+    /// scalar label and scalar position under `const`. Peer also of
+    /// the sibling boolean-partition projections [`Self::is_realizable`]
+    /// / [`Self::is_unrealizable`], closing the (label, ordinal,
+    /// boolean-half) scalar-projection triple on the face axis at the
+    /// primitive's own altitude.
+    ///
+    /// Idiom-peer of [`AttributionConfidence::ordinal`] on the
+    /// two-cell (exact × fallback) confidence axis (commit `165f579`),
+    /// [`crate::ShikumiErrorKind::ordinal`] on the seven-cell shikumi
+    /// error-kind axis, [`crate::Format::ordinal`] on the file-format
+    /// axis, [`crate::ConfigSourceKind::ordinal`] on the source-layer
+    /// axis, [`ConfigTierKind::ordinal`] on the tier axis of the
+    /// sealed `(tier, source)` primitive, [`DiffLineKind::ordinal`]
+    /// on the diff-cell axis,
+    /// [`crate::watcher::WatchEventClass::ordinal`] on the
+    /// reload-relevance axis,
+    /// [`crate::source::FigmentSourceKind::ordinal`] on the
+    /// figment-Source axis,
+    /// [`crate::source::FigmentNameTagKind::ordinal`] on the
+    /// figment-Name axis,
+    /// [`crate::source::EnvMetadataTagKind::ordinal`] on the
+    /// env-metadata axis,
+    /// [`crate::secret::SecretBackendKind::ordinal`] on the
+    /// config-author secret-backend axis,
+    /// [`crate::SecretErrorKind::ordinal`] on the secret-client
+    /// error-kind axis,
+    /// [`crate::SecretOperation::ordinal`] on the secret-client
+    /// operation axis, and
+    /// [`crate::SecretClientKind::ordinal`] on the runtime-client
+    /// kind axis — same `match`-on-`Self` shape, same
+    /// [`axis_ordinal`]-agreement discipline, same const-callability
+    /// contract, applied here to the (realizable × unrealizable)
+    /// cube-cell partition-face axis.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Realizable => 0,
+            Self::Unrealizable => 1,
+        }
+    }
 }
 
 /// Typed parse failure of [`<PartitionFace as
@@ -20628,6 +20705,101 @@ mod tests {
         // round-trip law.
         assert_eq!(PartitionFace::Realizable.as_str(), "realizable");
         assert_eq!(PartitionFace::Unrealizable.as_str(), "unrealizable");
+    }
+
+    #[test]
+    fn partition_face_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `PartitionFace::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `PartitionFace::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the equal-
+        // answer contract that keeps the two seams substitutable.
+        // Idiom-peer of every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal in the
+        // crate (`shikumi_error_kind_ordinal_agrees_with_axis_ordinal_pointwise`
+        // — `2026956`, `attribution_confidence_ordinal_agrees_with_axis_ordinal_pointwise`
+        // — `165f579`, and the sibling seals on every ordinal-
+        // carrying closed-axis primitive).
+        for &face in PartitionFace::ALL {
+            assert_eq!(
+                face.ordinal(),
+                crate::axis_ordinal(face),
+                "inherent ordinal must agree with axis_ordinal for {face:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Realizable → Unrealizable). A future swap
+        // in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `PartitionFace::ALL` on both
+        // sides) fails here first. Peer of
+        // `attribution_confidence_ordinal_reuses_declaration_order`
+        // (`165f579`) on the two-cell confidence axis.
+        assert_eq!(PartitionFace::Realizable.ordinal(), 0);
+        assert_eq!(PartitionFace::Unrealizable.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `PartitionFace::ALL` at every declared position. A
+        // future edit that shifts the match arms without shifting the
+        // slice literal in lockstep fails here on the first drifted
+        // position.
+        for (index, &face) in PartitionFace::ALL.iter().enumerate() {
+            assert_eq!(
+                face.ordinal(),
+                index,
+                "ordinal must reuse PartitionFace::ALL index for {face:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_ordinal_is_const_callable() {
+        // Compile-time weld: the (face → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `PartitionFace::as_str` and
+        // the sibling boolean-partition projections
+        // `PartitionFace::is_realizable` / `PartitionFace::is_unrealizable`.
+        // A drop of the `const` qualifier on `PartitionFace::ordinal`
+        // fails this test to compile. Idiom-peer of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate.
+        //
+        // Two `const` bindings — one per `PartitionFace` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `PartitionFace::ordinal` loses its const-ness one of the
+        // two `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const REALIZABLE: usize = PartitionFace::Realizable.ordinal();
+        const UNREALIZABLE: usize = PartitionFace::Unrealizable.ordinal();
+
+        assert_eq!(REALIZABLE, 0);
+        assert_eq!(UNREALIZABLE, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `PartitionFace::ALL` to the runtime-side
+        // `face.ordinal()` call — the const-context weld only
+        // exercises the two variants named at const-binding sites, but
+        // the runtime pin threads the full closed list through the
+        // same projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (face, expected) in [
+            (PartitionFace::Realizable, REALIZABLE),
+            (PartitionFace::Unrealizable, UNREALIZABLE),
+        ] {
+            assert_eq!(face.ordinal(), expected, "face {face:?}");
+        }
     }
 
     #[test]
