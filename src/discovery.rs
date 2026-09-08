@@ -1658,6 +1658,55 @@ impl FormatProvenance {
         }
     }
 
+    /// The [`crate::ClosedAxis`] precedence ordinal of this provenance —
+    /// `0` for [`Self::FigmentBuiltin`], `1` for [`Self::ShikumiBuilt`]. The
+    /// declaration order carried by [`Self::ALL`], matching the derived
+    /// [`Ord`] on the primitive (pinned by
+    /// [`tests::format_provenance_ord_matches_all_declaration_order`]).
+    ///
+    /// Inherent `const`-callable mirror of the trait-uniform
+    /// [`crate::axis_ordinal::<Self>`] free-function projection over this
+    /// closed axis. `axis_ordinal` is not `const` (it delegates to
+    /// [`Iterator::position`] over a generic [`crate::ClosedAxis`] bound,
+    /// both non-`const` on stable Rust today), so a caller wanting the
+    /// provenance-axis ordinal in a `const` context — a compile-time-
+    /// selected per-provenance dispatch table (e.g. a per-provenance
+    /// diagnostic-weight vector routing figment-builtin failures under a
+    /// different weight than shikumi-built ones, since name-axis
+    /// attribution is string-shape-dependent and drops out silently on a
+    /// renamed upstream provider), a `const` per-provenance bitset sized
+    /// by `axis_cardinality::<FormatProvenance>()`, an attestation manifest
+    /// whose per-provenance slots are initialized under `const` — reached
+    /// through a `let` binding at runtime instead of the inherent seam.
+    /// This `match`-based inherent, keyed on the two closed variants
+    /// directly, gives the same `usize` answer under `const` — pinned
+    /// pointwise across every variant by
+    /// [`tests::format_provenance_ordinal_agrees_with_axis_ordinal_pointwise`],
+    /// which fails if either the inherent match or the [`Self::ALL`]
+    /// declaration order drifts.
+    ///
+    /// Peer of [`Self::as_str`] on the same primitive: both are
+    /// `Copy`-taking `const fn`s that project the closed-enum tag to a
+    /// scalar (a `&'static str` label and a `usize` precedence position),
+    /// both delegate the declaration-order source of truth to
+    /// [`Self::ALL`], and together they name the provenance's scalar label
+    /// and scalar position under `const`. Idiom-peer of [`Format::ordinal`]
+    /// on the sibling format axis (commit `8b10659`),
+    /// [`crate::AttributionRule::ordinal`] on the attribution-rule axis
+    /// (commit `14c4e5f`), [`crate::SecretRefShape::ordinal`] on the
+    /// (whole × field) extraction-shape axis (commit `582d041`), and every
+    /// other `_ordinal` seal on the sibling closed-axis primitives across
+    /// the crate — same `match`-on-`Self` shape, same
+    /// [`crate::axis_ordinal`]-agreement discipline, same const-
+    /// callability contract.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::FigmentBuiltin => 0,
+            Self::ShikumiBuilt => 1,
+        }
+    }
+
     /// The closed slice of [`Format`] variants whose [`Format::provenance`]
     /// equals `self` — the fiber of [`Format::provenance`] over this
     /// provenance cell.
@@ -8470,6 +8519,95 @@ mod tests {
         assert!(!FB_SB);
         assert!(!SB_FB);
         assert!(SB_SB);
+    }
+
+    #[test]
+    fn format_provenance_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `FormatProvenance::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `FormatProvenance::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal`
+        // does not (it delegates to non-const `Iterator::position`
+        // over a generic trait bound); this test guards the
+        // equal-answer contract that keeps the two seams substitutable
+        // at every consumer site. Idiom-peer of
+        // `format_ordinal_agrees_with_axis_ordinal_pointwise` on the
+        // sibling format axis in this same module, and every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal on the
+        // closed-axis primitives across the crate.
+        for &p in FormatProvenance::ALL {
+            assert_eq!(
+                p.ordinal(),
+                crate::axis_ordinal(p),
+                "inherent ordinal must agree with axis_ordinal for {p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (FigmentBuiltin → ShikumiBuilt). A future
+        // swap in the match arms that would still pass the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `FormatProvenance::ALL` on
+        // both sides) fails here first. Idiom-peer of
+        // `secret_ref_shape_ordinal_reuses_declaration_order` on the
+        // sibling two-cell extraction-shape axis.
+        assert_eq!(FormatProvenance::FigmentBuiltin.ordinal(), 0);
+        assert_eq!(FormatProvenance::ShikumiBuilt.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `FormatProvenance::ALL` at every declared position.
+        // A future edit that shifts the match arms without shifting
+        // the slice literal in lockstep fails here on the first
+        // drifted position.
+        for (index, &p) in FormatProvenance::ALL.iter().enumerate() {
+            assert_eq!(
+                p.ordinal(),
+                index,
+                "ordinal must reuse FormatProvenance::ALL index for {p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_ordinal_is_const_callable() {
+        // Compile-time weld: the (provenance → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the sibling
+        // per-variant scalar projection `FormatProvenance::as_str` and
+        // the sibling boolean predicates
+        // `FormatProvenance::is_figment_builtin` /
+        // `FormatProvenance::is_shikumi_built`. A drop of the `const`
+        // qualifier on `FormatProvenance::ordinal` fails this test to
+        // compile at one of the two const bindings below before drift
+        // reaches downstream const-context consumers. Idiom-peer of
+        // `secret_ref_shape_ordinal_is_const_callable` and every other
+        // `_ordinal_is_const_callable` seal on the sibling closed-axis
+        // primitives.
+        const FIGMENT_BUILTIN: usize = FormatProvenance::FigmentBuiltin.ordinal();
+        const SHIKUMI_BUILT: usize = FormatProvenance::ShikumiBuilt.ordinal();
+
+        assert_eq!(FIGMENT_BUILTIN, 0);
+        assert_eq!(SHIKUMI_BUILT, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `FormatProvenance::ALL` to the
+        // runtime-side `p.ordinal()` call — the const-context weld
+        // only exercises the two variants named at const-binding
+        // sites, but the runtime pin threads the full closed list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (p, expected) in [
+            (FormatProvenance::FigmentBuiltin, FIGMENT_BUILTIN),
+            (FormatProvenance::ShikumiBuilt, SHIKUMI_BUILT),
+        ] {
+            assert_eq!(p.ordinal(), expected, "provenance {p:?}");
+        }
     }
 
     #[test]
