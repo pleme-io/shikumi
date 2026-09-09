@@ -13225,6 +13225,76 @@ impl ParseAxisHistogramError {
     pub const fn is_duplicate_label(&self) -> bool {
         matches!(self, Self::DuplicateLabel { .. })
     }
+
+    /// Dense declaration-order ordinal of this rejection —
+    /// `MissingEquals { .. } → 0`, `UnknownLabel { .. } → 1`,
+    /// `InvalidCount { .. } → 2`, `DuplicateLabel { .. } → 3`.
+    ///
+    /// The scalar-ordinal peer of the shipped scalar-boolean predicates
+    /// [`Self::is_missing_equals`] / [`Self::is_unknown_label`] /
+    /// [`Self::is_invalid_count`] / [`Self::is_duplicate_label`] on the
+    /// same closed quaternary partition of the
+    /// `<AxisHistogram<A> as FromStr>` parse rejection modes. A consumer
+    /// wanting a dense `usize` slot for the rejection tag — a per-arm
+    /// retry-budget slot keyed by ordinal, a per-arm rendering-column
+    /// layout indexed by ordinal, a `const [T; 4]` per-arm lookup table
+    /// for operator-facing suggestion strings, a `const` per-arm
+    /// structured-log field-code lookup — matches this projection at ONE
+    /// site instead of routing through `Self::ALL.iter().position(...)`
+    /// (there is no `Self::ALL` for a payload-bearing parse-error enum)
+    /// or the non-const `Iterator::position` walk over the four sibling
+    /// predicates.
+    ///
+    /// Payload-independence: the answer is the same for every
+    /// `MissingEquals { pair }` regardless of the inner `String` pair,
+    /// for every `UnknownLabel { label }` regardless of the inner
+    /// `String` label, for every `InvalidCount { label, count }`
+    /// regardless of the two inner `String`s, and for every
+    /// `DuplicateLabel { label }` regardless of the inner `String`
+    /// label — the tag-side declaration is forbidden from consulting any
+    /// payload.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParseAxisHistogramError`] projects its ordinal at compile time
+    /// too. The four-arm exhaustive match binds nothing on any arm
+    /// (`Self::MissingEquals { .. }`, `Self::UnknownLabel { .. }`,
+    /// `Self::InvalidCount { .. }`, `Self::DuplicateLabel { .. }`), so
+    /// no `Drop`-carrying payload — the inner `String`s — is moved
+    /// through the projection at any const-eval point; the projection
+    /// reads only the enum discriminant and returns a [`Copy`] [`usize`].
+    /// Same const-fn eligibility argument as the four sibling tag-side
+    /// predicates.
+    ///
+    /// **Idiom-peer of the tag-side scalar-ordinal closures on other
+    /// closed-partition parse-error primitives.** Direct methodological
+    /// analogue of [`crate::discovery::ParseFormatCoordinatesError::ordinal`]
+    /// (commit `3191a2b`) on the three-cell parse-error kind axis of
+    /// `<FormatCoordinates as FromStr>` and of
+    /// [`crate::cube::ParsePartitionOrdinalError::ordinal`] (commit
+    /// `60410db`) on the three-cell parse-error kind axis of
+    /// `<PartitionOrdinal as FromStr>` — same exhaustive direct-match
+    /// discipline at the payload-bearing altitude, same closed-partition
+    /// contract, same const-callability weld — and of
+    /// [`crate::ShikumiError::ordinal`] on the seven-cell error-kind
+    /// axis, [`crate::secret_client::SecretError::ordinal`] on the
+    /// five-cell secret-error axis, and
+    /// [`crate::hotswap::ProofRelation::ordinal`] on the quinary
+    /// proof-relation kind axis. Pointwise agreement with the four
+    /// sibling predicates is pinned by
+    /// [`tests::parse_axis_histogram_error_ordinal_agrees_with_predicates_pointwise`];
+    /// concrete positions and payload-independence by
+    /// [`tests::parse_axis_histogram_error_ordinal_reuses_declaration_order`];
+    /// const-callability weld by
+    /// [`tests::parse_axis_histogram_error_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::MissingEquals { .. } => 0,
+            Self::UnknownLabel { .. } => 1,
+            Self::InvalidCount { .. } => 2,
+            Self::DuplicateLabel { .. } => 3,
+        }
+    }
 }
 
 impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
@@ -43125,6 +43195,219 @@ mod tests {
             duplicate.is_duplicate_label(),
             "expected is_duplicate_label for {duplicate:?}",
         );
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_ordinal_agrees_with_predicates_pointwise() {
+        // Every `ParseAxisHistogramError` value on the payload-bearing
+        // sample table (two per arm, ASCII and Unicode-carrying payloads
+        // covered) projects to the unique dense position whose sibling
+        // predicate holds. Pointwise-agreement pin between the inherent
+        // scalar-ordinal projection and the four sibling boolean
+        // predicates — catches drift between the inherent match and any
+        // one of the four predicates on the first variant where they
+        // disagree. Idiom-peer of
+        // `parse_format_coordinates_error_ordinal_agrees_with_predicates_pointwise`
+        // (`3191a2b`) on the sibling payload-bearing parse-error
+        // primitive.
+        let cases: [(ParseAxisHistogramError, usize); 8] = [
+            (
+                ParseAxisHistogramError::MissingEquals {
+                    pair: "addedone".to_owned(),
+                },
+                0,
+            ),
+            (
+                ParseAxisHistogramError::MissingEquals {
+                    pair: "行=".to_owned(),
+                },
+                0,
+            ),
+            (
+                ParseAxisHistogramError::UnknownLabel {
+                    label: "bogus".to_owned(),
+                },
+                1,
+            ),
+            (
+                ParseAxisHistogramError::UnknownLabel {
+                    label: "未知".to_owned(),
+                },
+                1,
+            ),
+            (
+                ParseAxisHistogramError::InvalidCount {
+                    label: "added".to_owned(),
+                    count: "oops".to_owned(),
+                },
+                2,
+            ),
+            (
+                ParseAxisHistogramError::InvalidCount {
+                    label: "行".to_owned(),
+                    count: "𝟏".to_owned(),
+                },
+                2,
+            ),
+            (
+                ParseAxisHistogramError::DuplicateLabel {
+                    label: "added".to_owned(),
+                },
+                3,
+            ),
+            (
+                ParseAxisHistogramError::DuplicateLabel {
+                    label: "行".to_owned(),
+                },
+                3,
+            ),
+        ];
+        for (err, expected) in &cases {
+            assert_eq!(
+                err.ordinal(),
+                *expected,
+                "ParseAxisHistogramError::{err:?} ordinal must equal {expected}",
+            );
+            let hits = usize::from(err.is_missing_equals())
+                + usize::from(err.is_unknown_label())
+                + usize::from(err.is_invalid_count())
+                + usize::from(err.is_duplicate_label());
+            assert_eq!(
+                hits, 1,
+                "ParseAxisHistogramError::{err:?} must satisfy exactly one \
+                 sibling predicate (satisfied {hits})",
+            );
+            let predicate_ordinal = usize::from(err.is_unknown_label())
+                + usize::from(err.is_invalid_count()) * 2
+                + usize::from(err.is_duplicate_label()) * 3;
+            assert_eq!(
+                predicate_ordinal, *expected,
+                "predicate-derived ordinal for {err:?} must equal {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: `MissingEquals` at 0, `UnknownLabel` at
+        // 1, `InvalidCount` at 2, `DuplicateLabel` at 3 — the exact
+        // declaration order carried by the parser's
+        // `MissingEquals → UnknownLabel → InvalidCount → DuplicateLabel`
+        // precedence contract. Payload-independence is exercised
+        // pointwise per arm: empty, ASCII, and Unicode-carrying payload
+        // variants must all yield the same ordinal. Idiom-peer of
+        // `parse_format_coordinates_error_ordinal_reuses_declaration_order`
+        // (`3191a2b`).
+        for pair in ["", "addedone", "行="] {
+            assert_eq!(
+                ParseAxisHistogramError::MissingEquals {
+                    pair: pair.to_owned(),
+                }
+                .ordinal(),
+                0,
+                "MissingEquals {{pair:{pair:?}}} must have ordinal 0",
+            );
+        }
+        for label in ["", "bogus", "未知"] {
+            assert_eq!(
+                ParseAxisHistogramError::UnknownLabel {
+                    label: label.to_owned(),
+                }
+                .ordinal(),
+                1,
+                "UnknownLabel {{label:{label:?}}} must have ordinal 1",
+            );
+        }
+        for (label, count) in [("", ""), ("added", "oops"), ("行", "𝟏")] {
+            assert_eq!(
+                ParseAxisHistogramError::InvalidCount {
+                    label: label.to_owned(),
+                    count: count.to_owned(),
+                }
+                .ordinal(),
+                2,
+                "InvalidCount {{label:{label:?},count:{count:?}}} must have ordinal 2",
+            );
+        }
+        for label in ["", "added", "行"] {
+            assert_eq!(
+                ParseAxisHistogramError::DuplicateLabel {
+                    label: label.to_owned(),
+                }
+                .ordinal(),
+                3,
+                "DuplicateLabel {{label:{label:?}}} must have ordinal 3",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_ordinal_is_const_callable() {
+        // Compile-time weld — the scalar-ordinal projection is
+        // `pub const fn`, matching the shipped tag-side ordinal
+        // projections on the sibling closed-partition parse-error
+        // primitives (`crate::cube::ParsePartitionOrdinalError::ordinal`,
+        // `crate::discovery::ParseFormatCoordinatesError::ordinal`,
+        // `crate::ShikumiError::ordinal`,
+        // `crate::secret_client::SecretError::ordinal`,
+        // `crate::hotswap::ProofRelation::ordinal`). A
+        // `const fn ordinal_of(&ParseAxisHistogramError) -> usize`
+        // wrapper delegating to `err.ordinal()` pins the const-fn
+        // signature at the language level: the moment
+        // `ParseAxisHistogramError::ordinal` loses its `const`
+        // qualifier (a future edit that reaches for a non-const helper
+        // inside the four-arm exhaustive match — an allocator, a
+        // payload inspection on any of the four payload-bearing arms,
+        // a runtime lookup) the wrapper below fails to compile at
+        // THAT line before the drift can reach downstream const-context
+        // consumers that assumed const-ness through this projection.
+        const fn ordinal_of(err: &ParseAxisHistogramError) -> usize {
+            err.ordinal()
+        }
+        // All four arms admit a `static` receiver here — every arm
+        // carries only `String` payloads, and `String::new()` is
+        // `const` since Rust 1.39, so the whole four-arm closure is
+        // const-welded at the receiver, not just the projection. The
+        // `static` (rather than `const`) receiver sidesteps the E0493
+        // (`destructor cannot be evaluated at compile-time`) constraint
+        // the sibling
+        // `parse_partition_ordinal_error_ordinal_is_const_callable`
+        // and
+        // `parse_format_coordinates_error_ordinal_is_const_callable`
+        // welds name — the same shape the sibling welds already carry.
+        static MISSING_EQUALS_ERR: ParseAxisHistogramError =
+            ParseAxisHistogramError::MissingEquals {
+                pair: String::new(),
+            };
+        static UNKNOWN_LABEL_ERR: ParseAxisHistogramError = ParseAxisHistogramError::UnknownLabel {
+            label: String::new(),
+        };
+        static INVALID_COUNT_ERR: ParseAxisHistogramError = ParseAxisHistogramError::InvalidCount {
+            label: String::new(),
+            count: String::new(),
+        };
+        static DUPLICATE_LABEL_ERR: ParseAxisHistogramError =
+            ParseAxisHistogramError::DuplicateLabel {
+                label: String::new(),
+            };
+
+        const MISSING_EQUALS_ORD: usize = MISSING_EQUALS_ERR.ordinal();
+        const UNKNOWN_LABEL_ORD: usize = UNKNOWN_LABEL_ERR.ordinal();
+        const INVALID_COUNT_ORD: usize = INVALID_COUNT_ERR.ordinal();
+        const DUPLICATE_LABEL_ORD: usize = DUPLICATE_LABEL_ERR.ordinal();
+
+        assert_eq!(MISSING_EQUALS_ORD, 0);
+        assert_eq!(UNKNOWN_LABEL_ORD, 1);
+        assert_eq!(INVALID_COUNT_ORD, 2);
+        assert_eq!(DUPLICATE_LABEL_ORD, 3);
+
+        // Runtime cross-check via the const-fn wrapper — catches a
+        // future edit that shifted the const-fn body away from the
+        // runtime-fn body on any of the four const-welded arms.
+        assert_eq!(ordinal_of(&MISSING_EQUALS_ERR), 0);
+        assert_eq!(ordinal_of(&UNKNOWN_LABEL_ERR), 1);
+        assert_eq!(ordinal_of(&INVALID_COUNT_ERR), 2);
+        assert_eq!(ordinal_of(&DUPLICATE_LABEL_ERR), 3);
     }
 
     #[test]
