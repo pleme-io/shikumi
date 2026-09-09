@@ -29888,6 +29888,65 @@ impl<'a> FigmentSourceTag<'a> {
         matches!(self.kind(), FigmentSourceKind::Code)
     }
 
+    /// Returns the source-code location if this tag is a
+    /// [`Self::Code`] — the `&'static Location<'static>` figment
+    /// attaches to [`figment::providers::Serialized`] (the shape
+    /// behind [`crate::ProviderChain::with_defaults`]) and to every
+    /// other `Serialized`-lowered defaults layer.
+    ///
+    /// Third payload extractor on the [`FigmentSourceTag`] ternary,
+    /// closing the trio the sibling pair
+    /// [`Self::as_file_path`] / [`Self::as_custom`] opened: every
+    /// variant now has its inner payload reachable through a
+    /// named accessor at the same `pub const fn Self -> Option<&'static _>`
+    /// altitude, matching the `Some`-iff-arm discipline (`Self::Code(loc)
+    /// -> Some(loc)`, every other arm `-> None`). Before this
+    /// extractor the [`Self::Code`] arm's payload was reachable
+    /// only through an inline
+    /// `let FigmentSourceTag::Code(loc) = tag else { … }`
+    /// destructure at the call site (four such sites in-tree today:
+    /// `tests/dispatcher_registration.rs`,
+    /// `source.rs::figment_source_tag_classifies_code_location`,
+    /// `figment_source_tag_classifies_code_location_via_serialized`,
+    /// `figment_source_kind_partitions_disjointly`), losing the
+    /// named-projection discipline the sibling extractors already
+    /// enforce at their own arms.
+    ///
+    /// The extractor and the sibling predicate [`Self::is_code`]
+    /// agree pointwise: `tag.as_code_location().is_some() ==
+    /// tag.is_code()` for every value, matching the two extractor/
+    /// predicate agreement laws
+    /// `as_file_path().is_some() == is_file()` and
+    /// `as_custom().is_some() == is_custom()` the sibling pairs
+    /// already carry. Pinned by
+    /// [`tests::figment_source_tag_as_code_location_closes_ternary_payload_extractor_trio`].
+    ///
+    /// `const`-callable — `self` is `Copy`, the [`Self::Code`] arm's
+    /// bound `&'static Location<'static>` payload is `Copy` (no `Drop`
+    /// at any arm), and the returned `Option::Some` / `Option::None`
+    /// variants are const-constructible under rustc 1.94.1. Peer to
+    /// [`Self::as_file_path`] / [`Self::as_custom`] on the same
+    /// `impl` block and to the [`FigmentNameTag`]-side payload
+    /// extractors [`FigmentNameTag::as_format`] /
+    /// [`FigmentNameTag::as_env`] and the inner
+    /// [`EnvMetadataTag::as_prefix`] extractor (commit `d383522`)
+    /// on the borrowed figment-metadata tag surface. The
+    /// `const`-context weld welds through the None-return branch
+    /// (a compile-time-constructible [`Self::Custom`] tag returned
+    /// through the extractor); the Some-return branch is exercised
+    /// at runtime because `Location::caller()` is const only inside
+    /// `#[track_caller]` frames, not in a `const` initializer
+    /// position under rustc 1.94.1. See the sibling weld
+    /// [`tests::figment_source_tag_predicates_and_kind_are_const_callable`]
+    /// for the same Location-in-const-position limitation.
+    #[must_use]
+    pub const fn as_code_location(self) -> Option<&'static Location<'static>> {
+        match self {
+            Self::Code(loc) => Some(loc),
+            _ => None,
+        }
+    }
+
     /// Returns the custom-source string if this tag is a [`Self::Custom`].
     ///
     /// `const`-callable — `self` is `Copy`, the [`Self::Custom`] arm's
@@ -101668,6 +101727,92 @@ mod tests {
             Some(Path::new("/etc/x.yaml")),
         );
         assert_eq!(FigmentSourceTag::File(Path::new("/x")).as_custom(), None);
+    }
+
+    #[test]
+    fn figment_source_tag_as_code_location_closes_ternary_payload_extractor_trio() {
+        // Weld the const-callability and value-level agreement of
+        // the third payload extractor on `FigmentSourceTag`, closing
+        // the ternary the sibling pair `as_file_path` / `as_custom`
+        // opened. Before this extractor the `Code(&'static Location
+        // <'static>)` arm's payload was reachable only through an
+        // inline destructure at every call site; now every variant
+        // of the ternary carries a `pub const fn Self -> Option
+        // <&'static _>` extractor at one altitude, matching the
+        // extractor discipline every other borrowed figment-metadata
+        // tag axis already carries (`FigmentNameTag::as_format` /
+        // `as_env`, `EnvMetadataTag::as_prefix`).
+        //
+        // The const-context branch welds the None-return path
+        // through a compile-time-constructible `Custom(&'static str)`
+        // tag: `Location::caller()` is const only inside
+        // `#[track_caller]` frames, not in a `const` initializer
+        // position under rustc 1.94.1, so a compile-time `Code(_)`
+        // binding cannot be authored — the same limitation the peer
+        // weld `figment_source_tag_predicates_and_kind_are_const_callable`
+        // documents. The compiler having accepted the `pub const fn`
+        // declaration on `as_code_location` proves the `Code` arm of
+        // the match compiles under the same const-checker, so const-
+        // callability of the whole projection is covered without a
+        // synthetic `Location`.
+        const CUSTOM: FigmentSourceTag<'static> = FigmentSourceTag::Custom("vault://kv/x");
+        const CUSTOM_AS_CODE: Option<&'static Location<'static>> = CUSTOM.as_code_location();
+        const { assert!(CUSTOM_AS_CODE.is_none()) };
+
+        // Runtime cross-checks. The two non-`Code` arms return
+        // `None` — the miss branches pin the polarity so a future
+        // edit that widened the `Code(_) => Some(loc)` arm to any
+        // other variant fails at the pin before it drifts through
+        // downstream consumers.
+        assert_eq!(
+            FigmentSourceTag::File(Path::new("/etc/x.yaml")).as_code_location(),
+            None,
+        );
+        assert_eq!(
+            FigmentSourceTag::Custom("vault://kv/x").as_code_location(),
+            None,
+        );
+
+        // The Some-return branch: extract a real `&'static Location
+        // <'static>` from figment's own `Serialized` provider (the
+        // shape behind `ProviderChain::with_defaults`) and route it
+        // back through the extractor. Pointer-identity equality
+        // pins that the extractor hands back the exact reference the
+        // `Code` arm carried, without a shallow copy or a detour
+        // through any allocating conversion; field-level equality on
+        // file/line/column pins the value-level agreement
+        // independent of pointer identity.
+        use figment::Provider;
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = prov.metadata();
+        let loc: &'static Location<'static> = md
+            .source
+            .as_ref()
+            .and_then(figment::Source::code_location)
+            .expect("Serialized metadata must carry a code location");
+        let tag = FigmentSourceTag::Code(loc);
+        let extracted = tag.as_code_location().expect("Code arm must return Some");
+        assert!(std::ptr::eq(extracted, loc));
+        assert_eq!(extracted.file(), loc.file());
+        assert_eq!(extracted.line(), loc.line());
+        assert_eq!(extracted.column(), loc.column());
+
+        // Extractor / predicate boolean-agreement law across the
+        // full ternary — `tag.as_code_location().is_some() ==
+        // tag.is_code()` for every variant, matching the two
+        // sibling laws `as_file_path().is_some() == is_file()` and
+        // `as_custom().is_some() == is_custom()` the peer pairs
+        // already carry. A future edit that reversed the extractor's
+        // polarity (silently returning `Some` on a non-`Code` arm,
+        // or `None` on `Code`) fails at this pin before drifting
+        // through observers that assumed the correspondence.
+        assert_eq!(tag.as_code_location().is_some(), tag.is_code());
+        for other in [
+            FigmentSourceTag::File(Path::new("/etc/x.yaml")),
+            FigmentSourceTag::Custom("vault://kv/x"),
+        ] {
+            assert_eq!(other.as_code_location().is_some(), other.is_code());
+        }
     }
 
     // ---- EnvMetadataTagKind / EnvMetadataTag::kind ----
