@@ -312,8 +312,23 @@ impl<A: ClosedAxis> std::iter::FusedIterator for AxisIter<A> {}
 /// 18 ([`crate::ErrorLocalizationCoordinates`]),
 /// 9 ([`crate::AttributionSourceKindCoordinates`]) — reachable as one
 /// method call across all thirteen implementors uniformly.
+///
+/// # `const`-callable
+///
+/// The helper is `const fn`: its body is `A::ALL.len()`, and both the
+/// associated-const projection (`ClosedAxis::ALL` — a `&'static [Self]`
+/// constant every implementor exposes as a `const`) and the slice
+/// [`<[T]>::len`] method it composes are stable-`const` (`slice::len`
+/// since Rust 1.39). Consumers wanting a compile-time-selected dense
+/// array or bitset sized by the axis cardinality (`const [T; N]` /
+/// `[T; axis_cardinality::<A>()]`) route through the projection under
+/// `const` without a runtime `let` binding, closing the trait-generic
+/// const-time sibling gap to every per-axis inherent `Self::ALL.len()`
+/// composition site already const-callable through the associated
+/// constant. Pinned by
+/// [`tests::axis_cardinality_is_const_callable_for_every_closed_axis_implementor`].
 #[must_use]
-pub fn axis_cardinality<A: ClosedAxis>() -> usize {
+pub const fn axis_cardinality<A: ClosedAxis>() -> usize {
     A::ALL.len()
 }
 
@@ -18903,6 +18918,87 @@ mod tests {
             ($ty:ident) => {
                 assert_pointwise::<$ty>();
             };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    // ---- axis_cardinality is `const fn`: the trait-generic
+    // ---- compile-time sizer over every ClosedAxis implementor ----
+    //
+    // `axis_cardinality::<A>()` is `pub const fn`; its body is
+    // `A::ALL.len()`, and both the associated-const projection
+    // (`ClosedAxis::ALL` — a `&'static [Self]` constant every
+    // implementor exposes as a `const`) and the slice `<[T]>::len`
+    // inherent it composes are stable-`const` (`slice::len` since Rust
+    // 1.39). Consumers wanting a compile-time-selected dense array
+    // sized by the axis cardinality — `const [T; axis_cardinality::<A>()]`,
+    // a `[T; N]` field on a per-cell dispatch table, an
+    // `AxisHistogram`-adjacent dense-slot struct sized at the type
+    // level rather than through a runtime `Vec::with_capacity` — route
+    // through the projection under `const` without a runtime `let`
+    // binding, closing the trait-generic const-time sibling gap to
+    // every per-axis inherent `Self::ALL.len()` composition site
+    // already const-callable through the associated constant.
+    //
+    // The trait-uniform const-context weld routes every ClosedAxis
+    // implementor's cardinality through the projection in const
+    // position — a drop of `const fn` on `axis_cardinality` fails one
+    // of the `const N` welds below to compile at THAT line before the
+    // drift can reach downstream consumers that assumed const-ness
+    // through the projection. A twenty-first primitive or sixth
+    // product cube landing extends `for_each_closed_axis_implementor!`
+    // in lockstep and inherits the const-callable pin — one line at
+    // the macro site, zero code churn here.
+
+    #[test]
+    fn axis_cardinality_is_const_callable_for_every_closed_axis_implementor() {
+        // Compile-time weld: the (A → cardinality) projection is
+        // `const`-callable for every ClosedAxis implementor. Idiom-peer
+        // of every per-axis `_ordinal_is_const_callable` seal already
+        // shipped on the primitive-side inherent projections, lifted
+        // here to the trait-generic free-function projection.
+        macro_rules! check {
+            ($ty:ident) => {{
+                // One `const` binding per implementor routes the
+                // helper through const-context evaluation. The moment
+                // `axis_cardinality` loses its const-ness this `const`
+                // weld fails to compile at THAT line.
+                const N: usize = axis_cardinality::<$ty>();
+
+                // Cross-check the const-context weld against the
+                // runtime-side call — pins the two paths agree on
+                // every implementor, catching a body drift that only
+                // hits the runtime side or only the const side.
+                assert_eq!(
+                    N,
+                    axis_cardinality::<$ty>(),
+                    "{}: const-context axis_cardinality must equal runtime call",
+                    stringify!($ty),
+                );
+
+                // And against the associated-const `ALL` slice directly —
+                // pins the projection's body is `A::ALL.len()` and not
+                // a drift to a different `usize`.
+                assert_eq!(
+                    N,
+                    <$ty as ClosedAxis>::ALL.len(),
+                    "{}: const-context axis_cardinality must equal <A>::ALL.len()",
+                    stringify!($ty),
+                );
+
+                // Non-emptiness pin: every closed axis is non-empty by
+                // discipline (the round-trip laws would fail on an
+                // empty `ALL`). The const-context binding gives us the
+                // cardinality as a `const N`; a discipline violation
+                // (an implementor with empty `ALL`) would land as `0`
+                // here and fail every downstream `const [T; N]` sizer
+                // that relies on `N >= 1`.
+                assert!(
+                    N >= 1,
+                    "{}: axis_cardinality must be non-empty",
+                    stringify!($ty),
+                );
+            }};
         }
         for_each_closed_axis_implementor!(check);
     }
