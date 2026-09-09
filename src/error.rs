@@ -3572,6 +3572,94 @@ impl AttributionCoordinates {
     pub const fn is_realizable(self) -> bool {
         AttributionRule::from_coordinates(self).is_some()
     }
+
+    /// Dense zero-based position of the cell in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the `axis × layer_kind × confidence`
+    /// product cube, computed algebraically from the three axis ordinals
+    /// in the lexicographic (axis outer, `layer_kind` middle, confidence
+    /// inner) layout [`Self::ALL`] carries.
+    ///
+    /// Second inherent `ordinal` on a [`crate::ProductCube`] implementor
+    /// — after [`crate::FormatCoordinates::ordinal`] on the two-axis
+    /// `format × provenance` cube (commit `f336bd8`), lifted here onto the
+    /// three-axis `axis × layer_kind × confidence` cube. Every prior
+    /// landing of the ordinal-projection idiom on closed-enum axes
+    /// ([`AttributionAxis::ordinal`], [`crate::ConfigSourceKind::ordinal`],
+    /// [`AttributionConfidence::ordinal`], and every other
+    /// closed-enum axis primitive on the typescape) targeted an
+    /// exhaustive `match self { ... }` returning the dense position of
+    /// each variant. Product cubes carry no variant-level tag to match
+    /// on: the position of an [`AttributionCoordinates`] cell in
+    /// [`Self::ALL`] is determined by the three field ordinals via the
+    /// three-axis row-major layout formula the sibling
+    /// [`tests::attribution_coordinates_all_iterates_in_lexicographic_order`]
+    /// already pins. Naming the projection at the primitive's own
+    /// altitude here extends the ordinal-projection idiom from the
+    /// two-axis cube onto the three-axis cube, aligning
+    /// [`AttributionCoordinates`] with the discipline every other
+    /// closed-axis primitive already carries.
+    ///
+    /// **Formula.** [`AttributionAxis::ordinal`] on `axis` outermost,
+    /// times the product of the two inner-axis cardinalities
+    /// ([`crate::ConfigSourceKind::ALL`]`.len()` ·
+    /// [`AttributionConfidence::ALL`]`.len()`); plus
+    /// [`crate::ConfigSourceKind::ordinal`] on `layer_kind` middle,
+    /// times the innermost-axis cardinality
+    /// [`AttributionConfidence::ALL`]`.len()`; plus
+    /// [`AttributionConfidence::ordinal`] on `confidence` inner — the
+    /// row-major linearization the sibling declaration-order pin already
+    /// asserts on [`Self::ALL`]. Depends only on the three axis ordinals
+    /// plus two inner-axis cardinalities, so a future axis growth on any
+    /// sibling extends the ordinal image in lockstep with the
+    /// [`Self::ALL`] cardinality growth: adding a third
+    /// [`AttributionAxis`] variant grows the range from `[0, 12)` to
+    /// `[0, 18)`; adding a fourth [`crate::ConfigSourceKind`] variant
+    /// would grow it from `[0, 12)` to `[0, 16)`; adding a third
+    /// [`AttributionConfidence`] variant would grow it from `[0, 12)` to
+    /// `[0, 18)` — the formula's cardinality factors pick up the new
+    /// divisors automatically. No arm-list literal to keep in lockstep —
+    /// the projection is derived from the three sibling primitives' own
+    /// inherent projections.
+    ///
+    /// **Pointwise agreement with [`crate::axis_ordinal`]** —
+    /// `cell.ordinal() == crate::axis_ordinal(cell)` for every
+    /// `cell: AttributionCoordinates`. The inherent projection agrees
+    /// with the trait-uniform free-function projection over the whole
+    /// cube; pinned by
+    /// [`tests::attribution_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`].
+    /// The inherent seam ships const-callability (via the three sibling
+    /// const-fn ordinal projections it composes) that
+    /// [`crate::axis_ordinal`] does not (it delegates to non-const
+    /// `Iterator::position` over a generic `A: ClosedAxis` trait bound
+    /// with `PartialEq::eq` in the predicate closure, both non-const on
+    /// today's toolchain); this method carries the const-callable seam
+    /// on this three-axis product cube, and the pointwise-agreement pin
+    /// keeps the two seams substitutable.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of the three sibling axis ordinals it composes
+    /// ([`AttributionAxis::ordinal`], [`crate::ConfigSourceKind::ordinal`],
+    /// [`AttributionConfidence::ordinal`], all `const fn` since their
+    /// respective landings) and the const-stable slice-`len` on
+    /// [`crate::ConfigSourceKind::ALL`] and [`AttributionConfidence::ALL`].
+    /// Consumers wanting a compile-time-selected per-cell dispatch table
+    /// (e.g. a `const [T; 12]` weight vector or per-cell label array keyed
+    /// by ordinal) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::attribution_coordinates_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::attribution_coordinates_ordinal_reuses_declaration_order`])
+    /// guards the twelve concrete positions so a future reorder of any
+    /// sibling axis's declarations (or of [`Self::ALL`] itself) shifts
+    /// both the algebraic formula and the constant-slice layout in
+    /// lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        self.axis.ordinal() * (ConfigSourceKind::ALL.len() * AttributionConfidence::ALL.len())
+            + self.layer_kind.ordinal() * AttributionConfidence::ALL.len()
+            + self.confidence.ordinal()
+    }
 }
 
 /// Coordinate pair over the two orthogonal closed-enum projections
@@ -18668,6 +18756,233 @@ mod tests {
              order over (AttributionAxis::ALL, ConfigSourceKind::ALL, \
              AttributionConfidence::ALL)",
         );
+    }
+
+    #[test]
+    fn attribution_coordinates_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `AttributionCoordinates::ordinal` and
+        // the trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every cell of the twelve-cell product
+        // cube so a future edit to either the inherent three-axis
+        // algebraic formula (the `self.axis.ordinal() * (ConfigSourceKind::
+        // ALL.len() * AttributionConfidence::ALL.len()) + self.layer_kind
+        // .ordinal() * AttributionConfidence::ALL.len() + self.confidence
+        // .ordinal()` composition) or the `AttributionCoordinates::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that `axis_ordinal` does
+        // not (it delegates to non-const `Iterator::position` over a
+        // generic `A: ClosedAxis` trait bound with `PartialEq::eq` in the
+        // predicate closure); this test guards the equal-answer contract
+        // that keeps the two seams substitutable across every cell of
+        // the cube. Second landing of the trait-uniform-agreement pin on
+        // a `ProductCube` implementor — peer to
+        // `format_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the two-axis (`format × provenance`) sibling cube, lifted
+        // here onto the three-axis (`axis × layer_kind × confidence`)
+        // cube.
+        for &cell in AttributionCoordinates::ALL {
+            assert_eq!(
+                cell.ordinal(),
+                crate::axis_ordinal(cell),
+                "inherent ordinal must agree with axis_ordinal for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn attribution_coordinates_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the algebraic three-axis formula
+        // delivers the twelve declared cell positions verbatim, in
+        // strictly ascending lexicographic (axis outer, layer_kind
+        // middle, confidence inner) order matching the
+        // `AttributionCoordinates::ALL` layout — MetadataSource/Defaults/
+        // Exact at 0, MetadataSource/Defaults/Fallback at 1, …,
+        // MetadataName/File/Fallback at 11. A future edit that shifts
+        // any sibling axis's declaration order without shifting
+        // `AttributionCoordinates::ALL` in lockstep fails here first,
+        // before the drift can reach the `agrees_with_axis_ordinal`
+        // pointwise pin (which reads the same declaration order out of
+        // `AttributionCoordinates::ALL` on both sides). Idiom-peer of
+        // `format_coordinates_ordinal_reuses_declaration_order` on the
+        // sibling two-axis cube, extended here onto the twelve-cell
+        // three-axis cube.
+        let expected: [(AttributionCoordinates, usize); 12] = [
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Defaults,
+                    confidence: AttributionConfidence::Exact,
+                },
+                0,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Defaults,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                1,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Exact,
+                },
+                2,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                3,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Exact,
+                },
+                4,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                5,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Defaults,
+                    confidence: AttributionConfidence::Exact,
+                },
+                6,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Defaults,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                7,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Exact,
+                },
+                8,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                9,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Exact,
+                },
+                10,
+            ),
+            (
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Fallback,
+                },
+                11,
+            ),
+        ];
+        for (cell, want) in expected {
+            assert_eq!(cell.ordinal(), want, "cell {cell:?}");
+        }
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `AttributionCoordinates::ALL` at every declared cell.
+        // A future edit that shifts the algebraic formula without
+        // shifting the slice literal in lockstep (or vice versa) fails
+        // here on the first drifted position.
+        for (index, &cell) in AttributionCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                cell.ordinal(),
+                index,
+                "ordinal must reuse AttributionCoordinates::ALL index for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_coordinates_ordinal_is_const_callable() {
+        // Compile-time weld: the (cell → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the three
+        // sibling axis ordinals it composes (`AttributionAxis::ordinal`,
+        // `ConfigSourceKind::ordinal`, `AttributionConfidence::ordinal`,
+        // all `const fn` since their respective landings) and the
+        // const-stable slice-`len` on `ConfigSourceKind::ALL` and
+        // `AttributionConfidence::ALL`. A drop of the `const` qualifier
+        // on `AttributionCoordinates::ordinal` — or on any sibling axis
+        // ordinal it composes — fails this test to compile. Idiom-peer
+        // of `format_coordinates_ordinal_is_const_callable` on the
+        // two-axis sibling cube, lifted here onto the three-axis cube.
+        //
+        // Twelve `const` bindings — one per `AttributionCoordinates::ALL`
+        // cell — route each cell through the const-fn projection in
+        // const position. The moment `AttributionCoordinates::ordinal`
+        // (or one of the three projections it composes) loses its
+        // const-ness, one of the twelve `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const CELLS: &[AttributionCoordinates] = AttributionCoordinates::ALL;
+        const ORD_00: usize = CELLS[0].ordinal();
+        const ORD_01: usize = CELLS[1].ordinal();
+        const ORD_02: usize = CELLS[2].ordinal();
+        const ORD_03: usize = CELLS[3].ordinal();
+        const ORD_04: usize = CELLS[4].ordinal();
+        const ORD_05: usize = CELLS[5].ordinal();
+        const ORD_06: usize = CELLS[6].ordinal();
+        const ORD_07: usize = CELLS[7].ordinal();
+        const ORD_08: usize = CELLS[8].ordinal();
+        const ORD_09: usize = CELLS[9].ordinal();
+        const ORD_10: usize = CELLS[10].ordinal();
+        const ORD_11: usize = CELLS[11].ordinal();
+
+        assert_eq!(ORD_00, 0);
+        assert_eq!(ORD_01, 1);
+        assert_eq!(ORD_02, 2);
+        assert_eq!(ORD_03, 3);
+        assert_eq!(ORD_04, 4);
+        assert_eq!(ORD_05, 5);
+        assert_eq!(ORD_06, 6);
+        assert_eq!(ORD_07, 7);
+        assert_eq!(ORD_08, 8);
+        assert_eq!(ORD_09, 9);
+        assert_eq!(ORD_10, 10);
+        assert_eq!(ORD_11, 11);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every cell in `AttributionCoordinates::ALL` to the
+        // runtime-side `cell.ordinal()` call — the const-context weld
+        // only exercises the twelve cells named at const-binding sites
+        // (which today equals the full cube), but the runtime pin
+        // threads the full closed slice through the same projection to
+        // catch a future cell landing whose const-context weld was
+        // forgotten upstream.
+        for (index, &cell) in CELLS.iter().enumerate() {
+            assert_eq!(cell.ordinal(), index, "cell {cell:?}");
+        }
     }
 
     #[test]
