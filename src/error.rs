@@ -4247,6 +4247,92 @@ impl AttributionSourceKindCoordinates {
                 | (FigmentSourceKind::Code, ConfigSourceKind::Defaults)
         )
     }
+
+    /// Dense zero-based position of the cell in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the
+    /// `figment_source_kind × layer_kind` product cube, computed
+    /// algebraically from the two axis ordinals in the lexicographic
+    /// (`figment_source_kind` outer, `layer_kind` inner) layout
+    /// [`Self::ALL`] carries.
+    ///
+    /// Fourth inherent `ordinal` on a [`crate::ProductCube`] implementor
+    /// — after [`crate::FormatCoordinates::ordinal`] on the two-axis
+    /// `format × provenance` cube (commit `f336bd8`),
+    /// [`AttributionCoordinates::ordinal`] on the three-axis
+    /// `axis × layer_kind × confidence` cube (commit `b11de0a`), and
+    /// [`ErrorLocalizationCoordinates::ordinal`] on the two-axis
+    /// `kind × localization` error-fidelity cube (commit `e4d9fc1`),
+    /// lifted here onto the two-axis
+    /// `figment_source_kind × layer_kind` attribution-source-kind cube.
+    /// Every prior landing of the ordinal-projection idiom on closed-enum
+    /// axes ([`FigmentSourceKind::ordinal`],
+    /// [`ConfigSourceKind::ordinal`], and every other closed-enum axis
+    /// primitive on the typescape) targeted an exhaustive
+    /// `match self { ... }` returning the dense position of each variant.
+    /// Product cubes carry no variant-level tag to match on: the position
+    /// of an [`AttributionSourceKindCoordinates`] cell in [`Self::ALL`]
+    /// is determined by the two field ordinals via the row-major layout
+    /// formula the sibling
+    /// `attribution_source_kind_coordinates_all_iterates_in_lexicographic_order`
+    /// test already pins. Naming the projection at the primitive's own
+    /// altitude here extends the ordinal-projection idiom onto the
+    /// attribution-source-kind cube, aligning
+    /// [`AttributionSourceKindCoordinates`] with the discipline every
+    /// other product cube already carries.
+    ///
+    /// **Formula.** [`FigmentSourceKind::ordinal`] on `figment_source_kind`
+    /// outer, times the innermost-axis cardinality
+    /// [`ConfigSourceKind::ALL`]`.len()`, plus [`ConfigSourceKind::ordinal`]
+    /// on `layer_kind` inner — the row-major linearization the sibling
+    /// declaration-order pin already asserts on [`Self::ALL`]. Depends
+    /// only on the two axis ordinals plus the innermost-axis
+    /// cardinality, so a future axis growth on either sibling extends
+    /// the ordinal image in lockstep with the [`Self::ALL`] cardinality
+    /// growth: adding a fourth [`FigmentSourceKind`] variant grows the
+    /// range from `[0, 9)` to `[0, 12)`; adding a fourth
+    /// [`ConfigSourceKind`] variant would grow it from `[0, 9)` to
+    /// `[0, 12)` too, and the formula's cardinality factor would pick
+    /// up the new divisor automatically. No arm-list literal to keep in
+    /// lockstep — the projection is derived from the two sibling
+    /// primitives' own inherent projections.
+    ///
+    /// **Pointwise agreement with [`crate::axis_ordinal`]** —
+    /// `cell.ordinal() == crate::axis_ordinal(cell)` for every
+    /// `cell: AttributionSourceKindCoordinates`. The inherent projection
+    /// agrees with the trait-uniform free-function projection over the
+    /// whole cube; pinned by
+    /// [`tests::attribution_source_kind_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`].
+    /// The inherent seam ships const-callability (via the two sibling
+    /// const-fn ordinal projections it composes) that
+    /// [`crate::axis_ordinal`] does not (it delegates to non-const
+    /// `Iterator::position` over a generic `A: ClosedAxis` trait bound
+    /// with `PartialEq::eq` in the predicate closure, both non-const on
+    /// today's toolchain); this method carries the const-callable seam
+    /// on this attribution-source-kind product cube, and the
+    /// pointwise-agreement pin keeps the two seams substitutable.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of the two sibling axis ordinals it composes
+    /// ([`FigmentSourceKind::ordinal`], [`ConfigSourceKind::ordinal`],
+    /// both `const fn` since their respective landings) and the
+    /// const-stable slice-`len` on [`ConfigSourceKind::ALL`]. Consumers
+    /// wanting a compile-time-selected per-cell dispatch table (e.g. a
+    /// `const [T; 9]` weight vector, a per-cell diagnostic-legend array,
+    /// or an attestation-manifest ordering keyed by ordinal) route
+    /// through the projection under `const` without dropping through a
+    /// runtime `let` binding. Pinned by
+    /// [`tests::attribution_source_kind_coordinates_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::attribution_source_kind_coordinates_ordinal_reuses_declaration_order`])
+    /// guards the nine concrete positions so a future reorder of either
+    /// sibling axis's declarations (or of [`Self::ALL`] itself) shifts
+    /// both the algebraic formula and the constant-slice layout in
+    /// lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        self.figment_source_kind.ordinal() * ConfigSourceKind::ALL.len() + self.layer_kind.ordinal()
+    }
 }
 
 /// Joint cell of a name-axis [`AttributionRule`]: the typed pair of
@@ -21400,6 +21486,185 @@ mod tests {
              AttributionSourceKindCoordinates::ALL; observed: {observed:?}, \
              declared: {declared:?}",
         );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `AttributionSourceKindCoordinates::ordinal`
+        // and the trait-uniform free-function projection
+        // `crate::axis_ordinal` are two spellings of the same closed-axis
+        // position lookup; pin them pointwise across every cell of the
+        // nine-cell product cube so a future edit to either the inherent
+        // two-axis algebraic formula (the
+        // `self.figment_source_kind.ordinal() * ConfigSourceKind::ALL.len()
+        // + self.layer_kind.ordinal()` composition) or the
+        // `AttributionSourceKindCoordinates::ALL` declaration order cannot
+        // silently drift them apart. The inherent seam ships
+        // const-callability that `axis_ordinal` does not (it delegates to
+        // non-const `Iterator::position` over a generic `A: ClosedAxis`
+        // trait bound with `PartialEq::eq` in the predicate closure);
+        // this test guards the equal-answer contract that keeps the two
+        // seams substitutable across every cell of the cube. Fourth
+        // landing of the trait-uniform-agreement pin on a `ProductCube`
+        // implementor — idiom-peer of
+        // `format_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the two-axis (`format × provenance`) sibling cube,
+        // `attribution_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the three-axis (`axis × layer_kind × confidence`) cube, and
+        // `error_localization_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the two-axis (`kind × localization`) error-fidelity cube,
+        // lifted here onto the two-axis
+        // (`figment_source_kind × layer_kind`) attribution-source-kind
+        // cube.
+        for &cell in AttributionSourceKindCoordinates::ALL {
+            assert_eq!(
+                cell.ordinal(),
+                crate::axis_ordinal(cell),
+                "inherent ordinal must agree with axis_ordinal for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the algebraic two-axis formula delivers
+        // the nine declared cell positions verbatim, in strictly ascending
+        // lexicographic (`figment_source_kind` outer, `layer_kind` inner)
+        // order matching the `AttributionSourceKindCoordinates::ALL`
+        // layout — (File, Defaults) at 0, (File, Env) at 1, (File, File)
+        // at 2, (Code, Defaults) at 3, ..., (Custom, File) at 8. A future
+        // edit that shifts either sibling axis's declaration order
+        // without shifting `AttributionSourceKindCoordinates::ALL` in
+        // lockstep fails here first, before the drift can reach the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the same
+        // declaration order out of `AttributionSourceKindCoordinates::ALL`
+        // on both sides). Idiom-peer of
+        // `format_coordinates_ordinal_reuses_declaration_order` on the
+        // sibling two-axis cube,
+        // `attribution_coordinates_ordinal_reuses_declaration_order` on
+        // the sibling three-axis cube, and
+        // `error_localization_coordinates_ordinal_reuses_declaration_order`
+        // on the sibling two-axis error-fidelity cube, extended here onto
+        // the nine-cell (`figment_source_kind × layer_kind`) cube.
+        //
+        // Independent witness: the inherent ordinal equals the index in
+        // `AttributionSourceKindCoordinates::ALL` at every declared cell.
+        // A future edit that shifts the algebraic formula without
+        // shifting the slice literal in lockstep (or vice versa) fails
+        // here on the first drifted position.
+        for (index, &cell) in AttributionSourceKindCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                cell.ordinal(),
+                index,
+                "ordinal must reuse AttributionSourceKindCoordinates::ALL index for {cell:?}",
+            );
+        }
+
+        // Corner-cell concrete-position pin: pin the four extremes of the
+        // (`figment_source_kind × layer_kind`) layout by hand so a future
+        // reordering that happens to keep the enumerate-index witness
+        // consistent (because both `ALL` and the formula drifted in
+        // lockstep to a different order) still fails here against the
+        // named declaration order the primitives themselves carry.
+        assert_eq!(
+            AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::File,
+                layer_kind: ConfigSourceKind::Defaults,
+            }
+            .ordinal(),
+            0,
+        );
+        assert_eq!(
+            AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::File,
+                layer_kind: ConfigSourceKind::File,
+            }
+            .ordinal(),
+            2,
+        );
+        assert_eq!(
+            AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::Custom,
+                layer_kind: ConfigSourceKind::Defaults,
+            }
+            .ordinal(),
+            6,
+        );
+        assert_eq!(
+            AttributionSourceKindCoordinates {
+                figment_source_kind: FigmentSourceKind::Custom,
+                layer_kind: ConfigSourceKind::File,
+            }
+            .ordinal(),
+            8,
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_ordinal_is_const_callable() {
+        // Compile-time weld: the (cell → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the two sibling
+        // axis ordinals it composes (`FigmentSourceKind::ordinal` and
+        // `ConfigSourceKind::ordinal`, both `const fn` since their
+        // respective landings) and the const-stable slice-`len` on
+        // `ConfigSourceKind::ALL`. A drop of the `const` qualifier on
+        // `AttributionSourceKindCoordinates::ordinal` — or on either
+        // sibling axis ordinal it composes — fails this test to compile.
+        // Idiom-peer of `format_coordinates_ordinal_is_const_callable` on
+        // the sibling two-axis cube,
+        // `attribution_coordinates_ordinal_is_const_callable` on the
+        // sibling three-axis cube, and
+        // `error_localization_coordinates_ordinal_is_const_callable` on
+        // the sibling two-axis error-fidelity cube, lifted here onto the
+        // nine-cell (`figment_source_kind × layer_kind`)
+        // attribution-source-kind cube.
+        //
+        // Four representative `const` bindings — one per corner of the
+        // (`figment_source_kind`-endpoint × `layer_kind`-endpoint) layout
+        // — route each corner through the const-fn projection in const
+        // position. The moment
+        // `AttributionSourceKindCoordinates::ordinal` (or one of the two
+        // projections it composes) loses its const-ness, one of the four
+        // `const` welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const C_FILE_DEF: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::Defaults,
+        };
+        const C_FILE_FILE: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::File,
+        };
+        const C_CUSTOM_DEF: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::Defaults,
+        };
+        const C_CUSTOM_FILE: AttributionSourceKindCoordinates = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::File,
+        };
+
+        const ORD_FILE_DEF: usize = C_FILE_DEF.ordinal();
+        const ORD_FILE_FILE: usize = C_FILE_FILE.ordinal();
+        const ORD_CUSTOM_DEF: usize = C_CUSTOM_DEF.ordinal();
+        const ORD_CUSTOM_FILE: usize = C_CUSTOM_FILE.ordinal();
+
+        assert_eq!(ORD_FILE_DEF, 0);
+        assert_eq!(ORD_FILE_FILE, 2);
+        assert_eq!(ORD_CUSTOM_DEF, 6);
+        assert_eq!(ORD_CUSTOM_FILE, 8);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every cell in `AttributionSourceKindCoordinates::ALL` to its
+        // index — the const-context welds above only exercise the four
+        // corner cells named at const-binding sites, but the runtime pin
+        // threads the full closed nine-cell list through the same
+        // projection to catch a future cell landing whose const-context
+        // weld was forgotten upstream.
+        for (index, &cell) in AttributionSourceKindCoordinates::ALL.iter().enumerate() {
+            assert_eq!(cell.ordinal(), index, "cell {cell:?}");
+        }
     }
 
     // ---- AttributionNameKindCoordinates::ALL cover / partition / realizability ----
