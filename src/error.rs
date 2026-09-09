@@ -3928,6 +3928,86 @@ impl ErrorLocalizationCoordinates {
     pub const fn is_realizable(self) -> bool {
         self.kind.is_figment_bearing() == self.localization.is_applicable()
     }
+
+    /// Dense zero-based position of the cell in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the `kind × localization` product
+    /// cube, computed algebraically from the two axis ordinals in the
+    /// lexicographic (kind outer, localization inner) layout
+    /// [`Self::ALL`] carries.
+    ///
+    /// Third inherent `ordinal` on a [`crate::ProductCube`] implementor
+    /// — after [`crate::FormatCoordinates::ordinal`] on the two-axis
+    /// `format × provenance` cube (commit `f336bd8`) and
+    /// [`AttributionCoordinates::ordinal`] on the three-axis
+    /// `axis × layer_kind × confidence` cube (commit `b11de0a`), lifted
+    /// here onto the two-axis `kind × localization` error-fidelity cube.
+    /// Every prior landing of the ordinal-projection idiom on closed-enum
+    /// axes ([`ShikumiErrorKind::ordinal`],
+    /// [`FieldPathLocalization::ordinal`], and every other closed-enum
+    /// axis primitive on the typescape) targeted an exhaustive
+    /// `match self { ... }` returning the dense position of each variant.
+    /// Product cubes carry no variant-level tag to match on: the position
+    /// of an [`ErrorLocalizationCoordinates`] cell in [`Self::ALL`] is
+    /// determined by the two field ordinals via the row-major layout
+    /// formula the sibling
+    /// [`tests::error_localization_coordinates_all_iterates_in_lexicographic_order`]
+    /// already pins. Naming the projection at the primitive's own
+    /// altitude here extends the ordinal-projection idiom onto the
+    /// error-fidelity cube, aligning [`ErrorLocalizationCoordinates`]
+    /// with the discipline every other product cube already carries.
+    ///
+    /// **Formula.** [`ShikumiErrorKind::ordinal`] on `kind` outer, times
+    /// the innermost-axis cardinality [`FieldPathLocalization::ALL`]`.len()`;
+    /// plus [`FieldPathLocalization::ordinal`] on `localization` inner —
+    /// the row-major linearization the sibling declaration-order pin
+    /// already asserts on [`Self::ALL`]. Depends only on the two axis
+    /// ordinals plus the innermost-axis cardinality, so a future axis
+    /// growth on either sibling extends the ordinal image in lockstep
+    /// with the [`Self::ALL`] cardinality growth: adding an eighth
+    /// [`ShikumiErrorKind`] variant grows the range from `[0, 21)` to
+    /// `[0, 24)`; adding a fourth [`FieldPathLocalization`] variant
+    /// would grow it from `[0, 21)` to `[0, 28)`, and the formula's
+    /// cardinality factor picks up the new divisor automatically. No
+    /// arm-list literal to keep in lockstep — the projection is derived
+    /// from the two sibling primitives' own inherent projections.
+    ///
+    /// **Pointwise agreement with [`crate::axis_ordinal`]** —
+    /// `cell.ordinal() == crate::axis_ordinal(cell)` for every
+    /// `cell: ErrorLocalizationCoordinates`. The inherent projection
+    /// agrees with the trait-uniform free-function projection over the
+    /// whole cube; pinned by
+    /// [`tests::error_localization_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`].
+    /// The inherent seam ships const-callability (via the two sibling
+    /// const-fn ordinal projections it composes) that
+    /// [`crate::axis_ordinal`] does not (it delegates to non-const
+    /// `Iterator::position` over a generic `A: ClosedAxis` trait bound
+    /// with `PartialEq::eq` in the predicate closure, both non-const on
+    /// today's toolchain); this method carries the const-callable seam
+    /// on this error-fidelity product cube, and the pointwise-agreement
+    /// pin keeps the two seams substitutable.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of the two sibling axis ordinals it composes
+    /// ([`ShikumiErrorKind::ordinal`], [`FieldPathLocalization::ordinal`],
+    /// both `const fn` since their respective landings) and the
+    /// const-stable slice-`len` on [`FieldPathLocalization::ALL`].
+    /// Consumers wanting a compile-time-selected per-cell dispatch
+    /// table (e.g. a `const [T; 21]` weight vector, a per-cell
+    /// diagnostic-legend array, or an attestation-manifest ordering
+    /// keyed by ordinal) route through the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::error_localization_coordinates_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::error_localization_coordinates_ordinal_reuses_declaration_order`])
+    /// guards the twenty-one concrete positions so a future reorder of
+    /// either sibling axis's declarations (or of [`Self::ALL`] itself)
+    /// shifts both the algebraic formula and the constant-slice layout
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        self.kind.ordinal() * FieldPathLocalization::ALL.len() + self.localization.ordinal()
+    }
 }
 
 /// Coordinate pair over the two orthogonal closed-enum projections
@@ -20584,6 +20664,177 @@ mod tests {
         let c3 = c;
         assert_eq!(c, c2);
         assert_eq!(c2, c3);
+    }
+
+    #[test]
+    fn error_localization_coordinates_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `ErrorLocalizationCoordinates::ordinal`
+        // and the trait-uniform free-function projection
+        // `crate::axis_ordinal` are two spellings of the same
+        // closed-axis position lookup; pin them pointwise across every
+        // cell of the twenty-one-cell product cube so a future edit to
+        // either the inherent two-axis algebraic formula (the
+        // `self.kind.ordinal() * FieldPathLocalization::ALL.len() +
+        // self.localization.ordinal()` composition) or the
+        // `ErrorLocalizationCoordinates::ALL` declaration order cannot
+        // silently drift them apart. The inherent seam ships
+        // const-callability that `axis_ordinal` does not (it delegates
+        // to non-const `Iterator::position` over a generic `A: ClosedAxis`
+        // trait bound with `PartialEq::eq` in the predicate closure);
+        // this test guards the equal-answer contract that keeps the two
+        // seams substitutable across every cell of the cube. Third
+        // landing of the trait-uniform-agreement pin on a `ProductCube`
+        // implementor — idiom-peer of
+        // `format_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the two-axis (`format × provenance`) sibling cube and
+        // `attribution_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`
+        // on the three-axis (`axis × layer_kind × confidence`) cube,
+        // lifted here onto the two-axis (`kind × localization`)
+        // error-fidelity cube.
+        for &cell in ErrorLocalizationCoordinates::ALL {
+            assert_eq!(
+                cell.ordinal(),
+                crate::axis_ordinal(cell),
+                "inherent ordinal must agree with axis_ordinal for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the algebraic two-axis formula
+        // delivers the twenty-one declared cell positions verbatim, in
+        // strictly ascending lexicographic (kind outer, localization
+        // inner) order matching the `ErrorLocalizationCoordinates::ALL`
+        // layout — NotFound/Localized at 0, NotFound/FigmentUnlocalized
+        // at 1, NotFound/NotApplicable at 2, ..., Validation/NotApplicable
+        // at 20. A future edit that shifts either sibling axis's
+        // declaration order without shifting
+        // `ErrorLocalizationCoordinates::ALL` in lockstep fails here
+        // first, before the drift can reach the
+        // `agrees_with_axis_ordinal` pointwise pin (which reads the
+        // same declaration order out of `ErrorLocalizationCoordinates::ALL`
+        // on both sides). Idiom-peer of
+        // `format_coordinates_ordinal_reuses_declaration_order` on the
+        // sibling two-axis cube and
+        // `attribution_coordinates_ordinal_reuses_declaration_order` on
+        // the sibling three-axis cube, extended here onto the
+        // twenty-one-cell (`kind × localization`) cube.
+        //
+        // Independent witness: the inherent ordinal equals the index
+        // in `ErrorLocalizationCoordinates::ALL` at every declared
+        // cell. A future edit that shifts the algebraic formula
+        // without shifting the slice literal in lockstep (or vice
+        // versa) fails here on the first drifted position.
+        for (index, &cell) in ErrorLocalizationCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                cell.ordinal(),
+                index,
+                "ordinal must reuse ErrorLocalizationCoordinates::ALL index for {cell:?}",
+            );
+        }
+
+        // Corner-cell concrete-position pin: pin the four extremes of
+        // the (kind × localization) layout by hand so a future
+        // reordering that happens to keep the enumerate-index witness
+        // consistent (because both `ALL` and the formula drifted in
+        // lockstep to a different order) still fails here against the
+        // named declaration order the primitives themselves carry.
+        assert_eq!(
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::Localized,
+            }
+            .ordinal(),
+            0,
+        );
+        assert_eq!(
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::NotApplicable,
+            }
+            .ordinal(),
+            2,
+        );
+        assert_eq!(
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Validation,
+                localization: FieldPathLocalization::Localized,
+            }
+            .ordinal(),
+            18,
+        );
+        assert_eq!(
+            ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Validation,
+                localization: FieldPathLocalization::NotApplicable,
+            }
+            .ordinal(),
+            20,
+        );
+    }
+
+    #[test]
+    fn error_localization_coordinates_ordinal_is_const_callable() {
+        // Compile-time weld: the (cell → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the two
+        // sibling axis ordinals it composes (`ShikumiErrorKind::ordinal`
+        // and `FieldPathLocalization::ordinal`, both `const fn` since
+        // their respective landings) and the const-stable slice-`len`
+        // on `FieldPathLocalization::ALL`. A drop of the `const`
+        // qualifier on `ErrorLocalizationCoordinates::ordinal` — or on
+        // either sibling axis ordinal it composes — fails this test to
+        // compile. Idiom-peer of `format_coordinates_ordinal_is_const_callable`
+        // on the sibling two-axis cube and
+        // `attribution_coordinates_ordinal_is_const_callable` on the
+        // sibling three-axis cube, lifted here onto the twenty-one-cell
+        // (`kind × localization`) error-fidelity cube.
+        //
+        // Four representative `const` bindings — one per corner of the
+        // (kind-endpoint × localization-endpoint) layout — route each
+        // corner through the const-fn projection in const position. The
+        // moment `ErrorLocalizationCoordinates::ordinal` (or one of the
+        // two projections it composes) loses its const-ness, one of the
+        // four `const` welds below fails to compile at THAT line before
+        // the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const C_NF_LOC: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::NotFound,
+            localization: FieldPathLocalization::Localized,
+        };
+        const C_NF_NA: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::NotFound,
+            localization: FieldPathLocalization::NotApplicable,
+        };
+        const C_VAL_LOC: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::Validation,
+            localization: FieldPathLocalization::Localized,
+        };
+        const C_VAL_NA: ErrorLocalizationCoordinates = ErrorLocalizationCoordinates {
+            kind: ShikumiErrorKind::Validation,
+            localization: FieldPathLocalization::NotApplicable,
+        };
+
+        const ORD_NF_LOC: usize = C_NF_LOC.ordinal();
+        const ORD_NF_NA: usize = C_NF_NA.ordinal();
+        const ORD_VAL_LOC: usize = C_VAL_LOC.ordinal();
+        const ORD_VAL_NA: usize = C_VAL_NA.ordinal();
+
+        assert_eq!(ORD_NF_LOC, 0);
+        assert_eq!(ORD_NF_NA, 2);
+        assert_eq!(ORD_VAL_LOC, 18);
+        assert_eq!(ORD_VAL_NA, 20);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every cell in `ErrorLocalizationCoordinates::ALL` to its
+        // index — the const-context welds above only exercise the four
+        // corner cells named at const-binding sites, but the runtime
+        // pin threads the full closed twenty-one-cell list through the
+        // same projection to catch a future cell landing whose
+        // const-context weld was forgotten upstream.
+        for (index, &cell) in ErrorLocalizationCoordinates::ALL.iter().enumerate() {
+            assert_eq!(cell.ordinal(), index, "cell {cell:?}");
+        }
     }
 
     // ---- AttributionSourceKindCoordinates::ALL cover / partition / realizability ----
