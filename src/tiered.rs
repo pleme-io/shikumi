@@ -1874,6 +1874,132 @@ impl Provenance {
         self.source.is_file()
     }
 
+    /// Returns `Some(&Path)` if this provenance's source is
+    /// [`ConfigSource::File`], `None` on every other source-arm regardless
+    /// of the inner path payload — the borrowed-`Path` payload extractor
+    /// on the source axis of the atomic `(tier, source)` pair, mirroring
+    /// the predicate-projection [`Self::is_file`] one seam over on the
+    /// same axis with a payload projection instead of a scalar `bool`.
+    ///
+    /// Equal to `self.source().as_path()` by construction — one method
+    /// call answers *"what YAML file path produced this leaf?"* without
+    /// borrowing through the [`Self::source`] projection at every site.
+    /// The [`Provenance`]-altitude lift of the primitive-altitude
+    /// [`crate::ConfigSource::as_path`] payload extractor onto the atomic
+    /// `(tier, source)` pair that carries the source coordinate. Together
+    /// with [`Self::as_env_prefix`] one arm over, this closes the
+    /// payload-extractor sibling gap on the source axis: before this
+    /// seam, every source-axis *predicate* projection ([`Self::is_defaults`]
+    /// / [`Self::is_env`] / [`Self::is_file`] / [`Self::is_overlay`],
+    /// commits `84e8f9d` / `48c625b`) was reachable through a
+    /// one-hop inherent on [`Provenance`], but a caller wanting the
+    /// borrowed *payload* — the file path a `File`-source leaf came
+    /// from, the env prefix an `Env`-source leaf came from — reached
+    /// through the two-hop `prov.source().as_path()` /
+    /// `prov.source().as_env_prefix()` chain that named the [`Self::source`]
+    /// projection at the call site instead of the inherent seam.
+    ///
+    /// Peer of the tier-side sibling [`crate::ConfigTier::as_custom_path`]
+    /// (commit `bb4d2e4`) on the other half of the sealed `(tier, source)`
+    /// pair — that projection extracts the borrowed [`Path`] payload from
+    /// the operator-supplied *custom-tier* overlay; this one extracts the
+    /// borrowed [`Path`] payload from the operator-supplied *file-source*
+    /// overlay at the [`Provenance`] altitude. On every operator-supplied
+    /// [`Provenance::file`] the two are the same [`Path`] byte-for-byte
+    /// (the constructor pins the pair (`Custom`, `File(path)`)); on the
+    /// two other operator-overlay [`ConfigSource`] arms
+    /// (`ConfigSource::Env` / `ConfigSource::Defaults` under a `Custom`
+    /// tier) the tier-side projection is `None` at the [`Provenance`]
+    /// altitude because [`Provenance`]'s tier field is a
+    /// [`ConfigTierKind`] tag that does not carry the [`PathBuf`] payload
+    /// [`ConfigTier::Custom(PathBuf)`] does — the path lives entirely in
+    /// the source coordinate here.
+    ///
+    /// Not const-callable — the body composes [`ConfigSource::as_path`],
+    /// which composes [`std::path::PathBuf::as_path`] (not yet const-stable
+    /// on rustc 1.94.1). Same std-stability boundary as the primitive-side
+    /// peer [`crate::ConfigSource::as_path`] and the tier-side peer
+    /// [`crate::ConfigTier::as_custom_path`] (commit `bb4d2e4`), matching
+    /// the pattern of one non-const inherent per borrowed-`Path` payload
+    /// extractor on the crate. The sibling [`Self::as_env_prefix`] on the
+    /// same source axis IS const-callable because [`String::as_str`] is
+    /// const-stable — same asymmetry the primitive-side
+    /// [`crate::ConfigSource::as_env_prefix`] / [`crate::ConfigSource::as_path`]
+    /// pair already carries.
+    ///
+    /// **Boolean-agreement law** — `prov.as_file_path().is_some() ==
+    /// prov.is_file()` holds pointwise on the shipped constructor surface,
+    /// pinned by [`tests::provenance_as_file_path_agrees_with_is_file_pointwise`].
+    /// Peer of the same-shape agreement law
+    /// `config_tier_as_custom_path_agrees_with_is_custom_pointwise` on the
+    /// tier-side extractor (commit `bb4d2e4`) and of
+    /// [`crate::ConfigSource::as_path`] /
+    /// [`crate::ConfigSource::is_file`] on the primitive-side one altitude
+    /// down.
+    ///
+    /// **Payload identity** — for every `File(p)` source the extractor
+    /// returns `Some(&*p)`: the same [`Path`] the primitive-side
+    /// [`crate::ConfigSource::as_path`] projects, byte-for-byte identical
+    /// to the inner [`PathBuf`]. Pinned by
+    /// [`tests::provenance_as_file_path_preserves_inner_pathbuf_verbatim`].
+    #[must_use]
+    pub fn as_file_path(&self) -> Option<&Path> {
+        self.source.as_path()
+    }
+
+    /// Returns `Some(&str)` if this provenance's source is
+    /// [`ConfigSource::Env`], `None` on every other source-arm regardless
+    /// of the inner prefix payload — the borrowed-`&str` payload extractor
+    /// on the source axis of the atomic `(tier, source)` pair, mirroring
+    /// the predicate-projection [`Self::is_env`] one seam over on the
+    /// same axis with a payload projection instead of a scalar `bool`.
+    ///
+    /// Equal to `self.source().as_env_prefix()` by construction — one
+    /// method call answers *"what env-var prefix produced this leaf?"*
+    /// without borrowing through the [`Self::source`] projection at every
+    /// site. The [`Provenance`]-altitude lift of the primitive-altitude
+    /// [`crate::ConfigSource::as_env_prefix`] payload extractor onto the
+    /// atomic `(tier, source)` pair that carries the source coordinate.
+    /// Sibling of [`Self::as_file_path`] one arm over on the same axis;
+    /// together the pair closes the payload-extractor gap on the source
+    /// axis at one altitude, mirroring the borrow-side pair
+    /// [`crate::ConfigSource::as_path`] / [`crate::ConfigSource::as_env_prefix`]
+    /// the primitive already carries one altitude down.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`crate::ConfigSource::as_env_prefix`] on `self.source`, so a
+    /// compile-time-known [`Provenance`] projects its env-prefix payload
+    /// at compile time too. Matches the const-callability of the sibling
+    /// source-axis predicate triplet [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] and the compound-polarity
+    /// sibling [`Self::is_overlay`] on the same primitive; the sibling
+    /// [`Self::as_file_path`] is deliberately non-const behind the
+    /// unstable [`std::path::PathBuf::as_path`] boundary, matching the
+    /// primitive-side [`crate::ConfigSource::as_env_prefix`] /
+    /// [`crate::ConfigSource::as_path`] const-vs-non-const asymmetry.
+    /// Welded at compile time by
+    /// [`tests::provenance_as_env_prefix_is_const_callable`].
+    ///
+    /// **Boolean-agreement law** — `prov.as_env_prefix().is_some() ==
+    /// prov.is_env()` holds pointwise on the shipped constructor surface,
+    /// pinned by [`tests::provenance_as_env_prefix_agrees_with_is_env_pointwise`].
+    /// Peer of the same-shape agreement law
+    /// [`tests::provenance_as_file_path_agrees_with_is_file_pointwise`] on
+    /// the paired file-arm extractor, and of
+    /// [`crate::ConfigSource::as_env_prefix`] /
+    /// [`crate::ConfigSource::is_env`] on the primitive-side one altitude
+    /// down.
+    ///
+    /// **Payload identity** — for every `Env(prefix)` source the extractor
+    /// returns `Some(prefix.as_str())`: the same borrowed `&str` the
+    /// primitive-side [`crate::ConfigSource::as_env_prefix`] projects,
+    /// byte-for-byte identical to the inner [`String`]. Pinned by
+    /// [`tests::provenance_as_env_prefix_preserves_inner_string_verbatim`].
+    #[must_use]
+    pub const fn as_env_prefix(&self) -> Option<&str> {
+        self.source.as_env_prefix()
+    }
+
     /// Returns `true` iff this provenance's source is one of the
     /// operator-supplied overlay kinds ([`ConfigSource::Env`] or
     /// [`ConfigSource::File`]) — the compound-polarity complement of
@@ -76493,6 +76619,245 @@ mod progressive_tests {
         const COMPUTED_IS_OVERLAY: bool = COMPUTED_PROV.is_overlay();
 
         assert!(!COMPUTED_IS_OVERLAY);
+    }
+
+    #[test]
+    fn provenance_as_file_path_extracts_only_from_file_source() {
+        // Selectivity pin at the Provenance altitude for the
+        // borrowed-Path payload extractor on the source axis. Exactly
+        // the file-source constructor (`Provenance::file`) answers
+        // `Some(_)`; every other constructor row answers `None`,
+        // regardless of the inner path or prefix payload. Same shape as
+        // `config_tier_as_custom_path_extracts_only_from_custom_variant`
+        // (commit `bb4d2e4`) on the tier-side sibling of the sealed
+        // `(tier, source)` pair.
+        assert!(Provenance::bare().as_file_path().is_none());
+        assert!(Provenance::discovered().as_file_path().is_none());
+        assert!(Provenance::prescribed_default().as_file_path().is_none());
+        assert!(
+            Provenance::computed(ConfigTierKind::Custom)
+                .as_file_path()
+                .is_none(),
+        );
+        assert!(Provenance::env("").as_file_path().is_none());
+        assert!(
+            Provenance::env("SHIKUMI_AS_FILE_PATH_SELECTIVITY_")
+                .as_file_path()
+                .is_none(),
+        );
+
+        for raw in [
+            "/etc/as_file_path_selectivity.yaml",
+            "relative/as_file_path_selectivity.toml",
+            "",
+            "/tmp/has space/as_file_path_selectivity.yaml",
+        ] {
+            let extracted = Provenance::file(raw).as_file_path().map(Path::to_path_buf);
+            assert_eq!(
+                extracted.as_deref(),
+                Some(Path::new(raw)),
+                "as_file_path did not project inner path verbatim for {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_file_path_agrees_with_is_file_pointwise() {
+        // Boolean-agreement law: `prov.as_file_path().is_some() ==
+        // prov.is_file()` on every shipped constructor row. Refuses a
+        // future edit that reversed the extractor's polarity on the
+        // file-source arm — the two projections walk the same three-arm
+        // source partition and must agree pointwise. Peer of the
+        // same-shape agreement law
+        // `config_tier_as_custom_path_agrees_with_is_custom_pointwise`
+        // (commit `bb4d2e4`) on the tier-side extractor.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_AS_FILE_PATH_AGREEMENT_"),
+            Provenance::file("/etc/as_file_path_agreement.yaml"),
+            Provenance::file("relative/as_file_path_agreement.toml"),
+            Provenance::file(""),
+        ] {
+            assert_eq!(
+                prov.as_file_path().is_some(),
+                prov.is_file(),
+                "as_file_path/is_file polarity drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_file_path_preserves_inner_pathbuf_verbatim() {
+        // Payload-identity law: for every file-source `Provenance` the
+        // extractor returns the same `Path` bytes as `ConfigSource::as_path`
+        // on the underlying source coordinate — no transformation through
+        // `canonicalize`, prefix-strip, or separator-normalize. Peer of
+        // `config_tier_as_custom_path_preserves_inner_pathbuf_verbatim`
+        // (commit `bb4d2e4`) on the tier-side extractor; catches a future
+        // edit that inserted a normalization step between the source-level
+        // extractor and the Provenance-level extractor.
+        for raw in [
+            "/etc/as_file_path_verbatim.yaml",
+            "relative/as_file_path_verbatim.toml",
+            "",
+            "/tmp/has space/as_file_path_verbatim.yaml",
+            "///double//separators.yaml",
+        ] {
+            let prov = Provenance::file(raw);
+            let via_provenance = prov.as_file_path().expect("file-source projection");
+            let via_source = prov.source().as_path().expect("source-arm projection");
+            assert_eq!(
+                via_provenance, via_source,
+                "as_file_path diverged from ConfigSource::as_path on {raw:?}",
+            );
+            assert_eq!(
+                via_provenance,
+                Path::new(raw),
+                "as_file_path did not preserve inner Path bytes on {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_env_prefix_extracts_only_from_env_source() {
+        // Selectivity pin at the Provenance altitude for the borrowed-
+        // `&str` payload extractor on the source axis. Exactly the
+        // env-source constructor (`Provenance::env`) answers `Some(_)`;
+        // every other constructor row answers `None`, regardless of the
+        // inner path or prefix payload. Same shape as
+        // `provenance_as_file_path_extracts_only_from_file_source` on
+        // the paired file-arm extractor.
+        assert!(Provenance::bare().as_env_prefix().is_none());
+        assert!(Provenance::discovered().as_env_prefix().is_none());
+        assert!(Provenance::prescribed_default().as_env_prefix().is_none(),);
+        assert!(
+            Provenance::computed(ConfigTierKind::Custom)
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            Provenance::file("/etc/as_env_prefix_selectivity.yaml")
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            Provenance::file("relative/as_env_prefix_selectivity.toml")
+                .as_env_prefix()
+                .is_none(),
+        );
+
+        for raw in [
+            "",
+            "S_",
+            "SHIKUMI_AS_ENV_PREFIX_SELECTIVITY_LONG_",
+            "with space_",
+        ] {
+            let prov = Provenance::env(raw);
+            let extracted = prov.as_env_prefix();
+            assert_eq!(
+                extracted,
+                Some(raw),
+                "as_env_prefix did not project inner prefix verbatim for {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_env_prefix_agrees_with_is_env_pointwise() {
+        // Boolean-agreement law: `prov.as_env_prefix().is_some() ==
+        // prov.is_env()` on every shipped constructor row. Refuses a
+        // future edit that reversed the extractor's polarity on the
+        // env-source arm — the two projections walk the same three-arm
+        // source partition and must agree pointwise. Peer of the
+        // same-shape agreement law
+        // `provenance_as_file_path_agrees_with_is_file_pointwise` on
+        // the paired file-arm extractor.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_AS_ENV_PREFIX_AGREEMENT_"),
+            Provenance::file("/etc/as_env_prefix_agreement.yaml"),
+            Provenance::file("relative/as_env_prefix_agreement.toml"),
+        ] {
+            assert_eq!(
+                prov.as_env_prefix().is_some(),
+                prov.is_env(),
+                "as_env_prefix/is_env polarity drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_env_prefix_preserves_inner_string_verbatim() {
+        // Payload-identity law: for every env-source `Provenance` the
+        // extractor returns the same `&str` bytes as
+        // `ConfigSource::as_env_prefix` on the underlying source
+        // coordinate — no transformation through `to_uppercase`,
+        // `trim`, or any string-normalization step. Peer of
+        // `provenance_as_file_path_preserves_inner_pathbuf_verbatim`
+        // on the paired file-arm extractor.
+        for raw in [
+            "",
+            "SHIKUMI_",
+            "SHIKUMI_AS_ENV_PREFIX_VERBATIM_LONG_",
+            "with space_",
+            "lower_case_",
+        ] {
+            let prov = Provenance::env(raw);
+            let via_provenance = prov.as_env_prefix().expect("env-source projection");
+            let via_source = prov
+                .source()
+                .as_env_prefix()
+                .expect("source-arm projection");
+            assert_eq!(
+                via_provenance, via_source,
+                "as_env_prefix diverged from ConfigSource::as_env_prefix on {raw:?}",
+            );
+            assert_eq!(
+                via_provenance, raw,
+                "as_env_prefix did not preserve inner str bytes on {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_as_env_prefix_is_const_callable() {
+        // Weld the const-callability of the borrowed-`&str` payload
+        // extractor (`Provenance::as_env_prefix`) with the const-callable
+        // `Provenance::computed` constructor at compile time. Mirrors
+        // the shape of `provenance_source_predicates_are_const_callable`
+        // one payload-extractor cell over on the same primitive — the
+        // crate's established idiom for pinning compile-time-callability
+        // at the exact line a future edit would drift it. The sibling
+        // `Provenance::as_file_path` is deliberately non-const behind the
+        // unstable `std::path::PathBuf::as_path` boundary and gets no
+        // parallel weld here, matching the primitive-side
+        // `ConfigSource::as_env_prefix` / `ConfigSource::as_path`
+        // const-vs-non-const asymmetry.
+        //
+        // Every `Provenance::computed(_)` carries `ConfigSource::Defaults`,
+        // which has no non-const-Drop payload — but `Provenance` still
+        // cannot be bound to a `const` item because the
+        // `source: ConfigSource` field type carries non-const-Drop
+        // variants (`PathBuf` / `String` in the other arms), so we route
+        // through a `static` binding the same way the sibling welds do:
+        // statics never drop, so the drop-check that rejects a `const`
+        // Provenance does not apply, and the `.as_env_prefix()` hop in
+        // the const-init position below still routes through the
+        // const-fn `Provenance::computed` constructor and the const-fn
+        // `Provenance::as_env_prefix` extractor.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_ENV_PREFIX: Option<&str> = COMPUTED_PROV.as_env_prefix();
+
+        assert!(COMPUTED_ENV_PREFIX.is_none());
     }
 
     #[test]
