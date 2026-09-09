@@ -844,6 +844,85 @@ impl ConfigTier {
         matches!(self, Self::Custom(_))
     }
 
+    /// Returns the operator-supplied YAML overlay path if this tier is
+    /// [`Self::Custom`], `None` for the three computed-defaults tiers
+    /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]).
+    ///
+    /// The named payload extractor on the [`Self::Custom`] arm of the
+    /// quaternary [`ConfigTier`] axis — the only variant that carries
+    /// an inner payload (a caller-supplied [`PathBuf`] naming the YAML
+    /// overlay that `resolve_tier` reads on top of `prescribed_default`).
+    /// Before this landing, four in-tree sites reached the inner path
+    /// through an inline `if let ConfigTier::Custom(path) = tier { … }`
+    /// destructure (`resolve_tier`'s file-read arm at
+    /// `tiered.rs::resolve_tier`, the round-trip check in
+    /// `from_str_or_default_recognizes_canonical_names`, the two-liner
+    /// unpack in the `ConfigTier::Custom` matches under
+    /// `tests::config_tier_ordinal_reuses_declaration_order` and
+    /// friends). After this landing, `tier.as_custom_path()` reaches
+    /// the payload through one named method call at every site, with
+    /// the same discipline that the sibling axes already carry: the
+    /// borrowed [`Path`] rides through the [`Option`] envelope, no
+    /// allocation, no intermediate.
+    ///
+    /// Idiom-peer of [`crate::ConfigSource::as_path`] on the sibling
+    /// source axis of the atomic `(tier, source)` primitive — the
+    /// borrowed `Path` extractor on `File(PathBuf)` there is the peer
+    /// of this borrowed `Path` extractor on `Custom(PathBuf)` here,
+    /// spelling the same *borrowed-path payload* discipline on both
+    /// halves of the sealed `(tier, source)` pair. Also idiom-peer of
+    /// [`crate::ConfigSource::as_env_prefix`] (borrowed `&str`
+    /// extractor on `Env(String)`), of [`crate::FigmentSourceTag::as_file_path`]
+    /// (borrowed `Path` extractor on `File(&Path)`) and
+    /// [`crate::FigmentSourceTag::as_code_location`] (commit `b0dcf24`,
+    /// borrowed `&'static Location<'static>` extractor on
+    /// `Code(&'static Location<'static>)`), of [`crate::FigmentSourceTag::as_custom`]
+    /// (borrowed `&str` extractor on `Custom(&str)`), and of
+    /// [`crate::EnvMetadataTag::as_prefix`] (commit `d383522`,
+    /// borrowed `&str` extractor on the env-name sub-axis) — the
+    /// same *one named borrowed-payload extractor per payload-carrying
+    /// variant* discipline every closed-axis primitive with a
+    /// borrowed payload in the crate already carries.
+    ///
+    /// **Not const-callable** — the body composes [`PathBuf::as_path`]
+    /// (`&PathBuf` → `&Path`) which is not yet const-stable on rustc
+    /// 1.94.1, matching the same non-const limitation the sibling
+    /// [`crate::ConfigSource::as_path`] documents at its own
+    /// declaration. Every other predicate and projection on
+    /// `impl ConfigTier` (`is_bare` / `is_discovered` / `is_default` /
+    /// `is_custom` / `is_computed` / `kind` / `ordinal` / `as_str` /
+    /// `name`) remains `const`-callable — this extractor sits behind
+    /// exactly the same std-stability boundary as its
+    /// [`ConfigSource`]-side peer, without leaking the boundary onto
+    /// the rest of the impl block.
+    ///
+    /// **Boolean-agreement law** — `tier.as_custom_path().is_some() ==
+    /// tier.is_custom()` holds pointwise on the canonical sample table
+    /// (across payload-independence sweeps of absolute paths, relative
+    /// paths, and the empty path). Pinned by
+    /// [`tests::config_tier_as_custom_path_agrees_with_is_custom_pointwise`].
+    /// Peer of the same-shape agreement law
+    /// [`crate::ConfigSource::as_path`] / [`crate::ConfigSource::is_file`]
+    /// on the sibling source axis, and of the three-arm agreement laws
+    /// [`crate::FigmentSourceTag`]'s
+    /// `as_file_path().is_some() == is_file()`,
+    /// `as_code_location().is_some() == is_code()`,
+    /// `as_custom().is_some() == is_custom()` on the borrowed
+    /// figment-Source ternary.
+    ///
+    /// **Payload identity** — for every `Custom(p)` the extractor
+    /// returns `Some(&*p)`: the same `Path` that `PathBuf::as_path`
+    /// projects, byte-for-byte identical to the inner `PathBuf`.
+    /// Pinned by
+    /// [`tests::config_tier_as_custom_path_preserves_inner_pathbuf_verbatim`].
+    #[must_use]
+    pub fn as_custom_path(&self) -> Option<&Path> {
+        match self {
+            Self::Custom(p) => Some(p.as_path()),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for the three built-in computed-defaults tiers
     /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]),
     /// `false` for the operator-supplied overlay tier
@@ -31907,6 +31986,94 @@ mod tests {
         assert!(ConfigTier::Custom(std::path::PathBuf::from("/x")).is_custom());
         assert!(ConfigTier::Custom(std::path::PathBuf::from("rel.yaml")).is_custom());
         assert!(ConfigTier::Custom(std::path::PathBuf::new()).is_custom());
+    }
+
+    #[test]
+    fn config_tier_as_custom_path_extracts_only_from_custom_variant() {
+        // Extractor selectivity pin: `as_custom_path` returns `Some` on
+        // every `Custom(path)` and `None` on every other variant. The
+        // three computed-defaults tiers (Bare / Discovered / Default)
+        // carry no path payload by declaration, so the extractor is
+        // structurally forced to return `None` on all three. Peer of
+        // `as_path_returns_path_for_file_only` on the ConfigSource ↔
+        // File(PathBuf) axis one primitive over on the sealed
+        // (tier, source) pair.
+        assert_eq!(ConfigTier::Bare.as_custom_path(), None);
+        assert_eq!(ConfigTier::Discovered.as_custom_path(), None);
+        assert_eq!(ConfigTier::Default.as_custom_path(), None);
+        assert_eq!(
+            ConfigTier::Custom(std::path::PathBuf::from("/etc/app.yaml")).as_custom_path(),
+            Some(Path::new("/etc/app.yaml"))
+        );
+        assert_eq!(
+            ConfigTier::Custom(std::path::PathBuf::from("rel.toml")).as_custom_path(),
+            Some(Path::new("rel.toml"))
+        );
+        assert_eq!(
+            ConfigTier::Custom(std::path::PathBuf::new()).as_custom_path(),
+            Some(Path::new(""))
+        );
+    }
+
+    #[test]
+    fn config_tier_as_custom_path_agrees_with_is_custom_pointwise() {
+        // Boolean-agreement law: the extractor's `is_some()` polarity
+        // matches the predicate's `is_custom()` polarity pointwise —
+        // `tier.as_custom_path().is_some() == tier.is_custom()` for
+        // every variant, across payload-independence sweeps of
+        // absolute paths, relative paths, and the empty path. Peer of
+        // the three-arm agreement laws
+        // `FigmentSourceTag::as_file_path().is_some() == is_file()`,
+        // `FigmentSourceTag::as_code_location().is_some() == is_code()`,
+        // and `FigmentSourceTag::as_custom().is_some() == is_custom()`
+        // on the borrowed figment-Source ternary. Refuses a future
+        // edit that reversed the extractor's polarity on any arm — a
+        // silent swap that inverted `Some(&*p)` and `None` on the
+        // Custom arm would still deserialize and would still compile,
+        // but would fail here on the first shape where the polarities
+        // disagree.
+        let tiers = [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("./rel.toml")),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+        ];
+        for tier in &tiers {
+            assert_eq!(
+                tier.as_custom_path().is_some(),
+                tier.is_custom(),
+                "as_custom_path().is_some() must agree with is_custom() for {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_as_custom_path_preserves_inner_pathbuf_verbatim() {
+        // Payload-identity pin: for every `Custom(p)` the extractor
+        // returns the same `Path` bytes as the inner `PathBuf`, with
+        // no transformation, no allocation, no re-normalization. The
+        // borrowed `Path` is projected through `PathBuf::as_path`
+        // (which is `&PathBuf` → `&Path`, no copy) so a caller
+        // holding both the inner `PathBuf` and the extracted `Path`
+        // sees byte-for-byte equality. This locks the extractor's
+        // *transparency* contract — a future edit that mapped the
+        // payload through `Path::canonicalize` (a filesystem hit),
+        // stripped a prefix, or renormalized separators would diverge
+        // here on the first path that doesn't survive the transform.
+        for raw in [
+            "/etc/app/app.yaml",
+            "./local.toml",
+            "../parent/rel.nix",
+            "",
+            "with spaces/in-the-path.yaml",
+        ] {
+            let inner = std::path::PathBuf::from(raw);
+            let tier = ConfigTier::Custom(inner.clone());
+            assert_eq!(tier.as_custom_path(), Some(inner.as_path()));
+            assert_eq!(tier.as_custom_path(), Some(Path::new(raw)));
+        }
     }
 
     #[test]
