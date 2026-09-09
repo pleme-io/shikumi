@@ -18601,6 +18601,106 @@ mod tests {
         for_each_closed_axis_implementor!(check);
     }
 
+    // ---- inherent const-fn `ordinal` agrees with the generic
+    // ---- `axis_ordinal` across every closed-axis primitive ----
+    //
+    // Every one of the twenty closed-axis primitives listed in
+    // `for_each_closed_axis_primitive!` carries a hand-authored
+    // `pub const fn ordinal(&self) -> usize` inherent projection on
+    // its own `impl` block (`Format::ordinal`, `FormatProvenance::ordinal`,
+    // …, `DiffLineKind::ordinal`; 20+ per-axis commits landed one at a
+    // time under `Run-by: claude-routine-shikumi` since `9df376c`). Each
+    // per-axis ordinal has its own per-axis `_reuses_declaration_order`
+    // pin and its own `_agrees_with_all_position` pin — but no single
+    // trait-uniform site pinned that the inherent const-fn projection
+    // agrees pointwise with the generic runtime-side `axis_ordinal::<A>`
+    // fold across every closed-axis primitive at once.
+    //
+    // A future ordinal landing on the twenty-first primitive that
+    // silently drifts one arm ordinal (e.g. a swap of `MissingSeparator`
+    // and `UnknownFormat` in the match on the const-fn side but not on
+    // the `ALL` slice side) would slip past every per-axis pin — the
+    // per-axis pin re-reads the same declaration order out of `Self::ALL`
+    // that the drifted match now reflects, so both sides land at the
+    // same drifted position. This trait-uniform pin catches that
+    // drift at the first divergent variant because `axis_ordinal::<A>`
+    // reads `Self::ALL` (unchanged) and the inherent match reads the
+    // drifted arm order; the two projections disagree at the drifted
+    // variant.
+    //
+    // Uses method-call syntax `v.ordinal()` so the pin covers both
+    // receiver shapes uniformly — the payload-free primitives with
+    // `pub const fn ordinal(self) -> usize` and any future primitive
+    // that lands `pub const fn ordinal(&self) -> usize` for a `&self`
+    // receiver — auto-ref on `Copy` receivers routes both to the same
+    // method call. A twenty-first closed-axis primitive landing extends
+    // `for_each_closed_axis_primitive!` and inherits this pin in
+    // lockstep — one line at the macro site, zero code churn here.
+
+    #[test]
+    fn inherent_ordinal_matches_axis_ordinal_for_every_closed_axis_primitive() {
+        macro_rules! check {
+            ($ty:ident) => {
+                for value in axis_iter::<$ty>() {
+                    let inherent = value.ordinal();
+                    let generic = axis_ordinal::<$ty>(value);
+                    assert_eq!(
+                        inherent,
+                        generic,
+                        "{}::{:?}: inherent ordinal ({}) must equal axis_ordinal::<{0}> ({})",
+                        stringify!($ty),
+                        value,
+                        inherent,
+                        generic,
+                    );
+                    // Round-trip: A::ALL[inherent] recovers the value.
+                    // Reads the same slice `axis_ordinal` reads, so a
+                    // drift between the inherent match and `Self::ALL`
+                    // fails at this index on the first drifted variant
+                    // before the outer equality assertion has a chance
+                    // to fire on the next iteration.
+                    assert_eq!(
+                        <$ty as $crate::ClosedAxis>::ALL[inherent],
+                        value,
+                        "{}::{:?}: ALL[inherent ordinal {}] must equal the value",
+                        stringify!($ty),
+                        value,
+                        inherent,
+                    );
+                }
+            };
+        }
+        for_each_closed_axis_primitive!(check);
+    }
+
+    #[test]
+    fn inherent_ordinal_image_equals_zero_to_cardinality_for_every_closed_axis_primitive() {
+        // Second, independent-shape witness of the same invariant:
+        // the image of the inherent const-fn ordinal over `axis_iter::<A>()`
+        // equals the set `0..axis_cardinality::<A>()` for every closed-
+        // axis primitive. Where the pointwise pin above catches drift
+        // between the inherent match and `Self::ALL` at the first
+        // divergent variant, this pin catches a collision (two variants
+        // mapping to the same ordinal) or a gap (an ordinal in
+        // `0..cardinality` not hit by any variant) at the set-equality
+        // level — a shape a drifted variant swap cannot fix without also
+        // re-widening or re-narrowing the ordinal range.
+        use std::collections::HashSet;
+        macro_rules! check {
+            ($ty:ident) => {{
+                let ordinals: HashSet<usize> = axis_iter::<$ty>().map(|v| v.ordinal()).collect();
+                let expected: HashSet<usize> = (0..axis_cardinality::<$ty>()).collect();
+                assert_eq!(
+                    ordinals,
+                    expected,
+                    "{}: inherent ordinal image over axis_iter must equal 0..axis_cardinality",
+                    stringify!($ty),
+                );
+            }};
+        }
+        for_each_closed_axis_primitive!(check);
+    }
+
     // ---- axis_at closes the safe forward direction of the
     // ---- (axis_ordinal, axis_at) bijection ----
     //
