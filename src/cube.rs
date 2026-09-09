@@ -15130,6 +15130,59 @@ impl ParsePartitionOrdinalError {
     pub const fn is_malformed_ordinal(&self) -> bool {
         matches!(self, Self::MalformedOrdinal { .. })
     }
+
+    /// Dense declaration-order ordinal of this rejection —
+    /// `MissingSeparator { .. } → 0`, `UnknownFace { .. } → 1`,
+    /// `MalformedOrdinal { .. } → 2`.
+    ///
+    /// The scalar-ordinal peer of the shipped scalar-boolean predicates
+    /// [`Self::is_missing_separator`] / [`Self::is_unknown_face`] /
+    /// [`Self::is_malformed_ordinal`] on the same closed ternary
+    /// partition. A consumer wanting a dense `usize` slot for the
+    /// rejection tag — a per-arm retry-budget slot keyed by ordinal,
+    /// a per-arm rendering-column layout indexed by ordinal, a
+    /// `const [T; 3]` per-arm lookup table — matches this projection
+    /// at ONE site instead of routing through
+    /// `Self::ALL.iter().position(...)` (there is no `Self::ALL` for
+    /// a payload-bearing parse-error enum) or the non-const
+    /// `Iterator::position` walk over the three sibling predicates.
+    ///
+    /// Payload-independence: the answer is the same for every
+    /// `MissingSeparator { input }` regardless of the inner `String`
+    /// input, for every `UnknownFace { label }` regardless of the
+    /// inner `String` label, and for every
+    /// `MalformedOrdinal { ordinal, source }` regardless of the inner
+    /// `String` / [`std::num::ParseIntError`] pair — the tag-side
+    /// declaration is forbidden from consulting any payload.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParsePartitionOrdinalError`] projects its ordinal at compile
+    /// time too. The three-arm exhaustive match binds nothing on any
+    /// arm (`Self::MissingSeparator { .. }`, `Self::UnknownFace { .. }`,
+    /// `Self::MalformedOrdinal { .. }`), so no `Drop`-carrying payload
+    /// is moved through the projection at any const-eval point; the
+    /// projection reads only the enum discriminant and returns a
+    /// [`Copy`] [`usize`]. Same const-fn eligibility argument as the
+    /// three sibling tag-side predicates (const since their landing
+    /// commits).
+    ///
+    /// **Idiom-peer of the tag-side scalar-ordinal closures on other
+    /// closed-partition parse-error primitives.** Direct methodological
+    /// analogue of [`crate::ShikumiError::ordinal`] on the seven-cell
+    /// error-kind axis, [`crate::secret_client::SecretError::ordinal`]
+    /// on the five-cell secret-error axis, and
+    /// [`crate::hotswap::ProofRelation::ordinal`] on the quinary
+    /// proof-relation kind axis — same direct-match discipline at the
+    /// payload-bearing altitude, same closed-partition contract, same
+    /// const-callability weld.
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::MissingSeparator { .. } => 0,
+            Self::UnknownFace { .. } => 1,
+            Self::MalformedOrdinal { .. } => 2,
+        }
+    }
 }
 
 impl std::str::FromStr for PartitionOrdinal {
@@ -21633,6 +21686,168 @@ mod tests {
             err.is_malformed_ordinal(),
             "expected is_malformed_ordinal for {err:?}"
         );
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_ordinal_agrees_with_predicates_pointwise() {
+        // Pointwise agreement between the scalar-ordinal projection and
+        // the shipped scalar-boolean predicate trio on the same closed
+        // ternary partition: for every constructed
+        // `ParsePartitionOrdinalError` value, `err.ordinal()` equals the
+        // unique dense position (0/1/2) whose sibling predicate holds.
+        // Catches drift between the inherent match and the three
+        // sibling predicates on the first variant where they disagree.
+        // Peer of `shikumi_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // and `secret_error_ordinal_agrees_with_kind_ordinal_pointwise`
+        // on the payload-bearing tag-side altitude of the sibling
+        // closed-partition error primitives.
+        let bad_ordinal = || "nope".parse::<usize>().unwrap_err();
+        let errors = [
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: String::new(),
+            },
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: "no-colon-here-at-all".into(),
+            },
+            ParsePartitionOrdinalError::UnknownFace {
+                label: String::new(),
+            },
+            ParsePartitionOrdinalError::UnknownFace {
+                label: "vault".into(),
+            },
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: String::new(),
+                source: bad_ordinal(),
+            },
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: "not_a_number".into(),
+                source: bad_ordinal(),
+            },
+        ];
+        for err in &errors {
+            let expected = if err.is_missing_separator() {
+                0
+            } else if err.is_unknown_face() {
+                1
+            } else {
+                assert!(err.is_malformed_ordinal());
+                2
+            };
+            assert_eq!(
+                err.ordinal(),
+                expected,
+                "ordinal must agree with predicate polarity for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the payload-bearing altitude: `MissingSeparator { .. }` at
+        // 0, `UnknownFace { .. }` at 1, `MalformedOrdinal { .. }` at 2
+        // regardless of the inner payload. Payload-independence sub-pin:
+        // three representative payload shapes on each arm (empty, ASCII,
+        // Unicode-carrying) all yield the same ordinal, pinning that
+        // the tag-side declaration is forbidden from consulting any
+        // payload. Guards against a swap in the match arms that would
+        // still pass the pointwise-agreement pin if the predicate
+        // methods were edited in the same drift.
+        let bad_ordinal = || "nope".parse::<usize>().unwrap_err();
+        for input in ["", "no-colon", "unicode\u{2028}no colon 仕組み"] {
+            assert_eq!(
+                ParsePartitionOrdinalError::MissingSeparator {
+                    input: input.into(),
+                }
+                .ordinal(),
+                0,
+                "MissingSeparator({input:?}) ordinal must be 0 regardless of payload",
+            );
+        }
+        for label in ["", "vault", "  realizable  "] {
+            assert_eq!(
+                ParsePartitionOrdinalError::UnknownFace {
+                    label: label.into(),
+                }
+                .ordinal(),
+                1,
+                "UnknownFace({label:?}) ordinal must be 1 regardless of payload",
+            );
+        }
+        for ordinal in ["", "not_a_number", "-1"] {
+            assert_eq!(
+                ParsePartitionOrdinalError::MalformedOrdinal {
+                    ordinal: ordinal.into(),
+                    source: bad_ordinal(),
+                }
+                .ordinal(),
+                2,
+                "MalformedOrdinal({ordinal:?}) ordinal must be 2 regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_partition_ordinal_error_ordinal_is_const_callable() {
+        // Compile-time weld — the scalar-ordinal projection is
+        // `pub const fn`, matching the shipped tag-side ordinal
+        // projections on the sibling closed-partition parse-error
+        // primitives (`ShikumiError::ordinal`,
+        // `SecretError::ordinal`, `ProofRelation::ordinal`). A
+        // `const fn ordinal_of(&ParsePartitionOrdinalError) -> usize`
+        // wrapper delegating to `err.ordinal()` pins the const-fn
+        // signature at the language level: the moment
+        // `ParsePartitionOrdinalError::ordinal` loses its `const`
+        // qualifier (a future edit that reaches for a non-const helper
+        // inside the three-arm exhaustive match — an allocator, a
+        // payload inspection on any of the three payload-bearing arms,
+        // a runtime lookup) the wrapper below fails to compile at
+        // THAT line before the drift can reach downstream const-context
+        // consumers that assumed const-ness through this projection.
+        const fn ordinal_of(err: &ParsePartitionOrdinalError) -> usize {
+            err.ordinal()
+        }
+        // The `static` rather than `const` receiver is load-bearing for
+        // the same E0493 (`destructor cannot be evaluated at
+        // compile-time`) reason the sibling
+        // `shikumi_error_ordinal_is_const_callable` names: the two
+        // `String`-only variants (`MissingSeparator`, `UnknownFace`)
+        // admit a `const` initializer via `String::new()`, but the
+        // `MalformedOrdinal` arm's `std::num::ParseIntError` payload
+        // has no const constructor on stable Rust today, so that arm
+        // is covered at runtime by the pointwise-agreement pin
+        // `parse_partition_ordinal_error_ordinal_agrees_with_predicates_pointwise`
+        // over the same construction table.
+        static MISSING_SEP_ERR: ParsePartitionOrdinalError =
+            ParsePartitionOrdinalError::MissingSeparator {
+                input: String::new(),
+            };
+        static UNKNOWN_FACE_ERR: ParsePartitionOrdinalError =
+            ParsePartitionOrdinalError::UnknownFace {
+                label: String::new(),
+            };
+        const MISSING_SEP_ORD: usize = MISSING_SEP_ERR.ordinal();
+        const UNKNOWN_FACE_ORD: usize = UNKNOWN_FACE_ERR.ordinal();
+
+        assert_eq!(MISSING_SEP_ORD, 0);
+        assert_eq!(UNKNOWN_FACE_ORD, 1);
+
+        // Runtime cross-check via the const-fn wrapper — catches a
+        // future edit that shifted the const-fn body away from the
+        // runtime-fn body on either of the two const-welded arms.
+        assert_eq!(ordinal_of(&MISSING_SEP_ERR), 0);
+        assert_eq!(ordinal_of(&UNKNOWN_FACE_ERR), 1);
+
+        // Runtime coverage of the third arm through the same const-fn
+        // wrapper — closes the three-arm coverage of the projection
+        // even though the arm's payload cannot ride a `const`
+        // receiver on stable Rust today.
+        let bad_ordinal = "nope".parse::<usize>().unwrap_err();
+        let malformed = ParsePartitionOrdinalError::MalformedOrdinal {
+            ordinal: String::new(),
+            source: bad_ordinal,
+        };
+        assert_eq!(ordinal_of(&malformed), 2);
     }
 
     #[test]
