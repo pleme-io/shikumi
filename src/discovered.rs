@@ -187,14 +187,34 @@ impl AxisLayer {
     }
 
     /// How many axes actually answered — `0` means this layer is a no-op.
+    ///
+    /// `const`-callable: the body is a single [`Vec::len`] delegation, which
+    /// is const-stable since Rust 1.79 (`vec::Vec::<T>::len` reads the
+    /// `len` field directly with no allocator call and no `T`-dependent
+    /// bound on the const path), so `let n: usize = layer.len();` in a
+    /// `const` context evaluates at compile time. Pinned by
+    /// [`axis_layer_tests::axis_layer_len_and_is_empty_are_const_callable`];
+    /// a future edit that reaches for a non-const helper on the accessor
+    /// path (a runtime `.iter().count()`, a non-const projection) fails
+    /// to compile at THAT pin before any downstream const-context
+    /// consumer of `AxisLayer::len` drifts.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether no axis answered (the fully-degenerate layer).
+    ///
+    /// `const`-callable: the body is a single [`Vec::is_empty`]
+    /// delegation, which is const-stable since Rust 1.79 (compares the
+    /// `len` field against zero — no allocator call, no `T`-dependent
+    /// bound on the const path), so `if layer.is_empty()` in a `const`
+    /// context evaluates at compile time. Pinned by the same test as
+    /// [`Self::len`]; the two const-fn lifts move together because they
+    /// share the identical const-context substrate (a borrowed
+    /// [`Vec`] projection).
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
@@ -9015,6 +9035,54 @@ mod axis_layer_tests {
         const FLEET: AxisLayer = AxisLayer::new("fleet");
         assert_eq!(PLATFORM.name(), "platform");
         assert_eq!(FLEET.name(), "fleet");
+    }
+
+    #[test]
+    fn axis_layer_len_and_is_empty_are_const_callable() {
+        // Welds the [`AxisLayer::len`] and [`AxisLayer::is_empty`]
+        // accessors at compile time: a `const _: usize = LAYER.len();`
+        // and `const _: bool = LAYER.is_empty();` binding — receiver a
+        // `static AxisLayer`, so the const eval reads it by reference
+        // rather than materializing (and then dropping) a temporary —
+        // evaluates each whole `Vec` projection in const context. A
+        // future edit that reaches for a non-const helper on the
+        // accessor path (a runtime `.iter().count()`, a non-const
+        // `.into_iter()` fold, a trait-method call whose impl is not
+        // const on the const path) fails to compile at THIS pin before
+        // any downstream const-context consumer of `AxisLayer::len` or
+        // `AxisLayer::is_empty` drifts.
+        //
+        // The receiver is `static` (not `const`): a `const` item is
+        // materialized as a value at each use site, and materializing
+        // an `AxisLayer` in const eval drops its inner `Vec` at scope
+        // end — `Vec`'s destructor is not const, so `const BARE: … =
+        // AxisLayer::new(_); const _: usize = BARE.len();` fails with
+        // `E0493` at the drop point. `static` items are never dropped
+        // and are read by reference on the const-eval path, so the
+        // `Vec` destructor never runs.
+        static BARE: AxisLayer = AxisLayer::new("bare");
+        const BARE_LEN: usize = BARE.len();
+        const BARE_IS_EMPTY: bool = BARE.is_empty();
+        // Cross-check the const-bound accessors against the runtime-side
+        // invariants an empty layer carries: the empty seed has zero
+        // entries and reports itself empty on both projections.
+        assert_eq!(BARE_LEN, 0);
+        assert!(BARE_IS_EMPTY);
+        // A second static-bound layer under a distinct name pins the
+        // same invariants — catches a future edit that inadvertently
+        // ties the const-callable body to a single receiver on the
+        // const-context path.
+        static PLATFORM: AxisLayer = AxisLayer::new("platform");
+        const PLATFORM_LEN: usize = PLATFORM.len();
+        const PLATFORM_IS_EMPTY: bool = PLATFORM.is_empty();
+        assert_eq!(PLATFORM_LEN, 0);
+        assert!(PLATFORM_IS_EMPTY);
+        // Runtime-side crosscheck: after populating the layer with one
+        // answer, the runtime-callable projection agrees with the pin
+        // above at the empty seed and diverges at the populated one.
+        let populated = AxisLayer::new("fleet").set("theme", "nord");
+        assert_eq!(populated.len(), 1);
+        assert!(!populated.is_empty());
     }
 
     #[test]
