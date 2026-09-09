@@ -137,8 +137,25 @@ pub struct AxisLayer {
 
 impl AxisLayer {
     /// A new, empty axis layer named `name` (the provenance label).
+    ///
+    /// `const`-callable — the body composes a struct-literal expression over
+    /// a `Copy` `&'static str` field and the stable-`const`
+    /// [`Vec::new`][std::vec::Vec::new] constructor
+    /// (const-stable since Rust 1.39). No allocator or non-const helper
+    /// sits on the path, so a compile-time-known layer name projects to a
+    /// compile-time-known empty [`AxisLayer`] — a `const EMPTY:
+    /// AxisLayer = AxisLayer::new("bare");` static sentinel a fleet
+    /// dashboard uses as a probe-less baseline, or a `const` fixture the
+    /// per-layer attribution welds bind against, evaluates at compile
+    /// time. Pinned by
+    /// [`axis_layer_tests::axis_layer_new_is_const_callable`]; a future
+    /// edit that reaches for a non-const helper on the constructor path
+    /// (a runtime `String::from(name)` intermediate, an allocator on the
+    /// entries seed, a non-const `Default` on `Vec`) fails to compile at
+    /// the pin before any downstream const-context consumer of
+    /// `AxisLayer::new` drifts.
     #[must_use]
-    pub fn new(name: &'static str) -> Self {
+    pub const fn new(name: &'static str) -> Self {
         Self {
             name,
             entries: Vec::new(),
@@ -8971,6 +8988,33 @@ mod axis_layer_tests {
         let specific = AxisLayer::new("platform").set("font_size", 16.0_f64);
         let c = compose_with_provenance(&[&coarse, &specific]);
         assert_eq!(c.attribution.layer_of(&["font_size"]), Some("platform"));
+    }
+
+    #[test]
+    fn axis_layer_new_is_const_callable() {
+        // Welds the [`AxisLayer::new`] constructor at compile time: a
+        // `const _: AxisLayer = AxisLayer::new(_);` binding evaluates the
+        // whole struct-literal-plus-`Vec::new` composition in const
+        // context. A future edit that reaches for a non-const helper on
+        // the constructor path (a runtime intermediate on the name
+        // parameter, an allocator on the entries seed, a non-const
+        // `Default` on `Vec`) fails to compile at THIS pin before any
+        // downstream const-context consumer of `AxisLayer::new` drifts.
+        const BARE: AxisLayer = AxisLayer::new("bare");
+        // Cross-check the const-bound layer against the runtime-side
+        // invariants an empty layer carries: name mirrors the input, no
+        // entries answered, no dict emitted.
+        assert_eq!(BARE.name(), "bare");
+        assert!(BARE.is_empty());
+        assert_eq!(BARE.len(), 0);
+        assert!(BARE.discover().is_empty());
+        // Multiple const bindings compose freely — pin two distinct
+        // compile-time-known names to catch a future edit that
+        // inadvertently ties the constructor to a single-static name.
+        const PLATFORM: AxisLayer = AxisLayer::new("platform");
+        const FLEET: AxisLayer = AxisLayer::new("fleet");
+        assert_eq!(PLATFORM.name(), "platform");
+        assert_eq!(FLEET.name(), "fleet");
     }
 
     #[test]
