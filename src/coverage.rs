@@ -61,11 +61,12 @@ impl CoverageReport {
     /// [`HintedCoverageReport::hint_count`] / [`HintedCoverageReport::is_clean`],
     /// [`EnvVarAudit::hint_count`] / [`EnvVarAudit::is_clean`], and
     /// [`ValueAudit::hint_count`] / [`ValueAudit::is_clean`] pairs on
-    /// the three peer sub-report types, so the whole
-    /// hint_count/is_clean surface across the four hinted/unhinted
-    /// sub-reports sits at one const-callability altitude and the
-    /// future [`HealthReport::hint_count`] / [`HealthReport::is_clean`]
-    /// lift composes over three const-callable primitives.
+    /// the three peer sub-report types, together with the roll-up
+    /// [`HealthReport::hint_count`] / [`HealthReport::is_clean`] pair
+    /// composed over the three sub-report const primitives — so the
+    /// whole hint_count/is_clean surface across the four hinted/
+    /// unhinted sub-reports plus the whole-report roll-up sits at one
+    /// const-callability altitude.
     #[must_use]
     pub const fn is_clean(&self) -> bool {
         self.dead_knobs.is_empty() && self.stale_entries.is_empty()
@@ -673,10 +674,11 @@ impl HintedCoverageReport {
     /// [`CoverageReport::is_clean`] (single method), [`EnvVarAudit::hint_count`]
     /// / [`EnvVarAudit::is_clean`], and [`ValueAudit::hint_count`] /
     /// [`ValueAudit::is_clean`] pairs on the sibling sub-report types,
-    /// so the whole hint_count/is_clean surface sits at one
-    /// const-callability altitude and the future
-    /// [`HealthReport::hint_count`] / [`HealthReport::is_clean`] lift
-    /// composes over three const-callable primitives.
+    /// together with the roll-up [`HealthReport::hint_count`] /
+    /// [`HealthReport::is_clean`] pair composed over the three sub-
+    /// report const primitives — so the whole hint_count/is_clean
+    /// surface across the three sub-reports plus the whole-report
+    /// roll-up sits at one const-callability altitude.
     #[must_use]
     pub const fn hint_count(&self) -> usize {
         self.dead_knobs.len() + self.stale_entries.len()
@@ -1653,8 +1655,33 @@ impl HealthReport {
     /// as one number, or for CI to enforce a monotonically-shrinking
     /// hint-count budget across a fleet of consumers without having
     /// to hand-sum the four surface hint lists.
+    ///
+    /// `const`-callable — composes over the three sub-report
+    /// `pub const fn hint_count` primitives on
+    /// [`HintedCoverageReport::hint_count`], [`ValueAudit::hint_count`],
+    /// and [`EnvVarAudit::hint_count`] (each a [`Vec::len`] read,
+    /// const-stable since Rust 1.39) with two [`usize`] additions, all
+    /// three of which sit on the const path — so a compile-time-
+    /// constructible [`HealthReport`] projects its cross-surface total
+    /// at compile time too. Welded on the empty baseline by
+    /// [`tests::health_report_hint_count_and_is_clean_are_const_callable`];
+    /// closes the const-callability lift the sibling sub-report
+    /// hint_count/is_clean pairs (`HintedCoverageReport::hint_count`
+    /// / [`HintedCoverageReport::is_clean`],
+    /// [`ValueAudit::hint_count`] / [`ValueAudit::is_clean`],
+    /// [`EnvVarAudit::hint_count`] / [`EnvVarAudit::is_clean`])
+    /// explicitly foreshadowed at their own doc-strings ("the whole
+    /// hint_count/is_clean surface sits at one const-callability
+    /// altitude and the future [`HealthReport::hint_count`] /
+    /// [`HealthReport::is_clean`] lift composes over three const-
+    /// callable primitives"). A future edit that reaches for a non-
+    /// const helper on the compose path (a `.iter().sum()` fold, a
+    /// trait-method call whose impl is not const on the const path)
+    /// fails to compile at THAT pin before any downstream const-
+    /// context consumer of `HealthReport::hint_count` /
+    /// `HealthReport::is_clean` drifts.
     #[must_use]
-    pub fn hint_count(&self) -> usize {
+    pub const fn hint_count(&self) -> usize {
         self.coverage.hint_count() + self.value.hint_count() + self.env.hint_count()
     }
 
@@ -1663,8 +1690,20 @@ impl HealthReport {
     /// consumer entries, no unknown value keys, no unknown env vars.
     /// Equivalent to `hint_count() == 0`, and delegates to it so the
     /// two peers cannot drift.
+    ///
+    /// `const`-callable — inherits from the const-fn [`Self::hint_count`]
+    /// primitive it delegates to; welded on the empty baseline by
+    /// [`tests::health_report_hint_count_and_is_clean_are_const_callable`].
+    /// Matches the sibling const-callability of the sub-report
+    /// hint_count/is_clean pairs
+    /// ([`HintedCoverageReport::hint_count`] / [`HintedCoverageReport::is_clean`],
+    /// [`ValueAudit::hint_count`] / [`ValueAudit::is_clean`],
+    /// [`EnvVarAudit::hint_count`] / [`EnvVarAudit::is_clean`]) so
+    /// the whole hint_count/is_clean surface across the whole-report +
+    /// three-sub-report cohort now sits at one const-callability
+    /// altitude.
     #[must_use]
-    pub fn is_clean(&self) -> bool {
+    pub const fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
 
@@ -10183,6 +10222,18 @@ tags: []
     static VALUE_AUDIT_EMPTY: ValueAudit = ValueAudit {
         unknown: Vec::new(),
     };
+    static HEALTH_REPORT_EMPTY: HealthReport = HealthReport {
+        coverage: HintedCoverageReport {
+            dead_knobs: Vec::new(),
+            stale_entries: Vec::new(),
+        },
+        value: ValueAudit {
+            unknown: Vec::new(),
+        },
+        env: EnvVarAudit {
+            unknown: Vec::new(),
+        },
+    };
 
     #[test]
     fn coverage_report_is_clean_is_const_callable() {
@@ -10280,6 +10331,78 @@ tags: []
             }],
         };
         assert_eq!(dirty.hint_count(), 1);
+        assert!(!dirty.is_clean());
+        assert_eq!(dirty.is_clean(), dirty.hint_count() == 0);
+    }
+
+    #[test]
+    fn health_report_hint_count_and_is_clean_are_const_callable() {
+        // Compile-time weld: `HealthReport::hint_count` composes the
+        // three sub-report `pub const fn hint_count` primitives on the
+        // const-eval path, so a compile-time-constructible
+        // `HealthReport` projects its cross-surface total at compile
+        // time too. The empty baseline — `Vec::new()` on each of the
+        // three sub-reports' Vec-shaped hint lists — is the canonical
+        // clean-report sentinel a `static` binding can name and both
+        // projections classify at compile time. The receiver is `static`
+        // (not `const`) to sidestep the E0493-drop-in-const barrier the
+        // sibling `AxisLayer::{len, is_empty}` weld documents: a `const
+        // R: HealthReport = …` binding would drop the inner Vecs at
+        // scope end, and `Vec::drop` is not const, so `const` on the
+        // receiver would fail before the projection was even called; a
+        // `static` item is read by reference on the const-eval path and
+        // is never dropped.
+        //
+        // A future edit that reaches for a non-const helper on the
+        // roll-up path (a `[coverage, value, env].iter().sum()` fold, a
+        // trait-method call whose impl is not const on the const path,
+        // an `Option`-shaped intermediate whose `.unwrap_or(0)` is not
+        // const) fails to compile at THIS pin before any downstream
+        // const-context consumer of `HealthReport::hint_count` or
+        // `HealthReport::is_clean` drifts.
+        const HINT_COUNT: usize = HEALTH_REPORT_EMPTY.hint_count();
+        const IS_CLEAN: bool = HEALTH_REPORT_EMPTY.is_clean();
+        const {
+            assert!(HINT_COUNT == 0);
+            assert!(IS_CLEAN);
+        }
+        // Runtime cross-check on the empty baseline: `is_clean() ⇔
+        // hint_count() == 0`, the delegation the const body encodes.
+        assert_eq!(
+            HEALTH_REPORT_EMPTY.is_clean(),
+            HEALTH_REPORT_EMPTY.hint_count() == 0,
+        );
+        // Runtime cross-check on a populated report — one hint in each
+        // of the three sub-reports — pinning that the const body's
+        // three-term addition agrees with the runtime-side sub-report
+        // hint counts on a non-empty case.
+        let dirty = HealthReport {
+            coverage: HintedCoverageReport {
+                dead_knobs: vec![CoverageHint {
+                    entry: "a".to_owned(),
+                    did_you_mean: None,
+                }],
+                stale_entries: Vec::new(),
+            },
+            value: ValueAudit {
+                unknown: vec![ValueKeyHint {
+                    path: "b.c".to_owned(),
+                    did_you_mean: None,
+                }],
+            },
+            env: EnvVarAudit {
+                unknown: vec![EnvVarHint {
+                    env_var: "MYAPP_XX".to_owned(),
+                    normalized_path: "xx".to_owned(),
+                    did_you_mean: None,
+                }],
+            },
+        };
+        assert_eq!(dirty.hint_count(), 3);
+        assert_eq!(
+            dirty.hint_count(),
+            dirty.coverage.hint_count() + dirty.value.hint_count() + dirty.env.hint_count(),
+        );
         assert!(!dirty.is_clean());
         assert_eq!(dirty.is_clean(), dirty.hint_count() == 0);
     }
