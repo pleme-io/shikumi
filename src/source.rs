@@ -28334,7 +28334,7 @@ pub enum EnvMetadataTag<'a> {
     Bare,
 }
 
-impl EnvMetadataTag<'_> {
+impl<'a> EnvMetadataTag<'a> {
     /// Data-free, `'static` discriminant of this [`EnvMetadataTag`]:
     /// the kind of figment env-metadata shape
     /// ([`EnvMetadataTagKind::Prefixed`] / [`EnvMetadataTagKind::Bare`])
@@ -28553,6 +28553,85 @@ impl EnvMetadataTag<'_> {
         match self {
             Self::Prefixed(_) => "prefixed",
             Self::Bare => "bare",
+        }
+    }
+
+    /// Returns the inner borrowed prefix slice if this tag is
+    /// [`Self::Prefixed`]; `None` for the payload-free [`Self::Bare`]
+    /// arm.
+    ///
+    /// The last payload-extractor peer on the borrowed figment-metadata
+    /// triple ([`FigmentSourceTag`] × [`FigmentNameTag`] ×
+    /// [`EnvMetadataTag`]): [`FigmentSourceTag::as_file_path`] /
+    /// [`FigmentSourceTag::as_custom`] cover the outer figment-Source
+    /// ternary's two payload-bearing arms, and
+    /// [`FigmentNameTag::as_format`] / [`FigmentNameTag::as_env`] cover
+    /// the outer figment-Name binary; this closes the inner env-name
+    /// sub-axis by naming the [`Self::Prefixed`] arm's `&'a str` payload
+    /// at the same altitude as those four extractors on the same
+    /// `pub const fn Self -> Option<&'a _>` idiom. Before this lift the
+    /// [`Self::Prefixed(prefix)`] payload was reachable only through an
+    /// inline `let Self::Prefixed(prefix) = tag else { … }` destructure
+    /// at every consumer site (two such destructures already live in
+    /// this crate's own test module, `env_metadata_tag_kind_samples`
+    /// call sites at lines 97964 / 98699), leaving the (payload → inner
+    /// prefix) projection nameless at the type level.
+    ///
+    /// Peer of [`ConfigSource::as_env_prefix`] on the shikumi-source
+    /// side of the env-prefix projection surface, one primitive over:
+    /// both return `Option<&str>` scoped to the env-arm of their
+    /// respective closed enums, both are `pub const fn`, and both name
+    /// the (env-value → borrowed prefix) map at the type level so
+    /// consumers reach the prefix through one method call rather than
+    /// hand-rolling the `matches!`-and-inner-payload dance at every
+    /// site.
+    ///
+    /// **Payload-independence complement.** Where [`Self::is_prefixed`]
+    /// / [`Self::is_bare`] / [`Self::kind`] / [`Self::ordinal`] /
+    /// [`Self::as_str`] all project the tag while explicitly ignoring
+    /// the inner prefix (pinned by
+    /// [`tests::env_metadata_tag_predicates_are_payload_independent`]),
+    /// this extractor is the ONE inherent projection that inspects the
+    /// payload — the type-level partition between "kind-shaped
+    /// projections that must not see the payload" and "payload-shaped
+    /// projections that must return it". A future edit that reaches
+    /// for the inner slice on any kind-shaped projection still fails
+    /// the payload-independence pin; this extractor is the sanctioned
+    /// escape hatch.
+    ///
+    /// **Boolean-agreement law** — `tag.as_prefix().is_some() ==
+    /// tag.is_prefixed()` for every [`EnvMetadataTag`] value. The
+    /// [`Option::is_some`] projection over this extractor recovers the
+    /// same binary partition [`Self::is_prefixed`] carries at the
+    /// tag-side altitude; pinned by
+    /// [`tests::env_metadata_tag_as_prefix_agrees_with_is_prefixed_pointwise`].
+    /// Mirrors the boolean-agreement law
+    /// [`ConfigSource::as_env_prefix`] carries against
+    /// [`ConfigSource::is_env`] on the sibling shikumi-source axis.
+    ///
+    /// `const`-callable — `self` is [`Copy`], the [`Self::Prefixed`]
+    /// arm's bound `&'a str` payload is [`Copy`] (no [`Drop`] at either
+    /// arm), and the returned `Option::Some` / `Option::None` variants
+    /// are const-constructible under rustc 1.94.1. Matches the
+    /// const-callability altitude every other projection on this
+    /// `impl` block already occupies ([`Self::kind`], [`Self::is_prefixed`]
+    /// / [`Self::is_bare`], [`Self::ordinal`], [`Self::as_str`], all
+    /// `pub const fn`) and the const-callability of the four peer
+    /// payload extractors on [`FigmentSourceTag`] / [`FigmentNameTag`]
+    /// pinned by
+    /// [`tests::figment_tag_payload_extractors_are_const_callable`].
+    /// Consumers wanting a compile-time-known inner prefix for a
+    /// compile-time-known tag (a `const PREFIX: Option<&str> =
+    /// TAG.as_prefix()` sentinel routed through a static lookup, an
+    /// attestation manifest carrying per-tag inner prefix at compile
+    /// time) route through this extractor without dropping off the
+    /// const-context edge. Pinned by
+    /// [`tests::env_metadata_tag_as_prefix_is_const_callable`].
+    #[must_use]
+    pub const fn as_prefix(self) -> Option<&'a str> {
+        match self {
+            Self::Prefixed(prefix) => Some(prefix),
+            Self::Bare => None,
         }
     }
 }
@@ -102594,6 +102673,110 @@ mod tests {
         }
         assert_eq!(label_of(PREFIXED), "prefixed");
         assert_eq!(label_of(BARE), "bare");
+    }
+
+    #[test]
+    fn env_metadata_tag_as_prefix_returns_inner_prefix_for_prefixed_arm() {
+        // Concrete-position pin on the (Prefixed(prefix) → Some(prefix))
+        // payload projection: every payload-bearing shape produced by
+        // `strip_env_metadata_name` yields `Some(&prefix)` byte-identical
+        // to the borrowed slice the tag carries. Bare — the payload-free
+        // arm — yields `None`. Guards against a future edit that reaches
+        // for a substring, a case fold, or an allocation inside the
+        // extractor: any deviation from a verbatim slice return would
+        // fail the byte-equality checks below.
+        for (name, expected_kind) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("every canonical sample must classify");
+            match expected_kind {
+                EnvMetadataTagKind::Prefixed => {
+                    let EnvMetadataTag::Prefixed(prefix) = tag else {
+                        panic!("kind Prefixed must reach the payload arm for {tag:?}");
+                    };
+                    assert_eq!(
+                        tag.as_prefix(),
+                        Some(prefix),
+                        "as_prefix must return the inner borrowed prefix verbatim for {tag:?}",
+                    );
+                }
+                EnvMetadataTagKind::Bare => {
+                    assert_eq!(
+                        tag.as_prefix(),
+                        None,
+                        "as_prefix on Bare must return None for {tag:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_as_prefix_agrees_with_is_prefixed_pointwise() {
+        // Boolean-agreement law:
+        // `tag.as_prefix().is_some() == tag.is_prefixed()` across every
+        // canonical shape (and pointwise on every payload variant of the
+        // Prefixed arm the sample table admits). The two projections
+        // now cover the "did this tag carry a prefix payload?" question
+        // on the extractor side and the "is this the Prefixed variant?"
+        // question on the predicate side — the pin refuses any future
+        // drift that would let one answer split from the other. Peer of
+        // the shikumi-source-side `is_env`/`as_env_prefix` boolean-
+        // agreement discipline pinned pointwise by
+        // `as_env_prefix_returns_prefix_for_env_only`.
+        for prefix in [
+            "MYAPP_",
+            "TOBIRA_",
+            "AyaTsuri_",
+            "X_",
+            "VERY_LONG_PREFIX_UNDERSCORE_",
+        ] {
+            let tag = EnvMetadataTag::Prefixed(prefix);
+            assert_eq!(tag.as_prefix().is_some(), tag.is_prefixed());
+            assert_eq!(tag.as_prefix(), Some(prefix));
+        }
+        let bare = EnvMetadataTag::Bare;
+        assert_eq!(bare.as_prefix().is_some(), bare.is_prefixed());
+        assert_eq!(bare.as_prefix(), None);
+    }
+
+    #[test]
+    fn env_metadata_tag_as_prefix_is_const_callable() {
+        // Compile-time weld — the tag-side payload extractor is
+        // `pub const fn`, matching the const-callability altitude of
+        // the four peer payload extractors on `FigmentSourceTag` /
+        // `FigmentNameTag` pinned by
+        // `figment_tag_payload_extractors_are_const_callable`, and the
+        // rest of the projections on this `impl` block (`Self::kind`,
+        // `Self::is_prefixed` / `Self::is_bare`, `Self::ordinal`,
+        // `Self::as_str`, all already `pub const fn`).
+        //
+        // Assigning through a `const fn` wrapper delegating to
+        // `tag.as_prefix()` pins the const-fn signature at the language
+        // level: the moment the extractor loses `const` (a future edit
+        // that reaches for a non-const helper — `.to_owned()`,
+        // `.to_ascii_uppercase()`, an allocator, a runtime lookup on
+        // the borrowed slice) the wrapper fails to compile at THAT line
+        // before the drift can reach downstream const-context consumers
+        // that assumed const-ness through this projection (a `const`
+        // per-tag inner-prefix lookup table, a `static` attestation-
+        // manifest entry carrying a compile-time-known tag's prefix).
+        //
+        // Both arms weld directly from const positions: `Bare` is
+        // data-free, and `Prefixed(&'static str)` accepts a string
+        // literal in const context.
+        const fn prefix_of<'a>(tag: EnvMetadataTag<'a>) -> Option<&'a str> {
+            tag.as_prefix()
+        }
+        const PREFIXED: EnvMetadataTag<'static> = EnvMetadataTag::Prefixed("MYAPP_");
+        const BARE: EnvMetadataTag<'static> = EnvMetadataTag::Bare;
+        const PREFIXED_AS_PREFIX: Option<&str> = PREFIXED.as_prefix();
+        const BARE_AS_PREFIX: Option<&str> = BARE.as_prefix();
+        const {
+            assert!(matches!(PREFIXED_AS_PREFIX, Some(_)));
+            assert!(BARE_AS_PREFIX.is_none());
+        }
+        assert_eq!(prefix_of(PREFIXED), Some("MYAPP_"));
+        assert_eq!(prefix_of(BARE), None);
     }
 
     #[test]
