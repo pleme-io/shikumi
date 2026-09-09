@@ -444,9 +444,48 @@ pub fn axis_ordinal<A: ClosedAxis>(value: A) -> usize {
 /// cube-cover dashboards that render rows keyed by ordinal index
 /// recover the row's typescape cell through one named helper rather
 /// than re-deriving the slice-`get` per renderer.
+///
+/// # `const`-callable
+///
+/// The helper is `const fn`: its body is a bounds-checked slice index
+/// against the associated-const `A::ALL` projection, which is a
+/// `&'static [Self]` `const` on every implementor. Both the slice
+/// [`<[T]>::len`] method the guard composes (const-stable since
+/// Rust 1.39) and the checked slice index it feeds sit on the
+/// const-eval path, and the `A: Copy` bound the trait already carries
+/// makes the `A::ALL[ordinal]` place expression a compile-time move.
+/// Consumers wanting a compile-time-selected typed cell — a static
+/// dispatch table's `i`-th entry recovered as its typed value, a
+/// `const`-selected fixture reading a cell by ordinal, a manifest
+/// loader that materializes a compile-time-known typescape cell —
+/// route through the projection under `const` without a runtime
+/// `let` binding, closing the trait-generic const-time sibling gap
+/// on the ordinal-to-value dual of [`axis_ordinal`] (which cannot
+/// itself be `const` today — its body composes
+/// [`Iterator::position`] plus a [`PartialEq::eq`] trait-method call,
+/// neither of which is const-stable). Pinned across every
+/// [`ClosedAxis`] implementor by
+/// [`tests::axis_at_is_const_callable_for_every_closed_axis_implementor`].
+/// Idiom-peer of [`axis_cardinality::<A>()`][axis_cardinality]'s own
+/// `const fn` lift (commit `ad27ac1`) on the trait-generic
+/// free-function `ClosedAxis` receiver surface, and of every per-
+/// axis inherent `Self::ordinal` const-fn already shipped on the
+/// primitives — extended here to the forward-map dual on the same
+/// receiver surface.
 #[must_use]
-pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
-    A::ALL.get(ordinal).copied()
+pub const fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
+    // Bounds-check first so the fallback branch stays a const-eval
+    // path; the `A::ALL[ordinal]` slice index below never panics
+    // once this guard succeeds, and the `A: Copy` bound the trait
+    // carries makes the place-expression read a compile-time move.
+    // Equivalent to the previous body `A::ALL.get(ordinal).copied()`
+    // — pinned pointwise against that formulation by the trait-
+    // uniform `axis_at_*` round-trip and pointwise-agreement tests.
+    if ordinal < A::ALL.len() {
+        Some(A::ALL[ordinal])
+    } else {
+        None
+    }
 }
 
 /// Dense, declaration-ordered per-cell observation tally over a
@@ -18996,6 +19035,113 @@ mod tests {
                 assert!(
                     N >= 1,
                     "{}: axis_cardinality must be non-empty",
+                    stringify!($ty),
+                );
+            }};
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    // ---- axis_at is `const fn`: the trait-generic compile-time
+    // ---- ordinal-to-value lookup over every ClosedAxis implementor ----
+    //
+    // `axis_at::<A>(ordinal)` is `pub const fn`; its body is a
+    // bounds-checked slice index against the associated-const
+    // `A::ALL` projection, and both the slice `<[T]>::len` inherent
+    // (`slice::len` since Rust 1.39) and the checked slice index it
+    // feeds sit on the const-eval path. The `A: Copy` bound the
+    // trait already carries makes the `A::ALL[ordinal]` place
+    // expression a compile-time move — the whole helper composes at
+    // compile time under rustc 1.94.1 for every ClosedAxis
+    // implementor uniformly.
+    //
+    // The trait-uniform const-context weld routes every ClosedAxis
+    // implementor's ordinal-to-value lookup through the projection
+    // in const position — a drop of `const fn` on `axis_at` fails
+    // the `const CELL` welds below to compile at THAT line before
+    // the drift can reach downstream consumers that assumed const-
+    // ness through the projection. A twenty-first primitive or
+    // sixth product cube landing extends
+    // `for_each_closed_axis_implementor!` in lockstep and inherits
+    // the const-callable pin — one line at the macro site, zero
+    // code churn here.
+    //
+    // Closes the trait-generic const-time forward-map sibling of
+    // the `axis_cardinality<A>()` lift (commit `ad27ac1`): the two
+    // free-function projections on the `ClosedAxis` receiver — the
+    // cardinality sizer and the ordinal-to-value lookup — now both
+    // sit at one const-callability altitude. The reverse map
+    // `axis_ordinal<A>(value)` cannot follow today (its body
+    // composes `Iterator::position` plus a `PartialEq::eq` trait-
+    // method call, neither const-stable); an audit of that
+    // asymmetry is captured on the `axis_ordinal` doc-string.
+
+    #[test]
+    fn axis_at_is_const_callable_for_every_closed_axis_implementor() {
+        // Compile-time weld: the (ordinal → Option<value>)
+        // projection is `const`-callable for every ClosedAxis
+        // implementor. Idiom-peer of
+        // `axis_cardinality_is_const_callable_for_every_closed_axis_implementor`
+        // on the forward-map surface, and of every per-axis
+        // `_ordinal_is_const_callable` seal already shipped on the
+        // primitive-side inherent projections, lifted here to the
+        // trait-generic free-function forward-map projection.
+        macro_rules! check {
+            ($ty:ident) => {{
+                // One `const` binding per implementor routes the
+                // helper through const-context evaluation on the
+                // first cell of the axis (ordinal 0 — every closed
+                // axis has at least one variant, so this is always
+                // in-range). The moment `axis_at` loses its
+                // const-ness this `const` weld fails to compile at
+                // THAT line.
+                const FIRST: Option<$ty> = axis_at::<$ty>(0);
+
+                // Same weld on the past-the-end boundary — pins the
+                // partiality branch is also const-evaluable, so a
+                // future edit that folded the `None` arm through a
+                // non-const helper fails here rather than only on
+                // the in-range arm above.
+                const PAST_END: Option<$ty> = axis_at::<$ty>(<$ty as ClosedAxis>::ALL.len());
+
+                // Cross-check the two const-context welds against
+                // the runtime-side calls — pins the const path
+                // agrees with the runtime path on both branches,
+                // catching a body drift that only hits one side.
+                assert_eq!(
+                    FIRST,
+                    axis_at::<$ty>(0),
+                    "{}: const-context axis_at(0) must equal runtime call",
+                    stringify!($ty),
+                );
+                assert_eq!(
+                    PAST_END,
+                    axis_at::<$ty>(<$ty as ClosedAxis>::ALL.len()),
+                    "{}: const-context axis_at(cardinality) must equal runtime call",
+                    stringify!($ty),
+                );
+
+                // In-range arm cross-check: `FIRST` recovers the
+                // first `ALL` cell as `Some(_)`, and its inner
+                // ordinal round-trips to 0 through `axis_ordinal`
+                // — pins the const body's slice-index arm reaches
+                // the same declaration-order surface every peer
+                // helper (`axis_iter`, `axis_ordinal`) reaches.
+                assert_eq!(
+                    FIRST,
+                    Some(<$ty as ClosedAxis>::ALL[0]),
+                    "{}: const-context axis_at(0) must equal Some(<A>::ALL[0])",
+                    stringify!($ty),
+                );
+
+                // Past-the-end pin: the partiality branch fires at
+                // exactly ordinal == cardinality, matching the
+                // trait-uniform `axis_at_returns_none_on_out_of_range_*`
+                // law shipped on the runtime-side callers.
+                assert_eq!(
+                    PAST_END,
+                    None,
+                    "{}: const-context axis_at(cardinality) must be None",
                     stringify!($ty),
                 );
             }};
