@@ -2088,6 +2088,87 @@ impl FormatCoordinates {
     pub const fn is_realizable(self) -> bool {
         self.format_or_none().is_some()
     }
+
+    /// Dense zero-based position of the cell in [`Self::ALL`] — the
+    /// scalar-ordinal projection on the `format × provenance` product
+    /// cube, computed algebraically from the two axis ordinals in the
+    /// lexicographic (format outer, provenance inner) layout
+    /// [`Self::ALL`] carries.
+    ///
+    /// First inherent `ordinal` on a [`crate::ProductCube`] implementor
+    /// — every previous landing of the ordinal-projection idiom
+    /// ([`Format::ordinal`], [`FormatProvenance::ordinal`],
+    /// [`crate::ConfigSourceKind::ordinal`],
+    /// [`crate::FigmentSourceKind::ordinal`],
+    /// [`crate::ShikumiErrorKind::ordinal`],
+    /// [`crate::FieldPathLocalization::ordinal`],
+    /// [`crate::AttributionRule::ordinal`], and every other closed-enum
+    /// axis primitive on the typescape) targeted a `#[non_exhaustive]`
+    /// enum whose body was an exhaustive `match self { ... }` returning
+    /// the dense position of each variant. Product cubes carry no
+    /// variant-level tag to match on: the position of a
+    /// [`FormatCoordinates`] cell in [`Self::ALL`] is determined by the
+    /// two field ordinals ([`Format::ordinal`] on `format` outermost,
+    /// [`FormatProvenance::ordinal`] on `provenance` innermost) via the
+    /// row-major layout formula the sibling
+    /// [`tests::format_coordinates_all_iterates_in_lexicographic_order`]
+    /// already pins. Naming the projection at the primitive's own
+    /// altitude here closes the ordinal-projection idiom onto the
+    /// product-cube half of the typescape, aligning
+    /// [`FormatCoordinates`] with the discipline every closed-enum
+    /// axis primitive already carries.
+    ///
+    /// **Formula.** [`Format::ordinal`] on `format` outer, times the
+    /// innermost-axis cardinality [`FormatProvenance::ALL`]`.len()`,
+    /// plus [`FormatProvenance::ordinal`] on `provenance` inner — the
+    /// row-major linearization the sibling declaration-order pins
+    /// already assert on [`Self::ALL`]. Depends only on the two axis
+    /// ordinals plus the innermost-axis cardinality, so a future axis
+    /// growth on either sibling extends the ordinal image in lockstep
+    /// with the [`Self::ALL`] cardinality growth: adding a sixth
+    /// [`Format`] variant grows the range from `[0, 10)` to `[0, 12)`;
+    /// adding a third [`FormatProvenance`] variant would grow it from
+    /// `[0, 10)` to `[0, 15)`, and the formula's cardinality factor
+    /// would pick up the new divisor automatically. No arm-list literal
+    /// to keep in lockstep — the projection is derived from the two
+    /// sibling primitives' own inherent projections.
+    ///
+    /// **Pointwise agreement with [`crate::axis_ordinal`]** —
+    /// `cell.ordinal() == crate::axis_ordinal(cell)` for every
+    /// `cell: FormatCoordinates`. The inherent projection agrees with
+    /// the trait-uniform free-function projection over the whole cube;
+    /// pinned by
+    /// [`tests::format_coordinates_ordinal_agrees_with_axis_ordinal_pointwise`].
+    /// The inherent seam ships const-callability (via the two sibling
+    /// const-fn ordinal projections it composes) that
+    /// [`crate::axis_ordinal`] does not (it delegates to non-const
+    /// `Iterator::position` over a generic `A: ClosedAxis` trait bound
+    /// with `PartialEq::eq` in the predicate closure, both non-const on
+    /// today's toolchain); this method carries the const-callable seam
+    /// on the product-cube axis, and the pointwise-agreement pin keeps
+    /// the two seams substitutable.
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of the two sibling axis ordinals it composes
+    /// ([`Format::ordinal`], [`FormatProvenance::ordinal`], both
+    /// `const fn` since their respective landings) and the const-stable
+    /// slice-`len` on [`FormatProvenance::ALL`]. Consumers wanting a
+    /// compile-time-selected per-cell dispatch table (e.g. a
+    /// `const [T; 10]` weight vector or per-cell label array keyed by
+    /// ordinal) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::format_coordinates_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::format_coordinates_ordinal_reuses_declaration_order`])
+    /// guards the ten concrete positions so a future reorder of the
+    /// two sibling axes' declarations (or of [`Self::ALL`] itself)
+    /// shifts both the algebraic formula and the constant-slice layout
+    /// in lockstep.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        self.format.ordinal() * FormatProvenance::ALL.len() + self.provenance.ordinal()
+    }
 }
 
 impl crate::ClosedAxis for Format {
@@ -9653,6 +9734,219 @@ mod tests {
                 expected.is_some(),
                 "is_realizable must equal format_or_none(...).is_some() on {cell:?}",
             );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_ordinal_agrees_with_axis_ordinal_pointwise() {
+        // The inherent const-fn `FormatCoordinates::ordinal` and the
+        // trait-uniform free-function projection `crate::axis_ordinal`
+        // are two spellings of the same closed-axis position lookup;
+        // pin them pointwise across every cell of the product cube so
+        // a future edit to either the inherent algebraic formula (the
+        // `self.format.ordinal() * FormatProvenance::ALL.len() +
+        // self.provenance.ordinal()` composition) or the
+        // `FormatCoordinates::ALL` declaration order cannot silently
+        // drift them apart. The inherent seam ships const-callability
+        // that `axis_ordinal` does not (it delegates to non-const
+        // `Iterator::position` over a generic `A: ClosedAxis` trait
+        // bound with `PartialEq::eq` in the predicate closure);
+        // this test guards the equal-answer contract that keeps the
+        // two seams substitutable across every cell of the cube. The
+        // first landing of the trait-uniform-agreement pin on a
+        // `ProductCube` implementor — idiom-peer of
+        // `format_ordinal_agrees_with_axis_ordinal_pointwise` on the
+        // sibling closed-enum `Format` axis and every other closed-
+        // enum axis primitive's own `_ordinal_agrees_with_axis_ordinal_pointwise`
+        // pin, lifted here onto the (`format × provenance`) product-
+        // cube surface.
+        for &cell in FormatCoordinates::ALL {
+            assert_eq!(
+                cell.ordinal(),
+                crate::axis_ordinal(cell),
+                "inherent ordinal must agree with axis_ordinal for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the algebraic formula delivers the ten
+        // declared cell positions verbatim, in strictly ascending
+        // lexicographic (format outer, provenance inner) order matching
+        // the `FormatCoordinates::ALL` layout — Yaml/FigmentBuiltin at
+        // 0, Yaml/ShikumiBuilt at 1, Toml/FigmentBuiltin at 2, …,
+        // Blue/ShikumiBuilt at 9. A future edit that shifts either
+        // sibling axis's declaration order without shifting
+        // `FormatCoordinates::ALL` in lockstep fails here first, before
+        // the drift can reach the `agrees_with_axis_ordinal` pointwise
+        // pin (which reads the same declaration order out of
+        // `FormatCoordinates::ALL` on both sides). Idiom-peer of
+        // `format_ordinal_reuses_declaration_order` on the sibling
+        // closed-enum `Format` axis, extended here from the five-cell
+        // enum axis onto the ten-cell product cube.
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }
+            .ordinal(),
+            0,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }
+            .ordinal(),
+            1,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Toml,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }
+            .ordinal(),
+            2,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Toml,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }
+            .ordinal(),
+            3,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Lisp,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }
+            .ordinal(),
+            4,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Lisp,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }
+            .ordinal(),
+            5,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Nix,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }
+            .ordinal(),
+            6,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Nix,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }
+            .ordinal(),
+            7,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Blue,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }
+            .ordinal(),
+            8,
+        );
+        assert_eq!(
+            FormatCoordinates {
+                format: Format::Blue,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }
+            .ordinal(),
+            9,
+        );
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `FormatCoordinates::ALL` at every declared cell. A
+        // future edit that shifts the algebraic formula without
+        // shifting the slice literal in lockstep (or vice versa) fails
+        // here on the first drifted position.
+        for (index, &cell) in FormatCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                cell.ordinal(),
+                index,
+                "ordinal must reuse FormatCoordinates::ALL index for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_ordinal_is_const_callable() {
+        // Compile-time weld: the (cell → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of the two
+        // sibling axis ordinals it composes (`Format::ordinal` and
+        // `FormatProvenance::ordinal`, both `const fn` since their
+        // respective landings) and the const-stable slice-`len` on
+        // `FormatProvenance::ALL`. A drop of the `const` qualifier on
+        // `FormatCoordinates::ordinal` — or on either sibling axis
+        // ordinal it composes — fails this test to compile. Idiom-peer
+        // of `format_ordinal_is_const_callable` and
+        // `format_provenance_ordinal_is_const_callable` on the two
+        // sibling closed-enum axes, and of every other
+        // `_ordinal_is_const_callable` seal on ordinal-carrying
+        // closed-axis primitives in the crate — lifted here from the
+        // closed-enum altitude onto the product-cube altitude.
+        //
+        // Ten `const` bindings — one per `FormatCoordinates::ALL` cell —
+        // route each cell through the const-fn projection in const
+        // position. The moment `FormatCoordinates::ordinal` (or one of
+        // the two projections it composes) loses its const-ness, one of
+        // the ten `const` welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const CELLS: &[FormatCoordinates] = FormatCoordinates::ALL;
+        const ORD_YAML_FB: usize = CELLS[0].ordinal();
+        const ORD_YAML_SB: usize = CELLS[1].ordinal();
+        const ORD_TOML_FB: usize = CELLS[2].ordinal();
+        const ORD_TOML_SB: usize = CELLS[3].ordinal();
+        const ORD_LISP_FB: usize = CELLS[4].ordinal();
+        const ORD_LISP_SB: usize = CELLS[5].ordinal();
+        const ORD_NIX_FB: usize = CELLS[6].ordinal();
+        const ORD_NIX_SB: usize = CELLS[7].ordinal();
+        const ORD_BLUE_FB: usize = CELLS[8].ordinal();
+        const ORD_BLUE_SB: usize = CELLS[9].ordinal();
+
+        assert_eq!(ORD_YAML_FB, 0);
+        assert_eq!(ORD_YAML_SB, 1);
+        assert_eq!(ORD_TOML_FB, 2);
+        assert_eq!(ORD_TOML_SB, 3);
+        assert_eq!(ORD_LISP_FB, 4);
+        assert_eq!(ORD_LISP_SB, 5);
+        assert_eq!(ORD_NIX_FB, 6);
+        assert_eq!(ORD_NIX_SB, 7);
+        assert_eq!(ORD_BLUE_FB, 8);
+        assert_eq!(ORD_BLUE_SB, 9);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every cell in `FormatCoordinates::ALL` to the runtime-side
+        // `cell.ordinal()` call — the const-context weld only exercises
+        // the ten cells named at const-binding sites (which today
+        // equals the full cube), but the runtime pin threads the full
+        // closed slice through the same projection to catch a future
+        // cell landing whose const-context weld was forgotten upstream.
+        for (cell, expected) in [
+            (CELLS[0], ORD_YAML_FB),
+            (CELLS[1], ORD_YAML_SB),
+            (CELLS[2], ORD_TOML_FB),
+            (CELLS[3], ORD_TOML_SB),
+            (CELLS[4], ORD_LISP_FB),
+            (CELLS[5], ORD_LISP_SB),
+            (CELLS[6], ORD_NIX_FB),
+            (CELLS[7], ORD_NIX_SB),
+            (CELLS[8], ORD_BLUE_FB),
+            (CELLS[9], ORD_BLUE_SB),
+        ] {
+            assert_eq!(cell.ordinal(), expected, "cell {cell:?}");
         }
     }
 
