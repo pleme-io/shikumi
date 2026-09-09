@@ -596,6 +596,69 @@ impl OutputFormat {
         matches!(self, Self::Json)
     }
 
+    /// The `Self::ALL` declaration-order ordinal of this emission
+    /// format — `0` for [`Self::Yaml`], `1` for [`Self::Json`]. The
+    /// scalar-position peer of the shipped scalar-boolean predicates
+    /// [`Self::is_yaml`] / [`Self::is_json`] on the same closed
+    /// (yaml × json) emission-format axis, matching the position each
+    /// variant occupies in [`Self::ALL`] (pinned by
+    /// [`tests::output_format_all_enumerates_every_variant_in_declaration_order`]).
+    ///
+    /// [`OutputFormat`] stays off the [`crate::ClosedAxis`] trait
+    /// surface today — it is the CLI operator-facing emission tag one
+    /// altitude down from the shikumi-owned parser axis
+    /// [`crate::discovery::Format`], and the trait impl lives on the
+    /// substrate-side parser primitive rather than on the operator-
+    /// facing subset. The `Iterator::position(|&v| v == self)`
+    /// spelling is therefore what agrees with this ordinal on `ALL`
+    /// (not [`crate::axis_ordinal`], which is bound on the trait
+    /// surface). This inherent match-based projection ships const-
+    /// callability that `Iterator::position` does not; a caller
+    /// wanting the emission-axis ordinal in a `const` context — a
+    /// compile-time-selected per-emission dispatch table (e.g. a
+    /// per-emission diagnostic-weight vector), a `const` per-emission
+    /// bitset, an attestation manifest whose per-emission slots are
+    /// initialized under `const` — reaches it here rather than through
+    /// the runtime linear scan.
+    ///
+    /// Idiom-peer of [`TierArg::ordinal`] on the sibling five-cell CLI
+    /// operator-facing tier tag (commit `303f78b`) — the direct
+    /// non-`ClosedAxis` sibling in this same module — and of every
+    /// other `_ordinal` seal on the closed-axis primitives across the
+    /// crate: same `match`-on-`Self` shape, same declaration-order-
+    /// agreement discipline, same const-callability contract. First
+    /// landing of the ordinal-projection idiom on the CLI-side
+    /// emission-format axis, promoting the closed-binary
+    /// [`OutputFormat`] primitive onto the scalar-ordinal altitude
+    /// that already carries its sibling boolean predicates
+    /// ([`Self::is_yaml`] / [`Self::is_json`]) and slice constants
+    /// ([`Self::YAML`] / [`Self::JSON`]).
+    ///
+    /// A future third emitter variant (e.g. a hypothetical `Toml`
+    /// class the primitive's own doc-comment already anticipates as a
+    /// deliberate narrowing today) lands here as a third arm at
+    /// ordinal `2` in lockstep with an [`Self::ALL`] extension; the
+    /// pointwise-agreement pin refuses a silent landing under any
+    /// mismatch between the match arms and [`Self::ALL`] order.
+    ///
+    /// The three agreement laws are pinned by:
+    /// - [`tests::output_format_ordinal_agrees_with_all_position_pointwise`]
+    ///   — pointwise agreement with `Self::ALL.iter().position(…)`
+    ///   over every variant.
+    /// - [`tests::output_format_ordinal_reuses_declaration_order`] —
+    ///   concrete-position pin (`Yaml` at 0, `Json` at 1) and index-
+    ///   agreement across `Self::ALL`.
+    /// - [`tests::output_format_ordinal_is_const_callable`] —
+    ///   const-context weld matching every peer `pub const fn` on the
+    ///   `impl OutputFormat` block.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Yaml => 0,
+            Self::Json => 1,
+        }
+    }
+
     /// The single YAML [`OutputFormat`] variant — [`Self::Yaml`] — in
     /// the SAME relative declaration order it occupies in
     /// [`Self::ALL`], forming one pole of the (yaml × json) closed-
@@ -2316,6 +2379,116 @@ mod tests {
         assert_eq!(YAML_LEN, 1);
         assert_eq!(JSON_LEN, 1);
         assert_eq!(YAML_LEN + JSON_LEN, ALL_LEN);
+    }
+
+    // ─── OutputFormat::ordinal — scalar-ordinal projection on the
+    // ─── CLI operator-facing emission-format tag ───────────────────
+
+    #[test]
+    fn output_format_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `OutputFormat::ordinal` and the
+        // linear-scan projection `Self::ALL.iter().position(|&v| v == self)`
+        // are two spellings of the same closed-slice position lookup;
+        // pin them pointwise across every variant so a future edit to
+        // either the inherent match or the `OutputFormat::ALL`
+        // declaration order cannot silently drift them apart. The
+        // inherent seam ships const-callability that the linear-scan
+        // seam does not (`Iterator::position` is not const on stable
+        // Rust today); this test guards the equal-answer contract that
+        // keeps the two seams substitutable at every non-const consumer
+        // site.
+        //
+        // Idiom-peer of `tier_arg_ordinal_agrees_with_all_position_pointwise`
+        // on the sibling five-cell CLI operator-facing tier tag in
+        // this same module, and of every other
+        // `_ordinal_agrees_with_axis_ordinal_pointwise` seal on the
+        // closed-axis primitives across the crate — same shape,
+        // applied here to the closed-binary emission-format axis. The
+        // CLI operator surface stays off the `ClosedAxis` trait bound
+        // (which lives on the shikumi-side parser primitive
+        // `crate::discovery::Format`, one altitude down), so the
+        // agreement law targets `Self::ALL` position directly rather
+        // than `crate::axis_ordinal`.
+        for &fmt in OutputFormat::ALL {
+            let expected = OutputFormat::ALL
+                .iter()
+                .position(|&v| v == fmt)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                fmt.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {fmt:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the two
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Yaml → Json). A future swap in the match
+        // arms that would still pass the `agrees_with_all_position`
+        // pointwise pin (which reads the same declaration order out of
+        // `OutputFormat::ALL` on both sides) fails here first. Idiom-
+        // peer of `format_provenance_ordinal_reuses_declaration_order`
+        // on the sibling two-cell provenance axis and of
+        // `secret_ref_shape_ordinal_reuses_declaration_order` on the
+        // sibling two-cell extraction-shape axis.
+        assert_eq!(OutputFormat::Yaml.ordinal(), 0);
+        assert_eq!(OutputFormat::Json.ordinal(), 1);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `OutputFormat::ALL` at every declared position. A
+        // future edit that shifts the match arms without shifting the
+        // slice literal in lockstep fails here on the first drifted
+        // position.
+        for (index, &fmt) in OutputFormat::ALL.iter().enumerate() {
+            assert_eq!(
+                fmt.ordinal(),
+                index,
+                "ordinal must reuse OutputFormat::ALL index for {fmt:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_ordinal_is_const_callable() {
+        // Compile-time weld: the (fmt → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl OutputFormat` block (`is_yaml`, `is_json`, both
+        // `pub const fn`) and every peer slice constant
+        // (`YAML`, `JSON`, both `pub const &'static [Self]`). A drop
+        // of the `const` qualifier on `OutputFormat::ordinal` fails
+        // this test to compile at one of the two const bindings below
+        // before the drift can reach downstream const-context
+        // consumers.
+        //
+        // Two `const` bindings — one per `OutputFormat` variant —
+        // route each payload-free variant through the const-fn
+        // projection in const position. The moment
+        // `OutputFormat::ordinal` loses its const-ness one of the two
+        // `const` welds below fails to compile at THAT line before
+        // any downstream drift. Idiom-peer of
+        // `tier_arg_ordinal_is_const_callable` on the sibling CLI
+        // tier tag and of every other `_ordinal_is_const_callable`
+        // seal on the closed-axis primitives across the crate.
+        const YAML: usize = OutputFormat::Yaml.ordinal();
+        const JSON: usize = OutputFormat::Json.ordinal();
+
+        assert_eq!(YAML, 0);
+        assert_eq!(JSON, 1);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `OutputFormat::ALL` to the runtime-side
+        // `fmt.ordinal()` call — the const-context weld only exercises
+        // the two variants named at const-binding sites, but the
+        // runtime pin threads the full closed list through the same
+        // projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (fmt, expected) in [(OutputFormat::Yaml, YAML), (OutputFormat::Json, JSON)] {
+            assert_eq!(fmt.ordinal(), expected, "emission {fmt:?}");
+        }
     }
 
     // ─── ConfigShowError sibling predicates — ternary-partition arms
