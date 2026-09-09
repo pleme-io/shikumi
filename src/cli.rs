@@ -247,6 +247,73 @@ impl TierArg {
         )
     }
 
+    /// The scalar ordinal of this arg in [`Self::ALL`] — the dense
+    /// `0..TierArg::ALL.len()` index every consumer that keys
+    /// per-arg data by position (a `const [T; N]` dispatch table
+    /// sized to [`Self::ALL`] with `TierArg::ALL.len()` = 5, a
+    /// per-arg bitset, a compile-time-materialized column layout
+    /// keyed by ordinal) previously reached through
+    /// `Self::ALL.iter().position(|&v| v == self)` — a linear scan
+    /// through the closed slice, non-const, allocation-free but not
+    /// `const`-callable.
+    ///
+    /// Body is a five-arm exhaustive match returning `0..=4`, matching
+    /// the declaration order carried by [`Self::ALL`] and the
+    /// (bare × discovered × default × custom × env) canonical
+    /// operator-facing tier order. The pointwise-agreement pin
+    /// ([`tests::tier_arg_ordinal_agrees_with_all_position_pointwise`])
+    /// keeps the inherent match and the linear-scan projection
+    /// substitutable at every consumer site so a future edit to
+    /// either the match or the [`Self::ALL`] declaration order cannot
+    /// silently drift them apart. Since [`TierArg`] is not a
+    /// [`crate::ClosedAxis`] primitive (the CLI operator surface
+    /// sibling of the substrate-side [`crate::ConfigTierKind`], which
+    /// itself owns the trait impl), the agreement law is pinned
+    /// against [`Self::ALL`] position directly rather than through
+    /// [`crate::axis_ordinal`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of every peer variant-tag projection already
+    /// carried on this `impl TierArg` block ([`Self::is_bare`],
+    /// [`Self::is_discovered`], [`Self::is_default`],
+    /// [`Self::is_custom`], [`Self::is_env`], [`Self::is_computed`],
+    /// all `pub const fn`). Consumers wanting a compile-time-selected
+    /// per-arg dispatch table (e.g. a `const [usize; TierArg::ALL.len()]`
+    /// weight vector keyed by ordinal routing operator-supplied
+    /// overlays under a different weight than computed-defaults tiers,
+    /// or a `const` per-arg label indexed by ordinal, or a
+    /// compile-time shell-completion column layout keyed by tier
+    /// position) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::tier_arg_ordinal_is_const_callable`].
+    ///
+    /// The declaration-order-preservation pin
+    /// ([`tests::tier_arg_ordinal_reuses_declaration_order`]) guards
+    /// the concrete positions so a future reorder of the variant
+    /// declarations shifts both the match and [`Self::ALL`] in
+    /// lockstep.
+    ///
+    /// Idiom-peer of [`crate::tiered::ConfigTierKind::ordinal`] on
+    /// the crate-side four-way tier-kind axis at the shipped
+    /// scalar-ordinal altitude — same scalar projection, one cell
+    /// wider (the CLI-only [`Self::Env`] arm at ordinal `4`),
+    /// applied here to the CLI-side operator-facing tier tag. Peer
+    /// of [`crate::coverage::HintSurface::ordinal`] on the sibling
+    /// four-cell non-`ClosedAxis` axis and of
+    /// [`crate::cube::SupportCardinalityClass::ordinal`] /
+    /// [`crate::cube::ModalityClass::ordinal`] on the peer five-cell
+    /// non-`ClosedAxis` axes.
+    #[must_use]
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Bare => 0,
+            Self::Discovered => 1,
+            Self::Default => 2,
+            Self::Custom => 3,
+            Self::Env => 4,
+        }
+    }
+
     /// The four COMPUTED-DEFAULTS [`TierArg`] variants —
     /// [`Self::Bare`] (zero-opinion floor), [`Self::Discovered`]
     /// (runtime auto-detect), [`Self::Default`] (curated app
@@ -1171,6 +1238,122 @@ mod tests {
             TierArg::ALL.len(),
             "compound-polarity partition must cover TierArg::ALL exhaustively",
         );
+    }
+
+    // ─── TierArg::ordinal — scalar-ordinal projection on the
+    // ─── CLI operator-facing tier tag ──────────────────────────────
+
+    #[test]
+    fn tier_arg_ordinal_agrees_with_all_position_pointwise() {
+        // The inherent const-fn `TierArg::ordinal` and the linear-scan
+        // projection `Self::ALL.iter().position(|&v| v == self)` are
+        // two spellings of the same closed-slice position lookup; pin
+        // them pointwise across every variant so a future edit to
+        // either the inherent match or the `TierArg::ALL` declaration
+        // order cannot silently drift them apart. The inherent seam
+        // ships const-callability that the linear-scan seam does not
+        // (`Iterator::position` is not const); this test guards the
+        // equal-answer contract that keeps the two seams substitutable
+        // at every non-const consumer site.
+        //
+        // Idiom-peer of every `_ordinal_agrees_with_axis_ordinal_pointwise`
+        // seal in the crate applied here at the non-`ClosedAxis`
+        // altitude — the CLI operator surface is the sibling of the
+        // substrate-side `ConfigTierKind`, which itself owns the trait
+        // impl and the `crate::axis_ordinal` routing, so `TierArg` (a
+        // CLI-side operator-facing tier tag one cell wider than its
+        // crate-side peer) stays off the trait surface and the
+        // pointwise-agreement law targets `Self::ALL` position directly
+        // rather than `crate::axis_ordinal`. Direct sibling to
+        // `hint_surface_ordinal_agrees_with_all_position_pointwise` on
+        // the peer four-cell non-`ClosedAxis` axis and to
+        // `support_cardinality_class_ordinal_agrees_with_all_position_pointwise`
+        // on the peer five-cell non-`ClosedAxis` cube-classifier axis.
+        for &arg in TierArg::ALL {
+            let expected = TierArg::ALL
+                .iter()
+                .position(|&v| v == arg)
+                .expect("Self::ALL must contain every variant");
+            assert_eq!(
+                arg.ordinal(),
+                expected,
+                "inherent ordinal must agree with Self::ALL position for {arg:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_ordinal_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // declared positions verbatim, in strictly ascending
+        // declaration order (Bare → Discovered → Default → Custom →
+        // Env). A future swap in the match arms that would still pass
+        // the `agrees_with_all_position` pointwise pin (which reads the
+        // same declaration order out of `TierArg::ALL` on both sides)
+        // fails here first.
+        assert_eq!(TierArg::Bare.ordinal(), 0);
+        assert_eq!(TierArg::Discovered.ordinal(), 1);
+        assert_eq!(TierArg::Default.ordinal(), 2);
+        assert_eq!(TierArg::Custom.ordinal(), 3);
+        assert_eq!(TierArg::Env.ordinal(), 4);
+
+        // Second independent witness: the inherent ordinal equals the
+        // index in `TierArg::ALL` at every declared position. A future
+        // edit that shifts the match arms without shifting the slice
+        // literal in lockstep fails here on the first drifted position.
+        for (index, &arg) in TierArg::ALL.iter().enumerate() {
+            assert_eq!(
+                arg.ordinal(),
+                index,
+                "ordinal must reuse TierArg::ALL index for {arg:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_ordinal_is_const_callable() {
+        // Compile-time weld: the (arg → ordinal) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the `impl TierArg`
+        // block (`is_bare`, `is_discovered`, `is_default`, `is_custom`,
+        // `is_env`, `is_computed`, all `pub const fn`). A drop of the
+        // `const` qualifier on `TierArg::ordinal` fails this test to
+        // compile.
+        //
+        // Five `const` bindings — one per `TierArg` variant — route
+        // each payload-free variant through the const-fn projection in
+        // const position. The moment `TierArg::ordinal` loses its
+        // const-ness one of the five `const` welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const BARE: usize = TierArg::Bare.ordinal();
+        const DISCOVERED: usize = TierArg::Discovered.ordinal();
+        const DEFAULT: usize = TierArg::Default.ordinal();
+        const CUSTOM: usize = TierArg::Custom.ordinal();
+        const ENV: usize = TierArg::Env.ordinal();
+
+        assert_eq!(BARE, 0);
+        assert_eq!(DISCOVERED, 1);
+        assert_eq!(DEFAULT, 2);
+        assert_eq!(CUSTOM, 3);
+        assert_eq!(ENV, 4);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `TierArg::ALL` to the runtime-side
+        // `arg.ordinal()` call — the const-context weld only exercises
+        // the five variants named at const-binding sites, but the
+        // runtime pin threads the full closed list through the same
+        // projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (arg, expected) in [
+            (TierArg::Bare, BARE),
+            (TierArg::Discovered, DISCOVERED),
+            (TierArg::Default, DEFAULT),
+            (TierArg::Custom, CUSTOM),
+            (TierArg::Env, ENV),
+        ] {
+            assert_eq!(arg.ordinal(), expected, "arg {arg:?}");
+        }
     }
 
     // ── TierArg COMPUTED / CUSTOM compound-polarity slice constants
