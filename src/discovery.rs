@@ -2293,6 +2293,71 @@ impl ParseFormatCoordinatesError {
     pub const fn is_unknown_provenance(&self) -> bool {
         matches!(self, Self::UnknownProvenance { .. })
     }
+
+    /// Dense declaration-order ordinal of this rejection —
+    /// `MissingSeparator { .. } → 0`, `UnknownFormat { .. } → 1`,
+    /// `UnknownProvenance { .. } → 2`.
+    ///
+    /// The scalar-ordinal peer of the shipped scalar-boolean predicates
+    /// [`Self::is_missing_separator`] / [`Self::is_unknown_format`] /
+    /// [`Self::is_unknown_provenance`] on the same closed ternary
+    /// partition of the `<FormatCoordinates as FromStr>` parse
+    /// rejection modes. A consumer wanting a dense `usize` slot for
+    /// the rejection tag — a per-arm retry-budget slot keyed by
+    /// ordinal, a per-arm rendering-column layout indexed by ordinal,
+    /// a `const [T; 3]` per-arm lookup table for operator-facing
+    /// suggestion strings, a `const` per-arm structured-log field-code
+    /// lookup — matches this projection at ONE site instead of routing
+    /// through `Self::ALL.iter().position(...)` (there is no
+    /// `Self::ALL` for a payload-bearing parse-error enum) or the
+    /// non-const `Iterator::position` walk over the three sibling
+    /// predicates.
+    ///
+    /// Payload-independence: the answer is the same for every
+    /// `MissingSeparator { input }` regardless of the inner `String`
+    /// input, for every `UnknownFormat { label }` regardless of the
+    /// inner `String` label, and for every
+    /// `UnknownProvenance { label }` regardless of the inner `String`
+    /// label — the tag-side declaration is forbidden from consulting
+    /// any payload.
+    ///
+    /// `const`-callable — a compile-time-known
+    /// [`ParseFormatCoordinatesError`] projects its ordinal at compile
+    /// time too. The three-arm exhaustive match binds nothing on any
+    /// arm (`Self::MissingSeparator { .. }`, `Self::UnknownFormat { .. }`,
+    /// `Self::UnknownProvenance { .. }`), so no `Drop`-carrying payload
+    /// is moved through the projection at any const-eval point; the
+    /// projection reads only the enum discriminant and returns a
+    /// [`Copy`] [`usize`]. Same const-fn eligibility argument as the
+    /// three sibling tag-side predicates (const since their landing
+    /// commit `dcc8cb3`).
+    ///
+    /// **Idiom-peer of the tag-side scalar-ordinal closures on other
+    /// closed-partition parse-error primitives.** Direct methodological
+    /// analogue of [`crate::cube::ParsePartitionOrdinalError::ordinal`]
+    /// (commit `60410db`) on the three-cell parse-error kind axis of
+    /// `<PartitionOrdinal as FromStr>` — same three-arm direct-match
+    /// discipline at the payload-bearing altitude, same closed-partition
+    /// contract, same const-callability weld — and of
+    /// [`crate::ShikumiError::ordinal`] on the seven-cell error-kind
+    /// axis, [`crate::secret_client::SecretError::ordinal`] on the
+    /// five-cell secret-error axis, and
+    /// [`crate::hotswap::ProofRelation::ordinal`] on the quinary
+    /// proof-relation kind axis. Pointwise agreement with the three
+    /// sibling predicates is pinned by
+    /// [`tests::parse_format_coordinates_error_ordinal_agrees_with_predicates_pointwise`];
+    /// concrete positions and payload-independence by
+    /// [`tests::parse_format_coordinates_error_ordinal_reuses_declaration_order`];
+    /// const-callability weld by
+    /// [`tests::parse_format_coordinates_error_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::MissingSeparator { .. } => 0,
+            Self::UnknownFormat { .. } => 1,
+            Self::UnknownProvenance { .. } => 2,
+        }
+    }
 }
 
 impl FromStr for FormatCoordinates {
@@ -10338,6 +10403,165 @@ mod tests {
             err.is_unknown_provenance(),
             "expected is_unknown_provenance for {err:?}"
         );
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_ordinal_agrees_with_predicates_pointwise() {
+        // Pointwise agreement between the scalar-ordinal projection and
+        // the shipped scalar-boolean predicate trio on the same closed
+        // ternary partition: for every constructed
+        // `ParseFormatCoordinatesError` value, `err.ordinal()` equals
+        // the unique dense position (0/1/2) whose sibling predicate
+        // holds. Catches drift between the inherent match and the
+        // three sibling predicates on the first variant where they
+        // disagree. Peer of
+        // `parse_partition_ordinal_error_ordinal_agrees_with_predicates_pointwise`
+        // on `crate::cube::ParsePartitionOrdinalError` (commit
+        // `60410db`) at the sibling three-cell payload-bearing
+        // parse-error altitude.
+        let errors = [
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: String::new(),
+            },
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: "no-colon-here-at-all".into(),
+            },
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: String::new(),
+            },
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: "vault".into(),
+            },
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: String::new(),
+            },
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: "upstream-figment".into(),
+            },
+        ];
+        for err in &errors {
+            let expected = if err.is_missing_separator() {
+                0
+            } else if err.is_unknown_format() {
+                1
+            } else {
+                assert!(err.is_unknown_provenance());
+                2
+            };
+            assert_eq!(
+                err.ordinal(),
+                expected,
+                "ordinal must agree with predicate polarity for {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_ordinal_reuses_declaration_order() {
+        // Concrete-position pin on the (variant → ordinal) projection
+        // at the payload-bearing altitude: `MissingSeparator { .. }`
+        // at 0, `UnknownFormat { .. }` at 1, `UnknownProvenance { .. }`
+        // at 2, regardless of the inner payload. Payload-independence
+        // sub-pin: three representative payload shapes on each arm
+        // (empty, ASCII, Unicode-carrying) all yield the same ordinal,
+        // pinning that the tag-side declaration is forbidden from
+        // consulting any payload. Guards against a swap in the match
+        // arms that would still pass the pointwise-agreement pin if
+        // the predicate methods were edited in the same drift. Peer of
+        // `parse_partition_ordinal_error_ordinal_reuses_declaration_order`
+        // on `crate::cube::ParsePartitionOrdinalError`.
+        for input in ["", "no-colon", "unicode\u{2028}no colon 仕組み"] {
+            assert_eq!(
+                ParseFormatCoordinatesError::MissingSeparator {
+                    input: input.into(),
+                }
+                .ordinal(),
+                0,
+                "MissingSeparator({input:?}) ordinal must be 0 regardless of payload",
+            );
+        }
+        for label in ["", "vault", "  YAML  "] {
+            assert_eq!(
+                ParseFormatCoordinatesError::UnknownFormat {
+                    label: label.into(),
+                }
+                .ordinal(),
+                1,
+                "UnknownFormat({label:?}) ordinal must be 1 regardless of payload",
+            );
+        }
+        for label in ["", "upstream-figment", "figment-builtin:extra"] {
+            assert_eq!(
+                ParseFormatCoordinatesError::UnknownProvenance {
+                    label: label.into(),
+                }
+                .ordinal(),
+                2,
+                "UnknownProvenance({label:?}) ordinal must be 2 regardless of payload",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_coordinates_error_ordinal_is_const_callable() {
+        // Compile-time weld — the scalar-ordinal projection is
+        // `pub const fn`, matching the shipped tag-side ordinal
+        // projections on the sibling closed-partition parse-error
+        // primitives (`crate::cube::ParsePartitionOrdinalError::ordinal`,
+        // `crate::ShikumiError::ordinal`,
+        // `crate::secret_client::SecretError::ordinal`,
+        // `crate::hotswap::ProofRelation::ordinal`). A
+        // `const fn ordinal_of(&ParseFormatCoordinatesError) -> usize`
+        // wrapper delegating to `err.ordinal()` pins the const-fn
+        // signature at the language level: the moment
+        // `ParseFormatCoordinatesError::ordinal` loses its `const`
+        // qualifier (a future edit that reaches for a non-const helper
+        // inside the three-arm exhaustive match — an allocator, a
+        // payload inspection on any of the three payload-bearing arms,
+        // a runtime lookup) the wrapper below fails to compile at
+        // THAT line before the drift can reach downstream const-context
+        // consumers that assumed const-ness through this projection.
+        const fn ordinal_of(err: &ParseFormatCoordinatesError) -> usize {
+            err.ordinal()
+        }
+        // All three arms admit a `const` receiver here — unlike
+        // `ParsePartitionOrdinalError::MalformedOrdinal` (which
+        // carries a `std::num::ParseIntError` payload with no const
+        // constructor on stable Rust today), every arm of
+        // `ParseFormatCoordinatesError` carries only a `String`, and
+        // `String::new()` is `const` since Rust 1.39, so the whole
+        // three-arm closure is const-welded at the receiver, not just
+        // the projection. The `static` (rather than `const`) receiver
+        // sidesteps the same E0493 (`destructor cannot be evaluated
+        // at compile-time`) constraint the sibling
+        // `parse_partition_ordinal_error_ordinal_is_const_callable`
+        // names.
+        static MISSING_SEP_ERR: ParseFormatCoordinatesError =
+            ParseFormatCoordinatesError::MissingSeparator {
+                input: String::new(),
+            };
+        static UNKNOWN_FMT_ERR: ParseFormatCoordinatesError =
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: String::new(),
+            };
+        static UNKNOWN_PROV_ERR: ParseFormatCoordinatesError =
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: String::new(),
+            };
+        const MISSING_SEP_ORD: usize = MISSING_SEP_ERR.ordinal();
+        const UNKNOWN_FMT_ORD: usize = UNKNOWN_FMT_ERR.ordinal();
+        const UNKNOWN_PROV_ORD: usize = UNKNOWN_PROV_ERR.ordinal();
+
+        assert_eq!(MISSING_SEP_ORD, 0);
+        assert_eq!(UNKNOWN_FMT_ORD, 1);
+        assert_eq!(UNKNOWN_PROV_ORD, 2);
+
+        // Runtime cross-check via the const-fn wrapper — catches a
+        // future edit that shifted the const-fn body away from the
+        // runtime-fn body on any of the three const-welded arms.
+        assert_eq!(ordinal_of(&MISSING_SEP_ERR), 0);
+        assert_eq!(ordinal_of(&UNKNOWN_FMT_ERR), 1);
+        assert_eq!(ordinal_of(&UNKNOWN_PROV_ERR), 2);
     }
 
     #[test]
