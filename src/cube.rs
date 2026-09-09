@@ -21083,6 +21083,106 @@ mod tests {
         for_each_closed_axis_label_implementor!(check);
     }
 
+    // ---- inherent `as_str` agrees with the trait `<Self as ClosedAxisLabel>::as_str`
+    // ---- across every closed-axis label implementor ----
+    //
+    // Every one of the twenty [`ClosedAxisLabel`] implementors listed in
+    // `for_each_closed_axis_label_implementor!` carries a hand-authored
+    // `pub const fn as_str(self) -> &'static str` (or `(&self)`) inherent
+    // projection on its own `impl` block (`Format::as_str`,
+    // `FormatProvenance::as_str`, …, `DiffLineKind::as_str`; twenty of
+    // them in total) AND a trait `impl ClosedAxisLabel::as_str` that
+    // today delegates to that inherent via `Self::as_str(self)`. Each
+    // per-axis inherent has its own per-axis `_yields_canonical_lowercase_names`
+    // pin and its own `_round_trips_via_from_canonical_str` pin — but no
+    // single trait-uniform site pinned that the two projections (the
+    // inherent-side match-based `Self::as_str` and the trait-generic
+    // `<Self as ClosedAxisLabel>::as_str`) agree pointwise across every
+    // implementor at once. Every existing trait-uniform label pin above
+    // reaches `as_str` through the `value.as_str()` method-call syntax,
+    // which method-resolution routes to the inherent (auto-ref on the
+    // `Copy` bound handles the `(self)` vs `(&self)` receiver split at
+    // the same call site), so the trait-side projection is never
+    // observed by any of them.
+    //
+    // A future implementor whose `impl ClosedAxisLabel::as_str` drifts
+    // from the delegation shape — the trait body hard-coding a
+    // per-arm `match self` that omits or misspells one arm's label
+    // relative to the inherent — would slip past every existing
+    // trait-uniform label pin (the round-trip / distinct / nonempty /
+    // reject-empty pins all read the inherent through method
+    // resolution) but fail this trait-uniform pin, because it explicitly
+    // routes through both projections at the same call site and
+    // compares them pointwise. Uses method-call syntax `v.as_str()` on
+    // the inherent side so the pin covers both receiver shapes
+    // uniformly — the payload-free primitives with
+    // `pub const fn as_str(self) -> &'static str` and the primitives
+    // that carry `pub const fn as_str(&self) -> &'static str` for a
+    // `&self` receiver (`ConfigSourceKind`, `ConfigTierKind`,
+    // `FigmentSourceKind::as_str` all sign `&self`) — auto-ref on the
+    // `Copy` bound the `ClosedAxis` super-trait pins routes both to
+    // the same method call. A twenty-first `ClosedAxisLabel`
+    // implementor landing extends `for_each_closed_axis_label_implementor!`
+    // and inherits this pin in lockstep — one line at the macro site,
+    // zero code churn here.
+
+    #[test]
+    fn inherent_as_str_matches_trait_as_str_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                for value in axis_iter::<$ty>() {
+                    let inherent: &'static str = value.as_str();
+                    let trait_side: &'static str =
+                        <$ty as $crate::ClosedAxisLabel>::as_str(value);
+                    assert_eq!(
+                        inherent, trait_side,
+                        "{}::{:?}: inherent as_str ({:?}) must equal <{0} as ClosedAxisLabel>::as_str ({:?})",
+                        stringify!($ty),
+                        value,
+                        inherent,
+                        trait_side,
+                    );
+                }
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn inherent_as_str_image_equals_trait_as_str_image_for_every_closed_axis_label_implementor() {
+        // Second, independent-shape witness of the same invariant: the
+        // image of the inherent `as_str` over `axis_iter::<A>()` equals
+        // the image of the trait `<A as ClosedAxisLabel>::as_str` over
+        // the same iterator, as a set. Where the pointwise pin above
+        // catches drift between a single inherent arm and its
+        // corresponding trait arm at the first divergent value, this
+        // pin catches a permutation shape — the trait impl produces
+        // the same set of labels as the inherent but assigns them to
+        // different variants (a swap of two arms on the trait side
+        // that keeps every label in the union) — which the pointwise
+        // pin also fires on, but the set-equality pin fires on
+        // *without* any specific pointwise witness, so the two pins
+        // compose as complementary evidence of the same invariant on
+        // disjoint failure shapes.
+        use std::collections::HashSet;
+        macro_rules! check {
+            ($ty:ident) => {{
+                let inherent_image: HashSet<&'static str> =
+                    axis_iter::<$ty>().map(|v| v.as_str()).collect();
+                let trait_image: HashSet<&'static str> = axis_iter::<$ty>()
+                    .map(|v| <$ty as $crate::ClosedAxisLabel>::as_str(v))
+                    .collect();
+                assert_eq!(
+                    inherent_image,
+                    trait_image,
+                    "{}: inherent as_str image over axis_iter must equal trait as_str image",
+                    stringify!($ty),
+                );
+            }};
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
     #[test]
     fn for_each_closed_axis_label_implementor_macro_covers_twenty_implementors() {
         // Pin that the macro expands to exactly twenty arms — the
