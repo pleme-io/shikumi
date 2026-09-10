@@ -2952,6 +2952,139 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(_, v)| v.source_kind())
     }
 
+    /// Lexicographically smallest leaf's [`ConfigTierKind`] precedence
+    /// ordinal, or [`None`] if this map is empty — the ordinal-axis
+    /// scalar sub-projection of the tier-axis bound [`Self::first_tier`]
+    /// on the same underlying [`BTreeMap`], one altitude further inland
+    /// on the [`ConfigTierKind::ordinal`] const-fn projection every
+    /// [`ConfigTierKind`] carries. The bound-side peer of
+    /// [`Self::tier_ordinals`] on the walker altitude that
+    /// [`Self::tier_ordinals`] projects across the full per-leaf stream.
+    ///
+    /// Pointwise-equal to `self.first_tier().map(ConfigTierKind::ordinal)`,
+    /// to `self.first_provenance().map(Provenance::tier_ordinal)`, and to
+    /// `self.tier_ordinals().next()` on every input by construction — the
+    /// body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the
+    /// [`Provenance::tier_ordinal`] const-fn accessor on the retained
+    /// value. Callers already reaching for `Some(...)` through
+    /// `self.first_tier().map(|k| k.ordinal())` or the deeper
+    /// `self.first_provenance().map(|p| p.tier_ordinal())` — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte of the lex-lower-bound leaf's tier without the
+    /// [`ConfigTierKind`] tag, an operator-facing dashboard sorting the
+    /// extremal leaves by precedence position, or a compile-time
+    /// attestation hasher folding just the two boundary ordinals —
+    /// were pulling a `ConfigTierKind` or `&Provenance` borrow at the
+    /// extremal leaf just to project one `usize` scalar off it; this
+    /// seam collapses that to one direct ordinal-axis probe on the
+    /// primitive altitude, matching the same one-hop shape
+    /// [`Self::tier_ordinals`] gives on the walker side.
+    ///
+    /// Returns owned [`usize`] matching the [`ProvenanceMapTierOrdinals`]
+    /// item shape ([`Copy`], no borrow) with no allocation. The
+    /// ordinal-altitude peer of [`Self::first_tier`] one altitude down
+    /// on the tier axis, and the bound-side peer of
+    /// [`Self::tier_ordinals`] on the walker altitude — together they
+    /// close the ordinal-axis sub-projection of the tier-axis bound at
+    /// the primitive altitude.
+    #[must_use]
+    pub fn first_tier_ordinal(&self) -> Option<usize> {
+        self.inner.first_key_value().map(|(_, v)| v.tier_ordinal())
+    }
+
+    /// Lexicographically largest leaf's [`ConfigTierKind`] precedence
+    /// ordinal, or [`None`] if this map is empty — the ordinal-axis
+    /// scalar sub-projection sibling of [`Self::first_tier_ordinal`] on
+    /// the upper-bound side that [`Self::first_tier_ordinal`] closes at
+    /// the lower bound.
+    ///
+    /// Pointwise-equal to `self.last_tier().map(ConfigTierKind::ordinal)`,
+    /// to `self.last_provenance().map(Provenance::tier_ordinal)`, and to
+    /// `self.tier_ordinals().next_back()` on every input by construction
+    /// — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the
+    /// [`Provenance::tier_ordinal`] const-fn accessor on the retained
+    /// value, so the two disagree only under a `BTreeMap` bug. Returns
+    /// the same owned [`usize`] shape as [`Self::first_tier_ordinal`] on
+    /// the ordinal axis.
+    #[must_use]
+    pub fn last_tier_ordinal(&self) -> Option<usize> {
+        self.inner.last_key_value().map(|(_, v)| v.tier_ordinal())
+    }
+
+    /// Lexicographically smallest leaf's [`crate::ConfigSourceKind`]
+    /// precedence ordinal, or [`None`] if this map is empty — the
+    /// ordinal-axis scalar sub-projection of the source-kind-axis bound
+    /// [`Self::first_source_kind`] on the source-kind coordinate of the
+    /// atomic `(tier, source)` pair every leaf's [`Provenance`] carries.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_source_kind().map(crate::ConfigSourceKind::ordinal)`,
+    /// to `self.first_provenance().map(Provenance::source_kind_ordinal)`,
+    /// and to `self.source_kind_ordinals().next()` on every input by
+    /// construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// [`Provenance::source_kind_ordinal`] const-fn accessor on the
+    /// retained value. Callers already reaching for `Some(...)` through
+    /// `self.first_source_kind().map(|k| k.ordinal())` or the deeper
+    /// `self.first_provenance().map(|p| p.source_kind_ordinal())` — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte of the lex-lower-bound leaf's source-kind without the
+    /// [`crate::ConfigSourceKind`] tag, a per-source-kind boundary
+    /// telemetry counter comparing just the first and last leaves'
+    /// ordinals, or a compile-time attestation hasher folding just the
+    /// two boundary source-kind ordinals — were pulling a
+    /// [`crate::ConfigSourceKind`] or `&Provenance` borrow at the
+    /// extremal leaf just to project one `usize` scalar off it; this
+    /// seam collapses that to one direct ordinal-axis probe on the
+    /// primitive altitude, matching the same one-hop shape
+    /// [`Self::source_kind_ordinals`] gives on the walker side.
+    ///
+    /// Returns owned [`usize`] matching the
+    /// [`ProvenanceMapSourceKindOrdinals`] item shape ([`Copy`], no
+    /// borrow) with no allocation. The ordinal-axis peer of
+    /// [`Self::first_tier_ordinal`] on the sibling closed-axis coordinate
+    /// of the atomic `(tier, source)` pair — the two together close the
+    /// ordinal-axis scalar sub-projection of the value-axis bound on
+    /// BOTH closed-axis coordinates at the primitive altitude, matching
+    /// the closure the tier / source-kind pair
+    /// ([`Self::first_tier`] / [`Self::first_source_kind`]) gives one
+    /// altitude out on the axis-kind coordinate of the same pair.
+    #[must_use]
+    pub fn first_source_kind_ordinal(&self) -> Option<usize> {
+        self.inner
+            .first_key_value()
+            .map(|(_, v)| v.source_kind_ordinal())
+    }
+
+    /// Lexicographically largest leaf's [`crate::ConfigSourceKind`]
+    /// precedence ordinal, or [`None`] if this map is empty — the
+    /// ordinal-axis scalar sub-projection sibling of
+    /// [`Self::first_source_kind_ordinal`] on the upper-bound side that
+    /// [`Self::first_source_kind_ordinal`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_source_kind().map(crate::ConfigSourceKind::ordinal)`,
+    /// to `self.last_provenance().map(Provenance::source_kind_ordinal)`,
+    /// and to `self.source_kind_ordinals().next_back()` on every input
+    /// by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// [`Provenance::source_kind_ordinal`] const-fn accessor on the
+    /// retained value, so the two disagree only under a `BTreeMap` bug.
+    /// Returns the same owned [`usize`] shape as
+    /// [`Self::first_source_kind_ordinal`] on the ordinal axis.
+    #[must_use]
+    pub fn last_source_kind_ordinal(&self) -> Option<usize> {
+        self.inner
+            .last_key_value()
+            .map(|(_, v)| v.source_kind_ordinal())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -53612,6 +53745,244 @@ mod progressive_tests {
         assert_eq!(
             one.first_source_kind(),
             Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    // -------- ProvenanceMap::first_tier_ordinal / ::last_tier_ordinal ordinal-axis scalar sub-projection --------
+
+    #[test]
+    fn provenance_map_first_tier_ordinal_agrees_with_first_tier_ordinal_projection_pointwise() {
+        // The ordinal-axis scalar sub-projection of the tier-axis bound
+        // yields the same `usize` as
+        // `first_tier().map(ConfigTierKind::ordinal)`, projecting the
+        // extremal leaf's tier one altitude further inland from
+        // `ConfigTierKind` to its precedence ordinal. Catches a future
+        // edit that reroutes `first_tier_ordinal()` through
+        // `last_key_value()` (upper-bound cursor by mistake) or projects
+        // through the wrong `Provenance` accessor (source_kind_ordinal
+        // instead of tier_ordinal).
+        let r = Prog::resolve_progressive();
+        let via_first_to: Option<usize> = r.provenance().first_tier_ordinal();
+        let via_first_tier: Option<usize> =
+            r.provenance().first_tier().map(ConfigTierKind::ordinal);
+        assert_eq!(via_first_to, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_tier_ordinal_agrees_with_last_tier_ordinal_projection_pointwise() {
+        // Peer of the `first_tier_ordinal` pin above on the upper-bound
+        // side. Pointwise-equal to
+        // `last_tier().map(ConfigTierKind::ordinal)`.
+        let r = Prog::resolve_progressive();
+        let via_last_to: Option<usize> = r.provenance().last_tier_ordinal();
+        let via_last_tier: Option<usize> = r.provenance().last_tier().map(ConfigTierKind::ordinal);
+        assert_eq!(via_last_to, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_tier_ordinal_agrees_with_first_provenance_tier_ordinal_projection_pointwise()
+     {
+        // Deeper cross-seam agreement: the same ordinal is recoverable
+        // through the two-hop chain `first_provenance().map(|p|
+        // p.tier_ordinal())` on the value-axis bound. Catches a future
+        // edit that decouples the ordinal from the const-fn tier_ordinal
+        // accessor on `Provenance`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().first_tier_ordinal();
+        let via_prov: Option<usize> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::tier_ordinal);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_tier_ordinal_agrees_with_last_provenance_tier_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_tier_ordinal` two-hop pin above on the
+        // upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().last_tier_ordinal();
+        let via_prov: Option<usize> = r
+            .provenance()
+            .last_provenance()
+            .map(Provenance::tier_ordinal);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_tier_ordinal_agrees_with_tier_ordinals_next_pointwise() {
+        // The BTreeMap-idiom
+        // `first_key_value().map(|(_, v)| v.tier_ordinal()) == tier_ordinals().next()`
+        // law lifted to the ProvenanceMap surface on the ordinal walker
+        // seam. Catches a future edit that reroutes
+        // `first_tier_ordinal` through a walker with the wrong ordering
+        // discipline (unsorted HashMap projection, `into_values` reverse
+        // walk).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().first_tier_ordinal();
+        let via_walker: Option<usize> = r.provenance().tier_ordinals().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_last_tier_ordinal_agrees_with_tier_ordinals_next_back_pointwise() {
+        // Peer of the `first_tier_ordinal` walker pin above on the upper
+        // bound via `DoubleEndedIterator::next_back`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().last_tier_ordinal();
+        let via_walker: Option<usize> = r.provenance().tier_ordinals().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_tier_ordinal_none_on_empty_map() {
+        // Empty case: `Option<usize>` is `None` at both bounds, matching
+        // the `first_provenance` / `first_tier` / `first_source_kind`
+        // empty behavior on the same underlying BTreeMap. Closes the
+        // empty-case pattern on the ordinal-axis sub-projection at the
+        // primitive altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_tier_ordinal().is_none());
+        assert!(empty.last_tier_ordinal().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_tier_ordinal_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's tier_ordinal is both the
+        // lex-lower-bound and lex-upper-bound projection, so
+        // `first_tier_ordinal()` and `last_tier_ordinal()` name the same
+        // `usize`. Ground-truth pin: the sole entry is
+        // `Provenance::bare()`, whose tier is `ConfigTierKind::Bare` at
+        // ordinal position 0 on the precedence axis.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_tier_ordinal(), one.last_tier_ordinal());
+        assert_eq!(
+            one.first_tier_ordinal(),
+            Some(ConfigTierKind::Bare.ordinal())
+        );
+    }
+
+    // -------- ProvenanceMap::first_source_kind_ordinal / ::last_source_kind_ordinal ordinal-axis scalar sub-projection --------
+
+    #[test]
+    fn provenance_map_first_source_kind_ordinal_agrees_with_first_source_kind_ordinal_projection_pointwise()
+     {
+        // The ordinal-axis scalar sub-projection of the source-kind-axis
+        // bound yields the same `usize` as
+        // `first_source_kind().map(ConfigSourceKind::ordinal)`,
+        // projecting the extremal leaf's source-kind one altitude
+        // further inland from `ConfigSourceKind` to its precedence
+        // ordinal. Catches a future edit that reroutes
+        // `first_source_kind_ordinal()` through `last_key_value()`
+        // (upper-bound cursor by mistake) or projects through the wrong
+        // `Provenance` accessor (tier_ordinal instead of
+        // source_kind_ordinal).
+        let r = Prog::resolve_progressive();
+        let via_first_sko: Option<usize> = r.provenance().first_source_kind_ordinal();
+        let via_first_sk: Option<usize> = r
+            .provenance()
+            .first_source_kind()
+            .map(crate::ConfigSourceKind::ordinal);
+        assert_eq!(via_first_sko, via_first_sk);
+    }
+
+    #[test]
+    fn provenance_map_last_source_kind_ordinal_agrees_with_last_source_kind_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` pin above on the
+        // upper-bound side. Pointwise-equal to
+        // `last_source_kind().map(ConfigSourceKind::ordinal)`.
+        let r = Prog::resolve_progressive();
+        let via_last_sko: Option<usize> = r.provenance().last_source_kind_ordinal();
+        let via_last_sk: Option<usize> = r
+            .provenance()
+            .last_source_kind()
+            .map(crate::ConfigSourceKind::ordinal);
+        assert_eq!(via_last_sko, via_last_sk);
+    }
+
+    #[test]
+    fn provenance_map_first_source_kind_ordinal_agrees_with_first_provenance_source_kind_ordinal_projection_pointwise()
+     {
+        // Deeper cross-seam agreement: the same ordinal is recoverable
+        // through the two-hop chain
+        // `first_provenance().map(|p| p.source_kind_ordinal())` on the
+        // value-axis bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().first_source_kind_ordinal();
+        let via_prov: Option<usize> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::source_kind_ordinal);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_source_kind_ordinal_agrees_with_last_provenance_source_kind_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` two-hop pin above on
+        // the upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().last_source_kind_ordinal();
+        let via_prov: Option<usize> = r
+            .provenance()
+            .last_provenance()
+            .map(Provenance::source_kind_ordinal);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_source_kind_ordinal_agrees_with_source_kind_ordinals_next_pointwise() {
+        // The BTreeMap-idiom
+        // `first_key_value().map(|(_, v)| v.source_kind_ordinal()) == source_kind_ordinals().next()`
+        // law lifted to the ProvenanceMap surface on the ordinal walker
+        // seam.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().first_source_kind_ordinal();
+        let via_walker: Option<usize> = r.provenance().source_kind_ordinals().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_last_source_kind_ordinal_agrees_with_source_kind_ordinals_next_back_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` walker pin above on
+        // the upper bound via `DoubleEndedIterator::next_back`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.provenance().last_source_kind_ordinal();
+        let via_walker: Option<usize> = r.provenance().source_kind_ordinals().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_source_kind_ordinal_none_on_empty_map() {
+        // Empty case: `Option<usize>` is `None` at both bounds, matching
+        // the sibling `first_tier_ordinal` empty behavior on the same
+        // underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_source_kind_ordinal().is_none());
+        assert!(empty.last_source_kind_ordinal().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_source_kind_ordinal_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's source_kind_ordinal is both
+        // the lex-lower-bound and lex-upper-bound projection. Ground-truth
+        // pin: `Provenance::bare()` carries `ConfigSource::Defaults`,
+        // whose source-kind is `ConfigSourceKind::Defaults` — its
+        // precedence ordinal on the `ConfigSourceKind` closed axis is
+        // the value pinned here.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(
+            one.first_source_kind_ordinal(),
+            one.last_source_kind_ordinal(),
+        );
+        assert_eq!(
+            one.first_source_kind_ordinal(),
+            Some(crate::ConfigSourceKind::Defaults.ordinal()),
         );
     }
 
