@@ -2672,6 +2672,72 @@ impl ProvenanceMap {
         }
     }
 
+    /// Lexicographically smallest `(path, provenance)` entry, or
+    /// [`None`] if this map is empty — the bounded-lookup extractor
+    /// sibling of [`Self::provenance_of`] on the same underlying
+    /// [`BTreeMap`], closing the standard [`BTreeMap`]-idiom
+    /// bounded-lookup pair
+    /// ([`first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// / [`last_key_value`][std::collections::BTreeMap::last_key_value])
+    /// at the primitive altitude alongside the walker quartet
+    /// [`Self::entries`] / [`Self::iter`] / [`Self::paths`] /
+    /// [`Self::provenances`], the sizing pair [`Self::len`] /
+    /// [`Self::is_empty`], and the lookup pair [`Self::provenance_of`] /
+    /// [`Self::contains_path`] already carry.
+    ///
+    /// Pointwise-equal to `self.entries().next()` on every input by
+    /// construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the walker's underlying
+    /// [`BTreeMap::iter`][std::collections::BTreeMap::iter] steps to
+    /// first, so the two disagree only under a `BTreeMap` bug. Callers
+    /// already reaching for a `Some(...)` via `self.entries().next()`
+    /// should stay on the walker if they will step further; this seam
+    /// exists for callers whose only question is the lex-smallest
+    /// leaf (a `/healthz/provenance` "first-leaf" probe, a
+    /// schema-driven canonicalizer emitting the alphabetically-first
+    /// path first, a fold-fixture harness asserting the sorted
+    /// map's lower bound) so they need not name a walker just to
+    /// read one pair.
+    ///
+    /// Returns `&[String]` on the path axis matching the
+    /// [`ProvenanceMapEntries`] item shape — the same slice-lifetime
+    /// borrow the walker hands out — and `&Provenance` on the value
+    /// axis matching [`Self::provenances`]. The tier-level peer of the
+    /// concrete-typed `first_key_value` seam on the discovered-altitude
+    /// [`crate::discovered::LayerAttribution`] (when landed): both
+    /// bounded-lookup extractors project the same `(&[String],
+    /// &Attribution)` pair shape and both cite the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// underlying seam.
+    #[must_use]
+    pub fn first_entry(&self) -> Option<(&[String], &Provenance)> {
+        self.inner.first_key_value().map(|(k, v)| (k.as_slice(), v))
+    }
+
+    /// Lexicographically largest `(path, provenance)` entry, or
+    /// [`None`] if this map is empty — the bounded-lookup extractor
+    /// sibling of [`Self::first_entry`] on the same underlying
+    /// [`BTreeMap`], closing the standard [`BTreeMap`]-idiom
+    /// bounded-lookup pair
+    /// ([`first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// / [`last_key_value`][std::collections::BTreeMap::last_key_value])
+    /// at the primitive altitude on the upper-bound side that
+    /// [`Self::first_entry`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to `self.entries().next_back()` on every input
+    /// by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the walker's underlying
+    /// [`BTreeMap::iter`][std::collections::BTreeMap::iter] steps to
+    /// last via [`DoubleEndedIterator::next_back`], so the two disagree
+    /// only under a `BTreeMap` bug. Returns the same borrow shape as
+    /// [`Self::first_entry`] on both axes.
+    #[must_use]
+    pub fn last_entry(&self) -> Option<(&[String], &Provenance)> {
+        self.inner.last_key_value().map(|(k, v)| (k.as_slice(), v))
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -52431,6 +52497,92 @@ mod progressive_tests {
         assert_eq!(empty.provenances().size_hint(), (0, Some(0)));
         assert!(empty.provenances().next().is_none());
         assert!(empty.provenances().next_back().is_none());
+    }
+
+    // -------- ProvenanceMap::first_entry / ::last_entry bounded-lookup pair --------
+
+    #[test]
+    fn provenance_map_first_entry_agrees_with_entries_next_pointwise() {
+        // The lex-smallest bounded-lookup extractor yields the same
+        // pair as `entries().next()`, the walker's first step. The pin
+        // catches a future edit that reroutes `first_entry()` through a
+        // different BTreeMap cursor (a `.last_key_value()` typo, an
+        // `.iter().rev().next()` reverse-walk by mistake) that would
+        // break the shared-order contract with the walker.
+        let r = Prog::resolve_progressive();
+        let via_first: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .first_entry()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_walker: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .entries()
+            .next()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_first, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_last_entry_agrees_with_entries_next_back_pointwise() {
+        // The lex-largest bounded-lookup extractor yields the same
+        // pair as `entries().next_back()`, the walker's first tail
+        // step. Peer of the `first_entry` pin above on the upper-bound
+        // side.
+        let r = Prog::resolve_progressive();
+        let via_last: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .last_entry()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_walker: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .entries()
+            .next_back()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_last, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_first_entry_names_a_leaf_at_the_lex_lower_bound() {
+        // Ground-truth pin: on the `Prog` fixture (paths a/b/c/d,
+        // lex-sorted), `first_entry()` names `a` and its Discovered
+        // tier; `last_entry()` names `d` and its Default tier. This
+        // guarantees the bounded-lookup extractors read from the
+        // correct end of the sorted BTreeMap, not merely agree with
+        // the walker (which would still be satisfied if both were
+        // wrong in the same direction).
+        let r = Prog::resolve_progressive();
+        let (first_path, first_prov) = r.provenance().first_entry().unwrap();
+        assert_eq!(first_path, &["a".to_string()][..]);
+        assert_eq!(first_prov.tier(), ConfigTierKind::Discovered);
+        let (last_path, last_prov) = r.provenance().last_entry().unwrap();
+        assert_eq!(last_path, &["d".to_string()][..]);
+        assert_eq!(last_prov.tier(), ConfigTierKind::Default);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_entry_none_on_empty_map() {
+        // Empty case: `Option<(&[String], &Provenance)>` is `None` at
+        // both bounds. Peer of `paths_and_provenances_empty_on_empty_map`
+        // on the bounded-lookup pair.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_entry().is_none());
+        assert!(empty.last_entry().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_entry_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf is both the lex-smallest and
+        // the lex-largest, so `first_entry()` and `last_entry()` name
+        // the same `(path, provenance)` pair. Pins the BTreeMap
+        // invariant that a one-element map's lower and upper bounds
+        // coincide, closing the size-parametric edge cases (empty,
+        // singleton, multi-leaf) on the bounded-lookup extractors.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        let (first_path, first_prov) = one.first_entry().unwrap();
+        let (last_path, last_prov) = one.last_entry().unwrap();
+        assert_eq!(first_path, last_path);
+        assert_eq!(first_prov, last_prov);
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
