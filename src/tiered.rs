@@ -95,7 +95,7 @@
 use crate::discovered::{DiscoveryLayer, compose, deep_merge, deep_merge_attributed};
 use crate::error::ShikumiError;
 use crate::provider::ProviderChain;
-use crate::source::ConfigSource;
+use crate::source::{ConfigSource, EnvMetadataTagKind};
 use figment::value::Dict;
 use figment::{Figment, providers::Serialized};
 use serde::{Serialize, de::DeserializeOwned};
@@ -1998,6 +1998,61 @@ impl Provenance {
     #[must_use]
     pub const fn as_env_prefix(&self) -> Option<&str> {
         self.source.as_env_prefix()
+    }
+
+    /// Returns the typed [`EnvMetadataTagKind`] sub-axis polarity if this
+    /// provenance's source is [`ConfigSource::Env`] (`Some(Bare)` for the
+    /// empty-prefix env source, `Some(Prefixed)` for every non-empty
+    /// prefix), `None` on every other source-arm — the typed
+    /// env-name-sub-axis projection on the source axis of the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// Equal to `self.source().env_prefix_kind()` by construction — one
+    /// method call answers *"was this env-source a bare `Env::raw`-shaped
+    /// overlay or a prefixed `Env::prefixed`-shaped overlay?"* without
+    /// borrowing through the [`Self::source`] projection at every site.
+    /// The [`Provenance`]-altitude lift of the primitive-altitude
+    /// [`crate::ConfigSource::env_prefix_kind`] typed sub-axis projection
+    /// onto the atomic `(tier, source)` pair that carries the source
+    /// coordinate. Env-arm sibling of [`Self::as_env_prefix`] on the same
+    /// axis: where [`Self::as_env_prefix`] extracts the raw borrowed
+    /// `&str` payload, this projection strips the payload to its typed
+    /// `Bare` vs `Prefixed` sub-axis tag — together the two env-arm
+    /// projections close both the raw-payload and the typed-sub-axis
+    /// gaps at one altitude, mirroring the peer-consolidated
+    /// `env_prefix_kind` / `as_env_prefix` pair the primitive already
+    /// carries one altitude down.
+    ///
+    /// `const`-callable — the body is a one-hop call into the const-fn
+    /// [`crate::ConfigSource::env_prefix_kind`] on `self.source`, so a
+    /// compile-time-known [`Provenance`] projects its env-name-sub-axis
+    /// polarity at compile time too. Matches the const-callability of
+    /// the sibling source-axis payload extractor [`Self::as_env_prefix`]
+    /// and the source-axis predicate triplet [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] on the same primitive.
+    /// Welded at compile time by
+    /// [`tests::provenance_env_prefix_kind_is_const_callable`].
+    ///
+    /// **Boolean-agreement law** — `prov.env_prefix_kind().is_some() ==
+    /// prov.is_env()` holds pointwise on the shipped constructor surface,
+    /// pinned by
+    /// [`tests::provenance_env_prefix_kind_agrees_with_is_env_pointwise`].
+    /// Peer of the same-shape agreement law
+    /// [`tests::provenance_as_env_prefix_agrees_with_is_env_pointwise`]
+    /// on the paired raw-payload extractor, and of
+    /// [`crate::ConfigSource::env_prefix_kind`] /
+    /// [`crate::ConfigSource::is_env`] on the primitive-side one altitude
+    /// down.
+    ///
+    /// **Payload identity** — for every `Env(prefix)` source the
+    /// projection returns the same [`EnvMetadataTagKind`] the
+    /// primitive-side [`crate::ConfigSource::env_prefix_kind`] would
+    /// project on the same source coordinate: `Bare` on the empty prefix,
+    /// `Prefixed` on every non-empty prefix. Pinned by
+    /// [`tests::provenance_env_prefix_kind_preserves_inner_kind_verbatim`].
+    #[must_use]
+    pub const fn env_prefix_kind(&self) -> Option<EnvMetadataTagKind> {
+        self.source.env_prefix_kind()
     }
 
     /// Returns `true` iff this provenance's source is one of the
@@ -76858,6 +76913,149 @@ mod progressive_tests {
         const COMPUTED_ENV_PREFIX: Option<&str> = COMPUTED_PROV.as_env_prefix();
 
         assert!(COMPUTED_ENV_PREFIX.is_none());
+    }
+
+    #[test]
+    fn provenance_env_prefix_kind_extracts_only_from_env_source() {
+        // Selectivity pin at the Provenance altitude for the typed
+        // `EnvMetadataTagKind` sub-axis projection on the source axis.
+        // Exactly the env-source constructor (`Provenance::env`) answers
+        // `Some(_)`; every other constructor row answers `None`,
+        // regardless of the inner path or prefix payload. Peer of
+        // `provenance_as_env_prefix_extracts_only_from_env_source` on
+        // the raw-payload sibling.
+        assert!(Provenance::bare().env_prefix_kind().is_none());
+        assert!(Provenance::discovered().env_prefix_kind().is_none());
+        assert!(Provenance::prescribed_default().env_prefix_kind().is_none(),);
+        assert!(
+            Provenance::computed(ConfigTierKind::Custom)
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            Provenance::file("/etc/env_prefix_kind_selectivity.yaml")
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            Provenance::file("relative/env_prefix_kind_selectivity.toml")
+                .env_prefix_kind()
+                .is_none(),
+        );
+
+        assert_eq!(
+            Provenance::env("").env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        for raw in [
+            "S_",
+            "SHIKUMI_ENV_PREFIX_KIND_SELECTIVITY_LONG_",
+            "with space_",
+        ] {
+            assert_eq!(
+                Provenance::env(raw).env_prefix_kind(),
+                Some(EnvMetadataTagKind::Prefixed),
+                "env_prefix_kind did not classify {raw:?} as Prefixed",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_env_prefix_kind_agrees_with_is_env_pointwise() {
+        // Boolean-agreement law: `prov.env_prefix_kind().is_some() ==
+        // prov.is_env()` on every shipped constructor row. Refuses a
+        // future edit that reversed the projection's polarity on the
+        // env-source arm — the two projections walk the same three-arm
+        // source partition and must agree pointwise. Peer of the
+        // same-shape agreement law
+        // `provenance_as_env_prefix_agrees_with_is_env_pointwise` on the
+        // paired raw-payload extractor.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_ENV_PREFIX_KIND_AGREEMENT_"),
+            Provenance::file("/etc/env_prefix_kind_agreement.yaml"),
+            Provenance::file("relative/env_prefix_kind_agreement.toml"),
+        ] {
+            assert_eq!(
+                prov.env_prefix_kind().is_some(),
+                prov.is_env(),
+                "env_prefix_kind/is_env polarity drift on {prov:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_env_prefix_kind_preserves_inner_kind_verbatim() {
+        // Payload-identity law: for every env-source `Provenance` the
+        // projection returns the same `EnvMetadataTagKind` as
+        // `ConfigSource::env_prefix_kind` on the underlying source
+        // coordinate — `Bare` on the empty prefix, `Prefixed` on every
+        // non-empty prefix. Peer of
+        // `provenance_as_env_prefix_preserves_inner_string_verbatim`
+        // on the paired raw-payload extractor; catches a future edit
+        // that inserted a case-fold, trim, or any classification step
+        // between the source-level projection and the Provenance-level
+        // projection.
+        for raw in [
+            "",
+            "SHIKUMI_",
+            "SHIKUMI_ENV_PREFIX_KIND_VERBATIM_LONG_",
+            "with space_",
+            "lower_case_",
+        ] {
+            let prov = Provenance::env(raw);
+            let via_provenance = prov.env_prefix_kind().expect("env-source projection");
+            let via_source = prov
+                .source()
+                .env_prefix_kind()
+                .expect("source-arm projection");
+            assert_eq!(
+                via_provenance, via_source,
+                "env_prefix_kind diverged from ConfigSource::env_prefix_kind on {raw:?}",
+            );
+            let expected = if raw.is_empty() {
+                EnvMetadataTagKind::Bare
+            } else {
+                EnvMetadataTagKind::Prefixed
+            };
+            assert_eq!(
+                via_provenance, expected,
+                "env_prefix_kind did not preserve inner kind classification on {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_env_prefix_kind_is_const_callable() {
+        // Weld the const-callability of the typed sub-axis projection
+        // (`Provenance::env_prefix_kind`) with the const-callable
+        // `Provenance::computed` constructor at compile time. Mirrors
+        // the shape of `provenance_as_env_prefix_is_const_callable` one
+        // sub-axis projection over on the same env-arm — the crate's
+        // established idiom for pinning compile-time-callability at the
+        // exact line a future edit would drift it.
+        //
+        // Every `Provenance::computed(_)` carries `ConfigSource::Defaults`,
+        // which has no non-const-Drop payload — but `Provenance` still
+        // cannot be bound to a `const` item because the
+        // `source: ConfigSource` field type carries non-const-Drop
+        // variants (`PathBuf` / `String` in the other arms), so we route
+        // through a `static` binding the same way the sibling welds do:
+        // statics never drop, so the drop-check that rejects a `const`
+        // Provenance does not apply, and the `.env_prefix_kind()` hop in
+        // the const-init position below still routes through the
+        // const-fn `Provenance::computed` constructor and the const-fn
+        // `Provenance::env_prefix_kind` projection.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_ENV_PREFIX_KIND: Option<EnvMetadataTagKind> =
+            COMPUTED_PROV.env_prefix_kind();
+
+        assert!(COMPUTED_ENV_PREFIX_KIND.is_none());
     }
 
     #[test]
