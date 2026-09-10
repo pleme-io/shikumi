@@ -23074,6 +23074,76 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.last_tier()
     }
 
+    /// Lex-lower-bound leaf's [`crate::ConfigSourceKind`] scalar, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::first_source_kind`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.first_source_kind()`.
+    ///
+    /// The source-kind-axis sibling of [`Self::first_tier`] on the
+    /// atomic `(tier, source)` pair every leaf's [`Provenance`] carries
+    /// — together they close the scalar sub-projection of the value-axis
+    /// bound on BOTH closed-axis coordinates of the atomic pair at the
+    /// container altitude, matching the closure the primitive-altitude
+    /// pair [`ProvenanceMap::first_source_kind`] /
+    /// [`ProvenanceMap::last_source_kind`] gives one seam down on the
+    /// same source-kind axis. Returns owned [`crate::ConfigSourceKind`]
+    /// matching the [`ProvenanceMapSourceKinds`] item shape ([`Copy`],
+    /// no borrow) with no allocation.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_source_kind()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_agrees_with_provenance_map_first_source_kind_pointwise`].
+    /// - Equal to `self.first_provenance().map(Provenance::source_kind)`
+    ///   on every input by construction — the source-kind-axis
+    ///   sub-projection of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_agrees_with_first_provenance_source_kind_projection_pointwise`].
+    /// - Equal to `self.source_kinds().next()` on every input — the
+    ///   walker's first lower-bound step — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_agrees_with_source_kinds_next_pointwise`].
+    #[must_use]
+    pub fn first_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.first_source_kind()
+    }
+
+    /// Lex-upper-bound leaf's [`crate::ConfigSourceKind`] scalar, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::last_source_kind`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.last_source_kind()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_source_kind`] on the
+    /// upper-bound side that [`Self::first_source_kind`] closes at the
+    /// lower bound — closes the source-kind-axis sub-projection of the
+    /// value-axis bound at the container altitude on both bounds,
+    /// matching the closure the tier-axis pair [`Self::first_tier`] /
+    /// [`Self::last_tier`] gives on the sibling closed-axis coordinate
+    /// of the same atomic `(tier, source)` pair. Returns the same owned
+    /// [`crate::ConfigSourceKind`] shape as [`Self::first_source_kind`]
+    /// on the source-kind axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_source_kind()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_agrees_with_provenance_map_last_source_kind_pointwise`].
+    /// - Equal to `self.last_provenance().map(Provenance::source_kind)`
+    ///   on every input by construction — the source-kind-axis
+    ///   sub-projection of the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_agrees_with_last_provenance_source_kind_projection_pointwise`].
+    /// - Equal to `self.source_kinds().next_back()` on every input — the
+    ///   walker's first upper-bound step via
+    ///   [`DoubleEndedIterator::next_back`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_agrees_with_source_kinds_next_back_pointwise`].
+    #[must_use]
+    pub fn last_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.provenance.last_source_kind()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -99584,6 +99654,156 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         assert_eq!(r.first_tier(), Some(ConfigTierKind::Discovered));
         assert_eq!(r.last_tier(), Some(ConfigTierKind::Default));
+    }
+
+    // -------- ProgressiveResolution source-kind-axis scalar-projection pair
+    // -------- (container-altitude peer of `ProvenanceMap::first_source_kind` /
+    // -------- `ProvenanceMap::last_source_kind`, closing the source-kind-axis
+    // -------- scalar sub-projection of the value-axis bound at the container
+    // -------- altitude on the output side of the fold's atomic-pair
+    // -------- ownership boundary)
+
+    #[test]
+    fn progressive_resolution_first_source_kind_agrees_with_provenance_map_first_source_kind_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // source-kind-axis lower-bound delegate:
+        // `ProgressiveResolution::first_source_kind` yields the same
+        // `Option<ConfigSourceKind>` value as
+        // `res.provenance().first_source_kind()`. Catches a future edit
+        // that reroutes the container-altitude seam through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (a `last_source_kind` typo, a walk-based
+        // lower-bound probe through `source_kinds().next()` — pointwise-
+        // equal but a different code path — the wrong sub-projection
+        // through `tiers().next()`, or a projection through the wrong
+        // end of the sorted cursor) that would break the shared-lookup
+        // contract, before the drift can reach any caller that reads
+        // `res.provenance().first_source_kind()` and now migrates to the
+        // one-hop form. Source-kind-axis peer of
+        // `progressive_resolution_first_tier_agrees_with_provenance_map_first_tier_pointwise`
+        // on the sibling closed-axis coordinate of the same atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<crate::ConfigSourceKind> = r.first_source_kind();
+        let via_prov: Option<crate::ConfigSourceKind> = r.provenance().first_source_kind();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_agrees_with_provenance_map_last_source_kind_pointwise()
+     {
+        // Peer of the `first_source_kind` pin above on the upper-bound
+        // side: the container-altitude source-kind-axis upper-bound
+        // delegate yields the same `Option<ConfigSourceKind>` value as
+        // `res.provenance().last_source_kind()`. Closes the
+        // shared-lookup contract on both bounds of the source-kind-axis
+        // scalar-projection pair at the container altitude.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<crate::ConfigSourceKind> = r.last_source_kind();
+        let via_prov: Option<crate::ConfigSourceKind> = r.provenance().last_source_kind();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_agrees_with_first_provenance_source_kind_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude source-kind-axis scalar-projection pair
+        // and the container-altitude value-axis scalar-projection pair
+        // `first_provenance` at the same container: the lower-bound
+        // source-kind-axis seam yields the same `ConfigSourceKind` as
+        // `first_provenance().map(Provenance::source_kind)`, discarding
+        // the path key and dereferencing the `Provenance::source_kind`
+        // const-fn accessor on the retained value. Peer of the
+        // primitive-altitude pin
+        // `provenance_map_first_source_kind_agrees_with_first_provenance_source_kind_projection_pointwise`
+        // one seam up, and tier-axis peer
+        // `progressive_resolution_first_tier_agrees_with_first_provenance_tier_projection_pointwise`
+        // on the same container.
+        let r = Prog::resolve_progressive();
+        let via_sk: Option<crate::ConfigSourceKind> = r.first_source_kind();
+        let via_prov: Option<crate::ConfigSourceKind> =
+            r.first_provenance().map(Provenance::source_kind);
+        assert_eq!(via_sk, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_agrees_with_last_provenance_source_kind_projection_pointwise()
+     {
+        // Peer of the `first_source_kind` cross-seam pin above on the
+        // upper-bound side: the upper-bound source-kind-axis seam yields
+        // the same `ConfigSourceKind` as
+        // `last_provenance().map(Provenance::source_kind)`, the
+        // source-kind-axis sub-projection of the same value-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_sk: Option<crate::ConfigSourceKind> = r.last_source_kind();
+        let via_prov: Option<crate::ConfigSourceKind> =
+            r.last_provenance().map(Provenance::source_kind);
+        assert_eq!(via_sk, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_agrees_with_source_kinds_next_pointwise() {
+        // Cross-seam agreement law between the container-altitude
+        // source-kind-axis scalar-projection pair and the
+        // source-kind-axis projection walker `source_kinds` at the
+        // container-altitude walker seam: the lower-bound
+        // source-kind-axis seam yields the same `ConfigSourceKind` as
+        // `source_kinds().next()`, the walker's first lower-bound step.
+        // The `BTreeMap`-idiom
+        // `first_key_value().map(|(_, v)| v.source_kind()) == source_kinds().next()`
+        // law lifted to the container altitude on the output side of
+        // the fold. Peer of the primitive-altitude pin
+        // `provenance_map_first_source_kind_agrees_with_source_kinds_next_pointwise`
+        // one seam down, and tier-axis peer
+        // `progressive_resolution_first_tier_agrees_with_tiers_next_pointwise`
+        // on the same container.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<crate::ConfigSourceKind> = r.first_source_kind();
+        let via_walker: Option<crate::ConfigSourceKind> = r.source_kinds().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_agrees_with_source_kinds_next_back_pointwise() {
+        // Peer of the `first_source_kind` walker pin above on the
+        // upper-bound side: the upper-bound source-kind-axis seam yields
+        // the same `ConfigSourceKind` as `source_kinds().next_back()`,
+        // the walker's first upper-bound step via
+        // [`DoubleEndedIterator::next_back`].
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<crate::ConfigSourceKind> = r.last_source_kind();
+        let via_walker: Option<crate::ConfigSourceKind> = r.source_kinds().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_source_kind_name_the_lex_bound_leaf_source_kinds() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: Prog is a pure-progressive fixture (no overlays), so
+        // every leaf's provenance is one of `Provenance::bare()` /
+        // `Provenance::discovered()` / `Provenance::prescribed_default()`
+        // — all three carry source `ConfigSource::Defaults`, whose
+        // source-kind projection is `ConfigSourceKind::Defaults`. Peer
+        // of the primitive-altitude pin
+        // `provenance_map_first_source_kind_names_the_lex_lower_bound_leaf_source_kind`
+        // one altitude up: catches a future edit that reroutes the
+        // container-altitude seams through the wrong end of the sorted
+        // `BTreeMap` (e.g. both routed through `last_source_kind` by
+        // mistake) or projects the wrong axis — a subtle drift the
+        // pointwise-agreement pins above would still accept in one
+        // direction.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+        assert_eq!(
+            r.last_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
