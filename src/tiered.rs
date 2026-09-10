@@ -21200,6 +21200,107 @@ impl ProgressiveLayer {
         self.provenance.as_file_path()
     }
 
+    /// Returns the typed [`crate::discovery::Format`] file-format sub-axis
+    /// polarity if this overlay's stamp carries a [`ConfigSource::File`]
+    /// source whose recorded path has a recognized extension
+    /// (`.yaml` / `.yml` → `Yaml`, `.toml` → `Toml`, `.lisp` / `.el` →
+    /// `Lisp`, `.nix` → `Nix`, `.blue` → `Blue`), `None` on every other
+    /// source-arm AND on file-source arms whose extension is unrecognized
+    /// or absent — the container-altitude lift of
+    /// [`Provenance::file_format`] (`eb29b46`) onto [`ProgressiveLayer`]'s
+    /// [`Provenance`] stamp coordinate, and the typed-sub-axis sibling of
+    /// the raw-payload extractor [`Self::as_file_path`] (`e1a755d`) on the
+    /// same file-arm of the source axis of the atomic `(tier, source)`
+    /// pair.
+    ///
+    /// Equal to `self.provenance().file_format()` by construction — one
+    /// method call answers *"what typed [`crate::discovery::Format`] did
+    /// this file-source overlay's extension declare?"* without borrowing
+    /// through the [`Self::provenance`] accessor at every call site. Where
+    /// the paired raw-payload extractor [`Self::as_file_path`] returns the
+    /// underlying [`Path`] bytes verbatim, this projection strips the
+    /// payload to its typed [`crate::discovery::Format`] sub-axis tag —
+    /// together the two file-arm projections close both the raw-payload
+    /// seam and the typed-sub-axis seam at one altitude, mirroring the
+    /// peer-consolidated `file_format` / `as_path` pair the primitive-side
+    /// [`Provenance`] already carries one altitude down, and the env-arm
+    /// peer `env_prefix_kind` / `as_env_prefix` pair one arm over at this
+    /// same container altitude (`33a1f01` / `4001be6`).
+    ///
+    /// Before this seam, a caller extracting the typed
+    /// [`crate::discovery::Format`] sub-axis tag from a [`ProgressiveLayer`]
+    /// — a `ConfigPlane` broadcast surface encoding a wire message keyed
+    /// on each stamped file-overlay's format sub-axis (`Yaml` / `Toml` /
+    /// `Lisp` / `Nix` / `Blue`), an attestation-manifest counter
+    /// partitioning file-sourced overlays by the same sub-axis, an
+    /// operator-facing `/healthz/overlays` renderer that displays the
+    /// format tag on each file row — reached through
+    /// `layer.provenance().file_format()`, a two-hop borrow-and-project
+    /// chain that named the [`Self::provenance`] accessor at every call
+    /// site instead of the inherent seam at the container altitude. After
+    /// this lift the typed file-arm sub-axis projection closes at the
+    /// [`ProgressiveLayer`] altitude, matching the container-altitude
+    /// closure the paired raw-payload sibling [`Self::as_file_path`]
+    /// already carries on the same file-arm, and the container-altitude
+    /// closure the env-arm sibling [`Self::env_prefix_kind`] carries one
+    /// arm over.
+    ///
+    /// Not `const`-callable — the body composes
+    /// [`Provenance::file_format`], which composes
+    /// [`crate::ConfigSource::file_format`], which composes
+    /// [`crate::discovery::Format::from_path`], which composes
+    /// [`std::path::Path::extension`] (not yet const-stable on
+    /// rustc 1.94.1). Same std-stability boundary as the primitive-side
+    /// peer [`Provenance::file_format`] and the paired raw-payload
+    /// sibling [`Self::as_file_path`] on this container. The env-arm
+    /// sibling [`Self::env_prefix_kind`] IS const-callable because
+    /// [`String::is_empty`] is const-stable — matching the same
+    /// const-vs-non-const asymmetry the primitive-side pair
+    /// [`Provenance::file_format`] / [`Provenance::env_prefix_kind`] and
+    /// the paired raw-payload extractors [`Self::as_file_path`] /
+    /// [`Self::as_env_prefix`] already carry on this container.
+    ///
+    /// **Implication law** — `layer.file_format().is_some() ==>
+    /// layer.is_file()` holds pointwise on the shipped stamp-side
+    /// constructor surface. The converse does NOT hold: a
+    /// [`ConfigSource::File`] overlay with an unrecognized extension
+    /// (`.conf`) or none at all (`app`, empty path) is still
+    /// `is_file() == true` but yields `file_format() == None` — the
+    /// projection strictly *refines* [`Self::is_file`] rather than
+    /// partitioning it, matching the primitive-side asymmetry
+    /// [`tests::provenance_file_format_implies_is_file_pointwise`] on the
+    /// primitive-side one altitude down. Pinned by
+    /// [`tests::progressive_layer_file_format_implies_is_file_pointwise`];
+    /// catches a future edit that made the projection answer `Some(_)` on
+    /// a non-file-source arm without also drifting [`Self::is_file`], and
+    /// the arm-sibling analogue of
+    /// [`tests::progressive_layer_env_prefix_kind_agrees_with_is_env_pointwise`]
+    /// on the paired env-arm typed sub-axis projection at the same altitude
+    /// — the file-arm law is one-way implication (unrecognized extensions
+    /// preserve `is_file` but strip the format tag), whereas the env-arm
+    /// law is bidirectional agreement (every env prefix classifies).
+    ///
+    /// **Payload identity** — for every `File(path)` overlay the projection
+    /// returns the same [`crate::discovery::Format`] classification the
+    /// two-hop `layer.provenance().file_format()` chain returns, which is
+    /// the same classification [`crate::ConfigSource::file_format`] returns
+    /// on the underlying source coordinate, which is
+    /// [`crate::discovery::Format::from_path`] on the recorded path — no
+    /// canonicalize, prefix-strip, case-fold, or extension-normalize step
+    /// between the primitive-side classification and this container-side
+    /// classification. Pinned by
+    /// [`tests::progressive_layer_file_format_preserves_inner_format_verbatim`];
+    /// the container-altitude analogue of
+    /// [`tests::provenance_file_format_preserves_inner_format_verbatim`]
+    /// on the primitive-side one altitude down, and the arm-sibling analogue
+    /// of
+    /// [`tests::progressive_layer_env_prefix_kind_preserves_inner_kind_verbatim`]
+    /// on the paired env-arm typed sub-axis projection at the same altitude.
+    #[must_use]
+    pub fn file_format(&self) -> Option<crate::discovery::Format> {
+        self.provenance.file_format()
+    }
+
     /// Returns `Some(&str)` if this overlay's stamp carries the
     /// [`ConfigSource::Env`] source, `None` on every other source-arm
     /// regardless of the inner prefix payload — the container-altitude
@@ -75477,6 +75578,177 @@ mod progressive_tests {
             assert_eq!(
                 via_layer, expected,
                 "ProgressiveLayer::env_prefix_kind did not preserve inner kind classification on {raw:?}",
+            );
+        }
+    }
+
+    // ── ProgressiveLayer::file_format — container-altitude lift of
+    //    the primitive-altitude typed file-arm sub-axis projection
+    //    `Provenance::file_format` (`eb29b46`) onto ProgressiveLayer's
+    //    `Provenance` stamp coordinate; the typed-sub-axis sibling of the
+    //    raw-payload extractor `ProgressiveLayer::as_file_path`
+    //    (`e1a755d`) on the same file-arm, and the arm-sibling of the
+    //    env-arm typed sub-axis projection `ProgressiveLayer::env_prefix_kind`
+    //    (`33a1f01`) one arm over at the same altitude ──
+
+    #[test]
+    fn progressive_layer_file_format_reports_extension_format_for_file_source_only() {
+        // Selectivity pin at the ProgressiveLayer altitude for the typed
+        // `Format` file-arm sub-axis projection. Only
+        // `ProgressiveLayer::file` with a recognized extension answers
+        // `Some(_)`; every other stamp-side constructor row answers
+        // `None`, and a `ProgressiveLayer::file` with an unrecognized or
+        // absent extension also answers `None`. Container-altitude
+        // analogue of the primitive-altitude selectivity pin
+        // `provenance_file_format_reports_extension_format_for_file_source_only`
+        // one seam down, and the sibling analogue of
+        // `progressive_layer_env_prefix_kind_extracts_only_from_env_source`
+        // on the paired env-arm typed sub-axis projection at the same
+        // altitude; catches a future edit that reversed the projection's
+        // polarity, admitted a non-file-source arm, or drifted the
+        // extension-classification set that `Format::from_path` walks.
+        use crate::discovery::Format;
+        let dict = Dict::new();
+
+        assert!(ProgressiveLayer::bare(dict.clone()).file_format().is_none());
+        assert!(
+            ProgressiveLayer::discovered(dict.clone())
+                .file_format()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::prescribed_default(dict.clone())
+                .file_format()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::env("", dict.clone())
+                .file_format()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::env("SHIKUMI_LAYER_FILE_FORMAT_SELECTIVITY_", dict.clone())
+                .file_format()
+                .is_none(),
+        );
+
+        assert_eq!(
+            ProgressiveLayer::file("/etc/app/app.yaml", dict.clone()).file_format(),
+            Some(Format::Yaml),
+        );
+        assert_eq!(
+            ProgressiveLayer::file("app.yml", dict.clone()).file_format(),
+            Some(Format::Yaml),
+        );
+        assert_eq!(
+            ProgressiveLayer::file("app.toml", dict.clone()).file_format(),
+            Some(Format::Toml),
+        );
+
+        // `ProgressiveLayer::file` with an unrecognized or absent
+        // extension: still a `File`-arm source, but the extension declares
+        // no format. Container-altitude peer of
+        // `file_format_none_for_unrecognized_or_extensionless_file` one
+        // altitude down on the primitive-side.
+        assert!(
+            ProgressiveLayer::file("app.conf", dict.clone())
+                .file_format()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file("app", dict.clone())
+                .file_format()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file("", dict.clone())
+                .file_format()
+                .is_none(),
+        );
+    }
+
+    #[test]
+    fn progressive_layer_file_format_implies_is_file_pointwise() {
+        // Implication law at the container altitude:
+        // `layer.file_format().is_some() ==> layer.is_file()` on every
+        // shipped stamp-side constructor row. Refuses a future edit that
+        // made the projection answer `Some(_)` on a non-`File`-source
+        // arm. Unlike the bidirectional agreement law
+        // `env_prefix_kind().is_some() == is_env()` on the env-arm sibling,
+        // the file-arm law is strict-implication only: a
+        // `ProgressiveLayer::file` with an unrecognized extension yields
+        // `is_file() == true` and `file_format() == None`, matching the
+        // primitive-side asymmetry
+        // `provenance_file_format_implies_is_file_pointwise` one seam
+        // down on `Provenance`; catches a future edit that drifts one
+        // altitude's polarity without the other, and pins the payload-
+        // independence contract on this altitude (the primitive-side has
+        // no `Dict` visibility either, so the container-side is forbidden
+        // from consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_LAYER_FILE_FORMAT_IMPLICATION_", dict.clone()),
+            ProgressiveLayer::file("/etc/layer_file_format_implication.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/layer_file_format_implication.toml", dict.clone()),
+            ProgressiveLayer::file("layer_file_format_implication.conf", dict.clone()),
+            ProgressiveLayer::file("layer_file_format_implication", dict.clone()),
+            ProgressiveLayer::file("", dict.clone()),
+        ] {
+            if layer.file_format().is_some() {
+                assert!(
+                    layer.is_file(),
+                    "file_format returned Some on non-File source: {layer:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_layer_file_format_preserves_inner_format_verbatim() {
+        // Payload-identity law at the container altitude: for every
+        // file-source `ProgressiveLayer` the projection returns the same
+        // `Format` classification the two-hop
+        // `layer.provenance().file_format()` chain returns, which is the
+        // same classification `ConfigSource::file_format` returns on the
+        // underlying source coordinate, which is `Format::from_path` on
+        // the recorded path — no canonicalize, prefix-strip, case-fold,
+        // or extension-normalize step. Container-altitude analogue of the
+        // primitive-altitude identity law
+        // `provenance_file_format_preserves_inner_format_verbatim` one
+        // seam down, and the sibling analogue of
+        // `progressive_layer_env_prefix_kind_preserves_inner_kind_verbatim`
+        // on the paired env-arm typed sub-axis projection at the same
+        // altitude; catches a future edit that inserted a
+        // classification-transformation step between the primitive-side
+        // classification and the container-side classification.
+        let dict = Dict::new();
+        for raw in [
+            "c.yaml", "c.yml", "c.toml", "c.lisp", "c.el", "c.nix", "c.json", "c.conf", "c", "",
+        ] {
+            let layer = ProgressiveLayer::file(raw, dict.clone());
+            let via_layer = layer.file_format();
+            let via_provenance = layer.provenance().file_format();
+            let via_source = layer.source().file_format();
+            assert_eq!(
+                via_layer, via_provenance,
+                "ProgressiveLayer::file_format diverged from Provenance::file_format on {raw:?}",
+            );
+            assert_eq!(
+                via_layer, via_source,
+                "ProgressiveLayer::file_format diverged from ConfigSource::file_format on {raw:?}",
+            );
+            assert_eq!(
+                via_layer,
+                crate::discovery::Format::from_path(Path::new(raw)),
+                "ProgressiveLayer::file_format diverged from Format::from_path on {raw:?}",
             );
         }
     }
