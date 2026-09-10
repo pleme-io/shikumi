@@ -1947,6 +1947,67 @@ impl Provenance {
         self.source.as_path()
     }
 
+    /// Returns the typed [`crate::discovery::Format`] sub-axis polarity
+    /// declared by this provenance's source's file extension if the
+    /// source is a [`ConfigSource::File`] with a recognized extension,
+    /// `None` on every other source-arm and on any [`ConfigSource::File`]
+    /// whose extension is unrecognized or absent — the typed
+    /// file-format-sub-axis projection on the source axis of the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// Equal to `self.source().file_format()` by construction — one
+    /// method call answers *"what `Format` (YAML / TOML / Lisp / Nix / Blue)
+    /// did this file-source leaf's extension declare?"* without
+    /// borrowing through the [`Self::source`] projection at every site.
+    /// The [`Provenance`]-altitude lift of the primitive-altitude
+    /// [`crate::ConfigSource::file_format`] typed sub-axis projection
+    /// onto the atomic `(tier, source)` pair that carries the source
+    /// coordinate. File-arm sibling of [`Self::as_file_path`] on the same
+    /// axis: where [`Self::as_file_path`] extracts the raw borrowed
+    /// [`Path`] payload, this projection strips the payload to its typed
+    /// `Format` sub-axis tag — together the two file-arm projections
+    /// close both the raw-payload and the typed-sub-axis gaps at one
+    /// altitude, mirroring the peer-consolidated `file_format` /
+    /// `as_path` pair the primitive already carries one altitude down,
+    /// and the env-arm peer `env_prefix_kind` / `as_env_prefix` pair one
+    /// arm over on the same [`Provenance`] primitive.
+    ///
+    /// Not const-callable — the body composes
+    /// [`crate::ConfigSource::file_format`], which composes
+    /// [`crate::discovery::Format::from_path`], which composes
+    /// [`std::path::Path::extension`] (not yet const-stable on
+    /// rustc 1.94.1). Same std-stability boundary as the primitive-side
+    /// peer [`crate::ConfigSource::file_format`], matching the pattern
+    /// of one non-const inherent per `Path`-derived projection on the
+    /// crate. The env-arm sibling [`Self::env_prefix_kind`] IS
+    /// const-callable because [`String::is_empty`] is const-stable — the
+    /// same const-vs-non-const asymmetry the paired raw-payload
+    /// extractors [`Self::as_file_path`] / [`Self::as_env_prefix`]
+    /// already carry.
+    ///
+    /// **Implication law** — `prov.file_format().is_some() ==>
+    /// prov.is_file()` holds pointwise on the shipped constructor
+    /// surface. The converse does NOT hold: a
+    /// [`ConfigSource::File`] with an unrecognized extension (`.conf`)
+    /// or none at all (`app`) is still `is_file() == true` but yields
+    /// `file_format() == None` — the projection strictly refines
+    /// [`Self::is_file`] rather than partitioning it, matching the
+    /// primitive-side asymmetry
+    /// `file_format_none_for_unrecognized_or_extensionless_file` on
+    /// [`crate::ConfigSource::file_format`]. Pinned by
+    /// [`tests::provenance_file_format_implies_is_file_pointwise`].
+    ///
+    /// **Payload identity** — for every `File(p)` source the projection
+    /// returns the same [`crate::discovery::Format`] the primitive-side
+    /// [`crate::ConfigSource::file_format`] would project on the same
+    /// source coordinate, which is [`crate::discovery::Format::from_path`]
+    /// on the recorded path. Pinned by
+    /// [`tests::provenance_file_format_preserves_inner_format_verbatim`].
+    #[must_use]
+    pub fn file_format(&self) -> Option<crate::discovery::Format> {
+        self.source.file_format()
+    }
+
     /// Returns `Some(&str)` if this provenance's source is
     /// [`ConfigSource::Env`], `None` on every other source-arm regardless
     /// of the inner prefix payload — the borrowed-`&str` payload extractor
@@ -76773,6 +76834,118 @@ mod progressive_tests {
                 via_provenance,
                 Path::new(raw),
                 "as_file_path did not preserve inner Path bytes on {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_file_format_reports_extension_format_for_file_source_only() {
+        // Selectivity pin at the Provenance altitude for the typed
+        // `Format` sub-axis projection on the source axis. Only
+        // `Provenance::file` with a recognized extension answers
+        // `Some(_)`; every other constructor row answers `None`, and a
+        // `Provenance::file` with an unrecognized or absent extension
+        // also answers `None`. Same shape as
+        // `file_format_reports_extension_format_for_file_only` on the
+        // primitive-side one altitude down.
+        use crate::discovery::Format;
+
+        assert!(Provenance::bare().file_format().is_none());
+        assert!(Provenance::discovered().file_format().is_none());
+        assert!(Provenance::prescribed_default().file_format().is_none());
+        assert!(
+            Provenance::computed(ConfigTierKind::Custom)
+                .file_format()
+                .is_none(),
+        );
+        assert!(Provenance::env("").file_format().is_none());
+        assert!(
+            Provenance::env("SHIKUMI_FILE_FORMAT_SELECTIVITY_")
+                .file_format()
+                .is_none(),
+        );
+
+        assert_eq!(
+            Provenance::file("/etc/app/app.yaml").file_format(),
+            Some(Format::Yaml),
+        );
+        assert_eq!(
+            Provenance::file("app.yml").file_format(),
+            Some(Format::Yaml),
+        );
+        assert_eq!(
+            Provenance::file("app.toml").file_format(),
+            Some(Format::Toml),
+        );
+
+        // `Provenance::file` with an unrecognized or absent extension:
+        // still a `File`-arm source, but the extension declares no
+        // format. Peer of `file_format_none_for_unrecognized_or_extensionless_file`
+        // one altitude down.
+        assert!(Provenance::file("app.conf").file_format().is_none());
+        assert!(Provenance::file("app").file_format().is_none());
+        assert!(Provenance::file("").file_format().is_none());
+    }
+
+    #[test]
+    fn provenance_file_format_implies_is_file_pointwise() {
+        // Implication law: `prov.file_format().is_some() ==>
+        // prov.is_file()` on every shipped constructor row. Refuses a
+        // future edit that made the projection answer `Some(_)` on a
+        // non-`File`-source arm. Unlike the bidirectional agreement law
+        // `env_prefix_kind().is_some() == is_env()` on the env-arm
+        // sibling, the file-arm law is strict-implication only: a
+        // `Provenance::file` with an unrecognized extension yields
+        // `is_file() == true` and `file_format() == None`, matching the
+        // primitive-side asymmetry
+        // `file_format_none_for_unrecognized_or_extensionless_file` on
+        // `ConfigSource::file_format`.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::env(""),
+            Provenance::env("SHIKUMI_FILE_FORMAT_IMPLICATION_"),
+            Provenance::file("/etc/file_format_implication.yaml"),
+            Provenance::file("relative/file_format_implication.toml"),
+            Provenance::file("file_format_implication.conf"),
+            Provenance::file("file_format_implication"),
+            Provenance::file(""),
+        ] {
+            if prov.file_format().is_some() {
+                assert!(
+                    prov.is_file(),
+                    "file_format returned Some on non-File source: {prov:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_file_format_preserves_inner_format_verbatim() {
+        // Payload-identity law: for every file-source `Provenance` the
+        // projection returns the same `Format` as
+        // `ConfigSource::file_format` on the underlying source coordinate,
+        // which is `Format::from_path` on the recorded path. Peer of
+        // `provenance_as_file_path_preserves_inner_pathbuf_verbatim` on
+        // the paired raw-payload extractor; catches a future edit that
+        // inserted a normalization or fallback step between the
+        // source-level projection and the Provenance-level projection.
+        for raw in [
+            "c.yaml", "c.yml", "c.toml", "c.lisp", "c.el", "c.nix", "c.json", "c.conf", "c", "",
+        ] {
+            let prov = Provenance::file(raw);
+            let via_provenance = prov.file_format();
+            let via_source = prov.source().file_format();
+            assert_eq!(
+                via_provenance, via_source,
+                "file_format diverged from ConfigSource::file_format on {raw:?}",
+            );
+            assert_eq!(
+                via_provenance,
+                crate::discovery::Format::from_path(Path::new(raw)),
+                "file_format diverged from Format::from_path on {raw:?}",
             );
         }
     }
