@@ -22035,6 +22035,78 @@ impl<T> ProgressiveResolution<T> {
         (self.value, self.provenance)
     }
 
+    /// [`Provenance`] of the effective leaf named by dotted `path`, or
+    /// [`None`] if `path` names no leaf in the resolved config — the
+    /// container-altitude peer of [`ProvenanceMap::provenance_of`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.provenance_of(path)`.
+    ///
+    /// The single-leaf lookup sibling of the paired-walker trio
+    /// [`Self::entries`] / [`Self::paths`] / [`Self::provenances`] on the
+    /// same container: where the paired walkers stream every
+    /// `(path, provenance)` leaf in one pass, this seam answers *"what
+    /// [`Provenance`] stamps this one specific leaf?"* without a walk.
+    /// Before this seam, a caller wanting the provenance of a single named
+    /// leaf — a `config-check` subcommand pinning where one specific field
+    /// came from, an operator-facing "why did this override win?" trace, a
+    /// fold-fixture harness asserting on the per-field attribution — reached
+    /// through the two-hop borrow chain
+    /// `res.provenance().provenance_of(&["field"])` that named the
+    /// [`Self::provenance`] accessor at every call site (30+ existing call
+    /// sites across the shipped tests alone, e.g. lines 51693 / 51724 /
+    /// 73482 / 73642); this method collapses it to one seam on the
+    /// resolution container itself, matching the same one-hop delegation
+    /// the paired walkers ([`Self::entries`] / [`Self::paths`] /
+    /// [`Self::provenances`]) and the scalar-projection quintet
+    /// ([`Self::tiers`] / [`Self::source_kinds`] / [`Self::sources`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`]) already
+    /// carry on adjacent seams.
+    ///
+    /// The allocation cost equals the primitive-altitude peer
+    /// [`ProvenanceMap::provenance_of`] on the same input by construction —
+    /// the body forwards the borrowed `&[&str]` verbatim, so the underlying
+    /// per-lookup `Vec<String>` allocation happens exactly once regardless
+    /// of which altitude the caller entered. Callers with an already-owned
+    /// path reach for the allocation-free [`Self::provenance_of_owned`]
+    /// sibling one seam over.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().provenance_of(path)` on every
+    /// input — pinned by
+    /// [`progressive_tests::progressive_resolution_provenance_of_agrees_with_provenance_map_pointwise`].
+    #[must_use]
+    pub fn provenance_of(&self, path: &[&str]) -> Option<&Provenance> {
+        self.provenance.provenance_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::provenance_of`] for callers that
+    /// already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::provenance_of_owned`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.provenance_of_owned(path)`.
+    ///
+    /// The allocation-free lookup sibling of [`Self::provenance_of`] on the
+    /// same container: where [`Self::provenance_of`] forwards a borrowed
+    /// `&[&str]` and pays the primitive's per-lookup `Vec<String>`
+    /// allocation, this seam forwards an already-owned `&[String]` straight
+    /// into the underlying [`BTreeMap::get`][std::collections::BTreeMap::get]
+    /// with no allocation of its own. Mirrors the primitive-altitude
+    /// borrowed-vs-owned pair [`ProvenanceMap::provenance_of`] /
+    /// [`ProvenanceMap::provenance_of_owned`] verbatim, closing the
+    /// single-leaf lookup surface on both path forms at the container
+    /// altitude.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().provenance_of_owned(path)` on
+    /// every input — pinned by
+    /// [`progressive_tests::progressive_resolution_provenance_of_owned_agrees_with_provenance_map_pointwise`].
+    #[must_use]
+    pub fn provenance_of_owned(&self, path: &[String]) -> Option<&Provenance> {
+        self.provenance.provenance_of_owned(path)
+    }
+
     /// Sorted `(path, provenance)` entries — the container-altitude peer
     /// of [`ProvenanceMap::entries`] on the *output* side of the fold's
     /// atomic-pair ownership boundary, delegating one seam down into
@@ -97432,6 +97504,108 @@ mod progressive_tests {
         assert_eq!(r.sources().count(), n);
         assert_eq!(r.tier_ordinals().count(), n);
         assert_eq!(r.source_kind_ordinals().count(), n);
+    }
+
+    // -------- ProgressiveResolution single-leaf lookup pair
+    // -------- (container-altitude peer of `ProvenanceMap::provenance_of` /
+    // -------- `ProvenanceMap::provenance_of_owned`, single-leaf sibling of
+    // -------- the paired-walker trio `entries` / `paths` / `provenances`)
+
+    #[test]
+    fn progressive_resolution_provenance_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // single-leaf lookup delegate: the container-altitude method
+        // yields the same `Option<&Provenance>` as
+        // `res.provenance().provenance_of(path)` on every path the
+        // resolved config carries (each `paths()` entry) and on a path
+        // that names no leaf (a fabricated `"missing"` key). Catches a
+        // future edit that reroutes `ProgressiveResolution::provenance_of`
+        // through a different `BTreeMap` accessor than the primitive-
+        // altitude peer it delegates to (a `get_mut` cursor by mistake,
+        // a projection through a different `ProvenanceMap` accessor)
+        // that would break the shared-lookup contract, before the drift
+        // can reach any of the 30+ shipped call sites that read
+        // `res.provenance().provenance_of(&["field"])` and now migrate
+        // to the one-hop form.
+        let r = Prog::resolve_progressive();
+        // Every path in the resolved map — the container-altitude
+        // seam agrees with the primitive-altitude one on every hit.
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.provenance_of(&borrowed);
+            let via_prov = r.provenance().provenance_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        // The one-miss case: a fabricated key names no leaf on either
+        // altitude, so both agree on `None`.
+        assert!(r.provenance_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.provenance_of(&["definitely_not_a_field"]),
+            r.provenance().provenance_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_provenance_of_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude single-leaf
+        // lookup pair: the owned-path seam yields the same
+        // `Option<&Provenance>` as `res.provenance().provenance_of_owned(path)`
+        // on every path the resolved config carries and on a fabricated
+        // miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::provenance_of_owned` through the
+        // borrowed variant (by mistake reintroducing the per-lookup
+        // `Vec<String>` allocation the owned form exists to avoid) or
+        // through a different `ProvenanceMap` accessor that would break
+        // the shared-lookup contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.provenance_of_owned(&owned);
+            let via_prov = r.provenance().provenance_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.provenance_of_owned(&miss).is_none());
+        assert_eq!(
+            r.provenance_of_owned(&miss),
+            r.provenance().provenance_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_provenance_of_agrees_with_provenance_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude lookup pair:
+        // the borrowed-path seam agrees with the owned-path seam on
+        // every leaf the resolved map carries, mirroring the same
+        // cross-form parity the primitive-altitude pair carries one
+        // seam down. Catches a future edit that reroutes one of the
+        // two forms through a different `BTreeMap` accessor than the
+        // other and thereby breaks the cross-form parity contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.provenance_of(&borrowed), r.provenance_of_owned(&owned));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_provenance_of_agrees_with_entries_lookup_pointwise() {
+        // Cross-seam agreement law between the single-leaf lookup pair
+        // and the paired-walker `entries` walker at the container-altitude
+        // walker seam: the single-leaf lookup at path `p` yields the same
+        // `&Provenance` as the pair `(p, prov)` returned by `entries`
+        // whose key equals `p`, closing the `BTreeMap`-idiom
+        // `get(k) == iter().find(|(kk, _)| kk == k).map(|(_, v)| v)` law
+        // at the container altitude on the output side of the fold.
+        // Peer of the walker-agreement pins on adjacent seams.
+        let r = Prog::resolve_progressive();
+        for (path, prov) in r.entries() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.provenance_of(&borrowed), Some(prov));
+        }
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
