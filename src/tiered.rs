@@ -2510,6 +2510,44 @@ impl ProvenanceMap {
         self.inner.get(path)
     }
 
+    /// True iff the dotted `path` names a leaf in the resolved config —
+    /// the presence-check sibling of [`Self::provenance_of`] on the same
+    /// underlying [`BTreeMap`], closing the standard `BTreeMap`-idiom
+    /// lookup pair (`get` / `contains_key`) at the primitive altitude
+    /// alongside the sizing pair [`Self::len`] / [`Self::is_empty`] and
+    /// the walker trio [`Self::entries`] / [`Self::paths`] /
+    /// [`Self::provenances`] already carry.
+    ///
+    /// Pointwise equal to `self.provenance_of(path).is_some()` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::contains_key`][std::collections::BTreeMap::contains_key]
+    /// cursor `provenance_of` reads through
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get], so the two
+    /// disagree only under a `BTreeMap` bug. Callers already reaching
+    /// for the `Option<&Provenance>` payload should stay on
+    /// [`Self::provenance_of`] and drop `is_some()`; this seam exists for
+    /// callers whose only question is presence (a `/healthz/provenance`
+    /// leaf-existence probe, a schema-driven emitter skipping fields
+    /// absent from the resolved map, a fold-fixture harness asserting a
+    /// specific leaf survived the fold) so they need not name a
+    /// `Provenance` accessor to answer it.
+    #[must_use]
+    pub fn contains_path(&self, path: &[&str]) -> bool {
+        self.contains_path_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::contains_path`] for callers that
+    /// already carry an owned path — closes the borrowed-vs-owned
+    /// presence-check pair mirroring the borrowed-vs-owned lookup pair
+    /// [`Self::provenance_of`] / [`Self::provenance_of_owned`] one seam
+    /// over. Forwards straight into
+    /// [`BTreeMap::contains_key`][std::collections::BTreeMap::contains_key]
+    /// with no allocation of its own.
+    #[must_use]
+    pub fn contains_path_owned(&self, path: &[String]) -> bool {
+        self.inner.contains_key(path)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -22182,6 +22220,52 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn provenance_of_owned(&self, path: &[String]) -> Option<&Provenance> {
         self.provenance.provenance_of_owned(path)
+    }
+
+    /// True iff the dotted `path` names a leaf in the resolved config —
+    /// the container-altitude peer of [`ProvenanceMap::contains_path`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.contains_path(path)`.
+    ///
+    /// The presence-check sibling of the single-leaf lookup pair
+    /// [`Self::provenance_of`] / [`Self::provenance_of_owned`] on the
+    /// same container, closing the standard [`BTreeMap`]-idiom lookup
+    /// pair (`get` / `contains_key`) at the container altitude
+    /// alongside the sizing pair [`Self::len`] / [`Self::is_empty`] and
+    /// the walker trio [`Self::entries`] / [`Self::paths`] /
+    /// [`Self::provenances`] already carry.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Primitive-altitude agreement: pointwise equal to
+    ///   `self.provenance().contains_path(path)` on every input —
+    ///   pinned by
+    ///   [`progressive_tests::progressive_resolution_contains_path_agrees_with_provenance_map_pointwise`].
+    /// - Lookup-pair cross-form parity: `contains_path(p) ==
+    ///   provenance_of(p).is_some()` on every input — the `BTreeMap`-idiom
+    ///   `contains_key(k) == get(k).is_some()` law at the container
+    ///   altitude — pinned by
+    ///   [`progressive_tests::progressive_resolution_contains_path_agrees_with_provenance_of_is_some_pointwise`].
+    #[must_use]
+    pub fn contains_path(&self, path: &[&str]) -> bool {
+        self.provenance.contains_path(path)
+    }
+
+    /// Allocation-free variant of [`Self::contains_path`] for callers
+    /// that already carry an owned path — the container-altitude peer
+    /// of [`ProvenanceMap::contains_path_owned`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.contains_path_owned(path)`.
+    ///
+    /// Mirrors the primitive-altitude borrowed-vs-owned pair
+    /// [`ProvenanceMap::contains_path`] /
+    /// [`ProvenanceMap::contains_path_owned`] verbatim, closing the
+    /// presence-check surface on both path forms at the container
+    /// altitude.
+    #[must_use]
+    pub fn contains_path_owned(&self, path: &[String]) -> bool {
+        self.provenance.contains_path_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -97770,6 +97854,129 @@ mod progressive_tests {
         // tautology `is_empty() == is_empty()` and defeats the pin.
         let r = Prog::resolve_progressive();
         assert_eq!(r.is_empty(), r.len() == 0);
+    }
+
+    // -------- ProgressiveResolution presence-check pair
+    // -------- (container-altitude peer of `ProvenanceMap::contains_path` /
+    // -------- `ProvenanceMap::contains_path_owned`, closing the
+    // -------- `BTreeMap`-idiom lookup pair `get` / `contains_key` at
+    // -------- the container altitude alongside the single-leaf lookup
+    // -------- pair `provenance_of` / `provenance_of_owned`)
+
+    #[test]
+    fn progressive_resolution_contains_path_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // presence-check delegate: `contains_path` yields the same
+        // `bool` as `res.provenance().contains_path(path)` on every
+        // path the resolved config carries (each `paths()` entry) and
+        // on a path that names no leaf. Catches a future edit that
+        // reroutes `ProgressiveResolution::contains_path` through a
+        // different `ProvenanceMap` accessor than the primitive-altitude
+        // peer it delegates to (a walk-based existence probe by mistake,
+        // a projection through a different `BTreeMap` cursor) that would
+        // break the shared-lookup contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert!(r.contains_path(&borrowed));
+            assert_eq!(
+                r.contains_path(&borrowed),
+                r.provenance().contains_path(&borrowed),
+            );
+        }
+        // The one-miss case: a fabricated key names no leaf on either
+        // altitude, so both agree on `false`.
+        assert!(!r.contains_path(&["definitely_not_a_field"]));
+        assert_eq!(
+            r.contains_path(&["definitely_not_a_field"]),
+            r.provenance().contains_path(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contains_path_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude
+        // presence-check pair: the owned-path seam yields the same
+        // `bool` as `res.provenance().contains_path_owned(path)` on
+        // every path the resolved config carries and on a fabricated
+        // miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::contains_path_owned` through the
+        // borrowed variant (reintroducing the per-lookup `Vec<String>`
+        // allocation the owned form exists to avoid) or through a
+        // different `ProvenanceMap` accessor.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            assert!(r.contains_path_owned(&owned));
+            assert_eq!(
+                r.contains_path_owned(&owned),
+                r.provenance().contains_path_owned(&owned),
+            );
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(!r.contains_path_owned(&miss));
+        assert_eq!(
+            r.contains_path_owned(&miss),
+            r.provenance().contains_path_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contains_path_agrees_with_contains_path_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude presence-check
+        // pair: the borrowed-path seam agrees with the owned-path seam
+        // on every leaf the resolved map carries and on a fabricated
+        // miss, mirroring the same cross-form parity the single-leaf
+        // lookup pair carries one seam over.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.contains_path(&borrowed), r.contains_path_owned(&owned));
+        }
+        let owned_miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        let borrowed_miss: Vec<&str> = owned_miss.iter().map(String::as_str).collect();
+        assert_eq!(
+            r.contains_path(&borrowed_miss),
+            r.contains_path_owned(&owned_miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_contains_path_agrees_with_provenance_of_is_some_pointwise() {
+        // Lookup-pair cross-form parity law at the container altitude:
+        // `contains_path(p) == provenance_of(p).is_some()` on every
+        // path the resolved config carries and on a fabricated miss.
+        // The `BTreeMap`-idiom `contains_key(k) == get(k).is_some()`
+        // law lifted to the container altitude on the output side of
+        // the fold. Catches a future edit that reroutes one of the two
+        // seams through a different `ProvenanceMap` accessor than the
+        // other so the pair no longer refers to the same underlying
+        // `BTreeMap` cursor.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.contains_path(&borrowed),
+                r.provenance_of(&borrowed).is_some()
+            );
+            assert_eq!(
+                r.contains_path_owned(&owned),
+                r.provenance_of_owned(&owned).is_some(),
+            );
+        }
+        let miss_owned: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        let miss_borrowed: Vec<&str> = miss_owned.iter().map(String::as_str).collect();
+        assert_eq!(
+            r.contains_path(&miss_borrowed),
+            r.provenance_of(&miss_borrowed).is_some(),
+        );
+        assert_eq!(
+            r.contains_path_owned(&miss_owned),
+            r.provenance_of_owned(&miss_owned).is_some(),
+        );
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
