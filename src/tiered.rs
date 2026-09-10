@@ -22035,6 +22035,83 @@ impl<T> ProgressiveResolution<T> {
         (self.value, self.provenance)
     }
 
+    /// Number of leaves attributed — the container-altitude peer of
+    /// [`ProvenanceMap::len`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.len()`. Equal to the leaf count of the resolved
+    /// config (`bare()` seeds every leaf).
+    ///
+    /// The sizing sibling of the [`BTreeMap`]-idiom walker trio
+    /// [`Self::entries`] / [`Self::paths`] / [`Self::provenances`] on the
+    /// same container: where the paired walkers stream every leaf, this
+    /// seam answers *"how many leaves does the resolved config carry?"*
+    /// without a walk. Before this seam, a caller wanting the leaf count
+    /// out of a [`ProgressiveResolution`] (a `ConfigPlane` wire encoder
+    /// pre-sizing an output buffer, an operator-facing renderer paging
+    /// through the per-leaf provenance table, an attestation manifest
+    /// preallocating a hash pool) reached through the two-hop borrow chain
+    /// `res.provenance().len()` that named the [`Self::provenance`]
+    /// accessor at every call site; this method collapses it to one seam
+    /// on the resolution container itself, matching the same one-hop
+    /// delegation the single-leaf lookup pair ([`Self::provenance_of`] /
+    /// [`Self::provenance_of_owned`]), the paired-walker trio
+    /// ([`Self::entries`] / [`Self::paths`] / [`Self::provenances`]),
+    /// and the scalar-projection quintet ([`Self::tiers`] /
+    /// [`Self::source_kinds`] / [`Self::sources`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`]) already
+    /// carry on adjacent seams.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Primitive-altitude agreement: pointwise equal to
+    ///   `self.provenance().len()` on every input — pinned by
+    ///   [`progressive_tests::progressive_resolution_len_agrees_with_provenance_map_len_pointwise`].
+    /// - Walker-sizing agreement: `len() == entries().count()` — the
+    ///   [`BTreeMap`]-idiom `len() == iter().count()` law at the
+    ///   container altitude on the output side of the fold — pinned by
+    ///   [`progressive_tests::progressive_resolution_len_matches_entries_count_pointwise`].
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.provenance.len()
+    }
+
+    /// True iff no leaves are attributed — the container-altitude peer
+    /// of [`ProvenanceMap::is_empty`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.is_empty()`.
+    ///
+    /// The emptiness sibling of the sizing seam [`Self::len`] on the
+    /// same container, closing the standard [`BTreeMap`]-idiom sizing
+    /// pair `len` / `is_empty` at the container altitude alongside the
+    /// walker trio [`Self::entries`] / [`Self::paths`] /
+    /// [`Self::provenances`] and the single-leaf lookup pair
+    /// [`Self::provenance_of`] / [`Self::provenance_of_owned`]. Before
+    /// this seam, a caller asking *"does the resolved config carry any
+    /// attributed leaf?"* (a `/healthz/provenance` renderer short-circuiting
+    /// an empty-fold path, a `ConfigPlane` broadcast surface skipping the
+    /// per-leaf envelope when there is nothing to broadcast, a
+    /// fold-fixture harness asserting the clean-degenerate case) reached
+    /// through the two-hop borrow chain `res.provenance().is_empty()`
+    /// that named the [`Self::provenance`] accessor at every call site;
+    /// this method collapses it to one seam on the resolution container
+    /// itself. `#[must_use]` on both `len` and `is_empty` mirrors the
+    /// `#[must_use]` on the paired-walker trio and the single-leaf
+    /// lookup pair one seam over.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Primitive-altitude agreement: pointwise equal to
+    ///   `self.provenance().is_empty()` on every input — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_empty_agrees_with_provenance_map_is_empty_pointwise`].
+    /// - Sizing-pair cross-form parity: `is_empty() == (len() == 0)` on
+    ///   every input — the [`BTreeMap`]-idiom `is_empty() == (len() == 0)`
+    ///   law at the container altitude — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_empty_agrees_with_len_zero_pointwise`].
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.provenance.is_empty()
+    }
+
     /// [`Provenance`] of the effective leaf named by dotted `path`, or
     /// [`None`] if `path` names no leaf in the resolved config — the
     /// container-altitude peer of [`ProvenanceMap::provenance_of`] on the
@@ -97606,6 +97683,93 @@ mod progressive_tests {
             let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
             assert_eq!(r.provenance_of(&borrowed), Some(prov));
         }
+    }
+
+    // -------- ProgressiveResolution sizing pair
+    // -------- (container-altitude peer of `ProvenanceMap::len` /
+    // -------- `ProvenanceMap::is_empty`, closing the `BTreeMap`-idiom
+    // -------- `len`/`is_empty` sizing pair at the container altitude
+    // -------- alongside the walker trio and the single-leaf lookup pair)
+
+    #[test]
+    fn progressive_resolution_len_agrees_with_provenance_map_len_pointwise() {
+        // Load-bearing structural law on the container-altitude sizing
+        // delegate: the container-altitude `len` yields the same `usize`
+        // as `res.provenance().len()`. Catches a future edit that
+        // reroutes `ProgressiveResolution::len` through a different
+        // ProvenanceMap projection (a `paths().count()` walk-based
+        // sizing by mistake, an unrelated field like a cache size) that
+        // would break the shared-lookup contract, before the drift can
+        // reach any caller that reads `res.provenance().len()` and now
+        // migrates to the one-hop form. The 4-leaf Prog fixture — `a`,
+        // `b`, `c`, `d` all seeded at bare — pins the concrete value at
+        // 4 so a total-visitation regression is a hard fail rather than
+        // an underspecified equality.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.len(), r.provenance().len());
+        assert_eq!(r.len(), 4);
+    }
+
+    #[test]
+    fn progressive_resolution_is_empty_agrees_with_provenance_map_is_empty_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // emptiness delegate: the container-altitude `is_empty` yields
+        // the same `bool` as `res.provenance().is_empty()`. The 4-leaf
+        // Prog fixture pins the concrete value at `false` so a
+        // future edit that routes `is_empty` through a projection that
+        // reports emptiness whenever a specific tier is absent — a
+        // subtle drift the pointwise-equality assertion alone would
+        // silently accept — trips the concrete pin before the drift
+        // can reach any caller.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_empty(), r.provenance().is_empty());
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn progressive_resolution_len_matches_entries_count_pointwise() {
+        // Cross-seam agreement law between the container-altitude
+        // sizing seam and the paired-walker trio at the container-
+        // altitude walker seam: `len() == entries().count()`,
+        // `len() == paths().count()`, `len() == provenances().count()`
+        // — the `BTreeMap`-idiom `len() == iter().count()` law
+        // extended across all three walker projections at the container
+        // altitude on the output side of the fold. Peer of the
+        // walker-agreement pins on adjacent seams (the primitive-
+        // altitude `provenance_map_paths_len_matches_map_len_pointwise`
+        // and `provenance_map_provenances_len_matches_map_len_pointwise`
+        // one seam down). Catches a future edit that reroutes any of
+        // the four seams (`len` and the three walker `count()` sinks)
+        // through a projection that no longer respects total
+        // visitation on the same underlying `BTreeMap`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.len(), r.entries().count());
+        assert_eq!(r.len(), r.paths().count());
+        assert_eq!(r.len(), r.provenances().count());
+    }
+
+    #[test]
+    #[allow(clippy::len_zero)]
+    fn progressive_resolution_is_empty_agrees_with_len_zero_pointwise() {
+        // Sizing-pair cross-form parity law on the container altitude:
+        // `is_empty() == (len() == 0)`, the standard `BTreeMap` idiom
+        // the primitive-altitude sizing pair implicitly carries one
+        // seam down (`ProvenanceMap::is_empty` == `self.inner.is_empty()`
+        // == `self.inner.len() == 0` == `ProvenanceMap::len() == 0`
+        // by construction on the underlying `BTreeMap`). Catches a
+        // future edit that reroutes one of the two sizing seams through
+        // a different ProvenanceMap accessor than the other so the pair
+        // no longer refers to the same underlying `BTreeMap` cursor —
+        // e.g. `is_empty` routed through a discovered-layer emptiness
+        // probe while `len` still counts every attributed leaf — before
+        // the drift can reach any caller.
+        //
+        // `#[allow(clippy::len_zero)]`: comparing `len() == 0` is the
+        // whole point of this test — replacing it with `.is_empty()`
+        // (as clippy would suggest) collapses the assertion into the
+        // tautology `is_empty() == is_empty()` and defeats the pin.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_empty(), r.len() == 0);
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
