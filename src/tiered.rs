@@ -22530,6 +22530,76 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.provenances()
     }
 
+    /// Lexicographically smallest `(path, provenance)` entry, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::first_entry`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.first_entry()`.
+    ///
+    /// The bounded-lookup sibling of the paired-walker trio
+    /// [`Self::entries`] / [`Self::paths`] / [`Self::provenances`], the
+    /// sizing pair [`Self::len`] / [`Self::is_empty`], the single-leaf
+    /// lookup pair [`Self::provenance_of`] /
+    /// [`Self::provenance_of_owned`], and the presence-check pair
+    /// [`Self::contains_path`] / [`Self::contains_path_owned`] on the
+    /// same container. Closes the standard [`BTreeMap`]-idiom
+    /// bounded-lookup pair
+    /// ([`first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// / [`last_key_value`][std::collections::BTreeMap::last_key_value])
+    /// at the container altitude on the lower-bound side that
+    /// [`Self::last_entry`] closes at the upper bound, matching the
+    /// closure the primitive-altitude [`ProvenanceMap::first_entry`] /
+    /// [`ProvenanceMap::last_entry`] pair carries one seam down.
+    ///
+    /// Before this seam, a caller answering *"which leaf is
+    /// lex-first?"* on a resolution container (a `/healthz/provenance`
+    /// first-leaf probe, a schema-driven canonicalizer emitting the
+    /// alphabetically-first path first, a fold-fixture harness
+    /// asserting the sorted map's lower bound) reached through the
+    /// two-hop borrow chain `res.provenance().first_entry()` that named
+    /// the [`Self::provenance`] accessor at every call site; this
+    /// method collapses it to one seam on the resolution container
+    /// itself, matching the same one-hop delegation the walker trio,
+    /// the sizing pair, the single-leaf lookup pair, and the
+    /// presence-check pair already carry on adjacent seams.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().first_entry()` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the primitive reads through — pinned by
+    /// [`progressive_tests::progressive_resolution_first_entry_agrees_with_provenance_map_first_entry_pointwise`].
+    #[must_use]
+    pub fn first_entry(&self) -> Option<(&[String], &Provenance)> {
+        self.provenance.first_entry()
+    }
+
+    /// Lexicographically largest `(path, provenance)` entry, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::last_entry`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.last_entry()`.
+    ///
+    /// The bounded-lookup sibling of [`Self::first_entry`] on the same
+    /// container — closes the standard [`BTreeMap`]-idiom
+    /// bounded-lookup pair at the container altitude on the upper-bound
+    /// side that [`Self::first_entry`] closes at the lower bound.
+    /// Returns the same borrow shape as [`Self::first_entry`] on both
+    /// axes.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().last_entry()` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the primitive reads through — pinned by
+    /// [`progressive_tests::progressive_resolution_last_entry_agrees_with_provenance_map_last_entry_pointwise`].
+    #[must_use]
+    pub fn last_entry(&self) -> Option<(&[String], &Provenance)> {
+        self.provenance.last_entry()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -98129,6 +98199,111 @@ mod progressive_tests {
             r.contains_path_owned(&miss_owned),
             r.provenance_of_owned(&miss_owned).is_some(),
         );
+    }
+
+    // -------- ProgressiveResolution bounded-lookup pair
+    // -------- (container-altitude peer of `ProvenanceMap::first_entry` /
+    // -------- `ProvenanceMap::last_entry`, closing the `BTreeMap`-idiom
+    // -------- `first_key_value` / `last_key_value` pair at the container
+    // -------- altitude alongside the walker trio, the sizing pair, the
+    // -------- single-leaf lookup pair, and the presence-check pair)
+
+    #[test]
+    fn progressive_resolution_first_entry_agrees_with_provenance_map_first_entry_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // lex-lower-bound delegate: `ProgressiveResolution::first_entry`
+        // yields the same `Option<(&[String], &Provenance)>` pair as
+        // `res.provenance().first_entry()`. Catches a future edit that
+        // reroutes the container-altitude seam through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (a `last_key_value` typo, a walk-based lower-
+        // bound probe through `entries().next()`, a projection through
+        // an unrelated field) that would break the shared-lookup
+        // contract, before the drift can reach any caller that reads
+        // `res.provenance().first_entry()` and now migrates to the
+        // one-hop form.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<(Vec<String>, Provenance)> =
+            r.first_entry().map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_prov: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .first_entry()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_entry_agrees_with_provenance_map_last_entry_pointwise() {
+        // Peer of the `first_entry` pin above on the upper-bound side:
+        // the container-altitude lex-upper-bound delegate yields the
+        // same pair as `res.provenance().last_entry()`. Closes the
+        // shared-lookup contract on both bounds at the container
+        // altitude.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<(Vec<String>, Provenance)> =
+            r.last_entry().map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_prov: Option<(Vec<String>, Provenance)> = r
+            .provenance()
+            .last_entry()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_entry_agrees_with_entries_next_pointwise() {
+        // Cross-seam agreement law between the container-altitude
+        // bounded-lookup pair and the paired-walker `entries` walker
+        // at the container-altitude walker seam: the lower-bound seam
+        // yields the same pair as `entries().next()`, the walker's
+        // first step. The `BTreeMap`-idiom `first_key_value() ==
+        // iter().next()` law lifted to the container altitude on the
+        // output side of the fold. Peer of the walker-agreement pins
+        // on adjacent seams.
+        let r = Prog::resolve_progressive();
+        let via_first: Option<(Vec<String>, Provenance)> =
+            r.first_entry().map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_walker: Option<(Vec<String>, Provenance)> = r
+            .entries()
+            .next()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_first, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_last_entry_agrees_with_entries_next_back_pointwise() {
+        // Peer of the `first_entry` cross-seam pin above on the
+        // upper-bound side: the upper-bound seam yields the same pair
+        // as `entries().next_back()`, the walker's first tail step.
+        let r = Prog::resolve_progressive();
+        let via_last: Option<(Vec<String>, Provenance)> =
+            r.last_entry().map(|(p, prov)| (p.to_vec(), prov.clone()));
+        let via_walker: Option<(Vec<String>, Provenance)> = r
+            .entries()
+            .next_back()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()));
+        assert_eq!(via_last, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_first_entry_names_a_leaf_at_the_lex_lower_bound() {
+        // Ground-truth pin at the container altitude: on the `Prog`
+        // fixture (paths a/b/c/d, lex-sorted), `first_entry()` names
+        // `a` and its Discovered tier; `last_entry()` names `d` and
+        // its Default tier. Peer of
+        // `provenance_map_first_entry_names_a_leaf_at_the_lex_lower_bound`
+        // one altitude down: catches a future edit that reroutes the
+        // container-altitude seams through the wrong end of the sorted
+        // `BTreeMap` (e.g. both routed through `last_key_value` by
+        // mistake) without disagreeing with the walker — a subtle
+        // drift the pointwise-agreement pins above would still accept
+        // in one direction.
+        let r = Prog::resolve_progressive();
+        let (first_path, first_prov) = r.first_entry().unwrap();
+        assert_eq!(first_path, &["a".to_string()][..]);
+        assert_eq!(first_prov.tier(), ConfigTierKind::Discovered);
+        let (last_path, last_prov) = r.last_entry().unwrap();
+        assert_eq!(last_path, &["d".to_string()][..]);
+        assert_eq!(last_prov.tier(), ConfigTierKind::Default);
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
