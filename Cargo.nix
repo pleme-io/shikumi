@@ -2085,11 +2085,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" ];
       };
-      "bitflags 2.13.1" = rec {
+      "bitflags 2.13.2" = rec {
         crateName = "bitflags";
-        version = "2.13.1";
+        version = "2.13.2";
         edition = "2021";
-        sha256 = "1nl76mpykmwmb8rq1l5vw1azdh1wvxdrnsk4sy3rdrzx01nvg25m";
+        sha256 = "01hbgjwvid66850fzi76mvn5f2bqycx6sf165ng1kfjqq9bl1v9x";
         authors = [
           "The Rust Project Developers"
         ];
@@ -3023,7 +3023,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
@@ -5166,7 +5166,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
           }
           {
             name = "inotify-sys";
@@ -5582,7 +5582,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             usesDefaultFeatures = false;
           }
           {
@@ -5783,7 +5783,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             target = { target, features }: ("macos" == target."os" or null);
           }
           {
@@ -5877,7 +5877,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
           }
         ];
         features = {
@@ -5985,7 +5985,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6390,7 +6390,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6479,7 +6479,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6570,7 +6570,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6638,7 +6638,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6815,7 +6815,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6874,7 +6874,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6956,7 +6956,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -7060,7 +7060,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -7103,7 +7103,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -7221,7 +7221,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -8405,7 +8405,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
             usesDefaultFeatures = false;
           }
           {
@@ -8948,7 +8948,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
           }
           {
             name = "core-foundation";
@@ -9484,7 +9484,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.907";
+        version = "0.1.908";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10819,7 +10819,7 @@ rec {
         dependencies = [
           {
             name = "bitflags";
-            packageId = "bitflags 2.13.1";
+            packageId = "bitflags 2.13.2";
           }
           {
             name = "bytes";
