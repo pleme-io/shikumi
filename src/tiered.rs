@@ -21984,6 +21984,68 @@ impl<T> ProgressiveResolution<T> {
         (self.value, self.provenance)
     }
 
+    /// Sorted iterator over just the per-leaf [`Provenance`] stamp — the
+    /// container-altitude peer of [`ProvenanceMap::provenances`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.provenances()`.
+    ///
+    /// The atomic-pair-altitude peer of the scalar-projection walker
+    /// quintet ([`Self::tiers`] / [`Self::source_kinds`] /
+    /// [`Self::sources`] / [`Self::tier_ordinals`] /
+    /// [`Self::source_kind_ordinals`]) on the same container: where the
+    /// quintet projects the per-leaf `(tier, source)` pair each
+    /// [`Provenance`] carries to one of its coordinates, this walker
+    /// keeps the whole [`Provenance`] borrow. Every scalar the quintet
+    /// emits is recoverable from this walker's stream via the named
+    /// primitive-altitude accessor — `provenances().map(Provenance::tier)`
+    /// pointwise equals `tiers()`,
+    /// `provenances().map(Provenance::source_kind)` pointwise equals
+    /// `source_kinds()`, and so on across all five coordinates. Peer of
+    /// [`ProvenanceMap::provenances`] one seam down on the primitive-
+    /// altitude peer of the same [`BTreeMap`]-idiom `iter` / `keys` /
+    /// `values` trio (`entries` / `paths` / `provenances`), lifted to the
+    /// resolution container on the output side of the fold.
+    ///
+    /// Before this seam, a caller streaming the per-leaf [`Provenance`]
+    /// stamps out of a [`ProgressiveResolution`] (an attestation manifest
+    /// hashing the atomic `(tier, source)` pair per leaf, a `ConfigPlane`
+    /// broadcast surface routing per-leaf stamps to a downstream
+    /// consumer, an operator-facing `/healthz/provenance` renderer that
+    /// walks the full stamp per row) reached through the two-hop borrow
+    /// chain `res.provenance().provenances()` that named the
+    /// [`Self::provenance`] accessor at every call site; this walker
+    /// collapses it to one seam on the resolution container itself,
+    /// matching the same one-hop delegation the scalar-projection quintet
+    /// already carries on adjacent seams.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapProvenances`] impls the
+    /// full walker trait shape ([`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug]) — routed through this seam unchanged,
+    /// the same trait shape the scalar-projection quintet carries on
+    /// adjacent seams.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Element stream: pointwise equal to `res.provenance().provenances()`
+    ///   in element count, order, and element identity — pinned by
+    ///   [`progressive_tests::progressive_resolution_provenances_agrees_with_provenance_provenances_pointwise`].
+    /// - Scalar recovery: `provenances().map(Provenance::tier)` equals
+    ///   [`Self::tiers`] pointwise — pinned by
+    ///   [`progressive_tests::progressive_resolution_provenances_folded_to_tiers_equals_tiers_walker`];
+    ///   `provenances().map(Provenance::source_kind)` equals
+    ///   [`Self::source_kinds`] pointwise — pinned by
+    ///   [`progressive_tests::progressive_resolution_provenances_folded_to_source_kinds_equals_source_kinds_walker`].
+    /// - Total visitation: `provenances().count() == res.provenance().len()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_provenances_length_matches_provenance_len`].
+    #[must_use]
+    pub fn provenances(&self) -> ProvenanceMapProvenances<'_> {
+        self.provenance.provenances()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -97130,6 +97192,78 @@ mod progressive_tests {
         assert_eq!(r.sources().count(), n);
         assert_eq!(r.tier_ordinals().count(), n);
         assert_eq!(r.source_kind_ordinals().count(), n);
+    }
+
+    // -------- ProgressiveResolution atomic-pair-altitude walker
+    // -------- (container-altitude peer of `ProvenanceMap::provenances`,
+    // -------- one altitude up from the scalar-projection quintet)
+
+    #[test]
+    fn progressive_resolution_provenances_agrees_with_provenance_provenances_pointwise() {
+        // The load-bearing structural law on the container-altitude
+        // atomic-pair-altitude walker delegate: the container-altitude
+        // walker yields the same `&Provenance` stream, in the same
+        // order, as `res.provenance().provenances()`. Catches a future
+        // edit that routes `ProgressiveResolution::provenances` through
+        // a different BTreeMap projection than the primitive-altitude
+        // walker it delegates to (a `.iter().rev()` cursor, an
+        // `.into_values()` consume by mistake, a projection through a
+        // different `ProvenanceMap` accessor) that would break the
+        // shared-order contract, before the drift can reach any consumer
+        // that reads `res.provenances()` and expects it to match
+        // `res.provenance().provenances()`. Peer of the scalar-projection
+        // quintet's agreement pins one altitude down on the same seam.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<Provenance> = r.provenances().cloned().collect();
+        let via_prov: Vec<Provenance> = r.provenance().provenances().cloned().collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_provenances_folded_to_tiers_equals_tiers_walker() {
+        // Cross-projection recoverability pin between the atomic-pair-
+        // altitude walker and the tier-axis scalar walker at the
+        // container-altitude walker seam: the atomic-pair walker folded
+        // through `Provenance::tier` yields the same stream as the
+        // scalar walker, so the two walkers remain the same pointwise
+        // witness of the same tier axis, one altitude apart. Peer of the
+        // primitive-altitude pin
+        // `provenance_map_tiers_agrees_with_provenances_tier_projection`
+        // one seam down.
+        let r = Prog::resolve_progressive();
+        let via_provs_folded: Vec<ConfigTierKind> = r.provenances().map(Provenance::tier).collect();
+        let via_tiers: Vec<ConfigTierKind> = r.tiers().collect();
+        assert_eq!(via_provs_folded, via_tiers);
+    }
+
+    #[test]
+    fn progressive_resolution_provenances_folded_to_source_kinds_equals_source_kinds_walker() {
+        // Source-kind-axis peer of the tier-axis cross-projection pin
+        // above — closes the atomic-pair-vs-scalar recoverability pin
+        // on both coordinates of the `(tier, source)` pair at the
+        // container-altitude walker seam.
+        let r = Prog::resolve_progressive();
+        let via_provs_folded: Vec<crate::ConfigSourceKind> =
+            r.provenances().map(Provenance::source_kind).collect();
+        let via_kinds: Vec<crate::ConfigSourceKind> = r.source_kinds().collect();
+        assert_eq!(via_provs_folded, via_kinds);
+    }
+
+    #[test]
+    fn progressive_resolution_provenances_length_matches_provenance_len() {
+        // The atomic-pair-altitude walker visits every leaf in the
+        // underlying provenance map exactly once — the
+        // `ExactSizeIterator` bound gets pinned against the map's own
+        // `len()`. Catches a future edit that reroutes the walker
+        // through a partial cursor (a `.filter(..)` step, a `.take(..)`
+        // prefix) that would break the total-visitation contract on
+        // the atomic-pair walker without touching the scalar quintet
+        // one altitude down. Peer of the quintet's length pin
+        // `progressive_resolution_walker_quintet_length_matches_provenance_len`
+        // one altitude down on the same seam.
+        let r = Prog::resolve_progressive();
+        let n = r.provenance().len();
+        assert_eq!(r.provenances().count(), n);
     }
 
     // -------- ProgressiveResolution histogram pair
