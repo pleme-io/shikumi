@@ -2847,6 +2847,59 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(k, _)| k.as_slice())
     }
 
+    /// Lexicographically smallest leaf's [`ConfigTierKind`] scalar, or
+    /// [`None`] if this map is empty — the tier-axis scalar sub-projection
+    /// of the value-axis bound [`Self::first_provenance`] on the same
+    /// underlying [`BTreeMap`], and the bounded-lookup peer of
+    /// [`Self::tiers`] on the lower-bound side. Sub-projects the value
+    /// half `&Provenance` one altitude further inland to the
+    /// [`Provenance::tier`] scalar every leaf carries, matching
+    /// [`Self::first_provenance`] the same way [`Self::tiers`] matches
+    /// [`Self::provenances`]: sorted-map lex order on the hidden path
+    /// key, one BTreeMap cursor probe, no allocation.
+    ///
+    /// Pointwise-equal to `self.first_provenance().map(Provenance::tier)`
+    /// and to `self.tiers().next()` on every input by construction —
+    /// the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, discarding just the path key
+    /// and dereferencing the [`Provenance::tier`] const-fn accessor on
+    /// the retained value. Callers already reaching for `Some(...)`
+    /// through `self.first_provenance().map(|p| p.tier())` were pulling
+    /// a `&Provenance` borrow at the extremal leaf just to project one
+    /// scalar off it; this seam collapses that to one direct tier-axis
+    /// probe — the peer routing [`Self::tiers`] gives on the walker side.
+    ///
+    /// Returns owned [`ConfigTierKind`] matching the [`ProvenanceMapTiers`]
+    /// item shape ([`Copy`], no borrow) with no allocation. The tier-axis
+    /// peer of [`Self::first_provenance`] one altitude down on the value
+    /// axis, and the pair-side peer of [`Self::tiers`] on the walker
+    /// altitude — together they close the tier-axis sub-projection of
+    /// the value-axis bound at the primitive altitude.
+    #[must_use]
+    pub fn first_tier(&self) -> Option<ConfigTierKind> {
+        self.inner.first_key_value().map(|(_, v)| v.tier())
+    }
+
+    /// Lexicographically largest leaf's [`ConfigTierKind`] scalar, or
+    /// [`None`] if this map is empty — the tier-axis scalar sub-projection
+    /// sibling of [`Self::first_tier`] on the upper-bound side that
+    /// [`Self::first_tier`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to `self.last_provenance().map(Provenance::tier)`
+    /// and to `self.tiers().next_back()` on every input by construction —
+    /// the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, discarding just the path key
+    /// and dereferencing the [`Provenance::tier`] const-fn accessor on
+    /// the retained value, so the two disagree only under a `BTreeMap`
+    /// bug. Returns the same owned [`ConfigTierKind`] shape as
+    /// [`Self::first_tier`] on the tier axis.
+    #[must_use]
+    pub fn last_tier(&self) -> Option<ConfigTierKind> {
+        self.inner.last_key_value().map(|(_, v)| v.tier())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -53137,6 +53190,108 @@ mod progressive_tests {
         let one: ProvenanceMap =
             std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
         assert_eq!(one.first_path(), one.last_path());
+    }
+
+    // -------- ProvenanceMap::first_tier / ::last_tier tier-axis scalar sub-projection --------
+
+    #[test]
+    fn provenance_map_first_tier_agrees_with_first_provenance_tier_projection_pointwise() {
+        // The tier-axis scalar sub-projection of the value-axis bound
+        // yields the same `ConfigTierKind` as
+        // `first_provenance().map(Provenance::tier)`, discarding the
+        // path key and dereferencing the `Provenance::tier` accessor at
+        // the same lex-lower-bound leaf. Catches a future edit that
+        // reroutes `first_tier()` through `last_key_value()`
+        // (upper-bound cursor by mistake), a `values().last()` linear
+        // scan, or the wrong `Provenance` axis projection (source_kind
+        // instead of tier).
+        let r = Prog::resolve_progressive();
+        let via_first_tier: Option<ConfigTierKind> = r.provenance().first_tier();
+        let via_first_prov: Option<ConfigTierKind> =
+            r.provenance().first_provenance().map(Provenance::tier);
+        assert_eq!(via_first_tier, via_first_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_tier_agrees_with_last_provenance_tier_projection_pointwise() {
+        // Peer of the `first_tier` pin above on the upper-bound side.
+        // Pointwise-equal to `last_provenance().map(Provenance::tier)`.
+        let r = Prog::resolve_progressive();
+        let via_last_tier: Option<ConfigTierKind> = r.provenance().last_tier();
+        let via_last_prov: Option<ConfigTierKind> =
+            r.provenance().last_provenance().map(Provenance::tier);
+        assert_eq!(via_last_tier, via_last_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_tier_agrees_with_tiers_next_pointwise() {
+        // The BTreeMap-idiom `first_key_value().map(|(_, v)| v.tier())
+        // == tiers().next()` law lifted to the ProvenanceMap surface on
+        // the walker seam. Catches a future edit that reroutes
+        // `first_tier` through a walker with the wrong ordering
+        // discipline (e.g. an unsorted HashMap projection or an
+        // `into_values` reverse walk).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<ConfigTierKind> = r.provenance().first_tier();
+        let via_walker: Option<ConfigTierKind> = r.provenance().tiers().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_last_tier_agrees_with_tiers_next_back_pointwise() {
+        // Peer of the `first_tier` walker pin above on the upper bound
+        // via `DoubleEndedIterator::next_back`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<ConfigTierKind> = r.provenance().last_tier();
+        let via_walker: Option<ConfigTierKind> = r.provenance().tiers().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_first_tier_names_the_lex_lower_bound_leaf_tier_kind() {
+        // Ground-truth pin on the `Prog` fixture (paths a/b/c/d,
+        // lex-sorted; per-leaf tiers Discovered/Default/Bare/Default):
+        // `first_tier()` names `a`'s Discovered; `last_tier()` names
+        // `d`'s Default. Rules out the both-routed-to-`last_key_value`
+        // mode the pointwise pins above would still accept, and asserts
+        // the tier-axis scalar sub-projection matches the value axis
+        // bound at the same leaf.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().first_tier(),
+            Some(ConfigTierKind::Discovered)
+        );
+        assert_eq!(r.provenance().last_tier(), Some(ConfigTierKind::Default));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_tier_none_on_empty_map() {
+        // Empty case: `Option<ConfigTierKind>` is `None` at both bounds,
+        // matching the `first_provenance` / `last_provenance` and
+        // `first_path` / `last_path` empty behavior on the same
+        // underlying BTreeMap. Closes the empty-case triplet
+        // (pair, value-axis, tier-axis sub-projection) at the primitive
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_tier().is_none());
+        assert!(empty.last_tier().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_tier_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's tier is both the
+        // lex-lower-bound and lex-upper-bound projection, so
+        // `first_tier()` and `last_tier()` name the same
+        // `ConfigTierKind`. Peer of
+        // `provenance_map_first_and_last_provenance_coincide_on_singleton_map`
+        // on the tier-axis scalar sub-projection — closes the
+        // singleton-case triplet at the primitive altitude on the
+        // pair, value-axis, and tier-axis sub-projections of the pair
+        // walker.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_tier(), one.last_tier());
+        assert_eq!(one.first_tier(), Some(ConfigTierKind::Bare));
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
