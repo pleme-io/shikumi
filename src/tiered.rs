@@ -21128,6 +21128,78 @@ impl ProgressiveLayer {
         self.provenance.is_file()
     }
 
+    /// Returns `Some(&Path)` if this overlay's stamp carries the
+    /// [`ConfigSource::File`] source, `None` on every other source-arm
+    /// regardless of the inner path payload — the container-altitude
+    /// lift of [`Provenance::as_file_path`] (`0a09dc4`) onto
+    /// [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and the
+    /// file-arm raw-payload extractor peer of the yes/no polarity sibling
+    /// [`Self::is_file`] one seam up on the same source axis.
+    ///
+    /// Equal to `self.provenance().as_file_path()` by construction — one
+    /// method call answers *"what filesystem path produced this overlay?"*
+    /// without borrowing through the [`Self::provenance`] accessor at the
+    /// call site. Returns a borrow rather than a copy because
+    /// [`std::path::PathBuf`] owns its allocation — the same borrow shape
+    /// [`Provenance::as_file_path`] carries one seam down, and the same
+    /// shape [`Self::source`] carries on the neighbouring scalar-source
+    /// projection.
+    ///
+    /// Before this seam, a caller extracting the borrowed [`Path`] payload
+    /// from a [`ProgressiveLayer`] — a `ConfigPlane` broadcast surface
+    /// encoding a wire message keyed on the overlay's operator-visible
+    /// path, an attestation manifest recording per-overlay file
+    /// fingerprints, an operator-facing `/healthz/overlays` renderer that
+    /// walks each stamped overlay to display its source path — reached
+    /// through `layer.provenance().as_file_path()`, a two-hop
+    /// borrow-and-project chain that names the [`Self::provenance`]
+    /// accessor at every call site instead of the inherent seam at the
+    /// container altitude. After this lift the file-arm raw-payload
+    /// extractor closes at the [`ProgressiveLayer`] altitude, matching the
+    /// container-altitude closure the source-axis predicate triplet
+    /// [`Self::is_defaults`] / [`Self::is_env`] / [`Self::is_file`] and
+    /// the compound-polarity sibling [`Self::is_overlay`] already carry
+    /// on the same axis.
+    ///
+    /// Not `const`-callable — the body composes
+    /// [`Provenance::as_file_path`], which composes
+    /// [`crate::ConfigSource::as_path`], which composes
+    /// [`std::path::PathBuf::as_path`] (not yet const-stable on
+    /// rustc 1.94.1). Same std-stability boundary as the primitive-side
+    /// peer [`Provenance::as_file_path`], matching the pattern of one
+    /// non-const inherent per [`std::path::Path`]-derived projection on
+    /// the crate. The env-arm sibling extractor — should it be lifted
+    /// here — would be `const`-callable because
+    /// [`Provenance::as_env_prefix`] is const, matching the same
+    /// const-vs-non-const asymmetry the primitive-side pair
+    /// [`Provenance::as_file_path`] / [`Provenance::as_env_prefix`] and
+    /// the tier-side sibling [`ConfigTier::as_custom_path`] (`bb4d2e4`)
+    /// carry.
+    ///
+    /// **Boolean-agreement law** — `layer.as_file_path().is_some() ==
+    /// layer.is_file()` holds pointwise on the shipped stamp-side
+    /// constructor surface, pinned by
+    /// [`tests::progressive_layer_as_file_path_agrees_with_is_file_pointwise`].
+    /// Container-altitude analogue of the same-shape agreement law
+    /// [`tests::provenance_as_file_path_agrees_with_is_file_pointwise`]
+    /// on the primitive-side one altitude down; catches a future edit
+    /// that drifts one altitude's polarity on the file-source arm
+    /// without the other.
+    ///
+    /// **Payload identity** — for every `File(path)` overlay the
+    /// extractor returns the same [`Path`] bytes as the two-hop
+    /// `layer.provenance().as_file_path()` chain, which is the same
+    /// [`Path`] bytes as [`crate::ConfigSource::as_path`] on the
+    /// underlying source coordinate. Pinned by
+    /// [`tests::progressive_layer_as_file_path_preserves_inner_pathbuf_verbatim`];
+    /// the container-altitude analogue of
+    /// [`tests::provenance_as_file_path_preserves_inner_pathbuf_verbatim`]
+    /// on the primitive-side.
+    #[must_use]
+    pub fn as_file_path(&self) -> Option<&Path> {
+        self.provenance.as_file_path()
+    }
+
     /// Returns `true` iff this overlay's stamp carries one of the
     /// operator-supplied overlay sources ([`ConfigSource::Env`] or
     /// [`ConfigSource::File`]) — the compound-polarity complement of
@@ -74779,6 +74851,149 @@ mod progressive_tests {
                 !layer.is_custom(),
                 "ProgressiveLayer {layer:?}: is_computed() must be the complement of \
                  is_custom() on the tier-axis polarity pair",
+            );
+        }
+    }
+
+    // ── ProgressiveLayer::as_file_path — container-altitude lift of
+    //    the primitive-altitude file-arm raw-payload extractor
+    //    `Provenance::as_file_path` (`0a09dc4`) onto ProgressiveLayer's
+    //    `Provenance` stamp coordinate; the file-arm borrowed-`Path`
+    //    payload projection on the source axis of the atomic
+    //    `(tier, source)` pair ──
+
+    #[test]
+    fn progressive_layer_as_file_path_extracts_only_from_file_source() {
+        // Selectivity pin at the ProgressiveLayer altitude for the
+        // file-arm raw-payload extractor. Exactly the file-source
+        // constructor (`ProgressiveLayer::file`) answers `Some(_)`;
+        // every other stamp-side constructor row answers `None`,
+        // regardless of the inner path or prefix payload. Container-
+        // altitude analogue of the primitive-altitude selectivity pin
+        // `provenance_as_file_path_extracts_only_from_file_source` one
+        // seam down; catches a future edit that reversed the extractor's
+        // polarity or admitted a non-file-source arm.
+        let dict = Dict::new();
+        assert!(
+            ProgressiveLayer::bare(dict.clone())
+                .as_file_path()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::discovered(dict.clone())
+                .as_file_path()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::prescribed_default(dict.clone())
+                .as_file_path()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::env("", dict.clone())
+                .as_file_path()
+                .is_none()
+        );
+        assert!(
+            ProgressiveLayer::env("SHIKUMI_LAYER_AS_FILE_PATH_SELECTIVITY_", dict.clone())
+                .as_file_path()
+                .is_none(),
+        );
+
+        for raw in [
+            "/etc/layer_as_file_path_selectivity.yaml",
+            "relative/layer_as_file_path_selectivity.toml",
+            "",
+            "/tmp/has space/layer_as_file_path_selectivity.yaml",
+        ] {
+            let layer = ProgressiveLayer::file(raw, dict.clone());
+            let extracted = layer.as_file_path().map(Path::to_path_buf);
+            assert_eq!(
+                extracted.as_deref(),
+                Some(Path::new(raw)),
+                "as_file_path did not project inner path verbatim for {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_file_path_agrees_with_is_file_pointwise() {
+        // Boolean-agreement law at the container altitude:
+        // `layer.as_file_path().is_some() == layer.is_file()` on every
+        // shipped stamp-side constructor row. Refuses a future edit that
+        // reversed the extractor's polarity on the file-source arm — the
+        // two projections walk the same three-arm source partition and
+        // must agree pointwise. Container-altitude analogue of the
+        // primitive-altitude agreement law
+        // `provenance_as_file_path_agrees_with_is_file_pointwise` one
+        // seam down on `Provenance`; catches a future edit that drifts
+        // one altitude's polarity without the other, and pins the
+        // payload-independence contract on this altitude (the primitive-
+        // side has no `Dict` visibility either, so the container-side is
+        // forbidden from consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_LAYER_AS_FILE_PATH_AGREEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/layer_as_file_path_agreement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/layer_as_file_path_agreement.toml", dict.clone()),
+            ProgressiveLayer::file("", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.as_file_path().is_some(),
+                layer.is_file(),
+                "as_file_path/is_file polarity drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_file_path_preserves_inner_pathbuf_verbatim() {
+        // Payload-identity law at the container altitude: for every
+        // file-source `ProgressiveLayer` the extractor returns the same
+        // `Path` bytes as the two-hop `layer.provenance().as_file_path()`
+        // chain, which is the same `Path` bytes as `ConfigSource::as_path`
+        // on the underlying source coordinate — no transformation through
+        // `canonicalize`, prefix-strip, or separator-normalize. Container-
+        // altitude analogue of the primitive-altitude identity law
+        // `provenance_as_file_path_preserves_inner_pathbuf_verbatim` one
+        // seam down; catches a future edit that inserted a normalization
+        // step between the primitive-side extractor and the container-
+        // side extractor.
+        let dict = Dict::new();
+        for raw in [
+            "/etc/layer_as_file_path_verbatim.yaml",
+            "relative/layer_as_file_path_verbatim.toml",
+            "",
+            "/tmp/has space/layer_as_file_path_verbatim.yaml",
+            "///double//separators.yaml",
+        ] {
+            let layer = ProgressiveLayer::file(raw, dict.clone());
+            let via_layer = layer.as_file_path().expect("file-source projection");
+            let via_provenance = layer
+                .provenance()
+                .as_file_path()
+                .expect("primitive-side projection");
+            let via_source = layer.source().as_path().expect("source-arm projection");
+            assert_eq!(
+                via_layer, via_provenance,
+                "ProgressiveLayer::as_file_path diverged from Provenance::as_file_path on {raw:?}",
+            );
+            assert_eq!(
+                via_layer, via_source,
+                "ProgressiveLayer::as_file_path diverged from ConfigSource::as_path on {raw:?}",
+            );
+            assert_eq!(
+                via_layer,
+                Path::new(raw),
+                "ProgressiveLayer::as_file_path did not preserve inner Path bytes on {raw:?}",
             );
         }
     }
