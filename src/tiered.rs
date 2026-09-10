@@ -21984,6 +21984,65 @@ impl<T> ProgressiveResolution<T> {
         (self.value, self.provenance)
     }
 
+    /// Sorted iterator over just the per-leaf path key — the
+    /// container-altitude peer of [`ProvenanceMap::paths`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.paths()`.
+    ///
+    /// The path-key-altitude peer of [`Self::provenances`] on the same
+    /// container: [`Self::provenances`] emits the `&Provenance` stream
+    /// (the atomic `(tier, source)` pair each leaf carries);
+    /// [`Self::paths`] emits the `&[String]` stream (the leaf path key
+    /// keyed against the same [`BTreeMap`] the resolution's
+    /// [`ProvenanceMap`] wraps). Together they close both projection
+    /// walkers of the standard [`BTreeMap`]-idiom trio
+    /// (`iter` / `keys` / `values`) at the container altitude on the
+    /// output side of the fold, matching the closure the primitive-
+    /// altitude [`ProvenanceMap::paths`] / [`ProvenanceMap::provenances`]
+    /// pair carries one seam down.
+    ///
+    /// Before this seam, a caller streaming the per-leaf path keys out
+    /// of a [`ProgressiveResolution`] (a `ConfigPlane` wire encoder
+    /// emitting the leaf path list separately from the per-leaf
+    /// provenance envelope, a schema-driven UI listing every resolved
+    /// leaf without paying to render the provenance detail, a per-path
+    /// checklist walker cross-referencing another map keyed on the same
+    /// paths) reached through the two-hop borrow chain
+    /// `res.provenance().paths()` that named the [`Self::provenance`]
+    /// accessor at every call site; this walker collapses it to one
+    /// seam on the resolution container itself, matching the same
+    /// one-hop delegation the paired [`Self::provenances`] walker and
+    /// the scalar-projection quintet ([`Self::tiers`] /
+    /// [`Self::source_kinds`] / [`Self::sources`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`]) already
+    /// carry on adjacent seams.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapPaths`] impls the full
+    /// walker trait shape ([`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`]
+    /// + [`Debug`][std::fmt::Debug]) — routed through this seam
+    /// unchanged, the same trait shape [`Self::provenances`] and the
+    /// scalar-projection quintet carry on adjacent seams.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Element stream: pointwise equal to `res.provenance().paths()`
+    ///   in element count, order, and element identity — pinned by
+    ///   [`progressive_tests::progressive_resolution_paths_agrees_with_provenance_paths_pointwise`].
+    /// - Cross-walker length: `paths().count() == provenances().count()`
+    ///   — the paired walkers close over the same underlying
+    ///   [`BTreeMap`] leaf set — pinned by
+    ///   [`progressive_tests::progressive_resolution_paths_length_matches_provenances_length`].
+    /// - Total visitation: `paths().count() == res.provenance().len()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_paths_length_matches_provenance_len`].
+    #[must_use]
+    pub fn paths(&self) -> ProvenanceMapPaths<'_> {
+        self.provenance.paths()
+    }
+
     /// Sorted iterator over just the per-leaf [`Provenance`] stamp — the
     /// container-altitude peer of [`ProvenanceMap::provenances`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -97264,6 +97323,65 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         let n = r.provenance().len();
         assert_eq!(r.provenances().count(), n);
+    }
+
+    // -------- ProgressiveResolution path-key-altitude walker
+    // -------- (container-altitude peer of `ProvenanceMap::paths`,
+    // -------- keyed-side sibling of the atomic-pair walker
+    // -------- `ProgressiveResolution::provenances`)
+
+    #[test]
+    fn progressive_resolution_paths_agrees_with_provenance_paths_pointwise() {
+        // The load-bearing structural law on the container-altitude
+        // path-key-altitude walker delegate: the container-altitude
+        // walker yields the same `&[String]` stream, in the same order,
+        // as `res.provenance().paths()`. Catches a future edit that
+        // routes `ProgressiveResolution::paths` through a different
+        // BTreeMap projection than the primitive-altitude walker it
+        // delegates to (a `.iter().rev()` cursor, a projection through
+        // `.into_keys()` by mistake, a projection through a different
+        // `ProvenanceMap` accessor) that would break the shared-order
+        // contract, before the drift can reach any consumer that reads
+        // `res.paths()` and expects it to match
+        // `res.provenance().paths()`. Peer of the atomic-pair walker's
+        // agreement pin
+        // `progressive_resolution_provenances_agrees_with_provenance_provenances_pointwise`
+        // one seam over on the paired keyed-side walker.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<Vec<String>> = r.paths().map(<[String]>::to_vec).collect();
+        let via_prov: Vec<Vec<String>> = r.provenance().paths().map(<[String]>::to_vec).collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_paths_length_matches_provenances_length() {
+        // Cross-walker length pin between the path-key-altitude walker
+        // and the atomic-pair-altitude walker at the container-altitude
+        // walker seam: the two walkers close over the same underlying
+        // `BTreeMap` leaf set, so their element counts remain equal.
+        // Catches a future edit that reroutes one of the two walkers
+        // through a partial cursor (a `.filter(..)` step, a `.take(..)`
+        // prefix) that would break the shared-leaf-set contract on the
+        // paired keyed / atomic-pair walkers at the container altitude,
+        // before the drift can reach any consumer that reads either
+        // walker expecting them to close the standard `BTreeMap`-idiom
+        // `keys` / `values` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.paths().count(), r.provenances().count());
+    }
+
+    #[test]
+    fn progressive_resolution_paths_length_matches_provenance_len() {
+        // The path-key-altitude walker visits every leaf in the
+        // underlying provenance map exactly once — the
+        // `ExactSizeIterator` bound gets pinned against the map's own
+        // `len()`, closing the total-visitation contract on the paired
+        // keyed-side walker to match the total-visitation contract the
+        // atomic-pair walker `ProgressiveResolution::provenances`
+        // already carries on the same seam.
+        let r = Prog::resolve_progressive();
+        let n = r.provenance().len();
+        assert_eq!(r.paths().count(), n);
     }
 
     // -------- ProgressiveResolution histogram pair
