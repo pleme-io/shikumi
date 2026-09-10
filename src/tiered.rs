@@ -22939,6 +22939,89 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.last_path()
     }
 
+    /// Lex-lower-bound leaf's [`ConfigTierKind`] scalar, or [`None`] if
+    /// this resolution's provenance map is empty — the container-altitude
+    /// peer of [`ProvenanceMap::first_tier`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_tier()`.
+    ///
+    /// The tier-axis scalar sub-projection of the value-axis bound
+    /// [`Self::first_provenance`] on the same container: sub-projects the
+    /// value half `&Provenance` one altitude further inland to the
+    /// [`Provenance::tier`] scalar every leaf carries, matching
+    /// [`Self::first_provenance`] the same way [`Self::tiers`] matches
+    /// [`Self::provenances`]. Callers that reached through
+    /// `res.first_provenance().map(|p| p.tier())` — a `ConfigPlane` wire
+    /// encoder emitting only the tier byte of the lex-lower-bound leaf's
+    /// stamp, an operator-facing `/healthz/provenance` renderer that names
+    /// the extremal leaf's tier without pairing it against the source, a
+    /// per-tier boundary telemetry counter comparing just the first and
+    /// last leaves' tiers, or a compile-time attestation hasher folding
+    /// just the two boundary tiers — were pulling a `&Provenance` borrow
+    /// at the extremal leaf just to project one scalar off it; this seam
+    /// collapses that to one direct tier-axis probe, the container-altitude
+    /// peer of the projection the primitive-altitude
+    /// [`ProvenanceMap::first_tier`] gives on the same tier axis.
+    ///
+    /// Returns owned [`ConfigTierKind`] matching the [`ProvenanceMapTiers`]
+    /// item shape ([`Copy`], no borrow) with no allocation. The tier-axis
+    /// peer of [`Self::first_provenance`] one altitude down on the value
+    /// axis at the container altitude, and the container-altitude lift of
+    /// the primitive-altitude pair [`ProvenanceMap::first_tier`] /
+    /// [`ProvenanceMap::last_tier`] on the same tier axis — together they
+    /// close the tier-axis sub-projection of the value-axis bound at the
+    /// container altitude.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_tier()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_agrees_with_provenance_map_first_tier_pointwise`].
+    /// - Equal to `self.first_provenance().map(Provenance::tier)` on
+    ///   every input by construction — the tier-axis sub-projection of
+    ///   the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_agrees_with_first_provenance_tier_projection_pointwise`].
+    /// - Equal to `self.tiers().next()` on every input — the walker's
+    ///   first lower-bound step — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_agrees_with_tiers_next_pointwise`].
+    #[must_use]
+    pub fn first_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.first_tier()
+    }
+
+    /// Lex-upper-bound leaf's [`ConfigTierKind`] scalar, or [`None`] if
+    /// this resolution's provenance map is empty — the container-altitude
+    /// peer of [`ProvenanceMap::last_tier`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_tier()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_tier`] on the upper-bound
+    /// side that [`Self::first_tier`] closes at the lower bound — closes
+    /// the tier-axis sub-projection of the value-axis bound at the
+    /// container altitude on both bounds, matching the value-axis closure
+    /// the pair [`Self::first_provenance`] / [`Self::last_provenance`]
+    /// gives one altitude up on the same container. Returns the same
+    /// owned [`ConfigTierKind`] shape as [`Self::first_tier`] on the tier
+    /// axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_tier()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_agrees_with_provenance_map_last_tier_pointwise`].
+    /// - Equal to `self.last_provenance().map(Provenance::tier)` on
+    ///   every input by construction — the tier-axis sub-projection of
+    ///   the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_agrees_with_last_provenance_tier_projection_pointwise`].
+    /// - Equal to `self.tiers().next_back()` on every input — the
+    ///   walker's first upper-bound step via
+    ///   [`DoubleEndedIterator::next_back`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_agrees_with_tiers_next_back_pointwise`].
+    #[must_use]
+    pub fn last_tier(&self) -> Option<ConfigTierKind> {
+        self.provenance.last_tier()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -99203,6 +99286,136 @@ mod progressive_tests {
         assert_eq!(first_path, &["a".to_string()][..]);
         let last_path = r.last_path().unwrap();
         assert_eq!(last_path, &["d".to_string()][..]);
+    }
+
+    // -------- ProgressiveResolution tier-axis scalar-projection pair
+    // -------- (container-altitude peer of `ProvenanceMap::first_tier` /
+    // -------- `ProvenanceMap::last_tier`, closing the tier-axis scalar
+    // -------- sub-projection of the value-axis bound at the container
+    // -------- altitude on the output side of the fold's atomic-pair
+    // -------- ownership boundary)
+
+    #[test]
+    fn progressive_resolution_first_tier_agrees_with_provenance_map_first_tier_pointwise() {
+        // Load-bearing structural law on the container-altitude tier-axis
+        // lower-bound delegate: `ProgressiveResolution::first_tier` yields
+        // the same `Option<ConfigTierKind>` value as
+        // `res.provenance().first_tier()`. Catches a future edit that
+        // reroutes the container-altitude seam through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (a `last_tier` typo, a walk-based lower-bound
+        // probe through `tiers().next()` — pointwise-equal but a
+        // different code path — the wrong tier-axis projection through
+        // `source_kinds().next()`, or a projection through the wrong end
+        // of the sorted cursor) that would break the shared-lookup
+        // contract, before the drift can reach any caller that reads
+        // `res.provenance().first_tier()` and now migrates to the one-hop
+        // form. Tier-axis peer of
+        // `progressive_resolution_first_provenance_agrees_with_provenance_map_first_provenance_pointwise`
+        // one altitude down on the value axis of the same underlying
+        // `BTreeMap`.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<ConfigTierKind> = r.first_tier();
+        let via_prov: Option<ConfigTierKind> = r.provenance().first_tier();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_agrees_with_provenance_map_last_tier_pointwise() {
+        // Peer of the `first_tier` pin above on the upper-bound side: the
+        // container-altitude tier-axis upper-bound delegate yields the
+        // same `Option<ConfigTierKind>` value as
+        // `res.provenance().last_tier()`. Closes the shared-lookup
+        // contract on both bounds of the tier-axis scalar-projection pair
+        // at the container altitude.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<ConfigTierKind> = r.last_tier();
+        let via_prov: Option<ConfigTierKind> = r.provenance().last_tier();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_tier_agrees_with_first_provenance_tier_projection_pointwise() {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis scalar-projection pair and the
+        // container-altitude value-axis scalar-projection pair
+        // `first_provenance` at the same container: the lower-bound
+        // tier-axis seam yields the same `ConfigTierKind` as
+        // `first_provenance().map(Provenance::tier)`, discarding the
+        // path key and dereferencing the `Provenance::tier` const-fn
+        // accessor on the retained value. Peer of the primitive-altitude
+        // pin
+        // `provenance_map_first_tier_agrees_with_first_provenance_tier_projection_pointwise`
+        // one seam up, and value-axis peer
+        // `progressive_resolution_first_provenance_agrees_with_provenance_map_first_provenance_pointwise`
+        // on the same container.
+        let r = Prog::resolve_progressive();
+        let via_tier: Option<ConfigTierKind> = r.first_tier();
+        let via_prov: Option<ConfigTierKind> = r.first_provenance().map(Provenance::tier);
+        assert_eq!(via_tier, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_agrees_with_last_provenance_tier_projection_pointwise() {
+        // Peer of the `first_tier` cross-seam pin above on the
+        // upper-bound side: the upper-bound tier-axis seam yields the
+        // same `ConfigTierKind` as `last_provenance().map(Provenance::tier)`,
+        // the tier-axis sub-projection of the same value-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_tier: Option<ConfigTierKind> = r.last_tier();
+        let via_prov: Option<ConfigTierKind> = r.last_provenance().map(Provenance::tier);
+        assert_eq!(via_tier, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_tier_agrees_with_tiers_next_pointwise() {
+        // Cross-seam agreement law between the container-altitude
+        // tier-axis scalar-projection pair and the tier-axis projection
+        // walker `tiers` at the container-altitude walker seam: the
+        // lower-bound tier-axis seam yields the same `ConfigTierKind` as
+        // `tiers().next()`, the walker's first lower-bound step. The
+        // `BTreeMap`-idiom `first_key_value().map(|(_, v)| v.tier()) ==
+        // tiers().next()` law lifted to the container altitude on the
+        // output side of the fold. Peer of the primitive-altitude pin
+        // `provenance_map_first_tier_agrees_with_tiers_next_pointwise`
+        // one seam down, and value-axis peer
+        // `progressive_resolution_first_provenance_agrees_with_provenances_next_pointwise`
+        // on the same container.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<ConfigTierKind> = r.first_tier();
+        let via_walker: Option<ConfigTierKind> = r.tiers().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_agrees_with_tiers_next_back_pointwise() {
+        // Peer of the `first_tier` walker pin above on the upper-bound
+        // side: the upper-bound tier-axis seam yields the same
+        // `ConfigTierKind` as `tiers().next_back()`, the walker's first
+        // upper-bound step via [`DoubleEndedIterator::next_back`].
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<ConfigTierKind> = r.last_tier();
+        let via_walker: Option<ConfigTierKind> = r.tiers().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_tier_name_the_lex_bound_leaf_tier_kinds() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture (paths a/b/c/d, lex-sorted; per-leaf tiers
+        // Discovered/Default/Bare/Default): `first_tier()` names `a`'s
+        // Discovered; `last_tier()` names `d`'s Default. Peer of
+        // `provenance_map_first_tier_names_the_lex_lower_bound_leaf_tier_kind`
+        // one altitude down: catches a future edit that reroutes the
+        // container-altitude seams through the wrong end of the sorted
+        // `BTreeMap` (e.g. both routed through `last_tier` by mistake)
+        // without disagreeing with the walker — a subtle drift the
+        // pointwise-agreement pins above would still accept in one
+        // direction.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_tier(), Some(ConfigTierKind::Discovered));
+        assert_eq!(r.last_tier(), Some(ConfigTierKind::Default));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
