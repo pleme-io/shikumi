@@ -21276,6 +21276,88 @@ impl ProgressiveLayer {
         self.provenance.as_env_prefix()
     }
 
+    /// Returns the typed [`EnvMetadataTagKind`] sub-axis polarity if this
+    /// overlay's stamp carries the [`ConfigSource::Env`] source
+    /// (`Some(Bare)` for the empty-prefix env source, `Some(Prefixed)`
+    /// for every non-empty prefix), `None` on every other source-arm —
+    /// the container-altitude lift of [`Provenance::env_prefix_kind`]
+    /// (`be24283`) onto [`ProgressiveLayer`]'s [`Provenance`] stamp
+    /// coordinate, and the typed-sub-axis sibling of the raw-payload
+    /// extractor [`Self::as_env_prefix`] (`4001be6`) on the same
+    /// env-arm of the source axis of the atomic `(tier, source)` pair.
+    ///
+    /// Equal to `self.provenance().env_prefix_kind()` by construction —
+    /// one method call answers *"was this env-sourced overlay a bare
+    /// `Env::raw`-shaped overlay or a prefixed `Env::prefixed`-shaped
+    /// overlay?"* without borrowing through the [`Self::provenance`]
+    /// accessor at every call site. Where the paired raw-payload extractor
+    /// [`Self::as_env_prefix`] returns the underlying `&str` prefix
+    /// verbatim, this projection strips the payload to its typed `Bare`
+    /// vs `Prefixed` sub-axis tag — together the two env-arm projections
+    /// close both the raw-payload seam and the typed-sub-axis seam at one
+    /// altitude, mirroring the peer-consolidated `env_prefix_kind` /
+    /// `as_env_prefix` pair the primitive-side [`Provenance`] already
+    /// carries one altitude down.
+    ///
+    /// Before this seam, a caller extracting the typed
+    /// [`EnvMetadataTagKind`] sub-axis tag from a [`ProgressiveLayer`] —
+    /// a `ConfigPlane` broadcast surface encoding a wire message keyed on
+    /// each stamped overlay's env-name sub-axis (`bare` vs `prefixed`),
+    /// an attestation-manifest counter partitioning env-sourced overlays
+    /// by the same sub-axis, an operator-facing `/healthz/overlays`
+    /// renderer that displays the sub-axis tag on each env row — reached
+    /// through `layer.provenance().env_prefix_kind()`, a two-hop
+    /// borrow-and-project chain that named the [`Self::provenance`]
+    /// accessor at every call site instead of the inherent seam at the
+    /// container altitude. After this lift the typed env-arm sub-axis
+    /// projection closes at the [`ProgressiveLayer`] altitude, matching
+    /// the container-altitude closure the paired raw-payload sibling
+    /// [`Self::as_env_prefix`] (`4001be6`) already carries on the same
+    /// env-arm.
+    ///
+    /// `const`-callable — one-hop delegation through the const-fn
+    /// [`Provenance::env_prefix_kind`] preserves compile-time callability
+    /// end-to-end, matching the const-ness of the sibling source-axis
+    /// predicates [`Self::is_defaults`] / [`Self::is_env`] /
+    /// [`Self::is_file`], the compound-polarity sibling
+    /// [`Self::is_overlay`], and the paired raw-payload extractor
+    /// [`Self::as_env_prefix`] on the same container. Welded at compile
+    /// time by
+    /// [`tests::progressive_layer_env_prefix_kind_is_const_callable`].
+    ///
+    /// **Boolean-agreement law** — `layer.env_prefix_kind().is_some() ==
+    /// layer.is_env()` holds pointwise on the shipped stamp-side
+    /// constructor surface, pinned by
+    /// [`tests::progressive_layer_env_prefix_kind_agrees_with_is_env_pointwise`].
+    /// Container-altitude analogue of the same-shape agreement law
+    /// [`tests::provenance_env_prefix_kind_agrees_with_is_env_pointwise`]
+    /// on the primitive-side one altitude down; catches a future edit
+    /// that drifts one altitude's polarity on the env-source arm without
+    /// the other, and the sibling analogue of
+    /// [`tests::progressive_layer_as_env_prefix_agrees_with_is_env_pointwise`]
+    /// on the paired raw-payload extractor at the same altitude.
+    ///
+    /// **Payload identity** — for every `Env(prefix)` overlay the
+    /// projection returns the same [`EnvMetadataTagKind`] classification
+    /// the two-hop `layer.provenance().env_prefix_kind()` chain returns,
+    /// which is the same classification
+    /// [`crate::ConfigSource::env_prefix_kind`] returns on the underlying
+    /// source coordinate: `Bare` on the empty prefix, `Prefixed` on every
+    /// non-empty prefix — no case-fold, trim, or normalization step
+    /// between the primitive-side classification and this container-side
+    /// classification. Pinned by
+    /// [`tests::progressive_layer_env_prefix_kind_preserves_inner_kind_verbatim`];
+    /// the container-altitude analogue of
+    /// [`tests::provenance_env_prefix_kind_preserves_inner_kind_verbatim`]
+    /// on the primitive-side one altitude down, and the sibling analogue
+    /// of
+    /// [`tests::progressive_layer_as_env_prefix_preserves_inner_string_verbatim`]
+    /// on the paired raw-payload extractor at the same altitude.
+    #[must_use]
+    pub const fn env_prefix_kind(&self) -> Option<EnvMetadataTagKind> {
+        self.provenance.env_prefix_kind()
+    }
+
     /// Returns `true` iff this overlay's stamp carries one of the
     /// operator-supplied overlay sources ([`ConfigSource::Env`] or
     /// [`ConfigSource::File`]) — the compound-polarity complement of
@@ -75231,6 +75313,200 @@ mod progressive_tests {
                 "ProgressiveLayer::as_env_prefix did not preserve inner str bytes on {raw:?}",
             );
         }
+    }
+
+    // ── ProgressiveLayer::env_prefix_kind — container-altitude lift of
+    //    the primitive-altitude typed env-arm sub-axis projection
+    //    `Provenance::env_prefix_kind` (`be24283`) onto ProgressiveLayer's
+    //    `Provenance` stamp coordinate; the typed-sub-axis sibling of the
+    //    raw-payload extractor `ProgressiveLayer::as_env_prefix`
+    //    (`4001be6`) on the same env-arm ──
+
+    #[test]
+    fn progressive_layer_env_prefix_kind_extracts_only_from_env_source() {
+        // Selectivity pin at the ProgressiveLayer altitude for the typed
+        // `EnvMetadataTagKind` env-arm sub-axis projection. Exactly the
+        // env-source constructor (`ProgressiveLayer::env`) answers
+        // `Some(_)`; every other stamp-side constructor row answers
+        // `None`, regardless of the inner path payload. Container-
+        // altitude analogue of the primitive-altitude selectivity pin
+        // `provenance_env_prefix_kind_extracts_only_from_env_source` one
+        // seam down, and the sibling analogue of
+        // `progressive_layer_as_env_prefix_extracts_only_from_env_source`
+        // on the paired raw-payload extractor at the same altitude;
+        // catches a future edit that reversed the projection's polarity
+        // or admitted a non-env-source arm.
+        let dict = Dict::new();
+        assert!(
+            ProgressiveLayer::bare(dict.clone())
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::discovered(dict.clone())
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::prescribed_default(dict.clone())
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file("/etc/layer_env_prefix_kind_selectivity.yaml", dict.clone())
+                .env_prefix_kind()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file(
+                "relative/layer_env_prefix_kind_selectivity.toml",
+                dict.clone()
+            )
+            .env_prefix_kind()
+            .is_none(),
+        );
+
+        assert_eq!(
+            ProgressiveLayer::env("", dict.clone()).env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        for raw in [
+            "S_",
+            "SHIKUMI_LAYER_ENV_PREFIX_KIND_SELECTIVITY_LONG_",
+            "with space_",
+        ] {
+            assert_eq!(
+                ProgressiveLayer::env(raw, dict.clone()).env_prefix_kind(),
+                Some(EnvMetadataTagKind::Prefixed),
+                "env_prefix_kind did not classify {raw:?} as Prefixed",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_env_prefix_kind_agrees_with_is_env_pointwise() {
+        // Boolean-agreement law at the container altitude:
+        // `layer.env_prefix_kind().is_some() == layer.is_env()` on every
+        // shipped stamp-side constructor row. Refuses a future edit that
+        // reversed the projection's polarity on the env-source arm — the
+        // two projections walk the same three-arm source partition and
+        // must agree pointwise. Container-altitude analogue of the
+        // primitive-altitude agreement law
+        // `provenance_env_prefix_kind_agrees_with_is_env_pointwise` one
+        // seam down on `Provenance`, and the sibling analogue of
+        // `progressive_layer_as_env_prefix_agrees_with_is_env_pointwise`
+        // on the paired raw-payload extractor at the same altitude;
+        // catches a future edit that drifts one altitude's polarity
+        // without the other, and pins the payload-independence contract
+        // on this altitude (the primitive-side has no `Dict` visibility,
+        // so the container-side is forbidden from consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_LAYER_ENV_PREFIX_KIND_AGREEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/layer_env_prefix_kind_agreement.yaml", dict.clone()),
+            ProgressiveLayer::file(
+                "relative/layer_env_prefix_kind_agreement.toml",
+                dict.clone(),
+            ),
+            ProgressiveLayer::file("", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.env_prefix_kind().is_some(),
+                layer.is_env(),
+                "env_prefix_kind/is_env polarity drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_env_prefix_kind_preserves_inner_kind_verbatim() {
+        // Payload-identity law at the container altitude: for every
+        // env-source `ProgressiveLayer` the projection returns the same
+        // `EnvMetadataTagKind` the two-hop
+        // `layer.provenance().env_prefix_kind()` chain returns, which is
+        // the same classification `ConfigSource::env_prefix_kind` returns
+        // on the underlying source coordinate — no case-fold, trim, or
+        // any classification-normalization step. Container-altitude
+        // analogue of the primitive-altitude identity law
+        // `provenance_env_prefix_kind_preserves_inner_kind_verbatim` one
+        // seam down, and the sibling analogue of
+        // `progressive_layer_as_env_prefix_preserves_inner_string_verbatim`
+        // on the paired raw-payload extractor at the same altitude;
+        // catches a future edit that inserted a classification-
+        // transformation step between the primitive-side classification
+        // and the container-side classification.
+        let dict = Dict::new();
+        for raw in [
+            "",
+            "SHIKUMI_",
+            "SHIKUMI_LAYER_ENV_PREFIX_KIND_VERBATIM_LONG_",
+            "with space_",
+            "lower_case_",
+        ] {
+            let layer = ProgressiveLayer::env(raw, dict.clone());
+            let via_layer = layer.env_prefix_kind().expect("env-source projection");
+            let via_provenance = layer
+                .provenance()
+                .env_prefix_kind()
+                .expect("primitive-side projection");
+            let via_source = layer
+                .source()
+                .env_prefix_kind()
+                .expect("source-arm projection");
+            assert_eq!(
+                via_layer, via_provenance,
+                "ProgressiveLayer::env_prefix_kind diverged from Provenance::env_prefix_kind on {raw:?}",
+            );
+            assert_eq!(
+                via_layer, via_source,
+                "ProgressiveLayer::env_prefix_kind diverged from ConfigSource::env_prefix_kind on {raw:?}",
+            );
+            let expected = if raw.is_empty() {
+                EnvMetadataTagKind::Bare
+            } else {
+                EnvMetadataTagKind::Prefixed
+            };
+            assert_eq!(
+                via_layer, expected,
+                "ProgressiveLayer::env_prefix_kind did not preserve inner kind classification on {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_env_prefix_kind_is_const_callable() {
+        // Weld the const-callability of the container-altitude typed
+        // sub-axis projection (`ProgressiveLayer::env_prefix_kind`) with
+        // the const-callable `Provenance::computed` constructor at
+        // compile time via a `static` binding — the same static-hosted
+        // routing the sibling weld
+        // `progressive_layer_as_env_prefix` uses at the container
+        // altitude (`ProgressiveLayer` cannot be bound to a `const` item
+        // directly because the payload `Dict` field type is not
+        // const-constructible on `rustc 1.94.1`; the projection itself
+        // is still `const fn`, so the composition of the const-fn
+        // projection with a const-callable `Provenance` reference is
+        // welded through `const _: … = COMPUTED_PROV.env_prefix_kind();`
+        // in const position on the primitive-side, which is what this
+        // altitude's projection delegates to). Mirrors the shape of
+        // `provenance_env_prefix_kind_is_const_callable` one seam down
+        // and `progressive_layer_as_env_prefix` at the same altitude —
+        // the crate's established idiom for pinning compile-time
+        // callability at the exact line a future edit would drift it.
+        static COMPUTED_PROV: Provenance = Provenance::computed(ConfigTierKind::Bare);
+
+        const COMPUTED_ENV_PREFIX_KIND: Option<EnvMetadataTagKind> =
+            COMPUTED_PROV.env_prefix_kind();
+
+        assert!(COMPUTED_ENV_PREFIX_KIND.is_none());
     }
 
     // ── ProgressiveLayer::tier / source / source_kind / tier_ordinal /
