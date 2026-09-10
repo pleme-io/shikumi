@@ -21984,6 +21984,81 @@ impl<T> ProgressiveResolution<T> {
         (self.value, self.provenance)
     }
 
+    /// Sorted `(path, provenance)` entries — the container-altitude peer
+    /// of [`ProvenanceMap::entries`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.entries()`.
+    ///
+    /// The combined-pair sibling of the projection pair
+    /// [`Self::paths`] / [`Self::provenances`] on the same container:
+    /// where the paired projection walkers restrict the underlying
+    /// [`BTreeMap`] traversal to one axis each ([`Self::paths`] to the
+    /// key axis, [`Self::provenances`] to the value axis), this walker
+    /// keeps both halves of the pair. Together the three close the
+    /// standard [`BTreeMap`]-idiom trio (`iter` / `keys` / `values`) at
+    /// the container altitude on the output side of the fold, matching
+    /// the closure the primitive-altitude [`ProvenanceMap::entries`] /
+    /// [`ProvenanceMap::paths`] / [`ProvenanceMap::provenances`] trio
+    /// carries one seam down.
+    ///
+    /// Before this seam, a caller streaming the per-leaf
+    /// `(&[String], &Provenance)` pairs out of a
+    /// [`ProgressiveResolution`] (a `ConfigPlane` wire encoder emitting
+    /// the full path→provenance table in one pass, an operator-facing
+    /// `/healthz/provenance` renderer walking each row with both halves
+    /// in hand, an attestation manifest hashing the joined stream)
+    /// reached through the two-hop borrow chain
+    /// `res.provenance().entries()` that named the [`Self::provenance`]
+    /// accessor at every call site; this walker collapses it to one
+    /// seam on the resolution container itself, matching the same
+    /// one-hop delegation the paired [`Self::paths`] / [`Self::provenances`]
+    /// walkers and the scalar-projection quintet ([`Self::tiers`] /
+    /// [`Self::source_kinds`] / [`Self::sources`] /
+    /// [`Self::tier_ordinals`] / [`Self::source_kind_ordinals`]) already
+    /// carry on adjacent seams.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`ProvenanceMapEntries`] impls the full
+    /// walker trait shape ([`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`]
+    /// + [`Debug`][std::fmt::Debug]) — routed through this seam
+    /// unchanged, the same trait shape the paired projection walkers
+    /// [`Self::paths`] / [`Self::provenances`] and the scalar-projection
+    /// quintet carry on adjacent seams.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Element stream: pointwise equal to `res.provenance().entries()`
+    ///   in element count, order, and element identity — pinned by
+    ///   [`progressive_tests::progressive_resolution_entries_agrees_with_provenance_entries_pointwise`].
+    /// - Fst-projection agreement: `entries().map(|(p, _)| p)` pointwise
+    ///   equals [`Self::paths`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_entries_fst_projection_equals_paths_walker`].
+    /// - Snd-projection agreement: `entries().map(|(_, prov)| prov)`
+    ///   pointwise equals [`Self::provenances`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_entries_snd_projection_equals_provenances_walker`].
+    /// - Total visitation: `entries().count() == res.provenance().len()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_entries_length_matches_provenance_len`].
+    #[must_use]
+    pub fn entries(&self) -> ProvenanceMapEntries<'_> {
+        self.provenance.entries()
+    }
+
+    /// Idiomatic Rust `iter()` alias for [`Self::entries`] — one seam
+    /// every std keyed collection (`BTreeMap::iter`, `HashMap::iter`,
+    /// `Vec::iter`) surfaces on its `&Self` reference. Mirrors the
+    /// primitive-altitude [`ProvenanceMap::iter`] alias one seam down,
+    /// lifted to the resolution container on the output side of the
+    /// fold. Pointwise-equal to [`Self::entries`] in element count,
+    /// order, and element identity by construction — pinned by
+    /// [`progressive_tests::progressive_resolution_iter_agrees_with_entries_pointwise`].
+    #[must_use]
+    pub fn iter(&self) -> ProvenanceMapEntries<'_> {
+        self.entries()
+    }
+
     /// Sorted iterator over just the per-leaf path key — the
     /// container-altitude peer of [`ProvenanceMap::paths`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -97382,6 +97457,125 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         let n = r.provenance().len();
         assert_eq!(r.paths().count(), n);
+    }
+
+    // -------- ProgressiveResolution combined-pair walker
+    // -------- (container-altitude peer of `ProvenanceMap::entries`,
+    // -------- parent of the paired `paths` / `provenances` projections)
+
+    #[test]
+    fn progressive_resolution_entries_agrees_with_provenance_entries_pointwise() {
+        // The load-bearing structural law on the container-altitude
+        // combined-pair walker delegate: the container-altitude walker
+        // yields the same `(&[String], &Provenance)` stream, in the
+        // same order, as `res.provenance().entries()`. Catches a future
+        // edit that routes `ProgressiveResolution::entries` through a
+        // different BTreeMap projection than the primitive-altitude
+        // walker it delegates to (a `.iter().rev()` cursor, a
+        // `.into_iter()` consume by mistake, a projection through a
+        // different `ProvenanceMap` accessor) that would break the
+        // shared-order contract, before the drift can reach any
+        // consumer that reads `res.entries()` and expects it to match
+        // `res.provenance().entries()`. Peer of the paired projection
+        // walker agreement pins
+        // `progressive_resolution_paths_agrees_with_provenance_paths_pointwise`
+        // and
+        // `progressive_resolution_provenances_agrees_with_provenance_provenances_pointwise`
+        // one seam over on the paired keyed / value walkers.
+        let r = Prog::resolve_progressive();
+        let via_res: Vec<(Vec<String>, Provenance)> = r
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        let via_prov: Vec<(Vec<String>, Provenance)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_entries_fst_projection_equals_paths_walker() {
+        // Cross-walker fst-projection agreement between the combined-pair
+        // walker `entries` and the paired keyed-side projection walker
+        // `paths` at the container-altitude walker seam: the projection
+        // `entries().map(|(p, _)| p)` yields the same `&[String]`
+        // stream as `paths()`, closing the `BTreeMap`-idiom
+        // `iter().map(|(k, _)| k) == keys()` law at the container
+        // altitude the resolution owns. Catches a future edit that
+        // reroutes either walker through a mismatched BTreeMap cursor
+        // that would break the shared-order contract on the paired
+        // walkers, before the drift can reach any consumer. Peer of the
+        // primitive-altitude `provenance_map_paths_agrees_with_entries_fst_projection`
+        // pin one seam down.
+        let r = Prog::resolve_progressive();
+        let via_entries: Vec<Vec<String>> = r.entries().map(|(p, _)| p.to_vec()).collect();
+        let via_paths: Vec<Vec<String>> = r.paths().map(<[String]>::to_vec).collect();
+        assert_eq!(via_entries, via_paths);
+    }
+
+    #[test]
+    fn progressive_resolution_entries_snd_projection_equals_provenances_walker() {
+        // Value-axis peer of the fst-projection pin above at the same
+        // container-altitude walker seam: the projection
+        // `entries().map(|(_, prov)| prov)` yields the same
+        // `&Provenance` stream as `provenances()`, closing the
+        // `BTreeMap`-idiom `iter().map(|(_, v)| v) == values()` law at
+        // the container altitude the resolution owns. Together with the
+        // fst-projection pin one seam over, this closes both
+        // projection-walker agreement laws on the combined-pair walker
+        // that anchor the `BTreeMap`-idiom `iter` / `keys` / `values`
+        // trio at the container altitude on the output side of the
+        // fold. Peer of the primitive-altitude
+        // `provenance_map_provenances_agrees_with_entries_snd_projection`
+        // pin one seam down.
+        let r = Prog::resolve_progressive();
+        let via_entries: Vec<Provenance> = r.entries().map(|(_, prov)| prov.clone()).collect();
+        let via_provs: Vec<Provenance> = r.provenances().cloned().collect();
+        assert_eq!(via_entries, via_provs);
+    }
+
+    #[test]
+    fn progressive_resolution_entries_length_matches_provenance_len() {
+        // The combined-pair walker visits every leaf in the underlying
+        // provenance map exactly once — the `ExactSizeIterator` bound
+        // gets pinned against the map's own `len()`, closing the
+        // total-visitation contract on the combined-pair walker to
+        // match the same total-visitation contracts the paired
+        // projection walkers `ProgressiveResolution::paths` /
+        // `ProgressiveResolution::provenances` already carry on the
+        // same seam. Catches a future edit that reroutes the walker
+        // through a partial cursor (a `.filter(..)` step, a `.take(..)`
+        // prefix) that would break the shared-leaf-set contract on the
+        // combined-pair walker without touching the paired projection
+        // walkers one axis over.
+        let r = Prog::resolve_progressive();
+        let n = r.provenance().len();
+        assert_eq!(r.entries().count(), n);
+    }
+
+    #[test]
+    fn progressive_resolution_iter_agrees_with_entries_pointwise() {
+        // The idiomatic-Rust `iter()` alias yields the same element
+        // stream, in the same order, as [`Self::entries`]. Catches a
+        // future edit that reroutes `iter()` through a different
+        // BTreeMap projection than the `entries()` walker it aliases
+        // (a `.iter().rev()` cursor, a projection through a different
+        // `ProvenanceMap` accessor) that would break the alias-agreement
+        // contract, matching the same alias-agreement pin the
+        // primitive-altitude `ProvenanceMap::iter` alias carries one
+        // seam down.
+        let r = Prog::resolve_progressive();
+        let via_iter: Vec<(Vec<String>, Provenance)> = r
+            .iter()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        let via_entries: Vec<(Vec<String>, Provenance)> = r
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        assert_eq!(via_iter, via_entries);
     }
 
     // -------- ProgressiveResolution histogram pair
