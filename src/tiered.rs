@@ -20486,6 +20486,57 @@ impl ProgressiveLayer {
         }
     }
 
+    /// A tier-parameterized computed-defaults overlay — stamps
+    /// [`Provenance::computed`]`(tier)` (source pinned to
+    /// [`ConfigSource::Defaults`]) on every leaf the overlay wins in the
+    /// progressive fold. The container-altitude lift of the primitive-altitude
+    /// [`Provenance::computed`] tier-parameterized constructor onto the
+    /// stamp-side `ProgressiveLayer` container.
+    ///
+    /// Generalises the three named row-wrappers [`Self::bare`] /
+    /// [`Self::discovered`] / [`Self::prescribed_default`] on the same
+    /// container, closing on the tier-axis the same one-hop delegation the
+    /// primitive-altitude peer [`Provenance::computed`] already closes on
+    /// its trio ([`Provenance::bare`] / [`Provenance::discovered`] /
+    /// [`Provenance::prescribed_default`]) one seam down: pointwise equal to
+    /// [`Self::bare`]`(dict)` when [`ConfigTierKind::Bare`] is the tier,
+    /// [`Self::discovered`]`(dict)` on [`ConfigTierKind::Discovered`], and
+    /// [`Self::prescribed_default`]`(dict)` on [`ConfigTierKind::Default`] —
+    /// pinned by [`tests::progressive_layer_computed_agrees_with_named_row_wrappers_on_every_tier`].
+    /// The [`ConfigTierKind::Custom`] arm is admitted for parity with
+    /// [`Provenance::computed`] (which is total over the axis): it stamps
+    /// `(Custom, Defaults)`, the same coordinate pair
+    /// [`Provenance::computed`]`(ConfigTierKind::Custom)` produces, letting a
+    /// caller construct a computed-source overlay on the operator tier for
+    /// fold-fixture harnesses that need it — the operator-overlay tier is
+    /// normally reached through the source-side wrappers [`Self::file`] /
+    /// [`Self::env`] which pin the source coordinate.
+    ///
+    /// Before this seam, a caller wanting to route a caller-supplied
+    /// [`ConfigTierKind`] through the computed-defaults constructor row —
+    /// a test parameterised over the four tier arms, a fold-fixture
+    /// harness that reads the tier off the CLI and stamps the corresponding
+    /// overlay, a `config-check` subcommand routing a synthetic overlay to
+    /// each tier in turn — reached for a hand-rolled `match tier { Bare =>
+    /// Self::bare(dict), Discovered => Self::discovered(dict), Default =>
+    /// Self::prescribed_default(dict), Custom => Self::new(Provenance::computed(tier), dict) }`
+    /// at every call site. Lifting the tier-fold to a named constructor
+    /// closes it at one site, matching the same one-hop delegation the
+    /// primitive-altitude [`Provenance::computed`] carries.
+    ///
+    /// The overlay's dict is the caller's [`Dict`] verbatim — the same
+    /// payload identity the three named row-wrappers already carry — and
+    /// the stamped source is always [`ConfigSource::Defaults`] regardless
+    /// of the tier argument, pinned by
+    /// [`tests::progressive_layer_computed_pins_source_to_defaults_on_every_tier`].
+    #[must_use]
+    pub fn computed(tier: ConfigTierKind, dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::computed(tier),
+            dict,
+        }
+    }
+
     /// Read an operator FILE overlay from a path — the single-call fusion
     /// of the file-parsing side of the [`ProviderChain`] figment fold with
     /// the [`TieredConfig::resolve_progressive_with`] tier fold.
@@ -74856,6 +74907,61 @@ mod progressive_tests {
         assert_eq!(bare.provenance().tier(), ConfigTierKind::Bare);
         assert_eq!(discovered.provenance().tier(), ConfigTierKind::Discovered);
         assert_eq!(prescribed.provenance().tier(), ConfigTierKind::Default);
+    }
+
+    #[test]
+    fn progressive_layer_computed_agrees_with_named_row_wrappers_on_every_tier() {
+        // The tier-parameterized computed-defaults constructor
+        // ProgressiveLayer::computed(tier, dict) folds pointwise into the
+        // three named row-wrappers on the computed-defaults row of the
+        // stamp-side constructor grid — mirror of the primitive-altitude
+        // Provenance::computed(tier) folding through Provenance::bare /
+        // Provenance::discovered / Provenance::prescribed_default on the
+        // same tier axis, one altitude down.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(7_u32));
+        assert_eq!(
+            ProgressiveLayer::computed(ConfigTierKind::Bare, dict.clone()),
+            ProgressiveLayer::bare(dict.clone()),
+        );
+        assert_eq!(
+            ProgressiveLayer::computed(ConfigTierKind::Discovered, dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+        );
+        assert_eq!(
+            ProgressiveLayer::computed(ConfigTierKind::Default, dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+        );
+        // The Custom arm has no named row-wrapper on the computed-defaults
+        // row (Provenance::computed(Custom) pins (Custom, Defaults) which
+        // the source-side wrappers Self::file / Self::env do not produce),
+        // so its identity is welded against the two-step composition —
+        // the same fallback the named row-wrappers replace on the three
+        // computed tiers.
+        assert_eq!(
+            ProgressiveLayer::computed(ConfigTierKind::Custom, dict.clone()),
+            ProgressiveLayer::new(Provenance::computed(ConfigTierKind::Custom), dict),
+        );
+    }
+
+    #[test]
+    fn progressive_layer_computed_pins_source_to_defaults_on_every_tier() {
+        // ProgressiveLayer::computed(tier, dict) always stamps the
+        // Defaults source coordinate regardless of the tier argument —
+        // the container-altitude lift of the same fixed-source pin the
+        // primitive-altitude Provenance::computed(tier) carries on its
+        // (tier, Defaults) row. The tier coordinate reads back exactly
+        // the caller-supplied ConfigTierKind on every arm, and the dict
+        // is the caller's payload verbatim.
+        let mut dict = Dict::new();
+        dict.insert("s".to_owned(), Value::from(9_u32));
+        for &tier in ConfigTierKind::ALL {
+            let overlay = ProgressiveLayer::computed(tier, dict.clone());
+            assert_eq!(overlay.provenance().tier(), tier);
+            assert_eq!(overlay.provenance().source(), &ConfigSource::Defaults);
+            assert_eq!(overlay.source_kind(), crate::ConfigSourceKind::Defaults);
+            assert_eq!(overlay.dict(), &dict);
+        }
     }
 
     // ── ProgressiveLayer::is_bare / is_discovered / is_default / is_custom —
