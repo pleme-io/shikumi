@@ -21200,6 +21200,82 @@ impl ProgressiveLayer {
         self.provenance.as_file_path()
     }
 
+    /// Returns `Some(&str)` if this overlay's stamp carries the
+    /// [`ConfigSource::Env`] source, `None` on every other source-arm
+    /// regardless of the inner prefix payload — the container-altitude
+    /// lift of [`Provenance::as_env_prefix`] (`0a09dc4`) onto
+    /// [`ProgressiveLayer`]'s [`Provenance`] stamp coordinate, and the
+    /// env-arm raw-payload extractor peer of the yes/no polarity sibling
+    /// [`Self::is_env`] one seam up on the same source axis.
+    ///
+    /// Equal to `self.provenance().as_env_prefix()` by construction — one
+    /// method call answers *"what env-var prefix produced this overlay?"*
+    /// without borrowing through the [`Self::provenance`] accessor at the
+    /// call site. Returns a borrow rather than a copy because the inner
+    /// [`String`] owns its allocation — the same borrow shape
+    /// [`Provenance::as_env_prefix`] carries one seam down, and the same
+    /// shape [`Self::source`] carries on the neighbouring scalar-source
+    /// projection.
+    ///
+    /// Before this seam, a caller extracting the borrowed `&str` prefix
+    /// payload from a [`ProgressiveLayer`] — a `ConfigPlane` broadcast
+    /// surface encoding a wire message keyed on the overlay's
+    /// operator-visible env-var prefix, an attestation manifest recording
+    /// per-overlay env-scope tags, an operator-facing `/healthz/overlays`
+    /// renderer that walks each stamped overlay to display its env prefix
+    /// — reached through `layer.provenance().as_env_prefix()`, a two-hop
+    /// borrow-and-project chain that named the [`Self::provenance`]
+    /// accessor at every call site instead of the inherent seam at the
+    /// container altitude. After this lift the env-arm raw-payload
+    /// extractor closes at the [`ProgressiveLayer`] altitude, mirroring
+    /// the container-altitude closure the file-arm raw-payload sibling
+    /// [`Self::as_file_path`] (`e1a755d`) already carries one arm over
+    /// on the same source axis, and matching the same container-altitude
+    /// closure the source-axis predicate triplet [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] and the compound-polarity
+    /// sibling [`Self::is_overlay`] already carry on this container.
+    ///
+    /// `const`-callable — one-hop delegation through the const-fn
+    /// [`Provenance::as_env_prefix`] preserves compile-time callability
+    /// end-to-end, matching the const-ness of the sibling source-axis
+    /// predicates [`Self::is_defaults`] / [`Self::is_env`] /
+    /// [`Self::is_file`] and the compound-polarity sibling
+    /// [`Self::is_overlay`] on the same container. The paired file-arm
+    /// sibling [`Self::as_file_path`] is deliberately non-const behind
+    /// the unstable [`std::path::PathBuf::as_path`] boundary — matching
+    /// the same const-vs-non-const asymmetry the primitive-side pair
+    /// [`Provenance::as_env_prefix`] / [`Provenance::as_file_path`] and
+    /// the primitive-side [`crate::ConfigSource::as_env_prefix`] /
+    /// [`crate::ConfigSource::as_path`] carry.
+    ///
+    /// **Boolean-agreement law** — `layer.as_env_prefix().is_some() ==
+    /// layer.is_env()` holds pointwise on the shipped stamp-side
+    /// constructor surface, pinned by
+    /// [`tests::progressive_layer_as_env_prefix_agrees_with_is_env_pointwise`].
+    /// Container-altitude analogue of the same-shape agreement law
+    /// [`tests::provenance_as_env_prefix_agrees_with_is_env_pointwise`]
+    /// on the primitive-side one altitude down; catches a future edit
+    /// that drifts one altitude's polarity on the env-source arm
+    /// without the other, and the arm-sibling analogue of
+    /// [`tests::progressive_layer_as_file_path_agrees_with_is_file_pointwise`]
+    /// on the paired file-arm extractor one arm over.
+    ///
+    /// **Payload identity** — for every `Env(prefix)` overlay the
+    /// extractor returns the same `&str` bytes as the two-hop
+    /// `layer.provenance().as_env_prefix()` chain, which is the same
+    /// `&str` bytes as [`crate::ConfigSource::as_env_prefix`] on the
+    /// underlying source coordinate. Pinned by
+    /// [`tests::progressive_layer_as_env_prefix_preserves_inner_string_verbatim`];
+    /// the container-altitude analogue of
+    /// [`tests::provenance_as_env_prefix_preserves_inner_string_verbatim`]
+    /// on the primitive-side, and the arm-sibling analogue of
+    /// [`tests::progressive_layer_as_file_path_preserves_inner_pathbuf_verbatim`]
+    /// on the paired file-arm extractor one arm over.
+    #[must_use]
+    pub const fn as_env_prefix(&self) -> Option<&str> {
+        self.provenance.as_env_prefix()
+    }
+
     /// Returns `true` iff this overlay's stamp carries one of the
     /// operator-supplied overlay sources ([`ConfigSource::Env`] or
     /// [`ConfigSource::File`]) — the compound-polarity complement of
@@ -74994,6 +75070,165 @@ mod progressive_tests {
                 via_layer,
                 Path::new(raw),
                 "ProgressiveLayer::as_file_path did not preserve inner Path bytes on {raw:?}",
+            );
+        }
+    }
+
+    // ── ProgressiveLayer::as_env_prefix — container-altitude lift of
+    //    the primitive-altitude env-arm raw-payload extractor
+    //    `Provenance::as_env_prefix` (`0a09dc4`) onto ProgressiveLayer's
+    //    `Provenance` stamp coordinate; the env-arm borrowed-`&str`
+    //    payload projection on the source axis of the atomic
+    //    `(tier, source)` pair, arm-sibling of the file-arm extractor
+    //    lifted in `e1a755d` ──
+
+    #[test]
+    fn progressive_layer_as_env_prefix_extracts_only_from_env_source() {
+        // Selectivity pin at the ProgressiveLayer altitude for the
+        // env-arm raw-payload extractor. Exactly the env-source
+        // constructor (`ProgressiveLayer::env`) answers `Some(_)`;
+        // every other stamp-side constructor row answers `None`,
+        // regardless of the inner path or prefix payload. Container-
+        // altitude analogue of the primitive-altitude selectivity pin
+        // `provenance_as_env_prefix_extracts_only_from_env_source` one
+        // seam down, and the arm-sibling analogue of
+        // `progressive_layer_as_file_path_extracts_only_from_file_source`
+        // on the paired file-arm extractor at the same altitude one arm
+        // over; catches a future edit that reversed the extractor's
+        // polarity or admitted a non-env-source arm.
+        let dict = Dict::new();
+        assert!(
+            ProgressiveLayer::bare(dict.clone())
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::discovered(dict.clone())
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::prescribed_default(dict.clone())
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file("/etc/layer_as_env_prefix_selectivity.yaml", dict.clone())
+                .as_env_prefix()
+                .is_none(),
+        );
+        assert!(
+            ProgressiveLayer::file(
+                "relative/layer_as_env_prefix_selectivity.toml",
+                dict.clone()
+            )
+            .as_env_prefix()
+            .is_none(),
+        );
+
+        for raw in [
+            "",
+            "S_",
+            "SHIKUMI_LAYER_AS_ENV_PREFIX_SELECTIVITY_LONG_",
+            "with space_",
+        ] {
+            let layer = ProgressiveLayer::env(raw, dict.clone());
+            let extracted = layer.as_env_prefix();
+            assert_eq!(
+                extracted,
+                Some(raw),
+                "as_env_prefix did not project inner prefix verbatim for {raw:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_env_prefix_agrees_with_is_env_pointwise() {
+        // Boolean-agreement law at the container altitude:
+        // `layer.as_env_prefix().is_some() == layer.is_env()` on every
+        // shipped stamp-side constructor row. Refuses a future edit that
+        // reversed the extractor's polarity on the env-source arm — the
+        // two projections walk the same three-arm source partition and
+        // must agree pointwise. Container-altitude analogue of the
+        // primitive-altitude agreement law
+        // `provenance_as_env_prefix_agrees_with_is_env_pointwise` one
+        // seam down on `Provenance`, and the arm-sibling analogue of
+        // `progressive_layer_as_file_path_agrees_with_is_file_pointwise`
+        // on the paired file-arm extractor one arm over at this
+        // altitude; catches a future edit that drifts one altitude's
+        // polarity without the other, and pins the payload-independence
+        // contract on this altitude (the primitive-side has no `Dict`
+        // visibility either, so the container-side is forbidden from
+        // consulting it).
+        let dict = {
+            let mut d = Dict::new();
+            d.insert("k".to_owned(), Value::from(1_u32));
+            d
+        };
+        for layer in [
+            ProgressiveLayer::bare(dict.clone()),
+            ProgressiveLayer::discovered(dict.clone()),
+            ProgressiveLayer::prescribed_default(dict.clone()),
+            ProgressiveLayer::env("", dict.clone()),
+            ProgressiveLayer::env("SHIKUMI_LAYER_AS_ENV_PREFIX_AGREEMENT_", dict.clone()),
+            ProgressiveLayer::file("/etc/layer_as_env_prefix_agreement.yaml", dict.clone()),
+            ProgressiveLayer::file("relative/layer_as_env_prefix_agreement.toml", dict.clone()),
+            ProgressiveLayer::file("", dict.clone()),
+        ] {
+            assert_eq!(
+                layer.as_env_prefix().is_some(),
+                layer.is_env(),
+                "as_env_prefix/is_env polarity drift on {layer:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_layer_as_env_prefix_preserves_inner_string_verbatim() {
+        // Payload-identity law at the container altitude: for every
+        // env-source `ProgressiveLayer` the extractor returns the same
+        // `&str` bytes as the two-hop `layer.provenance().as_env_prefix()`
+        // chain, which is the same `&str` bytes as
+        // `ConfigSource::as_env_prefix` on the underlying source
+        // coordinate — no transformation through `to_uppercase`, `trim`,
+        // or any string-normalization step. Container-altitude analogue
+        // of the primitive-altitude identity law
+        // `provenance_as_env_prefix_preserves_inner_string_verbatim` one
+        // seam down, and the arm-sibling analogue of
+        // `progressive_layer_as_file_path_preserves_inner_pathbuf_verbatim`
+        // on the paired file-arm extractor one arm over at this
+        // altitude; catches a future edit that inserted a normalization
+        // step between the primitive-side extractor and the container-
+        // side extractor.
+        let dict = Dict::new();
+        for raw in [
+            "",
+            "SHIKUMI_",
+            "SHIKUMI_LAYER_AS_ENV_PREFIX_VERBATIM_LONG_",
+            "with space_",
+            "lower_case_",
+        ] {
+            let layer = ProgressiveLayer::env(raw, dict.clone());
+            let via_layer = layer.as_env_prefix().expect("env-source projection");
+            let via_provenance = layer
+                .provenance()
+                .as_env_prefix()
+                .expect("primitive-side projection");
+            let via_source = layer
+                .source()
+                .as_env_prefix()
+                .expect("source-arm projection");
+            assert_eq!(
+                via_layer, via_provenance,
+                "ProgressiveLayer::as_env_prefix diverged from Provenance::as_env_prefix on {raw:?}",
+            );
+            assert_eq!(
+                via_layer, via_source,
+                "ProgressiveLayer::as_env_prefix diverged from ConfigSource::as_env_prefix on {raw:?}",
+            );
+            assert_eq!(
+                via_layer, raw,
+                "ProgressiveLayer::as_env_prefix did not preserve inner str bytes on {raw:?}",
             );
         }
     }
