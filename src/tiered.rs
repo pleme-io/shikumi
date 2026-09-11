@@ -3360,6 +3360,173 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(_, v)| v.is_file())
     }
 
+    /// Lexicographically smallest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_bare`], or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_defaults`] one closed axis over, on the `Bare`
+    /// arm of the tier-axis quaternary partition (`{Bare, Discovered,
+    /// Default, Custom}`).
+    ///
+    /// Pointwise-equal to
+    /// `self.first_tier().map(|t| t.is_bare())` and to
+    /// `self.first_provenance().map(Provenance::is_bare)` on every input
+    /// by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_bare`] accessor on the retained value. Callers
+    /// reaching for `Some(...)` through
+    /// `self.first_tier().map(|t| t.is_bare())` or the deeper
+    /// `self.first_provenance().map(|p| p.is_bare())` — a `ConfigPlane`
+    /// renderer coloring the lex-lower-bound leaf per tier arm without
+    /// the [`ConfigTierKind`] tag, an operator-facing
+    /// `/healthz/provenance` payload emitting only the per-tier polarity
+    /// byte at the boundary leaves — were pulling a [`ConfigTierKind`]
+    /// or `&Provenance` borrow at the extremal leaf just to project one
+    /// `bool` scalar off it; this seam collapses that to one direct
+    /// boolean-tag probe on the primitive altitude. Returns owned
+    /// [`bool`] with no allocation, matching [`Self::first_is_defaults`]'s
+    /// boolean-tag return shape one closed axis over.
+    #[must_use]
+    pub fn first_is_bare(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_bare())
+    }
+
+    /// Lexicographically largest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_bare`], or [`None`] if this map is empty — the
+    /// upper-bound sibling of [`Self::first_is_bare`] that
+    /// [`Self::first_is_bare`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_tier().map(|t| t.is_bare())` and to
+    /// `self.last_provenance().map(Provenance::is_bare)` on every input
+    /// by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_bare`] accessor on the retained value, so the
+    /// two disagree only under a `BTreeMap` bug. Returns the same owned
+    /// [`bool`] shape as [`Self::first_is_bare`] on the boolean-tag
+    /// axis.
+    #[must_use]
+    pub fn last_is_bare(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_bare())
+    }
+
+    /// Lexicographically smallest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_discovered`], or [`None`] if this map is empty
+    /// — the per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_bare`] on the `Discovered` arm of the tier-axis
+    /// quaternary partition (`{Bare, Discovered, Default, Custom}`).
+    ///
+    /// Pointwise-equal to
+    /// `self.first_tier().map(|t| t.is_discovered())` and to
+    /// `self.first_provenance().map(Provenance::is_discovered)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_discovered`] accessor on the retained value.
+    /// Returns owned [`bool`] with no allocation.
+    #[must_use]
+    pub fn first_is_discovered(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_discovered())
+    }
+
+    /// Lexicographically largest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_discovered`], or [`None`] if this map is empty
+    /// — the upper-bound sibling of [`Self::first_is_discovered`].
+    ///
+    /// Pointwise-equal to
+    /// `self.last_tier().map(|t| t.is_discovered())` and to
+    /// `self.last_provenance().map(Provenance::is_discovered)` on every
+    /// input by construction. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_discovered`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_discovered(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_discovered())
+    }
+
+    /// Lexicographically smallest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_default`] (the *tier*-side `PrescribedDefault`
+    /// arm, distinct from the source-arm plural [`Self::first_is_defaults`]
+    /// one closed axis over), or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_bare`] on the `Default` arm of the tier-axis
+    /// quaternary partition (`{Bare, Discovered, Default, Custom}`).
+    ///
+    /// Pointwise-equal to
+    /// `self.first_tier().map(|t| t.is_default())` and to
+    /// `self.first_provenance().map(Provenance::is_default)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_default`] accessor on the retained value.
+    /// Returns owned [`bool`] with no allocation.
+    #[must_use]
+    pub fn first_is_default(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_default())
+    }
+
+    /// Lexicographically largest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_default`], or [`None`] if this map is empty —
+    /// the upper-bound sibling of [`Self::first_is_default`].
+    ///
+    /// Pointwise-equal to
+    /// `self.last_tier().map(|t| t.is_default())` and to
+    /// `self.last_provenance().map(Provenance::is_default)` on every
+    /// input by construction. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_default`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_default(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_default())
+    }
+
+    /// Lexicographically smallest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_custom`], or [`None`] if this map is empty —
+    /// the per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_bare`] on the `Custom` arm of the tier-axis
+    /// quaternary partition, closing the per-arm quartet
+    /// [`Self::first_is_bare`] / [`Self::first_is_discovered`] /
+    /// [`Self::first_is_default`] / [`Self::first_is_custom`] on the
+    /// value-axis bound at the primitive altitude.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_tier().map(|t| t.is_custom())` and to
+    /// `self.first_provenance().map(Provenance::is_custom)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_custom`] accessor on the retained value.
+    ///
+    /// **Quaternary-partition disjointness law.** Because the four
+    /// underlying [`Provenance`] predicates form a closed disjoint
+    /// partition of the tier-axis variant space (pinned pointwise by
+    /// [`tests::provenance_tier_predicates_are_a_closed_quaternary_partition`]),
+    /// the four bound-side sub-projections at each extremum together
+    /// yield exactly one `true` on any non-empty map:
+    /// `first_is_bare() as u8 + first_is_discovered() as u8 +
+    /// first_is_default() as u8 + first_is_custom() as u8 == 1` (and
+    /// symmetrically at the `last_*` extremum). Returns owned [`bool`]
+    /// with no allocation.
+    #[must_use]
+    pub fn first_is_custom(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_custom())
+    }
+
+    /// Lexicographically largest leaf's tier-axis per-arm boolean tag
+    /// [`Provenance::is_custom`], or [`None`] if this map is empty —
+    /// the upper-bound sibling of [`Self::first_is_custom`], closing
+    /// the per-arm quartet at the lex-upper-bound extremum on the
+    /// value-axis bound at the primitive altitude.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_tier().map(|t| t.is_custom())` and to
+    /// `self.last_provenance().map(Provenance::is_custom)` on every
+    /// input by construction. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_custom`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_custom(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_custom())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -55197,6 +55364,336 @@ mod progressive_tests {
         assert_eq!(
             r.provenance().last_is_defaults(),
             r.provenance().last_is_overlay().map(|b| !b),
+        );
+    }
+
+    // -------- ProvenanceMap::first_is_bare / ::last_is_bare / ::first_is_discovered / ::last_is_discovered / ::first_is_default / ::last_is_default / ::first_is_custom / ::last_is_custom tier-axis per-arm boolean-tag sub-projection quartet --------
+
+    #[test]
+    fn provenance_map_first_is_bare_agrees_with_first_tier_is_bare_projection_pointwise() {
+        // The `Bare`-arm boolean-tag scalar sub-projection of the
+        // tier-axis bound yields the same `bool` as
+        // `first_tier().map(|t| t.is_bare())`, projecting the
+        // extremal leaf's tier one const-fn hop further inland from
+        // `ConfigTierKind` to the per-arm quaternary-partition polarity
+        // coordinate. Peer of the source-arm ternary triplet's
+        // `first_is_defaults` agreement pin one closed axis over.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_bare();
+        let via_first_tier: Option<bool> = r.provenance().first_tier().map(|t| t.is_bare());
+        assert_eq!(via_bound, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_is_bare_agrees_with_last_tier_is_bare_projection_pointwise() {
+        // Peer of the `first_is_bare` pin above on the upper-bound side.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_bare();
+        let via_last_tier: Option<bool> = r.provenance().last_tier().map(|t| t.is_bare());
+        assert_eq!(via_bound, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_is_bare_agrees_with_first_provenance_is_bare_projection_pointwise() {
+        // Two-hop cross-seam agreement on the value-axis bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_bare();
+        let via_prov: Option<bool> = r.provenance().first_provenance().map(Provenance::is_bare);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_bare_agrees_with_last_provenance_is_bare_projection_pointwise() {
+        // Two-hop peer on the upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_bare();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_bare);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_discovered_agrees_with_first_tier_is_discovered_projection_pointwise()
+     {
+        // `Discovered`-arm peer of the `Bare`-arm pin above on the
+        // tier-axis bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_discovered();
+        let via_first_tier: Option<bool> = r.provenance().first_tier().map(|t| t.is_discovered());
+        assert_eq!(via_bound, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_is_discovered_agrees_with_last_tier_is_discovered_projection_pointwise()
+    {
+        // `Discovered`-arm upper-bound peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_discovered();
+        let via_last_tier: Option<bool> = r.provenance().last_tier().map(|t| t.is_discovered());
+        assert_eq!(via_bound, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_is_discovered_agrees_with_first_provenance_is_discovered_projection_pointwise()
+     {
+        // Two-hop `Discovered`-arm agreement peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_discovered();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::is_discovered);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_discovered_agrees_with_last_provenance_is_discovered_projection_pointwise()
+     {
+        // Two-hop `Discovered`-arm agreement peer on the upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_discovered();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .last_provenance()
+            .map(Provenance::is_discovered);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_default_agrees_with_first_tier_is_default_projection_pointwise() {
+        // `Default`-arm peer of the `Bare`-arm pin above on the
+        // tier-axis bound. Distinct from the source-arm plural
+        // `first_is_defaults` one closed axis over.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_default();
+        let via_first_tier: Option<bool> = r.provenance().first_tier().map(|t| t.is_default());
+        assert_eq!(via_bound, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_is_default_agrees_with_last_tier_is_default_projection_pointwise() {
+        // `Default`-arm upper-bound peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_default();
+        let via_last_tier: Option<bool> = r.provenance().last_tier().map(|t| t.is_default());
+        assert_eq!(via_bound, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_is_default_agrees_with_first_provenance_is_default_projection_pointwise()
+     {
+        // Two-hop `Default`-arm agreement peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_default();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::is_default);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_default_agrees_with_last_provenance_is_default_projection_pointwise()
+    {
+        // Two-hop `Default`-arm agreement peer on the upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_default();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_default);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_custom_agrees_with_first_tier_is_custom_projection_pointwise() {
+        // `Custom`-arm peer of the `Bare`-arm pin above on the
+        // tier-axis bound, closing the per-arm quartet on the
+        // value-axis bound at the primitive altitude.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_custom();
+        let via_first_tier: Option<bool> = r.provenance().first_tier().map(|t| t.is_custom());
+        assert_eq!(via_bound, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_is_custom_agrees_with_last_tier_is_custom_projection_pointwise() {
+        // `Custom`-arm upper-bound peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_custom();
+        let via_last_tier: Option<bool> = r.provenance().last_tier().map(|t| t.is_custom());
+        assert_eq!(via_bound, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_is_custom_agrees_with_first_provenance_is_custom_projection_pointwise()
+    {
+        // Two-hop `Custom`-arm agreement peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_custom();
+        let via_prov: Option<bool> = r.provenance().first_provenance().map(Provenance::is_custom);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_custom_agrees_with_last_provenance_is_custom_projection_pointwise() {
+        // Two-hop `Custom`-arm agreement peer on the upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_custom();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_custom);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_bare_none_on_empty_map() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_bare().is_none());
+        assert!(empty.last_is_bare().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_discovered_none_on_empty_map() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_discovered().is_none());
+        assert!(empty.last_is_discovered().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_default_none_on_empty_map() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_default().is_none());
+        assert!(empty.last_is_default().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_custom_none_on_empty_map() {
+        // Empty-map ceiling on the `Custom` arm, closing the per-arm
+        // quartet on the empty-map floor.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_custom().is_none());
+        assert!(empty.last_is_custom().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_bare_coincide_on_singleton_map() {
+        // Singleton case: `Provenance::bare()` carries
+        // `ConfigTierKind::Bare`, so `is_bare()` is `true` at both bounds.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_bare(), one.last_is_bare());
+        assert_eq!(one.first_is_bare(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_discovered_coincide_on_singleton_map() {
+        // Singleton on the `Discovered` arm: `Provenance::bare()` is
+        // `Bare`-tier, not `Discovered`, so both bounds return
+        // `Some(false)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_discovered(), one.last_is_discovered());
+        assert_eq!(one.first_is_discovered(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_default_coincide_on_singleton_map() {
+        // Singleton on the `Default` arm: `Provenance::bare()` is
+        // `Bare`-tier, not `Default`, so both bounds return
+        // `Some(false)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_default(), one.last_is_default());
+        assert_eq!(one.first_is_default(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_custom_coincide_on_singleton_map() {
+        // Singleton on the `Custom` arm, closing the per-arm quartet
+        // singleton ceiling: `Provenance::bare()` is `Bare`-tier so
+        // both bounds return `Some(false)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_custom(), one.last_is_custom());
+        assert_eq!(one.first_is_custom(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_is_discovered_ground_truth_on_prog_fixture() {
+        // Ground truth: `Prog`'s `a` leaf (lex-lower bound) is
+        // `Discovered`-tier, so `first_is_discovered` is `Some(true)`
+        // and the three sibling arms are all `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_bare(), Some(false));
+        assert_eq!(r.provenance().first_is_discovered(), Some(true));
+        assert_eq!(r.provenance().first_is_default(), Some(false));
+        assert_eq!(r.provenance().first_is_custom(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_last_is_default_ground_truth_on_prog_fixture() {
+        // Ground truth: `Prog`'s `d` leaf (lex-upper bound) is
+        // `Default`-tier (overridden at prescribed), so
+        // `last_is_default` is `Some(true)` and the three sibling arms
+        // are all `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().last_is_bare(), Some(false));
+        assert_eq!(r.provenance().last_is_discovered(), Some(false));
+        assert_eq!(r.provenance().last_is_default(), Some(true));
+        assert_eq!(r.provenance().last_is_custom(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_is_bare_is_discovered_is_default_is_custom_quartet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Quaternary-partition disjointness pin at the lex-lower-bound
+        // extremum: exactly one of the four per-arm projections
+        // answers `true` on every non-empty map, inheriting the
+        // partition law
+        // `provenance_tier_predicates_are_a_closed_quaternary_partition`
+        // one altitude down. Sum-to-one is the machine-checkable form.
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.provenance().first_is_bare().unwrap())
+            + u8::from(r.provenance().first_is_discovered().unwrap())
+            + u8::from(r.provenance().first_is_default().unwrap())
+            + u8::from(r.provenance().first_is_custom().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn provenance_map_last_is_bare_is_discovered_is_default_is_custom_quartet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Quaternary-partition disjointness pin at the lex-upper-bound
+        // extremum, peer of the `first_*` quartet-partition pin above.
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.provenance().last_is_bare().unwrap())
+            + u8::from(r.provenance().last_is_discovered().unwrap())
+            + u8::from(r.provenance().last_is_default().unwrap())
+            + u8::from(r.provenance().last_is_custom().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn provenance_map_first_is_custom_is_complement_of_first_is_computed_on_prog_fixture() {
+        // Complement-law pin at the lex-lower-bound extremum: the
+        // per-arm `Custom` tier-axis sub-projection is the pointwise
+        // complement of the compound-polarity `is_computed`
+        // sub-projection on the same value-axis bound, inheriting the
+        // altitude-down modal complement
+        // `prov.is_custom() == !prov.is_computed()` (which holds because
+        // the tier-axis modal partition is `{Bare, Discovered, Default}
+        // ∪ {Custom}` and `is_computed()` is the compound
+        // `is_bare() || is_discovered() || is_default()`).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().first_is_custom(),
+            r.provenance().first_is_computed().map(|b| !b),
+        );
+    }
+
+    #[test]
+    fn provenance_map_last_is_custom_is_complement_of_last_is_computed_on_prog_fixture() {
+        // Complement-law pin at the lex-upper-bound extremum, peer of
+        // the `first_*` complement pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_is_custom(),
+            r.provenance().last_is_computed().map(|b| !b),
         );
     }
 
