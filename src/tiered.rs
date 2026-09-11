@@ -2603,6 +2603,68 @@ impl ProvenanceMap {
         self.inner.get(path).map(Provenance::tier)
     }
 
+    /// [`crate::ConfigSourceKind`] of the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf in the resolved
+    /// config — the source-kind-axis scalar sub-projection of the
+    /// path-keyed value-axis lookup [`Self::provenance_of`] on the
+    /// source-kind coordinate of the atomic `(tier, source)` pair every
+    /// leaf's [`Provenance`] carries.
+    ///
+    /// The path-keyed peer of the source-kind-axis bounded-lookup pair
+    /// [`Self::first_source_kind`] / [`Self::last_source_kind`] and the
+    /// source-kind-axis walker [`Self::source_kinds`]: where those
+    /// seams project the source_kind at the lex-boundary leaves or
+    /// stream every leaf's source_kind in lex order, this seam projects
+    /// the source_kind at ONE named leaf. Callers already reaching for
+    /// `Some(...)` through `self.provenance_of(path).map(|p| p.source_kind())`
+    /// were pulling a `&Provenance` borrow at the named leaf just to
+    /// project one scalar off it; this seam collapses that to one direct
+    /// source-kind-axis probe through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, discarding just the path key alignment
+    /// and dereferencing the [`Provenance::source_kind`] const-fn
+    /// accessor on the retained value.
+    ///
+    /// Pointwise-equal to `self.provenance_of(path).map(Provenance::source_kind)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::get`][std::collections::BTreeMap::get] cursor
+    /// the value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Returns owned [`crate::ConfigSourceKind`]
+    /// matching the [`ProvenanceMapSourceKinds`] item shape ([`Copy`],
+    /// no borrow) with no allocation beyond the per-lookup path
+    /// conversion the borrowed-form entry pays.
+    ///
+    /// The source-kind-axis peer of [`Self::tier_of`] on the atomic
+    /// `(tier, source)` pair — the two together close the scalar
+    /// sub-projection of the path-keyed value-axis lookup on BOTH
+    /// closed-axis coordinates of the atomic pair at the primitive
+    /// altitude, alongside the shipped source-kind-axis bounded-lookup
+    /// pair [`Self::first_source_kind`] / [`Self::last_source_kind`]
+    /// and the walker [`Self::source_kinds`]. The next compounding
+    /// step is the container-altitude lift onto
+    /// [`ProgressiveResolution`] matching the shipped
+    /// [`ProgressiveResolution::first_source_kind`] /
+    /// [`ProgressiveResolution::last_source_kind`] delegation pair on
+    /// the same axis coordinate, and the payload-bearing source-axis
+    /// path-keyed pair `source_of` / `source_of_owned`.
+    #[must_use]
+    pub fn source_kind_of(&self, path: &[&str]) -> Option<crate::ConfigSourceKind> {
+        self.source_kind_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::source_kind_of`] for callers
+    /// that already carry an owned path — closes the borrowed-vs-owned
+    /// source-kind-axis path-keyed lookup pair mirroring the
+    /// borrowed-vs-owned value-axis lookup pair [`Self::provenance_of`]
+    /// / [`Self::provenance_of_owned`] one axis over. Forwards straight
+    /// into [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::source_kind`] const-fn accessor on
+    /// the retained value, with no allocation of its own.
+    #[must_use]
+    pub fn source_kind_of_owned(&self, path: &[String]) -> Option<crate::ConfigSourceKind> {
+        self.inner.get(path).map(Provenance::source_kind)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -54485,6 +54547,128 @@ mod progressive_tests {
         let empty = ProvenanceMap::default();
         assert!(empty.tier_of(&["a"]).is_none());
         assert!(empty.tier_of_owned(&["a".to_string()]).is_none());
+    }
+
+    // -------- ProvenanceMap::source_kind_of / ::source_kind_of_owned source-kind-axis path-keyed sub-projection --------
+
+    #[test]
+    fn provenance_map_source_kind_of_agrees_with_provenance_of_source_kind_projection_pointwise() {
+        // The source-kind-axis path-keyed scalar sub-projection yields
+        // the same `ConfigSourceKind` as
+        // `provenance_of(path).map(|p| p.source_kind())` on every leaf
+        // by construction. Catches a future edit that reroutes
+        // `source_kind_of` through a different `BTreeMap` cursor than
+        // `provenance_of` uses, or projects through the wrong
+        // `Provenance` accessor (`tier` instead of `source_kind`).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_source_kind_of: Option<crate::ConfigSourceKind> =
+                r.provenance().source_kind_of(&path);
+            let via_prov_of: Option<crate::ConfigSourceKind> = r
+                .provenance()
+                .provenance_of(&path)
+                .map(Provenance::source_kind);
+            assert_eq!(
+                via_source_kind_of, via_prov_of,
+                "disagreement at leaf {leaf}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_owned_agrees_with_source_kind_of_borrowed_form_pointwise() {
+        // Borrowed-vs-owned parity mirroring the value-axis lookup pair
+        // `provenance_of` / `provenance_of_owned` one axis over and the
+        // peer tier-axis pair `tier_of` / `tier_of_owned` one axis over.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().source_kind_of(&borrowed),
+                r.provenance().source_kind_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None`, matching
+        // the value-axis lookup `provenance_of` on the same input by
+        // construction. Rules out a future edit that would fall back to
+        // `ConfigSourceKind::Defaults` (or any other kind) on miss.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().source_kind_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .source_kind_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: Prog is a
+        // pure-progressive fixture (no overlays), so every leaf's
+        // source_kind is `Defaults`, matching the walker-side pin
+        // `provenance_map_source_kinds_matches_prog_fixture_by_leaf_order`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().source_kind_of(&["a"]),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+        assert_eq!(
+            r.provenance().source_kind_of(&["b"]),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+        assert_eq!(
+            r.provenance().source_kind_of(&["c"]),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+        assert_eq!(
+            r.provenance().source_kind_of(&["d"]),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_agrees_with_first_source_kind_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the bounded-lookup pair: at the
+        // lex-lower-bound path, `source_kind_of(first_path)` names the
+        // same source_kind as `first_source_kind()`. Welds the
+        // path-keyed and bounded-lookup surfaces pointwise at the
+        // extremal leaf, peer of the shipped tier-axis weld pin
+        // `provenance_map_tier_of_agrees_with_first_tier_at_lex_lower_bound_leaf`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().source_kind_of_owned(&first_path),
+            r.provenance().first_source_kind(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_agrees_with_last_source_kind_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the `first_source_kind` cross-seam pin above.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().source_kind_of_owned(&last_path),
+            r.provenance().last_source_kind(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_of_on_empty_map_is_none() {
+        // Empty case: `Option<ConfigSourceKind>` is `None` for every
+        // path, matching the `provenance_of` empty behavior and the
+        // peer tier-axis pin `provenance_map_tier_of_on_empty_map_is_none`
+        // on the same underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.source_kind_of(&["a"]).is_none());
+        assert!(empty.source_kind_of_owned(&["a".to_string()]).is_none());
     }
 
     // -------- ProvenanceMap::paths / ::provenances projection walkers --------
