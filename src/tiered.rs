@@ -23547,6 +23547,158 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.last_source_kind_ordinal()
     }
 
+    /// Lex-lower-bound leaf's tier-axis compound-polarity boolean tag
+    /// [`Provenance::is_computed`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_computed`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_is_computed()`.
+    ///
+    /// The boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_tier`] and [`Self::first_tier_ordinal`] one const-fn
+    /// hop further inland — from the [`ConfigTierKind`] tag / precedence
+    /// ordinal to the `(computed × custom)` compound-polarity `bool`
+    /// [`ConfigTierKind::is_computed`] carries — and the container-altitude
+    /// lift of the primitive-altitude pair
+    /// [`ProvenanceMap::first_is_computed`] /
+    /// [`ProvenanceMap::last_is_computed`] on the same compound-polarity
+    /// axis. Callers that reached through
+    /// `res.first_tier().map(|k| k.is_computed())` or the deeper
+    /// `res.first_provenance().map(|p| p.is_computed())` — a `ConfigPlane`
+    /// renderer coloring the lex-lower-bound leaf by "computed-defaults vs
+    /// operator-supplied", an operator-facing `/healthz/provenance`
+    /// payload emitting only the `bool` polarity byte of the boundary
+    /// leaves without the [`ConfigTierKind`] tag, or a compile-time
+    /// attestation hasher folding just the two boundary polarity bits —
+    /// were pulling a `ConfigTierKind` scalar or a `&Provenance` borrow at
+    /// the extremal leaf just to project one `bool` scalar off it; this
+    /// seam collapses that to one direct boolean-tag probe on the
+    /// container altitude.
+    ///
+    /// Returns owned [`bool`] with no allocation. The boolean-altitude
+    /// peer of [`Self::first_tier`] / [`Self::first_tier_ordinal`] on the
+    /// tier axis — together they close three scalar sub-projections of
+    /// the tier-axis bound at the container altitude: axis-kind
+    /// ([`ConfigTierKind`]), precedence-ordinal ([`usize`]), and
+    /// compound-polarity ([`bool`]).
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_is_computed()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_computed_agrees_with_provenance_map_first_is_computed_pointwise`].
+    /// - Equal to `self.first_tier().map(ConfigTierKind::is_computed)`
+    ///   on every input by construction — the boolean-tag sub-projection
+    ///   of the same tier-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_computed_agrees_with_first_tier_is_computed_projection_pointwise`].
+    /// - Equal to `self.first_provenance().map(Provenance::is_computed)`
+    ///   on every input by construction — the boolean-tag sub-projection
+    ///   of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_computed_agrees_with_first_provenance_is_computed_projection_pointwise`].
+    #[must_use]
+    pub fn first_is_computed(&self) -> Option<bool> {
+        self.provenance.first_is_computed()
+    }
+
+    /// Lex-upper-bound leaf's tier-axis compound-polarity boolean tag
+    /// [`Provenance::is_computed`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_computed`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_is_computed()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_computed`] on the
+    /// upper-bound side that [`Self::first_is_computed`] closes at the
+    /// lower bound — closes the boolean-tag sub-projection of the
+    /// tier-axis bound at the container altitude on both bounds, matching
+    /// the closure the tier-ordinal pair [`Self::first_tier_ordinal`] /
+    /// [`Self::last_tier_ordinal`] gives one const-fn hop out on the same
+    /// tier coordinate of the atomic `(tier, source)` pair. Returns the
+    /// same owned [`bool`] shape as [`Self::first_is_computed`] on the
+    /// boolean-tag axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_is_computed()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_is_computed_agrees_with_provenance_map_last_is_computed_pointwise`].
+    /// - Equal to `self.last_tier().map(ConfigTierKind::is_computed)` on
+    ///   every input by construction — the boolean-tag sub-projection of
+    ///   the same tier-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_is_computed_agrees_with_last_tier_is_computed_projection_pointwise`].
+    /// - Equal to `self.last_provenance().map(Provenance::is_computed)`
+    ///   on every input by construction — the boolean-tag sub-projection
+    ///   of the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_is_computed_agrees_with_last_provenance_is_computed_projection_pointwise`].
+    #[must_use]
+    pub fn last_is_computed(&self) -> Option<bool> {
+        self.provenance.last_is_computed()
+    }
+
+    /// Lex-lower-bound leaf's source-axis compound-polarity boolean tag
+    /// [`Provenance::is_overlay`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_overlay`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_is_overlay()`.
+    ///
+    /// The source-axis peer of [`Self::first_is_computed`] on the sibling
+    /// closed-axis coordinate of the atomic `(tier, source)` pair — the
+    /// two together close the boolean-tag scalar sub-projection of the
+    /// value-axis bound on BOTH closed-axis coordinates at the container
+    /// altitude on the compound-polarity axis (`(computed × custom)`
+    /// tier-side, `(baseline × overlay)` source-side), one const-fn hop
+    /// further inland from the ordinal-axis quartet
+    /// [`Self::first_tier_ordinal`] / [`Self::last_tier_ordinal`] /
+    /// [`Self::first_source_kind_ordinal`] /
+    /// [`Self::last_source_kind_ordinal`] on the same container. Returns
+    /// owned [`bool`] with no allocation.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_is_overlay()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_overlay_agrees_with_provenance_map_first_is_overlay_pointwise`].
+    /// - Equal to `self.first_provenance().map(Provenance::is_overlay)`
+    ///   on every input by construction — the boolean-tag sub-projection
+    ///   of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_overlay_agrees_with_first_provenance_is_overlay_projection_pointwise`].
+    #[must_use]
+    pub fn first_is_overlay(&self) -> Option<bool> {
+        self.provenance.first_is_overlay()
+    }
+
+    /// Lex-upper-bound leaf's source-axis compound-polarity boolean tag
+    /// [`Provenance::is_overlay`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_overlay`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_is_overlay()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_overlay`] on the
+    /// upper-bound side that [`Self::first_is_overlay`] closes at the
+    /// lower bound — closes the boolean-tag sub-projection of the
+    /// source-axis bound at the container altitude on both bounds,
+    /// matching the closure the boolean-tag tier pair
+    /// [`Self::first_is_computed`] / [`Self::last_is_computed`] gives on
+    /// the sibling closed-axis coordinate of the same atomic
+    /// `(tier, source)` pair. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_overlay`] on the boolean-tag axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_is_overlay()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_is_overlay_agrees_with_provenance_map_last_is_overlay_pointwise`].
+    /// - Equal to `self.last_provenance().map(Provenance::is_overlay)`
+    ///   on every input by construction — the boolean-tag sub-projection
+    ///   of the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_is_overlay_agrees_with_last_provenance_is_overlay_projection_pointwise`].
+    #[must_use]
+    pub fn last_is_overlay(&self) -> Option<bool> {
+        self.provenance.last_is_overlay()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -100938,6 +101090,203 @@ mod progressive_tests {
         let defaults = crate::ConfigSourceKind::Defaults.ordinal();
         assert_eq!(r.first_source_kind_ordinal(), Some(defaults));
         assert_eq!(r.last_source_kind_ordinal(), Some(defaults));
+    }
+
+    // -------- ProgressiveResolution boolean-tag scalar sub-projection quartet
+    // -------- (container-altitude lift of `ProvenanceMap::first_is_computed` /
+    // -------- `last_is_computed` and `first_is_overlay` / `last_is_overlay`,
+    // -------- closing the boolean-tag sub-projection surface on BOTH
+    // -------- closed-axis coordinates of the atomic pair at the container
+    // -------- altitude on the compound-polarity axis)
+
+    #[test]
+    fn progressive_resolution_first_is_computed_agrees_with_provenance_map_first_is_computed_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // boolean-tag tier-axis lower-bound delegate:
+        // `ProgressiveResolution::first_is_computed` yields the same
+        // `Option<bool>` value as `res.provenance().first_is_computed()`.
+        // Catches a future edit that reroutes the container-altitude seam
+        // through a different `ProvenanceMap` accessor than the
+        // primitive-altitude peer it delegates to (a `last_is_computed`
+        // typo, the wrong sub-projection through `first_is_overlay` on
+        // the source axis, or a projection through the wrong end of the
+        // sorted cursor) that would break the shared-lookup contract,
+        // before the drift can reach any caller that reads
+        // `res.provenance().first_is_computed()` and now migrates to the
+        // one-hop form. Boolean-tag peer of
+        // `progressive_resolution_first_tier_ordinal_agrees_with_provenance_map_first_tier_ordinal_pointwise`
+        // one const-fn hop further inland on the same tier coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.first_is_computed();
+        let via_prov: Option<bool> = r.provenance().first_is_computed();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_computed_agrees_with_provenance_map_last_is_computed_pointwise()
+     {
+        // Peer of the `first_is_computed` pin above on the upper-bound
+        // side: the container-altitude boolean-tag tier-axis upper-bound
+        // delegate yields the same `Option<bool>` value as
+        // `res.provenance().last_is_computed()`. Closes the shared-lookup
+        // contract on both bounds of the boolean-tag scalar sub-projection
+        // pair at the container altitude on the tier coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.last_is_computed();
+        let via_prov: Option<bool> = r.provenance().last_is_computed();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_computed_agrees_with_first_tier_is_computed_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude boolean-tag tier-axis scalar sub-projection
+        // pair and the container-altitude tier-axis scalar-projection
+        // pair `first_tier` at the same container: the lower-bound
+        // boolean-tag seam yields the same `bool` as
+        // `first_tier().map(ConfigTierKind::is_computed)`, projecting the
+        // tier-axis lower bound one const-fn hop further inland to the
+        // compound-polarity `bool` the [`ConfigTierKind`] carries. Peer
+        // of the primitive-altitude pin
+        // `provenance_map_first_is_computed_agrees_with_first_tier_is_computed_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_computed();
+        let via_tier: Option<bool> = r.first_tier().map(ConfigTierKind::is_computed);
+        assert_eq!(via_bound, via_tier);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_computed_agrees_with_last_tier_is_computed_projection_pointwise()
+     {
+        // Peer of the `first_is_computed` cross-seam pin above on the
+        // upper-bound side: the upper-bound boolean-tag seam yields the
+        // same `bool` as `last_tier().map(ConfigTierKind::is_computed)`,
+        // the boolean-tag sub-projection of the same tier-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_computed();
+        let via_tier: Option<bool> = r.last_tier().map(ConfigTierKind::is_computed);
+        assert_eq!(via_bound, via_tier);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_computed_agrees_with_first_provenance_is_computed_projection_pointwise()
+     {
+        // Value-axis two-hop sub-projection agreement law between the
+        // container-altitude boolean-tag tier-axis scalar sub-projection
+        // pair and the container-altitude value-axis scalar-projection
+        // pair `first_provenance` at the same container: the lower-bound
+        // boolean-tag seam yields the same `bool` as
+        // `first_provenance().map(Provenance::is_computed)`, discarding
+        // the path key and dereferencing the `Provenance::is_computed`
+        // const-fn accessor on the retained value. Peer of the
+        // primitive-altitude pin
+        // `provenance_map_first_is_computed_agrees_with_first_provenance_is_computed_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_computed();
+        let via_prov: Option<bool> = r.first_provenance().map(Provenance::is_computed);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_computed_agrees_with_last_provenance_is_computed_projection_pointwise()
+     {
+        // Peer of the `first_is_computed` two-hop pin above on the
+        // upper-bound side: the upper-bound boolean-tag seam yields the
+        // same `bool` as `last_provenance().map(Provenance::is_computed)`,
+        // the boolean-tag sub-projection of the same value-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_computed();
+        let via_prov: Option<bool> = r.last_provenance().map(Provenance::is_computed);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_overlay_agrees_with_provenance_map_first_is_overlay_pointwise()
+     {
+        // Source-axis peer of the tier-axis
+        // `progressive_resolution_first_is_computed_agrees_with_provenance_map_first_is_computed_pointwise`
+        // pin: closes the shared-lookup contract on the sibling
+        // closed-axis coordinate of the atomic `(tier, source)` pair at
+        // the container-altitude boolean-tag seam.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.first_is_overlay();
+        let via_prov: Option<bool> = r.provenance().first_is_overlay();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_overlay_agrees_with_provenance_map_last_is_overlay_pointwise()
+    {
+        // Peer of the `first_is_overlay` pin above on the upper-bound
+        // side: closes the shared-lookup contract on both bounds of the
+        // boolean-tag scalar sub-projection pair at the container
+        // altitude on the source coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.last_is_overlay();
+        let via_prov: Option<bool> = r.provenance().last_is_overlay();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_overlay_agrees_with_first_provenance_is_overlay_projection_pointwise()
+     {
+        // Value-axis two-hop sub-projection agreement on the source
+        // coordinate: the lower-bound boolean-tag source-axis seam
+        // yields the same `bool` as
+        // `first_provenance().map(Provenance::is_overlay)`. Catches a
+        // future edit that decouples the boolean-tag from the const-fn
+        // `is_overlay` accessor on `Provenance` (e.g. accidentally
+        // routing through `is_computed` on the tier axis) at the
+        // container-altitude seam.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_overlay();
+        let via_prov: Option<bool> = r.first_provenance().map(Provenance::is_overlay);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_overlay_agrees_with_last_provenance_is_overlay_projection_pointwise()
+     {
+        // Peer of the `first_is_overlay` two-hop pin above on the
+        // upper-bound side: the upper-bound boolean-tag source-axis seam
+        // yields the same `bool` as
+        // `last_provenance().map(Provenance::is_overlay)`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_overlay();
+        let via_prov: Option<bool> = r.last_provenance().map(Provenance::is_overlay);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_computed_name_the_lex_bound_leaf_polarities() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture (paths a/b/c/d, tiers Discovered/Default/Bare/Default —
+        // every one of these three tier kinds is `is_computed==true`, and
+        // no leaf here rides the `Custom` operator-supplied variant), so
+        // both bounds return `Some(true)`. Peer of the primitive-altitude
+        // ground-truth pin
+        // `provenance_map_first_and_last_is_computed_ground_truth_on_prog_fixture`
+        // one altitude up.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_computed(), Some(true));
+        assert_eq!(r.last_is_computed(), Some(true));
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_overlay_name_the_lex_bound_leaf_polarities() {
+        // Source-axis ground-truth peer of the `is_computed` pin above.
+        // Prog is a pure-progressive fixture (no overlays), so every
+        // leaf's provenance carries `ConfigSource::Defaults` whose
+        // `is_overlay()` is `false`, so both bounds return `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_overlay(), Some(false));
+        assert_eq!(r.last_is_overlay(), Some(false));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
