@@ -23277,6 +23277,170 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.last_source_kind()
     }
 
+    /// Lex-lower-bound leaf's [`ConfigTierKind`] precedence ordinal, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::first_tier_ordinal`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.first_tier_ordinal()`.
+    ///
+    /// The ordinal-axis scalar sub-projection sibling of
+    /// [`Self::first_tier`] one const-fn hop further inland — from the
+    /// [`ConfigTierKind`] tag to the precedence-ordinal [`usize`]
+    /// [`ConfigTierKind::ordinal`] carries — and the container-altitude
+    /// lift of the primitive-altitude pair
+    /// [`ProvenanceMap::first_tier_ordinal`] /
+    /// [`ProvenanceMap::last_tier_ordinal`] on the same tier-ordinal
+    /// axis. Callers that reached through
+    /// `res.first_tier().map(|k| k.ordinal())` or the deeper
+    /// `res.first_provenance().map(|p| p.tier_ordinal())` — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte of the lex-lower-bound leaf's tier without the
+    /// [`ConfigTierKind`] tag, an operator-facing dashboard sorting the
+    /// extremal leaves by precedence position, or a compile-time
+    /// attestation hasher folding just the two boundary ordinals —
+    /// were pulling a `ConfigTierKind` scalar or a `&Provenance` borrow
+    /// at the extremal leaf just to project one [`usize`] scalar off
+    /// it; this seam collapses that to one direct ordinal-axis probe
+    /// on the container altitude, matching the same one-hop shape
+    /// [`Self::tier_ordinals`] gives on the walker side.
+    ///
+    /// Returns owned [`usize`] matching the [`ProvenanceMapTierOrdinals`]
+    /// item shape ([`Copy`], no borrow) with no allocation.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_tier_ordinal()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_ordinal_agrees_with_provenance_map_first_tier_ordinal_pointwise`].
+    /// - Equal to `self.first_tier().map(ConfigTierKind::ordinal)` on
+    ///   every input by construction — the ordinal-axis sub-projection
+    ///   of the same tier-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_ordinal_agrees_with_first_tier_ordinal_projection_pointwise`].
+    /// - Equal to `self.tier_ordinals().next()` on every input — the
+    ///   walker's first lower-bound step — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_tier_ordinal_agrees_with_tier_ordinals_next_pointwise`].
+    #[must_use]
+    pub fn first_tier_ordinal(&self) -> Option<usize> {
+        self.provenance.first_tier_ordinal()
+    }
+
+    /// Lex-upper-bound leaf's [`ConfigTierKind`] precedence ordinal, or
+    /// [`None`] if this resolution's provenance map is empty — the
+    /// container-altitude peer of [`ProvenanceMap::last_tier_ordinal`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.last_tier_ordinal()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_tier_ordinal`] on the
+    /// upper-bound side that [`Self::first_tier_ordinal`] closes at the
+    /// lower bound — closes the ordinal-axis sub-projection of the
+    /// tier-axis bound at the container altitude on both bounds,
+    /// matching the closure the tier-axis pair [`Self::first_tier`] /
+    /// [`Self::last_tier`] gives one const-fn hop out on the same tier
+    /// coordinate of the atomic `(tier, source)` pair. Returns the
+    /// same owned [`usize`] shape as [`Self::first_tier_ordinal`] on
+    /// the ordinal axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_tier_ordinal()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_ordinal_agrees_with_provenance_map_last_tier_ordinal_pointwise`].
+    /// - Equal to `self.last_tier().map(ConfigTierKind::ordinal)` on
+    ///   every input by construction — the ordinal-axis sub-projection
+    ///   of the same tier-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_ordinal_agrees_with_last_tier_ordinal_projection_pointwise`].
+    /// - Equal to `self.tier_ordinals().next_back()` on every input —
+    ///   the walker's first upper-bound step via
+    ///   [`DoubleEndedIterator::next_back`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_tier_ordinal_agrees_with_tier_ordinals_next_back_pointwise`].
+    #[must_use]
+    pub fn last_tier_ordinal(&self) -> Option<usize> {
+        self.provenance.last_tier_ordinal()
+    }
+
+    /// Lex-lower-bound leaf's [`crate::ConfigSourceKind`] precedence
+    /// ordinal, or [`None`] if this resolution's provenance map is
+    /// empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_source_kind_ordinal`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into `self.provenance.first_source_kind_ordinal()`.
+    ///
+    /// The ordinal-axis scalar sub-projection sibling of
+    /// [`Self::first_source_kind`] one const-fn hop further inland —
+    /// from the [`crate::ConfigSourceKind`] tag to the
+    /// precedence-ordinal [`usize`] [`crate::ConfigSourceKind::ordinal`]
+    /// carries — and the container-altitude lift of the
+    /// primitive-altitude pair
+    /// [`ProvenanceMap::first_source_kind_ordinal`] /
+    /// [`ProvenanceMap::last_source_kind_ordinal`] on the same
+    /// source-kind-ordinal axis. The ordinal-axis peer of
+    /// [`Self::first_tier_ordinal`] on the sibling closed-axis
+    /// coordinate of the atomic `(tier, source)` pair — the two
+    /// together close the ordinal-axis scalar sub-projection surface
+    /// on BOTH closed-axis coordinates at the container altitude,
+    /// matching the closure the primitive-altitude ordinal quartet
+    /// gives one seam down.
+    ///
+    /// Returns owned [`usize`] matching the
+    /// [`ProvenanceMapSourceKindOrdinals`] item shape ([`Copy`], no
+    /// borrow) with no allocation.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().first_source_kind_ordinal()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_ordinal_agrees_with_provenance_map_first_source_kind_ordinal_pointwise`].
+    /// - Equal to `self.first_source_kind().map(crate::ConfigSourceKind::ordinal)`
+    ///   on every input by construction — the ordinal-axis
+    ///   sub-projection of the same source-kind-axis lower bound —
+    ///   pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_ordinal_agrees_with_first_source_kind_ordinal_projection_pointwise`].
+    /// - Equal to `self.source_kind_ordinals().next()` on every input —
+    ///   the walker's first lower-bound step — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_source_kind_ordinal_agrees_with_source_kind_ordinals_next_pointwise`].
+    #[must_use]
+    pub fn first_source_kind_ordinal(&self) -> Option<usize> {
+        self.provenance.first_source_kind_ordinal()
+    }
+
+    /// Lex-upper-bound leaf's [`crate::ConfigSourceKind`] precedence
+    /// ordinal, or [`None`] if this resolution's provenance map is
+    /// empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_source_kind_ordinal`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into `self.provenance.last_source_kind_ordinal()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_source_kind_ordinal`]
+    /// on the upper-bound side that [`Self::first_source_kind_ordinal`]
+    /// closes at the lower bound — closes the ordinal-axis
+    /// sub-projection of the source-kind-axis bound at the container
+    /// altitude on both bounds, matching the closure the tier-ordinal
+    /// pair [`Self::first_tier_ordinal`] / [`Self::last_tier_ordinal`]
+    /// gives on the sibling closed-axis coordinate of the same atomic
+    /// `(tier, source)` pair. Returns the same owned [`usize`] shape as
+    /// [`Self::first_source_kind_ordinal`] on the ordinal axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().last_source_kind_ordinal()`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_ordinal_agrees_with_provenance_map_last_source_kind_ordinal_pointwise`].
+    /// - Equal to `self.last_source_kind().map(crate::ConfigSourceKind::ordinal)`
+    ///   on every input by construction — the ordinal-axis
+    ///   sub-projection of the same source-kind-axis upper bound —
+    ///   pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_ordinal_agrees_with_last_source_kind_ordinal_projection_pointwise`].
+    /// - Equal to `self.source_kind_ordinals().next_back()` on every
+    ///   input — the walker's first upper-bound step via
+    ///   [`DoubleEndedIterator::next_back`] — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_source_kind_ordinal_agrees_with_source_kind_ordinals_next_back_pointwise`].
+    #[must_use]
+    pub fn last_source_kind_ordinal(&self) -> Option<usize> {
+        self.provenance.last_source_kind_ordinal()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -100175,6 +100339,337 @@ mod progressive_tests {
             r.last_source_kind(),
             Some(crate::ConfigSourceKind::Defaults),
         );
+    }
+
+    // -------- ProgressiveResolution ordinal-axis scalar sub-projection quartet
+    // -------- (container-altitude lift of `ProvenanceMap::first_tier_ordinal` /
+    // -------- `last_tier_ordinal` and `first_source_kind_ordinal` /
+    // -------- `last_source_kind_ordinal`, closing the ordinal-axis
+    // -------- sub-projection surface on BOTH closed-axis coordinates at
+    // -------- the container altitude on the output side of the fold)
+
+    #[test]
+    fn progressive_resolution_first_tier_ordinal_agrees_with_provenance_map_first_tier_ordinal_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // tier-ordinal-axis lower-bound delegate:
+        // `ProgressiveResolution::first_tier_ordinal` yields the same
+        // `Option<usize>` value as `res.provenance().first_tier_ordinal()`.
+        // Catches a future edit that reroutes the container-altitude
+        // seam through a different `ProvenanceMap` accessor than the
+        // primitive-altitude peer it delegates to (a `last_tier_ordinal`
+        // typo, a walk-based lower-bound probe through
+        // `tier_ordinals().next()` — pointwise-equal but a different
+        // code path — the wrong sub-projection through
+        // `source_kind_ordinals().next()`, or a projection through the
+        // wrong end of the sorted cursor) that would break the
+        // shared-lookup contract, before the drift can reach any caller
+        // that reads `res.provenance().first_tier_ordinal()` and now
+        // migrates to the one-hop form. Ordinal-axis peer of
+        // `progressive_resolution_first_tier_agrees_with_provenance_map_first_tier_pointwise`
+        // one const-fn hop further inland on the same tier coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<usize> = r.first_tier_ordinal();
+        let via_prov: Option<usize> = r.provenance().first_tier_ordinal();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_ordinal_agrees_with_provenance_map_last_tier_ordinal_pointwise()
+     {
+        // Peer of the `first_tier_ordinal` pin above on the upper-bound
+        // side: the container-altitude tier-ordinal-axis upper-bound
+        // delegate yields the same `Option<usize>` value as
+        // `res.provenance().last_tier_ordinal()`. Closes the
+        // shared-lookup contract on both bounds of the ordinal-axis
+        // scalar sub-projection pair at the container altitude on the
+        // tier coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<usize> = r.last_tier_ordinal();
+        let via_prov: Option<usize> = r.provenance().last_tier_ordinal();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_tier_ordinal_agrees_with_first_tier_ordinal_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-ordinal-axis scalar sub-projection
+        // pair and the container-altitude tier-axis scalar-projection
+        // pair `first_tier` at the same container: the lower-bound
+        // tier-ordinal seam yields the same `usize` as
+        // `first_tier().map(ConfigTierKind::ordinal)`, projecting the
+        // tier-axis lower bound one const-fn hop further inland to the
+        // precedence-ordinal scalar the [`ConfigTierKind`] carries.
+        // Peer of the primitive-altitude pin
+        // `provenance_map_first_tier_ordinal_agrees_with_first_tier_ordinal_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.first_tier_ordinal();
+        let via_tier: Option<usize> = r.first_tier().map(ConfigTierKind::ordinal);
+        assert_eq!(via_to, via_tier);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_ordinal_agrees_with_last_tier_ordinal_projection_pointwise()
+    {
+        // Peer of the `first_tier_ordinal` cross-seam pin above on the
+        // upper-bound side: the upper-bound tier-ordinal seam yields
+        // the same `usize` as `last_tier().map(ConfigTierKind::ordinal)`,
+        // the ordinal-axis sub-projection of the same tier-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.last_tier_ordinal();
+        let via_tier: Option<usize> = r.last_tier().map(ConfigTierKind::ordinal);
+        assert_eq!(via_to, via_tier);
+    }
+
+    #[test]
+    fn progressive_resolution_first_tier_ordinal_agrees_with_first_provenance_tier_ordinal_projection_pointwise()
+     {
+        // Value-axis two-hop sub-projection agreement law between the
+        // container-altitude tier-ordinal-axis scalar sub-projection
+        // pair and the container-altitude value-axis scalar-projection
+        // pair `first_provenance` at the same container: the
+        // lower-bound tier-ordinal seam yields the same `usize` as
+        // `first_provenance().map(Provenance::tier_ordinal)`,
+        // discarding the path key and dereferencing the
+        // `Provenance::tier_ordinal` const-fn accessor on the retained
+        // value. Peer of the primitive-altitude pin
+        // `provenance_map_first_tier_ordinal_agrees_with_first_provenance_tier_ordinal_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.first_tier_ordinal();
+        let via_prov: Option<usize> = r.first_provenance().map(Provenance::tier_ordinal);
+        assert_eq!(via_to, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_ordinal_agrees_with_last_provenance_tier_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_tier_ordinal` two-hop pin above on the
+        // upper-bound side: the upper-bound tier-ordinal seam yields
+        // the same `usize` as
+        // `last_provenance().map(Provenance::tier_ordinal)`, the
+        // ordinal-axis sub-projection of the same value-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.last_tier_ordinal();
+        let via_prov: Option<usize> = r.last_provenance().map(Provenance::tier_ordinal);
+        assert_eq!(via_to, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_tier_ordinal_agrees_with_tier_ordinals_next_pointwise() {
+        // Cross-seam agreement law between the container-altitude
+        // tier-ordinal-axis scalar sub-projection pair and the
+        // tier-ordinal-axis projection walker `tier_ordinals` at the
+        // container-altitude walker seam: the lower-bound tier-ordinal
+        // seam yields the same `usize` as `tier_ordinals().next()`, the
+        // walker's first lower-bound step. The `BTreeMap`-idiom
+        // `first_key_value().map(|(_, v)| v.tier_ordinal()) ==
+        // tier_ordinals().next()` law lifted to the container altitude
+        // on the output side of the fold. Peer of the primitive-altitude
+        // pin
+        // `provenance_map_first_tier_ordinal_agrees_with_tier_ordinals_next_pointwise`
+        // one seam down.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.first_tier_ordinal();
+        let via_walker: Option<usize> = r.tier_ordinals().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_last_tier_ordinal_agrees_with_tier_ordinals_next_back_pointwise() {
+        // Peer of the `first_tier_ordinal` walker pin above on the
+        // upper-bound side: the upper-bound tier-ordinal seam yields
+        // the same `usize` as `tier_ordinals().next_back()`, the
+        // walker's first upper-bound step via
+        // [`DoubleEndedIterator::next_back`].
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.last_tier_ordinal();
+        let via_walker: Option<usize> = r.tier_ordinals().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_tier_ordinal_name_the_lex_bound_leaf_tier_ordinals() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture (paths a/b/c/d, lex-sorted; per-leaf tiers
+        // Discovered/Default/Bare/Default, whose ordinals are
+        // Discovered=1 / Default=2 / Bare=0 / Default=2):
+        // `first_tier_ordinal()` names `a`'s Discovered ordinal;
+        // `last_tier_ordinal()` names `d`'s Default ordinal. Peer of
+        // `provenance_map_first_tier_ordinal_names_the_lex_lower_bound_leaf_tier_ordinal`
+        // one altitude up.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.first_tier_ordinal(),
+            Some(ConfigTierKind::Discovered.ordinal())
+        );
+        assert_eq!(
+            r.last_tier_ordinal(),
+            Some(ConfigTierKind::Default.ordinal())
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_ordinal_agrees_with_provenance_map_first_source_kind_ordinal_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // source-kind-ordinal-axis lower-bound delegate:
+        // `ProgressiveResolution::first_source_kind_ordinal` yields the
+        // same `Option<usize>` value as
+        // `res.provenance().first_source_kind_ordinal()`. Catches a
+        // future edit that reroutes the container-altitude seam through
+        // a different `ProvenanceMap` accessor than the primitive-
+        // altitude peer it delegates to (a `last_source_kind_ordinal`
+        // typo, a walk-based lower-bound probe through
+        // `source_kind_ordinals().next()` — pointwise-equal but a
+        // different code path — the wrong sub-projection through
+        // `tier_ordinals().next()`, or a projection through the wrong
+        // end of the sorted cursor) that would break the shared-lookup
+        // contract. Source-kind-axis peer of
+        // `progressive_resolution_first_tier_ordinal_agrees_with_provenance_map_first_tier_ordinal_pointwise`
+        // on the sibling closed-axis coordinate of the same atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<usize> = r.first_source_kind_ordinal();
+        let via_prov: Option<usize> = r.provenance().first_source_kind_ordinal();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_ordinal_agrees_with_provenance_map_last_source_kind_ordinal_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` pin above on the
+        // upper-bound side: the container-altitude
+        // source-kind-ordinal-axis upper-bound delegate yields the same
+        // `Option<usize>` value as
+        // `res.provenance().last_source_kind_ordinal()`. Closes the
+        // shared-lookup contract on both bounds of the ordinal-axis
+        // scalar sub-projection pair at the container altitude on the
+        // source-kind coordinate.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<usize> = r.last_source_kind_ordinal();
+        let via_prov: Option<usize> = r.provenance().last_source_kind_ordinal();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_ordinal_agrees_with_first_source_kind_ordinal_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude source-kind-ordinal-axis scalar
+        // sub-projection pair and the container-altitude
+        // source-kind-axis scalar-projection pair `first_source_kind`
+        // at the same container: the lower-bound source-kind-ordinal
+        // seam yields the same `usize` as
+        // `first_source_kind().map(ConfigSourceKind::ordinal)`,
+        // projecting the source-kind-axis lower bound one const-fn hop
+        // further inland to the precedence-ordinal scalar the
+        // [`crate::ConfigSourceKind`] carries.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.first_source_kind_ordinal();
+        let via_sk: Option<usize> = r.first_source_kind().map(crate::ConfigSourceKind::ordinal);
+        assert_eq!(via_to, via_sk);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_ordinal_agrees_with_last_source_kind_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` cross-seam pin above
+        // on the upper-bound side: the upper-bound source-kind-ordinal
+        // seam yields the same `usize` as
+        // `last_source_kind().map(ConfigSourceKind::ordinal)`, the
+        // ordinal-axis sub-projection of the same source-kind-axis
+        // upper bound.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.last_source_kind_ordinal();
+        let via_sk: Option<usize> = r.last_source_kind().map(crate::ConfigSourceKind::ordinal);
+        assert_eq!(via_to, via_sk);
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_ordinal_agrees_with_first_provenance_source_kind_ordinal_projection_pointwise()
+     {
+        // Value-axis two-hop sub-projection agreement law between the
+        // container-altitude source-kind-ordinal-axis scalar
+        // sub-projection pair and the container-altitude value-axis
+        // scalar-projection pair `first_provenance` at the same
+        // container: the lower-bound source-kind-ordinal seam yields
+        // the same `usize` as
+        // `first_provenance().map(Provenance::source_kind_ordinal)`,
+        // discarding the path key and dereferencing the
+        // `Provenance::source_kind_ordinal` const-fn accessor on the
+        // retained value.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.first_source_kind_ordinal();
+        let via_prov: Option<usize> = r.first_provenance().map(Provenance::source_kind_ordinal);
+        assert_eq!(via_to, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_ordinal_agrees_with_last_provenance_source_kind_ordinal_projection_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` two-hop pin above on
+        // the upper-bound side: the upper-bound source-kind-ordinal
+        // seam yields the same `usize` as
+        // `last_provenance().map(Provenance::source_kind_ordinal)`, the
+        // ordinal-axis sub-projection of the same value-axis upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_to: Option<usize> = r.last_source_kind_ordinal();
+        let via_prov: Option<usize> = r.last_provenance().map(Provenance::source_kind_ordinal);
+        assert_eq!(via_to, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_source_kind_ordinal_agrees_with_source_kind_ordinals_next_pointwise()
+     {
+        // Cross-seam agreement law between the container-altitude
+        // source-kind-ordinal-axis scalar sub-projection pair and the
+        // source-kind-ordinal-axis projection walker
+        // `source_kind_ordinals` at the container-altitude walker seam:
+        // the lower-bound source-kind-ordinal seam yields the same
+        // `usize` as `source_kind_ordinals().next()`, the walker's
+        // first lower-bound step. The `BTreeMap`-idiom
+        // `first_key_value().map(|(_, v)| v.source_kind_ordinal()) ==
+        // source_kind_ordinals().next()` law lifted to the container
+        // altitude on the output side of the fold.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.first_source_kind_ordinal();
+        let via_walker: Option<usize> = r.source_kind_ordinals().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_last_source_kind_ordinal_agrees_with_source_kind_ordinals_next_back_pointwise()
+     {
+        // Peer of the `first_source_kind_ordinal` walker pin above on
+        // the upper-bound side: the upper-bound source-kind-ordinal
+        // seam yields the same `usize` as
+        // `source_kind_ordinals().next_back()`, the walker's first
+        // upper-bound step via [`DoubleEndedIterator::next_back`].
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<usize> = r.last_source_kind_ordinal();
+        let via_walker: Option<usize> = r.source_kind_ordinals().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_source_kind_ordinal_name_the_lex_bound_leaf_source_kind_ordinals()
+     {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: Prog is a pure-progressive fixture (no overlays), so
+        // every leaf's provenance carries source `ConfigSource::Defaults`
+        // whose source-kind ordinal is `ConfigSourceKind::Defaults.ordinal()`.
+        // `first_source_kind_ordinal()` and `last_source_kind_ordinal()`
+        // both name that same ordinal.
+        let r = Prog::resolve_progressive();
+        let defaults = crate::ConfigSourceKind::Defaults.ordinal();
+        assert_eq!(r.first_source_kind_ordinal(), Some(defaults));
+        assert_eq!(r.last_source_kind_ordinal(), Some(defaults));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
