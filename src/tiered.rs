@@ -2548,6 +2548,61 @@ impl ProvenanceMap {
         self.inner.contains_key(path)
     }
 
+    /// [`ConfigTierKind`] of the effective leaf named by dotted `path`,
+    /// or [`None`] if `path` names no leaf in the resolved config — the
+    /// tier-axis scalar sub-projection of the path-keyed value-axis
+    /// lookup [`Self::provenance_of`] on the tier coordinate of the
+    /// atomic `(tier, source)` pair every leaf's [`Provenance`] carries.
+    ///
+    /// The path-keyed peer of the tier-axis bounded-lookup pair
+    /// [`Self::first_tier`] / [`Self::last_tier`] and the tier-axis
+    /// walker [`Self::tiers`]: where those seams project the tier at the
+    /// lex-boundary leaves or stream every leaf's tier in lex order, this
+    /// seam projects the tier at ONE named leaf. Callers already reaching
+    /// for `Some(...)` through
+    /// `self.provenance_of(path).map(|p| p.tier())` were pulling a
+    /// `&Provenance` borrow at the named leaf just to project one scalar
+    /// off it; this seam collapses that to one direct tier-axis probe
+    /// through the same [`BTreeMap::get`][std::collections::BTreeMap::get]
+    /// cursor the value-axis lookup uses, discarding just the path key
+    /// alignment and dereferencing the [`Provenance::tier`] const-fn
+    /// accessor on the retained value.
+    ///
+    /// Pointwise-equal to `self.provenance_of(path).map(Provenance::tier)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Returns owned [`ConfigTierKind`] matching the
+    /// [`ProvenanceMapTiers`] item shape ([`Copy`], no borrow) with no
+    /// allocation beyond the per-lookup path conversion the borrowed-form
+    /// entry pays.
+    ///
+    /// The tier-axis peer of the shipped source-kind-axis / source-axis
+    /// scalar sub-projections at the bounded-lookup and walker seams on
+    /// this primitive, extended one seam over to the path-keyed
+    /// single-leaf lookup surface. The next compounding step is the
+    /// container-altitude lift onto [`ProgressiveResolution`] matching
+    /// the shipped [`ProgressiveResolution::first_tier`] /
+    /// [`ProgressiveResolution::last_tier`] delegation pair on the same
+    /// axis coordinate.
+    #[must_use]
+    pub fn tier_of(&self, path: &[&str]) -> Option<ConfigTierKind> {
+        self.tier_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::tier_of`] for callers that
+    /// already carry an owned path — closes the borrowed-vs-owned
+    /// tier-axis path-keyed lookup pair mirroring the borrowed-vs-owned
+    /// value-axis lookup pair [`Self::provenance_of`] /
+    /// [`Self::provenance_of_owned`] one axis over. Forwards straight
+    /// into [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::tier`] const-fn accessor on the
+    /// retained value, with no allocation of its own.
+    #[must_use]
+    pub fn tier_of_owned(&self, path: &[String]) -> Option<ConfigTierKind> {
+        self.inner.get(path).map(Provenance::tier)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -54236,6 +54291,119 @@ mod progressive_tests {
             prov.provenance_of(&["a"]).unwrap().tier(),
             ConfigTierKind::Discovered
         );
+    }
+
+    // -------- ProvenanceMap::tier_of / ::tier_of_owned tier-axis path-keyed sub-projection --------
+
+    #[test]
+    fn provenance_map_tier_of_agrees_with_provenance_of_tier_projection_pointwise() {
+        // The tier-axis path-keyed scalar sub-projection yields the same
+        // `ConfigTierKind` as `provenance_of(path).map(|p| p.tier())` on
+        // every leaf by construction. Catches a future edit that reroutes
+        // `tier_of` through a different `BTreeMap` cursor than
+        // `provenance_of` uses, or projects through the wrong
+        // `Provenance` accessor (`source_kind` instead of `tier`).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_tier_of: Option<ConfigTierKind> = r.provenance().tier_of(&path);
+            let via_prov_of: Option<ConfigTierKind> =
+                r.provenance().provenance_of(&path).map(Provenance::tier);
+            assert_eq!(via_tier_of, via_prov_of, "disagreement at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_tier_of_owned_agrees_with_tier_of_borrowed_form_pointwise() {
+        // Borrowed-vs-owned parity mirroring the value-axis lookup pair
+        // `provenance_of` / `provenance_of_owned` one axis over. Catches
+        // a future edit that decouples the two path forms — e.g. by
+        // adding a debug-assert in one and not the other.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().tier_of(&borrowed),
+                r.provenance().tier_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_tier_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None`, matching
+        // the value-axis lookup `provenance_of` on the same input by
+        // construction. Rules out a future edit that would fall back to
+        // `Provenance::bare()` (or any other tier) on miss instead of
+        // propagating the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().tier_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .tier_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture:
+        //   a — detected at Discovered, re-emitted unchanged by prescribed → Discovered
+        //   b — curated at prescribed → Default
+        //   c — never rises above the floor → Bare
+        //   d — overridden by prescribed → Default
+        // Fixture landmarks match the pins on `progressive_provenance_credits_each_leaf_to_its_producing_tier`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().tier_of(&["a"]),
+            Some(ConfigTierKind::Discovered),
+        );
+        assert_eq!(
+            r.provenance().tier_of(&["b"]),
+            Some(ConfigTierKind::Default)
+        );
+        assert_eq!(r.provenance().tier_of(&["c"]), Some(ConfigTierKind::Bare));
+        assert_eq!(
+            r.provenance().tier_of(&["d"]),
+            Some(ConfigTierKind::Default)
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_of_agrees_with_first_tier_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the bounded-lookup pair: at the
+        // lex-lower-bound path, `tier_of(first_path)` names the same
+        // tier as `first_tier()`. Welds the path-keyed and bounded-lookup
+        // surfaces pointwise at the extremal leaf.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().tier_of_owned(&first_path),
+            r.provenance().first_tier(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_of_agrees_with_last_tier_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the `first_tier` cross-seam pin above.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().tier_of_owned(&last_path),
+            r.provenance().last_tier(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_of_on_empty_map_is_none() {
+        // Empty case: `Option<ConfigTierKind>` is `None` for every path,
+        // matching the `provenance_of` empty behavior on the same
+        // underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.tier_of(&["a"]).is_none());
+        assert!(empty.tier_of_owned(&["a".to_string()]).is_none());
     }
 
     // -------- ProvenanceMap::paths / ::provenances projection walkers --------
