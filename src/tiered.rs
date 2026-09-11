@@ -23247,6 +23247,87 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.contains_path_owned(path)
     }
 
+    /// [`ConfigTierKind`] of the effective leaf named by dotted `path`,
+    /// or [`None`] if `path` names no leaf in the resolved config — the
+    /// container-altitude peer of [`ProvenanceMap::tier_of`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into `self.provenance.tier_of(path)`.
+    ///
+    /// The tier-axis scalar sub-projection of the container-altitude
+    /// value-axis lookup [`Self::provenance_of`] on the tier coordinate
+    /// of the atomic `(tier, source)` pair every leaf's [`Provenance`]
+    /// carries. The path-keyed peer of the tier-axis bounded-lookup
+    /// pair [`Self::first_tier`] / [`Self::last_tier`] and the
+    /// tier-axis walker [`Self::tiers`] on the same container: where
+    /// those seams project the tier at the lex-boundary leaves or
+    /// stream every leaf's tier in lex order, this seam projects the
+    /// tier at ONE named leaf without pulling a `&Provenance` borrow
+    /// through [`Self::provenance_of`] just to project one scalar off
+    /// it. Callers already reaching for `Some(...)` through
+    /// `res.provenance_of(path).map(|p| p.tier())` — a CLI
+    /// `config-show tier=<path>` diagnostic printing only the tier bit
+    /// at one named leaf, an operator-facing
+    /// `/healthz/provenance/<path>/tier` payload emitting just the
+    /// four-way tier tag at one leaf, a schema-driven fold
+    /// cross-referencing another map keyed on the same paths with only
+    /// the tier bit needed — now open the same seam one hop shorter
+    /// through the same [`BTreeMap::get`][std::collections::BTreeMap::get]
+    /// cursor the value-axis lookup uses.
+    ///
+    /// The allocation cost equals the primitive-altitude peer
+    /// [`ProvenanceMap::tier_of`] on the same input by construction —
+    /// the body forwards the borrowed `&[&str]` verbatim, so the
+    /// underlying per-lookup `Vec<String>` allocation happens exactly
+    /// once regardless of which altitude the caller entered. Callers
+    /// with an already-owned path reach for the allocation-free
+    /// [`Self::tier_of_owned`] sibling one seam over. Returns owned
+    /// [`ConfigTierKind`] matching the [`ProvenanceMapTiers`] item
+    /// shape ([`Copy`], no borrow) with no allocation beyond that
+    /// per-lookup path conversion.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to `self.provenance().tier_of(path)`
+    ///   — pinned by
+    ///   [`progressive_tests::progressive_resolution_tier_of_agrees_with_provenance_map_tier_of_pointwise`].
+    /// - Equal to `self.provenance_of(path).map(Provenance::tier)` on
+    ///   every input by construction — the tier-axis sub-projection of
+    ///   the same value-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_tier_of_agrees_with_provenance_of_tier_projection_pointwise`].
+    #[must_use]
+    pub fn tier_of(&self, path: &[&str]) -> Option<ConfigTierKind> {
+        self.provenance.tier_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::tier_of`] for callers that
+    /// already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::tier_of_owned`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.tier_of_owned(path)`.
+    ///
+    /// The allocation-free tier-axis path-keyed lookup sibling of
+    /// [`Self::tier_of`] on the same container: where [`Self::tier_of`]
+    /// forwards a borrowed `&[&str]` and pays the primitive's
+    /// per-lookup `Vec<String>` allocation, this seam forwards an
+    /// already-owned `&[String]` straight into the underlying
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects
+    /// the [`Provenance::tier`] const-fn accessor on the retained value
+    /// with no allocation of its own. Mirrors the primitive-altitude
+    /// borrowed-vs-owned pair [`ProvenanceMap::tier_of`] /
+    /// [`ProvenanceMap::tier_of_owned`] verbatim, closing the
+    /// tier-axis path-keyed lookup surface on both path forms at the
+    /// container altitude.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().tier_of_owned(path)` on
+    /// every input — pinned by
+    /// [`progressive_tests::progressive_resolution_tier_of_owned_agrees_with_provenance_map_tier_of_owned_pointwise`].
+    #[must_use]
+    pub fn tier_of_owned(&self, path: &[String]) -> Option<ConfigTierKind> {
+        self.provenance.tier_of_owned(path)
+    }
+
     /// Sorted `(path, provenance)` entries — the container-altitude peer
     /// of [`ProvenanceMap::entries`] on the *output* side of the fold's
     /// atomic-pair ownership boundary, delegating one seam down into
@@ -102352,6 +102433,177 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         assert_eq!(r.first_tier(), Some(ConfigTierKind::Discovered));
         assert_eq!(r.last_tier(), Some(ConfigTierKind::Default));
+    }
+
+    // -------- ProgressiveResolution tier-axis path-keyed lookup pair
+    // -------- (container-altitude peer of `ProvenanceMap::tier_of` /
+    // -------- `ProvenanceMap::tier_of_owned`, tier-axis sub-projection of the
+    // -------- container-altitude value-axis lookup `provenance_of` /
+    // -------- `provenance_of_owned` on the output side of the fold's
+    // -------- atomic-pair ownership boundary)
+
+    #[test]
+    fn progressive_resolution_tier_of_agrees_with_provenance_map_tier_of_pointwise() {
+        // Load-bearing structural law on the container-altitude tier-axis
+        // path-keyed lookup delegate: the container-altitude method yields
+        // the same `Option<ConfigTierKind>` as
+        // `res.provenance().tier_of(path)` on every path the resolved
+        // config carries (each `paths()` entry) and on a path that names
+        // no leaf (a fabricated `"missing"` key). Catches a future edit
+        // that reroutes `ProgressiveResolution::tier_of` through a
+        // different `ProvenanceMap` accessor than the primitive-altitude
+        // peer it delegates to (a `provenance_of` two-hop chain by
+        // mistake, a projection through the wrong `Provenance` accessor
+        // like `source_kind`, or a projection through a different
+        // `BTreeMap` cursor) that would break the shared-lookup
+        // contract, before the drift can reach any caller migrating
+        // from `res.provenance().tier_of(&["field"])` to the one-hop
+        // form. Tier-axis path-keyed peer of
+        // `progressive_resolution_provenance_of_agrees_with_provenance_map_pointwise`
+        // on the same container.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.tier_of(&borrowed);
+            let via_prov = r.provenance().tier_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(r.tier_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.tier_of(&["definitely_not_a_field"]),
+            r.provenance().tier_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_owned_agrees_with_provenance_map_tier_of_owned_pointwise() {
+        // Allocation-free-peer law on the container-altitude tier-axis
+        // path-keyed lookup pair: the owned-path seam yields the same
+        // `Option<ConfigTierKind>` as `res.provenance().tier_of_owned(path)`
+        // on every path the resolved config carries and on a fabricated
+        // miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::tier_of_owned` through the borrowed
+        // variant (reintroducing the per-lookup `Vec<String>` allocation
+        // the owned form exists to avoid) or through a different
+        // `ProvenanceMap` accessor that would break the shared-lookup
+        // contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.tier_of_owned(&owned);
+            let via_prov = r.provenance().tier_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.tier_of_owned(&miss).is_none());
+        assert_eq!(r.tier_of_owned(&miss), r.provenance().tier_of_owned(&miss));
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_agrees_with_tier_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude tier-axis
+        // path-keyed lookup pair: the borrowed-path seam agrees with the
+        // owned-path seam on every leaf the resolved map carries,
+        // mirroring the same cross-form parity the value-axis peer pair
+        // `provenance_of` / `provenance_of_owned` carries one seam over.
+        // Catches a future edit that reroutes one of the two forms
+        // through a different `BTreeMap` cursor than the other and
+        // thereby breaks the cross-form parity contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.tier_of(&borrowed), r.tier_of_owned(&owned));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_agrees_with_provenance_of_tier_projection_pointwise() {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis path-keyed lookup pair and the
+        // container-altitude value-axis path-keyed lookup pair
+        // `provenance_of` at the same container: `tier_of(path)` yields
+        // the same `ConfigTierKind` as
+        // `provenance_of(path).map(Provenance::tier)`, discarding the
+        // `&Provenance` borrow and dereferencing the `Provenance::tier`
+        // const-fn accessor on the retained value. Peer of the
+        // primitive-altitude pin
+        // `provenance_map_tier_of_agrees_with_provenance_of_tier_projection_pointwise`
+        // one seam up, and the path-keyed peer of
+        // `progressive_resolution_first_tier_agrees_with_first_provenance_tier_projection_pointwise`
+        // on the same container's bounded-lookup pair.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tier_of: Option<ConfigTierKind> = r.tier_of(&borrowed);
+            let via_prov_of: Option<ConfigTierKind> =
+                r.provenance_of(&borrowed).map(Provenance::tier);
+            assert_eq!(
+                via_tier_of, via_prov_of,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // path forms, matching the value-axis lookup `provenance_of` on
+        // the same input by construction. Rules out a future edit that
+        // would fall back to `Provenance::bare()` (or any other tier) on
+        // miss instead of propagating the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.tier_of(&["nope"]).is_none());
+        assert!(r.tier_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture (a → Discovered, b → Default, c → Bare, d → Default —
+        // fixture landmarks matching `provenance_map_tier_of_names_prog_ground_truth_leaves`
+        // one altitude down and
+        // `progressive_provenance_credits_each_leaf_to_its_producing_tier`).
+        // Catches a future edit that reroutes the container-altitude
+        // seam through a subtly wrong `ProvenanceMap` accessor that
+        // still agrees pointwise with the primitive on the union of
+        // paths but attributes them to a different tier — a drift the
+        // delegation pin above cannot see because it only compares the
+        // two altitudes to each other, not to a fixed ground truth.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.tier_of(&["a"]), Some(ConfigTierKind::Discovered));
+        assert_eq!(r.tier_of(&["b"]), Some(ConfigTierKind::Default));
+        assert_eq!(r.tier_of(&["c"]), Some(ConfigTierKind::Bare));
+        assert_eq!(r.tier_of(&["d"]), Some(ConfigTierKind::Default));
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_agrees_with_first_tier_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the container-altitude tier-axis
+        // bounded-lookup pair at the extremal leaf: at the
+        // lex-lower-bound path, `tier_of(first_path)` names the same
+        // tier as `first_tier()`. Welds the path-keyed and
+        // bounded-lookup surfaces pointwise at the lower-bound leaf on
+        // the container altitude, mirroring the primitive-altitude pin
+        // `provenance_map_tier_of_agrees_with_first_tier_at_lex_lower_bound_leaf`
+        // one seam down.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.tier_of_owned(&first_path), r.first_tier());
+    }
+
+    #[test]
+    fn progressive_resolution_tier_of_agrees_with_last_tier_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the `first_tier` cross-seam pin above:
+        // at the lex-upper-bound path, `tier_of(last_path)` names the
+        // same tier as `last_tier()`. Together with the lower-bound
+        // peer, welds the path-keyed and bounded-lookup surfaces on
+        // both extremal leaves.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.tier_of_owned(&last_path), r.last_tier());
     }
 
     // -------- ProgressiveResolution source-kind-axis scalar-projection pair
