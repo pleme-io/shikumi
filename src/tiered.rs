@@ -23868,6 +23868,155 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.last_is_overlay()
     }
 
+    /// Lex-lower-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_defaults`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_defaults`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_is_defaults()`.
+    ///
+    /// Per-arm sibling of the compound-polarity
+    /// [`Self::first_is_overlay`] on the same source axis at the
+    /// container altitude: the compound `is_overlay()` folds two arms
+    /// (`Env || File`) into one polarity byte, while this per-arm
+    /// sub-projection isolates the third (`Defaults`) — pointwise
+    /// complementary on the value-axis bound of every input
+    /// `first_is_defaults() == !first_is_overlay()` on the shipped
+    /// constructor surface, matching the source-axis ternary-partition
+    /// complement law `prov.is_defaults() == !prov.is_overlay()` two
+    /// altitudes down. Returns owned [`bool`] with no allocation.
+    ///
+    /// Together with [`Self::first_is_env`] and [`Self::first_is_file`]
+    /// forms the per-arm ternary-partition boolean-tag triplet at the
+    /// container altitude, lifting the primitive-altitude triplet
+    /// [`ProvenanceMap::first_is_defaults`] /
+    /// [`ProvenanceMap::first_is_env`] /
+    /// [`ProvenanceMap::first_is_file`] one seam up.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_is_defaults()` — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_defaults_agrees_with_provenance_map_first_is_defaults_pointwise`].
+    /// - Equal to
+    ///   `self.first_source_kind().map(crate::ConfigSourceKind::is_defaults)`
+    ///   on every input by construction — the per-arm sub-projection
+    ///   of the same source-kind-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_defaults_agrees_with_first_source_kind_is_defaults_projection_pointwise`].
+    /// - Equal to `self.first_provenance().map(Provenance::is_defaults)`
+    ///   on every input by construction — the per-arm sub-projection
+    ///   of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_is_defaults_agrees_with_first_provenance_is_defaults_projection_pointwise`].
+    #[must_use]
+    pub fn first_is_defaults(&self) -> Option<bool> {
+        self.provenance.first_is_defaults()
+    }
+
+    /// Lex-upper-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_defaults`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_defaults`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_is_defaults()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_defaults`] on the
+    /// upper-bound side that [`Self::first_is_defaults`] closes at the
+    /// lower bound — closes the per-arm `Defaults` boolean-tag
+    /// sub-projection of the source axis at the container altitude on
+    /// both bounds. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_defaults`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_defaults(&self) -> Option<bool> {
+        self.provenance.last_is_defaults()
+    }
+
+    /// Lex-lower-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_env`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_env`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_is_env()`.
+    ///
+    /// Per-arm sibling of [`Self::first_is_defaults`] on the `Env` arm
+    /// of the source-axis ternary partition (`{Defaults, Env, File}`) at
+    /// the container altitude. Prefix-independence — the answer is the
+    /// same for every `Env(prefix)` leaf regardless of the [`String`]
+    /// payload — inherits from the const-fn [`Provenance::is_env`]
+    /// contract two altitudes down, which has no [`String`] visibility.
+    /// Returns owned [`bool`] with no allocation.
+    #[must_use]
+    pub fn first_is_env(&self) -> Option<bool> {
+        self.provenance.first_is_env()
+    }
+
+    /// Lex-upper-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_env`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_env`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.last_is_env()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_env`] on the
+    /// upper-bound side that [`Self::first_is_env`] closes at the lower
+    /// bound — closes the per-arm `Env` boolean-tag sub-projection of
+    /// the source axis at the container altitude on both bounds.
+    /// Returns the same owned [`bool`] shape as [`Self::first_is_env`]
+    /// on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_env(&self) -> Option<bool> {
+        self.provenance.last_is_env()
+    }
+
+    /// Lex-lower-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_file`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_is_file()`.
+    ///
+    /// Per-arm sibling of [`Self::first_is_defaults`] on the `File` arm
+    /// of the source-axis ternary partition (`{Defaults, Env, File}`) at
+    /// the container altitude, closing the per-arm ternary-partition
+    /// boolean-tag triplet [`Self::first_is_defaults`] /
+    /// [`Self::first_is_env`] / [`Self::first_is_file`] on the
+    /// value-axis bound at the container altitude. Path-independence —
+    /// the answer is the same for every `File(path)` leaf regardless of
+    /// the [`std::path::PathBuf`] payload — inherits from the const-fn
+    /// [`Provenance::is_file`] contract two altitudes down.
+    ///
+    /// **Ternary-partition disjointness law.** Because the three
+    /// underlying [`Provenance`] predicates form a closed disjoint
+    /// partition of the source-axis variant space, the three
+    /// container-altitude bound-side sub-projections at each extremum
+    /// together yield exactly one `true` on any non-empty resolution:
+    /// `first_is_defaults() as u8 + first_is_env() as u8 +
+    /// first_is_file() as u8 == 1` (and symmetrically at the `last_*`
+    /// extremum). Returns owned [`bool`] with no allocation.
+    #[must_use]
+    pub fn first_is_file(&self) -> Option<bool> {
+        self.provenance.first_is_file()
+    }
+
+    /// Lex-upper-bound leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_file`], or [`None`] if this resolution's
+    /// provenance map is empty — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.last_is_file()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_file`] on the
+    /// upper-bound side that [`Self::first_is_file`] closes at the lower
+    /// bound — closes the per-arm `File` boolean-tag sub-projection of
+    /// the source axis at the container altitude on both bounds, and
+    /// together with [`Self::last_is_defaults`] / [`Self::last_is_env`]
+    /// closes the per-arm ternary-partition boolean-tag triplet on the
+    /// upper-bound side. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_file`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_file(&self) -> Option<bool> {
+        self.provenance.last_is_file()
+    }
+
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
     /// container-altitude peer of [`ProvenanceMap::tiers`] on the
     /// *output* side of the fold's atomic-pair ownership boundary,
@@ -101768,6 +101917,326 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         assert_eq!(r.first_is_overlay(), Some(false));
         assert_eq!(r.last_is_overlay(), Some(false));
+    }
+
+    // -------- ProgressiveResolution::first_is_defaults /
+    // -------- ::last_is_defaults / ::first_is_env / ::last_is_env /
+    // -------- ::first_is_file / ::last_is_file (per-arm ternary-partition
+    // -------- boolean-tag scalar sub-projection triplet at the container
+    // -------- altitude on the source-axis coordinate)
+
+    #[test]
+    fn progressive_resolution_first_is_defaults_agrees_with_provenance_map_first_is_defaults_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // boolean-tag source-axis lower-bound per-arm delegate:
+        // `ProgressiveResolution::first_is_defaults` yields the same
+        // `Option<bool>` value as
+        // `res.provenance().first_is_defaults()`. Catches a future edit
+        // that reroutes the container-altitude seam through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (a `last_is_defaults` typo, a projection through
+        // the compound-polarity `first_is_overlay` mistaking the
+        // partition complement for the arm itself, or a projection
+        // through the wrong end of the sorted cursor) before the drift
+        // can reach any caller that reads
+        // `res.provenance().first_is_defaults()` and now migrates to the
+        // one-hop form. Per-arm peer of
+        // `progressive_resolution_first_is_overlay_agrees_with_provenance_map_first_is_overlay_pointwise`
+        // on the third arm of the source-axis ternary partition.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.first_is_defaults();
+        let via_prov: Option<bool> = r.provenance().first_is_defaults();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_defaults_agrees_with_provenance_map_last_is_defaults_pointwise()
+     {
+        // Peer of the `first_is_defaults` pin above on the upper-bound
+        // side: the container-altitude boolean-tag source-axis
+        // upper-bound per-arm delegate yields the same `Option<bool>`
+        // value as `res.provenance().last_is_defaults()`. Closes the
+        // shared-lookup contract on both bounds of the per-arm
+        // `Defaults` sub-projection at the container altitude.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.last_is_defaults();
+        let via_prov: Option<bool> = r.provenance().last_is_defaults();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_agrees_with_provenance_map_first_is_env_pointwise() {
+        // Per-arm peer of the `first_is_defaults` structural pin on the
+        // `Env` arm of the source-axis ternary partition. Closes the
+        // shared-lookup contract on the middle arm at the
+        // container-altitude boolean-tag seam.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.first_is_env();
+        let via_prov: Option<bool> = r.provenance().first_is_env();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_env_agrees_with_provenance_map_last_is_env_pointwise() {
+        // Upper-bound peer of the `first_is_env` structural pin above.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.last_is_env();
+        let via_prov: Option<bool> = r.provenance().last_is_env();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_file_agrees_with_provenance_map_first_is_file_pointwise() {
+        // Per-arm peer on the `File` arm of the source-axis ternary
+        // partition — closes the shared-lookup contract on all three
+        // arms of the ternary partition at the container-altitude
+        // boolean-tag seam on the lower-bound side.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.first_is_file();
+        let via_prov: Option<bool> = r.provenance().first_is_file();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_file_agrees_with_provenance_map_last_is_file_pointwise() {
+        // Upper-bound peer of the `first_is_file` structural pin above —
+        // closes the shared-lookup contract on all three arms of the
+        // ternary partition at the container-altitude boolean-tag seam
+        // on the upper-bound side.
+        let r = Prog::resolve_progressive();
+        let via_res: Option<bool> = r.last_is_file();
+        let via_prov: Option<bool> = r.provenance().last_is_file();
+        assert_eq!(via_res, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_defaults_agrees_with_first_source_kind_is_defaults_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude per-arm boolean-tag source-axis
+        // sub-projection and the container-altitude source-kind-axis
+        // scalar-projection pair `first_source_kind` at the same
+        // container: the lower-bound per-arm seam yields the same
+        // `bool` as `first_source_kind().map(ConfigSourceKind::is_defaults)`,
+        // projecting the source-kind-axis lower bound one const-fn hop
+        // further inland to the per-arm `bool` the [`ConfigSourceKind`]
+        // carries. Peer of
+        // `progressive_resolution_first_is_computed_agrees_with_first_tier_is_computed_projection_pointwise`
+        // on the sibling closed-axis coordinate of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_defaults();
+        let via_kind: Option<bool> = r
+            .first_source_kind()
+            .map(crate::ConfigSourceKind::is_defaults);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_defaults_agrees_with_last_source_kind_is_defaults_projection_pointwise()
+     {
+        // Upper-bound peer of the `first_is_defaults` cross-seam pin
+        // above on the source-kind axis.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_defaults();
+        let via_kind: Option<bool> = r
+            .last_source_kind()
+            .map(crate::ConfigSourceKind::is_defaults);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_agrees_with_first_source_kind_is_env_projection_pointwise()
+     {
+        // Per-arm cross-seam peer on the `Env` arm.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_env();
+        let via_kind: Option<bool> = r.first_source_kind().map(crate::ConfigSourceKind::is_env);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_env_agrees_with_last_source_kind_is_env_projection_pointwise()
+    {
+        // Upper-bound peer of the `first_is_env` cross-seam pin above.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_env();
+        let via_kind: Option<bool> = r.last_source_kind().map(crate::ConfigSourceKind::is_env);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_file_agrees_with_first_source_kind_is_file_projection_pointwise()
+     {
+        // Per-arm cross-seam peer on the `File` arm — closes the
+        // cross-seam pin on all three arms of the ternary partition on
+        // the source-kind axis on the lower-bound side.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_file();
+        let via_kind: Option<bool> = r.first_source_kind().map(crate::ConfigSourceKind::is_file);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_file_agrees_with_last_source_kind_is_file_projection_pointwise()
+     {
+        // Upper-bound peer of the `first_is_file` cross-seam pin above.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_file();
+        let via_kind: Option<bool> = r.last_source_kind().map(crate::ConfigSourceKind::is_file);
+        assert_eq!(via_bound, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_defaults_agrees_with_first_provenance_is_defaults_projection_pointwise()
+     {
+        // Value-axis two-hop sub-projection agreement law: the
+        // lower-bound per-arm seam yields the same `bool` as
+        // `first_provenance().map(Provenance::is_defaults)`, discarding
+        // the path key and dereferencing the const-fn
+        // `Provenance::is_defaults` accessor on the retained value.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_defaults();
+        let via_prov: Option<bool> = r.first_provenance().map(Provenance::is_defaults);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_defaults_agrees_with_last_provenance_is_defaults_projection_pointwise()
+     {
+        // Upper-bound peer of the `first_is_defaults` two-hop pin above.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_defaults();
+        let via_prov: Option<bool> = r.last_provenance().map(Provenance::is_defaults);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_agrees_with_first_provenance_is_env_projection_pointwise()
+     {
+        // Per-arm two-hop peer on the `Env` arm.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_env();
+        let via_prov: Option<bool> = r.first_provenance().map(Provenance::is_env);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_env_agrees_with_last_provenance_is_env_projection_pointwise()
+    {
+        // Upper-bound peer of the `first_is_env` two-hop pin above.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_env();
+        let via_prov: Option<bool> = r.last_provenance().map(Provenance::is_env);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_file_agrees_with_first_provenance_is_file_projection_pointwise()
+     {
+        // Per-arm two-hop peer on the `File` arm — closes the two-hop
+        // pin on all three arms of the ternary partition on the
+        // value axis on the lower-bound side.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.first_is_file();
+        let via_prov: Option<bool> = r.first_provenance().map(Provenance::is_file);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_file_agrees_with_last_provenance_is_file_projection_pointwise()
+     {
+        // Upper-bound peer of the `first_is_file` two-hop pin above.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.last_is_file();
+        let via_prov: Option<bool> = r.last_provenance().map(Provenance::is_file);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_defaults_ground_truth_on_prog_fixture() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture. Prog is a pure-progressive fixture (no overlays), so
+        // every leaf's source_kind is `Defaults`, so both bounds return
+        // `Some(true)`. Peer of the primitive-altitude ground-truth pin
+        // `provenance_map_first_and_last_is_defaults_ground_truth_on_prog_fixture`
+        // one altitude up.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_defaults(), Some(true));
+        assert_eq!(r.last_is_defaults(), Some(true));
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_env_ground_truth_on_prog_fixture() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture, `Env` arm. Prog has no env leaves, so both bounds
+        // return `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_env(), Some(false));
+        assert_eq!(r.last_is_env(), Some(false));
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_file_ground_truth_on_prog_fixture() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture, `File` arm. Prog has no file leaves, so both bounds
+        // return `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_file(), Some(false));
+        assert_eq!(r.last_is_file(), Some(false));
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_defaults_is_env_is_file_triplet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Ternary-partition disjointness pin at the lex-lower-bound
+        // extremum, lifted from the primitive-altitude
+        // `provenance_map_first_is_defaults_is_env_is_file_triplet_is_a_closed_partition_on_prog_fixture`
+        // one seam up. Exactly one of the three per-arm projections
+        // answers `true` on every non-empty resolution — sum-to-one is
+        // the machine-checkable form of the disjoint-covering-non-empty
+        // partition law.
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.first_is_defaults().unwrap())
+            + u8::from(r.first_is_env().unwrap())
+            + u8::from(r.first_is_file().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_defaults_is_env_is_file_triplet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Peer of the `first_*` triplet-partition pin above on the
+        // upper-bound extremum.
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.last_is_defaults().unwrap())
+            + u8::from(r.last_is_env().unwrap())
+            + u8::from(r.last_is_file().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_defaults_is_complement_of_first_is_overlay_on_prog_fixture()
+    {
+        // Container-altitude complement-law pin at the lex-lower-bound
+        // extremum, lifted from the primitive-altitude
+        // `provenance_map_first_is_defaults_is_complement_of_first_is_overlay_on_prog_fixture`
+        // one seam up. The per-arm `Defaults` sub-projection is the
+        // pointwise complement of the compound-polarity `is_overlay`
+        // sub-projection on the same value-axis bound, inheriting the
+        // altitude-down complement `prov.is_defaults() ==
+        // !prov.is_overlay()`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.first_is_defaults(), r.first_is_overlay().map(|b| !b));
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_defaults_is_complement_of_last_is_overlay_on_prog_fixture() {
+        // Container-altitude complement-law pin at the lex-upper-bound
+        // extremum, peer of the `first_*` complement pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.last_is_defaults(), r.last_is_overlay().map(|b| !b));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
