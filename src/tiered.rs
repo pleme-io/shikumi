@@ -3085,6 +3085,112 @@ impl ProvenanceMap {
             .map(|(_, v)| v.source_kind_ordinal())
     }
 
+    /// Lexicographically smallest leaf's tier-axis compound-polarity
+    /// boolean tag [`Provenance::is_computed`], or [`None`] if this map
+    /// is empty — the boolean-tag scalar sub-projection of the tier-axis
+    /// bound [`Self::first_tier`] on the compound-polarity `bool`
+    /// predicate every [`ConfigTierKind`] carries, one const-fn hop
+    /// further inland from the [`ConfigTierKind`] axis-kind scalar and
+    /// the [`ConfigTierKind::ordinal`] precedence coordinate to the
+    /// (computed × custom) polarity coordinate [`ConfigTierKind::is_computed`]
+    /// carries.
+    ///
+    /// Pointwise-equal to `self.first_tier().map(ConfigTierKind::is_computed)`
+    /// and to `self.first_provenance().map(Provenance::is_computed)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_computed`] accessor on the retained value.
+    /// Callers reaching for `Some(...)` through
+    /// `self.first_tier().map(|k| k.is_computed())` or the deeper
+    /// `self.first_provenance().map(|p| p.is_computed())` — a
+    /// `ConfigPlane` renderer coloring the lex-lower-bound leaf by
+    /// "computed-defaults vs operator-supplied", an operator-facing
+    /// `/healthz/provenance` payload emitting only the `bool` polarity
+    /// byte of the boundary leaves without the [`ConfigTierKind`] tag,
+    /// or a compile-time attestation hasher folding just the two
+    /// boundary polarity bits — were pulling a [`ConfigTierKind`] or
+    /// `&Provenance` borrow at the extremal leaf just to project one
+    /// `bool` scalar off it; this seam collapses that to one direct
+    /// boolean-tag probe on the primitive altitude.
+    ///
+    /// Returns owned [`bool`] with no allocation. The boolean-altitude
+    /// peer of [`Self::first_tier`] and [`Self::first_tier_ordinal`] on
+    /// the tier axis — together they close three scalar sub-projections
+    /// of the value-axis bound on the tier coordinate at the primitive
+    /// altitude: axis-kind ([`ConfigTierKind`]), precedence-ordinal
+    /// ([`usize`]), and compound-polarity ([`bool`]).
+    #[must_use]
+    pub fn first_is_computed(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_computed())
+    }
+
+    /// Lexicographically largest leaf's tier-axis compound-polarity
+    /// boolean tag [`Provenance::is_computed`], or [`None`] if this map
+    /// is empty — the boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_computed`] on the upper-bound side that
+    /// [`Self::first_is_computed`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to `self.last_tier().map(ConfigTierKind::is_computed)`
+    /// and to `self.last_provenance().map(Provenance::is_computed)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the tier-axis bound uses, dereferencing the const-fn
+    /// [`Provenance::is_computed`] accessor on the retained value, so
+    /// the two disagree only under a `BTreeMap` bug. Returns the same
+    /// owned [`bool`] shape as [`Self::first_is_computed`] on the
+    /// boolean-tag axis.
+    #[must_use]
+    pub fn last_is_computed(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_computed())
+    }
+
+    /// Lexicographically smallest leaf's source-axis compound-polarity
+    /// boolean tag [`Provenance::is_overlay`], or [`None`] if this map
+    /// is empty — the boolean-tag scalar sub-projection of the
+    /// source-kind-axis bound [`Self::first_source_kind`] on the
+    /// compound-polarity `bool` predicate every [`crate::ConfigSource`]
+    /// / [`crate::ConfigSourceKind`] carries.
+    ///
+    /// Pointwise-equal to `self.first_provenance().map(Provenance::is_overlay)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_overlay`] accessor on the retained
+    /// value. The source-axis peer of [`Self::first_is_computed`] on
+    /// the atomic `(tier, source)` pair — the two together close the
+    /// boolean-tag scalar sub-projection of the value-axis bound on
+    /// BOTH closed-axis coordinates of the atomic pair at the primitive
+    /// altitude on the compound-polarity axis (`(computed × custom)`
+    /// tier-side, `(baseline × overlay)` source-side), one const-fn
+    /// hop further inland from the ordinal-axis quartet
+    /// [`Self::first_tier_ordinal`] / [`Self::last_tier_ordinal`] /
+    /// [`Self::first_source_kind_ordinal`] / [`Self::last_source_kind_ordinal`]
+    /// on the same primitive.
+    #[must_use]
+    pub fn first_is_overlay(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_overlay())
+    }
+
+    /// Lexicographically largest leaf's source-axis compound-polarity
+    /// boolean tag [`Provenance::is_overlay`], or [`None`] if this map
+    /// is empty — the boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_overlay`] on the upper-bound side that
+    /// [`Self::first_is_overlay`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to `self.last_provenance().map(Provenance::is_overlay)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_overlay`] accessor on the retained
+    /// value, so the two disagree only under a `BTreeMap` bug. Returns
+    /// the same owned [`bool`] shape as [`Self::first_is_overlay`] on
+    /// the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_overlay(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_overlay())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -54148,6 +54254,168 @@ mod progressive_tests {
             one.first_source_kind_ordinal(),
             Some(crate::ConfigSourceKind::Defaults.ordinal()),
         );
+    }
+
+    // -------- ProvenanceMap::first_is_computed / ::last_is_computed / ::first_is_overlay / ::last_is_overlay boolean-tag scalar sub-projection --------
+
+    #[test]
+    fn provenance_map_first_is_computed_agrees_with_first_tier_is_computed_projection_pointwise() {
+        // The boolean-tag scalar sub-projection of the tier-axis bound
+        // yields the same `bool` as
+        // `first_tier().map(ConfigTierKind::is_computed)`, projecting
+        // the extremal leaf's tier one const-fn hop further inland from
+        // `ConfigTierKind` to its `(computed × custom)` polarity. Catches
+        // a future edit that reroutes `first_is_computed()` through
+        // `last_key_value()` (upper-bound cursor by mistake) or that
+        // projects through the wrong `Provenance` accessor (`is_overlay`
+        // instead of `is_computed`).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_computed();
+        let via_first_tier: Option<bool> =
+            r.provenance().first_tier().map(ConfigTierKind::is_computed);
+        assert_eq!(via_bound, via_first_tier);
+    }
+
+    #[test]
+    fn provenance_map_last_is_computed_agrees_with_last_tier_is_computed_projection_pointwise() {
+        // Peer of the `first_is_computed` pin above on the upper-bound
+        // side. Pointwise-equal to
+        // `last_tier().map(ConfigTierKind::is_computed)`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_computed();
+        let via_last_tier: Option<bool> =
+            r.provenance().last_tier().map(ConfigTierKind::is_computed);
+        assert_eq!(via_bound, via_last_tier);
+    }
+
+    #[test]
+    fn provenance_map_first_is_computed_agrees_with_first_provenance_is_computed_projection_pointwise()
+     {
+        // Deeper cross-seam agreement: the same boolean is recoverable
+        // through the two-hop chain `first_provenance().map(|p|
+        // p.is_computed())` on the value-axis bound. Catches a future
+        // edit that decouples the boolean-tag from the const-fn
+        // `is_computed` accessor on `Provenance`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_computed();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::is_computed);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_computed_agrees_with_last_provenance_is_computed_projection_pointwise()
+     {
+        // Peer of the `first_is_computed` two-hop pin above on the
+        // upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_computed();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .last_provenance()
+            .map(Provenance::is_computed);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_overlay_agrees_with_first_provenance_is_overlay_projection_pointwise()
+     {
+        // The source-axis peer of the tier-axis `first_is_computed`
+        // two-hop pin: pointwise-equal to
+        // `first_provenance().map(|p| p.is_overlay())`. Catches a
+        // future edit that decouples the boolean-tag from the const-fn
+        // `is_overlay` accessor on `Provenance` (e.g. accidentally
+        // routing through `is_computed` on the tier axis).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_overlay();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::is_overlay);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_overlay_agrees_with_last_provenance_is_overlay_projection_pointwise()
+    {
+        // Peer of the `first_is_overlay` two-hop pin above on the
+        // upper bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_overlay();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_overlay);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_computed_none_on_empty_map() {
+        // Empty case: `Option<bool>` is `None` at both bounds, matching
+        // the sibling `first_tier_ordinal` empty behavior on the same
+        // underlying `BTreeMap`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_computed().is_none());
+        assert!(empty.last_is_computed().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_overlay_none_on_empty_map() {
+        // Empty case peer of the `is_computed` pin: `Option<bool>` is
+        // `None` at both bounds on the source-side compound-polarity.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_overlay().is_none());
+        assert!(empty.last_is_overlay().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_computed_ground_truth_on_prog_fixture() {
+        // Ground-truth pin on the canonical `Prog` fixture: paths a/b/c/d
+        // with tiers Discovered/Default/Bare/Default — every one of the
+        // four tier kinds is `is_computed==true` (the `Custom` operator-
+        // supplied variant is the sole `false`, and no leaf here rides
+        // it), so `first_is_computed()` and `last_is_computed()` both
+        // return `Some(true)`. Complements the axis-kind pin
+        // `progressive_provenance_credits_each_leaf_to_its_producing_tier`
+        // and the ordinal pin one seam down.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_computed(), Some(true));
+        assert_eq!(r.provenance().last_is_computed(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_overlay_ground_truth_on_prog_fixture() {
+        // Source-axis peer of the `is_computed` ground-truth pin above.
+        // Every leaf on `Prog` carries `ConfigSource::Defaults` (the
+        // computed-defaults constructors all pin the `Defaults` source),
+        // so `is_overlay()` is `false` on every leaf and both bounds
+        // return `Some(false)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_overlay(), Some(false));
+        assert_eq!(r.provenance().last_is_overlay(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_computed_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's `is_computed` tag is both the
+        // lex-lower-bound and lex-upper-bound projection. Ground-truth
+        // pin: `Provenance::bare()` carries `ConfigTierKind::Bare`,
+        // which is one of the three computed-defaults kinds, so both
+        // bounds return `Some(true)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_computed(), one.last_is_computed());
+        assert_eq!(one.first_is_computed(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_overlay_coincide_on_singleton_map() {
+        // Source-side singleton peer of the `is_computed` singleton pin.
+        // `Provenance::bare()` carries `ConfigSource::Defaults`, whose
+        // `is_overlay()` is `false`, so both bounds return `Some(false)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_overlay(), one.last_is_overlay());
+        assert_eq!(one.first_is_overlay(), Some(false));
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
