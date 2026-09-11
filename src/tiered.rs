@@ -2952,6 +2952,75 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(_, v)| v.source_kind())
     }
 
+    /// Lexicographically smallest leaf's [`ConfigSource`] borrow, or
+    /// [`None`] if this map is empty — the payload-bearing peer of
+    /// [`Self::first_source_kind`] on the source axis of the atomic
+    /// `(tier, source)` pair every leaf's [`Provenance`] carries, and
+    /// the bounded-lookup peer of [`Self::sources`] on the lower-bound
+    /// side. Sub-projects the value half `&Provenance` one const-fn hop
+    /// further inland to the [`Provenance::source`] `&ConfigSource`
+    /// borrow every leaf carries.
+    ///
+    /// Where [`Self::first_source_kind`] discards the payload
+    /// ([`std::path::PathBuf`] for [`ConfigSource::File`], env prefix
+    /// [`String`] for [`ConfigSource::Env`]) and hands back the data-
+    /// free [`crate::ConfigSourceKind`] tag by value, this seam hands
+    /// back the whole payload-bearing [`ConfigSource`] by reference —
+    /// so a CLI `config-show` diagnostic that needs to print the file
+    /// path or env prefix of the lex-lower-bound leaf, an operator-
+    /// facing `/healthz/provenance` payload emitting the boundary
+    /// leaves' full source shape (not just the three-way kind tag), or
+    /// a fold that inspects `ConfigSource::as_path()` /
+    /// `ConfigSource::as_env_prefix()` on the extremal leaves, all open
+    /// the same seam without paying the two-hop
+    /// `first_provenance().map(Provenance::source)` chain.
+    ///
+    /// Pointwise-equal to `self.first_provenance().map(Provenance::source)`
+    /// and to `self.sources().next()` on every input by construction —
+    /// the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, discarding just the path key
+    /// and dereferencing the [`Provenance::source`] const-fn accessor
+    /// on the retained value.
+    ///
+    /// Returns borrowed [`&ConfigSource`] matching the
+    /// [`ProvenanceMapSources`] item shape (not [`Copy`], since
+    /// [`ConfigSource`] carries owned [`String`] / [`std::path::PathBuf`]
+    /// payload) with no allocation. The payload-bearing peer of
+    /// [`Self::first_source_kind`] one altitude further inland on the
+    /// source axis, and the bound-side peer of [`Self::sources`] on
+    /// the walker altitude — together they close the payload-bearing
+    /// scalar sub-projection of the value-axis bound on the source
+    /// coordinate at the primitive altitude, matching the closure the
+    /// kind-side pair [`Self::first_source_kind`] /
+    /// [`Self::last_source_kind`] already gives on the sibling
+    /// source-kind coordinate of the same primitive.
+    #[must_use]
+    pub fn first_source(&self) -> Option<&ConfigSource> {
+        self.inner.first_key_value().map(|(_, v)| v.source())
+    }
+
+    /// Lexicographically largest leaf's [`ConfigSource`] borrow, or
+    /// [`None`] if this map is empty — the payload-bearing peer of
+    /// [`Self::last_source_kind`] on the source axis of the atomic
+    /// `(tier, source)` pair, and the bounded-lookup peer of
+    /// [`Self::first_source`] on the upper-bound side that
+    /// [`Self::first_source`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to `self.last_provenance().map(Provenance::source)`
+    /// and to `self.sources().next_back()` on every input by
+    /// construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, discarding just the path key
+    /// and dereferencing the [`Provenance::source`] const-fn accessor
+    /// on the retained value, so the two disagree only under a
+    /// `BTreeMap` bug. Returns the same borrowed [`&ConfigSource`]
+    /// shape as [`Self::first_source`] on the source axis.
+    #[must_use]
+    pub fn last_source(&self) -> Option<&ConfigSource> {
+        self.inner.last_key_value().map(|(_, v)| v.source())
+    }
+
     /// Lexicographically smallest leaf's [`ConfigTierKind`] precedence
     /// ordinal, or [`None`] if this map is empty — the ordinal-axis
     /// scalar sub-projection of the tier-axis bound [`Self::first_tier`]
@@ -54820,6 +54889,128 @@ mod progressive_tests {
             one.first_source_kind(),
             Some(crate::ConfigSourceKind::Defaults),
         );
+    }
+
+    // -------- ProvenanceMap::first_source / ::last_source source-axis payload-bearing scalar sub-projection --------
+
+    #[test]
+    fn provenance_map_first_source_agrees_with_first_provenance_source_projection_pointwise() {
+        // The payload-bearing source-axis scalar sub-projection of the
+        // value-axis bound yields the same `&ConfigSource` borrow as
+        // `first_provenance().map(Provenance::source)`, discarding the
+        // path key and dereferencing the `Provenance::source` accessor
+        // at the same lex-lower-bound leaf. Catches a future edit that
+        // reroutes `first_source()` through `last_key_value()` (upper-
+        // bound cursor by mistake), a `values().last()` linear scan,
+        // or projects through the kind-side `Provenance::source_kind`
+        // accessor instead (losing the payload).
+        let r = Prog::resolve_progressive();
+        let via_first_src: Option<&ConfigSource> = r.provenance().first_source();
+        let via_first_prov: Option<&ConfigSource> =
+            r.provenance().first_provenance().map(Provenance::source);
+        assert_eq!(via_first_src, via_first_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_source_agrees_with_last_provenance_source_projection_pointwise() {
+        // Peer of the `first_source` pin above on the upper-bound side.
+        // Pointwise-equal to `last_provenance().map(Provenance::source)`.
+        let r = Prog::resolve_progressive();
+        let via_last_src: Option<&ConfigSource> = r.provenance().last_source();
+        let via_last_prov: Option<&ConfigSource> =
+            r.provenance().last_provenance().map(Provenance::source);
+        assert_eq!(via_last_src, via_last_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_source_agrees_with_sources_next_pointwise() {
+        // The BTreeMap-idiom
+        // `first_key_value().map(|(_, v)| v.source()) == sources().next()`
+        // law lifted to the ProvenanceMap surface on the walker seam.
+        // Catches a future edit that reroutes `first_source` through a
+        // walker with the wrong ordering discipline (e.g. an unsorted
+        // HashMap projection or an `into_values` reverse walk).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<&ConfigSource> = r.provenance().first_source();
+        let via_walker: Option<&ConfigSource> = r.provenance().sources().next();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_last_source_agrees_with_sources_next_back_pointwise() {
+        // Peer of the `first_source` walker pin above on the upper
+        // bound via `DoubleEndedIterator::next_back`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<&ConfigSource> = r.provenance().last_source();
+        let via_walker: Option<&ConfigSource> = r.provenance().sources().next_back();
+        assert_eq!(via_bound, via_walker);
+    }
+
+    #[test]
+    fn provenance_map_first_source_kind_agrees_with_first_source_kind_projection_pointwise() {
+        // Kind-side sibling agreement: the payload-bearing `first_source`
+        // projected through `ConfigSource::kind` yields the same
+        // `ConfigSourceKind` as the tag-side `first_source_kind`
+        // directly. Catches a future edit that drifts the payload-bearing
+        // seam off the kind partition (e.g. by rerouting through a
+        // different underlying `Provenance` slot than
+        // `first_source_kind` reads).
+        let r = Prog::resolve_progressive();
+        let via_payload: Option<crate::ConfigSourceKind> =
+            r.provenance().first_source().map(ConfigSource::kind);
+        let via_tag: Option<crate::ConfigSourceKind> = r.provenance().first_source_kind();
+        assert_eq!(via_payload, via_tag);
+    }
+
+    #[test]
+    fn provenance_map_last_source_kind_agrees_with_last_source_kind_projection_pointwise() {
+        // Upper-bound peer of the kind-side sibling agreement pin above:
+        // `last_source().map(ConfigSource::kind) == last_source_kind()`.
+        let r = Prog::resolve_progressive();
+        let via_payload: Option<crate::ConfigSourceKind> =
+            r.provenance().last_source().map(ConfigSource::kind);
+        let via_tag: Option<crate::ConfigSourceKind> = r.provenance().last_source_kind();
+        assert_eq!(via_payload, via_tag);
+    }
+
+    #[test]
+    fn provenance_map_first_source_names_the_lex_lower_bound_leaf_source() {
+        // Ground-truth pin on the `Prog` fixture: Prog is a
+        // pure-progressive fixture (no overlays), so every leaf's
+        // provenance is one of `Provenance::bare()` /
+        // `Provenance::discovered()` / `Provenance::prescribed_default()`
+        // — all three carry the singleton payload-free
+        // `ConfigSource::Defaults`. Rules out both bounds being routed
+        // to `None` by mistake, and pins the payload-bearing seam to
+        // the same fixture landmark the tag-side kind pin uses.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_source(), Some(&ConfigSource::Defaults),);
+        assert_eq!(r.provenance().last_source(), Some(&ConfigSource::Defaults),);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_source_none_on_empty_map() {
+        // Empty case: `Option<&ConfigSource>` is `None` at both bounds,
+        // matching the `first_provenance` / `last_provenance`,
+        // `first_path` / `last_path`, `first_tier` / `last_tier`, and
+        // `first_source_kind` / `last_source_kind` empty behavior on
+        // the same underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_source().is_none());
+        assert!(empty.last_source().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_source_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's `ConfigSource` payload is
+        // both the lex-lower-bound and lex-upper-bound projection, so
+        // `first_source()` and `last_source()` name the same source.
+        // Peer of the source-kind-axis singleton pin on the payload-
+        // bearing sub-projection.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_source(), one.last_source());
+        assert_eq!(one.first_source(), Some(&ConfigSource::Defaults));
     }
 
     // -------- ProvenanceMap::first_tier_ordinal / ::last_tier_ordinal ordinal-axis scalar sub-projection --------
