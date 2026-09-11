@@ -3191,6 +3191,175 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(_, v)| v.is_overlay())
     }
 
+    /// Lexicographically smallest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_defaults`], or [`None`] if this map is empty —
+    /// the per-arm boolean-tag scalar sub-projection of the
+    /// source-kind-axis bound [`Self::first_source_kind`] on the
+    /// `Defaults` arm of the ternary partition
+    /// (`{Defaults, Env, File}`) every [`crate::ConfigSource`] /
+    /// [`crate::ConfigSourceKind`] value carries, one const-fn hop
+    /// further inland from the axis-kind scalar
+    /// [`crate::ConfigSourceKind`] and the precedence-ordinal
+    /// [`crate::ConfigSourceKind::ordinal`] on the same axis.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_source_kind().map(crate::ConfigSourceKind::is_defaults)`
+    /// and to `self.first_provenance().map(Provenance::is_defaults)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_defaults`] accessor on the retained
+    /// value. Callers reaching for `Some(...)` through
+    /// `self.first_source_kind().map(|k| k.is_defaults())` or the
+    /// deeper `self.first_provenance().map(|p| p.is_defaults())` — a
+    /// `ConfigPlane` renderer classifying the lex-lower-bound leaf per
+    /// source-arm without the [`crate::ConfigSourceKind`] tag, an
+    /// operator-facing `/healthz/provenance` payload emitting only the
+    /// per-arm polarity byte at the boundary leaves — were pulling a
+    /// [`crate::ConfigSourceKind`] or `&Provenance` borrow at the
+    /// extremal leaf just to project one `bool` scalar off it; this
+    /// seam collapses that to one direct boolean-tag probe on the
+    /// primitive altitude.
+    ///
+    /// Per-arm sibling of the compound-polarity
+    /// [`Self::first_is_overlay`] on the same source axis: the
+    /// compound `is_overlay()` folds two arms (`Env || File`) into one
+    /// polarity byte, while this per-arm sub-projection isolates the
+    /// third (`Defaults`) — pointwise complementary on the value-axis
+    /// bound of every input `first_is_defaults() == !first_is_overlay()`
+    /// on the shipped constructor surface, matching the source-axis
+    /// ternary-partition complement law
+    /// `prov.is_defaults() == !prov.is_overlay()` one altitude down.
+    /// Returns owned [`bool`] with no allocation.
+    #[must_use]
+    pub fn first_is_defaults(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_defaults())
+    }
+
+    /// Lexicographically largest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_defaults`], or [`None`] if this map is empty —
+    /// the per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_defaults`] on the upper-bound side that
+    /// [`Self::first_is_defaults`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_source_kind().map(crate::ConfigSourceKind::is_defaults)`
+    /// and to `self.last_provenance().map(Provenance::is_defaults)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_defaults`] accessor on the retained
+    /// value, so the two disagree only under a `BTreeMap` bug. Returns
+    /// the same owned [`bool`] shape as [`Self::first_is_defaults`] on
+    /// the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_defaults(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_defaults())
+    }
+
+    /// Lexicographically smallest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_env`], or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_defaults`] on the `Env` arm of the
+    /// source-axis ternary partition (`{Defaults, Env, File}`).
+    ///
+    /// Pointwise-equal to
+    /// `self.first_source_kind().map(crate::ConfigSourceKind::is_env)`
+    /// and to `self.first_provenance().map(Provenance::is_env)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_env`] accessor on the retained value.
+    /// Prefix-independence — the answer is the same for every
+    /// `Env(prefix)` leaf regardless of the [`String`] payload — inherits
+    /// from the const-fn [`Provenance::is_env`] contract one altitude
+    /// down, which has no [`String`] visibility. Returns owned [`bool`]
+    /// with no allocation, matching [`Self::first_is_defaults`]'s
+    /// boolean-tag return shape.
+    #[must_use]
+    pub fn first_is_env(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_env())
+    }
+
+    /// Lexicographically largest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_env`], or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_env`] on the upper-bound side that
+    /// [`Self::first_is_env`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_source_kind().map(crate::ConfigSourceKind::is_env)`
+    /// and to `self.last_provenance().map(Provenance::is_env)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_env`] accessor on the retained value,
+    /// so the two disagree only under a `BTreeMap` bug. Returns the same
+    /// owned [`bool`] shape as [`Self::first_is_env`] on the
+    /// boolean-tag axis.
+    #[must_use]
+    pub fn last_is_env(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_env())
+    }
+
+    /// Lexicographically smallest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_file`], or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_defaults`] on the `File` arm of the
+    /// source-axis ternary partition (`{Defaults, Env, File}`), closing
+    /// the per-arm ternary-partition boolean-tag triplet
+    /// [`Self::first_is_defaults`] / [`Self::first_is_env`] /
+    /// [`Self::first_is_file`] on the value-axis bound at the primitive
+    /// altitude.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_source_kind().map(crate::ConfigSourceKind::is_file)`
+    /// and to `self.first_provenance().map(Provenance::is_file)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_file`] accessor on the retained value.
+    /// Path-independence — the answer is the same for every
+    /// `File(path)` leaf regardless of the [`std::path::PathBuf`] payload
+    /// — inherits from the const-fn [`Provenance::is_file`] contract one
+    /// altitude down, which has no [`std::path::PathBuf`] visibility.
+    ///
+    /// **Ternary-partition disjointness law.** Because the three
+    /// underlying [`Provenance`] predicates form a closed disjoint
+    /// partition of the source-axis variant space (pinned pointwise by
+    /// [`tests::provenance_source_predicates_are_a_closed_ternary_partition`]),
+    /// the three bound-side sub-projections at each extremum together
+    /// yield exactly one `true` on any non-empty map: `first_is_defaults()
+    /// as u8 + first_is_env() as u8 + first_is_file() as u8 == 1` (and
+    /// symmetrically at the `last_*` extremum). Returns owned [`bool`]
+    /// with no allocation, matching [`Self::first_is_defaults`]'s
+    /// boolean-tag return shape.
+    #[must_use]
+    pub fn first_is_file(&self) -> Option<bool> {
+        self.inner.first_key_value().map(|(_, v)| v.is_file())
+    }
+
+    /// Lexicographically largest leaf's source-axis per-arm boolean tag
+    /// [`Provenance::is_file`], or [`None`] if this map is empty — the
+    /// per-arm boolean-tag scalar sub-projection sibling of
+    /// [`Self::first_is_file`] on the upper-bound side that
+    /// [`Self::first_is_file`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_source_kind().map(crate::ConfigSourceKind::is_file)`
+    /// and to `self.last_provenance().map(Provenance::is_file)` on
+    /// every input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the source-kind-axis bound uses, dereferencing the
+    /// const-fn [`Provenance::is_file`] accessor on the retained value,
+    /// so the two disagree only under a `BTreeMap` bug. Returns the same
+    /// owned [`bool`] shape as [`Self::first_is_file`] on the
+    /// boolean-tag axis.
+    #[must_use]
+    pub fn last_is_file(&self) -> Option<bool> {
+        self.inner.last_key_value().map(|(_, v)| v.is_file())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -54568,6 +54737,318 @@ mod progressive_tests {
             std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
         assert_eq!(one.first_is_overlay(), one.last_is_overlay());
         assert_eq!(one.first_is_overlay(), Some(false));
+    }
+
+    // -------- ProvenanceMap::first_is_defaults / ::last_is_defaults / ::first_is_env / ::last_is_env / ::first_is_file / ::last_is_file per-arm boolean-tag sub-projection triplet --------
+
+    #[test]
+    fn provenance_map_first_is_defaults_agrees_with_first_source_kind_is_defaults_projection_pointwise()
+     {
+        // The `Defaults`-arm boolean-tag scalar sub-projection of the
+        // source-kind-axis bound yields the same `bool` as
+        // `first_source_kind().map(ConfigSourceKind::is_defaults)`,
+        // projecting the extremal leaf's source-kind one const-fn hop
+        // further inland from `ConfigSourceKind` to the per-arm
+        // ternary-partition polarity coordinate. Catches a future edit
+        // that reroutes `first_is_defaults()` through `last_key_value()`
+        // (upper-bound cursor by mistake) or that projects through a
+        // different `Provenance` accessor (`is_env` / `is_file` by
+        // mistake on the wrong arm).
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_defaults();
+        let via_first_kind: Option<bool> = r
+            .provenance()
+            .first_source_kind()
+            .map(crate::ConfigSourceKind::is_defaults);
+        assert_eq!(via_bound, via_first_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_defaults_agrees_with_last_source_kind_is_defaults_projection_pointwise()
+     {
+        // Peer of the `first_is_defaults` pin above on the upper-bound
+        // side. Pointwise-equal to
+        // `last_source_kind().map(ConfigSourceKind::is_defaults)`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_defaults();
+        let via_last_kind: Option<bool> = r
+            .provenance()
+            .last_source_kind()
+            .map(crate::ConfigSourceKind::is_defaults);
+        assert_eq!(via_bound, via_last_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_is_defaults_agrees_with_first_provenance_is_defaults_projection_pointwise()
+     {
+        // Deeper cross-seam agreement: the same boolean is recoverable
+        // through the two-hop chain `first_provenance().map(|p|
+        // p.is_defaults())` on the value-axis bound. Catches a future
+        // edit that decouples the boolean-tag from the const-fn
+        // `is_defaults` accessor on `Provenance`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_defaults();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .first_provenance()
+            .map(Provenance::is_defaults);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_defaults_agrees_with_last_provenance_is_defaults_projection_pointwise()
+     {
+        // Peer of the `first_is_defaults` two-hop pin above on the upper
+        // bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_defaults();
+        let via_prov: Option<bool> = r
+            .provenance()
+            .last_provenance()
+            .map(Provenance::is_defaults);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_env_agrees_with_first_source_kind_is_env_projection_pointwise() {
+        // `Env`-arm peer of the `Defaults`-arm pin above on the
+        // source-kind-axis bound. Pointwise-equal to
+        // `first_source_kind().map(ConfigSourceKind::is_env)`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_env();
+        let via_first_kind: Option<bool> = r
+            .provenance()
+            .first_source_kind()
+            .map(crate::ConfigSourceKind::is_env);
+        assert_eq!(via_bound, via_first_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_env_agrees_with_last_source_kind_is_env_projection_pointwise() {
+        // `Env`-arm upper-bound peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_env();
+        let via_last_kind: Option<bool> = r
+            .provenance()
+            .last_source_kind()
+            .map(crate::ConfigSourceKind::is_env);
+        assert_eq!(via_bound, via_last_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_is_env_agrees_with_first_provenance_is_env_projection_pointwise() {
+        // Two-hop `Env`-arm agreement peer on the value-axis bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_env();
+        let via_prov: Option<bool> = r.provenance().first_provenance().map(Provenance::is_env);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_env_agrees_with_last_provenance_is_env_projection_pointwise() {
+        // Two-hop `Env`-arm agreement peer on the upper-bound side.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_env();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_env);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_is_file_agrees_with_first_source_kind_is_file_projection_pointwise() {
+        // `File`-arm peer of the `Defaults`-arm pin above on the
+        // source-kind-axis bound. Pointwise-equal to
+        // `first_source_kind().map(ConfigSourceKind::is_file)`.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_file();
+        let via_first_kind: Option<bool> = r
+            .provenance()
+            .first_source_kind()
+            .map(crate::ConfigSourceKind::is_file);
+        assert_eq!(via_bound, via_first_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_file_agrees_with_last_source_kind_is_file_projection_pointwise() {
+        // `File`-arm upper-bound peer.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_file();
+        let via_last_kind: Option<bool> = r
+            .provenance()
+            .last_source_kind()
+            .map(crate::ConfigSourceKind::is_file);
+        assert_eq!(via_bound, via_last_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_is_file_agrees_with_first_provenance_is_file_projection_pointwise() {
+        // Two-hop `File`-arm agreement peer on the value-axis bound.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().first_is_file();
+        let via_prov: Option<bool> = r.provenance().first_provenance().map(Provenance::is_file);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_is_file_agrees_with_last_provenance_is_file_projection_pointwise() {
+        // Two-hop `File`-arm agreement peer on the upper-bound side.
+        let r = Prog::resolve_progressive();
+        let via_bound: Option<bool> = r.provenance().last_is_file();
+        let via_prov: Option<bool> = r.provenance().last_provenance().map(Provenance::is_file);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_defaults_none_on_empty_map() {
+        // Empty case: `Option<bool>` is `None` at both bounds, matching
+        // the sibling `first_is_overlay` empty behavior on the same
+        // underlying `BTreeMap`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_defaults().is_none());
+        assert!(empty.last_is_defaults().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_env_none_on_empty_map() {
+        // Empty case peer on the `Env` arm.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_env().is_none());
+        assert!(empty.last_is_env().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_file_none_on_empty_map() {
+        // Empty case peer on the `File` arm, closing the per-arm
+        // triplet on the empty-map ceiling.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_file().is_none());
+        assert!(empty.last_is_file().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_defaults_ground_truth_on_prog_fixture() {
+        // Ground-truth pin on the canonical `Prog` fixture: every leaf
+        // carries `ConfigSource::Defaults` (the computed-defaults
+        // constructors all pin the `Defaults` source), so
+        // `is_defaults()` is `true` on every leaf and both bounds return
+        // `Some(true)`. Complements the compound-polarity
+        // `first_is_overlay==Some(false)` ground-truth pin on the same
+        // fixture — the per-arm and compound projections agree here
+        // via the ternary-partition complement law
+        // `is_defaults() == !is_overlay()` one altitude down.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_defaults(), Some(true));
+        assert_eq!(r.provenance().last_is_defaults(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_env_ground_truth_on_prog_fixture() {
+        // Ground-truth pin: every `Prog` leaf is `Defaults`-sourced, so
+        // the per-arm `is_env()` boolean is `false` at both bounds.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_env(), Some(false));
+        assert_eq!(r.provenance().last_is_env(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_file_ground_truth_on_prog_fixture() {
+        // Ground-truth pin: every `Prog` leaf is `Defaults`-sourced, so
+        // the per-arm `is_file()` boolean is `false` at both bounds,
+        // closing the per-arm triplet ground-truth on the fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().first_is_file(), Some(false));
+        assert_eq!(r.provenance().last_is_file(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_defaults_coincide_on_singleton_map() {
+        // Singleton case: the sole leaf's `is_defaults` tag is both the
+        // lex-lower-bound and lex-upper-bound projection.
+        // `Provenance::bare()` carries `ConfigSource::Defaults`, so
+        // both bounds return `Some(true)`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_defaults(), one.last_is_defaults());
+        assert_eq!(one.first_is_defaults(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_env_coincide_on_singleton_map() {
+        // Singleton case on the `Env` arm. `Provenance::bare()` carries
+        // `ConfigSource::Defaults` (not `Env`), so `is_env()` is
+        // `false` at both bounds.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_env(), one.last_is_env());
+        assert_eq!(one.first_is_env(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_file_coincide_on_singleton_map() {
+        // Singleton case on the `File` arm. `Provenance::bare()`
+        // carries `ConfigSource::Defaults` (not `File`), so
+        // `is_file()` is `false` at both bounds, closing the per-arm
+        // triplet singleton ceiling.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::bare())).collect();
+        assert_eq!(one.first_is_file(), one.last_is_file());
+        assert_eq!(one.first_is_file(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_is_defaults_is_env_is_file_triplet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Ternary-partition disjointness pin at the lex-lower-bound
+        // extremum: exactly one of the three per-arm projections
+        // answers `true` on every non-empty map, inheriting the
+        // partition law
+        // `provenance_source_predicates_are_a_closed_ternary_partition`
+        // one altitude down. Sum-to-one is the machine-checkable form
+        // (disjoint AND covering AND non-empty).
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.provenance().first_is_defaults().unwrap())
+            + u8::from(r.provenance().first_is_env().unwrap())
+            + u8::from(r.provenance().first_is_file().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn provenance_map_last_is_defaults_is_env_is_file_triplet_is_a_closed_partition_on_prog_fixture()
+     {
+        // Ternary-partition disjointness pin at the lex-upper-bound
+        // extremum, peer of the `first_*` triplet-partition pin above.
+        let r = Prog::resolve_progressive();
+        let sum = u8::from(r.provenance().last_is_defaults().unwrap())
+            + u8::from(r.provenance().last_is_env().unwrap())
+            + u8::from(r.provenance().last_is_file().unwrap());
+        assert_eq!(sum, 1);
+    }
+
+    #[test]
+    fn provenance_map_first_is_defaults_is_complement_of_first_is_overlay_on_prog_fixture() {
+        // Complement-law pin at the lex-lower-bound extremum: the
+        // per-arm `Defaults` sub-projection is the pointwise
+        // complement of the compound-polarity `is_overlay`
+        // sub-projection on the same value-axis bound, inheriting the
+        // altitude-down complement `prov.is_defaults() ==
+        // !prov.is_overlay()` (which holds because the source-axis
+        // ternary partition is `{Defaults} ∪ {Env, File}` and
+        // `is_overlay()` is `is_env() || is_file()`).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().first_is_defaults(),
+            r.provenance().first_is_overlay().map(|b| !b),
+        );
+    }
+
+    #[test]
+    fn provenance_map_last_is_defaults_is_complement_of_last_is_overlay_on_prog_fixture() {
+        // Complement-law pin at the lex-upper-bound extremum, peer of
+        // the `first_*` complement pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().last_is_defaults(),
+            r.provenance().last_is_overlay().map(|b| !b),
+        );
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
