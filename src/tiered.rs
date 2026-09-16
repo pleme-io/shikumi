@@ -2888,6 +2888,127 @@ impl ProvenanceMap {
         self.inner.get(path).map(Provenance::source_kind_ordinal)
     }
 
+    /// Tier-axis compound-polarity boolean tag [`Provenance::is_computed`]
+    /// of the effective leaf named by dotted `path`, or [`None`] if
+    /// `path` names no leaf in the resolved config — the boolean-tag
+    /// scalar sub-projection of the path-keyed value-axis lookup
+    /// [`Self::provenance_of`] one const-fn hop further inland than the
+    /// tag-side pair [`Self::tier_of`] / [`Self::tier_of_owned`] on the
+    /// tier coordinate of the atomic `(tier, source)` pair every leaf's
+    /// [`Provenance`] carries.
+    ///
+    /// The path-keyed peer of the tier-axis compound-polarity bounded-
+    /// lookup pair [`Self::first_is_computed`] / [`Self::last_is_computed`]:
+    /// where those seams project the compound-polarity `bool` at the
+    /// lex-boundary leaves, this seam projects the compound-polarity
+    /// `bool` at ONE named leaf. Callers already reaching for
+    /// `Some(true)` through
+    /// `self.provenance_of(path).map(Provenance::is_computed)` — a
+    /// `/healthz/provenance/<path>/is_computed` payload emitting only the
+    /// compound-polarity byte at one named leaf, a per-leaf attestation
+    /// hasher folding the `(computed × custom)` polarity of one named
+    /// leaf, a `ConfigPlane` wire encoder emitting just the polarity byte
+    /// at one leaf — were pulling a `&Provenance` borrow at the named
+    /// leaf just to project one `bool` scalar off it; this seam collapses
+    /// that to one direct boolean-tag probe through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, discarding just the path key and
+    /// dereferencing the [`Provenance::is_computed`] const-fn accessor on
+    /// the retained value.
+    ///
+    /// The compound `is_computed()` folds three arms
+    /// (`Bare || Discovered || Default`) of the tier-axis quaternary
+    /// partition into one polarity byte and complements the fourth
+    /// (`Custom`) — the per-leaf `is_computed_of(path) ==
+    /// !prov.is_custom()` complement law inherits from the const-fn
+    /// [`Provenance::is_computed`] contract one altitude down. The peer
+    /// of the source-axis compound-polarity path-keyed pair
+    /// `is_overlay_of` / `is_overlay_of_owned` on the sibling closed-axis
+    /// coordinate (still-unclosed), together closing the compound-polarity
+    /// boolean-tag path-keyed lookup surface on BOTH closed-axis
+    /// coordinates at the primitive altitude on the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_computed)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::is_computed)` one const-fn
+    /// seam further out on the same tier axis. Returns owned [`bool`]
+    /// with no allocation beyond the per-lookup path conversion the
+    /// borrowed-form entry pays.
+    #[must_use]
+    pub fn is_computed_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_computed_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_computed_of`] for callers
+    /// that already carry an owned path — closes the borrowed-vs-owned
+    /// tier-axis compound-polarity path-keyed lookup pair mirroring the
+    /// borrowed-vs-owned tag-side tier-axis pair [`Self::tier_of`] /
+    /// [`Self::tier_of_owned`] one const-fn seam further out and the peer
+    /// tier-axis ordinal pair [`Self::tier_ordinal_of`] /
+    /// [`Self::tier_ordinal_of_owned`] one seam over on the same closed
+    /// axis. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects
+    /// the [`Provenance::is_computed`] const-fn accessor on the retained
+    /// value, with no allocation of its own.
+    #[must_use]
+    pub fn is_computed_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_computed)
+    }
+
+    /// Source-axis compound-polarity boolean tag [`Provenance::is_overlay`]
+    /// of the effective leaf named by dotted `path`, or [`None`] if
+    /// `path` names no leaf in the resolved config — the source-axis peer
+    /// of [`Self::is_computed_of`] on the sibling closed-axis coordinate
+    /// of the atomic `(tier, source)` pair.
+    ///
+    /// The compound `is_overlay()` folds two arms (`Env || File`) of the
+    /// source-axis ternary partition into one polarity byte and
+    /// complements the third (`Defaults`) — the per-leaf
+    /// `is_overlay_of(path) == !prov.is_defaults()` complement law
+    /// inherits from the const-fn [`Provenance::is_overlay`] contract one
+    /// altitude down. The path-keyed peer of the source-axis compound-
+    /// polarity bounded-lookup pair [`Self::first_is_overlay`] /
+    /// [`Self::last_is_overlay`]: where those seams project the compound-
+    /// polarity `bool` at the lex-boundary leaves, this seam projects the
+    /// compound-polarity `bool` at ONE named leaf. Together with
+    /// [`Self::is_computed_of`], closes the compound-polarity boolean-tag
+    /// path-keyed lookup surface on BOTH closed-axis coordinates at the
+    /// primitive altitude on the atomic `(tier, source)` pair.
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_overlay)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Also pointwise-equal to
+    /// `self.source_kind_of(path).map(ConfigSourceKind::is_overlay)` one
+    /// const-fn seam further out on the same source axis. Returns owned
+    /// [`bool`] with no allocation beyond the per-lookup path conversion
+    /// the borrowed-form entry pays.
+    #[must_use]
+    pub fn is_overlay_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_overlay_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_overlay_of`] for callers
+    /// that already carry an owned path — closes the borrowed-vs-owned
+    /// source-axis compound-polarity path-keyed lookup pair, sibling of
+    /// the tier-axis compound-polarity pair [`Self::is_computed_of`] /
+    /// [`Self::is_computed_of_owned`] on the other closed-axis coordinate
+    /// of the atomic `(tier, source)` pair. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects
+    /// the [`Provenance::is_overlay`] const-fn accessor on the retained
+    /// value, with no allocation of its own.
+    #[must_use]
+    pub fn is_overlay_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_overlay)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -24007,6 +24128,99 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn source_kind_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
         self.provenance.source_kind_ordinal_of_owned(path)
+    }
+
+    /// Tier-axis compound-polarity boolean tag [`Provenance::is_computed`]
+    /// of the effective leaf named by dotted `path`, or [`None`] if
+    /// `path` names no leaf in the resolved config — the container-altitude
+    /// peer of [`ProvenanceMap::is_computed_of`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.is_computed_of(path)`.
+    ///
+    /// The boolean-tag scalar sub-projection of the container-altitude
+    /// value-axis lookup [`Self::provenance_of`] one const-fn hop further
+    /// inland than the tag-side pair [`Self::tier_of`] /
+    /// [`Self::tier_of_owned`] on the tier coordinate of the atomic
+    /// `(tier, source)` pair. The path-keyed peer of the container-
+    /// altitude tier-axis compound-polarity bounded-lookup pair
+    /// [`Self::first_is_computed`] / [`Self::last_is_computed`]: where
+    /// those seams project the compound-polarity `bool` at the lex-
+    /// boundary leaves, this seam projects it at ONE named leaf without
+    /// pulling a [`ConfigTierKind`] tag or `&Provenance` borrow through
+    /// the two-hop chain `self.tier_of(path).map(ConfigTierKind::is_computed)`
+    /// / `self.provenance_of(path).map(Provenance::is_computed)` just to
+    /// project one `bool` scalar off it. Callers already reaching for
+    /// `Some(true)` through either of those two-hop chains — a
+    /// `/healthz/provenance/<path>/is_computed` payload emitting only the
+    /// compound-polarity byte at one named leaf, a per-leaf attestation
+    /// hasher folding the `(computed × custom)` polarity of one named
+    /// leaf, or a `ConfigPlane` wire encoder emitting just the polarity
+    /// byte at one leaf — now open the same seam one hop shorter directly
+    /// on the [`ProgressiveResolution`] container itself.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().is_computed_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_computed_of_agrees_with_provenance_map_is_computed_of_pointwise`].
+    /// - Equal to
+    ///   `self.provenance_of(path).map(Provenance::is_computed)` on every
+    ///   input by construction — the compound-polarity sub-projection of
+    ///   the same value-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_computed_of_agrees_with_provenance_of_is_computed_projection_pointwise`].
+    /// - Equal to `self.tier_of(path).map(ConfigTierKind::is_computed)`
+    ///   on every input, one const-fn seam further out on the same tier
+    ///   axis — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_computed_of_agrees_with_tier_of_is_computed_projection_pointwise`].
+    #[must_use]
+    pub fn is_computed_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_computed_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_computed_of`] for callers
+    /// that already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_computed_of_owned`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.is_computed_of_owned(path)`.
+    #[must_use]
+    pub fn is_computed_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_computed_of_owned(path)
+    }
+
+    /// Source-axis compound-polarity boolean tag [`Provenance::is_overlay`]
+    /// of the effective leaf named by dotted `path`, or [`None`] if
+    /// `path` names no leaf in the resolved config — the container-altitude
+    /// peer of [`ProvenanceMap::is_overlay_of`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.is_overlay_of(path)`. Sibling of
+    /// [`Self::is_computed_of`] on the other closed-axis coordinate of
+    /// the atomic `(tier, source)` pair, together closing the compound-
+    /// polarity boolean-tag path-keyed lookup surface on BOTH closed-axis
+    /// coordinates at the container altitude.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().is_overlay_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_overlay_of_agrees_with_provenance_map_is_overlay_of_pointwise`].
+    /// - Equal to
+    ///   `self.provenance_of(path).map(Provenance::is_overlay)` on every
+    ///   input by construction — the compound-polarity sub-projection of
+    ///   the same value-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_is_overlay_of_agrees_with_provenance_of_is_overlay_projection_pointwise`].
+    #[must_use]
+    pub fn is_overlay_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_overlay_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_overlay_of`] for callers
+    /// that already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_overlay_of_owned`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.is_overlay_of_owned(path)`.
+    #[must_use]
+    pub fn is_overlay_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_overlay_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -55802,6 +56016,290 @@ mod progressive_tests {
                 .source_kind_ordinal_of_owned(&["a".to_string()])
                 .is_none()
         );
+    }
+
+    // -------- ProvenanceMap::is_computed_of / ::is_computed_of_owned /
+    // -------- ::is_overlay_of / ::is_overlay_of_owned compound-polarity
+    // -------- boolean-tag path-keyed sub-projection (path-keyed peer of
+    // -------- the tier-axis / source-axis compound-polarity bounded-lookup
+    // -------- quartet `first_is_computed / last_is_computed / first_is_overlay
+    // -------- / last_is_overlay`, one const-fn seam further inland on the
+    // -------- boolean-tag axis than the tag-side `tier_of` / `source_kind_of`
+    // -------- pairs) ---------------------------------------------------------
+
+    #[test]
+    fn provenance_map_is_computed_of_agrees_with_provenance_of_is_computed_projection_pointwise() {
+        // The tier-axis compound-polarity boolean-tag path-keyed scalar
+        // sub-projection yields the same `bool` as
+        // `provenance_of(path).map(|p| p.is_computed())` on every leaf by
+        // construction. Catches a future edit that reroutes
+        // `is_computed_of` through a different `BTreeMap` cursor than
+        // `provenance_of` uses, or projects through the wrong
+        // `Provenance` accessor (`is_overlay` instead of `is_computed` —
+        // the crossed-axis regression the source-axis peer pin below
+        // rules out on the other coordinate).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_flag: Option<bool> = r.provenance().is_computed_of(&path);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&path)
+                .map(Provenance::is_computed);
+            assert_eq!(via_flag, via_prov, "disagreement at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_agrees_with_tier_of_is_computed_projection_pointwise() {
+        // One const-fn seam further out on the same tier axis: the
+        // compound-polarity path-keyed lookup yields the same `bool` as
+        // `tier_of(path).map(ConfigTierKind::is_computed)` on every leaf
+        // by construction. Welds the tag-side and boolean-tag path-keyed
+        // seams on the tier axis pointwise on every leaf the resolved
+        // map carries.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_flag: Option<bool> = r.provenance().is_computed_of(&path);
+            let via_tag: Option<bool> = r
+                .provenance()
+                .tier_of(&path)
+                .map(ConfigTierKind::is_computed);
+            assert_eq!(via_flag, via_tag, "tag-vs-flag disagreement at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_owned_agrees_with_is_computed_of_borrowed_form_pointwise() {
+        // Borrowed-vs-owned parity mirroring the value-axis lookup pair
+        // `provenance_of` / `provenance_of_owned` one axis over, and the
+        // peer tier-axis pair `tier_of` / `tier_of_owned` one const-fn
+        // seam further out. Catches a future edit that decouples the
+        // two path forms.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().is_computed_of(&borrowed),
+                r.provenance().is_computed_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // path forms, matching the value-axis lookup `provenance_of` on
+        // the same input by construction. Rules out a future edit that
+        // would fall back to `false` (or `true`) on miss instead of
+        // propagating the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_computed_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_computed_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_agrees_with_first_is_computed_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the compound-polarity bounded-lookup
+        // pair at the extremal leaf: at the lex-lower-bound path,
+        // `is_computed_of(first_path)` names the same `bool` as
+        // `first_is_computed()`. Welds the path-keyed and bounded-lookup
+        // surfaces pointwise at the lower-bound leaf on the tier-axis
+        // compound-polarity coordinate.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_computed_of_owned(&first_path),
+            r.provenance().first_is_computed(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_agrees_with_last_is_computed_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the `first_is_computed` cross-seam pin
+        // above. Together with the lower-bound peer, welds the path-keyed
+        // and bounded-lookup surfaces on both extremal leaves at the
+        // tier-axis compound-polarity coordinate.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_computed_of_owned(&last_path),
+            r.provenance().last_is_computed(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: `resolve_progressive`
+        // was called with no overlays, so every leaf's tier stays at
+        // one of the `computed` arms of the quaternary partition
+        // (`Bare` / `Discovered` / `PrescribedDefault`) — none reach
+        // `Custom` — and every leaf's `is_computed()` byte reads `true`.
+        // Matches the tag-side ground-truth pin
+        // `provenance_map_tier_of_names_prog_ground_truth_leaves`
+        // composed with `ConfigTierKind::is_computed`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().is_computed_of(&["a"]), Some(true));
+        assert_eq!(r.provenance().is_computed_of(&["b"]), Some(true));
+        assert_eq!(r.provenance().is_computed_of(&["c"]), Some(true));
+        assert_eq!(r.provenance().is_computed_of(&["d"]), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_is_computed_of_on_empty_map_is_none() {
+        // Empty case: `Option<bool>` is `None` for every path, matching
+        // the `provenance_of` empty behavior and the peer tag-side
+        // tier-axis and ordinal-axis empty-case pins on the same
+        // underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_computed_of(&["a"]).is_none());
+        assert!(empty.is_computed_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_agrees_with_provenance_of_is_overlay_projection_pointwise() {
+        // Sibling of the tier-axis pin above on the source-axis coordinate
+        // of the atomic `(tier, source)` pair. The source-axis
+        // compound-polarity path-keyed scalar sub-projection yields the
+        // same `bool` as `provenance_of(path).map(|p| p.is_overlay())` on
+        // every leaf by construction.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_flag: Option<bool> = r.provenance().is_overlay_of(&path);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&path)
+                .map(Provenance::is_overlay);
+            assert_eq!(via_flag, via_prov, "disagreement at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_agrees_with_source_kind_of_is_overlay_projection_pointwise() {
+        // One const-fn seam further out on the same source axis: the
+        // compound-polarity path-keyed lookup yields the same `bool` as
+        // `source_kind_of(path).map(ConfigSourceKind::is_overlay)` on
+        // every leaf by construction. Welds the tag-side and boolean-tag
+        // path-keyed seams on the source axis pointwise on every leaf.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_flag: Option<bool> = r.provenance().is_overlay_of(&path);
+            let via_tag: Option<bool> = r
+                .provenance()
+                .source_kind_of(&path)
+                .map(crate::ConfigSourceKind::is_overlay);
+            assert_eq!(via_flag, via_tag, "tag-vs-flag disagreement at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_owned_agrees_with_is_overlay_of_borrowed_form_pointwise() {
+        // Borrowed-vs-owned parity peer of the tier-axis pair pin above,
+        // on the source-axis compound-polarity coordinate.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().is_overlay_of(&borrowed),
+                r.provenance().is_overlay_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_returns_none_for_unknown_path() {
+        // Miss case peer of the tier-axis pin above, on the source-axis
+        // compound-polarity coordinate.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_overlay_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_overlay_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_agrees_with_first_is_overlay_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the source-axis compound-polarity
+        // bounded-lookup pair at the extremal leaf, peer of the tier-axis
+        // weld pin above.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_overlay_of_owned(&first_path),
+            r.provenance().first_is_overlay(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_agrees_with_last_is_overlay_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the source-axis extremal weld pin above.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_overlay_of_owned(&last_path),
+            r.provenance().last_is_overlay(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_is_complement_of_is_defaults_on_every_prog_leaf() {
+        // Ternary-partition complement law at the primitive altitude on
+        // the source-axis compound-polarity coordinate: for every leaf
+        // `p`, `is_overlay_of(p) == !is_defaults_of(p)` inherits from
+        // the const-fn `Provenance::is_overlay` /
+        // `Provenance::is_defaults` complement law one altitude down
+        // (`Env || File` on the overlay side, `Defaults` on the baseline
+        // side, disjoint by construction of `ConfigSourceKind`).
+        //
+        // NOTE: `provenance_of(p).map(|prov| !prov.is_defaults())` is the
+        // structural analogue; here we use the shipped
+        // `provenance_of(p).map(Provenance::is_defaults)` directly and
+        // invert, keeping the pin self-contained without depending on an
+        // `is_defaults_of` path-keyed sibling (still-unclosed on this
+        // primitive).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let overlay = r.provenance().is_overlay_of(&path);
+            let baseline = r
+                .provenance()
+                .provenance_of(&path)
+                .map(|p| !Provenance::is_defaults(p));
+            assert_eq!(overlay, baseline, "complement law breaks at leaf {leaf}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin: `Prog` is a pure-progressive fixture so no
+        // leaf's source-kind reaches `Env` or `File`; every
+        // `is_overlay_of` byte reads `false`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().is_overlay_of(&["a"]), Some(false));
+        assert_eq!(r.provenance().is_overlay_of(&["b"]), Some(false));
+        assert_eq!(r.provenance().is_overlay_of(&["c"]), Some(false));
+        assert_eq!(r.provenance().is_overlay_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_is_overlay_of_on_empty_map_is_none() {
+        // Empty case peer of the tier-axis pin above.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_overlay_of(&["a"]).is_none());
+        assert!(empty.is_overlay_of_owned(&["a".to_string()]).is_none());
     }
 
     // -------- ProvenanceMap::paths / ::provenances projection walkers --------
@@ -104764,6 +105262,278 @@ mod progressive_tests {
             r.source_kind_ordinal_of_owned(&last_path),
             r.last_source_kind_ordinal(),
         );
+    }
+
+    // -------- ProgressiveResolution compound-polarity boolean-tag
+    // -------- path-keyed lookup quartet (container-altitude peer of
+    // -------- `ProvenanceMap::is_computed_of` / `_owned` and
+    // -------- `ProvenanceMap::is_overlay_of` / `_owned`, closing the
+    // -------- compound-polarity boolean-tag sub-projection of the
+    // -------- value-axis lookup one const-fn seam further inland than
+    // -------- the tag-side `tier_of` / `source_kind_of` pairs at the
+    // -------- container altitude on the output side of the fold's
+    // -------- atomic-pair ownership boundary) ----------------------------
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_provenance_map_is_computed_of_pointwise() {
+        // Load-bearing structural law on the container-altitude tier-axis
+        // compound-polarity path-keyed delegate: the container-altitude
+        // method yields the same `Option<bool>` as
+        // `res.provenance().is_computed_of(path)` on every path the
+        // resolved config carries (each `paths()` entry) and on a
+        // fabricated miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::is_computed_of` through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (an `is_overlay_of` typo — the crossed-axis
+        // regression the source-axis peer pin below rules out — a
+        // projection through the wrong `Provenance` accessor, or a
+        // projection through a different `BTreeMap` cursor).
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.is_computed_of(&borrowed);
+            let via_prov = r.provenance().is_computed_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(r.is_computed_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.is_computed_of(&["definitely_not_a_field"]),
+            r.provenance().is_computed_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_owned_agrees_with_provenance_map_is_computed_of_owned_pointwise()
+     {
+        // Allocation-free-peer law on the container-altitude tier-axis
+        // compound-polarity path-keyed pair: the owned-path seam yields
+        // the same `Option<bool>` as
+        // `res.provenance().is_computed_of_owned(path)` on every path the
+        // resolved config carries and on a fabricated miss path.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.is_computed_of_owned(&owned);
+            let via_prov = r.provenance().is_computed_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_computed_of_owned(&miss).is_none());
+        assert_eq!(
+            r.is_computed_of_owned(&miss),
+            r.provenance().is_computed_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_is_computed_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude tier-axis
+        // compound-polarity path-keyed pair.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_computed_of(&borrowed), r.is_computed_of_owned(&owned),);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_provenance_of_is_computed_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis compound-polarity path-keyed pair
+        // and the container-altitude value-axis path-keyed lookup pair
+        // `provenance_of` at the same container.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.is_computed_of(&borrowed);
+            let via_prov_of: Option<bool> = r.provenance_of(&borrowed).map(Provenance::is_computed);
+            assert_eq!(via_flag, via_prov_of, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_tier_of_is_computed_projection_pointwise()
+    {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis compound-polarity path-keyed pair
+        // and the container-altitude tag-side tier-axis pair `tier_of`
+        // composed with `ConfigTierKind::is_computed` one const-fn seam
+        // further out on the same axis.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.is_computed_of(&borrowed);
+            let via_tag: Option<bool> = r.tier_of(&borrowed).map(ConfigTierKind::is_computed);
+            assert_eq!(
+                via_flag, via_tag,
+                "tag-vs-flag disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // path forms at the container altitude.
+        let r = Prog::resolve_progressive();
+        assert!(r.is_computed_of(&["nope"]).is_none());
+        assert!(r.is_computed_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: `resolve_progressive` fed no overlays, so every
+        // leaf's tier stays in one of the computed arms
+        // (`Bare` / `Discovered` / `PrescribedDefault`) and every leaf's
+        // `is_computed_of` byte reads `true`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_computed_of(&["a"]), Some(true));
+        assert_eq!(r.is_computed_of(&["b"]), Some(true));
+        assert_eq!(r.is_computed_of(&["c"]), Some(true));
+        assert_eq!(r.is_computed_of(&["d"]), Some(true));
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_first_is_computed_at_lex_lower_bound_leaf()
+    {
+        // Cross-seam agreement with the container-altitude tier-axis
+        // compound-polarity bounded-lookup pair at the extremal leaf.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.is_computed_of_owned(&first_path), r.first_is_computed(),);
+    }
+
+    #[test]
+    fn progressive_resolution_is_computed_of_agrees_with_last_is_computed_at_lex_upper_bound_leaf()
+    {
+        // Upper-bound peer of the extremal weld pin above.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_computed_of_owned(&last_path), r.last_is_computed(),);
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_agrees_with_provenance_map_is_overlay_of_pointwise() {
+        // Sibling of the tier-axis pin above on the source-axis
+        // compound-polarity coordinate of the atomic `(tier, source)`
+        // pair at the container altitude.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.is_overlay_of(&borrowed);
+            let via_prov = r.provenance().is_overlay_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(r.is_overlay_of(&["definitely_not_a_field"]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_owned_agrees_with_provenance_map_is_overlay_of_owned_pointwise()
+     {
+        // Allocation-free-peer law on the container-altitude source-axis
+        // compound-polarity path-keyed pair.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.is_overlay_of_owned(&owned);
+            let via_prov = r.provenance().is_overlay_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_overlay_of_owned(&miss).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_agrees_with_is_overlay_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude source-axis
+        // compound-polarity path-keyed pair.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_overlay_of(&borrowed), r.is_overlay_of_owned(&owned),);
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_agrees_with_provenance_of_is_overlay_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude source-axis compound-polarity path-keyed pair
+        // and the container-altitude value-axis path-keyed lookup pair
+        // `provenance_of` at the same container.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.is_overlay_of(&borrowed);
+            let via_prov_of: Option<bool> = r.provenance_of(&borrowed).map(Provenance::is_overlay);
+            assert_eq!(via_flag, via_prov_of, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_is_complement_of_is_computed_of_only_when_baseline_and_computed_align()
+     {
+        // Structural note: `is_overlay_of` and `is_computed_of` measure
+        // orthogonal closed axes — they are NOT boolean complements.
+        // The `Prog` fixture stays on the computed side (`is_computed`
+        // true) AND on the baseline side (`is_overlay` false) for every
+        // leaf, so `is_computed_of(p) != is_overlay_of(p)` reads as
+        // `true != false` on every path. This pin catches a future edit
+        // that would wire the source-axis path-keyed lookup through the
+        // tier-axis `is_computed` accessor.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_computed_of(&borrowed), Some(true));
+            assert_eq!(r.is_overlay_of(&borrowed), Some(false));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_returns_none_for_unknown_path() {
+        // Miss case peer of the tier-axis pin above.
+        let r = Prog::resolve_progressive();
+        assert!(r.is_overlay_of(&["nope"]).is_none());
+        assert!(r.is_overlay_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: no overlays are fed, so every leaf's `is_overlay_of`
+        // byte reads `false`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_overlay_of(&["a"]), Some(false));
+        assert_eq!(r.is_overlay_of(&["b"]), Some(false));
+        assert_eq!(r.is_overlay_of(&["c"]), Some(false));
+        assert_eq!(r.is_overlay_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_agrees_with_first_is_overlay_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the container-altitude source-axis
+        // compound-polarity bounded-lookup pair at the extremal leaf.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.is_overlay_of_owned(&first_path), r.first_is_overlay(),);
+    }
+
+    #[test]
+    fn progressive_resolution_is_overlay_of_agrees_with_last_is_overlay_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the source-axis extremal weld pin above.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_overlay_of_owned(&last_path), r.last_is_overlay(),);
     }
 
     // -------- ProgressiveResolution source-kind-axis scalar-projection pair
