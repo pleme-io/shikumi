@@ -23905,6 +23905,110 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.tier_ordinal_of_owned(path)
     }
 
+    /// [`crate::ConfigSourceKind`] precedence ordinal of the effective
+    /// leaf named by dotted `path`, or [`None`] if `path` names no leaf
+    /// in the resolved config — the container-altitude peer of
+    /// [`ProvenanceMap::source_kind_ordinal_of`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.source_kind_ordinal_of(path)`.
+    ///
+    /// The ordinal-axis scalar sub-projection of the container-altitude
+    /// value-axis lookup [`Self::provenance_of`] one const-fn hop further
+    /// inland than the tag-side pair [`Self::source_kind_of`] /
+    /// [`Self::source_kind_of_owned`] on the source-kind coordinate of
+    /// the atomic `(tier, source)` pair every leaf's [`Provenance`]
+    /// carries. The peer of the container-altitude tier-axis path-keyed
+    /// ordinal pair [`Self::tier_ordinal_of`] /
+    /// [`Self::tier_ordinal_of_owned`] on the sibling closed-axis
+    /// coordinate, together closing the ordinal-axis path-keyed lookup
+    /// surface on BOTH closed-axis coordinates at the container altitude
+    /// — matching the closure the primitive-altitude pair
+    /// [`ProvenanceMap::source_kind_ordinal_of`] /
+    /// [`ProvenanceMap::source_kind_ordinal_of_owned`] gives one seam
+    /// down. The path-keyed peer of the container-altitude
+    /// source-kind-ordinal bounded-lookup pair
+    /// [`Self::first_source_kind_ordinal`] /
+    /// [`Self::last_source_kind_ordinal`] on the same container: where
+    /// those seams project the source-kind precedence-ordinal at the
+    /// lex-boundary leaves, this seam projects it at ONE named leaf
+    /// without pulling a [`crate::ConfigSourceKind`] tag or `&Provenance`
+    /// borrow through the two-hop chain
+    /// `self.source_kind_of(path).map(crate::ConfigSourceKind::ordinal)`
+    /// / `self.provenance_of(path).map(Provenance::source_kind_ordinal)`
+    /// just to project one `usize` scalar off it. Callers already
+    /// reaching for `Some(...)` through either of those two-hop chains —
+    /// a `ConfigPlane` wire encoder emitting only the source-kind
+    /// precedence-ordinal byte at one named leaf, an operator-facing
+    /// `/healthz/provenance/<path>/source_kind_ordinal` payload emitting
+    /// just the `usize` at one leaf, or a compile-time attestation hasher
+    /// folding the source-kind precedence-ordinal of one named leaf — now
+    /// open the same seam one hop shorter directly on the
+    /// [`ProgressiveResolution`] container itself.
+    ///
+    /// The allocation cost equals the primitive-altitude peer
+    /// [`ProvenanceMap::source_kind_ordinal_of`] on the same input by
+    /// construction — the body forwards the borrowed `&[&str]` verbatim,
+    /// so the underlying per-lookup `Vec<String>` allocation happens
+    /// exactly once regardless of which altitude the caller entered.
+    /// Callers with an already-owned path reach for the allocation-free
+    /// [`Self::source_kind_ordinal_of_owned`] sibling one seam over.
+    /// Returns owned [`usize`] matching the
+    /// [`ProvenanceMapSourceKindOrdinals`] item shape ([`Copy`], no
+    /// borrow) with no allocation beyond that per-lookup path conversion.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().source_kind_ordinal_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_source_kind_ordinal_of_agrees_with_provenance_map_source_kind_ordinal_of_pointwise`].
+    /// - Equal to
+    ///   `self.provenance_of(path).map(Provenance::source_kind_ordinal)`
+    ///   on every input by construction — the ordinal-axis sub-projection
+    ///   of the same value-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_source_kind_ordinal_of_agrees_with_provenance_of_source_kind_ordinal_projection_pointwise`].
+    /// - Equal to
+    ///   `self.source_kind_of(path).map(crate::ConfigSourceKind::ordinal)`
+    ///   on every input, one const-fn seam further out on the same
+    ///   source-kind axis — pinned by
+    ///   [`progressive_tests::progressive_resolution_source_kind_ordinal_of_agrees_with_source_kind_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn source_kind_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.provenance.source_kind_ordinal_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::source_kind_ordinal_of`] for
+    /// callers that already carry an owned path — the container-altitude
+    /// peer of [`ProvenanceMap::source_kind_ordinal_of_owned`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.source_kind_ordinal_of_owned(path)`.
+    ///
+    /// The allocation-free ordinal-axis path-keyed lookup sibling of
+    /// [`Self::source_kind_ordinal_of`] on the same container: where
+    /// [`Self::source_kind_ordinal_of`] forwards a borrowed `&[&str]` and
+    /// pays the primitive's per-lookup `Vec<String>` allocation, this
+    /// seam forwards an already-owned `&[String]` straight into the
+    /// underlying [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::source_kind_ordinal`] const-fn accessor
+    /// on the retained value with no allocation of its own. Mirrors the
+    /// primitive-altitude borrowed-vs-owned pair
+    /// [`ProvenanceMap::source_kind_ordinal_of`] /
+    /// [`ProvenanceMap::source_kind_ordinal_of_owned`] verbatim, closing
+    /// the ordinal-axis path-keyed lookup surface on both path forms at
+    /// the container altitude on the source-kind coordinate of the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to
+    /// `self.provenance().source_kind_ordinal_of_owned(path)` on every
+    /// input — pinned by
+    /// [`progressive_tests::progressive_resolution_source_kind_ordinal_of_owned_agrees_with_provenance_map_source_kind_ordinal_of_owned_pointwise`].
+    #[must_use]
+    pub fn source_kind_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.provenance.source_kind_ordinal_of_owned(path)
+    }
+
     /// Sorted `(path, provenance)` entries — the container-altitude peer
     /// of [`ProvenanceMap::entries`] on the *output* side of the fold's
     /// atomic-pair ownership boundary, delegating one seam down into
@@ -104433,6 +104537,233 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         let last_path = r.provenance().last_path().unwrap().to_vec();
         assert_eq!(r.tier_ordinal_of_owned(&last_path), r.last_tier_ordinal(),);
+    }
+
+    // -------- ProgressiveResolution source-kind-axis ordinal path-keyed
+    // -------- lookup pair (container-altitude peer of
+    // -------- `ProvenanceMap::source_kind_ordinal_of` /
+    // -------- `ProvenanceMap::source_kind_ordinal_of_owned`, ordinal-axis
+    // -------- sub-projection of the container-altitude value-axis lookup
+    // -------- one const-fn seam further inland than `source_kind_of` on
+    // -------- the source-kind coordinate of the atomic (tier, source)
+    // -------- pair on the output side of the fold's atomic-pair
+    // -------- ownership boundary; the peer of the tier-axis path-keyed
+    // -------- ordinal pair `tier_ordinal_of` / `tier_ordinal_of_owned`
+    // -------- above, together closing the ordinal-axis path-keyed lookup
+    // -------- surface on BOTH closed-axis coordinates at the container
+    // -------- altitude)
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_provenance_map_source_kind_ordinal_of_pointwise()
+     {
+        // Load-bearing structural law on the container-altitude
+        // source-kind-axis ordinal path-keyed lookup delegate: the
+        // container-altitude method yields the same `Option<usize>` as
+        // `res.provenance().source_kind_ordinal_of(path)` on every path
+        // the resolved config carries (each `paths()` entry) and on a
+        // path that names no leaf (a fabricated `"missing"` key). Catches
+        // a future edit that reroutes
+        // `ProgressiveResolution::source_kind_ordinal_of` through a
+        // different `ProvenanceMap` accessor than the primitive-altitude
+        // peer it delegates to (a `tier_ordinal_of` typo, a projection
+        // through the wrong `Provenance` accessor like `tier_ordinal`, or
+        // a projection through a different `BTreeMap` cursor) that would
+        // break the shared-lookup contract, before the drift can reach
+        // any caller migrating from
+        // `res.provenance().source_kind_ordinal_of(&["field"])` to the
+        // one-hop form. Ordinal-axis peer of
+        // `progressive_resolution_source_kind_of_agrees_with_provenance_map_source_kind_of_pointwise`
+        // one const-fn seam further inland on the same source-kind
+        // coordinate, and the closed-axis peer of
+        // `progressive_resolution_tier_ordinal_of_agrees_with_provenance_map_tier_ordinal_of_pointwise`
+        // one axis over on the sibling tier coordinate.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.source_kind_ordinal_of(&borrowed);
+            let via_prov = r.provenance().source_kind_ordinal_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(
+            r.source_kind_ordinal_of(&["definitely_not_a_field"])
+                .is_none()
+        );
+        assert_eq!(
+            r.source_kind_ordinal_of(&["definitely_not_a_field"]),
+            r.provenance()
+                .source_kind_ordinal_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_owned_agrees_with_provenance_map_source_kind_ordinal_of_owned_pointwise()
+     {
+        // Allocation-free-peer law on the container-altitude
+        // source-kind-axis ordinal path-keyed lookup pair: the owned-path
+        // seam yields the same `Option<usize>` as
+        // `res.provenance().source_kind_ordinal_of_owned(path)` on every
+        // path the resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::source_kind_ordinal_of_owned` through
+        // the borrowed variant (reintroducing the per-lookup `Vec<String>`
+        // allocation the owned form exists to avoid) or through a
+        // different `ProvenanceMap` accessor that would break the
+        // shared-lookup contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.source_kind_ordinal_of_owned(&owned);
+            let via_prov = r.provenance().source_kind_ordinal_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.source_kind_ordinal_of_owned(&miss).is_none());
+        assert_eq!(
+            r.source_kind_ordinal_of_owned(&miss),
+            r.provenance().source_kind_ordinal_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_source_kind_ordinal_of_owned_on_every_path()
+     {
+        // Cross-form parity law on the container-altitude
+        // source-kind-axis ordinal path-keyed lookup pair: the
+        // borrowed-path seam agrees with the owned-path seam on every
+        // leaf the resolved map carries, mirroring the same cross-form
+        // parity the tag-side pair `source_kind_of` / `source_kind_of_owned`
+        // carries one const-fn seam further out on the same axis.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.source_kind_ordinal_of(&borrowed),
+                r.source_kind_ordinal_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_provenance_of_source_kind_ordinal_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude source-kind-axis ordinal path-keyed lookup
+        // pair and the container-altitude value-axis path-keyed lookup
+        // pair `provenance_of` at the same container:
+        // `source_kind_ordinal_of(path)` yields the same `usize` as
+        // `provenance_of(path).map(Provenance::source_kind_ordinal)`,
+        // discarding the `&Provenance` borrow and dereferencing the
+        // `Provenance::source_kind_ordinal` const-fn accessor on the
+        // retained value. Peer of the primitive-altitude pin
+        // `provenance_map_source_kind_ordinal_of_agrees_with_provenance_of_source_kind_ordinal_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal_of: Option<usize> = r.source_kind_ordinal_of(&borrowed);
+            let via_prov_of: Option<usize> = r
+                .provenance_of(&borrowed)
+                .map(Provenance::source_kind_ordinal);
+            assert_eq!(
+                via_ordinal_of, via_prov_of,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_source_kind_of_ordinal_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude source-kind-axis ordinal path-keyed lookup
+        // pair and the container-altitude tag-side source-kind-axis pair
+        // `source_kind_of` composed with `ConfigSourceKind::ordinal` one
+        // const-fn seam further out on the same axis. Welds the tag-side
+        // and ordinal-side path-keyed seams on the source-kind axis
+        // pointwise on every leaf the resolved map carries at the
+        // container altitude.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal_of: Option<usize> = r.source_kind_ordinal_of(&borrowed);
+            let via_tag_projection: Option<usize> = r
+                .source_kind_of(&borrowed)
+                .map(crate::ConfigSourceKind::ordinal);
+            assert_eq!(
+                via_ordinal_of, via_tag_projection,
+                "tag-vs-ordinal disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // path forms, matching the value-axis lookup `provenance_of` on
+        // the same input by construction. Rules out a future edit that
+        // would fall back to `ConfigSourceKind::Defaults.ordinal()` (or
+        // any other source-kind's ordinal) on miss instead of propagating
+        // the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.source_kind_ordinal_of(&["nope"]).is_none());
+        assert!(
+            r.source_kind_ordinal_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: precedence ordinals match the tag-side ground-truth
+        // pin `progressive_resolution_source_kind_of_names_prog_ground_truth_leaves`
+        // composed with `ConfigSourceKind::ordinal` (a/b/c/d → Defaults —
+        // file/env/runtime were never fed on the `resolve_progressive`
+        // entry, so every leaf's source-kind stays at `Defaults`).
+        let r = Prog::resolve_progressive();
+        let d = crate::ConfigSourceKind::Defaults.ordinal();
+        assert_eq!(r.source_kind_ordinal_of(&["a"]), Some(d));
+        assert_eq!(r.source_kind_ordinal_of(&["b"]), Some(d));
+        assert_eq!(r.source_kind_ordinal_of(&["c"]), Some(d));
+        assert_eq!(r.source_kind_ordinal_of(&["d"]), Some(d));
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_first_source_kind_ordinal_at_lex_lower_bound_leaf()
+     {
+        // Cross-seam agreement with the container-altitude ordinal-axis
+        // bounded-lookup pair at the extremal leaf: at the
+        // lex-lower-bound path,
+        // `source_kind_ordinal_of(first_path)` names the same `usize` as
+        // `first_source_kind_ordinal()`. Welds the path-keyed and
+        // bounded-lookup surfaces pointwise at the lower-bound leaf on
+        // the source-kind-ordinal-axis coordinate.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.source_kind_ordinal_of_owned(&first_path),
+            r.first_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_source_kind_ordinal_of_agrees_with_last_source_kind_ordinal_at_lex_upper_bound_leaf()
+     {
+        // Upper-bound peer of the `first_source_kind_ordinal` cross-seam
+        // pin above. Together with the lower-bound peer, welds the
+        // path-keyed and bounded-lookup surfaces on both extremal leaves
+        // at the source-kind-ordinal-axis coordinate at the container
+        // altitude.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.source_kind_ordinal_of_owned(&last_path),
+            r.last_source_kind_ordinal(),
+        );
     }
 
     // -------- ProgressiveResolution source-kind-axis scalar-projection pair
