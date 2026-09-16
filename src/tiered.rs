@@ -5123,6 +5123,75 @@ impl ProvenanceMap {
             .and_then(|(_, v)| v.as_env_prefix())
     }
 
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis
+    /// [`crate::discovery::Format`] extraction, or [`None`] if this map
+    /// is empty, OR if the lex-lower-bound leaf's source is NOT
+    /// [`ConfigSource::File`], OR if it names a `File(_)` leaf whose
+    /// recorded path has no recognized extension — the File-arm
+    /// typed-sub-axis scalar sub-projection of the value-axis bound,
+    /// one const-fn seam further inland from the arm-payload bound
+    /// [`Self::first_as_file_path`] to the typed
+    /// [`crate::discovery::Format`] sub-axis polarity the raw `&Path`
+    /// payload declares. The outer bound-side altitude peer of the
+    /// path-keyed pair [`Self::file_format_of`] /
+    /// [`Self::file_format_of_owned`] on the same File-arm
+    /// typed-sub-axis seam: where the path-keyed pair filters to one
+    /// named leaf, this seam pins the extremal leaf on the
+    /// [`BTreeMap::first_key_value`] cursor the value-axis bound uses.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_provenance().and_then(Provenance::file_format)` and
+    /// to `self.first_as_file_path().and_then(crate::discovery::Format::from_path)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::file_format`] accessor on the retained value.
+    ///
+    /// **Implication law** — `first_file_format().is_some() ==>
+    /// first_as_file_path().is_some() ==> first_is_file() == Some(true)`
+    /// holds pointwise on the shipped constructor surface: the
+    /// typed-sub-axis is at most as populated as the arm-payload bound
+    /// it projects (a `File(_)` with no recognized extension keeps the
+    /// arm-payload `&Path` but evaporates the typed sub-axis), which is
+    /// itself at most as populated as the boolean tag on the same arm.
+    /// Inherits from the primitive [`Provenance::file_format`] /
+    /// [`Provenance::is_file`] implication law one altitude down.
+    ///
+    /// Returns owned [`crate::discovery::Format`] ([`Copy`], no borrow).
+    #[must_use]
+    pub fn first_file_format(&self) -> Option<crate::discovery::Format> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis
+    /// [`crate::discovery::Format`] extraction, or [`None`] if this map
+    /// is empty, OR if the lex-upper-bound leaf's source is NOT
+    /// [`ConfigSource::File`], OR if it names a `File(_)` leaf whose
+    /// recorded path has no recognized extension — the upper-bound
+    /// sibling of [`Self::first_file_format`] that
+    /// [`Self::first_file_format`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_provenance().and_then(Provenance::file_format)` and
+    /// to `self.last_as_file_path().and_then(crate::discovery::Format::from_path)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::file_format`] accessor on the retained value, so
+    /// the two disagree only under a `BTreeMap` bug. Returns the same
+    /// owned [`crate::discovery::Format`] shape as
+    /// [`Self::first_file_format`] on the typed-sub-axis.
+    #[must_use]
+    pub fn last_file_format(&self) -> Option<crate::discovery::Format> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -27283,6 +27352,84 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn last_as_env_prefix(&self) -> Option<&str> {
         self.provenance.last_as_env_prefix()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis
+    /// [`crate::discovery::Format`] extraction, or [`None`] if this
+    /// resolution's provenance map is empty, OR if the lex-lower-bound
+    /// leaf's source is NOT [`ConfigSource::File`], OR if it names a
+    /// `File(_)` leaf whose recorded path has no recognized extension
+    /// — the container-altitude peer of
+    /// [`ProvenanceMap::first_file_format`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.first_file_format()`.
+    ///
+    /// The outer bound-side altitude peer of the path-keyed pair
+    /// [`Self::file_format_of`] / [`Self::file_format_of_owned`] on the
+    /// same File-arm typed-sub-axis seam, and the typed-sub-axis
+    /// scalar sub-projection sibling of [`Self::first_as_file_path`]
+    /// one const-fn seam further inland from the borrowed `&Path`
+    /// payload to the typed [`crate::discovery::Format`] polarity that
+    /// path declares. Callers that previously reached for
+    /// `Some(Format)` at the lex-lower-bound leaf through the two-hop
+    /// chain `res.first_provenance().and_then(Provenance::file_format)`
+    /// or the three-hop
+    /// `res.first_as_file_path().and_then(crate::discovery::Format::from_path)`
+    /// — a `ConfigPlane` telemetry emitter naming the format that
+    /// seeded the boundary leaf, an operator-facing
+    /// `/healthz/provenance` payload printing the format behind the
+    /// lex-first entry, or a compile-time attestation hasher folding
+    /// just the boundary leaf's typed [`crate::discovery::Format`] tag
+    /// — now open the same seam one hop shorter on the container
+    /// itself. Returns owned [`crate::discovery::Format`] ([`Copy`],
+    /// no borrow).
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_file_format()` — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_file_format_agrees_with_provenance_map_first_file_format_pointwise`].
+    /// - Equal to
+    ///   `self.first_provenance().and_then(Provenance::file_format)` on
+    ///   every input by construction — the typed-sub-axis sub-projection
+    ///   of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_file_format_agrees_with_first_provenance_file_format_projection_pointwise`].
+    #[must_use]
+    pub fn first_file_format(&self) -> Option<crate::discovery::Format> {
+        self.provenance.first_file_format()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis
+    /// [`crate::discovery::Format`] extraction, or [`None`] if this
+    /// resolution's provenance map is empty, OR if the lex-upper-bound
+    /// leaf's source is NOT [`ConfigSource::File`], OR if it names a
+    /// `File(_)` leaf whose recorded path has no recognized extension
+    /// — the container-altitude peer of
+    /// [`ProvenanceMap::last_file_format`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_file_format()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_file_format`] on the
+    /// upper-bound side that [`Self::first_file_format`] closes at the
+    /// lower bound — closes the File-arm typed-sub-axis scalar
+    /// sub-projection of the value-axis bound at the container altitude
+    /// on both bounds. Returns the same owned
+    /// [`crate::discovery::Format`] shape as [`Self::first_file_format`]
+    /// on the typed-sub-axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().last_file_format()` — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_file_format_agrees_with_provenance_map_last_file_format_pointwise`].
+    /// - Equal to
+    ///   `self.last_provenance().and_then(Provenance::file_format)` on
+    ///   every input by construction — the typed-sub-axis sub-projection
+    ///   of the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_file_format_agrees_with_last_provenance_file_format_projection_pointwise`].
+    #[must_use]
+    pub fn last_file_format(&self) -> Option<crate::discovery::Format> {
+        self.provenance.last_file_format()
     }
 
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
@@ -62731,6 +62878,131 @@ mod progressive_tests {
             bare_env.last_as_env_prefix()
         );
         assert_eq!(bare_env.first_as_env_prefix(), Some(""));
+    }
+
+    // -------- ProvenanceMap::first_file_format / ::last_file_format
+    // -------- File-arm typed-sub-axis scalar sub-projection of the
+    // -------- value-axis bound (outer bound-side altitude peer of the
+    // -------- path-keyed pair `file_format_of` / `file_format_of_owned`,
+    // -------- one const-fn seam further inland from the arm-payload
+    // -------- bound-side pair `first_as_file_path` / `last_as_file_path`)
+
+    #[test]
+    fn provenance_map_first_file_format_agrees_with_first_provenance_file_format_projection_pointwise()
+     {
+        // Cross-seam agreement law at the lex-lower bound: the File-arm
+        // typed-sub-axis scalar sub-projection on the value-axis bound
+        // yields the same `Option<Format>` on every input as the
+        // two-hop chain
+        // `first_provenance().and_then(Provenance::file_format)` that
+        // the one-hop `first_file_format` seam exists to collapse.
+        // Peer of the same-shape agreement pin on the arm-payload
+        // sub-projection one seam further out
+        // (`provenance_map_first_as_file_path_agrees_with_first_provenance_as_file_path_projection_pointwise`).
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_bound: Option<crate::discovery::Format> = r.provenance().first_file_format();
+        let via_prov: Option<crate::discovery::Format> = r
+            .provenance()
+            .first_provenance()
+            .and_then(Provenance::file_format);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_file_format_agrees_with_last_provenance_file_format_projection_pointwise()
+     {
+        // Peer of the `first_file_format` cross-seam pin above on the
+        // upper-bound side. Pointwise-equal to
+        // `last_provenance().and_then(Provenance::file_format)`.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_bound: Option<crate::discovery::Format> = r.provenance().last_file_format();
+        let via_prov: Option<crate::discovery::Format> = r
+            .provenance()
+            .last_provenance()
+            .and_then(Provenance::file_format);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_file_format_implies_first_as_file_path_pointwise() {
+        // Implication law at the lex-lower bound:
+        // `first_file_format().is_some() ==>
+        // first_as_file_path().is_some() ==> first_is_file() ==
+        // Some(true)`. Two witnesses: one where the boundary leaf is
+        // File-sourced with a recognized extension (all three sides
+        // Some(_)) and one where the boundary leaf is not File-sourced
+        // (all three sides None / Some(false)).
+        let bare_only = Prog::resolve_progressive();
+        assert!(bare_only.provenance().first_file_format().is_none());
+        assert!(bare_only.provenance().first_as_file_path().is_none());
+        assert_eq!(bare_only.provenance().first_is_file(), Some(false));
+
+        let mut file_dict = Dict::new();
+        for leaf in ["a", "b", "c", "d"] {
+            file_dict.insert(leaf.to_owned(), Value::from(1_u32));
+        }
+        let all_file =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(
+            all_file.provenance().first_file_format(),
+            Some(crate::discovery::Format::Yaml),
+        );
+        assert!(all_file.provenance().first_as_file_path().is_some());
+        assert_eq!(all_file.provenance().first_is_file(), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_file_format_none_on_empty_map() {
+        // Empty-map ceiling on both bounds. Peer of the same-shape
+        // empty pins on the arm-payload pair
+        // (`first_as_file_path` / `last_as_file_path`) one seam further
+        // out and every scalar sub-projection peer already shipped on
+        // the value-axis bound at the primitive altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_file_format().is_none());
+        assert!(empty.last_file_format().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_file_format_agree_on_singleton_file_leaf() {
+        // Singleton-map coincidence law: on a one-leaf map both bounds
+        // are the same leaf, so the two seams agree, and on a
+        // `File(PathBuf)` singleton with a recognized extension they
+        // both yield `Some(Format)` — the one recognized format the
+        // recorded path declares. Second fixture pins the strict-inland
+        // slack the File-arm typed sub-axis carries against the
+        // arm-payload bound: a `File(_)` with an unrecognized
+        // extension still yields `Some(&Path)` on the arm-payload seam
+        // but evaporates the typed sub-axis to `None`.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/only.yaml")))
+                .collect();
+        assert_eq!(one.first_file_format(), one.last_file_format());
+        assert_eq!(
+            one.first_file_format(),
+            Some(crate::discovery::Format::Yaml)
+        );
+
+        let ext_less: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/only.conf")))
+                .collect();
+        assert_eq!(ext_less.first_file_format(), ext_less.last_file_format());
+        assert!(ext_less.first_file_format().is_none());
+        assert!(ext_less.first_as_file_path().is_some());
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
@@ -113465,6 +113737,115 @@ mod progressive_tests {
             all_env.first_as_env_prefix().map(str::to_owned),
             Some("PROG_".to_owned()),
         );
+    }
+
+    // -------- ProgressiveResolution::first_file_format /
+    // -------- ::last_file_format File-arm typed-sub-axis scalar
+    // -------- sub-projection at the container altitude (outer
+    // -------- bound-side altitude peer of the path-keyed
+    // -------- `file_format_of` pair, one const-fn seam inland from
+    // -------- the arm-payload bound-side pair `first_as_file_path` /
+    // -------- `last_as_file_path`)
+
+    #[test]
+    fn progressive_resolution_first_file_format_agrees_with_provenance_map_first_file_format_pointwise()
+     {
+        // Load-bearing delegation pin at the container altitude: the
+        // container-altitude first-bound extractor routes through
+        // `self.provenance().first_file_format()` on every input.
+        // Catches a future edit that reroutes the seam through a
+        // rebuilt `first_key_value` cursor on the container itself
+        // instead of delegating to the primitive-altitude peer.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<crate::discovery::Format> = r.first_file_format();
+        let via_primitive: Option<crate::discovery::Format> = r.provenance().first_file_format();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_last_file_format_agrees_with_provenance_map_last_file_format_pointwise()
+     {
+        // Peer of the `first_file_format` delegation pin above on the
+        // upper-bound side. The container-altitude seam delegates to
+        // `self.provenance().last_file_format()` on every input.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<crate::discovery::Format> = r.last_file_format();
+        let via_primitive: Option<crate::discovery::Format> = r.provenance().last_file_format();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_first_file_format_agrees_with_first_provenance_file_format_projection_pointwise()
+     {
+        // Cross-seam agreement law at the container altitude: the
+        // container-altitude first-bound extractor equals the two-hop
+        // chain `first_provenance().and_then(Provenance::file_format)`
+        // pointwise. Peer of the same-shape agreement pin at the
+        // primitive altitude one seam down.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<crate::discovery::Format> = r.first_file_format();
+        let via_prov: Option<crate::discovery::Format> =
+            r.first_provenance().and_then(Provenance::file_format);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_file_format_agrees_with_last_provenance_file_format_projection_pointwise()
+     {
+        // Peer of the `first_file_format` cross-seam agreement pin
+        // above on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<crate::discovery::Format> = r.last_file_format();
+        let via_prov: Option<crate::discovery::Format> =
+            r.last_provenance().and_then(Provenance::file_format);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_file_format_implies_first_as_file_path_pointwise() {
+        // Implication law at the container altitude:
+        // `first_file_format().is_some() ==>
+        // first_as_file_path().is_some() ==> first_is_file() ==
+        // Some(true)`. Two witnesses: a bare-only fold (no File leaves,
+        // all None / Some(false)) and an all-file overlay (all Some(_)
+        // / Some(true)).
+        let bare_only = Prog::resolve_progressive();
+        assert!(bare_only.first_file_format().is_none());
+        assert!(bare_only.first_as_file_path().is_none());
+        assert_eq!(bare_only.first_is_file(), Some(false));
+
+        let mut file_dict = Dict::new();
+        for leaf in ["a", "b", "c", "d"] {
+            file_dict.insert(leaf.to_owned(), Value::from(1_u32));
+        }
+        let all_file =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(
+            all_file.first_file_format(),
+            Some(crate::discovery::Format::Yaml),
+        );
+        assert!(all_file.first_as_file_path().is_some());
+        assert_eq!(all_file.first_is_file(), Some(true));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
