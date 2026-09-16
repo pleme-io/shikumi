@@ -2740,6 +2740,76 @@ impl ProvenanceMap {
         self.inner.get(path).map(Provenance::source)
     }
 
+    /// [`ConfigTierKind`] precedence ordinal of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf in the
+    /// resolved config — the ordinal-axis scalar sub-projection of the
+    /// path-keyed value-axis lookup [`Self::provenance_of`] one const-fn
+    /// hop further inland than the tag-side pair [`Self::tier_of`] /
+    /// [`Self::tier_of_owned`] on the tier coordinate of the atomic
+    /// `(tier, source)` pair every leaf's [`Provenance`] carries.
+    ///
+    /// The path-keyed peer of the ordinal-axis bounded-lookup pair
+    /// [`Self::first_tier_ordinal`] / [`Self::last_tier_ordinal`] and
+    /// the ordinal-axis walker [`Self::tier_ordinals`]: where those
+    /// seams project the tier precedence-ordinal at the lex-boundary
+    /// leaves or stream every leaf's tier precedence-ordinal in lex
+    /// order, this seam projects the tier precedence-ordinal at ONE
+    /// named leaf. Callers already reaching for `Some(...)` through
+    /// `self.tier_of(path).map(ConfigTierKind::ordinal)` — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte at one named leaf's tier without the [`ConfigTierKind`]
+    /// tag, a per-leaf boundary telemetry counter comparing precedence
+    /// positions across paths, an operator-facing
+    /// `/healthz/provenance/<path>/tier_ordinal` payload emitting just
+    /// the `usize` at one leaf, or a compile-time attestation hasher
+    /// folding the precedence-ordinal of one named leaf — were pulling
+    /// a [`ConfigTierKind`] tag at the named leaf just to project one
+    /// `usize` scalar off it; this seam collapses that to one direct
+    /// ordinal-axis probe through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, discarding just the path key and
+    /// dereferencing the [`Provenance::tier_ordinal`] const-fn accessor
+    /// on the retained value.
+    ///
+    /// Pointwise-equal to `self.provenance_of(path).map(Provenance::tier_ordinal)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::get`][std::collections::BTreeMap::get] cursor
+    /// the value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::ordinal)`, one const-fn
+    /// seam further out on the same axis. Returns owned [`usize`]
+    /// matching the [`ProvenanceMapTierOrdinals`] item shape ([`Copy`],
+    /// no borrow) with no allocation beyond the per-lookup path
+    /// conversion the borrowed-form entry pays.
+    ///
+    /// The ordinal-axis peer of [`Self::tier_of`] on the tier coordinate
+    /// of the atomic `(tier, source)` pair — one const-fn hop further
+    /// inland from the tag-side path-keyed lookup, matching the
+    /// bound-side ordinal-axis pair [`Self::first_tier_ordinal`] /
+    /// [`Self::last_tier_ordinal`] and the walker
+    /// [`Self::tier_ordinals`] on the same axis. The next compounding
+    /// step is the source-kind-axis ordinal-axis path-keyed peer
+    /// (`source_kind_ordinal_of` / `source_kind_ordinal_of_owned`),
+    /// closing the ordinal-axis sub-projection surface on both
+    /// closed-axis coordinates at the primitive altitude.
+    #[must_use]
+    pub fn tier_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.tier_ordinal_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::tier_ordinal_of`] for callers
+    /// that already carry an owned path — closes the borrowed-vs-owned
+    /// tier-axis ordinal path-keyed lookup pair mirroring the
+    /// borrowed-vs-owned tag-side tier-axis pair [`Self::tier_of`] /
+    /// [`Self::tier_of_owned`] one const-fn seam further out. Forwards
+    /// straight into [`BTreeMap::get`][std::collections::BTreeMap::get]
+    /// and projects the [`Provenance::tier_ordinal`] const-fn accessor
+    /// on the retained value, with no allocation of its own.
+    #[must_use]
+    pub fn tier_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.inner.get(path).map(Provenance::tier_ordinal)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -23662,6 +23732,99 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn source_of_owned(&self, path: &[String]) -> Option<&ConfigSource> {
         self.provenance.source_of_owned(path)
+    }
+
+    /// [`ConfigTierKind`] precedence ordinal of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf in the
+    /// resolved config — the container-altitude peer of
+    /// [`ProvenanceMap::tier_ordinal_of`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.tier_ordinal_of(path)`.
+    ///
+    /// The ordinal-axis scalar sub-projection of the container-altitude
+    /// value-axis lookup [`Self::provenance_of`] one const-fn hop further
+    /// inland than the tag-side pair [`Self::tier_of`] /
+    /// [`Self::tier_of_owned`] on the tier coordinate of the atomic
+    /// `(tier, source)` pair every leaf's [`Provenance`] carries. The
+    /// path-keyed peer of the container-altitude ordinal-axis
+    /// bounded-lookup pair [`Self::first_tier_ordinal`] /
+    /// [`Self::last_tier_ordinal`] and the walker
+    /// [`Self::tier_ordinals`] on the same container: where those seams
+    /// project the tier precedence-ordinal at the lex-boundary leaves or
+    /// stream every leaf's tier precedence-ordinal in lex order, this
+    /// seam projects the tier precedence-ordinal at ONE named leaf
+    /// without pulling a [`ConfigTierKind`] tag or `&Provenance` borrow
+    /// through the two-hop chain
+    /// `self.tier_of(path).map(ConfigTierKind::ordinal)` /
+    /// `self.provenance_of(path).map(Provenance::tier_ordinal)` just to
+    /// project one `usize` scalar off it. Callers already reaching for
+    /// `Some(...)` through either of those two-hop chains — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte at one named leaf's tier, an operator-facing
+    /// `/healthz/provenance/<path>/tier_ordinal` payload emitting just
+    /// the `usize` at one leaf, or a compile-time attestation hasher
+    /// folding the precedence-ordinal of one named leaf — now open the
+    /// same seam one hop shorter directly on the [`ProgressiveResolution`]
+    /// container itself.
+    ///
+    /// The allocation cost equals the primitive-altitude peer
+    /// [`ProvenanceMap::tier_ordinal_of`] on the same input by
+    /// construction — the body forwards the borrowed `&[&str]` verbatim,
+    /// so the underlying per-lookup `Vec<String>` allocation happens
+    /// exactly once regardless of which altitude the caller entered.
+    /// Callers with an already-owned path reach for the allocation-free
+    /// [`Self::tier_ordinal_of_owned`] sibling one seam over. Returns
+    /// owned [`usize`] matching the [`ProvenanceMapTierOrdinals`] item
+    /// shape ([`Copy`], no borrow) with no allocation beyond that
+    /// per-lookup path conversion.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().tier_ordinal_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_tier_ordinal_of_agrees_with_provenance_map_tier_ordinal_of_pointwise`].
+    /// - Equal to `self.provenance_of(path).map(Provenance::tier_ordinal)`
+    ///   on every input by construction — the ordinal-axis sub-projection
+    ///   of the same value-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_tier_ordinal_of_agrees_with_provenance_of_tier_ordinal_projection_pointwise`].
+    /// - Equal to `self.tier_of(path).map(ConfigTierKind::ordinal)` on
+    ///   every input, one const-fn seam further out on the same tier
+    ///   axis — pinned by
+    ///   [`progressive_tests::progressive_resolution_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn tier_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.provenance.tier_ordinal_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::tier_ordinal_of`] for callers
+    /// that already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::tier_ordinal_of_owned`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.tier_ordinal_of_owned(path)`.
+    ///
+    /// The allocation-free ordinal-axis path-keyed lookup sibling of
+    /// [`Self::tier_ordinal_of`] on the same container: where
+    /// [`Self::tier_ordinal_of`] forwards a borrowed `&[&str]` and pays
+    /// the primitive's per-lookup `Vec<String>` allocation, this seam
+    /// forwards an already-owned `&[String]` straight into the
+    /// underlying [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::tier_ordinal`] const-fn accessor on
+    /// the retained value with no allocation of its own. Mirrors the
+    /// primitive-altitude borrowed-vs-owned pair
+    /// [`ProvenanceMap::tier_ordinal_of`] /
+    /// [`ProvenanceMap::tier_ordinal_of_owned`] verbatim, closing the
+    /// ordinal-axis path-keyed lookup surface on both path forms at the
+    /// container altitude on the tier coordinate of the atomic
+    /// `(tier, source)` pair.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().tier_ordinal_of_owned(path)`
+    /// on every input — pinned by
+    /// [`progressive_tests::progressive_resolution_tier_ordinal_of_owned_agrees_with_provenance_map_tier_ordinal_of_owned_pointwise`].
+    #[must_use]
+    pub fn tier_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.provenance.tier_ordinal_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -55099,6 +55262,179 @@ mod progressive_tests {
         let empty = ProvenanceMap::default();
         assert!(empty.source_of(&["a"]).is_none());
         assert!(empty.source_of_owned(&["a".to_string()]).is_none());
+    }
+
+    // -------- ProvenanceMap::tier_ordinal_of / ::tier_ordinal_of_owned tier-axis ordinal path-keyed sub-projection --------
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_agrees_with_provenance_of_tier_ordinal_projection_pointwise()
+    {
+        // The tier-axis ordinal path-keyed scalar sub-projection yields
+        // the same `usize` as
+        // `provenance_of(path).map(|p| p.tier_ordinal())` on every leaf
+        // by construction. Catches a future edit that reroutes
+        // `tier_ordinal_of` through a different `BTreeMap` cursor than
+        // `provenance_of` uses, or projects through the wrong
+        // `Provenance` accessor (`source_kind_ordinal` instead of
+        // `tier_ordinal`).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_tier_ordinal_of: Option<usize> = r.provenance().tier_ordinal_of(&path);
+            let via_prov_of: Option<usize> = r
+                .provenance()
+                .provenance_of(&path)
+                .map(Provenance::tier_ordinal);
+            assert_eq!(
+                via_tier_ordinal_of, via_prov_of,
+                "disagreement at leaf {leaf}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise() {
+        // One const-fn seam further out on the same axis: the
+        // ordinal-axis path-keyed lookup yields the same `usize` as
+        // `tier_of(path).map(ConfigTierKind::ordinal)` on every leaf by
+        // construction. Welds the tag-side and ordinal-side path-keyed
+        // seams on the tier axis pointwise on every leaf the resolved
+        // map carries; catches a future edit that reroutes
+        // `tier_ordinal_of` through a different projection than the
+        // tag-side pair `tier_of` composed with `ConfigTierKind::ordinal`.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_ordinal_of: Option<usize> = r.provenance().tier_ordinal_of(&path);
+            let via_tag_projection: Option<usize> =
+                r.provenance().tier_of(&path).map(ConfigTierKind::ordinal);
+            assert_eq!(
+                via_ordinal_of, via_tag_projection,
+                "tag-vs-ordinal disagreement at leaf {leaf}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_owned_agrees_with_tier_ordinal_of_borrowed_form_pointwise() {
+        // Borrowed-vs-owned parity mirroring the value-axis lookup pair
+        // `provenance_of` / `provenance_of_owned` one axis over and the
+        // peer tag-side tier-axis pair `tier_of` / `tier_of_owned` one
+        // const-fn seam further out. Catches a future edit that decouples
+        // the two path forms.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().tier_ordinal_of(&borrowed),
+                r.provenance().tier_ordinal_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None`, matching
+        // the value-axis lookup `provenance_of` on the same input by
+        // construction. Rules out a future edit that would fall back to
+        // `ConfigTierKind::Bare.ordinal()` (or any other tier's ordinal)
+        // on miss instead of propagating the `None` out of
+        // `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().tier_ordinal_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .tier_ordinal_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: precedence ordinals
+        // match the tag-side ground-truth pin
+        // `provenance_map_tier_of_names_prog_ground_truth_leaves`
+        // composed with `ConfigTierKind::ordinal`:
+        //   a → Discovered.ordinal()
+        //   b → Default.ordinal()
+        //   c → Bare.ordinal()
+        //   d → Default.ordinal()
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().tier_ordinal_of(&["a"]),
+            Some(ConfigTierKind::Discovered.ordinal()),
+        );
+        assert_eq!(
+            r.provenance().tier_ordinal_of(&["b"]),
+            Some(ConfigTierKind::Default.ordinal()),
+        );
+        assert_eq!(
+            r.provenance().tier_ordinal_of(&["c"]),
+            Some(ConfigTierKind::Bare.ordinal()),
+        );
+        assert_eq!(
+            r.provenance().tier_ordinal_of(&["d"]),
+            Some(ConfigTierKind::Default.ordinal()),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_agrees_with_first_tier_ordinal_at_lex_lower_bound_leaf() {
+        // Cross-seam agreement with the ordinal-axis bounded-lookup pair
+        // at the extremal leaf: at the lex-lower-bound path,
+        // `tier_ordinal_of(first_path)` names the same `usize` as
+        // `first_tier_ordinal()`. Welds the path-keyed and
+        // bounded-lookup surfaces pointwise at the lower-bound leaf on
+        // the ordinal axis.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().tier_ordinal_of_owned(&first_path),
+            r.provenance().first_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_agrees_with_last_tier_ordinal_at_lex_upper_bound_leaf() {
+        // Upper-bound peer of the `first_tier_ordinal` cross-seam pin
+        // above. Together with the lower-bound peer, welds the
+        // path-keyed and bounded-lookup surfaces on both extremal leaves
+        // at the ordinal-axis coordinate.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().tier_ordinal_of_owned(&last_path),
+            r.provenance().last_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_agrees_with_tier_ordinals_walker_at_first_leaf() {
+        // Cross-seam agreement with the ordinal-axis walker
+        // `tier_ordinals`: at the lex-lower-bound path,
+        // `tier_ordinal_of(first_path)` yields the same `usize` as
+        // `tier_ordinals().next()`. Closes the `BTreeMap`-idiom
+        // walker-side / bound-side / path-keyed triangle on the
+        // ordinal-axis coordinate: `first_key_value().map(tier_ordinal)`
+        // == `tier_ordinals().next()` == `tier_ordinal_of(first_path)`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().tier_ordinal_of_owned(&first_path),
+            r.provenance().tier_ordinals().next(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_ordinal_of_on_empty_map_is_none() {
+        // Empty case: `Option<usize>` is `None` for every path, matching
+        // the `provenance_of` empty behavior and the peer tag-side
+        // tier-axis empty-case pin on the same underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.tier_ordinal_of(&["a"]).is_none());
+        assert!(empty.tier_ordinal_of_owned(&["a".to_string()]).is_none());
     }
 
     // -------- ProvenanceMap::paths / ::provenances projection walkers --------
@@ -103627,6 +103963,213 @@ mod progressive_tests {
         let r = Prog::resolve_progressive();
         let last_path = r.provenance().last_path().unwrap().to_vec();
         assert_eq!(r.source_of_owned(&last_path), r.last_source());
+    }
+
+    // -------- ProgressiveResolution tier-axis ordinal path-keyed lookup pair
+    // -------- (container-altitude peer of `ProvenanceMap::tier_ordinal_of` /
+    // -------- `ProvenanceMap::tier_ordinal_of_owned`, ordinal-axis
+    // -------- sub-projection of the container-altitude value-axis lookup
+    // -------- one const-fn seam further inland than `tier_of` on the tier
+    // -------- coordinate of the atomic (tier, source) pair on the output
+    // -------- side of the fold's atomic-pair ownership boundary)
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_provenance_map_tier_ordinal_of_pointwise()
+    {
+        // Load-bearing structural law on the container-altitude tier-axis
+        // ordinal path-keyed lookup delegate: the container-altitude
+        // method yields the same `Option<usize>` as
+        // `res.provenance().tier_ordinal_of(path)` on every path the
+        // resolved config carries (each `paths()` entry) and on a path
+        // that names no leaf (a fabricated `"missing"` key). Catches a
+        // future edit that reroutes `ProgressiveResolution::tier_ordinal_of`
+        // through a different `ProvenanceMap` accessor than the
+        // primitive-altitude peer it delegates to (a `source_kind_ordinal_of`
+        // typo, a projection through the wrong `Provenance` accessor
+        // like `source_kind_ordinal`, or a projection through a different
+        // `BTreeMap` cursor) that would break the shared-lookup contract,
+        // before the drift can reach any caller migrating from
+        // `res.provenance().tier_ordinal_of(&["field"])` to the one-hop
+        // form. Ordinal-axis peer of
+        // `progressive_resolution_tier_of_agrees_with_provenance_map_tier_of_pointwise`
+        // one const-fn seam further inland on the same tier coordinate.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.tier_ordinal_of(&borrowed);
+            let via_prov = r.provenance().tier_ordinal_of(&borrowed);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(r.tier_ordinal_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.tier_ordinal_of(&["definitely_not_a_field"]),
+            r.provenance().tier_ordinal_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_owned_agrees_with_provenance_map_tier_ordinal_of_owned_pointwise()
+     {
+        // Allocation-free-peer law on the container-altitude tier-axis
+        // ordinal path-keyed lookup pair: the owned-path seam yields the
+        // same `Option<usize>` as
+        // `res.provenance().tier_ordinal_of_owned(path)` on every path
+        // the resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::tier_ordinal_of_owned` through the
+        // borrowed variant (reintroducing the per-lookup `Vec<String>`
+        // allocation the owned form exists to avoid) or through a
+        // different `ProvenanceMap` accessor that would break the
+        // shared-lookup contract.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.tier_ordinal_of_owned(&owned);
+            let via_prov = r.provenance().tier_ordinal_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.tier_ordinal_of_owned(&miss).is_none());
+        assert_eq!(
+            r.tier_ordinal_of_owned(&miss),
+            r.provenance().tier_ordinal_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_tier_ordinal_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude tier-axis
+        // ordinal path-keyed lookup pair: the borrowed-path seam agrees
+        // with the owned-path seam on every leaf the resolved map
+        // carries, mirroring the same cross-form parity the tag-side
+        // pair `tier_of` / `tier_of_owned` carries one const-fn seam
+        // further out on the same axis.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.tier_ordinal_of(&borrowed),
+                r.tier_ordinal_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_provenance_of_tier_ordinal_projection_pointwise()
+     {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis ordinal path-keyed lookup pair
+        // and the container-altitude value-axis path-keyed lookup pair
+        // `provenance_of` at the same container: `tier_ordinal_of(path)`
+        // yields the same `usize` as
+        // `provenance_of(path).map(Provenance::tier_ordinal)`, discarding
+        // the `&Provenance` borrow and dereferencing the
+        // `Provenance::tier_ordinal` const-fn accessor on the retained
+        // value. Peer of the primitive-altitude pin
+        // `provenance_map_tier_ordinal_of_agrees_with_provenance_of_tier_ordinal_projection_pointwise`
+        // one seam up.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal_of: Option<usize> = r.tier_ordinal_of(&borrowed);
+            let via_prov_of: Option<usize> =
+                r.provenance_of(&borrowed).map(Provenance::tier_ordinal);
+            assert_eq!(
+                via_ordinal_of, via_prov_of,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise() {
+        // Cross-seam sub-projection agreement law between the
+        // container-altitude tier-axis ordinal path-keyed lookup pair
+        // and the container-altitude tag-side tier-axis pair `tier_of`
+        // composed with `ConfigTierKind::ordinal` one const-fn seam
+        // further out on the same axis. Welds the tag-side and
+        // ordinal-side path-keyed seams on the tier axis pointwise on
+        // every leaf the resolved map carries at the container altitude.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal_of: Option<usize> = r.tier_ordinal_of(&borrowed);
+            let via_tag_projection: Option<usize> =
+                r.tier_of(&borrowed).map(ConfigTierKind::ordinal);
+            assert_eq!(
+                via_ordinal_of, via_tag_projection,
+                "tag-vs-ordinal disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // path forms, matching the value-axis lookup `provenance_of` on
+        // the same input by construction. Rules out a future edit that
+        // would fall back to `ConfigTierKind::Bare.ordinal()` (or any
+        // other tier's ordinal) on miss instead of propagating the
+        // `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.tier_ordinal_of(&["nope"]).is_none());
+        assert!(r.tier_ordinal_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin at the container altitude on the `Prog`
+        // fixture: precedence ordinals match the tag-side ground-truth
+        // pin `progressive_resolution_tier_of_names_prog_ground_truth_leaves`
+        // composed with `ConfigTierKind::ordinal` (a → Discovered,
+        // b → Default, c → Bare, d → Default).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.tier_ordinal_of(&["a"]),
+            Some(ConfigTierKind::Discovered.ordinal()),
+        );
+        assert_eq!(
+            r.tier_ordinal_of(&["b"]),
+            Some(ConfigTierKind::Default.ordinal()),
+        );
+        assert_eq!(
+            r.tier_ordinal_of(&["c"]),
+            Some(ConfigTierKind::Bare.ordinal()),
+        );
+        assert_eq!(
+            r.tier_ordinal_of(&["d"]),
+            Some(ConfigTierKind::Default.ordinal()),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_first_tier_ordinal_at_lex_lower_bound_leaf()
+     {
+        // Cross-seam agreement with the container-altitude ordinal-axis
+        // bounded-lookup pair at the extremal leaf: at the
+        // lex-lower-bound path, `tier_ordinal_of(first_path)` names the
+        // same `usize` as `first_tier_ordinal()`. Welds the path-keyed
+        // and bounded-lookup surfaces pointwise at the lower-bound leaf
+        // on the ordinal-axis coordinate.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.tier_ordinal_of_owned(&first_path), r.first_tier_ordinal(),);
+    }
+
+    #[test]
+    fn progressive_resolution_tier_ordinal_of_agrees_with_last_tier_ordinal_at_lex_upper_bound_leaf()
+     {
+        // Upper-bound peer of the `first_tier_ordinal` cross-seam pin
+        // above. Together with the lower-bound peer, welds the
+        // path-keyed and bounded-lookup surfaces on both extremal leaves
+        // at the ordinal-axis coordinate at the container altitude.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.tier_ordinal_of_owned(&last_path), r.last_tier_ordinal(),);
     }
 
     // -------- ProgressiveResolution source-kind-axis scalar-projection pair
