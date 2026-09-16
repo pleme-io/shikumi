@@ -2564,6 +2564,60 @@ impl ProvenanceMap {
             .map(|(k, v)| (k.as_slice(), v))
     }
 
+    /// Map-side interned `&[String]` path key of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf in the
+    /// resolved config — the key-only sub-projection of the composite-pair
+    /// path-keyed lookup [`Self::entry_of`] on the same underlying
+    /// [`BTreeMap`], and the path-keyed peer of the key-axis
+    /// bounded-lookup pair [`Self::first_path`] / [`Self::last_path`].
+    ///
+    /// The key-side sibling of the value-only path-keyed lookup
+    /// [`Self::provenance_of`] on the same
+    /// [`BTreeMap::get_key_value`][std::collections::BTreeMap::get_key_value]
+    /// cursor `entry_of` reads through: where `provenance_of` retains the
+    /// value half of the pair the composite pair yields, this seam
+    /// retains the key half. Pointwise-equal to
+    /// `self.entry_of(path).map(|(k, _)| k)` on every input by
+    /// construction — the body forwards through the same
+    /// [`BTreeMap::get_key_value`][std::collections::BTreeMap::get_key_value]
+    /// cursor and projects `k.as_slice()` on the retained pair, so the
+    /// two disagree only under a `BTreeMap` bug. Callers already
+    /// reaching for `Some(...)` through
+    /// `self.entry_of(path).map(|(k, _)| k)` — a `/healthz/provenance`
+    /// leaf-key echo endpoint returning the interned map-side path
+    /// spelling for one named leaf (not the caller's re-spelling), a
+    /// schema-driven canonicalizer normalizing a caller-supplied path to
+    /// the map-side interned key without pulling a `&Provenance` borrow
+    /// alongside, a per-path index cross-referencing another map keyed on
+    /// the same paths at just one named leaf — were pulling a
+    /// `&Provenance` at every probe just to discard it; this seam
+    /// collapses that to one direct key-axis projection.
+    ///
+    /// Returns `&[String]` matching the [`ProvenanceMapPaths`] item shape
+    /// — the same key-lifetime borrow the walker [`Self::paths`], the
+    /// key-axis bounded pair [`Self::first_path`] / [`Self::last_path`],
+    /// and the composite-pair lookup [`Self::entry_of`] hand out on the
+    /// key coordinate.
+    #[must_use]
+    pub fn path_of(&self, path: &[&str]) -> Option<&[String]> {
+        self.path_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::path_of`] for callers that
+    /// already carry an owned path — closes the borrowed-vs-owned
+    /// key-only path-keyed lookup pair, mirroring the borrowed-vs-owned
+    /// value-only lookup pair [`Self::provenance_of`] /
+    /// [`Self::provenance_of_owned`] one axis over on the same
+    /// [`BTreeMap::get_key_value`][std::collections::BTreeMap::get_key_value]
+    /// cursor. Forwards straight into
+    /// [`BTreeMap::get_key_value`][std::collections::BTreeMap::get_key_value]
+    /// and projects `k.as_slice()` on the retained pair, with no
+    /// allocation of its own.
+    #[must_use]
+    pub fn path_of_owned(&self, path: &[String]) -> Option<&[String]> {
+        self.inner.get_key_value(path).map(|(k, _)| k.as_slice())
+    }
+
     /// True iff the dotted `path` names a leaf in the resolved config —
     /// the presence-check sibling of [`Self::provenance_of`] on the same
     /// underlying [`BTreeMap`], closing the standard `BTreeMap`-idiom
@@ -24030,6 +24084,50 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn entry_of_owned(&self, path: &[String]) -> Option<(&[String], &Provenance)> {
         self.provenance.entry_of_owned(path)
+    }
+
+    /// Map-side interned `&[String]` path key of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf in the
+    /// resolved config — the container-altitude peer of
+    /// [`ProvenanceMap::path_of`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.path_of(path)`.
+    ///
+    /// The key-only sub-projection of the composite-pair path-keyed
+    /// lookup [`Self::entry_of`] on the same container, and the
+    /// path-keyed peer of the key-axis bounded-lookup pair
+    /// [`Self::first_path`] / [`Self::last_path`]: where those seams
+    /// project the path at the lex-boundary leaves or stream every leaf's
+    /// path via [`Self::paths`], this seam projects the interned path key
+    /// at ONE named leaf without pulling a `&Provenance` borrow through
+    /// [`Self::entry_of`] alongside it.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise equal to `self.provenance().path_of(path)` on every
+    /// input — pinned by
+    /// [`progressive_tests::progressive_resolution_path_of_agrees_with_provenance_map_pointwise`].
+    /// Equal to `self.entry_of(path).map(|(k, _)| k)` on every input —
+    /// the key-axis projection of the composite pair — pinned by
+    /// [`progressive_tests::progressive_resolution_path_of_agrees_with_entry_of_fst_projection_pointwise`].
+    #[must_use]
+    pub fn path_of(&self, path: &[&str]) -> Option<&[String]> {
+        self.provenance.path_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::path_of`] for callers that
+    /// already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::path_of_owned`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.path_of_owned(path)`.
+    ///
+    /// Mirrors the primitive-altitude borrowed-vs-owned pair
+    /// [`ProvenanceMap::path_of`] / [`ProvenanceMap::path_of_owned`]
+    /// verbatim, closing the key-only path-keyed lookup surface on both
+    /// path forms at the container altitude.
+    #[must_use]
+    pub fn path_of_owned(&self, path: &[String]) -> Option<&[String]> {
+        self.provenance.path_of_owned(path)
     }
 
     /// True iff the dotted `path` names a leaf in the resolved config —
@@ -58163,6 +58261,172 @@ mod progressive_tests {
         let (d_path, d_prov) = r.provenance().entry_of(&["d"]).unwrap();
         assert_eq!(d_path, &["d".to_string()][..]);
         assert_eq!(d_prov.tier(), ConfigTierKind::Default);
+    }
+
+    // -------- ProvenanceMap::path_of / ::path_of_owned key-only
+    // -------- path-keyed lookup pair (key-only sub-projection of the
+    // -------- composite-pair path-keyed lookup `entry_of` on the same
+    // -------- BTreeMap::get_key_value cursor, path-keyed peer of the
+    // -------- key-axis bounded pair `first_path` / `last_path`) --------
+
+    #[test]
+    fn provenance_map_path_of_agrees_with_entry_of_fst_projection_pointwise() {
+        // Cross-seam key-axis-vs-pair-shape agreement law: the key-only
+        // path-keyed lookup projects the same `&[String]` on the key
+        // axis as the composite-pair lookup `entry_of` on every leaf.
+        // Catches a future edit that reroutes `path_of` through a
+        // different `BTreeMap` cursor than `entry_of` reads (a
+        // `range().next()` scan by mistake, a `keys().find` linear walk)
+        // and thereby breaks the shared-lookup contract at the key-axis
+        // sub-projection seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_path_of: Option<Vec<String>> =
+                r.provenance().path_of(&borrowed).map(<[String]>::to_vec);
+            let via_entry_of: Option<Vec<String>> =
+                r.provenance().entry_of(&borrowed).map(|(k, _)| k.to_vec());
+            assert_eq!(via_path_of, via_entry_of, "disagreement at {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_path_of_projects_map_side_interned_key_pointwise() {
+        // Key-axis identity law: the returned `&[String]` is the map-
+        // side interned key, equal by content to the caller's lookup
+        // path. Peer of
+        // `provenance_map_entry_of_projects_map_side_path_key_pointwise`
+        // on the key-only sub-projection seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let map_path = r.provenance().path_of(&borrowed).unwrap();
+            assert_eq!(map_path, owned.as_slice());
+        }
+    }
+
+    #[test]
+    fn provenance_map_path_of_owned_agrees_with_path_of_borrowed_form_pointwise() {
+        // Cross-form parity law on the key-only path-keyed lookup pair:
+        // the borrowed-path seam agrees with the owned-path seam on
+        // every leaf, mirroring the same cross-form parity `entry_of` /
+        // `entry_of_owned` carries on the composite-pair seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().path_of(&borrowed).map(<[String]>::to_vec),
+                r.provenance().path_of_owned(&owned).map(<[String]>::to_vec),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_path_of_agrees_with_paths_walker_lookup_pointwise() {
+        // Cross-seam walker-vs-lookup agreement: the key-only path-keyed
+        // lookup at path `p` yields the same `&[String]` as the walker's
+        // `paths().find(|kk| kk == p)` on every leaf, closing the
+        // standard `BTreeMap`-idiom
+        // `get_key_value(k).map(fst) == keys().find(|kk| kk == k)` law
+        // at the primitive altitude on the key-only seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_path_of: Option<Vec<String>> =
+                r.provenance().path_of(&borrowed).map(<[String]>::to_vec);
+            let via_walker: Option<Vec<String>> = r
+                .provenance()
+                .paths()
+                .find(|kk| *kk == owned.as_slice())
+                .map(<[String]>::to_vec);
+            assert_eq!(via_path_of, via_walker);
+        }
+    }
+
+    #[test]
+    fn provenance_map_path_of_at_lex_bounds_agrees_with_first_and_last_path() {
+        // Bounded-lookup-vs-path-keyed agreement law: at the lex-
+        // smallest path, `path_of` names the same key as `first_path`;
+        // at the lex-largest path, the same key as `last_path`. Pins the
+        // shared-cursor contract between the key-axis bounded-lookup
+        // pair and the key-only path-keyed pair on the same underlying
+        // `BTreeMap`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance()
+                .path_of_owned(&first_path)
+                .map(<[String]>::to_vec),
+            Some(first_path.clone()),
+        );
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance()
+                .path_of_owned(&last_path)
+                .map(<[String]>::to_vec),
+            Some(last_path),
+        );
+    }
+
+    #[test]
+    fn provenance_map_path_of_agrees_with_contains_path_is_some_pointwise() {
+        // Presence-parity law: `path_of(p).is_some() == contains_path(p)`
+        // on every input — the `BTreeMap`-idiom
+        // `get_key_value(k).is_some() == contains_key(k)` law at the
+        // primitive altitude on the key-only seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().path_of(&borrowed).is_some(),
+                r.provenance().contains_path(&borrowed),
+            );
+        }
+        assert_eq!(
+            r.provenance().path_of(&["nope"]).is_some(),
+            r.provenance().contains_path(&["nope"]),
+        );
+    }
+
+    #[test]
+    fn provenance_map_path_of_returns_none_for_unknown_path() {
+        // Miss path: a fabricated key names no leaf, so both forms of
+        // the key-only path-keyed lookup return `None`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().path_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .path_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_path_of_on_empty_map_is_none() {
+        // Empty case: the key-only path-keyed lookup returns `None` on
+        // an empty map at both forms, mirroring the same empty-map
+        // behaviour `first_path` / `last_path` carry.
+        let empty = ProvenanceMap::default();
+        assert!(empty.path_of(&["a"]).is_none());
+        assert!(empty.path_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_path_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: `path_of` names the
+        // correct `&[String]` at every leaf, catching a future edit
+        // that reroutes the seam through a different `BTreeMap` cursor
+        // and returns `Some` from the wrong entry.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().path_of(&["a"]), Some(&["a".to_string()][..]));
+        assert_eq!(r.provenance().path_of(&["b"]), Some(&["b".to_string()][..]));
+        assert_eq!(r.provenance().path_of(&["c"]), Some(&["c".to_string()][..]));
+        assert_eq!(r.provenance().path_of(&["d"]), Some(&["d".to_string()][..]));
     }
 
     // -------- ProvenanceMap::first_provenance / ::last_provenance value-axis bounds --------
@@ -105202,6 +105466,130 @@ mod progressive_tests {
             .map(|(p, prov)| (p.to_vec(), prov.clone()))
             .unwrap();
         assert_eq!(last_via_entry_of, (last_path.to_vec(), last_prov.clone()));
+    }
+
+    // -------- ProgressiveResolution key-only path-keyed lookup pair
+    // -------- (container-altitude peer of `ProvenanceMap::path_of` /
+    // -------- `ProvenanceMap::path_of_owned`, key-only sub-projection of
+    // -------- the composite-pair lookup pair `entry_of` / `entry_of_owned`
+    // -------- on the same container, and path-keyed peer of the key-axis
+    // -------- bounded-lookup pair `first_path` / `last_path`)
+
+    #[test]
+    fn progressive_resolution_path_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude key-only
+        // path-keyed lookup delegate: the container-altitude method
+        // yields the same `Option<&[String]>` as
+        // `res.provenance().path_of(path)` on every path the resolved
+        // config carries (each `paths()` entry) and on a fabricated miss
+        // path. Catches a future edit that reroutes
+        // `ProgressiveResolution::path_of` through a different
+        // `ProvenanceMap` accessor than the primitive-altitude peer it
+        // delegates to (an `entry_of`-then-projection chain by mistake,
+        // a `first_path` cursor) that would break the shared-lookup
+        // contract at the key-only sub-projection seam.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res: Option<Vec<String>> = r.path_of(&borrowed).map(<[String]>::to_vec);
+            let via_prov: Option<Vec<String>> =
+                r.provenance().path_of(&borrowed).map(<[String]>::to_vec);
+            assert_eq!(via_res, via_prov);
+        }
+        assert!(r.path_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.path_of(&["definitely_not_a_field"])
+                .map(<[String]>::to_vec),
+            r.provenance()
+                .path_of(&["definitely_not_a_field"])
+                .map(<[String]>::to_vec),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_path_of_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude key-only
+        // path-keyed lookup pair: the owned-path seam yields the same
+        // `Option<&[String]>` as `res.provenance().path_of_owned(path)`
+        // on every path the resolved config carries and on a fabricated
+        // miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::path_of_owned` through the borrowed
+        // variant (reintroducing the per-lookup `Vec<String>`
+        // allocation the owned form exists to avoid) or through a
+        // different `ProvenanceMap` accessor.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res: Option<Vec<String>> = r.path_of_owned(&owned).map(<[String]>::to_vec);
+            let via_prov: Option<Vec<String>> =
+                r.provenance().path_of_owned(&owned).map(<[String]>::to_vec);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.path_of_owned(&miss).is_none());
+        assert_eq!(
+            r.path_of_owned(&miss).map(<[String]>::to_vec),
+            r.provenance().path_of_owned(&miss).map(<[String]>::to_vec),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_path_of_agrees_with_entry_of_fst_projection_pointwise() {
+        // Cross-seam key-only-vs-pair-shape agreement law at the
+        // container altitude: the key-only path-keyed lookup projects
+        // the same `&[String]` on the key axis as the composite-pair
+        // path-keyed lookup `entry_of` at every leaf. Mirrors the same
+        // key-only-vs-pair-shape law the primitive-altitude pair carries
+        // one seam down.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_path: Option<Vec<String>> = r.path_of(&borrowed).map(<[String]>::to_vec);
+            let via_entry: Option<Vec<String>> = r.entry_of(&borrowed).map(|(k, _)| k.to_vec());
+            assert_eq!(via_path, via_entry, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_path_of_agrees_with_path_of_owned_on_every_path() {
+        // Cross-form parity law on the container-altitude key-only
+        // lookup pair: the borrowed-path seam agrees with the owned-path
+        // seam on every leaf, mirroring the same cross-form parity
+        // `entry_of` / `entry_of_owned` carries one seam over on the
+        // composite-pair lookup pair.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.path_of(&borrowed).map(<[String]>::to_vec),
+                r.path_of_owned(&owned).map(<[String]>::to_vec),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_path_of_at_lex_bounds_agrees_with_first_and_last_path() {
+        // Bounded-lookup-vs-path-keyed agreement law at the container
+        // altitude: at the lex-smallest path, `path_of` names the same
+        // key as `first_path`; at the lex-largest path, the same key as
+        // `last_path`. Pins the shared-cursor contract between the
+        // container-altitude key-axis bounded-lookup pair and the
+        // container-altitude key-only path-keyed pair on the same
+        // underlying `BTreeMap`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.first_path().unwrap().to_vec();
+        assert_eq!(
+            r.path_of_owned(&first_path).map(<[String]>::to_vec),
+            Some(first_path.clone()),
+        );
+        let last_path = r.last_path().unwrap().to_vec();
+        assert_eq!(
+            r.path_of_owned(&last_path).map(<[String]>::to_vec),
+            Some(last_path),
+        );
     }
 
     // -------- ProgressiveResolution sizing pair
