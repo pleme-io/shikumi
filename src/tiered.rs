@@ -3667,6 +3667,98 @@ impl ProvenanceMap {
         self.inner.get(path).and_then(Provenance::file_format)
     }
 
+    /// [`crate::discovery::Format`] precedence ordinal of the
+    /// [`ConfigSource::File`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf in the resolved
+    /// config, OR if it names a leaf whose source is NOT
+    /// [`ConfigSource::File`], OR if it names a `File(_)` leaf whose
+    /// recorded path has no recognized extension — the File-arm
+    /// typed-sub-axis ordinal-axis path-keyed lookup pair one const-fn
+    /// seam further inland from the typed-sub-axis pair
+    /// [`Self::file_format_of`] / [`Self::file_format_of_owned`] on the
+    /// same closed source-axis ternary partition ({`Defaults`, `Env`,
+    /// `File`}) as the raw-payload pair [`Self::as_file_path_of`] /
+    /// [`Self::as_file_path_of_owned`], projecting
+    /// [`crate::discovery::Format::ordinal`] on the retained
+    /// [`crate::discovery::Format`] polarity and evaporating to
+    /// [`None`] wherever [`Self::file_format_of`] evaporates.
+    ///
+    /// The ordinal-axis peer of the typed-sub-axis pair
+    /// [`Self::file_format_of`] / [`Self::file_format_of_owned`] on
+    /// the File-arm coordinate, mirroring the same ordinal-axis
+    /// closure the source-axis pair [`Self::source_kind_ordinal_of`]
+    /// / [`Self::source_kind_ordinal_of_owned`] gives against
+    /// [`Self::source_kind_of`] one const-fn seam further out, and
+    /// the tier-axis pair [`Self::tier_ordinal_of`] /
+    /// [`Self::tier_ordinal_of_owned`] gives against [`Self::tier_of`]
+    /// on the sibling closed-axis coordinate. Collapses the two-hop
+    /// chain
+    /// `self.file_format_of(path).map(crate::discovery::Format::ordinal)`
+    /// a caller previously reached the File-arm typed-sub-axis
+    /// precedence-ordinal through into one hop on the same underlying
+    /// [`BTreeMap`] cursor, without pulling a
+    /// [`crate::discovery::Format`] tag at the named leaf just to
+    /// project one `usize` scalar off it.
+    ///
+    /// # Concrete callers
+    ///
+    /// A `ConfigPlane` broadcast surface encoding a wire message
+    /// keyed on each file-sourced leaf's format precedence-ordinal
+    /// byte rather than the [`crate::discovery::Format`] tag, an
+    /// attestation-manifest counter partitioning file-sourced leaves
+    /// by format precedence-ordinal without re-deriving
+    /// [`crate::discovery::Format::ordinal`] on each recorded format,
+    /// an operator-facing
+    /// `/healthz/provenance/<path>/file_format_ordinal` payload
+    /// emitting just the `usize` at one leaf, or a compile-time
+    /// attestation hasher folding the format precedence-ordinal of
+    /// one named leaf — each now opens the same seam one hop shorter
+    /// than the two-hop chain, without pulling the full
+    /// [`crate::discovery::Format`] tag alongside just to discard it.
+    ///
+    /// # Implication law
+    ///
+    /// `file_format_ordinal_of(p).is_some() ==>
+    /// file_format_of(p).is_some() ==> is_file_of(p) == Some(true)`
+    /// holds pointwise on the shipped constructor surface — the
+    /// ordinal-axis is at most as populated as the typed sub-axis it
+    /// projects (which is itself at most as populated as the boolean
+    /// tag on the same arm, per the strict-inland one-way slack the
+    /// File-arm sibling pair carries against `is_file_of`). Pinned
+    /// pointwise by
+    /// [`tests::provenance_map_file_format_ordinal_of_implies_file_format_of_pointwise`].
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise-equal to
+    /// `self.file_format_of(path).map(crate::discovery::Format::ordinal)`
+    /// on every input by construction. Pinned by
+    /// [`tests::provenance_map_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn file_format_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.file_format_ordinal_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::file_format_ordinal_of`]
+    /// for callers that already carry an owned path — the File-arm
+    /// typed-sub-axis ordinal-axis sibling of the typed-sub-axis pair
+    /// [`Self::file_format_of`] / [`Self::file_format_of_owned`],
+    /// forwarding straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get], projecting
+    /// [`Provenance::file_format`] on the retained value, and
+    /// mapping through [`crate::discovery::Format::ordinal`] on the
+    /// retained [`crate::discovery::Format`] polarity, with no
+    /// allocation of its own.
+    #[must_use]
+    pub fn file_format_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::ordinal)
+    }
+
     /// Typed [`EnvMetadataTagKind`] sub-axis polarity of the
     /// [`ConfigSource::Env`] arm at the effective leaf named by dotted
     /// `path`, or [`None`] if `path` names no leaf in the resolved
@@ -25362,6 +25454,58 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn file_format_of_owned(&self, path: &[String]) -> Option<crate::discovery::Format> {
         self.provenance.file_format_of_owned(path)
+    }
+
+    /// [`crate::discovery::Format`] precedence ordinal of the
+    /// [`ConfigSource::File`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf, OR if it names a
+    /// leaf whose source is NOT [`ConfigSource::File`], OR if it names
+    /// a `File(_)` leaf whose recorded path has no recognized extension
+    /// — the container-altitude peer of
+    /// [`ProvenanceMap::file_format_ordinal_of`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into
+    /// `self.provenance.file_format_ordinal_of(path)`.
+    ///
+    /// The File-arm typed-sub-axis ordinal-axis sub-projection of the
+    /// source-axis path-keyed lookup surface at the container altitude,
+    /// one const-fn seam inland from the typed-sub-axis pair
+    /// [`Self::file_format_of`] / [`Self::file_format_of_owned`] on
+    /// the same closed source-axis ternary partition ({`Defaults`,
+    /// `Env`, `File`}) and one axis over from the tier-axis ordinal
+    /// pair [`Self::tier_ordinal_of`] / [`Self::tier_ordinal_of_owned`]
+    /// on the sibling closed-axis coordinate. Collapses the two-hop
+    /// chain
+    /// `self.file_format_of(path).map(crate::discovery::Format::ordinal)`
+    /// into one direct probe on the shared [`ProvenanceMap`] cursor
+    /// without pulling a [`crate::discovery::Format`] tag through the
+    /// container-altitude two-hop chain just to project one `usize`
+    /// scalar off it.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().file_format_ordinal_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_file_format_ordinal_of_agrees_with_provenance_map_pointwise`].
+    /// - Equal to
+    ///   `self.file_format_of(path).map(crate::discovery::Format::ordinal)`
+    ///   on every input by construction — the ordinal-axis
+    ///   sub-projection of the same typed-sub-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn file_format_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.provenance.file_format_ordinal_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::file_format_ordinal_of`]
+    /// for callers that already carry an owned path — the container-
+    /// altitude peer of [`ProvenanceMap::file_format_ordinal_of_owned`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.file_format_ordinal_of_owned(path)`.
+    #[must_use]
+    pub fn file_format_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.provenance.file_format_ordinal_of_owned(path)
     }
 
     /// Typed [`EnvMetadataTagKind`] sub-axis polarity of the
@@ -59468,6 +59612,278 @@ mod progressive_tests {
                 r.provenance().file_format_of(&["b"]),
                 Some(expected),
                 "file_format_of drifted from Format::from_path on {path:?}",
+            );
+        }
+    }
+
+    // -------- ProvenanceMap::file_format_ordinal_of File-arm typed-sub-axis
+    // -------- ordinal-axis path-keyed lookup pair (one const-fn seam
+    // -------- further inland than the typed-sub-axis pair
+    // -------- `file_format_of` / `file_format_of_owned` on the same
+    // -------- closed source-axis ternary partition) ---------------------
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise()
+     {
+        // Cross-seam typed-sub-axis-vs-ordinal-axis agreement law: the
+        // File-arm ordinal-axis path-keyed lookup projects the same
+        // `Option<usize>` on every leaf as the two-hop chain
+        // `file_format_of(path).map(Format::ordinal)` that the one-hop
+        // `file_format_ordinal_of` seam exists to collapse. Peer of the
+        // same-shape agreement laws
+        // `provenance_map_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise`
+        // and
+        // `provenance_map_source_kind_ordinal_of_agrees_with_source_kind_of_ordinal_projection_pointwise`
+        // one const-fn seam further out on the sibling closed-axis
+        // coordinates. Runs against a mixed Defaults/Env/File overlay
+        // stack so the pointwise agreement carries witnesses for both
+        // the `Some` and `None` sides of the ordinal-axis projection.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.provenance().file_format_ordinal_of(&borrowed);
+            let via_tag_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::ordinal);
+            assert_eq!(
+                via_ordinal, via_tag_projection,
+                "tag-vs-ordinal disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_agrees_with_provenance_of_file_format_ordinal_projection_pointwise()
+     {
+        // Cross-seam value-axis-vs-ordinal-axis agreement law: the
+        // File-arm ordinal-axis path-keyed lookup projects the same
+        // `Option<usize>` on every leaf as the three-hop chain
+        // `provenance_of(path).and_then(Provenance::file_format).map(Format::ordinal)`
+        // that the one-hop `file_format_ordinal_of` seam exists to
+        // collapse. Catches a future edit that reroutes
+        // `file_format_ordinal_of` through a different `BTreeMap` cursor
+        // than `provenance_of` uses, or projects through the wrong
+        // typed-sub-axis (`env_prefix_kind` composed with an ordinal
+        // projection — the crossed-arm regression the Env-arm sibling
+        // pair rules out on the other arm).
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.provenance().file_format_ordinal_of(&borrowed);
+            let via_prov_chain = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .and_then(Provenance::file_format)
+                .map(crate::discovery::Format::ordinal);
+            assert_eq!(
+                via_ordinal, via_prov_chain,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_owned_agrees_with_borrowed_form_pointwise() {
+        // Cross-form parity law on the File-arm ordinal-axis path-keyed
+        // lookup pair: the borrowed-path seam agrees with the owned-
+        // path seam on every leaf, mirroring the same cross-form
+        // parity `file_format_of` / `file_format_of_owned` one const-fn
+        // seam further out on the same axis and the sibling ordinal
+        // pairs `tier_ordinal_of` / `tier_ordinal_of_owned` and
+        // `source_kind_ordinal_of` / `source_kind_ordinal_of_owned`
+        // carry on the sibling closed-axis coordinates. Catches a
+        // future edit that decouples the two path forms.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().file_format_ordinal_of(&borrowed),
+                r.provenance().file_format_ordinal_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_implies_file_format_of_pointwise() {
+        // One-way implication law: `file_format_ordinal_of(p).is_some()
+        // ==> file_format_of(p).is_some() ==> is_file_of(p) ==
+        // Some(true)` holds pointwise on the shipped constructor
+        // surface. The ordinal-axis is at most as populated as the
+        // typed sub-axis it projects (which is itself at most as
+        // populated as the boolean tag on the same arm, per the
+        // strict-inland one-way slack the File-arm typed-sub-axis pair
+        // carries against `is_file_of`). The converse does NOT hold:
+        // a `File(_)` leaf with no recognized extension still answers
+        // `Some(true)` from `is_file_of`, but both `file_format_of`
+        // and `file_format_ordinal_of` evaporate to `None`. Peer of
+        // the same-shape implication law
+        // `provenance_map_file_format_of_implies_is_file_of_pointwise`
+        // one const-fn seam further out on the same axis, extended
+        // one hop further inland to the ordinal projection.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            if r.provenance().file_format_ordinal_of(&borrowed).is_some() {
+                assert!(
+                    r.provenance().file_format_of(&borrowed).is_some(),
+                    "ordinal populated where typed sub-axis evaporated at {borrowed:?}"
+                );
+                assert_eq!(
+                    r.provenance().is_file_of(&borrowed),
+                    Some(true),
+                    "ordinal leaked past its arm at {borrowed:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_surfaces_ordinal_from_file_overlay() {
+        // Distinguishing witness at the ordinal-axis altitude: a
+        // `file("/etc/prog.yaml", …)` overlay lands under the leaf it
+        // seeded with `Some(Format::Yaml.ordinal())` — the same
+        // scalar the two-hop chain `file_format_of(&["b"]).map(Format::ordinal)`
+        // would return but reached in one hop. `Format::Yaml` is at
+        // declaration position `0` in `Format::ALL`, so the concrete
+        // pin is `Some(0)`. Peer of the same-shape distinguishing
+        // witness pin on the tag-side seam
+        // `provenance_map_file_format_of_surfaces_typed_format_from_file_overlay`
+        // one const-fn seam further out on the same axis.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(
+            r.provenance().file_format_ordinal_of(&["b"]),
+            Some(crate::discovery::Format::Yaml.ordinal())
+        );
+        assert_eq!(r.provenance().file_format_ordinal_of(&["b"]), Some(0));
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_returns_none_for_defaults_and_env_arms() {
+        // Off-arm evaporation law: leaves whose source is not
+        // `File(_)` — the Defaults arm at the untouched leaves, the
+        // Env arm at the leaf the env layer seeded — collapse to
+        // `None` at the File-arm ordinal-axis seam, even where
+        // `source_of` would still hand out a
+        // `Some(ConfigSource::{Defaults,Env(_)})`. Pins the ordinal-
+        // axis filter down to exactly the File arm, mirroring the
+        // same off-arm pin the typed-sub-axis pair carries one
+        // const-fn seam further out on the same axis.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert!(r.provenance().file_format_ordinal_of(&["a"]).is_none());
+        assert!(r.provenance().file_format_ordinal_of(&["c"]).is_none());
+        assert!(r.provenance().file_format_ordinal_of(&["d"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_returns_none_for_file_with_unrecognized_extension() {
+        // Load-bearing distinction from the boolean-tag and raw-payload
+        // File-arm pairs: a `File(_)` leaf whose recorded path has no
+        // recognized file extension answers `Some(true)` from
+        // `is_file_of` and `Some(&Path)` from `as_file_path_of`, but
+        // this ordinal-axis seam still evaporates to `None` because
+        // `file_format_of` itself evaporates on the unrecognized
+        // extension — matching the same strictly-inland one-way slack
+        // the typed-sub-axis pair carries against `is_file_of` one
+        // const-fn seam further out.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.conf", file_dict)]);
+        assert_eq!(r.provenance().is_file_of(&["b"]), Some(true));
+        assert!(r.provenance().as_file_path_of(&["b"]).is_some());
+        assert!(r.provenance().file_format_of(&["b"]).is_none());
+        assert!(r.provenance().file_format_ordinal_of(&["b"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_returns_none_for_unknown_path() {
+        // Miss path: a fabricated key names no leaf, so both forms of
+        // the File-arm ordinal-axis lookup return `None`. Rules out a
+        // future edit that would fall back to a fixed `Format`'s
+        // ordinal on miss instead of propagating the `None` out of
+        // `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().file_format_ordinal_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .file_format_ordinal_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_on_empty_map_is_none() {
+        // Empty case: the File-arm ordinal-axis lookup returns `None`
+        // on an empty map at both forms, mirroring the same empty-map
+        // behaviour every path-keyed pair on the same source-axis
+        // lookup surface carries.
+        let empty = ProvenanceMap::default();
+        assert!(empty.file_format_ordinal_of(&["a"]).is_none());
+        assert!(
+            empty
+                .file_format_ordinal_of_owned(&["a".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_file_format_ordinal_of_recognizes_every_shipped_extension() {
+        // Payload-identity law across the closed `Format` axis: for
+        // every shipped `Format` variant, the ordinal-axis seam
+        // returns exactly the `usize` `Format::ordinal` projects on
+        // the `Format` `Format::from_path` derives from the recorded
+        // path. Rules out a hand-rolled ordinal mapping that would
+        // drift from `Format::ordinal` if a new extension arm lands
+        // or the declaration order in `Format::ALL` shifts. Peer of
+        // the tag-side counterpart pin
+        // `provenance_map_file_format_of_recognizes_every_shipped_extension`
+        // one const-fn seam further out on the same axis.
+        for (path, expected) in [
+            ("/etc/prog.yaml", crate::discovery::Format::Yaml),
+            ("/etc/prog.yml", crate::discovery::Format::Yaml),
+            ("/etc/prog.toml", crate::discovery::Format::Toml),
+        ] {
+            let mut file_dict = Dict::new();
+            file_dict.insert("b".to_owned(), Value::from(99_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            assert_eq!(
+                r.provenance().file_format_ordinal_of(&["b"]),
+                Some(expected.ordinal()),
+                "file_format_ordinal_of drifted from Format::ordinal on {path:?}",
             );
         }
     }
@@ -107122,6 +107538,125 @@ mod progressive_tests {
             r.file_format_of_owned(&miss),
             r.provenance().file_format_of_owned(&miss),
         );
+    }
+
+    // -------- ProgressiveResolution::file_format_ordinal_of File-arm
+    // -------- typed-sub-axis ordinal-axis path-keyed lookup pair
+    // -------- (container-altitude peer of
+    // -------- ProvenanceMap::file_format_ordinal_of / _owned, one
+    // -------- const-fn seam further inland than the typed-sub-axis
+    // -------- pair `file_format_of` / `file_format_of_owned` on the
+    // -------- same closed source-axis ternary partition) -----------
+
+    #[test]
+    fn progressive_resolution_file_format_ordinal_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // File-arm ordinal-axis lookup delegate: the container-altitude
+        // method yields the same `Option<usize>` as
+        // `res.provenance().file_format_ordinal_of(path)` on every path
+        // the resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::file_format_ordinal_of` through a
+        // different `ProvenanceMap` accessor than the primitive peer
+        // it delegates to (a `source_kind_ordinal_of`-then-projection
+        // chain by mistake — the crossed-axis regression the peer
+        // source-kind-axis pin rules out on the other coordinate).
+        // Peer of the same-shape delegation laws
+        // `progressive_resolution_file_format_of_agrees_with_provenance_map_pointwise`
+        // one const-fn seam further out on the same axis, and
+        // `progressive_resolution_tier_ordinal_of_agrees_with_provenance_map_tier_ordinal_of_pointwise`
+        // / `progressive_resolution_source_kind_ordinal_of_agrees_with_provenance_map_source_kind_ordinal_of_pointwise`
+        // on the sibling closed-axis coordinates.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.file_format_ordinal_of(&borrowed);
+            let via_prov = r.provenance().file_format_ordinal_of(&borrowed);
+            assert_eq!(via_res, via_prov, "disagreement at {borrowed:?}");
+        }
+        assert!(
+            r.file_format_ordinal_of(&["definitely_not_a_field"])
+                .is_none()
+        );
+        assert_eq!(
+            r.file_format_ordinal_of(&["definitely_not_a_field"]),
+            r.provenance()
+                .file_format_ordinal_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_file_format_ordinal_of_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude File-arm
+        // ordinal-axis lookup pair: the owned-path seam yields the same
+        // `Option<usize>` as `res.provenance().file_format_ordinal_of_owned(path)`
+        // on every path the resolved config carries and on a
+        // fabricated miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::file_format_ordinal_of_owned`
+        // through the borrowed variant (reintroducing the per-lookup
+        // `Vec<String>` allocation the owned form exists to avoid) or
+        // through a different `ProvenanceMap` accessor.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.file_format_ordinal_of_owned(&owned);
+            let via_prov = r.provenance().file_format_ordinal_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.file_format_ordinal_of_owned(&miss).is_none());
+        assert_eq!(
+            r.file_format_ordinal_of_owned(&miss),
+            r.provenance().file_format_ordinal_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise()
+     {
+        // One const-fn seam further out on the same axis at the
+        // container altitude: the ordinal-axis path-keyed lookup
+        // yields the same `Option<usize>` as
+        // `res.file_format_of(path).map(Format::ordinal)` on every
+        // leaf by construction. Welds the tag-side and ordinal-side
+        // path-keyed seams on the File-arm typed sub-axis pointwise
+        // on every leaf the resolved container carries. Peer of the
+        // same-shape agreement laws
+        // `progressive_resolution_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise`
+        // and
+        // `progressive_resolution_source_kind_ordinal_of_agrees_with_source_kind_of_ordinal_projection_pointwise`
+        // on the sibling closed-axis coordinates one axis over.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.file_format_ordinal_of(&borrowed);
+            let via_tag_projection = r
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::ordinal);
+            assert_eq!(
+                via_ordinal, via_tag_projection,
+                "tag-vs-ordinal disagreement at {borrowed:?}"
+            );
+        }
     }
 
     // -------- ProgressiveResolution::env_prefix_kind_of Env-arm typed-sub-axis path-keyed lookup --------
