@@ -4995,6 +4995,66 @@ impl ProvenanceMap {
         self.inner.last_key_value().map(|(_, v)| v.is_custom())
     }
 
+    /// Lex-lower-bound leaf's File-arm arm-payload `&Path` extraction,
+    /// or [`None`] if this map is empty OR if the lex-lower-bound leaf's
+    /// source is NOT [`ConfigSource::File`] — the File-arm arm-payload
+    /// scalar sub-projection of the value-axis bound, one const-fn hop
+    /// further inland from the payload-bearing source-axis bound
+    /// [`Self::first_source`] to the borrowed [`Path`] payload the
+    /// [`ConfigSource::File`] arm carries. The outer bound-side altitude
+    /// peer of the path-keyed pair [`Self::as_file_path_of`] /
+    /// [`Self::as_file_path_of_owned`] on the same File-arm arm-payload
+    /// seam: where the path-keyed pair filters to one named leaf, this
+    /// seam pins the extremal leaf on the [`BTreeMap::first_key_value`]
+    /// cursor the value-axis bound uses.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_provenance().and_then(Provenance::as_file_path)` and
+    /// to `self.first_source().and_then(ConfigSource::as_path)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::as_file_path`] accessor on the retained value.
+    ///
+    /// **Boolean-agreement law** —
+    /// `self.first_as_file_path().is_some() == self.first_is_file()`
+    /// when [`Self::first_is_file`] returns `Some(true)`; when
+    /// [`Self::first_is_file`] returns `Some(false)`,
+    /// `self.first_as_file_path()` returns [`None`]. Inherits from the
+    /// primitive [`Provenance::as_file_path`] agreement law with
+    /// [`Provenance::is_file`] one altitude down.
+    ///
+    /// Returns borrowed [`&Path`] with no allocation.
+    #[must_use]
+    pub fn first_as_file_path(&self) -> Option<&Path> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.as_file_path())
+    }
+
+    /// Lex-upper-bound leaf's File-arm arm-payload `&Path` extraction,
+    /// or [`None`] if this map is empty OR if the lex-upper-bound leaf's
+    /// source is NOT [`ConfigSource::File`] — the upper-bound sibling of
+    /// [`Self::first_as_file_path`] that [`Self::first_as_file_path`]
+    /// closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_provenance().and_then(Provenance::as_file_path)` and
+    /// to `self.last_source().and_then(ConfigSource::as_path)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::as_file_path`] accessor on the retained value, so
+    /// the two disagree only under a `BTreeMap` bug. Returns the same
+    /// borrowed [`&Path`] shape as [`Self::first_as_file_path`] on the
+    /// arm-payload axis.
+    #[must_use]
+    pub fn last_as_file_path(&self) -> Option<&Path> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.as_file_path())
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -27009,6 +27069,77 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn last_is_custom(&self) -> Option<bool> {
         self.provenance.last_is_custom()
+    }
+
+    /// Lex-lower-bound leaf's File-arm arm-payload `&Path` extraction,
+    /// or [`None`] if this resolution's provenance map is empty OR if
+    /// the lex-lower-bound leaf's source is NOT [`ConfigSource::File`]
+    /// — the container-altitude peer of
+    /// [`ProvenanceMap::first_as_file_path`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.first_as_file_path()`.
+    ///
+    /// The outer bound-side altitude peer of the path-keyed pair
+    /// [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`] on
+    /// the same File-arm arm-payload seam, and the arm-payload scalar
+    /// sub-projection sibling of [`Self::first_source`] one const-fn
+    /// hop further inland from the full [`ConfigSource`] enum to the
+    /// borrowed [`Path`] payload the [`ConfigSource::File`] arm
+    /// carries. Callers that previously reached for `Some(&Path)` at
+    /// the lex-lower-bound leaf through the two-hop chain
+    /// `res.first_provenance().and_then(Provenance::as_file_path)` or
+    /// the three-hop `res.first_source().and_then(ConfigSource::as_path)`
+    /// — a `ConfigPlane` telemetry emitter naming the file path that
+    /// seeded the boundary leaf, an operator-facing
+    /// `/healthz/provenance` payload printing the file behind the
+    /// lex-first entry, or a compile-time attestation hasher folding
+    /// just the boundary file's `&Path` — now open the same seam one
+    /// hop shorter on the container itself. Returns borrowed [`&Path`]
+    /// with no allocation.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_as_file_path()` — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_as_file_path_agrees_with_provenance_map_first_as_file_path_pointwise`].
+    /// - Equal to
+    ///   `self.first_provenance().and_then(Provenance::as_file_path)`
+    ///   on every input by construction — the arm-payload sub-projection
+    ///   of the same value-axis lower bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_first_as_file_path_agrees_with_first_provenance_as_file_path_projection_pointwise`].
+    #[must_use]
+    pub fn first_as_file_path(&self) -> Option<&Path> {
+        self.provenance.first_as_file_path()
+    }
+
+    /// Lex-upper-bound leaf's File-arm arm-payload `&Path` extraction,
+    /// or [`None`] if this resolution's provenance map is empty OR if
+    /// the lex-upper-bound leaf's source is NOT [`ConfigSource::File`]
+    /// — the container-altitude peer of
+    /// [`ProvenanceMap::last_as_file_path`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.last_as_file_path()`.
+    ///
+    /// The bounded-lookup peer of [`Self::first_as_file_path`] on the
+    /// upper-bound side that [`Self::first_as_file_path`] closes at the
+    /// lower bound — closes the File-arm arm-payload scalar
+    /// sub-projection of the value-axis bound at the container altitude
+    /// on both bounds. Returns the same borrowed [`&Path`] shape as
+    /// [`Self::first_as_file_path`] on the arm-payload axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().last_as_file_path()` — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_as_file_path_agrees_with_provenance_map_last_as_file_path_pointwise`].
+    /// - Equal to
+    ///   `self.last_provenance().and_then(Provenance::as_file_path)` on
+    ///   every input by construction — the arm-payload sub-projection
+    ///   of the same value-axis upper bound — pinned by
+    ///   [`progressive_tests::progressive_resolution_last_as_file_path_agrees_with_last_provenance_as_file_path_projection_pointwise`].
+    #[must_use]
+    pub fn last_as_file_path(&self) -> Option<&Path> {
+        self.provenance.last_as_file_path()
     }
 
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
@@ -62152,6 +62283,154 @@ mod progressive_tests {
         assert_eq!(
             r.provenance().last_is_custom(),
             r.provenance().last_is_computed().map(|b| !b),
+        );
+    }
+
+    // -------- ProvenanceMap::first_as_file_path / ::last_as_file_path
+    // -------- File-arm arm-payload scalar sub-projection of the
+    // -------- value-axis bound (outer bound-side altitude peer of the
+    // -------- path-keyed pair `as_file_path_of` / `as_file_path_of_owned`)
+
+    #[test]
+    fn provenance_map_first_as_file_path_agrees_with_first_provenance_as_file_path_projection_pointwise()
+     {
+        // Cross-seam agreement law at the lex-lower bound: the File-arm
+        // arm-payload scalar sub-projection on the value-axis bound
+        // yields the same `Option<&Path>` on every input as the two-hop
+        // chain `first_provenance().and_then(Provenance::as_file_path)`
+        // that the one-hop `first_as_file_path` seam exists to collapse.
+        // Catches a future edit that reroutes the seam through a
+        // different BTreeMap cursor than `first_provenance` reads
+        // through, or through the source-kind axis (dropping the payload).
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_bound: Option<std::path::PathBuf> = r
+            .provenance()
+            .first_as_file_path()
+            .map(std::path::Path::to_path_buf);
+        let via_prov: Option<std::path::PathBuf> = r
+            .provenance()
+            .first_provenance()
+            .and_then(Provenance::as_file_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_last_as_file_path_agrees_with_last_provenance_as_file_path_projection_pointwise()
+     {
+        // Peer of the `first_as_file_path` cross-seam pin above on the
+        // upper-bound side. Pointwise-equal to
+        // `last_provenance().and_then(Provenance::as_file_path)`.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_bound: Option<std::path::PathBuf> = r
+            .provenance()
+            .last_as_file_path()
+            .map(std::path::Path::to_path_buf);
+        let via_prov: Option<std::path::PathBuf> = r
+            .provenance()
+            .last_provenance()
+            .and_then(Provenance::as_file_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn provenance_map_first_as_file_path_agrees_with_first_source_as_path_projection_pointwise() {
+        // Payload-preserving agreement law: the File-arm arm-payload
+        // seam on the value-axis bound yields the same `Option<&Path>`
+        // borrow as the two-hop chain
+        // `first_source().and_then(ConfigSource::as_path)` that peels
+        // the payload off the source-axis bound. Welds the arm-payload
+        // seam to the payload-bearing source-axis bound pointwise.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<std::path::PathBuf> = r
+            .provenance()
+            .first_as_file_path()
+            .map(std::path::Path::to_path_buf);
+        let via_source: Option<std::path::PathBuf> = r
+            .provenance()
+            .first_source()
+            .and_then(ConfigSource::as_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_source);
+    }
+
+    #[test]
+    fn provenance_map_first_as_file_path_agrees_with_first_is_file_boolean_pointwise() {
+        // Boolean-agreement law: on every hit
+        // `first_as_file_path().is_some() == first_is_file() == Some(true)`;
+        // when `first_is_file() == Some(false)`,
+        // `first_as_file_path() == None`. Inherits pointwise from the
+        // primitive `Provenance::as_file_path` / `Provenance::is_file`
+        // agreement law one altitude down.
+        //
+        // Two witnesses: one where the boundary leaf is File-sourced
+        // (both sides Some(true)/Some(&Path)) and one where it is not
+        // (Some(false)/None). The default `Prog::resolve_progressive()`
+        // fold has no File-arm leaves — every boundary leaf is Bare /
+        // Discovered / Default — so we witness both cases by comparison
+        // against a mixed overlay stack.
+        let bare_only = Prog::resolve_progressive();
+        assert_eq!(bare_only.provenance().first_is_file(), Some(false));
+        assert!(bare_only.provenance().first_as_file_path().is_none());
+
+        let mut file_dict = Dict::new();
+        for leaf in ["a", "b", "c", "d"] {
+            file_dict.insert(leaf.to_owned(), Value::from(1_u32));
+        }
+        let all_file =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(all_file.provenance().first_is_file(), Some(true));
+        assert_eq!(
+            all_file
+                .provenance()
+                .first_as_file_path()
+                .map(std::path::Path::to_path_buf),
+            Some(std::path::PathBuf::from("/etc/prog.yaml")),
+        );
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_as_file_path_none_on_empty_map() {
+        // Empty-map ceiling on both bounds. Peer of the same-shape
+        // empty pins on the source-axis bound (`first_source` /
+        // `last_source`) and every scalar sub-projection peer already
+        // shipped on the value-axis bound at the primitive altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_as_file_path().is_none());
+        assert!(empty.last_as_file_path().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_as_file_path_agree_on_singleton_file_leaf() {
+        // Singleton-map coincidence law: on a one-leaf map both bounds
+        // are the same leaf, so the two seams agree, and on a
+        // `File(PathBuf)` singleton they both yield `Some(&Path)`
+        // pointing at the same recorded path.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/only.yaml")))
+                .collect();
+        assert_eq!(one.first_as_file_path(), one.last_as_file_path());
+        assert_eq!(
+            one.first_as_file_path().map(std::path::Path::to_path_buf),
+            Some(std::path::PathBuf::from("/etc/only.yaml")),
         );
     }
 
@@ -112617,6 +112896,148 @@ mod progressive_tests {
         // extremum, peer of the `first_*` complement pin above.
         let r = Prog::resolve_progressive();
         assert_eq!(r.last_is_custom(), r.last_is_computed().map(|b| !b));
+    }
+
+    // -------- ProgressiveResolution::first_as_file_path /
+    // -------- ::last_as_file_path File-arm arm-payload scalar
+    // -------- sub-projection at the container altitude (outer
+    // -------- bound-side altitude peer of the path-keyed
+    // -------- `as_file_path_of` pair)
+
+    #[test]
+    fn progressive_resolution_first_as_file_path_agrees_with_provenance_map_first_as_file_path_pointwise()
+     {
+        // Load-bearing delegation pin at the container altitude: the
+        // container-altitude first-bound extractor routes through
+        // `self.provenance().first_as_file_path()` on every input.
+        // Catches a future edit that reroutes the seam through a
+        // rebuilt `first_key_value` cursor on the container itself
+        // instead of delegating to the primitive-altitude peer.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<std::path::PathBuf> =
+            r.first_as_file_path().map(std::path::Path::to_path_buf);
+        let via_primitive: Option<std::path::PathBuf> = r
+            .provenance()
+            .first_as_file_path()
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_last_as_file_path_agrees_with_provenance_map_last_as_file_path_pointwise()
+     {
+        // Peer of the `first_as_file_path` delegation pin above on the
+        // upper-bound side. The container-altitude seam delegates to
+        // `self.provenance().last_as_file_path()` on every input.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<std::path::PathBuf> =
+            r.last_as_file_path().map(std::path::Path::to_path_buf);
+        let via_primitive: Option<std::path::PathBuf> = r
+            .provenance()
+            .last_as_file_path()
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_first_as_file_path_agrees_with_first_provenance_as_file_path_projection_pointwise()
+     {
+        // Cross-seam agreement law at the container altitude: the
+        // container-altitude first-bound extractor equals the two-hop
+        // chain `first_provenance().and_then(Provenance::as_file_path)`
+        // pointwise. Peer of the same-shape agreement pin at the
+        // primitive altitude one seam down.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<std::path::PathBuf> =
+            r.first_as_file_path().map(std::path::Path::to_path_buf);
+        let via_prov: Option<std::path::PathBuf> = r
+            .first_provenance()
+            .and_then(Provenance::as_file_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_last_as_file_path_agrees_with_last_provenance_as_file_path_projection_pointwise()
+     {
+        // Peer of the `first_as_file_path` cross-seam agreement pin
+        // above on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<std::path::PathBuf> =
+            r.last_as_file_path().map(std::path::Path::to_path_buf);
+        let via_prov: Option<std::path::PathBuf> = r
+            .last_provenance()
+            .and_then(Provenance::as_file_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_prov);
+    }
+
+    #[test]
+    fn progressive_resolution_first_as_file_path_agrees_with_first_source_as_path_projection_pointwise()
+     {
+        // Payload-preserving agreement at the container altitude:
+        // the arm-payload seam equals `first_source().and_then(
+        // ConfigSource::as_path)` pointwise. Welds the arm-payload
+        // seam to the payload-bearing source-axis bound on the same
+        // container.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        let via_bound: Option<std::path::PathBuf> =
+            r.first_as_file_path().map(std::path::Path::to_path_buf);
+        let via_source: Option<std::path::PathBuf> = r
+            .first_source()
+            .and_then(ConfigSource::as_path)
+            .map(std::path::Path::to_path_buf);
+        assert_eq!(via_bound, via_source);
+    }
+
+    #[test]
+    fn progressive_resolution_first_as_file_path_agrees_with_first_is_file_boolean_pointwise() {
+        // Boolean-agreement law at the container altitude: on every
+        // hit `first_as_file_path().is_some() == first_is_file() ==
+        // Some(true)`; when `first_is_file() == Some(false)`,
+        // `first_as_file_path() == None`. Two witnesses: a bare-only
+        // fold (no File leaves) and an all-file overlay (every leaf a
+        // File leaf).
+        let bare_only = Prog::resolve_progressive();
+        assert_eq!(bare_only.first_is_file(), Some(false));
+        assert!(bare_only.first_as_file_path().is_none());
+
+        let mut file_dict = Dict::new();
+        for leaf in ["a", "b", "c", "d"] {
+            file_dict.insert(leaf.to_owned(), Value::from(1_u32));
+        }
+        let all_file =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(all_file.first_is_file(), Some(true));
+        assert_eq!(
+            all_file
+                .first_as_file_path()
+                .map(std::path::Path::to_path_buf),
+            Some(std::path::PathBuf::from("/etc/prog.yaml")),
+        );
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
