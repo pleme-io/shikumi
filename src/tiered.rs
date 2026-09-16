@@ -2810,6 +2810,84 @@ impl ProvenanceMap {
         self.inner.get(path).map(Provenance::tier_ordinal)
     }
 
+    /// [`crate::ConfigSourceKind`] precedence ordinal of the effective
+    /// leaf named by dotted `path`, or [`None`] if `path` names no leaf
+    /// in the resolved config — the ordinal-axis scalar sub-projection
+    /// of the path-keyed value-axis lookup [`Self::provenance_of`] one
+    /// const-fn hop further inland than the tag-side pair
+    /// [`Self::source_kind_of`] / [`Self::source_kind_of_owned`] on the
+    /// source coordinate of the atomic `(tier, source)` pair every
+    /// leaf's [`Provenance`] carries.
+    ///
+    /// The path-keyed peer of the ordinal-axis bounded-lookup pair
+    /// [`Self::first_source_kind_ordinal`] /
+    /// [`Self::last_source_kind_ordinal`] and the ordinal-axis walker
+    /// [`Self::source_kind_ordinals`]: where those seams project the
+    /// source-kind precedence-ordinal at the lex-boundary leaves or
+    /// stream every leaf's source-kind precedence-ordinal in lex order,
+    /// this seam projects the source-kind precedence-ordinal at ONE
+    /// named leaf. Callers already reaching for `Some(...)` through
+    /// `self.source_kind_of(path).map(ConfigSourceKind::ordinal)` — a
+    /// `ConfigPlane` wire encoder emitting only the precedence-ordinal
+    /// byte at one named leaf's source-kind without the
+    /// [`crate::ConfigSourceKind`] tag, a per-leaf boundary telemetry
+    /// counter comparing source-kind precedence positions across
+    /// paths, an operator-facing
+    /// `/healthz/provenance/<path>/source_kind_ordinal` payload emitting
+    /// just the `usize` at one leaf, or a compile-time attestation
+    /// hasher folding the source-kind precedence-ordinal of one named
+    /// leaf — were pulling a [`crate::ConfigSourceKind`] tag at the
+    /// named leaf just to project one `usize` scalar off it; this seam
+    /// collapses that to one direct ordinal-axis probe through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, discarding just the path key and
+    /// dereferencing the [`Provenance::source_kind_ordinal`] const-fn
+    /// accessor on the retained value.
+    ///
+    /// Pointwise-equal to `self.provenance_of(path).map(Provenance::source_kind_ordinal)`
+    /// on every input by construction — the body forwards through the
+    /// same [`BTreeMap::get`][std::collections::BTreeMap::get] cursor
+    /// the value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Also pointwise-equal to
+    /// `self.source_kind_of(path).map(ConfigSourceKind::ordinal)`, one
+    /// const-fn seam further out on the same axis. Returns owned
+    /// [`usize`] matching the [`ProvenanceMapSourceKindOrdinals`] item
+    /// shape ([`Copy`], no borrow) with no allocation beyond the
+    /// per-lookup path conversion the borrowed-form entry pays.
+    ///
+    /// Closes the ordinal-axis path-keyed lookup surface on the
+    /// source-kind coordinate of the atomic `(tier, source)` pair at
+    /// the primitive altitude — the peer of the tier-axis path-keyed
+    /// ordinal pair [`Self::tier_ordinal_of`] /
+    /// [`Self::tier_ordinal_of_owned`] on the tier coordinate one axis
+    /// over, together closing the ordinal-axis sub-projection surface
+    /// on BOTH closed-axis coordinates at the primitive altitude. The
+    /// next compounding step lifts the same pair to the container
+    /// altitude as [`ProgressiveResolution::source_kind_ordinal_of`] /
+    /// [`ProgressiveResolution::source_kind_ordinal_of_owned`].
+    #[must_use]
+    pub fn source_kind_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.source_kind_ordinal_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::source_kind_ordinal_of`] for
+    /// callers that already carry an owned path — closes the
+    /// borrowed-vs-owned source-kind-axis ordinal path-keyed lookup pair
+    /// mirroring the borrowed-vs-owned tag-side source-kind-axis pair
+    /// [`Self::source_kind_of`] / [`Self::source_kind_of_owned`] one
+    /// const-fn seam further out on the same axis and the peer tier-axis
+    /// ordinal pair [`Self::tier_ordinal_of`] /
+    /// [`Self::tier_ordinal_of_owned`] one axis over. Forwards straight
+    /// into [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::source_kind_ordinal`] const-fn accessor
+    /// on the retained value, with no allocation of its own.
+    #[must_use]
+    pub fn source_kind_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.inner.get(path).map(Provenance::source_kind_ordinal)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -55435,6 +55513,191 @@ mod progressive_tests {
         let empty = ProvenanceMap::default();
         assert!(empty.tier_ordinal_of(&["a"]).is_none());
         assert!(empty.tier_ordinal_of_owned(&["a".to_string()]).is_none());
+    }
+
+    // -------- ProvenanceMap::source_kind_ordinal_of / ::source_kind_ordinal_of_owned source-kind-axis ordinal path-keyed sub-projection --------
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_agrees_with_provenance_of_source_kind_ordinal_projection_pointwise()
+     {
+        // The source-kind-axis ordinal path-keyed scalar sub-projection
+        // yields the same `usize` as
+        // `provenance_of(path).map(|p| p.source_kind_ordinal())` on every
+        // leaf by construction. Catches a future edit that reroutes
+        // `source_kind_ordinal_of` through a different `BTreeMap` cursor
+        // than `provenance_of` uses, or projects through the wrong
+        // `Provenance` accessor (`tier_ordinal` instead of
+        // `source_kind_ordinal` — the crossed-axis regression the peer
+        // tier-axis pin `provenance_map_tier_ordinal_of_agrees_with_provenance_of_tier_ordinal_projection_pointwise`
+        // rules out on the other coordinate).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_source_kind_ordinal_of: Option<usize> =
+                r.provenance().source_kind_ordinal_of(&path);
+            let via_prov_of: Option<usize> = r
+                .provenance()
+                .provenance_of(&path)
+                .map(Provenance::source_kind_ordinal);
+            assert_eq!(
+                via_source_kind_ordinal_of, via_prov_of,
+                "disagreement at leaf {leaf}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_agrees_with_source_kind_of_ordinal_projection_pointwise()
+     {
+        // One const-fn seam further out on the same axis: the
+        // ordinal-axis path-keyed lookup yields the same `usize` as
+        // `source_kind_of(path).map(ConfigSourceKind::ordinal)` on every
+        // leaf by construction. Welds the tag-side and ordinal-side
+        // path-keyed seams on the source-kind axis pointwise on every
+        // leaf the resolved map carries; catches a future edit that
+        // reroutes `source_kind_ordinal_of` through a different
+        // projection than the tag-side pair `source_kind_of` composed
+        // with `ConfigSourceKind::ordinal`. Peer of the tier-axis pin
+        // `provenance_map_tier_ordinal_of_agrees_with_tier_of_ordinal_projection_pointwise`
+        // one axis over.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let path = [leaf];
+            let via_ordinal_of: Option<usize> = r.provenance().source_kind_ordinal_of(&path);
+            let via_tag_projection: Option<usize> = r
+                .provenance()
+                .source_kind_of(&path)
+                .map(crate::ConfigSourceKind::ordinal);
+            assert_eq!(
+                via_ordinal_of, via_tag_projection,
+                "tag-vs-ordinal disagreement at leaf {leaf}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_owned_agrees_with_source_kind_ordinal_of_borrowed_form_pointwise()
+     {
+        // Borrowed-vs-owned parity mirroring the value-axis lookup pair
+        // `provenance_of` / `provenance_of_owned` one axis over, the
+        // peer tag-side source-kind-axis pair `source_kind_of` /
+        // `source_kind_of_owned` one const-fn seam further out, and the
+        // peer tier-axis ordinal pair `tier_ordinal_of` /
+        // `tier_ordinal_of_owned` one axis over. Catches a future edit
+        // that decouples the two path forms.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            let borrowed = [leaf];
+            let owned = vec![leaf.to_string()];
+            assert_eq!(
+                r.provenance().source_kind_ordinal_of(&borrowed),
+                r.provenance().source_kind_ordinal_of_owned(&owned),
+                "borrowed/owned disagreement at leaf {leaf}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_returns_none_for_unknown_path() {
+        // Miss case: a path that names no leaf yields `None` on both
+        // forms, matching the value-axis lookup `provenance_of` on the
+        // same input by construction. Rules out a future edit that
+        // would fall back to `ConfigSourceKind::Defaults.ordinal()` (or
+        // any other source-kind's ordinal) on miss instead of
+        // propagating the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().source_kind_ordinal_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .source_kind_ordinal_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: Prog is a
+        // pure-progressive fixture (no overlays), so every leaf's
+        // source_kind is `Defaults` and every leaf's
+        // source_kind_ordinal is `ConfigSourceKind::Defaults.ordinal()`
+        // — matching the tag-side ground-truth pin
+        // `provenance_map_source_kind_of_names_prog_ground_truth_leaves`
+        // composed with `ConfigSourceKind::ordinal`.
+        let r = Prog::resolve_progressive();
+        let d = crate::ConfigSourceKind::Defaults.ordinal();
+        assert_eq!(r.provenance().source_kind_ordinal_of(&["a"]), Some(d));
+        assert_eq!(r.provenance().source_kind_ordinal_of(&["b"]), Some(d));
+        assert_eq!(r.provenance().source_kind_ordinal_of(&["c"]), Some(d));
+        assert_eq!(r.provenance().source_kind_ordinal_of(&["d"]), Some(d));
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_agrees_with_first_source_kind_ordinal_at_lex_lower_bound_leaf()
+     {
+        // Cross-seam agreement with the ordinal-axis bounded-lookup pair
+        // at the extremal leaf: at the lex-lower-bound path,
+        // `source_kind_ordinal_of(first_path)` names the same `usize` as
+        // `first_source_kind_ordinal()`. Welds the path-keyed and
+        // bounded-lookup surfaces pointwise at the lower-bound leaf on
+        // the source-kind-axis ordinal coordinate, peer of the tier-axis
+        // weld pin
+        // `provenance_map_tier_ordinal_of_agrees_with_first_tier_ordinal_at_lex_lower_bound_leaf`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().source_kind_ordinal_of_owned(&first_path),
+            r.provenance().first_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_agrees_with_last_source_kind_ordinal_at_lex_upper_bound_leaf()
+     {
+        // Upper-bound peer of the `first_source_kind_ordinal` cross-seam
+        // pin above. Together with the lower-bound peer, welds the
+        // path-keyed and bounded-lookup surfaces on both extremal leaves
+        // at the source-kind-axis ordinal coordinate.
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().source_kind_ordinal_of_owned(&last_path),
+            r.provenance().last_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_agrees_with_source_kind_ordinals_walker_at_first_leaf()
+    {
+        // Cross-seam agreement with the ordinal-axis walker
+        // `source_kind_ordinals`: at the lex-lower-bound path,
+        // `source_kind_ordinal_of(first_path)` yields the same `usize`
+        // as `source_kind_ordinals().next()`. Closes the `BTreeMap`-idiom
+        // walker-side / bound-side / path-keyed triangle on the
+        // source-kind-axis ordinal coordinate:
+        // `first_key_value().map(source_kind_ordinal)` ==
+        // `source_kind_ordinals().next()` ==
+        // `source_kind_ordinal_of(first_path)`.
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().source_kind_ordinal_of_owned(&first_path),
+            r.provenance().source_kind_ordinals().next(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_source_kind_ordinal_of_on_empty_map_is_none() {
+        // Empty case: `Option<usize>` is `None` for every path, matching
+        // the `provenance_of` empty behavior and the peer tag-side
+        // source-kind-axis and tier-axis-ordinal empty-case pins on the
+        // same underlying BTreeMap.
+        let empty = ProvenanceMap::default();
+        assert!(empty.source_kind_ordinal_of(&["a"]).is_none());
+        assert!(
+            empty
+                .source_kind_ordinal_of_owned(&["a".to_string()])
+                .is_none()
+        );
     }
 
     // -------- ProvenanceMap::paths / ::provenances projection walkers --------
