@@ -3852,6 +3852,101 @@ impl ProvenanceMap {
         self.inner.get(path).and_then(Provenance::env_prefix_kind)
     }
 
+    /// [`EnvMetadataTagKind`] precedence ordinal of the
+    /// [`ConfigSource::Env`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf in the resolved
+    /// config, OR if it names a leaf whose source is NOT
+    /// [`ConfigSource::Env`] — the Env-arm typed-sub-axis ordinal-axis
+    /// path-keyed lookup pair one const-fn seam further inland from the
+    /// typed-sub-axis pair [`Self::env_prefix_kind_of`] /
+    /// [`Self::env_prefix_kind_of_owned`] on the same closed source-axis
+    /// ternary partition ({`Defaults`, `Env`, `File`}) as the raw-payload
+    /// pair [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`],
+    /// projecting [`EnvMetadataTagKind::ordinal`] on the retained
+    /// [`EnvMetadataTagKind`] polarity.
+    ///
+    /// The ordinal-axis peer of the typed-sub-axis pair
+    /// [`Self::env_prefix_kind_of`] / [`Self::env_prefix_kind_of_owned`]
+    /// on the Env-arm coordinate, mirroring the same ordinal-axis
+    /// closure the File-arm pair [`Self::file_format_ordinal_of`] /
+    /// [`Self::file_format_ordinal_of_owned`] gives against
+    /// [`Self::file_format_of`] one arm over on the same closed
+    /// source-axis ternary partition, the source-kind-axis pair
+    /// [`Self::source_kind_ordinal_of`] /
+    /// [`Self::source_kind_ordinal_of_owned`] gives against
+    /// [`Self::source_kind_of`] one const-fn seam further out on the
+    /// sibling source-axis coordinate, and the tier-axis pair
+    /// [`Self::tier_ordinal_of`] / [`Self::tier_ordinal_of_owned`]
+    /// gives against [`Self::tier_of`] on the sibling closed-axis
+    /// coordinate. Collapses the two-hop chain
+    /// `self.env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+    /// a caller previously reached the Env-arm typed-sub-axis
+    /// precedence-ordinal through into one hop on the same underlying
+    /// [`BTreeMap`] cursor, without pulling an [`EnvMetadataTagKind`]
+    /// tag at the named leaf just to project one `usize` scalar off it.
+    ///
+    /// # Concrete callers
+    ///
+    /// A `ConfigPlane` broadcast surface encoding a wire message keyed
+    /// on each env-sourced leaf's env-name sub-axis precedence-ordinal
+    /// byte rather than the [`EnvMetadataTagKind`] tag, an attestation-
+    /// manifest counter partitioning env-sourced leaves by env-name
+    /// sub-axis precedence-ordinal without re-deriving
+    /// [`EnvMetadataTagKind::ordinal`] on each recorded kind, an
+    /// operator-facing
+    /// `/healthz/provenance/<path>/env_prefix_kind_ordinal` payload
+    /// emitting just the `usize` at one leaf, or a compile-time
+    /// attestation hasher folding the env-name sub-axis precedence-
+    /// ordinal of one named leaf — each now opens the same seam one hop
+    /// shorter than the two-hop chain, without pulling the full
+    /// [`EnvMetadataTagKind`] tag alongside just to discard it.
+    ///
+    /// # Boolean-agreement law
+    ///
+    /// `env_prefix_kind_ordinal_of(p).is_some() == is_env_of(p) ==
+    /// Some(true)` holds pointwise on the shipped constructor surface —
+    /// the ordinal-axis is total on the Env arm (every prefix, empty or
+    /// not, classifies to exactly one of [`EnvMetadataTagKind::Bare`] /
+    /// [`EnvMetadataTagKind::Prefixed`], each of which carries an
+    /// ordinal), so the ordinal-axis pair here is exactly as populated
+    /// as the typed sub-axis pair [`Self::env_prefix_kind_of`] on the
+    /// same arm. The strict-inland one-way slack the File-arm ordinal-
+    /// axis pair carries against `is_file_of` (a `File(_)` with no
+    /// recognized extension evaporates the typed sub-axis while the
+    /// boolean tag remains `true`) does NOT hold here — no env prefix,
+    /// empty or otherwise, evaporates the sub-axis. Pinned pointwise by
+    /// [`tests::provenance_map_env_prefix_kind_ordinal_of_agrees_with_is_env_of_boolean_pointwise`].
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise-equal to
+    /// `self.env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+    /// on every input by construction. Pinned by
+    /// [`tests::provenance_map_env_prefix_kind_ordinal_of_agrees_with_env_prefix_kind_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn env_prefix_kind_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.env_prefix_kind_ordinal_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::env_prefix_kind_ordinal_of`]
+    /// for callers that already carry an owned path — the Env-arm
+    /// typed-sub-axis ordinal-axis sibling of the typed-sub-axis pair
+    /// [`Self::env_prefix_kind_of`] / [`Self::env_prefix_kind_of_owned`],
+    /// forwarding straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get], projecting
+    /// [`Provenance::env_prefix_kind`] on the retained value, and
+    /// mapping through [`EnvMetadataTagKind::ordinal`] on the retained
+    /// [`EnvMetadataTagKind`] polarity, with no allocation of its own.
+    #[must_use]
+    pub fn env_prefix_kind_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::env_prefix_kind)
+            .map(EnvMetadataTagKind::ordinal)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -25546,6 +25641,56 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn env_prefix_kind_of_owned(&self, path: &[String]) -> Option<EnvMetadataTagKind> {
         self.provenance.env_prefix_kind_of_owned(path)
+    }
+
+    /// [`EnvMetadataTagKind`] precedence ordinal of the
+    /// [`ConfigSource::Env`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf, OR if it names a
+    /// leaf whose source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::env_prefix_kind_ordinal_of`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.env_prefix_kind_ordinal_of(path)`.
+    ///
+    /// The Env-arm typed-sub-axis ordinal-axis sub-projection of the
+    /// source-axis path-keyed lookup surface at the container altitude,
+    /// one const-fn seam inland from the typed-sub-axis pair
+    /// [`Self::env_prefix_kind_of`] / [`Self::env_prefix_kind_of_owned`]
+    /// on the same closed source-axis ternary partition ({`Defaults`,
+    /// `Env`, `File`}) and one arm over from the File-arm ordinal-axis
+    /// pair [`Self::file_format_ordinal_of`] /
+    /// [`Self::file_format_ordinal_of_owned`] on the same closed
+    /// source-axis ternary partition. Collapses the two-hop chain
+    /// `self.env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+    /// into one direct probe on the shared [`ProvenanceMap`] cursor
+    /// without pulling an [`EnvMetadataTagKind`] tag through the
+    /// container-altitude two-hop chain just to project one `usize`
+    /// scalar off it.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().env_prefix_kind_ordinal_of(path)` — pinned by
+    ///   [`progressive_tests::progressive_resolution_env_prefix_kind_ordinal_of_agrees_with_provenance_map_pointwise`].
+    /// - Equal to
+    ///   `self.env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+    ///   on every input by construction — the ordinal-axis sub-
+    ///   projection of the same typed-sub-axis lookup — pinned by
+    ///   [`progressive_tests::progressive_resolution_env_prefix_kind_ordinal_of_agrees_with_env_prefix_kind_of_ordinal_projection_pointwise`].
+    #[must_use]
+    pub fn env_prefix_kind_ordinal_of(&self, path: &[&str]) -> Option<usize> {
+        self.provenance.env_prefix_kind_ordinal_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::env_prefix_kind_ordinal_of`]
+    /// for callers that already carry an owned path — the container-
+    /// altitude peer of
+    /// [`ProvenanceMap::env_prefix_kind_ordinal_of_owned`], delegating
+    /// one seam down into
+    /// `self.provenance.env_prefix_kind_ordinal_of_owned(path)`.
+    #[must_use]
+    pub fn env_prefix_kind_ordinal_of_owned(&self, path: &[String]) -> Option<usize> {
+        self.provenance.env_prefix_kind_ordinal_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -60135,6 +60280,299 @@ mod progressive_tests {
         let empty = ProvenanceMap::default();
         assert!(empty.env_prefix_kind_of(&["a"]).is_none());
         assert!(empty.env_prefix_kind_of_owned(&["a".to_string()]).is_none());
+    }
+
+    // -------- ProvenanceMap::env_prefix_kind_ordinal_of Env-arm typed-sub-axis
+    // -------- ordinal-axis path-keyed lookup pair (one const-fn seam
+    // -------- further inland than the typed-sub-axis pair
+    // -------- `env_prefix_kind_of` / `env_prefix_kind_of_owned` on the
+    // -------- same closed source-axis ternary partition) ---------------
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_agrees_with_env_prefix_kind_of_ordinal_projection_pointwise()
+     {
+        // Cross-seam typed-sub-axis-vs-ordinal-axis agreement law: the
+        // Env-arm ordinal-axis path-keyed lookup projects the same
+        // `Option<usize>` on every leaf as the two-hop chain
+        // `env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+        // that the one-hop `env_prefix_kind_ordinal_of` seam exists to
+        // collapse. Peer of the same-shape agreement law
+        // `provenance_map_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise`
+        // one arm over on the sibling File-arm coordinate. Runs
+        // against a mixed Defaults/Env/File overlay stack so the
+        // pointwise agreement carries witnesses for both the `Some`
+        // (env leaf) and `None` (defaults / file leaf) sides of the
+        // ordinal-axis projection.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.provenance().env_prefix_kind_ordinal_of(&borrowed);
+            let via_tag_projection = r
+                .provenance()
+                .env_prefix_kind_of(&borrowed)
+                .map(EnvMetadataTagKind::ordinal);
+            assert_eq!(
+                via_ordinal, via_tag_projection,
+                "tag-vs-ordinal disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_agrees_with_provenance_of_env_prefix_kind_ordinal_projection_pointwise()
+     {
+        // Cross-seam value-axis-vs-ordinal-axis agreement law: the
+        // Env-arm ordinal-axis path-keyed lookup projects the same
+        // `Option<usize>` on every leaf as the three-hop chain
+        // `provenance_of(path).and_then(Provenance::env_prefix_kind).map(EnvMetadataTagKind::ordinal)`
+        // that the one-hop `env_prefix_kind_ordinal_of` seam exists to
+        // collapse. Catches a future edit that reroutes
+        // `env_prefix_kind_ordinal_of` through a different `BTreeMap`
+        // cursor than `provenance_of` uses, or projects through the
+        // wrong typed-sub-axis (`file_format` composed with an ordinal
+        // projection — the crossed-arm regression the File-arm sibling
+        // pair rules out on the other arm).
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.provenance().env_prefix_kind_ordinal_of(&borrowed);
+            let via_prov_chain = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .and_then(Provenance::env_prefix_kind)
+                .map(EnvMetadataTagKind::ordinal);
+            assert_eq!(
+                via_ordinal, via_prov_chain,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_owned_agrees_with_borrowed_form_pointwise() {
+        // Cross-form parity law on the Env-arm ordinal-axis path-keyed
+        // lookup pair: the borrowed-path seam agrees with the owned-
+        // path seam on every leaf, mirroring the same cross-form
+        // parity `env_prefix_kind_of` / `env_prefix_kind_of_owned`
+        // one const-fn seam further out on the same axis and the
+        // sibling ordinal pair `file_format_ordinal_of` /
+        // `file_format_ordinal_of_owned` carries one arm over on the
+        // sibling File-arm coordinate. Catches a future edit that
+        // decouples the two path forms.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().env_prefix_kind_ordinal_of(&borrowed),
+                r.provenance().env_prefix_kind_ordinal_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_agrees_with_is_env_of_boolean_pointwise() {
+        // Boolean-agreement law: `env_prefix_kind_ordinal_of(p).is_some() ==
+        // is_env_of(p) == Some(true)` on every hit, and when
+        // `is_env_of(p) == Some(false)` the ordinal-axis extractor
+        // returns `None`. Welds the Env-arm ordinal-axis seam to the
+        // Env-arm boolean-tag seam pointwise on the same source-axis
+        // partition. Unlike the File-arm ordinal sibling pin
+        // `provenance_map_file_format_ordinal_of_implies_file_format_of_pointwise`
+        // (which carries a strict-inland one-way slack because a
+        // `File(_)` with no recognized extension answers `Some(true)`
+        // from `is_file_of` while `file_format_of` and its ordinal
+        // projection both evaporate to `None`), the Env arm carries
+        // strict equality at the ordinal altitude too — every env-
+        // source prefix, empty or not, classifies to exactly one of
+        // `EnvMetadataTagKind::{Bare, Prefixed}`, each of which
+        // carries an ordinal, so the ordinal-axis pair is exactly as
+        // populated as the typed sub-axis pair on this arm, and
+        // therefore exactly as populated as the boolean tag on this
+        // arm. Peer of the same-shape agreement law
+        // `provenance_map_env_prefix_kind_of_agrees_with_is_env_of_boolean_pointwise`
+        // one const-fn seam further out on the same axis.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let ordinal = r.provenance().env_prefix_kind_ordinal_of(&borrowed);
+            let is_env = r.provenance().is_env_of(&borrowed);
+            assert_eq!(
+                ordinal.is_some(),
+                is_env == Some(true),
+                "ordinal-axis/tag disagreement at {borrowed:?}"
+            );
+            if is_env == Some(false) {
+                assert!(
+                    ordinal.is_none(),
+                    "ordinal-axis leaked past its arm at {borrowed:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_surfaces_prefixed_ordinal_from_prefixed_env_overlay()
+     {
+        // Distinguishing witness at the ordinal-axis altitude on the
+        // `Prefixed` polarity: an `env("PROG_", …)` overlay lands
+        // under the leaf it seeded with
+        // `Some(EnvMetadataTagKind::Prefixed.ordinal())` — the same
+        // scalar the two-hop chain
+        // `env_prefix_kind_of(&["c"]).map(EnvMetadataTagKind::ordinal)`
+        // would return but reached in one hop.
+        // `EnvMetadataTagKind::Prefixed` is at declaration position
+        // `0` in `EnvMetadataTagKind::ALL`, so the concrete pin is
+        // `Some(0)`. Peer of the same-shape distinguishing witness
+        // pin on the tag-side seam
+        // `provenance_map_env_prefix_kind_of_surfaces_prefixed_kind_from_prefixed_env_overlay`
+        // one const-fn seam further out on the same axis.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert_eq!(
+            r.provenance().env_prefix_kind_ordinal_of(&["c"]),
+            Some(EnvMetadataTagKind::Prefixed.ordinal())
+        );
+        assert_eq!(r.provenance().env_prefix_kind_ordinal_of(&["c"]), Some(0));
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_surfaces_bare_ordinal_from_bare_env_overlay() {
+        // Distinguishing witness on the OTHER polarity of the
+        // ordinal-axis: an `env("", …)` overlay (bare `Env::raw`-shape)
+        // lands under the leaf it seeded with
+        // `Some(EnvMetadataTagKind::Bare.ordinal())`.
+        // `EnvMetadataTagKind::Bare` is at declaration position `1` in
+        // `EnvMetadataTagKind::ALL`, so the concrete pin is `Some(1)`.
+        // Together with the `Prefixed` witness above, this pin closes
+        // the closed `Bare` / `Prefixed` binary partition on the Env-
+        // arm ordinal-axis one const-fn seam inland from the tag-side
+        // partition-closing witness pair
+        // `provenance_map_env_prefix_kind_of_surfaces_prefixed_kind_from_prefixed_env_overlay`
+        // and
+        // `provenance_map_env_prefix_kind_of_surfaces_bare_kind_from_bare_env_overlay`.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("", env_dict)]);
+        assert_eq!(
+            r.provenance().env_prefix_kind_ordinal_of(&["c"]),
+            Some(EnvMetadataTagKind::Bare.ordinal())
+        );
+        assert_eq!(r.provenance().env_prefix_kind_ordinal_of(&["c"]), Some(1));
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_returns_none_for_defaults_and_file_arms() {
+        // Off-arm evaporation law: leaves whose source is not
+        // `Env(_)` — the Defaults arm at the untouched leaves, the
+        // File arm at the leaf the file layer seeded — collapse to
+        // `None` at the Env-arm ordinal-axis seam, even where
+        // `source_of` would still hand out a
+        // `Some(ConfigSource::{Defaults,File(_)})`. Pins the ordinal-
+        // axis filter down to exactly the Env arm, mirroring the same
+        // off-arm pin
+        // `provenance_map_env_prefix_kind_of_returns_none_for_defaults_and_file_arms`
+        // one const-fn seam further out on the same axis.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert!(r.provenance().env_prefix_kind_ordinal_of(&["a"]).is_none());
+        assert!(r.provenance().env_prefix_kind_ordinal_of(&["b"]).is_none());
+        assert!(r.provenance().env_prefix_kind_ordinal_of(&["d"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_returns_none_for_unknown_path() {
+        // Miss path: a fabricated key names no leaf, so both forms of
+        // the Env-arm ordinal-axis lookup return `None`. Rules out a
+        // future edit that would fall back to a fixed
+        // `EnvMetadataTagKind`'s ordinal on miss instead of
+        // propagating the `None` out of `BTreeMap::get`.
+        let r = Prog::resolve_progressive();
+        assert!(
+            r.provenance()
+                .env_prefix_kind_ordinal_of(&["nope"])
+                .is_none()
+        );
+        assert!(
+            r.provenance()
+                .env_prefix_kind_ordinal_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_on_empty_map_is_none() {
+        // Empty case: the Env-arm ordinal-axis lookup returns `None`
+        // on an empty map at both forms, mirroring the same empty-map
+        // behaviour every path-keyed pair on the same source-axis
+        // lookup surface carries.
+        let empty = ProvenanceMap::default();
+        assert!(empty.env_prefix_kind_ordinal_of(&["a"]).is_none());
+        assert!(
+            empty
+                .env_prefix_kind_ordinal_of_owned(&["a".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_ordinal_of_covers_every_env_metadata_tag_kind_variant() {
+        // Payload-identity law across the closed `EnvMetadataTagKind`
+        // axis: for every shipped `EnvMetadataTagKind` variant, the
+        // ordinal-axis seam returns exactly the `usize`
+        // `EnvMetadataTagKind::ordinal` projects on the
+        // `EnvMetadataTagKind` the recorded env prefix classifies to.
+        // Rules out a hand-rolled ordinal mapping that would drift
+        // from `EnvMetadataTagKind::ordinal` if the declaration order
+        // in `EnvMetadataTagKind::ALL` shifts or a new variant lands.
+        // Peer of the tag-side counterpart pins
+        // `provenance_map_env_prefix_kind_of_surfaces_prefixed_kind_from_prefixed_env_overlay`
+        // and
+        // `provenance_map_env_prefix_kind_of_surfaces_bare_kind_from_bare_env_overlay`
+        // one const-fn seam further out on the same axis, closed
+        // across the whole `EnvMetadataTagKind::ALL` slice.
+        for (prefix, expected) in [
+            ("PROG_", EnvMetadataTagKind::Prefixed),
+            ("", EnvMetadataTagKind::Bare),
+        ] {
+            let mut env_dict = Dict::new();
+            env_dict.insert("c".to_owned(), Value::from(77_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env(prefix, env_dict)]);
+            assert_eq!(
+                r.provenance().env_prefix_kind_ordinal_of(&["c"]),
+                Some(expected.ordinal()),
+                "env_prefix_kind_ordinal_of drifted from EnvMetadataTagKind::ordinal on prefix {prefix:?}",
+            );
+        }
     }
 
     // -------- ProvenanceMap::first_provenance / ::last_provenance value-axis bounds --------
@@ -107730,6 +108168,121 @@ mod progressive_tests {
             r.env_prefix_kind_of_owned(&miss),
             r.provenance().env_prefix_kind_of_owned(&miss),
         );
+    }
+
+    // -------- ProgressiveResolution::env_prefix_kind_ordinal_of Env-arm
+    // -------- typed-sub-axis ordinal-axis path-keyed lookup pair
+    // -------- (container-altitude peer of
+    // -------- ProvenanceMap::env_prefix_kind_ordinal_of / _owned, one
+    // -------- const-fn seam further inland than the typed-sub-axis pair
+    // -------- `env_prefix_kind_of` / `env_prefix_kind_of_owned` on the
+    // -------- same closed source-axis ternary partition) -----------
+
+    #[test]
+    fn progressive_resolution_env_prefix_kind_ordinal_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude Env-arm
+        // ordinal-axis lookup delegate: the container-altitude method
+        // yields the same `Option<usize>` as
+        // `res.provenance().env_prefix_kind_ordinal_of(path)` on every
+        // path the resolved config carries and on a fabricated miss
+        // path. Catches a future edit that reroutes
+        // `ProgressiveResolution::env_prefix_kind_ordinal_of` through a
+        // different `ProvenanceMap` accessor than the primitive peer it
+        // delegates to (a `file_format_ordinal_of` crossed-arm cursor
+        // by mistake — the crossed-arm regression the peer File-arm
+        // pin rules out on the other arm). Peer of the same-shape
+        // delegation law
+        // `progressive_resolution_file_format_ordinal_of_agrees_with_provenance_map_pointwise`
+        // one arm over on the sibling File-arm coordinate.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.env_prefix_kind_ordinal_of(&borrowed);
+            let via_prov = r.provenance().env_prefix_kind_ordinal_of(&borrowed);
+            assert_eq!(via_res, via_prov, "disagreement at {borrowed:?}");
+        }
+        assert!(
+            r.env_prefix_kind_ordinal_of(&["definitely_not_a_field"])
+                .is_none()
+        );
+        assert_eq!(
+            r.env_prefix_kind_ordinal_of(&["definitely_not_a_field"]),
+            r.provenance()
+                .env_prefix_kind_ordinal_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_env_prefix_kind_ordinal_of_owned_agrees_with_provenance_map_pointwise()
+     {
+        // Allocation-free-peer law on the container-altitude Env-arm
+        // ordinal-axis lookup pair: the owned-path seam yields the same
+        // `Option<usize>` as
+        // `res.provenance().env_prefix_kind_ordinal_of_owned(path)` on
+        // every path the resolved config carries and on a fabricated
+        // miss path. Catches a future edit that reroutes
+        // `ProgressiveResolution::env_prefix_kind_ordinal_of_owned`
+        // through the borrowed variant (reintroducing the per-lookup
+        // `Vec<String>` allocation the owned form exists to avoid) or
+        // through a different `ProvenanceMap` accessor.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.env_prefix_kind_ordinal_of_owned(&owned);
+            let via_prov = r.provenance().env_prefix_kind_ordinal_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.env_prefix_kind_ordinal_of_owned(&miss).is_none());
+        assert_eq!(
+            r.env_prefix_kind_ordinal_of_owned(&miss),
+            r.provenance().env_prefix_kind_ordinal_of_owned(&miss),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_env_prefix_kind_ordinal_of_agrees_with_env_prefix_kind_of_ordinal_projection_pointwise()
+     {
+        // One const-fn seam further out on the same axis at the
+        // container altitude: the ordinal-axis path-keyed lookup yields
+        // the same `Option<usize>` as
+        // `res.env_prefix_kind_of(path).map(EnvMetadataTagKind::ordinal)`
+        // on every leaf by construction. Welds the tag-side and
+        // ordinal-side path-keyed seams on the Env-arm typed sub-axis
+        // pointwise on every leaf the resolved container carries. Peer
+        // of the same-shape agreement law
+        // `progressive_resolution_file_format_ordinal_of_agrees_with_file_format_of_ordinal_projection_pointwise`
+        // one arm over on the sibling File-arm coordinate.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_ordinal = r.env_prefix_kind_ordinal_of(&borrowed);
+            let via_tag_projection = r
+                .env_prefix_kind_of(&borrowed)
+                .map(EnvMetadataTagKind::ordinal);
+            assert_eq!(
+                via_ordinal, via_tag_projection,
+                "tag-vs-ordinal disagreement at {borrowed:?}"
+            );
+        }
     }
 
     // -------- ProgressiveResolution sizing pair
