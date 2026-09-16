@@ -9492,7 +9492,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.957";
+        version = "0.1.958";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -11078,9 +11078,9 @@ rec {
       };
       "unicode-ident" = rec {
         crateName = "unicode-ident";
-        version = "1.0.24";
+        version = "1.0.25";
         edition = "2021";
-        sha256 = "0xfs8y1g7syl2iykji8zk5hgfi5jw819f5zsrbaxmlzwsly33r76";
+        sha256 = "17sixcpvmmxz60pywjfbx0kzhpjwljl4ls6khw4wnxwdyrfa2wmb";
         libName = "unicode_ident";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
