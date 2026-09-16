@@ -3580,6 +3580,93 @@ impl ProvenanceMap {
         self.inner.get(path).and_then(Provenance::as_env_prefix)
     }
 
+    /// Typed [`crate::discovery::Format`] sub-axis polarity of the
+    /// [`ConfigSource::File`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf in the resolved
+    /// config, OR if it names a leaf whose source is NOT
+    /// [`ConfigSource::File`], OR if it names a [`ConfigSource::File`]
+    /// leaf whose recorded path has no recognized file extension —
+    /// the typed File-arm typed-sub-axis path-keyed lookup pair on the
+    /// same closed source-axis ternary partition
+    /// ({`Defaults`, `Env`, `File`}) as the raw-payload pair
+    /// [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`],
+    /// one seam inland from the raw `&Path` payload extractor, stripping
+    /// the payload to the typed [`crate::discovery::Format`] sub-axis
+    /// tag ([`Format::Yaml`] / [`Format::Toml`] / [`Format::Lisp`] /
+    /// [`Format::Nix`] / [`Format::Blue`]) declared by the file's
+    /// extension.
+    ///
+    /// The typed File-arm typed-sub-axis sibling of the raw-payload
+    /// File-arm pair [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`]:
+    /// where the raw-payload pair hands out the recorded `&Path`, this
+    /// seam strips the payload to its typed [`crate::discovery::Format`]
+    /// sub-axis polarity, and where the raw-payload pair still names
+    /// every [`ConfigSource::File`] leaf (regardless of extension
+    /// recognition), this seam evaporates every unrecognized-extension
+    /// or extensionless leaf to [`None`] just as the primitive-side
+    /// [`Provenance::file_format`] does one altitude down. Collapses
+    /// the two-hop chain
+    /// `self.provenance_of(path).and_then(Provenance::file_format)` a
+    /// caller previously reached the typed [`crate::discovery::Format`]
+    /// sub-axis polarity through into one hop on the same underlying
+    /// [`BTreeMap`] cursor.
+    ///
+    /// Peer of the [`Provenance::file_format`] typed-sub-axis
+    /// extractor one altitude down — this is exactly its path-keyed
+    /// lift on the [`ProvenanceMap`] cursor. Env-arm peer of the
+    /// pending typed-sub-axis extractor `env_prefix_kind_of` on the
+    /// same closed source-axis ternary partition one arm over.
+    ///
+    /// # Concrete callers
+    ///
+    /// A `/healthz/provenance` file-format echo endpoint returning the
+    /// typed [`crate::discovery::Format`] behind ONE named leaf's
+    /// value, an audit-trail canonicalizer emitting the typed format
+    /// tag rather than a raw path string, an operator-facing config
+    /// migration diagnostic keyed on the typed format sub-axis (e.g.
+    /// "which leaves came from a `.yaml` file?"): each now opens the
+    /// same seam one hop shorter than the `provenance_of` chain,
+    /// without pulling the full [`Provenance`] alongside just to
+    /// discard.
+    ///
+    /// # One-way implication with `is_file_of`
+    ///
+    /// `file_format_of(p).is_some()` implies
+    /// `is_file_of(p) == Some(true)`, but the converse does NOT hold:
+    /// a [`ConfigSource::File`] leaf whose recorded path has no
+    /// recognized extension answers `Some(true)` from `is_file_of(p)`
+    /// while `file_format_of(p)` still evaporates to [`None`],
+    /// mirroring the same one-way implication
+    /// [`Provenance::file_format`] carries against
+    /// [`Provenance::is_file`] one altitude down. Pinned pointwise by
+    /// [`tests::provenance_map_file_format_of_implies_is_file_of_pointwise`].
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).and_then(Provenance::file_format)`
+    /// on every input by construction. Pinned by
+    /// [`tests::provenance_map_file_format_of_agrees_with_provenance_of_file_format_projection_pointwise`].
+    #[must_use]
+    pub fn file_format_of(&self, path: &[&str]) -> Option<crate::discovery::Format> {
+        self.file_format_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::file_format_of`] for callers
+    /// that already carry an owned path — the File-arm typed-sub-axis
+    /// sibling of the payload-bearing File-arm pair
+    /// [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`],
+    /// filtering to the `File(PathBuf)` arm on the same underlying
+    /// [`BTreeMap`] cursor and stripping the payload to its typed
+    /// [`crate::discovery::Format`] sub-axis polarity. Forwards
+    /// straight into [`BTreeMap::get`][std::collections::BTreeMap::get]
+    /// and projects the [`Provenance::file_format`] accessor on the
+    /// retained value, with no allocation of its own.
+    #[must_use]
+    pub fn file_format_of_owned(&self, path: &[String]) -> Option<crate::discovery::Format> {
+        self.inner.get(path).and_then(Provenance::file_format)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -25143,6 +25230,45 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn as_env_prefix_of_owned(&self, path: &[String]) -> Option<&str> {
         self.provenance.as_env_prefix_of_owned(path)
+    }
+
+    /// Typed [`crate::discovery::Format`] sub-axis polarity of the
+    /// [`ConfigSource::File`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf, OR if it names a
+    /// leaf whose source is NOT [`ConfigSource::File`], OR if it names
+    /// a [`ConfigSource::File`] leaf whose recorded path has no
+    /// recognized file extension — the container-altitude peer of
+    /// [`ProvenanceMap::file_format_of`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.file_format_of(path)`.
+    ///
+    /// The typed File-arm typed-sub-axis sub-projection of the
+    /// source-axis path-keyed lookup surface at the container altitude,
+    /// one seam inland from the raw-payload File-arm pair
+    /// [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`] on
+    /// the same closed source-axis ternary partition
+    /// ({`Defaults`, `Env`, `File`}). Together with the raw-payload
+    /// File-arm pair, the raw-payload Env-arm pair
+    /// [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`],
+    /// the payload-full pair [`Self::source_of`] /
+    /// [`Self::source_of_owned`], and the boolean-tag triplet
+    /// [`Self::is_defaults_of`] / [`Self::is_env_of`] /
+    /// [`Self::is_file_of`], gives callers a full source-axis lookup
+    /// surface at the container altitude at every granularity
+    /// (payload-full, per-arm raw payload, per-arm typed sub-axis
+    /// polarity, per-arm boolean tag).
+    #[must_use]
+    pub fn file_format_of(&self, path: &[&str]) -> Option<crate::discovery::Format> {
+        self.provenance.file_format_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::file_format_of`] for callers
+    /// that already carry an owned path — the container-altitude peer
+    /// of [`ProvenanceMap::file_format_of_owned`], delegating one seam
+    /// down into `self.provenance.file_format_of_owned(path)`.
+    #[must_use]
+    pub fn file_format_of_owned(&self, path: &[String]) -> Option<crate::discovery::Format> {
+        self.provenance.file_format_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -58997,6 +59123,220 @@ mod progressive_tests {
         env_dict.insert("c".to_owned(), Value::from(77_u32));
         let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("", env_dict)]);
         assert_eq!(r.provenance().as_env_prefix_of(&["c"]), Some(""));
+    }
+
+    // -------- ProvenanceMap::file_format_of File-arm typed-sub-axis path-keyed lookup --------
+
+    #[test]
+    fn provenance_map_file_format_of_agrees_with_provenance_of_file_format_projection_pointwise() {
+        // Cross-seam value-axis-vs-typed-sub-axis agreement law: the
+        // File-arm typed-sub-axis path-keyed lookup projects the same
+        // `Option<Format>` on every leaf as the two-hop chain
+        // `provenance_of(path).and_then(Provenance::file_format)` that
+        // the one-hop `file_format_of` seam exists to collapse. Peer
+        // of the same-shape agreement law
+        // `provenance_map_as_file_path_of_agrees_with_provenance_of_as_file_path_projection_pointwise`
+        // on the raw-payload File-arm pair one seam over, and of
+        // `provenance_map_as_env_prefix_of_agrees_with_provenance_of_as_env_prefix_projection_pointwise`
+        // one arm over on the same closed source-axis ternary partition.
+        // Runs against a mixed Defaults/Env/File overlay stack so the
+        // pointwise agreement carries witnesses for both the `Some` and
+        // `None` sides of the typed-sub-axis projection.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_sub_axis = r.provenance().file_format_of(&borrowed);
+            let via_value_axis = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .and_then(Provenance::file_format);
+            assert_eq!(
+                via_sub_axis, via_value_axis,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_owned_agrees_with_borrowed_form_pointwise() {
+        // Cross-form parity law on the File-arm typed-sub-axis
+        // path-keyed lookup pair: the borrowed-path seam agrees with
+        // the owned-path seam on every leaf, mirroring the same
+        // cross-form parity `source_of` / `source_of_owned` and the
+        // raw-payload File-arm pair carry on the same source-axis
+        // lookup surface.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().file_format_of(&borrowed),
+                r.provenance().file_format_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_implies_is_file_of_pointwise() {
+        // One-way implication law: `file_format_of(p).is_some()`
+        // implies `is_file_of(p) == Some(true)`, mirroring the same
+        // one-way implication `Provenance::file_format` carries against
+        // `Provenance::is_file` one altitude down. The converse does
+        // not hold — a `File(_)` leaf with no recognized extension
+        // still answers `Some(true)` from `is_file_of` while
+        // `file_format_of` evaporates to `None`. Peer of the primitive
+        // pin `provenance_file_format_implies_is_file_pointwise` one
+        // altitude down, and one seam inland from the boolean-agreement
+        // law that binds the raw-payload File-arm pair
+        // `as_file_path_of` to `is_file_of` with equality (rather than
+        // implication) in the other direction. Also welds pointwise to
+        // the raw-payload seam: whenever `file_format_of(p) == Some(_)`,
+        // `as_file_path_of(p)` must also be `Some(_)` (the typed sub-axis
+        // is at most as populated as the raw payload it strips).
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            if r.provenance().file_format_of(&borrowed).is_some() {
+                assert_eq!(
+                    r.provenance().is_file_of(&borrowed),
+                    Some(true),
+                    "typed-sub-axis leaked past its arm at {borrowed:?}",
+                );
+                assert!(
+                    r.provenance().as_file_path_of(&borrowed).is_some(),
+                    "typed-sub-axis populated where raw payload evaporated at {borrowed:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_surfaces_typed_format_from_file_overlay() {
+        // Distinguishing witness at the typed-sub-axis altitude: a
+        // `file("/etc/prog.yaml", …)` overlay lands under the leaf it
+        // seeded with `Some(Format::Yaml)`, the typed `Format` the
+        // recorded extension declares — `as_file_path_of` would hand
+        // out `Some(Path)` and lose the typed sub-axis polarity, and
+        // `is_file_of` would collapse further to `Some(true)`. This
+        // pin is the load-bearing distinction between the typed-sub-axis
+        // seam and the raw-payload / boolean-tag seams on the same arm.
+        // Mirrors the same distinguishing witness
+        // `provenance_map_as_file_path_of_surfaces_file_payload_from_file_overlay`
+        // carries one seam over on the raw-payload File-arm pair.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert_eq!(
+            r.provenance().file_format_of(&["b"]),
+            Some(crate::discovery::Format::Yaml)
+        );
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_returns_none_for_defaults_and_env_arms() {
+        // Off-arm evaporation law: leaves whose source is not
+        // `File(_)` — the Defaults arm at the untouched leaves, the Env
+        // arm at the leaf the env layer seeded — collapse to `None` at
+        // the File-arm typed-sub-axis seam, even where `source_of` would
+        // still hand out a `Some(ConfigSource::{Defaults,Env(_)})`.
+        // Pins the typed-sub-axis filter down to exactly the File arm.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert!(r.provenance().file_format_of(&["a"]).is_none());
+        assert!(r.provenance().file_format_of(&["c"]).is_none());
+        assert!(r.provenance().file_format_of(&["d"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_returns_none_for_file_with_unrecognized_extension() {
+        // Load-bearing distinction from the raw-payload File-arm pair:
+        // a `File(_)` leaf whose recorded path has no recognized file
+        // extension answers `Some(_)` from `is_file_of` and `Some(&Path)`
+        // from `as_file_path_of`, but this typed-sub-axis seam still
+        // evaporates to `None` because `Format::from_path` on the
+        // recorded path returns `None` — matching the same primitive
+        // behaviour `Provenance::file_format` carries one altitude down
+        // on a `File(_)` with no recognized extension. This is the
+        // strictly-inland one-way slack the implication pin above
+        // pins from the other direction.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.conf", file_dict)]);
+        assert_eq!(r.provenance().is_file_of(&["b"]), Some(true));
+        assert!(r.provenance().as_file_path_of(&["b"]).is_some());
+        assert!(r.provenance().file_format_of(&["b"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_returns_none_for_unknown_path() {
+        // Miss path: a fabricated key names no leaf, so both forms of
+        // the File-arm typed-sub-axis lookup return `None`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().file_format_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .file_format_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_on_empty_map_is_none() {
+        // Empty case: the File-arm typed-sub-axis lookup returns `None`
+        // on an empty map at both forms, mirroring the same empty-map
+        // behaviour `path_of` / `source_of` and the raw-payload / boolean-
+        // tag pairs on the same source-axis lookup surface carry.
+        let empty = ProvenanceMap::default();
+        assert!(empty.file_format_of(&["a"]).is_none());
+        assert!(empty.file_format_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_file_format_of_recognizes_every_shipped_extension() {
+        // Payload-identity law across the closed `Format` axis: for
+        // every shipped `Format` variant, the typed-sub-axis seam
+        // returns exactly the `Format` `Format::from_path` would
+        // project on the recorded path. Rules out a hand-rolled
+        // sub-axis mapping that would drift from `Format::from_path`
+        // if a new extension arm lands. Peer of
+        // `provenance_file_format_preserves_inner_format_verbatim` one
+        // altitude down on the primitive extractor this seam lifts.
+        for (path, expected) in [
+            ("/etc/prog.yaml", crate::discovery::Format::Yaml),
+            ("/etc/prog.yml", crate::discovery::Format::Yaml),
+            ("/etc/prog.toml", crate::discovery::Format::Toml),
+        ] {
+            let mut file_dict = Dict::new();
+            file_dict.insert("b".to_owned(), Value::from(99_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            assert_eq!(
+                r.provenance().file_format_of(&["b"]),
+                Some(expected),
+                "file_format_of drifted from Format::from_path on {path:?}",
+            );
+        }
     }
 
     // -------- ProvenanceMap::first_provenance / ::last_provenance value-axis bounds --------
@@ -106326,6 +106666,79 @@ mod progressive_tests {
             r.provenance()
                 .as_env_prefix_of_owned(&miss)
                 .map(str::to_owned),
+        );
+    }
+
+    // -------- ProgressiveResolution::file_format_of File-arm typed-sub-axis path-keyed lookup --------
+
+    #[test]
+    fn progressive_resolution_file_format_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // File-arm typed-sub-axis lookup delegate: the container-altitude
+        // method yields the same `Option<Format>` as
+        // `res.provenance().file_format_of(path)` on every path the
+        // resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::file_format_of` through a different
+        // `ProvenanceMap` accessor than the primitive peer it delegates
+        // to (a `source_of`-then-projection chain by mistake, an
+        // `entry_of` cursor) that would break the shared-lookup
+        // contract at the typed-sub-axis seam. Peer of the same-shape
+        // delegation law
+        // `progressive_resolution_as_file_path_of_agrees_with_provenance_map_pointwise`
+        // one seam over on the raw-payload File-arm pair, and one arm
+        // over from
+        // `progressive_resolution_as_env_prefix_of_agrees_with_provenance_map_pointwise`
+        // on the same closed source-axis ternary partition.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.file_format_of(&borrowed);
+            let via_prov = r.provenance().file_format_of(&borrowed);
+            assert_eq!(via_res, via_prov, "disagreement at {borrowed:?}");
+        }
+        assert!(r.file_format_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.file_format_of(&["definitely_not_a_field"]),
+            r.provenance().file_format_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_file_format_of_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude File-arm
+        // typed-sub-axis lookup pair: the owned-path seam yields the
+        // same `Option<Format>` as
+        // `res.provenance().file_format_of_owned(path)` on every path
+        // the resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::file_format_of_owned` through the
+        // borrowed variant (reintroducing the per-lookup `Vec<String>`
+        // allocation the owned form exists to avoid) or through a
+        // different `ProvenanceMap` accessor.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.file_format_of_owned(&owned);
+            let via_prov = r.provenance().file_format_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.file_format_of_owned(&miss).is_none());
+        assert_eq!(
+            r.file_format_of_owned(&miss),
+            r.provenance().file_format_of_owned(&miss),
         );
     }
 
