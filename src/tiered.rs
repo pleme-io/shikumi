@@ -3667,6 +3667,99 @@ impl ProvenanceMap {
         self.inner.get(path).and_then(Provenance::file_format)
     }
 
+    /// Typed [`EnvMetadataTagKind`] sub-axis polarity of the
+    /// [`ConfigSource::Env`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf in the resolved
+    /// config, OR if it names a leaf whose source is NOT
+    /// [`ConfigSource::Env`] — the typed Env-arm typed-sub-axis
+    /// path-keyed lookup pair on the same closed source-axis ternary
+    /// partition ({`Defaults`, `Env`, `File`}) as the raw-payload pair
+    /// [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`],
+    /// one seam inland from the raw `&str` prefix payload extractor,
+    /// stripping the payload to the typed [`EnvMetadataTagKind`]
+    /// sub-axis tag ([`EnvMetadataTagKind::Bare`] on the empty prefix
+    /// / [`EnvMetadataTagKind::Prefixed`] on every non-empty prefix)
+    /// declared by the recorded prefix's emptiness.
+    ///
+    /// The typed Env-arm typed-sub-axis sibling of the raw-payload
+    /// Env-arm pair [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`]:
+    /// where the raw-payload pair hands out the recorded `&str`
+    /// prefix, this seam strips the payload to its typed
+    /// [`EnvMetadataTagKind`] sub-axis polarity, mirroring
+    /// [`Provenance::env_prefix_kind`] one altitude down. Collapses
+    /// the two-hop chain
+    /// `self.provenance_of(path).and_then(Provenance::env_prefix_kind)`
+    /// a caller previously reached the typed
+    /// [`EnvMetadataTagKind`] sub-axis polarity through into one hop
+    /// on the same underlying [`BTreeMap`] cursor.
+    ///
+    /// Peer of the [`Provenance::env_prefix_kind`] typed-sub-axis
+    /// extractor one altitude down — this is exactly its path-keyed
+    /// lift on the [`ProvenanceMap`] cursor. File-arm peer of the
+    /// typed-sub-axis extractor pair [`Self::file_format_of`] /
+    /// [`Self::file_format_of_owned`] on the same closed source-axis
+    /// ternary partition one arm over.
+    ///
+    /// # Concrete callers
+    ///
+    /// A `ConfigPlane` broadcast surface encoding a wire message keyed
+    /// on each env-sourced leaf's env-name sub-axis (`bare` vs
+    /// `prefixed`) rather than the raw prefix string, an
+    /// attestation-manifest counter partitioning env-sourced leaves by
+    /// the same sub-axis without re-deriving `is_empty` on each
+    /// prefix, an operator-facing config-migration diagnostic keyed on
+    /// the typed sub-axis tag rather than the raw prefix (e.g. "which
+    /// leaves came from a bare-shape `Env::raw` overlay?"): each now
+    /// opens the same seam one hop shorter than the two-hop
+    /// `provenance_of`-then-projection chain, without pulling the full
+    /// [`Provenance`] alongside just to discard the tier / raw-prefix
+    /// halves.
+    ///
+    /// # Boolean-agreement law
+    ///
+    /// `env_prefix_kind_of(p).is_some() == is_env_of(p) == Some(true)`
+    /// holds pointwise on the shipped constructor surface — the typed
+    /// sub-axis is total on the Env arm (every prefix, empty or not,
+    /// classifies to exactly one of [`EnvMetadataTagKind::Bare`] /
+    /// [`EnvMetadataTagKind::Prefixed`]), so the sub-axis pair here is
+    /// exactly as populated as the raw-payload pair
+    /// [`Self::as_env_prefix_of`] on the same arm, mirroring the same
+    /// boolean-agreement law [`Provenance::env_prefix_kind`] carries
+    /// against [`Provenance::is_env`] one altitude down. Pinned
+    /// pointwise by
+    /// [`tests::provenance_map_env_prefix_kind_of_agrees_with_is_env_of_boolean_pointwise`].
+    /// The strict-inland one-way slack the File-arm pair carries
+    /// against `is_file_of` (a `File(_)` with no recognized extension
+    /// evaporates the typed sub-axis while the boolean tag remains
+    /// `true`) does NOT hold here — no env prefix, empty or otherwise,
+    /// evaporates the sub-axis.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).and_then(Provenance::env_prefix_kind)`
+    /// on every input by construction. Pinned by
+    /// [`tests::provenance_map_env_prefix_kind_of_agrees_with_provenance_of_env_prefix_kind_projection_pointwise`].
+    #[must_use]
+    pub fn env_prefix_kind_of(&self, path: &[&str]) -> Option<EnvMetadataTagKind> {
+        self.env_prefix_kind_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::env_prefix_kind_of`] for
+    /// callers that already carry an owned path — the Env-arm
+    /// typed-sub-axis sibling of the payload-bearing Env-arm pair
+    /// [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`],
+    /// filtering to the `Env(String)` arm on the same underlying
+    /// [`BTreeMap`] cursor and stripping the payload to its typed
+    /// [`EnvMetadataTagKind`] sub-axis polarity. Forwards straight
+    /// into [`BTreeMap::get`][std::collections::BTreeMap::get] and
+    /// projects the [`Provenance::env_prefix_kind`] accessor on the
+    /// retained value, with no allocation of its own.
+    #[must_use]
+    pub fn env_prefix_kind_of_owned(&self, path: &[String]) -> Option<EnvMetadataTagKind> {
+        self.inner.get(path).and_then(Provenance::env_prefix_kind)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -25269,6 +25362,46 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn file_format_of_owned(&self, path: &[String]) -> Option<crate::discovery::Format> {
         self.provenance.file_format_of_owned(path)
+    }
+
+    /// Typed [`EnvMetadataTagKind`] sub-axis polarity of the
+    /// [`ConfigSource::Env`] arm at the effective leaf named by dotted
+    /// `path`, or [`None`] if `path` names no leaf, OR if it names a
+    /// leaf whose source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::env_prefix_kind_of`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.env_prefix_kind_of(path)`.
+    ///
+    /// The typed Env-arm typed-sub-axis sub-projection of the source-
+    /// axis path-keyed lookup surface at the container altitude, one
+    /// seam inland from the raw-payload Env-arm pair
+    /// [`Self::as_env_prefix_of`] / [`Self::as_env_prefix_of_owned`]
+    /// on the same closed source-axis ternary partition
+    /// ({`Defaults`, `Env`, `File`}). Together with the raw-payload
+    /// Env-arm pair, the raw-payload File-arm pair
+    /// [`Self::as_file_path_of`] / [`Self::as_file_path_of_owned`],
+    /// the typed File-arm sub-axis pair [`Self::file_format_of`] /
+    /// [`Self::file_format_of_owned`], the payload-full pair
+    /// [`Self::source_of`] / [`Self::source_of_owned`], and the
+    /// boolean-tag triplet [`Self::is_defaults_of`] /
+    /// [`Self::is_env_of`] / [`Self::is_file_of`], gives callers a
+    /// full source-axis lookup surface at the container altitude at
+    /// every granularity (payload-full, per-arm raw payload, per-arm
+    /// typed sub-axis polarity, per-arm boolean tag).
+    #[must_use]
+    pub fn env_prefix_kind_of(&self, path: &[&str]) -> Option<EnvMetadataTagKind> {
+        self.provenance.env_prefix_kind_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::env_prefix_kind_of`] for
+    /// callers that already carry an owned path — the container-
+    /// altitude peer of [`ProvenanceMap::env_prefix_kind_of_owned`],
+    /// delegating one seam down into
+    /// `self.provenance.env_prefix_kind_of_owned(path)`.
+    #[must_use]
+    pub fn env_prefix_kind_of_owned(&self, path: &[String]) -> Option<EnvMetadataTagKind> {
+        self.provenance.env_prefix_kind_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -59337,6 +59470,255 @@ mod progressive_tests {
                 "file_format_of drifted from Format::from_path on {path:?}",
             );
         }
+    }
+
+    // -------- ProvenanceMap::env_prefix_kind_of Env-arm typed-sub-axis path-keyed lookup --------
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_agrees_with_provenance_of_env_prefix_kind_projection_pointwise()
+     {
+        // Cross-seam value-axis-vs-typed-sub-axis agreement law: the
+        // Env-arm typed-sub-axis path-keyed lookup projects the same
+        // `Option<EnvMetadataTagKind>` on every leaf as the two-hop
+        // chain
+        // `provenance_of(path).and_then(Provenance::env_prefix_kind)`
+        // that the one-hop `env_prefix_kind_of` seam exists to
+        // collapse. Peer of the same-shape agreement law
+        // `provenance_map_file_format_of_agrees_with_provenance_of_file_format_projection_pointwise`
+        // one arm over on the same closed source-axis ternary
+        // partition, and of the raw-payload agreement law
+        // `provenance_map_as_env_prefix_of_agrees_with_provenance_of_as_env_prefix_projection_pointwise`
+        // one seam inland from the typed sub-axis on the same arm.
+        // Runs against a mixed Defaults/Env/File overlay stack so the
+        // pointwise agreement carries witnesses for both the `Some`
+        // and `None` sides of the typed-sub-axis projection.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_sub_axis = r.provenance().env_prefix_kind_of(&borrowed);
+            let via_value_axis = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .and_then(Provenance::env_prefix_kind);
+            assert_eq!(
+                via_sub_axis, via_value_axis,
+                "disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_owned_agrees_with_borrowed_form_pointwise() {
+        // Cross-form parity law on the Env-arm typed-sub-axis
+        // path-keyed lookup pair: the borrowed-path seam agrees with
+        // the owned-path seam on every leaf, mirroring the same
+        // cross-form parity `source_of` / `source_of_owned` and the
+        // raw-payload Env-arm pair carry on the same source-axis
+        // lookup surface.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().env_prefix_kind_of(&borrowed),
+                r.provenance().env_prefix_kind_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_agrees_with_is_env_of_boolean_pointwise() {
+        // Boolean-agreement law: `env_prefix_kind_of(p).is_some() ==
+        // is_env_of(p) == Some(true)` on every hit, and when
+        // `is_env_of(p) == Some(false)` the typed-sub-axis extractor
+        // returns `None`. Welds the Env-arm typed-sub-axis seam to
+        // the Env-arm boolean-tag seam pointwise on the same source-
+        // axis partition — and unlike the File-arm sibling
+        // `provenance_map_file_format_of_implies_is_file_of_pointwise`
+        // (which carries a strict-inland one-way slack because a
+        // `File(_)` with no recognized extension answers `Some(true)`
+        // from `is_file_of` while `file_format_of` still evaporates
+        // to `None`), the Env arm carries strict equality: every
+        // env-source prefix, empty or not, classifies to exactly one
+        // of `EnvMetadataTagKind::{Bare, Prefixed}`, so the typed
+        // sub-axis is exactly as populated as the boolean tag on
+        // this arm. Peer of the same-shape agreement law
+        // `provenance_as_env_prefix_agrees_with_is_env_pointwise`
+        // one altitude down on the primitive extractor this seam
+        // lifts, and of
+        // `provenance_map_as_env_prefix_of_agrees_with_is_env_of_boolean_pointwise`
+        // one seam over on the raw-payload Env-arm pair.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let sub_axis = r.provenance().env_prefix_kind_of(&borrowed);
+            let is_env = r.provenance().is_env_of(&borrowed);
+            assert_eq!(
+                sub_axis.is_some(),
+                is_env == Some(true),
+                "typed-sub-axis/tag disagreement at {borrowed:?}"
+            );
+            if is_env == Some(false) {
+                assert!(
+                    sub_axis.is_none(),
+                    "typed-sub-axis leaked past its arm at {borrowed:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_agrees_with_as_env_prefix_of_population_pointwise() {
+        // Env-arm intra-arm population equality: on the Env arm the
+        // typed sub-axis and the raw-payload seam are EQUALLY
+        // populated — every `Env(_)` leaf answers `Some(_)` from
+        // BOTH `env_prefix_kind_of` (with `Bare` on the empty prefix
+        // / `Prefixed` on every non-empty prefix) AND
+        // `as_env_prefix_of` (with the borrowed `&str` prefix
+        // verbatim), so `env_prefix_kind_of(p).is_some() ==
+        // as_env_prefix_of(p).is_some()` holds pointwise. This is
+        // the load-bearing distinction from the File-arm sibling
+        // `provenance_map_file_format_of_implies_is_file_of_pointwise`,
+        // which carries strict-inland one-way implication because
+        // `file_format_of` evaporates on unrecognized extensions
+        // while `as_file_path_of` still hands out the recorded
+        // `&Path`. Runs across bare + prefixed + non-Env stacks so
+        // both `Some` sides and the `None` off-arm side witness the
+        // equality.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut bare_env_dict = Dict::new();
+        bare_env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let mut prefixed_env_dict = Dict::new();
+        prefixed_env_dict.insert("d".to_owned(), Value::from(55_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("", bare_env_dict),
+            ProgressiveLayer::env("PROG_", prefixed_env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().env_prefix_kind_of(&borrowed).is_some(),
+                r.provenance().as_env_prefix_of(&borrowed).is_some(),
+                "typed-sub-axis and raw-payload disagreed on Env-arm population at {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_surfaces_prefixed_kind_from_prefixed_env_overlay() {
+        // Distinguishing witness at the typed-sub-axis altitude: an
+        // `env("PROG_", …)` overlay lands under the leaf it seeded
+        // with `Some(EnvMetadataTagKind::Prefixed)`, the typed
+        // `EnvMetadataTagKind` the recorded non-empty prefix declares
+        // — `as_env_prefix_of` would hand out `Some("PROG_")` and
+        // preserve the raw prefix bytes, and `is_env_of` would
+        // collapse further to `Some(true)`. This pin is the load-
+        // bearing distinction between the typed-sub-axis seam and
+        // the raw-payload / boolean-tag seams on the same arm,
+        // mirroring the same distinguishing witness
+        // `provenance_map_file_format_of_surfaces_typed_format_from_file_overlay`
+        // carries one arm over on the File arm.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert_eq!(
+            r.provenance().env_prefix_kind_of(&["c"]),
+            Some(EnvMetadataTagKind::Prefixed)
+        );
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_surfaces_bare_kind_from_bare_env_overlay() {
+        // Distinguishing witness on the OTHER polarity of the
+        // typed-sub-axis: an `env("", …)` overlay (bare `Env::raw`-
+        // shape) lands under the leaf it seeded with
+        // `Some(EnvMetadataTagKind::Bare)`. Rules out a hand-rolled
+        // classifier that would collapse the empty prefix through a
+        // `is_empty()`-to-`None` filter (like `Format::from_path` on
+        // an unrecognized extension) — the empty prefix is a
+        // legitimate env-source payload and MUST classify to `Bare`,
+        // not evaporate to `None`. Together with the `Prefixed`
+        // witness above, this pin closes the closed `Bare` /
+        // `Prefixed` binary partition on the Env-arm typed-sub-axis
+        // one altitude up from the primitive
+        // `provenance_env_prefix_kind_preserves_inner_kind_verbatim`
+        // pin.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("", env_dict)]);
+        assert_eq!(
+            r.provenance().env_prefix_kind_of(&["c"]),
+            Some(EnvMetadataTagKind::Bare)
+        );
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_returns_none_for_defaults_and_file_arms() {
+        // Off-arm evaporation law: leaves whose source is not
+        // `Env(_)` — the Defaults arm at the untouched leaves, the
+        // File arm at the leaf the file layer seeded — collapse to
+        // `None` at the Env-arm typed-sub-axis seam, even where
+        // `source_of` would still hand out a
+        // `Some(ConfigSource::{Defaults,File(_)})`. Pins the typed-
+        // sub-axis filter down to exactly the Env arm, mirroring the
+        // same off-arm pin
+        // `provenance_map_file_format_of_returns_none_for_defaults_and_env_arms`
+        // one arm over on the same closed source-axis ternary
+        // partition.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", file_dict)]);
+        assert!(r.provenance().env_prefix_kind_of(&["a"]).is_none());
+        assert!(r.provenance().env_prefix_kind_of(&["b"]).is_none());
+        assert!(r.provenance().env_prefix_kind_of(&["d"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_returns_none_for_unknown_path() {
+        // Miss path: a fabricated key names no leaf, so both forms
+        // of the Env-arm typed-sub-axis lookup return `None`.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().env_prefix_kind_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .env_prefix_kind_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_env_prefix_kind_of_on_empty_map_is_none() {
+        // Empty case: the Env-arm typed-sub-axis lookup returns
+        // `None` on an empty map at both forms, mirroring the same
+        // empty-map behaviour `path_of` / `source_of` and the raw-
+        // payload / boolean-tag pairs on the same source-axis lookup
+        // surface carry, and the File-arm typed-sub-axis pair one
+        // arm over.
+        let empty = ProvenanceMap::default();
+        assert!(empty.env_prefix_kind_of(&["a"]).is_none());
+        assert!(empty.env_prefix_kind_of_owned(&["a".to_string()]).is_none());
     }
 
     // -------- ProvenanceMap::first_provenance / ::last_provenance value-axis bounds --------
@@ -106739,6 +107121,79 @@ mod progressive_tests {
         assert_eq!(
             r.file_format_of_owned(&miss),
             r.provenance().file_format_of_owned(&miss),
+        );
+    }
+
+    // -------- ProgressiveResolution::env_prefix_kind_of Env-arm typed-sub-axis path-keyed lookup --------
+
+    #[test]
+    fn progressive_resolution_env_prefix_kind_of_agrees_with_provenance_map_pointwise() {
+        // Load-bearing structural law on the container-altitude
+        // Env-arm typed-sub-axis lookup delegate: the container-
+        // altitude method yields the same `Option<EnvMetadataTagKind>`
+        // as `res.provenance().env_prefix_kind_of(path)` on every path
+        // the resolved config carries and on a fabricated miss path.
+        // Catches a future edit that reroutes
+        // `ProgressiveResolution::env_prefix_kind_of` through a
+        // different `ProvenanceMap` accessor than the primitive peer
+        // it delegates to (a `source_of`-then-projection chain by
+        // mistake, an `entry_of` cursor) that would break the shared-
+        // lookup contract at the typed-sub-axis seam. Peer of the
+        // same-shape delegation law
+        // `progressive_resolution_file_format_of_agrees_with_provenance_map_pointwise`
+        // one arm over on the same closed source-axis ternary
+        // partition, and one seam inland from
+        // `progressive_resolution_as_env_prefix_of_agrees_with_provenance_map_pointwise`
+        // on the raw-payload Env-arm pair.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_res = r.env_prefix_kind_of(&borrowed);
+            let via_prov = r.provenance().env_prefix_kind_of(&borrowed);
+            assert_eq!(via_res, via_prov, "disagreement at {borrowed:?}");
+        }
+        assert!(r.env_prefix_kind_of(&["definitely_not_a_field"]).is_none());
+        assert_eq!(
+            r.env_prefix_kind_of(&["definitely_not_a_field"]),
+            r.provenance()
+                .env_prefix_kind_of(&["definitely_not_a_field"]),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_env_prefix_kind_of_owned_agrees_with_provenance_map_pointwise() {
+        // Allocation-free-peer law on the container-altitude Env-arm
+        // typed-sub-axis lookup pair: the owned-path seam yields the
+        // same `Option<EnvMetadataTagKind>` as
+        // `res.provenance().env_prefix_kind_of_owned(path)` on every
+        // path the resolved config carries and on a fabricated miss
+        // path. Catches a future edit that reroutes
+        // `ProgressiveResolution::env_prefix_kind_of_owned` through
+        // the borrowed variant (reintroducing the per-lookup
+        // `Vec<String>` allocation the owned form exists to avoid) or
+        // through a different `ProvenanceMap` accessor.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let via_res = r.env_prefix_kind_of_owned(&owned);
+            let via_prov = r.provenance().env_prefix_kind_of_owned(&owned);
+            assert_eq!(via_res, via_prov);
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.env_prefix_kind_of_owned(&miss).is_none());
+        assert_eq!(
+            r.env_prefix_kind_of_owned(&miss),
+            r.provenance().env_prefix_kind_of_owned(&miss),
         );
     }
 
