@@ -3147,6 +3147,191 @@ impl ProvenanceMap {
         self.inner.get(path).map(Provenance::is_file)
     }
 
+    /// Tier-axis per-arm boolean tag [`Provenance::is_bare`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf in the resolved config — the `Bare`-arm sub-projection of
+    /// the tier-axis quaternary partition
+    /// (`{Bare, Discovered, Default, Custom}`), one arm inside the
+    /// compound-polarity peer [`Self::is_computed_of`] on the same closed
+    /// axis.
+    ///
+    /// The compound `is_computed()` folds three arms
+    /// (`Bare || Discovered || Default`) into one polarity byte and
+    /// complements the fourth (`Custom`); this per-arm sub-projection
+    /// isolates the first (`Bare`) arm — the per-leaf quaternary-partition
+    /// disjointness contract inherits from the const-fn
+    /// [`Provenance::is_bare`] contract one altitude down. Together with
+    /// [`Self::is_discovered_of`], [`Self::is_default_of`], and
+    /// [`Self::is_custom_of`], closes the tier-axis per-arm quaternary-
+    /// partition boolean-tag path-keyed lookup quartet at the primitive
+    /// altitude, mirroring the shipped value-axis bound quartet
+    /// [`Self::first_is_bare`] / [`Self::first_is_discovered`] /
+    /// [`Self::first_is_default`] / [`Self::first_is_custom`] on the
+    /// path-keyed lookup surface.
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_bare)` on every input
+    /// by construction — the body forwards through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses, so the two disagree only under a
+    /// `BTreeMap` bug. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::is_bare)` one const-fn seam
+    /// further out on the same tier axis. Returns owned [`bool`] with no
+    /// allocation beyond the per-lookup path conversion the borrowed-form
+    /// entry pays.
+    #[must_use]
+    pub fn is_bare_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_bare_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_bare_of`] for callers that
+    /// already carry an owned path — closes the borrowed-vs-owned tier-
+    /// axis `Bare`-arm boolean-tag path-keyed lookup pair, sibling of the
+    /// `Discovered`-arm pair [`Self::is_discovered_of`] /
+    /// [`Self::is_discovered_of_owned`], the `Default`-arm pair
+    /// [`Self::is_default_of`] / [`Self::is_default_of_owned`], and the
+    /// `Custom`-arm pair [`Self::is_custom_of`] /
+    /// [`Self::is_custom_of_owned`] on the same tier-axis quaternary
+    /// partition. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects the
+    /// [`Provenance::is_bare`] const-fn accessor on the retained value,
+    /// with no allocation of its own.
+    #[must_use]
+    pub fn is_bare_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_bare)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_discovered`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf in the resolved config — the `Discovered`-arm sub-
+    /// projection of the tier-axis quaternary partition
+    /// (`{Bare, Discovered, Default, Custom}`), sibling of
+    /// [`Self::is_bare_of`], [`Self::is_default_of`], and
+    /// [`Self::is_custom_of`].
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_discovered)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::is_discovered)` one
+    /// const-fn seam further out on the same tier axis. Returns owned
+    /// [`bool`] with no allocation beyond the per-lookup path conversion
+    /// the borrowed-form entry pays.
+    #[must_use]
+    pub fn is_discovered_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_discovered_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_discovered_of`] for callers
+    /// that already carry an owned path — the `Discovered`-arm sibling of
+    /// [`Self::is_bare_of_owned`] / [`Self::is_default_of_owned`] /
+    /// [`Self::is_custom_of_owned`] on the tier-axis quaternary
+    /// partition. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects the
+    /// [`Provenance::is_discovered`] const-fn accessor on the retained
+    /// value, with no allocation of its own.
+    #[must_use]
+    pub fn is_discovered_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_discovered)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_default`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf in the resolved config — the `Default`-arm sub-projection
+    /// of the tier-axis quaternary partition
+    /// (`{Bare, Discovered, Default, Custom}`), sibling of
+    /// [`Self::is_bare_of`], [`Self::is_discovered_of`], and
+    /// [`Self::is_custom_of`]. The prescribed-default row of the sealed
+    /// fold: every leaf the fold credits to
+    /// [`TieredConfig::prescribed_default`] answers `true` here.
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_default)` on every
+    /// input by construction — the body forwards through the same
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] cursor the
+    /// value-axis lookup uses. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::is_default)` one const-fn
+    /// seam further out on the same tier axis. Returns owned [`bool`]
+    /// with no allocation beyond the per-lookup path conversion the
+    /// borrowed-form entry pays.
+    #[must_use]
+    pub fn is_default_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_default_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_default_of`] for callers
+    /// that already carry an owned path — the `Default`-arm sibling of
+    /// [`Self::is_bare_of_owned`] / [`Self::is_discovered_of_owned`] /
+    /// [`Self::is_custom_of_owned`] on the tier-axis quaternary
+    /// partition. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects the
+    /// [`Provenance::is_default`] const-fn accessor on the retained
+    /// value, with no allocation of its own.
+    #[must_use]
+    pub fn is_default_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_default)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_custom`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf in the resolved config — the `Custom`-arm sub-projection
+    /// of the tier-axis quaternary partition
+    /// (`{Bare, Discovered, Default, Custom}`), closing the tier-axis
+    /// per-arm quaternary-partition boolean-tag path-keyed lookup quartet
+    /// [`Self::is_bare_of`] / [`Self::is_discovered_of`] /
+    /// [`Self::is_default_of`] / [`Self::is_custom_of`] at the primitive
+    /// altitude on the path-keyed lookup surface.
+    ///
+    /// Payload-independence — the answer is the same for every
+    /// `Custom(path)` leaf regardless of the [`std::path::PathBuf`]
+    /// payload — inherits from the const-fn [`Provenance::is_custom`]
+    /// contract one altitude down, which has no [`std::path::PathBuf`]
+    /// visibility.
+    ///
+    /// **Quaternary-partition disjointness law.** Because the four
+    /// underlying [`Provenance`] predicates form a closed disjoint
+    /// partition of the tier-axis variant space (pinned pointwise by
+    /// [`tests::provenance_tier_predicates_are_a_closed_quaternary_partition`]),
+    /// the four path-keyed sub-projections together yield exactly one
+    /// `true` at any leaf the map carries: on every hit
+    /// `is_bare_of(p) as u8 + is_discovered_of(p) as u8 + is_default_of(p) as u8 + is_custom_of(p) as u8`
+    /// equals `1`.
+    ///
+    /// **Compound-vs-per-arm complement law.** The per-leaf
+    /// `is_custom_of(path) == !is_computed_of(path)` complement law
+    /// inherits from the const-fn [`Provenance::is_custom`] /
+    /// [`Provenance::is_computed`] complement law one altitude down: the
+    /// compound [`Provenance::is_computed`] folds
+    /// `Bare || Discovered || Default` into one polarity byte and
+    /// complements the fourth (`Custom`) arm this seam isolates.
+    ///
+    /// Pointwise-equal to
+    /// `self.provenance_of(path).map(Provenance::is_custom)` on every
+    /// input by construction. Also pointwise-equal to
+    /// `self.tier_of(path).map(ConfigTierKind::is_custom)` one const-fn
+    /// seam further out on the same tier axis. Returns owned [`bool`]
+    /// with no allocation beyond the per-lookup path conversion the
+    /// borrowed-form entry pays.
+    #[must_use]
+    pub fn is_custom_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_custom_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::is_custom_of`] for callers that
+    /// already carry an owned path — the `Custom`-arm sibling that closes
+    /// the borrowed-vs-owned per-arm quaternary-partition path-keyed
+    /// lookup quartet at the primitive altitude alongside
+    /// [`Self::is_bare_of_owned`], [`Self::is_discovered_of_owned`], and
+    /// [`Self::is_default_of_owned`]. Forwards straight into
+    /// [`BTreeMap::get`][std::collections::BTreeMap::get] and projects the
+    /// [`Provenance::is_custom`] const-fn accessor on the retained value,
+    /// with no allocation of its own.
+    #[must_use]
+    pub fn is_custom_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner.get(path).map(Provenance::is_custom)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -24438,6 +24623,113 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn is_file_of_owned(&self, path: &[String]) -> Option<bool> {
         self.provenance.is_file_of_owned(path)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_bare`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf — the container-altitude peer of
+    /// [`ProvenanceMap::is_bare_of`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.is_bare_of(path)`.
+    ///
+    /// The `Bare`-arm sub-projection of the tier-axis quaternary
+    /// partition (`{Bare, Discovered, Default, Custom}`), one arm inside
+    /// the compound-polarity peer [`Self::is_computed_of`] on the same
+    /// closed axis. Together with [`Self::is_discovered_of`],
+    /// [`Self::is_default_of`], and [`Self::is_custom_of`], closes the
+    /// tier-axis per-arm quaternary-partition boolean-tag path-keyed
+    /// lookup quartet at the container altitude.
+    #[must_use]
+    pub fn is_bare_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_bare_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_bare_of`] for callers that
+    /// already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_bare_of_owned`], delegating one seam down.
+    #[must_use]
+    pub fn is_bare_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_bare_of_owned(path)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_discovered`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf — the container-altitude peer of
+    /// [`ProvenanceMap::is_discovered_of`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.is_discovered_of(path)`.
+    ///
+    /// The `Discovered`-arm sub-projection sibling of [`Self::is_bare_of`],
+    /// [`Self::is_default_of`], and [`Self::is_custom_of`] on the tier-
+    /// axis quaternary partition.
+    #[must_use]
+    pub fn is_discovered_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_discovered_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_discovered_of`] for callers
+    /// that already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_discovered_of_owned`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn is_discovered_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_discovered_of_owned(path)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_default`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf — the container-altitude peer of
+    /// [`ProvenanceMap::is_default_of`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.is_default_of(path)`.
+    ///
+    /// The `Default`-arm sub-projection sibling of [`Self::is_bare_of`],
+    /// [`Self::is_discovered_of`], and [`Self::is_custom_of`] on the tier-
+    /// axis quaternary partition. The prescribed-default row of the
+    /// sealed fold: every leaf the fold credits to
+    /// [`TieredConfig::prescribed_default`] answers `true` here.
+    #[must_use]
+    pub fn is_default_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_default_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_default_of`] for callers
+    /// that already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_default_of_owned`], delegating one seam down.
+    #[must_use]
+    pub fn is_default_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_default_of_owned(path)
+    }
+
+    /// Tier-axis per-arm boolean tag [`Provenance::is_custom`] of the
+    /// effective leaf named by dotted `path`, or [`None`] if `path` names
+    /// no leaf — the container-altitude peer of
+    /// [`ProvenanceMap::is_custom_of`] on the *output* side of the fold's
+    /// atomic-pair ownership boundary, delegating one seam down into
+    /// `self.provenance.is_custom_of(path)`.
+    ///
+    /// Closes the tier-axis per-arm quaternary-partition boolean-tag
+    /// path-keyed lookup quartet [`Self::is_bare_of`] /
+    /// [`Self::is_discovered_of`] / [`Self::is_default_of`] /
+    /// [`Self::is_custom_of`] at the container altitude. Payload-
+    /// independence — the answer is the same for every `Custom(path)`
+    /// leaf regardless of the [`std::path::PathBuf`] payload — inherits
+    /// from the const-fn [`Provenance::is_custom`] contract one altitude
+    /// down. The per-leaf compound-polarity complement law
+    /// `is_custom_of(path) == !is_computed_of(path)` inherits from the
+    /// const-fn [`Provenance::is_custom`] / [`Provenance::is_computed`]
+    /// complement law two altitudes down.
+    #[must_use]
+    pub fn is_custom_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_custom_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_custom_of`] for callers that
+    /// already carry an owned path — the container-altitude peer of
+    /// [`ProvenanceMap::is_custom_of_owned`], delegating one seam down.
+    #[must_use]
+    pub fn is_custom_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_custom_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -56849,6 +57141,433 @@ mod progressive_tests {
             assert_eq!(
                 r.provenance().is_defaults_of(&borrowed),
                 r.provenance().is_overlay_of(&borrowed).map(|b| !b),
+                "complement law breaks at path {borrowed:?}",
+            );
+        }
+    }
+
+    // -------- ProvenanceMap::is_bare_of / ::is_discovered_of /
+    // -------- ::is_default_of / ::is_custom_of (primitive-altitude
+    // -------- tier-axis per-arm quaternary-partition boolean-tag
+    // -------- path-keyed lookup quartet, one arm inside the compound-
+    // -------- polarity is_computed_of pair on the same closed axis)
+
+    #[test]
+    fn provenance_map_is_bare_of_agrees_with_provenance_of_is_bare_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_bare_of(&borrowed);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .map(Provenance::is_bare);
+            assert_eq!(via_flag, via_prov, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_agrees_with_tier_of_is_bare_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_bare_of(&borrowed);
+            let via_tag: Option<bool> = r.provenance().tier_of(&borrowed).map(|k| k.is_bare());
+            assert_eq!(
+                via_flag, via_tag,
+                "tag-vs-flag disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_owned_agrees_with_is_bare_of_borrowed_form_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_bare_of(&borrowed),
+                r.provenance().is_bare_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_bare_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_bare_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_on_empty_map_is_none() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_bare_of(&["a"]).is_none());
+        assert!(empty.is_bare_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: a → Discovered,
+        // b → Default, c → Bare, d → Default, so `is_bare_of` reads
+        // `true` at `c` and `false` at the other three leaves.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().is_bare_of(&["a"]), Some(false));
+        assert_eq!(r.provenance().is_bare_of(&["b"]), Some(false));
+        assert_eq!(r.provenance().is_bare_of(&["c"]), Some(true));
+        assert_eq!(r.provenance().is_bare_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_agrees_with_first_is_bare_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_bare_of_owned(&first_path),
+            r.provenance().first_is_bare(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_bare_of_agrees_with_last_is_bare_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_bare_of_owned(&last_path),
+            r.provenance().last_is_bare(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_agrees_with_provenance_of_is_discovered_projection_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_discovered_of(&borrowed);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .map(Provenance::is_discovered);
+            assert_eq!(via_flag, via_prov, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_agrees_with_tier_of_is_discovered_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_discovered_of(&borrowed);
+            let via_tag: Option<bool> =
+                r.provenance().tier_of(&borrowed).map(|k| k.is_discovered());
+            assert_eq!(
+                via_flag, via_tag,
+                "tag-vs-flag disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_owned_agrees_with_is_discovered_of_borrowed_form_pointwise()
+    {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_discovered_of(&borrowed),
+                r.provenance().is_discovered_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_discovered_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_discovered_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_on_empty_map_is_none() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_discovered_of(&["a"]).is_none());
+        assert!(empty.is_discovered_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: a → Discovered,
+        // b → Default, c → Bare, d → Default, so `is_discovered_of`
+        // reads `true` at `a` and `false` at the other three leaves.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().is_discovered_of(&["a"]), Some(true));
+        assert_eq!(r.provenance().is_discovered_of(&["b"]), Some(false));
+        assert_eq!(r.provenance().is_discovered_of(&["c"]), Some(false));
+        assert_eq!(r.provenance().is_discovered_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_agrees_with_first_is_discovered_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_discovered_of_owned(&first_path),
+            r.provenance().first_is_discovered(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_discovered_of_agrees_with_last_is_discovered_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_discovered_of_owned(&last_path),
+            r.provenance().last_is_discovered(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_agrees_with_provenance_of_is_default_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_default_of(&borrowed);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .map(Provenance::is_default);
+            assert_eq!(via_flag, via_prov, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_agrees_with_tier_of_is_default_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_default_of(&borrowed);
+            let via_tag: Option<bool> = r.provenance().tier_of(&borrowed).map(|k| k.is_default());
+            assert_eq!(
+                via_flag, via_tag,
+                "tag-vs-flag disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_owned_agrees_with_is_default_of_borrowed_form_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_default_of(&borrowed),
+                r.provenance().is_default_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_default_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_default_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_on_empty_map_is_none() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_default_of(&["a"]).is_none());
+        assert!(empty.is_default_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin on the `Prog` fixture: a → Discovered,
+        // b → Default, c → Bare, d → Default, so `is_default_of` reads
+        // `true` at `b` and `d`, `false` at `a` and `c`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().is_default_of(&["a"]), Some(false));
+        assert_eq!(r.provenance().is_default_of(&["b"]), Some(true));
+        assert_eq!(r.provenance().is_default_of(&["c"]), Some(false));
+        assert_eq!(r.provenance().is_default_of(&["d"]), Some(true));
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_agrees_with_first_is_default_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_default_of_owned(&first_path),
+            r.provenance().first_is_default(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_default_of_agrees_with_last_is_default_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_default_of_owned(&last_path),
+            r.provenance().last_is_default(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_agrees_with_provenance_of_is_custom_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_custom_of(&borrowed);
+            let via_prov: Option<bool> = r
+                .provenance()
+                .provenance_of(&borrowed)
+                .map(Provenance::is_custom);
+            assert_eq!(via_flag, via_prov, "disagreement at path {borrowed:?}");
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_agrees_with_tier_of_is_custom_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_flag: Option<bool> = r.provenance().is_custom_of(&borrowed);
+            let via_tag: Option<bool> = r.provenance().tier_of(&borrowed).map(|k| k.is_custom());
+            assert_eq!(
+                via_flag, via_tag,
+                "tag-vs-flag disagreement at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_owned_agrees_with_is_custom_of_borrowed_form_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_custom_of(&borrowed),
+                r.provenance().is_custom_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().is_custom_of(&["nope"]).is_none());
+        assert!(
+            r.provenance()
+                .is_custom_of_owned(&["nope".to_string()])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_on_empty_map_is_none() {
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_custom_of(&["a"]).is_none());
+        assert!(empty.is_custom_of_owned(&["a".to_string()]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_names_prog_ground_truth_leaves() {
+        // Ground-truth pin: `Prog` fixture reaches no `Custom` leaf, so
+        // `is_custom_of` reads `false` at every leaf. The complement of
+        // the compound `is_computed_of` pin ({Bare, Discovered, Default}
+        // covering every `Prog` leaf).
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            assert_eq!(r.provenance().is_custom_of(&[leaf]), Some(false));
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_agrees_with_first_is_custom_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_custom_of_owned(&first_path),
+            r.provenance().first_is_custom(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_agrees_with_last_is_custom_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(
+            r.provenance().is_custom_of_owned(&last_path),
+            r.provenance().last_is_custom(),
+        );
+    }
+
+    #[test]
+    fn provenance_map_tier_axis_per_arm_quartet_sums_to_one_on_every_hit() {
+        // Quaternary-partition disjointness law at the primitive altitude
+        // on the path-keyed lookup surface: for every path the map
+        // carries, exactly one of {is_bare_of, is_discovered_of,
+        // is_default_of, is_custom_of} reads `true`, inheriting from the
+        // const-fn tier-axis quaternary-partition disjointness contract
+        // one altitude down.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let b = u8::from(r.provenance().is_bare_of(&borrowed).unwrap());
+            let d = u8::from(r.provenance().is_discovered_of(&borrowed).unwrap());
+            let f = u8::from(r.provenance().is_default_of(&borrowed).unwrap());
+            let c = u8::from(r.provenance().is_custom_of(&borrowed).unwrap());
+            assert_eq!(
+                b + d + f + c,
+                1,
+                "partition sum breaks at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_custom_of_is_complement_of_is_computed_of_pointwise() {
+        // Quaternary-partition compound-vs-per-arm complement law at the
+        // primitive altitude on the tier axis: for every path,
+        // `is_custom_of(p) == !is_computed_of(p)` inherits from the
+        // const-fn `Provenance::is_custom` / `Provenance::is_computed`
+        // complement law one altitude down. The compound `is_computed()`
+        // folds `Bare || Discovered || Default` into one polarity byte
+        // and complements the fourth (`Custom`) arm this per-arm sub-
+        // projection isolates.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_custom_of(&borrowed),
+                r.provenance().is_computed_of(&borrowed).map(|b| !b),
                 "complement law breaks at path {borrowed:?}",
             );
         }
@@ -106423,6 +107142,456 @@ mod progressive_tests {
             assert_eq!(
                 r.is_defaults_of(&borrowed),
                 r.is_overlay_of(&borrowed).map(|b| !b),
+                "complement law breaks at path {borrowed:?}",
+            );
+        }
+    }
+
+    // -------- ProgressiveResolution::is_bare_of / ::is_discovered_of /
+    // -------- ::is_default_of / ::is_custom_of (container-altitude peer
+    // -------- of the primitive-altitude tier-axis per-arm quaternary-
+    // -------- partition boolean-tag path-keyed lookup quartet, one arm
+    // -------- inside the compound-polarity is_computed_of pair)
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_provenance_map_is_bare_of_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_bare_of(&borrowed),
+                r.provenance().is_bare_of(&borrowed)
+            );
+        }
+        assert!(r.is_bare_of(&["definitely_not_a_field"]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_owned_agrees_with_provenance_map_is_bare_of_owned_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            assert_eq!(
+                r.is_bare_of_owned(&owned),
+                r.provenance().is_bare_of_owned(&owned),
+            );
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_bare_of_owned(&miss).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_is_bare_of_owned_on_every_path() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_bare_of(&borrowed), r.is_bare_of_owned(&owned));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_provenance_of_is_bare_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_bare_of(&borrowed),
+                r.provenance_of(&borrowed).map(Provenance::is_bare),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_tier_of_is_bare_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_bare_of(&borrowed),
+                r.tier_of(&borrowed).map(|k| k.is_bare()),
+                "tag-vs-flag disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.is_bare_of(&["nope"]).is_none());
+        assert!(r.is_bare_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_names_prog_ground_truth_leaves() {
+        // Container-altitude ground-truth pin on the `Prog` fixture:
+        // a → Discovered, b → Default, c → Bare, d → Default.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_bare_of(&["a"]), Some(false));
+        assert_eq!(r.is_bare_of(&["b"]), Some(false));
+        assert_eq!(r.is_bare_of(&["c"]), Some(true));
+        assert_eq!(r.is_bare_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_first_is_bare_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.is_bare_of_owned(&first_path), r.first_is_bare());
+    }
+
+    #[test]
+    fn progressive_resolution_is_bare_of_agrees_with_last_is_bare_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_bare_of_owned(&last_path), r.last_is_bare());
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_provenance_map_is_discovered_of_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_discovered_of(&borrowed),
+                r.provenance().is_discovered_of(&borrowed),
+            );
+        }
+        assert!(r.is_discovered_of(&["definitely_not_a_field"]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_owned_agrees_with_provenance_map_is_discovered_of_owned_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            assert_eq!(
+                r.is_discovered_of_owned(&owned),
+                r.provenance().is_discovered_of_owned(&owned),
+            );
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_discovered_of_owned(&miss).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_is_discovered_of_owned_on_every_path() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_discovered_of(&borrowed),
+                r.is_discovered_of_owned(&owned)
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_provenance_of_is_discovered_projection_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_discovered_of(&borrowed),
+                r.provenance_of(&borrowed).map(Provenance::is_discovered),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_tier_of_is_discovered_projection_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_discovered_of(&borrowed),
+                r.tier_of(&borrowed).map(|k| k.is_discovered()),
+                "tag-vs-flag disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.is_discovered_of(&["nope"]).is_none());
+        assert!(r.is_discovered_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_names_prog_ground_truth_leaves() {
+        // Container-altitude ground-truth pin on the `Prog` fixture:
+        // a → Discovered, b → Default, c → Bare, d → Default.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_discovered_of(&["a"]), Some(true));
+        assert_eq!(r.is_discovered_of(&["b"]), Some(false));
+        assert_eq!(r.is_discovered_of(&["c"]), Some(false));
+        assert_eq!(r.is_discovered_of(&["d"]), Some(false));
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_first_is_discovered_at_lex_lower_bound_leaf()
+     {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(
+            r.is_discovered_of_owned(&first_path),
+            r.first_is_discovered()
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_is_discovered_of_agrees_with_last_is_discovered_at_lex_upper_bound_leaf()
+     {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_discovered_of_owned(&last_path), r.last_is_discovered());
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_provenance_map_is_default_of_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_default_of(&borrowed),
+                r.provenance().is_default_of(&borrowed),
+            );
+        }
+        assert!(r.is_default_of(&["definitely_not_a_field"]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_owned_agrees_with_provenance_map_is_default_of_owned_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            assert_eq!(
+                r.is_default_of_owned(&owned),
+                r.provenance().is_default_of_owned(&owned),
+            );
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_default_of_owned(&miss).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_is_default_of_owned_on_every_path() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_default_of(&borrowed), r.is_default_of_owned(&owned));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_provenance_of_is_default_projection_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_default_of(&borrowed),
+                r.provenance_of(&borrowed).map(Provenance::is_default),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_tier_of_is_default_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_default_of(&borrowed),
+                r.tier_of(&borrowed).map(|k| k.is_default()),
+                "tag-vs-flag disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.is_default_of(&["nope"]).is_none());
+        assert!(r.is_default_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_names_prog_ground_truth_leaves() {
+        // Container-altitude ground-truth pin on the `Prog` fixture:
+        // a → Discovered, b → Default, c → Bare, d → Default.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.is_default_of(&["a"]), Some(false));
+        assert_eq!(r.is_default_of(&["b"]), Some(true));
+        assert_eq!(r.is_default_of(&["c"]), Some(false));
+        assert_eq!(r.is_default_of(&["d"]), Some(true));
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_first_is_default_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.is_default_of_owned(&first_path), r.first_is_default());
+    }
+
+    #[test]
+    fn progressive_resolution_is_default_of_agrees_with_last_is_default_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_default_of_owned(&last_path), r.last_is_default());
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_provenance_map_is_custom_of_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_custom_of(&borrowed),
+                r.provenance().is_custom_of(&borrowed),
+            );
+        }
+        assert!(r.is_custom_of(&["definitely_not_a_field"]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_owned_agrees_with_provenance_map_is_custom_of_owned_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            assert_eq!(
+                r.is_custom_of_owned(&owned),
+                r.provenance().is_custom_of_owned(&owned),
+            );
+        }
+        let miss: Vec<String> = vec!["definitely_not_a_field".to_owned()];
+        assert!(r.is_custom_of_owned(&miss).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_is_custom_of_owned_on_every_path() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(r.is_custom_of(&borrowed), r.is_custom_of_owned(&owned));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_provenance_of_is_custom_projection_pointwise()
+     {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_custom_of(&borrowed),
+                r.provenance_of(&borrowed).map(Provenance::is_custom),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_tier_of_is_custom_projection_pointwise() {
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_custom_of(&borrowed),
+                r.tier_of(&borrowed).map(|k| k.is_custom()),
+                "tag-vs-flag disagreement at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_returns_none_for_unknown_path() {
+        let r = Prog::resolve_progressive();
+        assert!(r.is_custom_of(&["nope"]).is_none());
+        assert!(r.is_custom_of_owned(&["nope".to_string()]).is_none());
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_names_prog_ground_truth_leaves() {
+        // Container-altitude ground-truth pin: `Prog` fixture reaches no
+        // `Custom` leaf, the complement of the compound `is_computed_of`
+        // pin at this altitude.
+        let r = Prog::resolve_progressive();
+        for leaf in ["a", "b", "c", "d"] {
+            assert_eq!(r.is_custom_of(&[leaf]), Some(false));
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_first_is_custom_at_lex_lower_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let first_path = r.provenance().first_path().unwrap().to_vec();
+        assert_eq!(r.is_custom_of_owned(&first_path), r.first_is_custom());
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_agrees_with_last_is_custom_at_lex_upper_bound_leaf() {
+        let r = Prog::resolve_progressive();
+        let last_path = r.provenance().last_path().unwrap().to_vec();
+        assert_eq!(r.is_custom_of_owned(&last_path), r.last_is_custom());
+    }
+
+    #[test]
+    fn progressive_resolution_tier_axis_per_arm_quartet_sums_to_one_on_every_hit() {
+        // Container-altitude peer of the primitive-altitude
+        // quaternary-partition disjointness law: for every path,
+        // exactly one of the four container-altitude per-arm predicates
+        // reads `true`.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let b = u8::from(r.is_bare_of(&borrowed).unwrap());
+            let d = u8::from(r.is_discovered_of(&borrowed).unwrap());
+            let f = u8::from(r.is_default_of(&borrowed).unwrap());
+            let c = u8::from(r.is_custom_of(&borrowed).unwrap());
+            assert_eq!(
+                b + d + f + c,
+                1,
+                "partition sum breaks at path {borrowed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_custom_of_is_complement_of_is_computed_of_pointwise() {
+        // Container-altitude peer of the primitive-altitude compound-vs-
+        // per-arm complement law: for every path,
+        // `is_custom_of(p) == !is_computed_of(p)`.
+        let r = Prog::resolve_progressive();
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_custom_of(&borrowed),
+                r.is_computed_of(&borrowed).map(|b| !b),
                 "complement law breaks at path {borrowed:?}",
             );
         }
