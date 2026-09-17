@@ -5707,6 +5707,199 @@ impl ProvenanceMap {
             .map(EnvMetadataTagKind::ordinal)
     }
 
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_yaml`], or [`None`] if this map
+    /// is empty, OR if the lex-lower-bound leaf's source is NOT
+    /// [`ConfigSource::File`], OR if it names a `File(_)` leaf whose
+    /// recorded path has no recognized extension — the File-arm
+    /// typed-sub-axis `Yaml`-polarity boolean-tag scalar sub-projection
+    /// of the value-axis bound, the outer bound-side altitude peer of
+    /// the path-keyed pair [`Self::is_file_format_yaml_of`] /
+    /// [`Self::is_file_format_yaml_of_owned`] one const-fn seam further
+    /// inland from the typed-sub-axis bound-side pair
+    /// [`Self::first_file_format`] / [`Self::last_file_format`] to the
+    /// [`crate::discovery::Format::is_yaml`] boolean-tag coordinate the
+    /// [`crate::discovery::Format`] tag carries. Where the path-keyed
+    /// pair filters to one named leaf, this seam pins the extremal leaf
+    /// on the [`BTreeMap::first_key_value`] cursor the value-axis bound
+    /// uses. Sibling of [`Self::first_is_env_prefix_prefixed`] one arm
+    /// over on the same closed source-axis ternary partition.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_file_format().map(crate::discovery::Format::is_yaml)`
+    /// and to
+    /// `self.first_provenance().and_then(Provenance::file_format).map(crate::discovery::Format::is_yaml)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::file_format`] accessor on the retained value and
+    /// mapping through [`crate::discovery::Format::is_yaml`] on the
+    /// retained [`crate::discovery::Format`] polarity.
+    ///
+    /// **Quinary-partition law** — together with
+    /// [`Self::first_is_file_format_toml`], [`Self::first_is_file_format_lisp`],
+    /// [`Self::first_is_file_format_nix`] and
+    /// [`Self::first_is_file_format_blue`], the five boolean tags form
+    /// a closed quinary partition on every File-arm lex-lower-bound hit
+    /// whose extension is recognized: exactly one is `Some(true)` and
+    /// the other four are `Some(false)`. Off the File arm, on an empty
+    /// map, or on a File-arm leaf with an unrecognized extension, ALL
+    /// FIVE evaporate to `None`, matching the same `None` boundary
+    /// [`Self::first_file_format`] carries one const-fn seam further
+    /// out.
+    ///
+    /// Returns owned [`bool`] ([`Copy`], no borrow).
+    #[must_use]
+    pub fn first_is_file_format_yaml(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_yaml)
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_yaml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the upper-bound sibling of
+    /// [`Self::first_is_file_format_yaml`] that
+    /// [`Self::first_is_file_format_yaml`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_file_format().map(crate::discovery::Format::is_yaml)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::file_format`] accessor on the retained value and
+    /// mapping through [`crate::discovery::Format::is_yaml`] on the
+    /// retained [`crate::discovery::Format`] polarity, so the two
+    /// disagree only under a [`BTreeMap`] bug. Returns the same owned
+    /// [`bool`] shape as [`Self::first_is_file_format_yaml`] on the
+    /// boolean-tag axis.
+    #[must_use]
+    pub fn last_is_file_format_yaml(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_yaml)
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_toml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the `Toml`-polarity sibling on the File-arm typed-sub-
+    /// axis quinary partition. See [`Self::first_is_file_format_yaml`]
+    /// for the full contract.
+    #[must_use]
+    pub fn first_is_file_format_toml(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_toml)
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_toml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the upper-bound sibling of
+    /// [`Self::first_is_file_format_toml`].
+    #[must_use]
+    pub fn last_is_file_format_toml(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_toml)
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_lisp`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the `Lisp`-polarity sibling on the File-arm typed-sub-
+    /// axis quinary partition. See [`Self::first_is_file_format_yaml`]
+    /// for the full contract.
+    #[must_use]
+    pub fn first_is_file_format_lisp(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_lisp)
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_lisp`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the upper-bound sibling of
+    /// [`Self::first_is_file_format_lisp`].
+    #[must_use]
+    pub fn last_is_file_format_lisp(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_lisp)
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_nix`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the `Nix`-polarity sibling on the File-arm typed-sub-
+    /// axis quinary partition. See [`Self::first_is_file_format_yaml`]
+    /// for the full contract.
+    #[must_use]
+    pub fn first_is_file_format_nix(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_nix)
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_nix`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the upper-bound sibling of
+    /// [`Self::first_is_file_format_nix`].
+    #[must_use]
+    pub fn last_is_file_format_nix(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_nix)
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_blue`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the `Blue`-polarity sibling on the File-arm typed-sub-
+    /// axis quinary partition, closing the File-arm typed-sub-axis
+    /// per-variant boolean-tag outer bound-side altitude peer of the
+    /// path-keyed lookup quintet
+    /// [`Self::is_file_format_yaml_of`] / [`Self::is_file_format_toml_of`]
+    /// / [`Self::is_file_format_lisp_of`] /
+    /// [`Self::is_file_format_nix_of`] / [`Self::is_file_format_blue_of`]
+    /// at the lex-lower bound.
+    #[must_use]
+    pub fn first_is_file_format_blue(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_blue)
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_blue`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the upper-bound sibling of
+    /// [`Self::first_is_file_format_blue`] that closes the File-arm
+    /// typed-sub-axis per-variant boolean-tag outer bound-side altitude
+    /// peer of the path-keyed lookup quintet at the lex-upper bound.
+    #[must_use]
+    pub fn last_is_file_format_blue(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.file_format())
+            .map(crate::discovery::Format::is_blue)
+    }
+
     /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
     /// tag [`EnvMetadataTagKind::is_prefixed`], or [`None`] if this map
     /// is empty OR if the lex-lower-bound leaf's source is NOT
@@ -28466,6 +28659,142 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn last_env_prefix_kind_ordinal(&self) -> Option<usize> {
         self.provenance.last_env_prefix_kind_ordinal()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_yaml`], or [`None`] if this
+    /// resolution's provenance map is empty, OR if the lex-lower-bound
+    /// leaf's source is NOT [`ConfigSource::File`], OR if it names a
+    /// `File(_)` leaf whose recorded path has no recognized extension —
+    /// the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file_format_yaml`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.first_is_file_format_yaml()`.
+    ///
+    /// The outer bound-side altitude peer of the container-altitude
+    /// path-keyed pair [`Self::is_file_format_yaml_of`] /
+    /// [`Self::is_file_format_yaml_of_owned`] one const-fn seam further
+    /// inland from the typed-sub-axis bound-side pair
+    /// [`Self::first_file_format`] / [`Self::last_file_format`] to the
+    /// [`crate::discovery::Format::is_yaml`] boolean-tag coordinate.
+    /// Sibling of [`Self::first_is_env_prefix_prefixed`] one arm over on
+    /// the same closed source-axis ternary partition.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_is_file_format_yaml()`.
+    /// - Equal to
+    ///   `self.first_file_format().map(crate::discovery::Format::is_yaml)`
+    ///   on every input by construction.
+    #[must_use]
+    pub fn first_is_file_format_yaml(&self) -> Option<bool> {
+        self.provenance.first_is_file_format_yaml()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_yaml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file_format_yaml`], delegating one seam
+    /// down. The bounded-lookup peer of [`Self::first_is_file_format_yaml`]
+    /// on the upper-bound side.
+    #[must_use]
+    pub fn last_is_file_format_yaml(&self) -> Option<bool> {
+        self.provenance.last_is_file_format_yaml()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_toml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file_format_toml`], delegating one seam
+    /// down. The `Toml`-polarity sibling on the File-arm typed-sub-axis
+    /// quinary partition.
+    #[must_use]
+    pub fn first_is_file_format_toml(&self) -> Option<bool> {
+        self.provenance.first_is_file_format_toml()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_toml`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file_format_toml`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn last_is_file_format_toml(&self) -> Option<bool> {
+        self.provenance.last_is_file_format_toml()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_lisp`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file_format_lisp`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn first_is_file_format_lisp(&self) -> Option<bool> {
+        self.provenance.first_is_file_format_lisp()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_lisp`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file_format_lisp`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn last_is_file_format_lisp(&self) -> Option<bool> {
+        self.provenance.last_is_file_format_lisp()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_nix`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file_format_nix`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn first_is_file_format_nix(&self) -> Option<bool> {
+        self.provenance.first_is_file_format_nix()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_nix`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file_format_nix`], delegating one seam
+    /// down.
+    #[must_use]
+    pub fn last_is_file_format_nix(&self) -> Option<bool> {
+        self.provenance.last_is_file_format_nix()
+    }
+
+    /// Lex-lower-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_blue`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::first_is_file_format_blue`], delegating one seam
+    /// down; closes the File-arm typed-sub-axis per-variant boolean-tag
+    /// outer bound-side altitude peer of the container-altitude
+    /// path-keyed lookup quintet at the lex-lower bound.
+    #[must_use]
+    pub fn first_is_file_format_blue(&self) -> Option<bool> {
+        self.provenance.first_is_file_format_blue()
+    }
+
+    /// Lex-upper-bound leaf's File-arm typed-sub-axis per-variant boolean
+    /// tag [`crate::discovery::Format::is_blue`], or [`None`] with the
+    /// same evaporation contract [`Self::first_is_file_format_yaml`]
+    /// carries — the container-altitude peer of
+    /// [`ProvenanceMap::last_is_file_format_blue`], delegating one seam
+    /// down; closes the File-arm typed-sub-axis per-variant boolean-tag
+    /// outer bound-side altitude peer of the container-altitude
+    /// path-keyed lookup quintet at the lex-upper bound.
+    #[must_use]
+    pub fn last_is_file_format_blue(&self) -> Option<bool> {
+        self.provenance.last_is_file_format_blue()
     }
 
     /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
@@ -64827,6 +65156,272 @@ mod progressive_tests {
         assert_eq!(
             bare_env.first_env_prefix_kind_ordinal(),
             Some(EnvMetadataTagKind::Bare.ordinal()),
+        );
+    }
+
+    // -------- ProvenanceMap::first_is_file_format_{yaml,toml,lisp,nix,blue} /
+    // -------- ::last_is_file_format_{yaml,toml,lisp,nix,blue}
+    // -------- File-arm typed-sub-axis per-variant boolean-tag scalar
+    // -------- sub-projection of the value-axis bound (outer bound-side
+    // -------- altitude peer of the path-keyed lookup quintet
+    // -------- `is_file_format_{yaml,toml,lisp,nix,blue}_of`, one const-fn
+    // -------- seam further inland from the typed-sub-axis bound-side pair
+    // -------- `first_file_format` / `last_file_format` to the
+    // -------- `Format::is_{yaml,toml,lisp,nix,blue}` boolean-tag coordinate)
+
+    #[test]
+    fn provenance_map_first_is_file_format_yaml_agrees_with_first_file_format_is_yaml_projection_pointwise()
+     {
+        // Cross-seam agreement law at the lex-lower bound on the `Yaml`
+        // polarity: the one-hop boolean-tag seam equals the two-hop
+        // chain `first_file_format().map(Format::is_yaml)` on every
+        // input. Peer of the same-shape Env-arm agreement pin
+        // `provenance_map_first_is_env_prefix_prefixed_agrees_with_first_env_prefix_kind_is_prefixed_projection_pointwise`
+        // one arm over on the same closed source-axis ternary
+        // partition.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().first_is_file_format_yaml();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .first_file_format()
+            .map(crate::discovery::Format::is_yaml);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_file_format_yaml_agrees_with_last_file_format_is_yaml_projection_pointwise()
+     {
+        // Upper-bound peer of the lex-lower cross-seam agreement pin.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().last_is_file_format_yaml();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .last_file_format()
+            .map(crate::discovery::Format::is_yaml);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_file_format_agrees_with_first_and_last_file_format_projection_on_all_five_variants()
+     {
+        // Sweep the remaining four polarities (Toml/Lisp/Nix/Blue) at
+        // both bounds against the two-hop
+        // `{first,last}_file_format().map(Format::is_<v>)` chain. Rules
+        // out a future edit that swaps extractor bodies across variants
+        // or projects through the wrong polarity.
+        for path in [
+            "/etc/prog.yaml",
+            "/etc/prog.toml",
+            "/etc/prog.lisp",
+            "/etc/prog.nix",
+            "/etc/prog.b",
+        ] {
+            let mut file_dict = Dict::new();
+            file_dict.insert("b".to_owned(), Value::from(99_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            let first_fmt = r.provenance().first_file_format();
+            let last_fmt = r.provenance().last_file_format();
+            assert_eq!(
+                r.provenance().first_is_file_format_yaml(),
+                first_fmt.map(crate::discovery::Format::is_yaml),
+            );
+            assert_eq!(
+                r.provenance().first_is_file_format_toml(),
+                first_fmt.map(crate::discovery::Format::is_toml),
+            );
+            assert_eq!(
+                r.provenance().first_is_file_format_lisp(),
+                first_fmt.map(crate::discovery::Format::is_lisp),
+            );
+            assert_eq!(
+                r.provenance().first_is_file_format_nix(),
+                first_fmt.map(crate::discovery::Format::is_nix),
+            );
+            assert_eq!(
+                r.provenance().first_is_file_format_blue(),
+                first_fmt.map(crate::discovery::Format::is_blue),
+            );
+            assert_eq!(
+                r.provenance().last_is_file_format_yaml(),
+                last_fmt.map(crate::discovery::Format::is_yaml),
+            );
+            assert_eq!(
+                r.provenance().last_is_file_format_toml(),
+                last_fmt.map(crate::discovery::Format::is_toml),
+            );
+            assert_eq!(
+                r.provenance().last_is_file_format_lisp(),
+                last_fmt.map(crate::discovery::Format::is_lisp),
+            );
+            assert_eq!(
+                r.provenance().last_is_file_format_nix(),
+                last_fmt.map(crate::discovery::Format::is_nix),
+            );
+            assert_eq!(
+                r.provenance().last_is_file_format_blue(),
+                last_fmt.map(crate::discovery::Format::is_blue),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_first_is_file_format_quintet_forms_closed_partition_on_file_hit_and_evaporates_off_arm()
+     {
+        // Quinary-partition law at the lex-lower bound: on every
+        // File-arm hit whose extension is recognized, exactly one of
+        // the five per-variant tags is `Some(true)` and the other four
+        // are `Some(false)`. Off the File arm, on an empty map, or on
+        // an unrecognized extension, ALL FIVE evaporate to `None`.
+        // Sibling of the Env-arm binary-partition pin
+        // `provenance_map_first_is_env_prefix_prefixed_and_bare_form_binary_partition_on_env_hit_and_evaporate_off_arm`
+        // one arm over on the same closed source-axis ternary
+        // partition.
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_file_format_yaml().is_none());
+        assert!(empty.first_is_file_format_toml().is_none());
+        assert!(empty.first_is_file_format_lisp().is_none());
+        assert!(empty.first_is_file_format_nix().is_none());
+        assert!(empty.first_is_file_format_blue().is_none());
+
+        for (path, expected_true_index) in [
+            ("/etc/prog.yaml", 0_usize),
+            ("/etc/prog.toml", 1),
+            ("/etc/prog.lisp", 2),
+            ("/etc/prog.nix", 3),
+            ("/etc/prog.b", 4),
+        ] {
+            let singleton: ProvenanceMap =
+                std::iter::once((vec!["only".to_string()], Provenance::file(path))).collect();
+            let flags = [
+                singleton.first_is_file_format_yaml(),
+                singleton.first_is_file_format_toml(),
+                singleton.first_is_file_format_lisp(),
+                singleton.first_is_file_format_nix(),
+                singleton.first_is_file_format_blue(),
+            ];
+            let true_count = flags.iter().filter(|f| **f == Some(true)).count();
+            let false_count = flags.iter().filter(|f| **f == Some(false)).count();
+            assert_eq!(
+                true_count, 1,
+                "quinary partition broken at {path}: {flags:?}"
+            );
+            assert_eq!(
+                false_count, 4,
+                "quinary partition broken at {path}: {flags:?}"
+            );
+            assert_eq!(flags[expected_true_index], Some(true));
+        }
+
+        // Off the File arm — every polarity evaporates.
+        let env_only: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env("PROG_"))).collect();
+        assert!(env_only.first_is_file_format_yaml().is_none());
+        assert!(env_only.first_is_file_format_toml().is_none());
+        assert!(env_only.first_is_file_format_lisp().is_none());
+        assert!(env_only.first_is_file_format_nix().is_none());
+        assert!(env_only.first_is_file_format_blue().is_none());
+
+        // Unrecognized extension — every polarity evaporates.
+        let mystery: ProvenanceMap = std::iter::once((
+            vec!["only".to_string()],
+            Provenance::file("/etc/prog.mystery"),
+        ))
+        .collect();
+        assert!(mystery.first_is_file_format_yaml().is_none());
+        assert!(mystery.first_is_file_format_toml().is_none());
+        assert!(mystery.first_is_file_format_lisp().is_none());
+        assert!(mystery.first_is_file_format_nix().is_none());
+        assert!(mystery.first_is_file_format_blue().is_none());
+    }
+
+    #[test]
+    fn provenance_map_last_is_file_format_quintet_forms_closed_partition_on_file_hit_and_evaporates_off_arm()
+     {
+        // Upper-bound peer of the same-shape quinary-partition +
+        // off-arm evaporation pin above.
+        let empty = ProvenanceMap::default();
+        assert!(empty.last_is_file_format_yaml().is_none());
+        assert!(empty.last_is_file_format_toml().is_none());
+        assert!(empty.last_is_file_format_lisp().is_none());
+        assert!(empty.last_is_file_format_nix().is_none());
+        assert!(empty.last_is_file_format_blue().is_none());
+
+        for (path, expected_true_index) in [
+            ("/etc/prog.yaml", 0_usize),
+            ("/etc/prog.toml", 1),
+            ("/etc/prog.lisp", 2),
+            ("/etc/prog.nix", 3),
+            ("/etc/prog.b", 4),
+        ] {
+            let singleton: ProvenanceMap =
+                std::iter::once((vec!["only".to_string()], Provenance::file(path))).collect();
+            let flags = [
+                singleton.last_is_file_format_yaml(),
+                singleton.last_is_file_format_toml(),
+                singleton.last_is_file_format_lisp(),
+                singleton.last_is_file_format_nix(),
+                singleton.last_is_file_format_blue(),
+            ];
+            let true_count = flags.iter().filter(|f| **f == Some(true)).count();
+            let false_count = flags.iter().filter(|f| **f == Some(false)).count();
+            assert_eq!(
+                true_count, 1,
+                "quinary partition broken at {path}: {flags:?}"
+            );
+            assert_eq!(
+                false_count, 4,
+                "quinary partition broken at {path}: {flags:?}"
+            );
+            assert_eq!(flags[expected_true_index], Some(true));
+        }
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_file_format_agree_on_singleton_file_leaf() {
+        // Singleton-map coincidence law on every polarity of the
+        // quintet: on a one-leaf map both bounds are the same leaf, so
+        // the two seams agree pointwise. Peer of the same-shape
+        // Env-arm coincidence pin
+        // `provenance_map_first_and_last_is_env_prefix_prefixed_agree_on_singleton_env_leaf`
+        // one arm over.
+        let one: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/prog.yaml")))
+                .collect();
+        assert_eq!(
+            one.first_is_file_format_yaml(),
+            one.last_is_file_format_yaml()
+        );
+        assert_eq!(one.first_is_file_format_yaml(), Some(true));
+        assert_eq!(
+            one.first_is_file_format_toml(),
+            one.last_is_file_format_toml()
+        );
+        assert_eq!(one.first_is_file_format_toml(), Some(false));
+        assert_eq!(
+            one.first_is_file_format_lisp(),
+            one.last_is_file_format_lisp()
+        );
+        assert_eq!(
+            one.first_is_file_format_nix(),
+            one.last_is_file_format_nix()
+        );
+        assert_eq!(
+            one.first_is_file_format_blue(),
+            one.last_is_file_format_blue()
         );
     }
 
@@ -116388,6 +116983,167 @@ mod progressive_tests {
         );
         assert!(all_env.first_as_env_prefix().is_some());
         assert_eq!(all_env.first_is_env(), Some(true));
+    }
+
+    // -------- ProgressiveResolution::first_is_file_format_{yaml,toml,lisp,nix,blue} /
+    // -------- ::last_is_file_format_{yaml,toml,lisp,nix,blue}
+    // -------- container-altitude File-arm typed-sub-axis per-variant
+    // -------- boolean-tag scalar sub-projection of the value-axis bound
+    // -------- (delegates to the primitive-altitude peers on the *output*
+    // -------- side of the fold's atomic-pair ownership boundary)
+
+    #[test]
+    fn progressive_resolution_first_is_file_format_yaml_agrees_with_provenance_map_first_is_file_format_yaml_pointwise()
+     {
+        // Load-bearing delegation pin at the lex-lower bound on the
+        // `Yaml` polarity: the container-altitude extractor routes
+        // through `self.provenance().first_is_file_format_yaml()` on
+        // every input. Peer of the same-shape Env-arm delegation pin
+        // `progressive_resolution_first_is_env_prefix_prefixed_agrees_with_provenance_map_first_is_env_prefix_prefixed_pointwise`
+        // one arm over.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.first_is_file_format_yaml();
+        let via_primitive: Option<bool> = r.provenance().first_is_file_format_yaml();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_file_format_yaml_agrees_with_provenance_map_last_is_file_format_yaml_pointwise()
+     {
+        // Peer of the `first_is_file_format_yaml` delegation pin above
+        // on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.last_is_file_format_yaml();
+        let via_primitive: Option<bool> = r.provenance().last_is_file_format_yaml();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_first_and_last_is_file_format_delegate_to_provenance_on_all_five_variants()
+     {
+        // Sweep the remaining four polarities (Toml/Lisp/Nix/Blue) at
+        // both bounds. Catches a future edit that reroutes any
+        // single-variant container-altitude seam through a rebuilt
+        // `{first,last}_key_value` cursor on the container instead of
+        // delegating to the primitive-altitude peer.
+        for path in [
+            "/etc/prog.toml",
+            "/etc/prog.lisp",
+            "/etc/prog.nix",
+            "/etc/prog.b",
+        ] {
+            let mut file_dict = Dict::new();
+            file_dict.insert("b".to_owned(), Value::from(99_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            assert_eq!(
+                r.first_is_file_format_toml(),
+                r.provenance().first_is_file_format_toml(),
+            );
+            assert_eq!(
+                r.first_is_file_format_lisp(),
+                r.provenance().first_is_file_format_lisp(),
+            );
+            assert_eq!(
+                r.first_is_file_format_nix(),
+                r.provenance().first_is_file_format_nix(),
+            );
+            assert_eq!(
+                r.first_is_file_format_blue(),
+                r.provenance().first_is_file_format_blue(),
+            );
+            assert_eq!(
+                r.last_is_file_format_toml(),
+                r.provenance().last_is_file_format_toml(),
+            );
+            assert_eq!(
+                r.last_is_file_format_lisp(),
+                r.provenance().last_is_file_format_lisp(),
+            );
+            assert_eq!(
+                r.last_is_file_format_nix(),
+                r.provenance().last_is_file_format_nix(),
+            );
+            assert_eq!(
+                r.last_is_file_format_blue(),
+                r.provenance().last_is_file_format_blue(),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_file_format_quintet_forms_closed_partition_on_file_hit_and_evaporates_off_arm()
+     {
+        // Container-altitude quinary-partition law + off-arm
+        // evaporation: on every File-arm hit with a recognized
+        // extension exactly one of the five per-variant tags is
+        // `Some(true)` and the other four are `Some(false)`; off the
+        // File arm (bare fold) all five evaporate to `None`. Peer of
+        // the primitive-altitude pin
+        // `provenance_map_first_is_file_format_quintet_forms_closed_partition_on_file_hit_and_evaporates_off_arm`
+        // one seam down.
+        let bare_only = Prog::resolve_progressive();
+        assert!(bare_only.first_is_file_format_yaml().is_none());
+        assert!(bare_only.first_is_file_format_toml().is_none());
+        assert!(bare_only.first_is_file_format_lisp().is_none());
+        assert!(bare_only.first_is_file_format_nix().is_none());
+        assert!(bare_only.first_is_file_format_blue().is_none());
+        assert!(bare_only.last_is_file_format_yaml().is_none());
+        assert!(bare_only.last_is_file_format_blue().is_none());
+
+        for (path, expected_true_index) in [
+            ("/etc/prog.yaml", 0_usize),
+            ("/etc/prog.toml", 1),
+            ("/etc/prog.lisp", 2),
+            ("/etc/prog.nix", 3),
+            ("/etc/prog.b", 4),
+        ] {
+            let mut file_dict = Dict::new();
+            for leaf in ["a", "b", "c", "d"] {
+                file_dict.insert(leaf.to_owned(), Value::from(99_u32));
+            }
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            let first_flags = [
+                r.first_is_file_format_yaml(),
+                r.first_is_file_format_toml(),
+                r.first_is_file_format_lisp(),
+                r.first_is_file_format_nix(),
+                r.first_is_file_format_blue(),
+            ];
+            let last_flags = [
+                r.last_is_file_format_yaml(),
+                r.last_is_file_format_toml(),
+                r.last_is_file_format_lisp(),
+                r.last_is_file_format_nix(),
+                r.last_is_file_format_blue(),
+            ];
+            for flags in [first_flags, last_flags] {
+                let true_count = flags.iter().filter(|f| **f == Some(true)).count();
+                let false_count = flags.iter().filter(|f| **f == Some(false)).count();
+                assert_eq!(
+                    true_count, 1,
+                    "quinary partition broken at {path}: {flags:?}"
+                );
+                assert_eq!(
+                    false_count, 4,
+                    "quinary partition broken at {path}: {flags:?}"
+                );
+                assert_eq!(flags[expected_true_index], Some(true));
+            }
+        }
     }
 
     // -------- ProgressiveResolution::first_is_env_prefix_prefixed /
