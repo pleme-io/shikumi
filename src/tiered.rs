@@ -7413,6 +7413,46 @@ impl ProvenanceMap {
         self.source_kind_histogram().dominant_cell()
     }
 
+    /// The **dominant source-kind ordinal** — the precedence-ordinal
+    /// ([`crate::ConfigSourceKind::ordinal`]) of the modal cell of
+    /// [`Self::source_kind_histogram`] over its observed support, or
+    /// [`None`] exactly on the empty [`ProvenanceMap`].
+    ///
+    /// The **ordinal-axis scalar sub-projection** of
+    /// [`Self::dominant_source_kind`] on the source-kind-axis modal-cell
+    /// projection, one const-fn seam further inland from the typed
+    /// [`crate::ConfigSourceKind`] tag to the [`usize`] precedence-ordinal
+    /// it carries. Pointwise-equal to
+    /// `self.dominant_source_kind().map(crate::ConfigSourceKind::ordinal)`
+    /// on every input by construction.
+    ///
+    /// Where [`Self::dominant_source_kind`] returns the typed
+    /// [`crate::ConfigSourceKind`] tag (a three-cell closed-axis
+    /// discriminant), this returns the [`usize`] precedence-ordinal alone
+    /// — the shape a ConfigPlane wire encoder emitting only the
+    /// modal-source-kind ordinal byte, an operator-facing
+    /// `/healthz/config/dominant_source_kind_ordinal` payload, or a
+    /// compile-time attestation hasher folding just the modal-source-kind
+    /// precedence coordinate actually wants.
+    ///
+    /// The **modal-cell peer** of [`Self::first_source_kind_ordinal`] /
+    /// [`Self::last_source_kind_ordinal`] on the ordinal-axis scalar
+    /// sub-projection: those two read the ordinal of the *bound-side*
+    /// source-kind (first-key / last-key by [`BTreeMap`] path-key order);
+    /// this reads the ordinal of the *modal* source-kind (argmax cell of
+    /// the histogram over the observed support). The **sibling** of
+    /// [`Self::dominant_tier_ordinal`] on the tier altitude — the two
+    /// altitudes now name the modal-cell ordinal-axis projection on the
+    /// two closed coordinates of the atomic `(tier, source)` pair.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching
+    /// [`Self::dominant_source_kind`]'s [`None`] on the empty map.
+    #[must_use]
+    pub fn dominant_source_kind_ordinal(&self) -> Option<usize> {
+        self.dominant_source_kind()
+            .map(crate::ConfigSourceKind::ordinal)
+    }
+
     /// The [`crate::ConfigSourceKind`] whose layer class produced the
     /// fewest (but still ≥1) surviving effective leaves on this resolved
     /// fold — the anti-modal (rarest observed) cell of
@@ -15668,6 +15708,52 @@ impl ProvenanceMap {
     #[must_use]
     pub fn dominant_tier(&self) -> Option<ConfigTierKind> {
         self.tier_histogram().dominant_cell()
+    }
+
+    /// The **dominant tier ordinal** — the precedence-ordinal
+    /// ([`ConfigTierKind::ordinal`]) of the modal cell of
+    /// [`Self::tier_histogram`] over its observed support, or [`None`]
+    /// exactly on the empty [`ProvenanceMap`].
+    ///
+    /// The **ordinal-axis scalar sub-projection** of [`Self::dominant_tier`]
+    /// on the tier-axis modal-cell projection, one const-fn seam further
+    /// inland from the typed [`ConfigTierKind`] tag to the [`usize`]
+    /// precedence-ordinal it carries. Pointwise-equal to
+    /// `self.dominant_tier().map(ConfigTierKind::ordinal)` on every input
+    /// by construction — the body reads that same projection directly, so
+    /// the two disagree only under a [`ConfigTierKind::ordinal`] bug.
+    ///
+    /// Where [`Self::dominant_tier`] returns the typed [`ConfigTierKind`]
+    /// tag (a four-cell closed-axis discriminant), this returns the
+    /// [`usize`] precedence-ordinal alone — the shape a
+    /// [`ConfigPlane`][crate::ProgressiveLayer] wire encoder emitting
+    /// only the modal-tier ordinal byte, an operator-facing
+    /// `/healthz/config/dominant_tier_ordinal` payload emitting the
+    /// [`usize`] alone, or a compile-time attestation hasher folding just
+    /// the modal-tier's precedence coordinate actually wants (no need to
+    /// carry the full [`ConfigTierKind`] tag through the wire only to
+    /// project one [`usize`] off it at every consumer site).
+    ///
+    /// The **modal-cell peer** of [`Self::first_tier_ordinal`] /
+    /// [`Self::last_tier_ordinal`] on the ordinal-axis scalar
+    /// sub-projection: those two read the ordinal of the *bound-side*
+    /// tier (first-key / last-key by [`BTreeMap`] path-key order); this
+    /// reads the ordinal of the *modal* tier (argmax cell of the
+    /// histogram over the observed support). All three seams route
+    /// through the same `ConfigTierKind::ordinal` const-fn projection,
+    /// differing only in which [`ConfigTierKind`] source they project.
+    /// The **sibling** of [`Self::dominant_source_kind_ordinal`] on the
+    /// source-kind altitude — the two altitudes now name the modal-cell
+    /// ordinal-axis projection on the two closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching
+    /// [`Self::dominant_tier`]'s [`None`] on the empty map: no leaf
+    /// contributes, so the modal cell is undefined and the projection
+    /// evaporates uniformly.
+    #[must_use]
+    pub fn dominant_tier_ordinal(&self) -> Option<usize> {
+        self.dominant_tier().map(ConfigTierKind::ordinal)
     }
 
     /// The **peak leaf count** — the number of surviving effective leaves
@@ -29547,6 +29633,29 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.dominant_tier()
     }
 
+    /// The **dominant tier ordinal** — the precedence-ordinal
+    /// ([`ConfigTierKind::ordinal`]) of the modal cell of the tier
+    /// histogram over its observed support, or [`None`] exactly on the
+    /// empty resolution. Container-altitude peer of
+    /// [`ProvenanceMap::dominant_tier_ordinal`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.dominant_tier_ordinal()`.
+    ///
+    /// The **ordinal-axis scalar sub-projection** of [`Self::dominant_tier`]
+    /// on the same container, one const-fn seam further inland from the
+    /// typed [`ConfigTierKind`] tag to the [`usize`] precedence-ordinal
+    /// it carries. The **modal-cell peer** of the bound-side ordinal-axis
+    /// pair [`Self::first_tier_ordinal`] / [`Self::last_tier_ordinal`]
+    /// already shipped on the same container. The **sibling** of
+    /// [`Self::dominant_source_kind_ordinal`] on the source-kind
+    /// altitude — the two altitudes now name the modal-cell ordinal-axis
+    /// projection on the two closed coordinates of the atomic
+    /// `(tier, source)` pair.
+    #[must_use]
+    pub fn dominant_tier_ordinal(&self) -> Option<usize> {
+        self.provenance.dominant_tier_ordinal()
+    }
+
     /// The **recessive tier** — the argmin cell of [`Self::tier_histogram`]
     /// over its observed support: the [`ConfigTierKind`] whose overlay
     /// produced the fewest (but still ≥1) surviving effective leaves on
@@ -29588,6 +29697,30 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn dominant_source_kind(&self) -> Option<crate::ConfigSourceKind> {
         self.provenance.dominant_source_kind()
+    }
+
+    /// The **dominant source-kind ordinal** — the precedence-ordinal
+    /// ([`crate::ConfigSourceKind::ordinal`]) of the modal cell of the
+    /// source-kind histogram over its observed support, or [`None`]
+    /// exactly on the empty resolution. Container-altitude peer of
+    /// [`ProvenanceMap::dominant_source_kind_ordinal`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.dominant_source_kind_ordinal()`.
+    ///
+    /// The **ordinal-axis scalar sub-projection** of
+    /// [`Self::dominant_source_kind`] on the same container, one
+    /// const-fn seam further inland from the typed
+    /// [`crate::ConfigSourceKind`] tag to the [`usize`] precedence-
+    /// ordinal it carries. The **modal-cell peer** of the bound-side
+    /// ordinal-axis pair [`Self::first_source_kind_ordinal`] /
+    /// [`Self::last_source_kind_ordinal`] already shipped on the same
+    /// container. The **sibling** of [`Self::dominant_tier_ordinal`] on
+    /// the tier altitude — the two altitudes now name the modal-cell
+    /// ordinal-axis projection on the two closed coordinates of the
+    /// atomic `(tier, source)` pair.
+    #[must_use]
+    pub fn dominant_source_kind_ordinal(&self) -> Option<usize> {
+        self.provenance.dominant_source_kind_ordinal()
     }
 
     /// The **recessive source-kind** — the argmin cell of
@@ -68634,6 +68767,87 @@ mod progressive_tests {
         assert_eq!(m.dominant_tier(), Some(ConfigTierKind::Bare));
     }
 
+    // ---- ProvenanceMap::dominant_tier_ordinal — ordinal-axis scalar
+    //      sub-projection of dominant_tier, one const-fn seam further
+    //      inland from the typed ConfigTierKind tag to the usize
+    //      precedence-ordinal it carries ----
+
+    #[test]
+    fn dominant_tier_ordinal_matches_dominant_tier_projection_pointwise() {
+        // Cross-seam agreement pin: `dominant_tier_ordinal()` is the
+        // ordinal-axis scalar sub-projection of `dominant_tier()`, so
+        // the two seams must stay pointwise equivalent under
+        // `ConfigTierKind::ordinal`. Modal-cell peer of the bound-side
+        // `first_tier_ordinal_matches_first_tier_projection_pointwise`
+        // pin one seam over on the ordinal-axis scalar sub-projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map.dominant_tier().map(ConfigTierKind::ordinal);
+            assert_eq!(map.dominant_tier_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_ordinal_prog_fixture_is_default_ordinal() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Default holds 2 of 4, uniquely dominant on the
+        // 4-cell tier axis. ConfigTierKind::Default's ordinal is 2 by
+        // the closed-axis declaration Bare(0) → Discovered(1) →
+        // Default(2) → Custom(3). Direct pin — the named seam answers
+        // the operator's *"what precedence-ordinal did the dominant
+        // tier land on?"* at one call, no tag projection at the site.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier_ordinal(),
+            Some(ConfigTierKind::Default.ordinal()),
+        );
+        assert_eq!(r.provenance().dominant_tier_ordinal(), Some(2));
+    }
+
+    #[test]
+    fn dominant_tier_ordinal_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no modal
+        // tier and no modal-tier ordinal — the empty-map / empty-
+        // histogram boundary of the ordinal-axis scalar sub-projection
+        // reads `None`, matching `dominant_tier_empty_map_is_none` on
+        // the typed-tag side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_tier_ordinal(), None);
+    }
+
+    #[test]
+    fn dominant_tier_ordinal_is_some_iff_map_is_nonempty() {
+        // Presence-parity pin: the ordinal-axis scalar sub-projection
+        // agrees with the typed-tag side on the empty-vs-nonempty
+        // boundary — `dominant_tier_ordinal().is_some() == !is_empty()`,
+        // matching `dominant_tier_is_some_iff_map_is_nonempty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.dominant_tier_ordinal().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_ordinal_singleton_leaf_reads_leaf_ordinal() {
+        // Singleton-support pin: on a one-leaf map, the sole
+        // observed cell is the modal cell, so the ordinal projection
+        // reads that leaf's tier ordinal — the closed-axis argmax
+        // reduces to the sole observed cell.
+        let mut singleton = ProvenanceMap::default();
+        singleton.extend([(vec!["only".to_string()], Provenance::discovered())]);
+        assert_eq!(
+            singleton.dominant_tier_ordinal(),
+            Some(ConfigTierKind::Discovered.ordinal()),
+        );
+        assert_eq!(singleton.dominant_tier_ordinal(), Some(1));
+    }
+
     // ---- ProvenanceMap::peak_tier_count — modal-cell scalar-count peer
     //      of ProvenanceMap::tier_histogram on the tier altitude, fusing
     //      with dominant_tier into the (cell, count) modal pair ----
@@ -94104,6 +94318,93 @@ mod progressive_tests {
         );
     }
 
+    // ── ProvenanceMap::dominant_source_kind_ordinal — ordinal-axis
+    //    scalar sub-projection of dominant_source_kind, one const-fn
+    //    seam further inland from the typed ConfigSourceKind tag to the
+    //    usize precedence-ordinal it carries ──
+
+    #[test]
+    fn dominant_source_kind_ordinal_matches_dominant_source_kind_projection_pointwise() {
+        // Cross-seam agreement pin: `dominant_source_kind_ordinal()`
+        // is the ordinal-axis scalar sub-projection of
+        // `dominant_source_kind()`, so the two seams must stay
+        // pointwise equivalent under `ConfigSourceKind::ordinal`.
+        // Source-altitude peer of
+        // `dominant_tier_ordinal_matches_dominant_tier_projection_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .dominant_source_kind()
+                .map(crate::ConfigSourceKind::ordinal);
+            assert_eq!(map.dominant_source_kind_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_ordinal_prog_fixture_is_defaults_ordinal() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`.
+        // Singleton-support on the source-kind axis: the sole observed
+        // cell is the modal cell. ConfigSourceKind::Defaults's ordinal
+        // is 0 by the closed-axis declaration Defaults(0) → Env(1) →
+        // File(2). Direct pin.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_source_kind_ordinal(),
+            Some(crate::ConfigSourceKind::Defaults.ordinal()),
+        );
+        assert_eq!(r.provenance().dominant_source_kind_ordinal(), Some(0));
+    }
+
+    #[test]
+    fn dominant_source_kind_ordinal_mixed_fixture_is_defaults_ordinal() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. The
+        // Defaults cell holds 2 of 4 leaves — strictly dominant on the
+        // three-cell source-kind axis (Env and File each hold 1). The
+        // ordinal reads 0 through the seam whether the fixture is
+        // singleton-support (Prog) or full-cover with a strict maximum
+        // (mixed).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().dominant_source_kind_ordinal(),
+            Some(crate::ConfigSourceKind::Defaults.ordinal()),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_ordinal_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no modal
+        // source-kind cell and no modal-source-kind ordinal — the
+        // empty-map / empty-histogram boundary of the ordinal-axis
+        // scalar sub-projection reads `None`. Source-altitude peer of
+        // `dominant_tier_ordinal_empty_map_is_none` on the tier
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_source_kind_ordinal(), None);
+    }
+
+    #[test]
+    fn dominant_source_kind_ordinal_is_some_iff_map_is_nonempty() {
+        // Presence-parity pin: the ordinal-axis scalar sub-projection
+        // agrees with the typed-tag side on the empty-vs-nonempty
+        // boundary — `dominant_source_kind_ordinal().is_some() ==
+        // !is_empty()`, matching
+        // `dominant_source_kind_is_some_iff_map_is_nonempty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.dominant_source_kind_ordinal().is_some(),
+                !map.is_empty(),
+            );
+        }
+    }
+
     // ── ProvenanceMap::dominant_source_kind_observation — modal-side
     //    fused `(cell, count)` pair seam on the source-kind altitude,
     //    climbing AxisHistogram::dominant_observation and lifting the
@@ -118375,6 +118676,73 @@ mod progressive_tests {
             r.recessive_source_kind(),
             r.provenance().recessive_source_kind()
         );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_ordinal_agrees_with_provenance_dominant_tier_ordinal() {
+        // Structural-agreement pin on the ordinal-axis scalar
+        // sub-projection of the argmax modal-cell delegate at the
+        // container altitude: `res.dominant_tier_ordinal()` routes
+        // through `res.provenance().dominant_tier_ordinal()`, so the
+        // two seams must stay pointwise equivalent — one-hop
+        // delegation on the *output* side of the fold's atomic-pair
+        // ownership boundary. Catches a future edit that reroutes the
+        // container seam through a different projection while still
+        // typechecking. Ordinal-axis peer of the typed-tag delegation
+        // pin `progressive_resolution_dominant_tier_agrees_with_provenance_dominant_tier`
+        // on the same container-altitude seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_ordinal(),
+            r.provenance().dominant_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_ordinal_matches_dominant_tier_projection() {
+        // Cross-seam agreement pin at the container altitude: the
+        // ordinal-axis scalar sub-projection agrees with
+        // `.dominant_tier().map(ConfigTierKind::ordinal)` — the same
+        // shape carried by the primitive-altitude
+        // `dominant_tier_ordinal_matches_dominant_tier_projection_pointwise`
+        // pin one altitude down.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_ordinal(),
+            r.dominant_tier().map(ConfigTierKind::ordinal),
+        );
+        assert_eq!(r.dominant_tier_ordinal(), Some(2)); // Default.ordinal() == 2
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_ordinal_agrees_with_provenance_dominant_source_kind_ordinal()
+     {
+        // Source-kind-axis peer of the tier-ordinal structural-
+        // agreement pin above on the same container-altitude
+        // delegation — closes the ordinal-axis scalar sub-projection
+        // of the argmax modal-cell delegate on both axes of the
+        // atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_ordinal(),
+            r.provenance().dominant_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_ordinal_matches_dominant_source_kind_projection()
+    {
+        // Source-kind-axis peer of the tier-ordinal cross-seam pin
+        // above at the container altitude — the ordinal-axis scalar
+        // sub-projection agrees with
+        // `.dominant_source_kind().map(ConfigSourceKind::ordinal)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_ordinal(),
+            r.dominant_source_kind()
+                .map(crate::ConfigSourceKind::ordinal),
+        );
+        assert_eq!(r.dominant_source_kind_ordinal(), Some(0)); // Defaults.ordinal() == 0
     }
 
     #[test]
