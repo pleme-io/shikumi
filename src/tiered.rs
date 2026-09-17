@@ -41422,6 +41422,136 @@ impl ConfigDiff {
         self.extremal_kinds()
             .map(|(m, a)| (m.ordinal(), a.ordinal()))
     }
+
+    /// The **fused-pair extremal-count scalar** on this diff's per-line
+    /// [`DiffLineKind`] histogram — the `(usize, usize)` pair packing the
+    /// modal (peak) count and the antimodal (trough) count into one
+    /// nested-pair scalar. Returns `(0, 0)` uniformly on the empty diff,
+    /// matching the [`Self::peak_kind_count`] / [`Self::trough_kind_count`]
+    /// scalar-zero empty conventions on the same altitude one const-fn
+    /// seam further inland (no [`Option`] wrapper — the count surface has
+    /// a natural zero identity that the typed-tag / observation surface
+    /// does not).
+    ///
+    /// **Count-axis cell-projection** of the fused-quadruple
+    /// [`Self::extremal_kind_observations`] one const-fn seam inland — the
+    /// fused quadruple carries the typed [`DiffLineKind`] cell + its count
+    /// + its tie cardinality on both sides; this method carries only the
+    /// two counts, dropping the two cells and the two multiplicities. The
+    /// projection law `extremal_kind_observations().map_or((0, 0), |((_,
+    /// mn, _), (_, an, _))| (mn, an))` recovers this fused-count pair
+    /// pointwise (with the empty-diff [`None`] case folding to the `(0,
+    /// 0)` scalar-zero identity). The scalar-half modal count projects
+    /// out by `.0` and recovers [`Self::peak_kind_count`] pointwise; the
+    /// scalar-half antimodal count projects out by `.1` and recovers
+    /// [`Self::trough_kind_count`] pointwise.
+    ///
+    /// **Fused-pair count-axis sibling** of the shipped typed-tag fused
+    /// pair [`Self::extremal_kinds`] and the shipped ordinal-projected
+    /// fused pair [`Self::extremal_kinds_ordinal`] on the same closed
+    /// [`DiffLineKind`] axis at the diff altitude — the three fused-pair
+    /// surfaces close the `(typed-tag, ordinal, count)` sub-projections
+    /// of the fused-quadruple [`Self::extremal_kind_observations`] on the
+    /// diff-cell axis. Together with the shipped diff-altitude scalar-
+    /// count surface [`Self::peak_kind_count`] / [`Self::trough_kind_count`]
+    /// / [`Self::kind_spread`] / [`Self::kind_peak_trough_sum`] /
+    /// [`Self::kind_peak_trough_product`], `extremal_kind_counts` reads
+    /// the entire `(peak, trough)` scalar-count pair off in one method
+    /// call versus two, and the shipped arithmetic algebra `{+, -, *}` on
+    /// the closed endpoint pair projects off the fused scalar in one
+    /// tuple deconstruction rather than two independent scalar reads.
+    ///
+    /// The natural typed primitive for reading *"what are the peak and
+    /// trough per-kind counts on this rebuild summary?"* at one method
+    /// call — a CLI `config-diff` summary emitting the `(peak, trough)`
+    /// scalar-count pair alone (dropping the typed cell discriminants), a
+    /// `/healthz/config/diff/extremal_kind_counts` payload serializing
+    /// both endpoints of the diff-cell count histogram simultaneously, a
+    /// ConfigPlane broadcast payload carrying the joint count endpoints
+    /// without serde on the typed cell axis, an attestation manifest
+    /// recording per-tick fused-pair `(peak, trough)` diff-cell count
+    /// attribution. Before this seam, the projection was open-coded as
+    /// `(diff.peak_kind_count(), diff.trough_kind_count())` at every
+    /// call site — two method calls plus a two-element tuple constructor
+    /// at every site, each site having to reason independently about the
+    /// non-emptiness floor `peak >= trough >= 0` on the underlying scalar
+    /// count pair, versus the fused method surfacing the joint scalar
+    /// pair with the invariant preserved by construction.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_kind_counts() == (peak_kind_count(), trough_kind_count())`
+    ///   — the defining fused-pair identity of the extremal-count scalar
+    ///   over the two shipped scalar-half endpoints on the same count
+    ///   surface at the diff altitude.
+    /// - `extremal_kind_counts().0 == peak_kind_count()` pointwise — the
+    ///   modal-half projection `.0` recovers the peak-count scalar on
+    ///   every fixture. Reads directly off the fused pair with no method
+    ///   call.
+    /// - `extremal_kind_counts().1 == trough_kind_count()` pointwise —
+    ///   the antimodal-half projection `.1` recovers the trough-count
+    ///   scalar on every fixture. Reads directly off the fused pair with
+    ///   no method call.
+    /// - `extremal_kind_counts() == (0, 0)` on the empty diff — the
+    ///   scalar-zero identity boundary, matching the two scalar-half
+    ///   endpoints' empty conventions and the shipped scalar-count
+    ///   quintuple `(peak_kind_count, trough_kind_count, kind_spread,
+    ///   kind_peak_trough_sum, kind_peak_trough_product)` reading
+    ///   uniformly `(0, 0, 0, 0, 0)` on the empty diff.
+    /// - `extremal_kind_counts() == (0, 0)` ⇔ `self.lines.is_empty()` —
+    ///   both endpoints are structurally `>= 1` on every non-empty diff
+    ///   (by [`Self::peak_kind_count`]'s and [`Self::trough_kind_count`]'s
+    ///   non-emptiness floors), so the fused pair reads `(0, 0)` exactly
+    ///   on the empty diff.
+    /// - `extremal_kind_counts().0 >= extremal_kind_counts().1` always —
+    ///   the peak / trough ordering invariant lifted from the scalar-half
+    ///   pair on the underlying histogram (the peak is defined as the
+    ///   maximum count and the trough as the minimum count-over-support).
+    ///   Equality holds iff every observed kind contributes the same
+    ///   count (uniform-count support, including singleton support).
+    /// - `extremal_kind_counts().0 - extremal_kind_counts().1 ==
+    ///   kind_spread()` always — the subtraction-form projection of the
+    ///   fused pair recovers the shipped [`Self::kind_spread`] scalar.
+    ///   The subtraction is underflow-safe by the `peak >= trough`
+    ///   ordering invariant.
+    /// - `extremal_kind_counts().0 + extremal_kind_counts().1 ==
+    ///   kind_peak_trough_sum()` always — the addition-form projection
+    ///   of the fused pair recovers the shipped
+    ///   [`Self::kind_peak_trough_sum`] scalar.
+    /// - `extremal_kind_counts().0 * extremal_kind_counts().1 ==
+    ///   kind_peak_trough_product()` always — the multiplication-form
+    ///   projection of the fused pair recovers the shipped
+    ///   [`Self::kind_peak_trough_product`] scalar. Together with the
+    ///   subtraction-form and addition-form identities above, this closes
+    ///   the arithmetic algebra `{+, -, *}` on the fused pair.
+    /// - `extremal_kind_counts() == extremal_kind_observations()
+    ///   .map_or((0, 0), |((_, mn, _), (_, an, _))| (mn, an))` — the
+    ///   count-axis cell-projection of the fused-quadruple pair equals
+    ///   this fused-count pair pointwise; both routes read the same two
+    ///   scalar counts off the same underlying histogram, with the empty-
+    ///   diff [`None`] case folding to the `(0, 0)` scalar-zero identity.
+    /// - `extremal_kind_counts().0 <= self.lines.len()` always — the
+    ///   peak is bounded above by the total line count (by
+    ///   [`Self::peak_kind_count`]'s upper bound). By transitivity with
+    ///   the ordering invariant, `extremal_kind_counts().1 <=
+    ///   self.lines.len()` also holds.
+    /// - Coincidence on uniform-count or empty: on every uniform-count
+    ///   diff (peak count == trough count with all observed cells sharing
+    ///   the same count) the modal and antimodal counts coincide, so
+    ///   `extremal_kind_counts().0 == extremal_kind_counts().1`; on the
+    ///   empty diff both halves are `0`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the paired peak +
+    /// trough scan). Both are `O(n)` in practice since the diff-cell axis
+    /// carries a fixed three-cell cardinality; the returned `(usize,
+    /// usize)` reads two scalars in one tuple with no heap allocation.
+    #[must_use]
+    pub fn extremal_kind_counts(&self) -> (usize, usize) {
+        (self.peak_kind_count(), self.trough_kind_count())
+    }
 }
 
 #[cfg(test)]
@@ -61850,6 +61980,204 @@ mod tests {
         // `dominant_kind_ordinal_empty_diff_is_none` /
         // `recessive_kind_ordinal_empty_diff_is_none`.
         assert_eq!(ConfigDiff::default().extremal_kinds_ordinal(), None);
+    }
+
+    // ── extremal_kind_counts — the fused-pair count-axis peer at the
+    //    diff altitude, closing the count-axis cell-projection of the
+    //    shipped typed-tag fused-quadruple `extremal_kind_observations`.
+    //    Sibling of the shipped typed-tag fused pair `extremal_kinds` and
+    //    the ordinal-projected fused pair `extremal_kinds_ordinal` on the
+    //    same closed `DiffLineKind` axis, closing the `(typed-tag,
+    //    ordinal, count)` sub-projections of the fused quadruple on the
+    //    diff-cell axis. Empty-diff convention `(0, 0)` matches the
+    //    scalar-zero identity of the underlying count surface (no
+    //    `Option` wrapper — the count axis has a natural zero). ──
+
+    #[test]
+    fn extremal_kind_counts_matches_peak_trough_kind_count_pointwise() {
+        // Defining projection-law pin: `extremal_kind_counts() ==
+        // (peak_kind_count(), trough_kind_count())` — the fused pair
+        // reads the two shipped scalar-half endpoints of the same count
+        // surface at the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_scalars = (diff.peak_kind_count(), diff.trough_kind_count());
+            assert_eq!(diff.extremal_kind_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_modal_projection_recovers_peak_kind_count_pointwise() {
+        // Modal-half round-trip pin: the `.0` slot of the fused pair
+        // recovers `peak_kind_count()` pointwise. Reads directly off
+        // the tuple with no method call.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.extremal_kind_counts().0, diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_antimodal_projection_recovers_trough_kind_count_pointwise() {
+        // Antimodal-half round-trip pin: the `.1` slot of the fused
+        // pair recovers `trough_kind_count()` pointwise. Reads directly
+        // off the tuple with no method call.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.extremal_kind_counts().1, diff.trough_kind_count());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_empty_diff_is_zero_zero() {
+        // Empty-diff literal pin: the scalar-zero identity boundary,
+        // matching the two scalar-half endpoints' empty conventions and
+        // the shipped scalar-count quintuple `(peak_kind_count,
+        // trough_kind_count, kind_spread, kind_peak_trough_sum,
+        // kind_peak_trough_product)` reading uniformly `(0, 0, 0, 0, 0)`
+        // on the empty diff.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.extremal_kind_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_kind_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: the fused pair reads `(0, 0)`
+        // exactly on the empty diff. Both endpoints are structurally
+        // `>= 1` on every non-empty diff, so `(0, 0)` on the fused pair
+        // is a bijective non-emptiness discriminant.
+        for diff in dominant_kind_fixtures() {
+            let is_zero = diff.extremal_kind_counts() == (0, 0);
+            assert_eq!(is_zero, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_peak_ge_trough_pointwise() {
+        // Peak / trough ordering invariant: the `.0` half is always
+        // `>=` the `.1` half. Lifted from the trait-uniform
+        // `peak_count() >= trough_count()` law on `AxisHistogram`.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.extremal_kind_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_difference_recovers_kind_spread_pointwise() {
+        // Subtraction-form projection pin: `.0 - .1` recovers the
+        // shipped `kind_spread()` scalar on every fixture. Underflow-
+        // safe by the peak / trough ordering invariant.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.extremal_kind_counts();
+            assert_eq!(peak - trough, diff.kind_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_sum_recovers_kind_peak_trough_sum_pointwise() {
+        // Addition-form projection pin: `.0 + .1` recovers the shipped
+        // `kind_peak_trough_sum()` scalar on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.extremal_kind_counts();
+            assert_eq!(peak + trough, diff.kind_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_product_recovers_kind_peak_trough_product_pointwise() {
+        // Multiplication-form projection pin: `.0 * .1` recovers the
+        // shipped `kind_peak_trough_product()` scalar on every fixture.
+        // Together with the subtraction-form and addition-form
+        // identities, this closes the arithmetic algebra `{+, -, *}` on
+        // the fused pair.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.extremal_kind_counts();
+            assert_eq!(peak * trough, diff.kind_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_matches_count_projection_of_extremal_kind_observations_pointwise() {
+        // Cell-projection pin: the count-axis cell-projection of the
+        // fused-quadruple `extremal_kind_observations()` — dropping the
+        // typed-tag cells on `.0.0` / `.1.0` and the tie multiplicities
+        // on `.0.2` / `.1.2`, keeping the counts on `.0.1` / `.1.1` —
+        // equals this fused-pair count scalar pointwise, with the empty-
+        // diff `None` case folding to the `(0, 0)` scalar-zero identity.
+        for diff in dominant_kind_fixtures() {
+            let via_observations = diff
+                .extremal_kind_observations()
+                .map_or((0, 0), |((_, mn, _), (_, an, _))| (mn, an));
+            assert_eq!(diff.extremal_kind_counts(), via_observations);
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_upper_bounded_by_line_count_pointwise() {
+        // Line-count upper-bound pin: both endpoints are bounded above
+        // by `self.lines.len()`. Lifted from the shipped
+        // `peak_kind_count() <= self.lines.len()` bound and the peak /
+        // trough ordering invariant.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.extremal_kind_counts();
+            assert!(peak <= diff.lines.len());
+            assert!(trough <= diff.lines.len());
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_coincide_on_uniform_or_empty_pointwise() {
+        // Coincidence-boundary pin: on every uniform-count diff and on
+        // the empty diff, the two halves of the fused pair coincide.
+        // Peer of `extremal_kind_observations_ordinal_coincide_on_
+        // uniform_or_empty_pointwise` on the count sub-axis.
+        for diff in dominant_kind_fixtures() {
+            let uniform_or_empty =
+                diff.lines.is_empty() || diff.kind_histogram().is_uniform_count();
+            if uniform_or_empty {
+                let (peak, trough) = diff.extremal_kind_counts();
+                assert_eq!(peak, trough);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kind_counts_context_dominated_fixture_is_three_one() {
+        // Ground-truth pin on the Context-dominated fixture: 3 Context
+        // + 1 Removed reads `(3, 1)` — the strictly-unimodal peak count
+        // paired with the unique trough count. Mirrors the count slots
+        // of the fused-quadruple ground-truth pin
+        // `extremal_kind_observations_ordinal_context_dominated_fixture_
+        // is_context_three_one_removed_one_one` one const-fn seam out
+        // (which reads `Some(((Context.ordinal(), 3, 1),
+        // (Removed.ordinal(), 1, 1)))`).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.extremal_kind_counts(), (3, 1));
+    }
+
+    #[test]
+    fn extremal_kind_counts_uniform_three_kind_cover_is_one_one() {
+        // Uniform full-cover polarity pin: one line per kind gives
+        // count `1` tied across all three cells, so both endpoints read
+        // `1` — the uniform-count coincidence boundary. Mirrors the
+        // count slots of the fused-quadruple ground-truth pin
+        // `extremal_kind_observations_ordinal_uniform_three_kind_cover_
+        // is_removed_one_three_removed_one_three` one const-fn seam out
+        // (which reads `Some(((ord, 1, 3), (ord, 1, 3)))`).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.extremal_kind_counts(), (1, 1));
     }
 
     #[test]
