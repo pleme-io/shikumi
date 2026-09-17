@@ -327,7 +327,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "full" "parsing" "printing" "proc-macro" "visit-mut" ];
           }
@@ -2583,7 +2583,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "full" ];
           }
         ];
@@ -2832,7 +2832,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "full" "extra-traits" ];
           }
         ];
@@ -2863,7 +2863,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
           }
         ];
 
@@ -3064,7 +3064,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
           }
         ];
         features = {
@@ -8008,7 +8008,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
           }
         ];
 
@@ -8403,9 +8403,9 @@ rec {
       };
       "rustix" = rec {
         crateName = "rustix";
-        version = "1.1.4";
+        version = "1.1.5";
         edition = "2021";
-        sha256 = "14511f9yjqh0ix07xjrjpllah3325774gfwi9zpq72sip5jlbzmn";
+        sha256 = "17b2srw7rcqmrs1shj89g8i3r1447lihv7qrbxvp11j1psxgl7l9";
         authors = [
           "Dan Gohman <dev@sunfishcode.online>"
           "Jakub Konka <kubkon@jakubkonka.com>"
@@ -9108,7 +9108,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "derive" "parsing" "printing" "proc-macro" ];
           }
@@ -9188,7 +9188,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
           }
         ];
 
@@ -9411,7 +9411,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "extra-traits" "full" "parsing" ];
           }
         ];
@@ -9492,7 +9492,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.959";
+        version = "0.1.960";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9850,11 +9850,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "visit-mut" ];
       };
-      "syn 3.0.5" = rec {
+      "syn 3.0.6" = rec {
         crateName = "syn";
-        version = "3.0.5";
+        version = "3.0.6";
         edition = "2021";
-        sha256 = "1yc9vbm1wqs68fyj5f1f3f9isyh6i7wpxccvfrgpfnzn200jxpqj";
+        sha256 = "1vmw7s58rzrs926nv5m06x7qbgswm1aa9iw3s1bj5var47kyi4w5";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -9926,7 +9926,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             usesDefaultFeatures = false;
             features = [ "derive" "parsing" "printing" "clone-impls" "visit" "extra-traits" ];
           }
@@ -10136,7 +10136,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
           }
         ];
 
@@ -10439,7 +10439,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "full" ];
           }
         ];
@@ -11451,7 +11451,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "visit" "visit-mut" "full" "extra-traits" ];
           }
           {
@@ -13319,7 +13319,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "fold" "visit" ];
           }
           {
@@ -13372,7 +13372,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "fold" "visit" ];
           }
           {
@@ -13506,7 +13506,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 3.0.5";
+            packageId = "syn 3.0.6";
             features = [ "extra-traits" ];
           }
         ];
