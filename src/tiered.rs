@@ -40934,6 +40934,155 @@ impl ConfigDiff {
         self.kind_histogram().antimodal_observation()
     }
 
+    /// The **modal kind observation ordinal** — the ordinal-axis
+    /// cell-projection of [`Self::modal_kind_observation`] one const-fn
+    /// seam further inland on the modal side of this diff's per-line
+    /// [`DiffLineKind`] histogram: the fused `(ordinal, count,
+    /// multiplicity)` triple carrying the [`DiffLineKind::ordinal`] of
+    /// the argmax cell together with the peak line count it collected
+    /// and how many diff-cell kinds tied at that peak. Returns [`None`]
+    /// exactly on the empty diff; otherwise returns `Some((o, n, m))`
+    /// where `o == self.dominant_kind_ordinal().unwrap()`,
+    /// `n == self.peak_kind_count() >= 1`, and
+    /// `m == self.peak_kind_multiplicity() >= 1`.
+    ///
+    /// Defined as `self.modal_kind_observation().map(|(k, n, m)|
+    /// (k.ordinal(), n, m))`, forwarding through the shipped
+    /// modal-observation fused triple one seam outland and the
+    /// const-callable [`DiffLineKind::ordinal`] method on the closed
+    /// [`DiffLineKind`] axis. The `.1` count and `.2` multiplicity
+    /// components ride through untouched — the ordinal projection
+    /// touches only the typed-tag `.0` slot, so the triple encodes the
+    /// modal cell as a bare [`usize`] precedence-ordinal on the wire
+    /// while the density components stay in their scalar form.
+    ///
+    /// **Fused-triple ordinal peer** of the shipped fused-pair
+    /// [`Self::dominant_kind_observation_ordinal`] one const-fn seam
+    /// outland on the same modal-side surface — this triple extends
+    /// the shipped pair with the tie-count multiplicity component in
+    /// the same one-hop `.map(|(k, n, _)| (k.ordinal(), n))` shape.
+    /// **Diff-altitude peer** of the container-altitude fused-triple
+    /// ordinal peer
+    /// [`ProgressiveResolution::modal_source_kind_observation_ordinal`]
+    /// on the source-kind cross-axis and
+    /// [`ProgressiveResolution::modal_tier_observation_ordinal`] on
+    /// the tier cross-axis one altitude up on the atomic
+    /// `(tier, source)` pair — the same shape lifted from the container
+    /// altitude to the diff altitude on the diff-cell closed axis.
+    ///
+    /// **Empty-diff convention** — returns [`None`], matching
+    /// [`Self::modal_kind_observation`] one seam out; consumers matching
+    /// on `Some((o, n, m))` never see a spurious `(0, 0, 0)` — the
+    /// empty gate lives on the outer [`Option`].
+    ///
+    /// **Round-trip pins**:
+    /// - `modal_kind_observation_ordinal().map(|(o, _, _)| o) ==
+    ///   dominant_kind_ordinal()` — the cell-axis scalar sub-projection
+    ///   recovers [`Self::dominant_kind_ordinal`] pointwise.
+    /// - `modal_kind_observation_ordinal().map_or(0, |(_, n, _)| n) ==
+    ///   peak_kind_count()` — the count-axis scalar sub-projection
+    ///   recovers [`Self::peak_kind_count`] pointwise.
+    /// - `modal_kind_observation_ordinal().map_or(0, |(_, _, m)| m) ==
+    ///   peak_kind_multiplicity()` — the multiplicity-axis scalar
+    ///   sub-projection recovers [`Self::peak_kind_multiplicity`]
+    ///   pointwise.
+    /// - `modal_kind_observation_ordinal().map(|(o, n, _)| (o, n)) ==
+    ///   dominant_kind_observation_ordinal()` — the fused-pair (ordinal,
+    ///   count) sub-projection recovers the shipped ordinal-projected
+    ///   fused pair pointwise.
+    /// - `modal_kind_observation_ordinal().is_none() == is_empty()` —
+    ///   the one-discriminant empty boundary on the triple.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.lines.len()` and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` — matches
+    /// [`Self::modal_kind_observation`] one seam out (delegates through
+    /// it with a `const`-callable [`DiffLineKind::ordinal`] one-shot on
+    /// the cell slot).
+    #[must_use]
+    pub fn modal_kind_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.modal_kind_observation()
+            .map(|(k, n, m)| (k.ordinal(), n, m))
+    }
+
+    /// The **antimodal kind observation ordinal** — the ordinal-axis
+    /// cell-projection of [`Self::antimodal_kind_observation`] one
+    /// const-fn seam further inland on the antimodal side of this
+    /// diff's per-line [`DiffLineKind`] histogram: the fused
+    /// `(ordinal, count, multiplicity)` triple carrying the
+    /// [`DiffLineKind::ordinal`] of the argmin cell together with the
+    /// trough line count it collected and how many diff-cell kinds
+    /// tied at that trough. Returns [`None`] exactly on the empty diff;
+    /// otherwise returns `Some((o, n, m))` where
+    /// `o == self.recessive_kind_ordinal().unwrap()`,
+    /// `n == self.trough_kind_count() >= 1`, and
+    /// `m == self.trough_kind_multiplicity() >= 1`.
+    ///
+    /// Defined as `self.antimodal_kind_observation().map(|(k, n, m)|
+    /// (k.ordinal(), n, m))`, forwarding through the shipped
+    /// antimodal-observation fused triple one seam outland and the
+    /// const-callable [`DiffLineKind::ordinal`] method on the closed
+    /// [`DiffLineKind`] axis. The `.1` count and `.2` multiplicity
+    /// components ride through untouched — the ordinal projection
+    /// touches only the typed-tag `.0` slot, so the triple encodes the
+    /// antimodal cell as a bare [`usize`] precedence-ordinal on the
+    /// wire while the density components stay in their scalar form.
+    ///
+    /// **Antimodal peer** of [`Self::modal_kind_observation_ordinal`]
+    /// on the same surface — together they close the ordinal-projected
+    /// `(modal, antimodal)` two-cell partition of the observation
+    /// triple-surface on the diff-cell axis at the diff altitude,
+    /// mirroring the container-altitude closure the source-kind
+    /// cross-axis carries via
+    /// [`ProgressiveResolution::modal_source_kind_observation_ordinal`]
+    /// / [`ProgressiveResolution::antimodal_source_kind_observation_ordinal`]
+    /// one altitude up on the atomic `(tier, source)` pair. **Fused-
+    /// triple ordinal peer** of the shipped fused-pair
+    /// [`Self::recessive_kind_observation_ordinal`] one const-fn seam
+    /// outland on the same antimodal-side surface — this triple extends
+    /// the shipped pair with the tie-count multiplicity component.
+    ///
+    /// **Empty-diff convention** — returns [`None`], matching
+    /// [`Self::antimodal_kind_observation`] one seam out; consumers
+    /// matching on `Some((o, n, m))` never see a spurious `(0, 0, 0)`
+    /// — the empty gate lives on the outer [`Option`].
+    ///
+    /// **Round-trip pins**:
+    /// - `antimodal_kind_observation_ordinal().map(|(o, _, _)| o) ==
+    ///   recessive_kind_ordinal()` — the cell-axis scalar sub-
+    ///   projection recovers [`Self::recessive_kind_ordinal`] pointwise.
+    /// - `antimodal_kind_observation_ordinal().map_or(0, |(_, n, _)| n)
+    ///   == trough_kind_count()` — the count-axis scalar sub-projection
+    ///   recovers [`Self::trough_kind_count`] pointwise.
+    /// - `antimodal_kind_observation_ordinal().map_or(0, |(_, _, m)| m)
+    ///   == trough_kind_multiplicity()` — the multiplicity-axis scalar
+    ///   sub-projection recovers [`Self::trough_kind_multiplicity`]
+    ///   pointwise.
+    /// - `antimodal_kind_observation_ordinal().map(|(o, n, _)| (o, n))
+    ///   == recessive_kind_observation_ordinal()` — the fused-pair
+    ///   (ordinal, count) sub-projection recovers the shipped ordinal-
+    ///   projected fused pair pointwise.
+    /// - `antimodal_kind_observation_ordinal().is_none() == is_empty()`
+    ///   — the one-discriminant empty boundary on the triple.
+    /// - `antimodal_kind_observation_ordinal() ==
+    ///   modal_kind_observation_ordinal()` on every uniform-count diff
+    ///   and on the empty diff — the ordinal-projection preserves the
+    ///   coincidence law from the typed-tag side.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.lines.len()` and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` — matches
+    /// [`Self::antimodal_kind_observation`] one seam out (delegates
+    /// through it with a `const`-callable [`DiffLineKind::ordinal`]
+    /// one-shot on the cell slot).
+    #[must_use]
+    pub fn antimodal_kind_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.antimodal_kind_observation()
+            .map(|(k, n, m)| (k.ordinal(), n, m))
+    }
+
     /// The **extremal kind observations** on this diff's per-line
     /// [`DiffLineKind`] histogram — the fused-quadruple pair
     /// `Option<((DiffLineKind, usize, usize), (DiffLineKind, usize,
@@ -60405,6 +60554,372 @@ mod tests {
                 assert!(am <= axis_card);
             }
         }
+    }
+
+    // ── modal_kind_observation_ordinal / antimodal_kind_observation_ordinal —
+    //    diff-altitude ordinal-projection peer of the shipped fused-
+    //    triple `(cell, count, multiplicity)` pair on both sides of the
+    //    diff-cell axis, one const-fn seam further inland than
+    //    `modal_kind_observation` / `antimodal_kind_observation`.
+    //    Mirrors the container-altitude ordinal-projected modal-
+    //    observation triple pair on the source-kind cross-axis
+    //    (`ProgressiveResolution::modal_source_kind_observation_ordinal`
+    //    / `antimodal_source_kind_observation_ordinal`) one altitude up.
+    //    Extends the shipped fused-pair diff-altitude ordinal peer
+    //    `dominant_kind_observation_ordinal` /
+    //    `recessive_kind_observation_ordinal` with the tie-count
+    //    multiplicity component. ─────────
+
+    #[test]
+    fn modal_kind_observation_ordinal_matches_ordinal_projection_of_observation_pointwise() {
+        // Defining projection-law pin:
+        // `modal_kind_observation_ordinal() ==
+        // modal_kind_observation().map(|(k, n, m)| (k.ordinal(), n, m))`
+        // — the threefold ordinal-projection routes through the typed-
+        // tag fused triple one const-fn seam outland.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .modal_kind_observation()
+                .map(|(k, n, m)| (k.ordinal(), n, m));
+            assert_eq!(diff.modal_kind_observation_ordinal(), via_map);
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_ordinal_half_recovers_dominant_kind_ordinal_pointwise() {
+        // Cell-axis scalar sub-projection: `.map(|(o, _, _)| o) ==
+        // dominant_kind_ordinal()` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.modal_kind_observation_ordinal().map(|(o, _, _)| o);
+            assert_eq!(via_map, diff.dominant_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_count_half_recovers_peak_kind_count_pointwise() {
+        // Count-axis scalar sub-projection: `.map_or(0, |(_, n, _)| n)
+        // == peak_kind_count()` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .modal_kind_observation_ordinal()
+                .map_or(0, |(_, n, _)| n);
+            assert_eq!(via_map, diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_multiplicity_half_recovers_peak_kind_multiplicity_pointwise()
+    {
+        // Multiplicity-axis scalar sub-projection: `.map_or(0, |(_, _,
+        // m)| m) == peak_kind_multiplicity()` on every fixture — the
+        // new component the fused triple carries beyond the shipped
+        // ordinal-projected fused pair.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .modal_kind_observation_ordinal()
+                .map_or(0, |(_, _, m)| m);
+            assert_eq!(via_map, diff.peak_kind_multiplicity());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_pair_projection_recovers_dominant_kind_observation_ordinal_pointwise()
+     {
+        // Fused-triple → fused-pair sub-projection law:
+        // `.map(|(o, n, _)| (o, n))` on the ordinal-projected triple
+        // recovers the shipped ordinal-projected fused pair
+        // `dominant_kind_observation_ordinal` pointwise on every
+        // fixture — the triple extends the pair with the multiplicity
+        // component in the same one-hop shape.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .modal_kind_observation_ordinal()
+                .map(|(o, n, _)| (o, n));
+            assert_eq!(via_map, diff.dominant_kind_observation_ordinal());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_empty_diff_is_none() {
+        // Empty-diff literal pin.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.modal_kind_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin: the ordinal-projection
+        // preserves the empty / non-empty discriminant of the outer
+        // `Option`.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.modal_kind_observation_ordinal().is_none();
+            assert_eq!(is_none, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_presence_matches_modal_kind_observation_pointwise() {
+        // Presence-parity pin: the ordinal-projected fused triple is
+        // `Some` exactly when the typed-tag fused triple is `Some`.
+        for diff in dominant_kind_fixtures() {
+            let ordinal_present = diff.modal_kind_observation_ordinal().is_some();
+            let typed_present = diff.modal_kind_observation().is_some();
+            assert_eq!(ordinal_present, typed_present);
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_ordinal_bounded_by_axis_cardinality_pointwise() {
+        // Axis-cardinality range pin: when `Some((o, _, _))`, `o < 3`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((o, _, _)) = diff.modal_kind_observation_ordinal() {
+                assert!(o < crate::axis_cardinality::<DiffLineKind>());
+            }
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_count_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin on the count component: `n >= 1`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n, _)) = diff.modal_kind_observation_ordinal() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_multiplicity_bounded_by_axis_cardinality_pointwise() {
+        // Bounded-multiplicity pin: `1 <= m <=
+        // axis_cardinality::<DiffLineKind>()` (= 3) on every non-empty
+        // diff. Ordinal-projection preserves the same axis-cardinality
+        // bound the typed-tag fused triple carries.
+        let axis_card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, _, m)) = diff.modal_kind_observation_ordinal() {
+                assert!(m >= 1);
+                assert!(m <= axis_card);
+            }
+        }
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_context_dominated_fixture_is_context_ordinal_at_three_multiplicity_one()
+     {
+        // Ground-truth pin on the Context-dominated fixture:
+        // 3 Context + 1 Removed reads
+        // `Some((Context.ordinal(), 3, 1))` — the strictly-unimodal
+        // peak with a unique tie count.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.modal_kind_observation_ordinal(),
+            Some((DiffLineKind::Context.ordinal(), 3, 1)),
+        );
+    }
+
+    #[test]
+    fn modal_kind_observation_ordinal_uniform_three_kind_cover_is_removed_ordinal_at_one_multiplicity_three()
+     {
+        // Uniform full-cover polarity pin: one line per kind gives
+        // peak count `1` tied across all three cells; declaration-
+        // order picks Removed's ordinal (0) at `(0, 1, 3)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.modal_kind_observation_ordinal(),
+            Some((DiffLineKind::Removed.ordinal(), 1, 3)),
+        );
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_matches_ordinal_projection_of_observation_pointwise() {
+        // Defining projection-law pin:
+        // `antimodal_kind_observation_ordinal() ==
+        // antimodal_kind_observation().map(|(k, n, m)| (k.ordinal(), n, m))`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .antimodal_kind_observation()
+                .map(|(k, n, m)| (k.ordinal(), n, m));
+            assert_eq!(diff.antimodal_kind_observation_ordinal(), via_map);
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_ordinal_half_recovers_recessive_kind_ordinal_pointwise() {
+        // Cell-axis scalar sub-projection: `.map(|(o, _, _)| o) ==
+        // recessive_kind_ordinal()` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.antimodal_kind_observation_ordinal().map(|(o, _, _)| o);
+            assert_eq!(via_map, diff.recessive_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_count_half_recovers_trough_kind_count_pointwise() {
+        // Count-axis scalar sub-projection: `.map_or(0, |(_, n, _)| n)
+        // == trough_kind_count()` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .antimodal_kind_observation_ordinal()
+                .map_or(0, |(_, n, _)| n);
+            assert_eq!(via_map, diff.trough_kind_count());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_multiplicity_half_recovers_trough_kind_multiplicity_pointwise()
+     {
+        // Multiplicity-axis scalar sub-projection: `.map_or(0, |(_, _,
+        // m)| m) == trough_kind_multiplicity()` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .antimodal_kind_observation_ordinal()
+                .map_or(0, |(_, _, m)| m);
+            assert_eq!(via_map, diff.trough_kind_multiplicity());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_pair_projection_recovers_recessive_kind_observation_ordinal_pointwise()
+     {
+        // Fused-triple → fused-pair sub-projection law:
+        // `.map(|(o, n, _)| (o, n))` on the antimodal ordinal-projected
+        // triple recovers the shipped ordinal-projected fused pair
+        // `recessive_kind_observation_ordinal` pointwise.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff
+                .antimodal_kind_observation_ordinal()
+                .map(|(o, n, _)| (o, n));
+            assert_eq!(via_map, diff.recessive_kind_observation_ordinal());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_empty_diff_is_none() {
+        // Empty-diff literal pin.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.antimodal_kind_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.antimodal_kind_observation_ordinal().is_none();
+            assert_eq!(is_none, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_presence_matches_modal_side_pointwise() {
+        // Cross-side presence-parity pin: `is_some()` reads the same on
+        // both sides of the ordinal-projected observation surface.
+        for diff in dominant_kind_fixtures() {
+            let anti_present = diff.antimodal_kind_observation_ordinal().is_some();
+            let modal_present = diff.modal_kind_observation_ordinal().is_some();
+            assert_eq!(anti_present, modal_present);
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_ordinal_bounded_by_axis_cardinality_pointwise() {
+        // Axis-cardinality range pin: `o < 3` on every fixture.
+        for diff in dominant_kind_fixtures() {
+            if let Some((o, _, _)) = diff.antimodal_kind_observation_ordinal() {
+                assert!(o < crate::axis_cardinality::<DiffLineKind>());
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_count_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin on the count component.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n, _)) = diff.antimodal_kind_observation_ordinal() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_count_bounded_above_by_peak_count_pointwise() {
+        // Peak/trough inequality pin: `n <= peak_kind_count()`. The
+        // trough count is bounded above by the peak count. Equality
+        // holds iff the histogram is uniform-count.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n, _)) = diff.antimodal_kind_observation_ordinal() {
+                assert!(n <= diff.peak_kind_count());
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_multiplicity_bounded_by_axis_cardinality_pointwise() {
+        // Bounded-multiplicity pin: `1 <= m <= 3` on every non-empty
+        // diff.
+        let axis_card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, _, m)) = diff.antimodal_kind_observation_ordinal() {
+                assert!(m >= 1);
+                assert!(m <= axis_card);
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_coincides_with_modal_side_on_uniform_or_empty_pointwise()
+    {
+        // Coincidence-boundary pin: `antimodal_kind_observation_ordinal()
+        // == modal_kind_observation_ordinal()` on every uniform-count
+        // diff and on the empty diff. The ordinal-projection preserves
+        // the typed-tag coincidence law from
+        // `modal_kind_observation` / `antimodal_kind_observation` under
+        // `DiffLineKind::ordinal`.
+        for diff in dominant_kind_fixtures() {
+            let uniform_or_empty =
+                diff.lines.is_empty() || diff.kind_histogram().is_uniform_count();
+            if uniform_or_empty {
+                assert_eq!(
+                    diff.antimodal_kind_observation_ordinal(),
+                    diff.modal_kind_observation_ordinal(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn antimodal_kind_observation_ordinal_context_dominated_fixture_is_removed_ordinal_at_one_multiplicity_one()
+     {
+        // Ground-truth pin on the Context-dominated fixture:
+        // 3 Context + 1 Removed reads
+        // `Some((Removed.ordinal(), 1, 1))` — the strictly-unimodal
+        // trough with a unique tie count.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.antimodal_kind_observation_ordinal(),
+            Some((DiffLineKind::Removed.ordinal(), 1, 1)),
+        );
     }
 
     // ── extremal_kinds — cells-only fused-pair diff-altitude sibling of
