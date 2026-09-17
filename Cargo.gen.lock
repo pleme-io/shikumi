@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "cbc43fbd355ba2566ad43fceafa488875a722c0e405ec7dd01d7c0231f3df515",
+  "cargo_lock_sha256": "b5588fbcf7fc2c9ae56792f7abbb34d310d90a5be91533bb1f9e1ace095297de",
   "manifest_sha256": {
-    "Cargo.toml": "2c585811a47a5063a883343f37a5ae252dad08537a350171d4892e3e110f3509"
+    "Cargo.toml": "6f679af65ece8c337dcf4078a1310da7ddca0ee8070d6995e5e2824ca8a2bb4b"
   },
   "target_resolves": {
     "base": {
@@ -848,7 +848,7 @@
         "runtime_dependencies": [
           {
             "name": "unicode_ident",
-            "package_key": "unicode-ident-1.0.25",
+            "package_key": "unicode-ident-1.0.26",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.963": {
+      "shikumi-0.1.964": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1338,7 +1338,7 @@
           },
           {
             "name": "unicode_ident",
-            "package_key": "unicode-ident-1.0.25",
+            "package_key": "unicode-ident-1.0.26",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1384,7 +1384,7 @@
           },
           {
             "name": "unicode_ident",
-            "package_key": "unicode-ident-1.0.25",
+            "package_key": "unicode-ident-1.0.26",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1864,7 +1864,7 @@
           "default"
         ]
       },
-      "unicode-ident-1.0.25": {
+      "unicode-ident-1.0.26": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -3992,7 +3992,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.963": {
+    "shikumi-0.1.964": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4052,7 +4052,7 @@
       "edition": "2018",
       "build_script": "build.rs"
     },
-    "unicode-ident-1.0.25": {
+    "unicode-ident-1.0.26": {
       "edition": "2021"
     },
     "unsafe-libyaml-0.2.11": {
