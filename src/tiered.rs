@@ -5707,6 +5707,136 @@ impl ProvenanceMap {
             .map(EnvMetadataTagKind::ordinal)
     }
 
+    /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_prefixed`], or [`None`] if this map
+    /// is empty OR if the lex-lower-bound leaf's source is NOT
+    /// [`ConfigSource::Env`] — the Env-arm typed-sub-axis `Prefixed`-
+    /// polarity boolean-tag scalar sub-projection of the value-axis
+    /// bound, the outer bound-side altitude peer of the path-keyed pair
+    /// [`Self::is_env_prefix_prefixed_of`] /
+    /// [`Self::is_env_prefix_prefixed_of_owned`] one const-fn seam
+    /// further inland from the typed-sub-axis bound-side pair
+    /// [`Self::first_env_prefix_kind`] / [`Self::last_env_prefix_kind`]
+    /// to the [`EnvMetadataTagKind::is_prefixed`] boolean-tag coordinate
+    /// the [`EnvMetadataTagKind`] tag carries. Where the path-keyed pair
+    /// filters to one named leaf, this seam pins the extremal leaf on
+    /// the [`BTreeMap::first_key_value`] cursor the value-axis bound
+    /// uses.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`
+    /// and to
+    /// `self.first_provenance().and_then(Provenance::env_prefix_kind).map(EnvMetadataTagKind::is_prefixed)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::first_key_value`][std::collections::BTreeMap::first_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::env_prefix_kind`] accessor on the retained value
+    /// and mapping through [`EnvMetadataTagKind::is_prefixed`] on the
+    /// retained [`EnvMetadataTagKind`] polarity.
+    ///
+    /// **Binary-partition law** — together with
+    /// [`Self::first_is_env_prefix_bare`], the two boolean tags form a
+    /// closed binary partition on every Env-arm lex-lower-bound hit:
+    /// exactly one is `Some(true)` and the other is `Some(false)`,
+    /// summing to `Some(true)` on every hit. Off the Env arm (or on an
+    /// empty map), both evaporate to `None`, matching the same `None`
+    /// boundary [`Self::first_env_prefix_kind`] carries one const-fn
+    /// seam further out.
+    ///
+    /// Returns owned [`bool`] ([`Copy`], no borrow).
+    #[must_use]
+    pub fn first_is_env_prefix_prefixed(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.env_prefix_kind())
+            .map(EnvMetadataTagKind::is_prefixed)
+    }
+
+    /// Lex-upper-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_prefixed`], or [`None`] if this map
+    /// is empty OR if the lex-upper-bound leaf's source is NOT
+    /// [`ConfigSource::Env`] — the upper-bound sibling of
+    /// [`Self::first_is_env_prefix_prefixed`] that
+    /// [`Self::first_is_env_prefix_prefixed`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`
+    /// and to
+    /// `self.last_provenance().and_then(Provenance::env_prefix_kind).map(EnvMetadataTagKind::is_prefixed)`
+    /// on every input by construction — the body forwards through the
+    /// same
+    /// [`BTreeMap::last_key_value`][std::collections::BTreeMap::last_key_value]
+    /// cursor the value-axis bound uses, projecting the
+    /// [`Provenance::env_prefix_kind`] accessor on the retained value
+    /// and mapping through [`EnvMetadataTagKind::is_prefixed`] on the
+    /// retained [`EnvMetadataTagKind`] polarity, so the two disagree
+    /// only under a [`BTreeMap`] bug. Returns the same owned [`bool`]
+    /// shape as [`Self::first_is_env_prefix_prefixed`] on the boolean-
+    /// tag axis.
+    #[must_use]
+    pub fn last_is_env_prefix_prefixed(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.env_prefix_kind())
+            .map(EnvMetadataTagKind::is_prefixed)
+    }
+
+    /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_bare`], or [`None`] if this map is
+    /// empty OR if the lex-lower-bound leaf's source is NOT
+    /// [`ConfigSource::Env`] — the `Bare`-polarity sibling of
+    /// [`Self::first_is_env_prefix_prefixed`] on the Env-arm typed-sub-
+    /// axis binary partition (`{Prefixed, Bare}`), closing the outer
+    /// bound-side altitude peer of the path-keyed pair
+    /// [`Self::is_env_prefix_bare_of`] / [`Self::is_env_prefix_bare_of_owned`]
+    /// at the lower bound.
+    ///
+    /// Distinct from [`Self::first_is_bare`] one closed axis over:
+    /// `first_is_bare` names the tier-axis `ConfigTier::Bare` polarity
+    /// (the zero-opinion tier floor), where this names the Env-arm
+    /// typed-sub-axis [`EnvMetadataTagKind::Bare`] polarity (an
+    /// `Env::raw`-shaped overlay's bare-prefix env source). The two
+    /// share the `Bare` English word but sit on orthogonal closed axes
+    /// (tier vs Env-arm typed sub-axis) and neither implies the other
+    /// pointwise — the qualified name pins the disambiguation at the
+    /// API boundary rather than in a call-site comment.
+    ///
+    /// Pointwise-equal to
+    /// `self.first_env_prefix_kind().map(EnvMetadataTagKind::is_bare)`
+    /// on every input by construction, and the [`Not`][std::ops::Not]-
+    /// dual of [`Self::first_is_env_prefix_prefixed`] on every Env-arm
+    /// hit at the lower bound
+    /// (`first_is_env_prefix_bare() == first_is_env_prefix_prefixed().map(|b| !b)`).
+    #[must_use]
+    pub fn first_is_env_prefix_bare(&self) -> Option<bool> {
+        self.inner
+            .first_key_value()
+            .and_then(|(_, v)| v.env_prefix_kind())
+            .map(EnvMetadataTagKind::is_bare)
+    }
+
+    /// Lex-upper-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_bare`], or [`None`] if this map is
+    /// empty OR if the lex-upper-bound leaf's source is NOT
+    /// [`ConfigSource::Env`] — the upper-bound sibling of
+    /// [`Self::first_is_env_prefix_bare`] that
+    /// [`Self::first_is_env_prefix_bare`] closes at the lower bound.
+    ///
+    /// Pointwise-equal to
+    /// `self.last_env_prefix_kind().map(EnvMetadataTagKind::is_bare)`
+    /// on every input by construction, and the [`Not`][std::ops::Not]-
+    /// dual of [`Self::last_is_env_prefix_prefixed`] on every Env-arm
+    /// hit at the upper bound. Returns the same owned [`bool`] shape as
+    /// [`Self::first_is_env_prefix_bare`] on the boolean-tag axis.
+    #[must_use]
+    pub fn last_is_env_prefix_bare(&self) -> Option<bool> {
+        self.inner
+            .last_key_value()
+            .and_then(|(_, v)| v.env_prefix_kind())
+            .map(EnvMetadataTagKind::is_bare)
+    }
+
     /// Sorted iterator over just the leaf [`ConfigTierKind`] — the
     /// tier-axis projection walker of [`Self::provenances`], one step
     /// down from `&Provenance` to the [`Provenance::tier`] scalar every
@@ -28336,6 +28466,101 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn last_env_prefix_kind_ordinal(&self) -> Option<usize> {
         self.provenance.last_env_prefix_kind_ordinal()
+    }
+
+    /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_prefixed`], or [`None`] if this
+    /// resolution's provenance map is empty OR if the lex-lower-bound
+    /// leaf's source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::first_is_env_prefix_prefixed`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.first_is_env_prefix_prefixed()`.
+    ///
+    /// The outer bound-side altitude peer of the container-altitude
+    /// path-keyed pair [`Self::is_env_prefix_prefixed_of`] /
+    /// [`Self::is_env_prefix_prefixed_of_owned`] one const-fn seam
+    /// further inland from the typed-sub-axis bound-side pair
+    /// [`Self::first_env_prefix_kind`] / [`Self::last_env_prefix_kind`]
+    /// to the [`EnvMetadataTagKind::is_prefixed`] boolean-tag
+    /// coordinate.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_is_env_prefix_prefixed()`.
+    /// - Equal to
+    ///   `self.first_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`
+    ///   on every input by construction.
+    #[must_use]
+    pub fn first_is_env_prefix_prefixed(&self) -> Option<bool> {
+        self.provenance.first_is_env_prefix_prefixed()
+    }
+
+    /// Lex-upper-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_prefixed`], or [`None`] if this
+    /// resolution's provenance map is empty OR if the lex-upper-bound
+    /// leaf's source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::last_is_env_prefix_prefixed`],
+    /// delegating one seam down.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_env_prefix_prefixed`]
+    /// on the upper-bound side that
+    /// [`Self::first_is_env_prefix_prefixed`] closes at the lower
+    /// bound — closes the Env-arm typed-sub-axis `Prefixed`-polarity
+    /// boolean-tag scalar sub-projection of the value-axis bound at
+    /// the container altitude on both bounds.
+    #[must_use]
+    pub fn last_is_env_prefix_prefixed(&self) -> Option<bool> {
+        self.provenance.last_is_env_prefix_prefixed()
+    }
+
+    /// Lex-lower-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_bare`], or [`None`] if this
+    /// resolution's provenance map is empty OR if the lex-lower-bound
+    /// leaf's source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::first_is_env_prefix_bare`],
+    /// delegating one seam down.
+    ///
+    /// Distinct from [`Self::first_is_bare`] one closed axis over:
+    /// `first_is_bare` names the tier-axis `ConfigTier::Bare` polarity,
+    /// where this names the Env-arm typed-sub-axis
+    /// [`EnvMetadataTagKind::Bare`] polarity — orthogonal closed axes
+    /// sharing the `Bare` English word but not their meaning.
+    ///
+    /// # Pointwise agreement
+    ///
+    /// - Delegates one seam down to
+    ///   `self.provenance().first_is_env_prefix_bare()`.
+    /// - Equal to
+    ///   `self.first_env_prefix_kind().map(EnvMetadataTagKind::is_bare)`
+    ///   on every input by construction.
+    /// - [`Not`][std::ops::Not]-dual of
+    ///   [`Self::first_is_env_prefix_prefixed`] on every Env-arm hit at
+    ///   the lower bound.
+    #[must_use]
+    pub fn first_is_env_prefix_bare(&self) -> Option<bool> {
+        self.provenance.first_is_env_prefix_bare()
+    }
+
+    /// Lex-upper-bound leaf's Env-arm typed-sub-axis per-variant boolean
+    /// tag [`EnvMetadataTagKind::is_bare`], or [`None`] if this
+    /// resolution's provenance map is empty OR if the lex-upper-bound
+    /// leaf's source is NOT [`ConfigSource::Env`] — the container-
+    /// altitude peer of [`ProvenanceMap::last_is_env_prefix_bare`],
+    /// delegating one seam down.
+    ///
+    /// The bounded-lookup peer of [`Self::first_is_env_prefix_bare`] on
+    /// the upper-bound side that [`Self::first_is_env_prefix_bare`]
+    /// closes at the lower bound — closes the Env-arm typed-sub-axis
+    /// `Bare`-polarity boolean-tag scalar sub-projection of the
+    /// value-axis bound at the container altitude on both bounds, and
+    /// with the `Prefixed`-polarity pair closes the Env-arm typed-sub-
+    /// axis binary-partition boolean-tag scalar sub-projection at both
+    /// altitudes.
+    #[must_use]
+    pub fn last_is_env_prefix_bare(&self) -> Option<bool> {
+        self.provenance.last_is_env_prefix_bare()
     }
 
     /// Sorted iterator over just the per-leaf [`ConfigTierKind`] — the
@@ -64603,6 +64828,211 @@ mod progressive_tests {
             bare_env.first_env_prefix_kind_ordinal(),
             Some(EnvMetadataTagKind::Bare.ordinal()),
         );
+    }
+
+    // -------- ProvenanceMap::first_is_env_prefix_prefixed /
+    // -------- ::last_is_env_prefix_prefixed /
+    // -------- ::first_is_env_prefix_bare / ::last_is_env_prefix_bare
+    // -------- Env-arm typed-sub-axis per-variant boolean-tag scalar
+    // -------- sub-projection of the value-axis bound (outer bound-side
+    // -------- altitude peer of the path-keyed pair
+    // -------- `is_env_prefix_prefixed_of` / `is_env_prefix_bare_of`,
+    // -------- one const-fn seam further inland from the typed-sub-axis
+    // -------- bound-side pair `first_env_prefix_kind` /
+    // -------- `last_env_prefix_kind` to the
+    // -------- `EnvMetadataTagKind::is_prefixed` / ::is_bare boolean-tag
+    // -------- coordinate)
+
+    #[test]
+    fn provenance_map_first_is_env_prefix_prefixed_agrees_with_first_env_prefix_kind_is_prefixed_projection_pointwise()
+     {
+        // Cross-seam agreement law at the lex-lower bound: the Env-arm
+        // typed-sub-axis `Prefixed`-polarity boolean-tag scalar sub-
+        // projection on the value-axis bound yields the same
+        // `Option<bool>` on every input as the two-hop chain
+        // `first_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`
+        // that the one-hop `first_is_env_prefix_prefixed` seam exists
+        // to collapse. Peer of the ordinal-axis agreement pin
+        // `provenance_map_first_env_prefix_kind_ordinal_agrees_with_first_env_prefix_kind_ordinal_projection_pointwise`
+        // one boolean-tag sub-axis over on the same Env-arm.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().first_is_env_prefix_prefixed();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .first_env_prefix_kind()
+            .map(EnvMetadataTagKind::is_prefixed);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_env_prefix_prefixed_agrees_with_last_env_prefix_kind_is_prefixed_projection_pointwise()
+     {
+        // Peer of the `first_is_env_prefix_prefixed` cross-seam pin
+        // above on the upper-bound side. Pointwise-equal to
+        // `last_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().last_is_env_prefix_prefixed();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .last_env_prefix_kind()
+            .map(EnvMetadataTagKind::is_prefixed);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_is_env_prefix_bare_agrees_with_first_env_prefix_kind_is_bare_projection_pointwise()
+     {
+        // Cross-seam agreement law at the lex-lower bound on the
+        // `Bare`-polarity sibling: pointwise-equal to
+        // `first_env_prefix_kind().map(EnvMetadataTagKind::is_bare)`.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().first_is_env_prefix_bare();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .first_env_prefix_kind()
+            .map(EnvMetadataTagKind::is_bare);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_last_is_env_prefix_bare_agrees_with_last_env_prefix_kind_is_bare_projection_pointwise()
+     {
+        // Peer of the `first_is_env_prefix_bare` cross-seam pin above
+        // on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_tag: Option<bool> = r.provenance().last_is_env_prefix_bare();
+        let via_kind: Option<bool> = r
+            .provenance()
+            .last_env_prefix_kind()
+            .map(EnvMetadataTagKind::is_bare);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn provenance_map_first_is_env_prefix_prefixed_and_bare_form_binary_partition_on_env_hit_and_evaporate_off_arm()
+     {
+        // Binary-partition law at the lex-lower bound: on every Env-arm
+        // hit the two per-variant tags sum to `Some(true)` and are
+        // pointwise negations of each other; off the Env arm (or on an
+        // empty map) both evaporate to `None`. Two positive witnesses
+        // (`Prefixed` and `Bare` singletons) and two evaporation
+        // witnesses (empty map, File-only overlay).
+        let empty = ProvenanceMap::default();
+        assert!(empty.first_is_env_prefix_prefixed().is_none());
+        assert!(empty.first_is_env_prefix_bare().is_none());
+
+        let prefixed: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env("PROG_"))).collect();
+        assert_eq!(prefixed.first_is_env_prefix_prefixed(), Some(true));
+        assert_eq!(prefixed.first_is_env_prefix_bare(), Some(false));
+
+        let bare: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env(""))).collect();
+        assert_eq!(bare.first_is_env_prefix_prefixed(), Some(false));
+        assert_eq!(bare.first_is_env_prefix_bare(), Some(true));
+
+        let file_only: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/only.yaml")))
+                .collect();
+        assert!(file_only.first_is_env_prefix_prefixed().is_none());
+        assert!(file_only.first_is_env_prefix_bare().is_none());
+    }
+
+    #[test]
+    fn provenance_map_last_is_env_prefix_prefixed_and_bare_form_binary_partition_on_env_hit_and_evaporate_off_arm()
+     {
+        // Upper-bound peer of the same-shape binary-partition + off-arm
+        // evaporation pin above.
+        let empty = ProvenanceMap::default();
+        assert!(empty.last_is_env_prefix_prefixed().is_none());
+        assert!(empty.last_is_env_prefix_bare().is_none());
+
+        let prefixed: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env("PROG_"))).collect();
+        assert_eq!(prefixed.last_is_env_prefix_prefixed(), Some(true));
+        assert_eq!(prefixed.last_is_env_prefix_bare(), Some(false));
+
+        let bare: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env(""))).collect();
+        assert_eq!(bare.last_is_env_prefix_prefixed(), Some(false));
+        assert_eq!(bare.last_is_env_prefix_bare(), Some(true));
+
+        let file_only: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::file("/etc/only.yaml")))
+                .collect();
+        assert!(file_only.last_is_env_prefix_prefixed().is_none());
+        assert!(file_only.last_is_env_prefix_bare().is_none());
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_env_prefix_prefixed_agree_on_singleton_env_leaf() {
+        // Singleton-map coincidence law on the `Prefixed`-polarity pair:
+        // on a one-leaf map both bounds are the same leaf, so the two
+        // seams agree. Two witnesses (non-empty prefix → Some(true),
+        // empty prefix → Some(false)).
+        let prefixed: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env("PROG_"))).collect();
+        assert_eq!(
+            prefixed.first_is_env_prefix_prefixed(),
+            prefixed.last_is_env_prefix_prefixed(),
+        );
+        assert_eq!(prefixed.first_is_env_prefix_prefixed(), Some(true));
+
+        let bare: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env(""))).collect();
+        assert_eq!(
+            bare.first_is_env_prefix_prefixed(),
+            bare.last_is_env_prefix_prefixed(),
+        );
+        assert_eq!(bare.first_is_env_prefix_prefixed(), Some(false));
+    }
+
+    #[test]
+    fn provenance_map_first_and_last_is_env_prefix_bare_agree_on_singleton_env_leaf() {
+        // Singleton-map coincidence law on the `Bare`-polarity sibling.
+        let prefixed: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env("PROG_"))).collect();
+        assert_eq!(
+            prefixed.first_is_env_prefix_bare(),
+            prefixed.last_is_env_prefix_bare(),
+        );
+        assert_eq!(prefixed.first_is_env_prefix_bare(), Some(false));
+
+        let bare: ProvenanceMap =
+            std::iter::once((vec!["only".to_string()], Provenance::env(""))).collect();
+        assert_eq!(
+            bare.first_is_env_prefix_bare(),
+            bare.last_is_env_prefix_bare(),
+        );
+        assert_eq!(bare.first_is_env_prefix_bare(), Some(true));
     }
 
     // -------- ProvenanceMap::tiers / ::source_kinds projection walkers --------
@@ -115958,6 +116388,137 @@ mod progressive_tests {
         );
         assert!(all_env.first_as_env_prefix().is_some());
         assert_eq!(all_env.first_is_env(), Some(true));
+    }
+
+    // -------- ProgressiveResolution::first_is_env_prefix_prefixed /
+    // -------- ::last_is_env_prefix_prefixed /
+    // -------- ::first_is_env_prefix_bare / ::last_is_env_prefix_bare
+    // -------- container-altitude Env-arm typed-sub-axis per-variant
+    // -------- boolean-tag scalar sub-projection of the value-axis
+    // -------- bound (delegates to the primitive-altitude peers on the
+    // -------- *output* side of the fold's atomic-pair ownership
+    // -------- boundary)
+
+    #[test]
+    fn progressive_resolution_first_is_env_prefix_prefixed_agrees_with_provenance_map_first_is_env_prefix_prefixed_pointwise()
+     {
+        // The load-bearing delegation pin at the lex-lower bound: the
+        // container-altitude first-bound extractor routes through
+        // `self.provenance().first_is_env_prefix_prefixed()` on every
+        // input. Catches a future edit that reroutes the seam through
+        // a rebuilt `first_key_value` cursor on the container itself
+        // instead of delegating to the primitive-altitude peer.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.first_is_env_prefix_prefixed();
+        let via_primitive: Option<bool> = r.provenance().first_is_env_prefix_prefixed();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_env_prefix_prefixed_agrees_with_provenance_map_last_is_env_prefix_prefixed_pointwise()
+     {
+        // Peer of the `first_is_env_prefix_prefixed` delegation pin
+        // above on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.last_is_env_prefix_prefixed();
+        let via_primitive: Option<bool> = r.provenance().last_is_env_prefix_prefixed();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_prefix_bare_agrees_with_provenance_map_first_is_env_prefix_bare_pointwise()
+     {
+        // Delegation pin at the lex-lower bound on the `Bare`-polarity
+        // sibling.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.first_is_env_prefix_bare();
+        let via_primitive: Option<bool> = r.provenance().first_is_env_prefix_bare();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_last_is_env_prefix_bare_agrees_with_provenance_map_last_is_env_prefix_bare_pointwise()
+     {
+        // Peer of the `first_is_env_prefix_bare` delegation pin above
+        // on the upper-bound side.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", file_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let via_container: Option<bool> = r.last_is_env_prefix_bare();
+        let via_primitive: Option<bool> = r.provenance().last_is_env_prefix_bare();
+        assert_eq!(via_container, via_primitive);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_prefix_prefixed_agrees_with_first_env_prefix_kind_is_prefixed_projection_pointwise()
+     {
+        // Cross-seam agreement law at the container altitude: the
+        // container-altitude first-bound boolean-tag extractor equals
+        // the two-hop chain
+        // `first_env_prefix_kind().map(EnvMetadataTagKind::is_prefixed)`
+        // pointwise. Peer of the same-shape agreement pin at the
+        // primitive altitude one seam down.
+        let mut env_dict = Dict::new();
+        env_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        let via_tag: Option<bool> = r.first_is_env_prefix_prefixed();
+        let via_kind: Option<bool> = r
+            .first_env_prefix_kind()
+            .map(EnvMetadataTagKind::is_prefixed);
+        assert_eq!(via_tag, via_kind);
+    }
+
+    #[test]
+    fn progressive_resolution_first_is_env_prefix_prefixed_and_bare_form_binary_partition_on_env_hit_and_evaporate_off_arm()
+     {
+        // Container-altitude binary-partition law + off-arm
+        // evaporation: on every Env-arm hit the two per-variant tags
+        // sum to `Some(true)` and are pointwise negations of each
+        // other; off the Env arm (bare fold, no overlays) both
+        // evaporate to `None`. Peer of the primitive-altitude pin
+        // `provenance_map_first_is_env_prefix_prefixed_and_bare_form_binary_partition_on_env_hit_and_evaporate_off_arm`
+        // one seam down.
+        let bare_only = Prog::resolve_progressive();
+        assert!(bare_only.first_is_env_prefix_prefixed().is_none());
+        assert!(bare_only.first_is_env_prefix_bare().is_none());
+        assert!(bare_only.last_is_env_prefix_prefixed().is_none());
+        assert!(bare_only.last_is_env_prefix_bare().is_none());
+
+        let mut env_dict = Dict::new();
+        for leaf in ["a", "b", "c", "d"] {
+            env_dict.insert(leaf.to_owned(), Value::from(1_u32));
+        }
+        let all_env = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert_eq!(all_env.first_is_env_prefix_prefixed(), Some(true));
+        assert_eq!(all_env.first_is_env_prefix_bare(), Some(false));
+        assert_eq!(all_env.last_is_env_prefix_prefixed(), Some(true));
+        assert_eq!(all_env.last_is_env_prefix_bare(), Some(false));
     }
 
     // -------- ProgressiveResolution atomic-pair-altitude walker
