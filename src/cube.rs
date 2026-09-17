@@ -6549,6 +6549,143 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.peak_count() - self.trough_count()
     }
 
+    /// The **extremal-count fused pair** — `(peak_count, trough_count)`
+    /// read off the histogram's observed support in one running-max +
+    /// running-min-over-positives walk of the counts vector. Returns
+    /// `(0, 0)` exactly when [`Self::is_empty`] is `true`; otherwise
+    /// returns `(peak, trough)` with `peak >= trough >= 1` on every
+    /// non-empty histogram (peak and trough coincide iff the observed
+    /// support carries a uniform count, including every singleton).
+    ///
+    /// The **count-axis fused primitive-altitude peer** of
+    /// [`Self::modality_degree`] on the multiplicity axis. Where
+    /// [`Self::modality_degree`] fuses the two multiplicity endpoints
+    /// `(peak_multiplicity, trough_multiplicity)` into one scalar-pair
+    /// read, `extremal_counts` fuses the two count endpoints
+    /// `(peak_count, trough_count)` into the same shape at the same
+    /// altitude. The two fused-pair primitives close the histogram's
+    /// scalar surface at both axes of the modality-shape grid — the
+    /// count-side fused pair upstream of the arithmetic algebra
+    /// `{+, -, *}` on the closed endpoint pair carried by
+    /// [`Self::spread`] / [`Self::peak_trough_sum`] /
+    /// [`Self::peak_trough_product`], the multiplicity-side fused pair
+    /// upstream of the abs-diff / sum peers carried by
+    /// [`Self::modality_amplitude`] / [`Self::modality_degree_sum`].
+    ///
+    /// The natural typed primitive for the *"what are the peak and
+    /// trough observation counts on this histogram?"* question every
+    /// diagnostic / dashboard / attestation site asks in one hop
+    /// instead of two coordinated reads: the CLI reload-summary line
+    /// `"peak / trough counts: (12, 1)"` off an
+    /// `AxisHistogram<crate::ShikumiErrorKind>`, the chain-summary
+    /// diagnostic `"file-format count endpoints: (47, 1)"` off a
+    /// [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// diff-summary payload `"kind count endpoints: (3, 1)"` off a
+    /// [`crate::ConfigDiff::kind_histogram`]. Before this lift, every
+    /// altitude-lifted variant open-coded the projection as
+    /// `(hist.peak_count(), hist.trough_count())` — two coordinated
+    /// walks of the counts vector at every consumer site, where a
+    /// single running-max + running-min pass reads both endpoints off
+    /// simultaneously.
+    ///
+    /// **Single-pass fusion.** The pair is computed in one iteration
+    /// of the counts vector, tracking the running max and the running
+    /// min-over-positives (initialized to `usize::MAX` so the first
+    /// positive count promotes the sentinel) simultaneously. On the
+    /// empty histogram both trackers stay at their initial values and
+    /// the result folds to `(0, 0)` uniformly. Halves the constant
+    /// factor of the previous open-coded
+    /// `(hist.peak_count(), hist.trough_count())` idiom (which walked
+    /// the counts vector twice).
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)`, matching the
+    /// [`Self::peak_count`] and [`Self::trough_count`] empty conventions
+    /// pointwise. The fused scalar peer reads `(0, 0)` on every
+    /// histogram on which `is_empty()` reads `true`, and strictly
+    /// `(k, l)` with `k >= l >= 1` on every non-empty histogram.
+    ///
+    /// **Definitional equivalence.** For every histogram `h`,
+    /// `h.extremal_counts() == (h.peak_count(), h.trough_count())`
+    /// pointwise. The named primitive is *behaviorally indistinguishable*
+    /// from the open-coded two-call pair on every input — the lift is
+    /// pure efficiency + naming, with no semantic surface change. Pinned
+    /// by the trait-uniform
+    /// `axis_histogram_extremal_counts_equals_open_coded_peak_trough_count_pair_*`
+    /// law across every [`ClosedAxis`] implementor.
+    ///
+    /// **Companion invariants** with [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`], [`Self::peak_trough_sum`],
+    /// [`Self::peak_trough_product`], [`Self::is_empty`], and
+    /// [`Self::is_uniform_count`]:
+    /// - `extremal_counts() == (0, 0)` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary equivalence both
+    ///   underlying scalars carry — both endpoints are structurally
+    ///   `>= 1` on every non-empty histogram).
+    /// - `extremal_counts().0 == peak_count()` and
+    ///   `extremal_counts().1 == trough_count()` always (the defining
+    ///   equivalence on the underlying scalar pair).
+    /// - `extremal_counts().0 >= extremal_counts().1` always — the
+    ///   peak / trough ordering invariant lifted from the scalar-half
+    ///   pair (the peak is defined as the maximum count and the trough
+    ///   as the minimum count-over-support). Equality holds iff every
+    ///   observed cell carries the same count (`is_uniform_count`,
+    ///   including singleton-support).
+    /// - `extremal_counts().0 - extremal_counts().1 == spread()` always
+    ///   — the subtraction-form projection recovers the shipped
+    ///   [`Self::spread`] scalar; underflow-safe by the ordering
+    ///   invariant.
+    /// - `extremal_counts().0 + extremal_counts().1 == peak_trough_sum()`
+    ///   always — the addition-form projection recovers the shipped
+    ///   [`Self::peak_trough_sum`] scalar.
+    /// - `extremal_counts().0 * extremal_counts().1 == peak_trough_product()`
+    ///   always — the multiplication-form projection recovers the
+    ///   shipped [`Self::peak_trough_product`] scalar. Together with
+    ///   the subtraction-form and addition-form identities above, this
+    ///   closes the arithmetic algebra `{+, -, *}` on the fused pair.
+    /// - `is_uniform_count() ⇒ extremal_counts().0 == extremal_counts().1`
+    ///   — on a uniformly-observed-count histogram, both endpoints
+    ///   collapse to the same value.
+    /// - Both components are `<= total()` always (each endpoint is
+    ///   bounded above by the total observation count).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The four trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_extremal_counts_empty_is_zero_pair_*`,
+    /// `axis_histogram_extremal_counts_singleton_is_one_pair_*`,
+    /// `axis_histogram_extremal_counts_axis_cover_is_one_pair_*`,
+    /// `axis_histogram_extremal_counts_equals_open_coded_peak_trough_count_pair_*`).
+    ///
+    /// Peer to [`Self::modality_degree`] (the fused scalar-pair
+    /// projection of the multiplicities): the histogram's fused-pair
+    /// surface now closes both axes of the modality-shape grid — the
+    /// count-side fused pair `(peak_count, trough_count)` alongside the
+    /// multiplicity-side fused pair `(peak_multiplicity, trough_multiplicity)`
+    /// — every operator-facing summary reads the joint pair it needs
+    /// at one method call, and every altitude-lifted variant (e.g.
+    /// [`crate::ConfigDiff::extremal_kind_counts`]) delegates through
+    /// this primitive.
+    #[must_use]
+    pub fn extremal_counts(&self) -> (usize, usize) {
+        let mut max = 0usize;
+        let mut min = usize::MAX;
+        for &c in &self.counts {
+            if c == 0 {
+                continue;
+            }
+            if c > max {
+                max = c;
+            }
+            if c < min {
+                min = c;
+            }
+        }
+        if max == 0 { (0, 0) } else { (max, min) }
+    }
+
     /// The **observed-distribution peak-trough sum** — the sum of the
     /// maximum and minimum observation counts over the histogram's
     /// observed support. Equal to
@@ -44056,6 +44193,260 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    fn assert_extremal_counts_empty_is_zero_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.extremal_counts(),
+            (0, 0),
+            "empty histogram extremal_counts must be (0, 0) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_extremal_counts_singleton_is_one_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has extremal_counts = (1, 1). The
+        // sole observed cell holds both the peak count and the trough
+        // count at 1.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.extremal_counts(),
+                (1, 1),
+                "singleton extremal_counts must be (1, 1) for observed cell {observed:?} \
+                 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_extremal_counts_axis_cover_is_one_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak == trough == 1); both
+        // endpoints collapse to 1, so extremal_counts == (1, 1)
+        // uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.extremal_counts(),
+            (1, 1),
+            "uniform axis-cover histogram extremal_counts must be (1, 1) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_extremal_counts_equals_open_coded_peak_trough_count_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: extremal_counts() is pointwise
+        // equal to (peak_count(), trough_count()) on every histogram
+        // shape — empty, singleton, full axis cover, and (where the
+        // axis has at least two variants) a strict two-cell sub-cover
+        // with unequal counts that exercises both the peak and the
+        // trough branches. Reached across every implementor through
+        // the macro.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.extremal_counts(),
+            (empty.peak_count(), empty.trough_count()),
+            "extremal_counts must equal the (peak_count, trough_count) pair \
+             on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.extremal_counts(),
+                (singleton.peak_count(), singleton.trough_count()),
+                "extremal_counts must equal the (peak_count, trough_count) pair \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.extremal_counts(),
+            (cover.peak_count(), cover.trough_count()),
+            "extremal_counts must equal the (peak_count, trough_count) pair \
+             on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Skewed shape: bump the first cell twice past the second cell
+        // (when the axis has at least two variants) to drive a strict
+        // peak/trough split. On a singleton axis, the loop body
+        // collapses to the singleton case above.
+        let mut variants = axis_iter::<A>();
+        if let (Some(first), Some(second)) = (variants.next(), variants.next()) {
+            let mut skewed = AxisHistogram::<A>::empty();
+            skewed.observe(first);
+            skewed.observe(first);
+            skewed.observe(second);
+            assert_eq!(
+                skewed.extremal_counts(),
+                (skewed.peak_count(), skewed.trough_count()),
+                "extremal_counts must equal the (peak_count, trough_count) pair \
+                 on a strict-peak/strict-trough skewed shape ({first:?} ×2, \
+                 {second:?} ×1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert!(
+                skewed.extremal_counts().0 >= skewed.extremal_counts().1,
+                "extremal_counts must satisfy peak >= trough on a strict-peak/ \
+                 strict-trough skewed shape ({first:?} ×2, {second:?} ×1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_empty_is_zero_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_counts_empty_is_zero_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_singleton_is_one_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_counts_singleton_is_one_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_axis_cover_is_one_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_counts_axis_cover_is_one_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_equals_open_coded_peak_trough_count_pair_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extremal_counts_equals_open_coded_peak_trough_count_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_recovers_spread_by_subtraction_over_diff_line_kind() {
+        // Subtraction-form projection: extremal_counts().0 -
+        // extremal_counts().1 == spread() on every DiffLineKind
+        // histogram shape. Underflow-safe by the peak >= trough
+        // ordering invariant.
+        let fixtures = [
+            AxisHistogram::<DiffLineKind>::empty(),
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Removed);
+                h
+            },
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Removed);
+                h.observe(DiffLineKind::Removed);
+                h.observe(DiffLineKind::Context);
+                h
+            },
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Removed);
+                h.observe(DiffLineKind::Context);
+                h
+            },
+            axis_iter::<DiffLineKind>().collect::<AxisHistogram<DiffLineKind>>(),
+        ];
+        for hist in &fixtures {
+            let (peak, trough) = hist.extremal_counts();
+            assert_eq!(peak - trough, hist.spread());
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_recovers_peak_trough_sum_by_addition_over_diff_line_kind() {
+        // Addition-form projection: extremal_counts().0 +
+        // extremal_counts().1 == peak_trough_sum() on every
+        // DiffLineKind histogram shape.
+        let fixtures = [
+            AxisHistogram::<DiffLineKind>::empty(),
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Removed);
+                h
+            },
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Removed);
+                h.observe(DiffLineKind::Context);
+                h
+            },
+        ];
+        for hist in &fixtures {
+            let (peak, trough) = hist.extremal_counts();
+            assert_eq!(peak + trough, hist.peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extremal_counts_recovers_peak_trough_product_by_multiplication_over_diff_line_kind()
+     {
+        // Multiplication-form projection: extremal_counts().0 *
+        // extremal_counts().1 == peak_trough_product() on every
+        // DiffLineKind histogram shape.
+        let fixtures = [
+            AxisHistogram::<DiffLineKind>::empty(),
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Removed);
+                h
+            },
+            {
+                let mut h = AxisHistogram::<DiffLineKind>::empty();
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Added);
+                h.observe(DiffLineKind::Removed);
+                h.observe(DiffLineKind::Context);
+                h
+            },
+        ];
+        for hist in &fixtures {
+            let (peak, trough) = hist.extremal_counts();
+            assert_eq!(peak * trough, hist.peak_trough_product());
+        }
     }
 
     #[test]

@@ -41550,7 +41550,7 @@ impl ConfigDiff {
     /// usize)` reads two scalars in one tuple with no heap allocation.
     #[must_use]
     pub fn extremal_kind_counts(&self) -> (usize, usize) {
-        (self.peak_kind_count(), self.trough_kind_count())
+        self.kind_histogram().extremal_counts()
     }
 }
 
