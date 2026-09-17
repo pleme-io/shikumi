@@ -11484,6 +11484,77 @@ impl ProvenanceMap {
             .zip(self.recessive_source_kind())
     }
 
+    /// The **extremal source-kinds pair ordinal** on this fold's per-leaf
+    /// [`crate::ConfigSourceKind`] histogram — the ordinal-projected
+    /// fused-pair `Option<(usize, usize)>` packing the precedence-
+    /// ordinals of the modal (argmax) cell and the antimodal (argmin)
+    /// cell into one scalar. Returns [`None`] exactly on the empty map;
+    /// otherwise returns
+    /// `Some((self.dominant_source_kind_ordinal().unwrap(),
+    /// self.recessive_source_kind_ordinal().unwrap()))` where the two
+    /// component [`Option`]s share the same non-emptiness discriminant
+    /// so the outer [`Option`] fuses both empty gates into a single
+    /// check.
+    ///
+    /// **Ordinal-axis cell-projection** of
+    /// [`Self::extremal_source_kinds`] on the source-kind axis — the
+    /// fused-pair one seam out carries the typed
+    /// [`crate::ConfigSourceKind`] tags on both slots; this method
+    /// carries the [`usize`] precedence-ordinals each tag exposes via
+    /// [`crate::ConfigSourceKind::ordinal`]. The projection law
+    /// `self.extremal_source_kinds().map(|(m, a)| (m.ordinal(),
+    /// a.ordinal()))` recovers this ordinal-projected fused pair
+    /// pointwise. The scalar-half modal-cell ordinal projects out by
+    /// `.map(|(m, _)| m)` and recovers
+    /// [`Self::dominant_source_kind_ordinal`] pointwise; the scalar-
+    /// half antimodal-cell ordinal projects out by `.map(|(_, a)| a)`
+    /// and recovers [`Self::recessive_source_kind_ordinal`] pointwise.
+    ///
+    /// The **tier-axis sibling** of [`Self::extremal_tiers_ordinal`] on
+    /// the tier altitude of the same [`ProvenanceMap`] — together the
+    /// two methods close the **primitive-altitude ordinal-projected
+    /// cells-only fused-pair pair** on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries,
+    /// one const-fn seam further inland than the typed-tag pair
+    /// [`Self::extremal_tiers`] / [`Self::extremal_source_kinds`] on the
+    /// same closed axis. Matches the shape the fused-quadruple ordinal
+    /// pair [`Self::extremal_source_kind_observations_ordinal`] already
+    /// carries one seam over on the same source-kind axis, dropping the
+    /// count + multiplicity halves.
+    ///
+    /// The natural typed primitive for reading *"what are the
+    /// precedence-ordinals of the modal and antimodal source-kinds on
+    /// this resolved fold?"* at one method call — a ConfigPlane
+    /// broadcast payload encoding both extremes of the source-kind
+    /// histogram with no serde on the wire (the receiving side re-
+    /// derives the typed tag via
+    /// [`crate::ConfigSourceKind::ALL`]`[o]`), a compile-time
+    /// attestation hasher folding the fused ordinal pair, an alerting
+    /// policy reading both extremes simultaneously as `usize`s without
+    /// the enum-typed upcast.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_source_kinds_ordinal() ==
+    ///   extremal_source_kinds().map(|(m, a)| (m.ordinal(),
+    ///   a.ordinal()))` — the ordinal-projected pair is the ordinal-
+    ///   axis cell-projection of the typed-tag pair pointwise.
+    /// - `extremal_source_kinds_ordinal() ==
+    ///   dominant_source_kind_ordinal().zip(recessive_source_kind_ordinal())`
+    ///   — equals the [`Option::zip`] of the two ordinal-projected
+    ///   scalar components pointwise.
+    /// - `extremal_source_kinds_ordinal().is_none() == is_empty()` —
+    ///   the fused pair is [`None`] exactly on the empty map.
+    /// - `extremal_source_kinds_ordinal().map(|(m, _)| m) ==
+    ///   dominant_source_kind_ordinal()` pointwise.
+    /// - `extremal_source_kinds_ordinal().map(|(_, a)| a) ==
+    ///   recessive_source_kind_ordinal()` pointwise.
+    #[must_use]
+    pub fn extremal_source_kinds_ordinal(&self) -> Option<(usize, usize)> {
+        self.extremal_source_kinds()
+            .map(|(m, a)| (m.ordinal(), a.ordinal()))
+    }
+
     /// Returns `true` exactly when this fold's observed
     /// [`crate::ConfigSourceKind`] histogram has two or more cells tied at
     /// the peak leaf count — the **modally-tied-source-kind-counts
@@ -20238,6 +20309,75 @@ impl ProvenanceMap {
     #[must_use]
     pub fn extremal_tiers(&self) -> Option<(ConfigTierKind, ConfigTierKind)> {
         self.dominant_tier().zip(self.recessive_tier())
+    }
+
+    /// The **extremal tiers pair ordinal** on this fold's per-leaf
+    /// [`ConfigTierKind`] histogram — the ordinal-projected fused-pair
+    /// `Option<(usize, usize)>` packing the precedence-ordinals of the
+    /// modal (argmax) cell and the antimodal (argmin) cell into one
+    /// scalar. Returns [`None`] exactly on the empty map; otherwise
+    /// returns `Some((self.dominant_tier_ordinal().unwrap(),
+    /// self.recessive_tier_ordinal().unwrap()))` where the two
+    /// component [`Option`]s share the same non-emptiness discriminant
+    /// so the outer [`Option`] fuses both empty gates into a single
+    /// check.
+    ///
+    /// **Ordinal-axis cell-projection** of [`Self::extremal_tiers`] on
+    /// the tier axis — the fused-pair one seam out carries the typed
+    /// [`ConfigTierKind`] tags on both slots; this method carries the
+    /// [`usize`] precedence-ordinals each tag exposes via
+    /// [`ConfigTierKind::ordinal`]. The projection law
+    /// `self.extremal_tiers().map(|(m, a)| (m.ordinal(), a.ordinal()))`
+    /// recovers this ordinal-projected fused pair pointwise. The
+    /// scalar-half modal-cell ordinal projects out by
+    /// `.map(|(m, _)| m)` and recovers [`Self::dominant_tier_ordinal`]
+    /// pointwise; the scalar-half antimodal-cell ordinal projects out
+    /// by `.map(|(_, a)| a)` and recovers
+    /// [`Self::recessive_tier_ordinal`] pointwise.
+    ///
+    /// The **source-kind-axis sibling** of
+    /// [`Self::extremal_source_kinds_ordinal`] on the source-kind
+    /// altitude of the same [`ProvenanceMap`] — together the two
+    /// methods close the **primitive-altitude ordinal-projected cells-
+    /// only fused-pair pair** on both closed coordinates of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries, one
+    /// const-fn seam further inland than the typed-tag pair
+    /// [`Self::extremal_tiers`] / [`Self::extremal_source_kinds`] on
+    /// the same closed axis. Matches the shape the fused-quadruple
+    /// ordinal pair [`Self::extremal_tier_observations_ordinal`]
+    /// already carries one seam over on the same tier axis, dropping
+    /// the count + multiplicity halves.
+    ///
+    /// The natural typed primitive for reading *"what are the
+    /// precedence-ordinals of the modal and antimodal tiers on this
+    /// resolved fold?"* at one method call — a ConfigPlane broadcast
+    /// payload encoding both extremes of the tier histogram with no
+    /// serde on the wire (the receiving side re-derives the typed tag
+    /// via [`ConfigTierKind::ALL`]`[o]`), a compile-time attestation
+    /// hasher folding the fused ordinal pair, an alerting policy
+    /// reading both extremes simultaneously as `usize`s without the
+    /// enum-typed upcast.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_tiers_ordinal() ==
+    ///   extremal_tiers().map(|(m, a)| (m.ordinal(), a.ordinal()))`
+    ///   — the ordinal-projected pair is the ordinal-axis cell-
+    ///   projection of the typed-tag pair pointwise.
+    /// - `extremal_tiers_ordinal() ==
+    ///   dominant_tier_ordinal().zip(recessive_tier_ordinal())` —
+    ///   equals the [`Option::zip`] of the two ordinal-projected
+    ///   scalar components pointwise.
+    /// - `extremal_tiers_ordinal().is_none() == is_empty()` — the
+    ///   fused pair is [`None`] exactly on the empty map.
+    /// - `extremal_tiers_ordinal().map(|(m, _)| m) ==
+    ///   dominant_tier_ordinal()` pointwise.
+    /// - `extremal_tiers_ordinal().map(|(_, a)| a) ==
+    ///   recessive_tier_ordinal()` pointwise.
+    #[must_use]
+    pub fn extremal_tiers_ordinal(&self) -> Option<(usize, usize)> {
+        self.extremal_tiers()
+            .map(|(m, a)| (m.ordinal(), a.ordinal()))
     }
 
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
@@ -31313,6 +31453,27 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.extremal_tiers()
     }
 
+    /// The **extremal tiers pair ordinal** at the container altitude —
+    /// the ordinal-projected fused-pair `Option<(usize, usize)>`
+    /// packing the precedence-ordinals of the modal (argmax) and
+    /// antimodal (argmin) cells of the tier histogram on this resolved
+    /// fold. Container-altitude peer of
+    /// [`ProvenanceMap::extremal_tiers_ordinal`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.extremal_tiers_ordinal()`.
+    ///
+    /// The **ordinal-axis cell-projection** of [`Self::extremal_tiers`]
+    /// on the same container, one const-fn seam further inland than
+    /// the typed [`ConfigTierKind`] fused pair. The **source-kind-axis
+    /// sibling** of [`Self::extremal_source_kinds_ordinal`] — together
+    /// the two methods close the container-altitude ordinal-projected
+    /// cells-only fused-pair pair on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries.
+    #[must_use]
+    pub fn extremal_tiers_ordinal(&self) -> Option<(usize, usize)> {
+        self.provenance.extremal_tiers_ordinal()
+    }
+
     /// The **extremal source-kinds pair** on this resolved fold's
     /// per-leaf [`crate::ConfigSourceKind`] histogram — the fused-pair
     /// `Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)>`
@@ -31355,6 +31516,30 @@ impl<T> ProgressiveResolution<T> {
         &self,
     ) -> Option<(crate::ConfigSourceKind, crate::ConfigSourceKind)> {
         self.provenance.extremal_source_kinds()
+    }
+
+    /// The **extremal source-kinds pair ordinal** at the container
+    /// altitude — the ordinal-projected fused-pair
+    /// `Option<(usize, usize)>` packing the precedence-ordinals of the
+    /// modal (argmax) and antimodal (argmin) cells of the source-kind
+    /// histogram on this resolved fold. Container-altitude peer of
+    /// [`ProvenanceMap::extremal_source_kinds_ordinal`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into
+    /// `self.provenance.extremal_source_kinds_ordinal()`.
+    ///
+    /// The **ordinal-axis cell-projection** of
+    /// [`Self::extremal_source_kinds`] on the same container, one
+    /// const-fn seam further inland than the typed
+    /// [`crate::ConfigSourceKind`] fused pair. The **tier-axis
+    /// sibling** of [`Self::extremal_tiers_ordinal`] — together the
+    /// two methods close the container-altitude ordinal-projected
+    /// cells-only fused-pair pair on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`]
+    /// carries.
+    #[must_use]
+    pub fn extremal_source_kinds_ordinal(&self) -> Option<(usize, usize)> {
+        self.provenance.extremal_source_kinds_ordinal()
     }
 }
 
@@ -85216,6 +85401,113 @@ mod progressive_tests {
         assert_ne!(m, a);
     }
 
+    // ── ProvenanceMap::extremal_tiers_ordinal — ordinal-axis cell-
+    //    projection of the cells-only fused-pair `extremal_tiers` above,
+    //    one const-fn seam further inland from the typed ConfigTierKind
+    //    tag on each slot to the usize precedence-ordinal it carries.
+    //    Sibling of `ProvenanceMap::extremal_source_kinds_ordinal` on the
+    //    source-kind axis; together the two methods close the primitive-
+    //    altitude ordinal-projected cells-only fused-pair pair on both
+    //    closed coordinates of the atomic (tier, source) pair. ──
+
+    #[test]
+    fn extremal_tiers_ordinal_matches_ordinal_projection_of_extremal_tiers_pointwise() {
+        // Cross-seam pin: the ordinal-projected cells-only fused pair is
+        // the ordinal-axis cell-projection of the typed-tag pair on the
+        // same underlying histogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .extremal_tiers()
+                .map(|(m, a)| (m.ordinal(), a.ordinal()));
+            assert_eq!(map.extremal_tiers_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_equals_dominant_recessive_ordinal_option_zip_pointwise() {
+        // Structural-form pin: the ordinal-projected fused pair equals
+        // `dominant_tier_ordinal().zip(recessive_tier_ordinal())` on the
+        // same map pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map
+                .dominant_tier_ordinal()
+                .zip(map.recessive_tier_ordinal());
+            assert_eq!(map.extremal_tiers_ordinal(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_modal_projection_recovers_dominant_tier_ordinal_pointwise() {
+        // Modal-half round-trip pin: the `.0` slot of the ordinal-
+        // projected fused pair recovers `dominant_tier_ordinal()`
+        // pointwise via `.map(|(m, _)| m)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tiers_ordinal().map(|(m, _)| m);
+            assert_eq!(via_map, map.dominant_tier_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_antimodal_projection_recovers_recessive_tier_ordinal_pointwise() {
+        // Antimodal-half round-trip pin: the `.1` slot of the ordinal-
+        // projected fused pair recovers `recessive_tier_ordinal()`
+        // pointwise via `.map(|(_, a)| a)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_tiers_ordinal().map(|(_, a)| a);
+            assert_eq!(via_map, map.recessive_tier_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin.
+        assert_eq!(ProvenanceMap::default().extremal_tiers_ordinal(), None);
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_none_iff_empty_pointwise() {
+        // Presence-parity pin: the ordinal-projected fused pair carries
+        // the same non-emptiness discriminant as the typed-tag pair one
+        // seam out.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.extremal_tiers_ordinal().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_tiers_ordinal_prog_fixture_is_default_ordinal_bare_ordinal() {
+        // Fixture-literal pin on Prog: modal reads `Default`, antimodal
+        // reads `Bare` (strictly-unimodal witness under decl-order tie-
+        // break). Under ordinal projection Default.ordinal() == 2 and
+        // Bare.ordinal() == 0 on the `Bare → Discovered → Default →
+        // Custom` precedence order.
+        let r = Prog::resolve_progressive();
+        let d = ConfigTierKind::Default.ordinal();
+        let b = ConfigTierKind::Bare.ordinal();
+        assert_eq!(r.provenance().extremal_tiers_ordinal(), Some((d, b)));
+        assert_eq!(r.provenance().extremal_tiers_ordinal(), Some((2, 0)));
+    }
+
     // ── ProvenanceMap::tiers_modally_tied — modally-tied-tier-counts
     //    boolean predicate on the tier altitude, climbing
     //    is_modally_tied from the histogram surface and lifting the
@@ -100442,6 +100734,139 @@ mod progressive_tests {
         let r = source_kind_histogram_mixed_fixture();
         let (m, a) = r.provenance().extremal_source_kinds().unwrap();
         assert_ne!(m, a);
+    }
+
+    // ── ProvenanceMap::extremal_source_kinds_ordinal — ordinal-axis
+    //    cell-projection of the cells-only fused-pair
+    //    `extremal_source_kinds` above, one const-fn seam further inland
+    //    from the typed ConfigSourceKind tag on each slot to the usize
+    //    precedence-ordinal it carries. Sibling of
+    //    `ProvenanceMap::extremal_tiers_ordinal` on the tier axis;
+    //    together the two methods close the primitive-altitude ordinal-
+    //    projected cells-only fused-pair pair on both closed coordinates
+    //    of the atomic (tier, source) pair. ──
+
+    #[test]
+    fn extremal_source_kinds_ordinal_matches_ordinal_projection_of_extremal_source_kinds_pointwise()
+    {
+        // Cross-seam pin: the ordinal-projected cells-only fused pair is
+        // the ordinal-axis cell-projection of the typed-tag pair on the
+        // same underlying histogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .extremal_source_kinds()
+                .map(|(m, a)| (m.ordinal(), a.ordinal()));
+            assert_eq!(map.extremal_source_kinds_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_equals_dominant_recessive_ordinal_option_zip_pointwise() {
+        // Structural-form pin: the ordinal-projected fused pair equals
+        // `dominant_source_kind_ordinal().zip(recessive_source_kind_ordinal())`
+        // on the same map pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map
+                .dominant_source_kind_ordinal()
+                .zip(map.recessive_source_kind_ordinal());
+            assert_eq!(map.extremal_source_kinds_ordinal(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_modal_projection_recovers_dominant_source_kind_ordinal_pointwise()
+     {
+        // Modal-half round-trip pin: the `.0` slot of the ordinal-
+        // projected fused pair recovers
+        // `dominant_source_kind_ordinal()` pointwise via
+        // `.map(|(m, _)| m)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_source_kinds_ordinal().map(|(m, _)| m);
+            assert_eq!(via_map, map.dominant_source_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_antimodal_projection_recovers_recessive_source_kind_ordinal_pointwise()
+     {
+        // Antimodal-half round-trip pin: the `.1` slot of the ordinal-
+        // projected fused pair recovers
+        // `recessive_source_kind_ordinal()` pointwise via
+        // `.map(|(_, a)| a)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_source_kinds_ordinal().map(|(_, a)| a);
+            assert_eq!(via_map, map.recessive_source_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin.
+        assert_eq!(
+            ProvenanceMap::default().extremal_source_kinds_ordinal(),
+            None,
+        );
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_none_iff_empty_pointwise() {
+        // Presence-parity pin: the ordinal-projected fused pair carries
+        // the same non-emptiness discriminant as the typed-tag pair one
+        // seam out.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.extremal_source_kinds_ordinal().is_some(),
+                !map.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_prog_fixture_is_defaults_ordinal_defaults_ordinal() {
+        // Fixture-literal pin on Prog: all four leaves attributed to
+        // `ConfigSource::Defaults`, so `Defaults` is the sole observed
+        // cell — modal and antimodal cells coincide at `Defaults` (the
+        // singleton-support corner). Under ordinal projection
+        // `Defaults.ordinal() == 0` on the `Defaults → Env → File`
+        // precedence order.
+        let r = Prog::resolve_progressive();
+        let d = crate::ConfigSourceKind::Defaults.ordinal();
+        assert_eq!(r.provenance().extremal_source_kinds_ordinal(), Some((d, d)));
+        assert_eq!(r.provenance().extremal_source_kinds_ordinal(), Some((0, 0)));
+    }
+
+    #[test]
+    fn extremal_source_kinds_ordinal_mixed_fixture_is_defaults_ordinal_env_ordinal() {
+        // Fixture-literal pin on the mixed fixture (strictly-unimodal
+        // witness on the source-kind axis): modal reads `Defaults`
+        // (count 2), antimodal reads `Env` (count 1, decl-order tie-
+        // break over `{Env, File}`). Under ordinal projection
+        // `Defaults.ordinal() == 0` and `Env.ordinal() == 1`.
+        let r = source_kind_histogram_mixed_fixture();
+        let d = crate::ConfigSourceKind::Defaults.ordinal();
+        let e = crate::ConfigSourceKind::Env.ordinal();
+        assert_eq!(r.provenance().extremal_source_kinds_ordinal(), Some((d, e)));
+        assert_eq!(r.provenance().extremal_source_kinds_ordinal(), Some((0, 1)));
     }
 
     // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
@@ -122684,6 +123109,136 @@ mod progressive_tests {
             r.extremal_tiers(),
             Some((ConfigTierKind::Default, ConfigTierKind::Bare)),
         );
+    }
+
+    // ── ProgressiveResolution::extremal_tiers_ordinal /
+    //    extremal_source_kinds_ordinal — container-altitude ordinal-
+    //    projected cells-only fused-pair siblings of the typed-tag pair
+    //    `extremal_tiers` / `extremal_source_kinds` on the same
+    //    container. Container-altitude peers of the shipped primitive-
+    //    altitude `ProvenanceMap::extremal_tiers_ordinal` /
+    //    `ProvenanceMap::extremal_source_kinds_ordinal`, one seam down;
+    //    together the two methods close the container-altitude ordinal-
+    //    projected cells-only fused-pair pair on both closed coordinates
+    //    of the atomic (tier, source) pair. ──
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_ordinal_agrees_with_provenance_extremal_tiers_ordinal()
+    {
+        // Delegation pin on the container-altitude ordinal-projected
+        // cells-only fused pair: `res.extremal_tiers_ordinal()` must
+        // route one-hop to the shipped primitive-altitude seam on the
+        // same underlying histogram.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers_ordinal(),
+            r.provenance().extremal_tiers_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_ordinal_agrees_with_provenance_extremal_source_kinds_ordinal()
+     {
+        // Source-kind-axis peer of the tier delegation pin above —
+        // closes the container-altitude ordinal-projected cells-only
+        // fused-pair delegation on both closed axes of the atomic
+        // `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds_ordinal(),
+            r.provenance().extremal_source_kinds_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_ordinal_matches_ordinal_projection_of_extremal_tiers()
+    {
+        // Cross-shape projection pin at the container altitude: the
+        // ordinal-projected pair equals the ordinal-axis cell-projection
+        // of the typed-tag pair on the same container.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers_ordinal(),
+            r.extremal_tiers().map(|(m, a)| (m.ordinal(), a.ordinal())),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_ordinal_matches_ordinal_projection_of_extremal_source_kinds()
+     {
+        // Source-kind-axis peer of the cross-shape projection pin above.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds_ordinal(),
+            r.extremal_source_kinds()
+                .map(|(m, a)| (m.ordinal(), a.ordinal())),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_ordinal_modal_projection_recovers_dominant_tier_ordinal()
+     {
+        // Modal-half round-trip pin at the container altitude: the `.0`
+        // slot of the ordinal-projected pair recovers
+        // `dominant_tier_ordinal()` pointwise via `.map(|(m, _)| m)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers_ordinal().map(|(m, _)| m),
+            r.dominant_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_ordinal_antimodal_projection_recovers_recessive_tier_ordinal()
+     {
+        // Antimodal-half round-trip pin at the container altitude: the
+        // `.1` slot of the ordinal-projected pair recovers
+        // `recessive_tier_ordinal()` pointwise via `.map(|(_, a)| a)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_tiers_ordinal().map(|(_, a)| a),
+            r.recessive_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_ordinal_modal_projection_recovers_dominant_source_kind_ordinal()
+     {
+        // Modal-half round-trip pin on the source-kind axis at the
+        // container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds_ordinal().map(|(m, _)| m),
+            r.dominant_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_source_kinds_ordinal_antimodal_projection_recovers_recessive_source_kind_ordinal()
+     {
+        // Antimodal-half round-trip pin on the source-kind axis at the
+        // container altitude — closes the container-altitude ordinal-
+        // projected round-trip law on all four cells of the modal ×
+        // antimodal × (tier, source) grid.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_source_kinds_ordinal().map(|(_, a)| a),
+            r.recessive_source_kind_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_tiers_ordinal_prog_fixture_is_default_ordinal_bare_ordinal()
+    {
+        // Prog fixture at the container altitude: modal reads `Default`,
+        // antimodal reads `Bare` — under ordinal projection
+        // `Default.ordinal() == 2` and `Bare.ordinal() == 0` on the
+        // `Bare → Discovered → Default → Custom` precedence order.
+        let r = Prog::resolve_progressive();
+        let d = ConfigTierKind::Default.ordinal();
+        let b = ConfigTierKind::Bare.ordinal();
+        assert_eq!(r.extremal_tiers_ordinal(), Some((d, b)));
+        assert_eq!(r.extremal_tiers_ordinal(), Some((2, 0)));
     }
 
     // -------- ProvenanceMap::is_file_format_{yaml,toml,lisp,nix,blue}_of
