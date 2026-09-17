@@ -10368,6 +10368,89 @@ impl ProvenanceMap {
         self.source_kind_histogram().dominant_observation()
     }
 
+    /// The **dominant source-kind observation ordinal** — the ordinal-
+    /// projected fused `(ordinal, count)` pair on the modal side of this
+    /// resolved fold's source-kind histogram: the
+    /// [`crate::ConfigSourceKind::ordinal`] of the argmax cell together
+    /// with the leaf count it collected. Returns [`None`] exactly when
+    /// the map is empty; otherwise returns `Some((o, n))` where `o ==
+    /// dominant_source_kind().unwrap().ordinal()` and `n ==
+    /// peak_source_kind_count() >= 1`.
+    ///
+    /// The **ordinal-axis cell-projection** of
+    /// [`Self::dominant_source_kind_observation`] on the same primitive,
+    /// one const-fn seam further inland from the typed
+    /// [`crate::ConfigSourceKind`] tag on the `.0` slot to the [`usize`]
+    /// precedence-ordinal it carries — the count component on the `.1`
+    /// slot rides through untouched. The **fused-pair peer** of the two
+    /// scalar-half seams already shipped on this altitude one seam over:
+    /// [`Self::dominant_source_kind_ordinal`] carries the *ordinal* alone
+    /// as `Option<usize>` and [`Self::peak_source_kind_count`] carries
+    /// the *count* alone as `usize`; both scalar halves project through
+    /// this fused pair via `.map(|(o, _)| o)` and `.map_or(0, |(_, n)| n)`
+    /// respectively. Halves the cost of the previous inline
+    /// `(map.dominant_source_kind_ordinal(),
+    /// map.peak_source_kind_count())` idiom that walked the histogram
+    /// twice — once to argmax the cell (feeding
+    /// [`crate::ConfigSourceKind::ordinal`]), once to read the peak count
+    /// back — where [`Self::dominant_source_kind_observation`] one seam
+    /// out fuses both into one walk and this seam threads the ordinal
+    /// projection through the same shared walk.
+    ///
+    /// The **source-kind-axis sibling** of
+    /// [`Self::dominant_tier_observation_ordinal`] on the tier altitude —
+    /// the two altitudes now name the ordinal-projected modal-observation
+    /// pair on the two closed coordinates of the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries. The natural typed
+    /// primitive for the ConfigPlane broadcast surface encoding just the
+    /// modal source-kind `(ordinal, count)` byte pair at wire time (no
+    /// [`crate::ConfigSourceKind`] serde needed on the wire — the
+    /// receiving side re-derives the tag by `ConfigSourceKind::ALL[o]`),
+    /// for the operator-facing
+    /// `/healthz/config/dominant_source_kind_observation_ordinal` payload
+    /// emitting the `(ordinal, count)` pair alone, and for the
+    /// compile-time attestation hasher folding just the modal-source-kind
+    /// precedence-ordinal + peak-count pair.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching the
+    /// [`Self::dominant_source_kind_observation`] empty convention one
+    /// seam out and the [`Self::dominant_source_kind_ordinal`] scalar-
+    /// half convention on the same altitude. The scalar-half
+    /// [`Self::peak_source_kind_count`] reads `0` on the same boundary
+    /// via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_source_kind_observation_ordinal() ==
+    ///   dominant_source_kind_observation().map(|(k, n)|
+    ///   (k.ordinal(), n))` — the ordinal projection of the fused-pair
+    ///   upstream; the two seams must stay pointwise equivalent under
+    ///   [`crate::ConfigSourceKind::ordinal`] on the cell slot.
+    /// - `dominant_source_kind_observation_ordinal().map(|(o, _)| o) ==
+    ///   dominant_source_kind_ordinal()` — the cell-half of the fused
+    ///   pair recovers the ordinal-axis scalar sub-projection on the same
+    ///   altitude one seam over.
+    /// - `dominant_source_kind_observation_ordinal().map_or(0, |(_, n)| n)
+    ///   == peak_source_kind_count()` — the count-half of the fused pair
+    ///   recovers the scalar-count sibling on the same altitude one seam
+    ///   over.
+    /// - `dominant_source_kind_observation_ordinal().is_some() ==
+    ///   !is_empty()` — presence-parity with the upstream fused-pair and
+    ///   both scalar halves; empty maps read [`None`] on all three seams.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` — matches
+    /// [`Self::dominant_source_kind_observation`] one seam out (delegates
+    /// through it with a `const`-callable
+    /// [`crate::ConfigSourceKind::ordinal`] one-shot on the cell slot).
+    #[must_use]
+    pub fn dominant_source_kind_observation_ordinal(&self) -> Option<(usize, usize)> {
+        self.dominant_source_kind_observation()
+            .map(|(k, n)| (k.ordinal(), n))
+    }
+
     /// The **recessive source-kind observation** — the fused `(cell,
     /// count)` pair on the trough side of this resolved fold's
     /// source-kind histogram: the anti-modal [`crate::ConfigSourceKind`]
@@ -18785,6 +18868,83 @@ impl ProvenanceMap {
     #[must_use]
     pub fn dominant_tier_observation(&self) -> Option<(ConfigTierKind, usize)> {
         self.tier_histogram().dominant_observation()
+    }
+
+    /// The **dominant tier observation ordinal** — the ordinal-projected
+    /// fused `(ordinal, count)` pair on the modal side of this resolved
+    /// fold's tier histogram: the [`ConfigTierKind::ordinal`] of the
+    /// argmax cell together with the leaf count it collected. Returns
+    /// [`None`] exactly when the map is empty; otherwise returns
+    /// `Some((o, n))` where `o == dominant_tier().unwrap().ordinal()` and
+    /// `n == peak_tier_count() >= 1`.
+    ///
+    /// The **ordinal-axis cell-projection** of
+    /// [`Self::dominant_tier_observation`] on the same primitive, one
+    /// const-fn seam further inland from the typed [`ConfigTierKind`] tag
+    /// on the `.0` slot to the [`usize`] precedence-ordinal it carries —
+    /// the count component on the `.1` slot rides through untouched. The
+    /// **fused-pair peer** of the two scalar-half seams already shipped on
+    /// this altitude one seam over: [`Self::dominant_tier_ordinal`]
+    /// carries the *ordinal* alone as `Option<usize>` and
+    /// [`Self::peak_tier_count`] carries the *count* alone as `usize`;
+    /// both scalar halves project through this fused pair via
+    /// `.map(|(o, _)| o)` and `.map_or(0, |(_, n)| n)` respectively.
+    /// Halves the cost of the previous inline
+    /// `(map.dominant_tier_ordinal(), map.peak_tier_count())` idiom that
+    /// walked the histogram twice — once to argmax the cell (feeding
+    /// [`ConfigTierKind::ordinal`]), once to read the peak count back —
+    /// where [`Self::dominant_tier_observation`] one seam out fuses both
+    /// into one walk and this seam threads the ordinal projection through
+    /// the same shared walk.
+    ///
+    /// The natural typed primitive for the ConfigPlane broadcast surface
+    /// encoding just the modal `(ordinal, count)` byte pair at wire time
+    /// (no `ConfigTierKind` serde needed on the wire — the receiving side
+    /// re-derives the tag by `ConfigTierKind::ALL[o]`), for the
+    /// operator-facing `/healthz/config/dominant_tier_observation_ordinal`
+    /// payload emitting the `(ordinal, count)` pair alone, and for the
+    /// compile-time attestation hasher folding just the modal-cell
+    /// precedence-ordinal + peak-count pair. Before this lift, every such
+    /// consumer re-derived the pair inline as
+    /// `(map.dominant_tier_ordinal(), map.peak_tier_count())` — two
+    /// coordinated walks over the counts vector fused into one via the
+    /// upstream [`Self::dominant_tier_observation`] one seam out.
+    ///
+    /// **Empty-map convention** — returns [`None`], matching the
+    /// [`Self::dominant_tier_observation`] empty convention one seam out
+    /// and the [`Self::dominant_tier_ordinal`] scalar-half convention on
+    /// the same altitude. The scalar-half [`Self::peak_tier_count`] reads
+    /// `0` on the same boundary via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_tier_observation_ordinal() ==
+    ///   dominant_tier_observation().map(|(t, n)| (t.ordinal(), n))` —
+    ///   the ordinal projection of the fused-pair upstream; the two
+    ///   seams must stay pointwise equivalent under
+    ///   [`ConfigTierKind::ordinal`] on the cell slot.
+    /// - `dominant_tier_observation_ordinal().map(|(o, _)| o) ==
+    ///   dominant_tier_ordinal()` — the cell-half of the fused pair
+    ///   recovers the ordinal-axis scalar sub-projection on the same
+    ///   altitude one seam over.
+    /// - `dominant_tier_observation_ordinal().map_or(0, |(_, n)| n) ==
+    ///   peak_tier_count()` — the count-half of the fused pair recovers
+    ///   the scalar-count sibling on the same altitude one seam over.
+    /// - `dominant_tier_observation_ordinal().is_some() == !is_empty()`
+    ///   — presence-parity with the upstream fused-pair and both scalar
+    ///   halves; empty maps read [`None`] on all three seams.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` — matches
+    /// [`Self::dominant_tier_observation`] one seam out (delegates
+    /// through it with a `const`-callable
+    /// [`ConfigTierKind::ordinal`] one-shot on the cell slot).
+    #[must_use]
+    pub fn dominant_tier_observation_ordinal(&self) -> Option<(usize, usize)> {
+        self.dominant_tier_observation()
+            .map(|(t, n)| (t.ordinal(), n))
     }
 
     /// The **recessive tier observation** — the fused `(cell, count)`
@@ -29921,6 +30081,34 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.dominant_tier_observation()
     }
 
+    /// The **dominant tier observation ordinal** — the ordinal-projected
+    /// fused `(ordinal, count)` pair on the modal side of this resolved
+    /// fold's tier histogram: the [`ConfigTierKind::ordinal`] of the argmax
+    /// cell together with the leaf count it collected, or [`None`] exactly
+    /// on the empty resolution. Container-altitude peer of
+    /// [`ProvenanceMap::dominant_tier_observation_ordinal`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.dominant_tier_observation_ordinal()`.
+    ///
+    /// The **ordinal-axis cell-projection** of
+    /// [`Self::dominant_tier_observation`] on the same container, one
+    /// const-fn seam further inland from the typed [`ConfigTierKind`] tag
+    /// on the `.0` slot to the [`usize`] precedence-ordinal it carries.
+    /// The **fused-pair peer** of the two scalar-half seams already shipped
+    /// on the same container one seam over: [`Self::dominant_tier_ordinal`]
+    /// carries the *ordinal* alone as `Option<usize>` and the peak count
+    /// alone reaches through `self.provenance().peak_tier_count()`; both
+    /// scalar halves project through this fused pair via `.map(|(o, _)| o)`
+    /// and `.map_or(0, |(_, n)| n)` respectively. The **sibling** of
+    /// [`Self::dominant_source_kind_observation_ordinal`] on the source-
+    /// kind altitude — the two altitudes now name the ordinal-projected
+    /// modal-observation pair on the two closed coordinates of the atomic
+    /// `(tier, source)` pair.
+    #[must_use]
+    pub fn dominant_tier_observation_ordinal(&self) -> Option<(usize, usize)> {
+        self.provenance.dominant_tier_observation_ordinal()
+    }
+
     /// The **recessive tier observation** — the fused `(cell, count)` pair
     /// on the anti-modal side of this resolved fold's tier histogram: the
     /// [`ConfigTierKind`] whose overlay produced the fewest (but still ≥1)
@@ -29967,6 +30155,39 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn dominant_source_kind_observation(&self) -> Option<(crate::ConfigSourceKind, usize)> {
         self.provenance.dominant_source_kind_observation()
+    }
+
+    /// The **dominant source-kind observation ordinal** — the ordinal-
+    /// projected fused `(ordinal, count)` pair on the modal side of this
+    /// resolved fold's source-kind histogram: the
+    /// [`crate::ConfigSourceKind::ordinal`] of the argmax cell together
+    /// with the leaf count it collected, or [`None`] exactly on the empty
+    /// resolution. Container-altitude peer of
+    /// [`ProvenanceMap::dominant_source_kind_observation_ordinal`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.dominant_source_kind_observation_ordinal()`.
+    ///
+    /// The **ordinal-axis cell-projection** of
+    /// [`Self::dominant_source_kind_observation`] on the same container,
+    /// one const-fn seam further inland from the typed
+    /// [`crate::ConfigSourceKind`] tag on the `.0` slot to the [`usize`]
+    /// precedence-ordinal it carries. The **fused-pair peer** of the two
+    /// scalar-half seams already shipped on the same container one seam
+    /// over: [`Self::dominant_source_kind_ordinal`] carries the *ordinal*
+    /// alone as `Option<usize>` and the peak count alone reaches through
+    /// `self.provenance().peak_source_kind_count()`; both scalar halves
+    /// project through this fused pair via `.map(|(o, _)| o)` and
+    /// `.map_or(0, |(_, n)| n)` respectively. The **sibling** of
+    /// [`Self::dominant_tier_observation_ordinal`] on the tier altitude —
+    /// the two altitudes now name the ordinal-projected modal-observation
+    /// pair on the two closed coordinates of the atomic `(tier, source)`
+    /// pair. Closes the container-altitude ordinal-projected modal-
+    /// observation pair on both closed axes on the argmax side of the
+    /// modal-observation surface.
+    #[must_use]
+    pub fn dominant_source_kind_observation_ordinal(&self) -> Option<(usize, usize)> {
+        self.provenance.dominant_source_kind_observation_ordinal()
     }
 
     /// The **recessive source-kind observation** — the fused `(cell, count)`
@@ -81566,6 +81787,140 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::dominant_tier_observation_ordinal — ordinal-axis
+    //    cell-projection of the modal-observation fused pair on the tier
+    //    altitude, threading ConfigTierKind::ordinal through the .0 slot
+    //    of dominant_tier_observation. Joint upstream of
+    //    dominant_tier_ordinal (`.map(|(o, _)| o)`) and peak_tier_count
+    //    (`.map_or(0, |(_, n)| n)`) — the ordinal-projected fused pair the
+    //    ConfigPlane byte-pair broadcast surface, the
+    //    /healthz/config/dominant_tier_observation_ordinal payload, and
+    //    the attestation-hash modal (ordinal, count) folder each read at
+    //    one call. ──
+
+    #[test]
+    fn dominant_tier_observation_ordinal_matches_ordinal_projection_of_observation_pointwise() {
+        // Cross-seam pin: `dominant_tier_observation_ordinal()` is the
+        // ordinal-axis cell-projection of `dominant_tier_observation()`,
+        // so the two seams must stay pointwise equivalent under
+        // `ConfigTierKind::ordinal` on the `.0` slot with the `.1` count
+        // component riding through untouched. Argmax peer of the
+        // corresponding tier-axis cross-seam pin one seam further inland
+        // on the ordinal side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .dominant_tier_observation()
+                .map(|(t, n)| (t.ordinal(), n));
+            assert_eq!(map.dominant_tier_observation_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_ordinal_half_recovers_dominant_tier_ordinal_pointwise() {
+        // Cell-half round-trip pin: the `.0` slot of the ordinal-projected
+        // fused pair recovers `dominant_tier_ordinal()` pointwise via
+        // `.map(|(o, _)| o)` — the same shape the typed-tag round-trip
+        // `.map(|(t, _)| t) == dominant_tier()` carries one seam out on
+        // the un-projected pair. Pins the ordinal-projected fused pair as
+        // the natural upstream the ordinal-axis scalar sub-projection
+        // reaches through.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.dominant_tier_observation_ordinal();
+            assert_eq!(obs.map(|(o, _)| o), map.dominant_tier_ordinal());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_count_half_recovers_peak_tier_count_pointwise() {
+        // Count-half round-trip pin: the `.1` slot of the ordinal-projected
+        // fused pair recovers `peak_tier_count()` pointwise via
+        // `.map_or(0, |(_, n)| n)` — the same shape the typed-tag
+        // round-trip carries one seam out. Empty maps read `0` uniformly
+        // on both seams; non-empty maps read the shared peak count.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.dominant_tier_observation_ordinal();
+            assert_eq!(obs.map_or(0, |(_, n)| n), map.peak_tier_count());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin: an empty `ProvenanceMap` has no leaves
+        // and therefore no modal observation and no ordinal-projected
+        // modal observation — the ordinal-projected fused pair reads
+        // `None`, matching `dominant_tier_observation_empty_map_is_none`
+        // one seam out and `dominant_tier_ordinal_empty_map_is_none` on
+        // the scalar-half side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_tier_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_prog_fixture_is_default_ordinal_at_two() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // The peak lands on Default at count 2. ConfigTierKind::Default's
+        // ordinal is 2 by the closed-axis declaration Bare(0) →
+        // Discovered(1) → Default(2) → Custom(3). Direct pin — the
+        // ordinal-projected fused pair reads `(2, 2)` at one call.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier_observation_ordinal(),
+            Some((ConfigTierKind::Default.ordinal(), 2)),
+        );
+        assert_eq!(
+            r.provenance().dominant_tier_observation_ordinal(),
+            Some((2, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_is_some_iff_map_is_nonempty_pointwise() {
+        // Presence-parity pin: the ordinal-projected fused pair reads
+        // `Some(_)` exactly on the non-empty support, matching
+        // `dominant_tier_observation_is_some_iff_map_is_nonempty_pointwise`
+        // one seam out and `dominant_tier_ordinal_is_some_iff_map_is_nonempty`
+        // on the scalar-half side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.dominant_tier_observation_ordinal().is_some(),
+                !map.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_ordinal_singleton_leaf_reads_leaf_ordinal_at_count_one() {
+        // Singleton-support pin: on a one-leaf map, the sole observed
+        // cell is the modal cell and the peak count is `1`, so the
+        // ordinal-projected fused pair reads `Some((leaf_ordinal, 1))`.
+        // Closed-axis-consistency pin against the typed-tag round-trip
+        // one seam out.
+        let mut singleton = ProvenanceMap::default();
+        singleton.extend([(vec!["only".to_string()], Provenance::discovered())]);
+        assert_eq!(
+            singleton.dominant_tier_observation_ordinal(),
+            Some((ConfigTierKind::Discovered.ordinal(), 1)),
+        );
+        assert_eq!(singleton.dominant_tier_observation_ordinal(), Some((1, 1)),);
+    }
+
     // ── ProvenanceMap::recessive_tier_observation — anti-modal-side
     //    fused `(cell, count)` pair seam on the tier altitude, climbing
     //    AxisHistogram::recessive_observation and lifting the "recessive-
@@ -95214,6 +95569,147 @@ mod progressive_tests {
             let count = obs.map_or(0, |(_, n)| n);
             assert_eq!(cell, map.dominant_source_kind());
             assert_eq!(count, map.peak_source_kind_count());
+        }
+    }
+
+    // ── ProvenanceMap::dominant_source_kind_observation_ordinal —
+    //    ordinal-axis cell-projection of the modal-observation fused pair
+    //    on the source-kind altitude, threading ConfigSourceKind::ordinal
+    //    through the .0 slot of dominant_source_kind_observation. Joint
+    //    upstream of dominant_source_kind_ordinal (`.map(|(o, _)| o)`) and
+    //    peak_source_kind_count (`.map_or(0, |(_, n)| n)`) — source-axis
+    //    peer of dominant_tier_observation_ordinal on the tier altitude,
+    //    closing the ordinal-projected fused-pair surface on both closed
+    //    coordinates of the atomic `(tier, source)` pair on the argmax
+    //    side. ──
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_matches_ordinal_projection_of_observation_pointwise()
+     {
+        // Cross-seam pin: `dominant_source_kind_observation_ordinal()` is
+        // the ordinal-axis cell-projection of
+        // `dominant_source_kind_observation()`, so the two seams must stay
+        // pointwise equivalent under `ConfigSourceKind::ordinal` on the
+        // `.0` slot with the `.1` count component riding through
+        // untouched. Source-kind-axis peer of the tier-axis cross-seam
+        // pin on the argmax side one seam further inland on the ordinal
+        // side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .dominant_source_kind_observation()
+                .map(|(k, n)| (k.ordinal(), n));
+            assert_eq!(map.dominant_source_kind_observation_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_ordinal_half_recovers_dominant_source_kind_ordinal_pointwise()
+     {
+        // Cell-half round-trip pin: the `.0` slot of the ordinal-projected
+        // fused pair recovers `dominant_source_kind_ordinal()` pointwise
+        // via `.map(|(o, _)| o)` — the same shape the typed-tag round-trip
+        // `.map(|(k, _)| k) == dominant_source_kind()` carries one seam
+        // out. Source-kind-axis peer of the tier-axis cell-half round-trip
+        // pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.dominant_source_kind_observation_ordinal();
+            assert_eq!(obs.map(|(o, _)| o), map.dominant_source_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_count_half_recovers_peak_source_kind_count_pointwise()
+     {
+        // Count-half round-trip pin: the `.1` slot of the ordinal-projected
+        // fused pair recovers `peak_source_kind_count()` pointwise via
+        // `.map_or(0, |(_, n)| n)` — the same shape the typed-tag
+        // round-trip carries one seam out. Empty maps read `0` uniformly
+        // on both seams; non-empty maps read the shared peak count.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.dominant_source_kind_observation_ordinal();
+            assert_eq!(obs.map_or(0, |(_, n)| n), map.peak_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin: an empty `ProvenanceMap` has no leaves
+        // and therefore no modal observation and no ordinal-projected
+        // modal observation — the ordinal-projected fused pair reads
+        // `None`, matching
+        // `dominant_source_kind_observation_empty_map_is_none` one seam
+        // out and `dominant_source_kind_ordinal_empty_map_is_none` on
+        // the scalar-half side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_source_kind_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_prog_fixture_is_defaults_ordinal_at_four() {
+        // Prog's fold is all-Defaults on the source-kind axis (four
+        // leaves, singleton-support). The peak lands on Defaults at
+        // count 4. ConfigSourceKind::Defaults's ordinal is 0 by the
+        // closed-axis declaration Defaults(0) → Env(1) → File(2).
+        // Direct pin — the ordinal-projected fused pair reads `(0, 4)`
+        // at one call.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_source_kind_observation_ordinal(),
+            Some((crate::ConfigSourceKind::Defaults.ordinal(), 4)),
+        );
+        assert_eq!(
+            r.provenance().dominant_source_kind_observation_ordinal(),
+            Some((0, 4)),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_mixed_fixture_is_defaults_ordinal_at_two() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. Counts:
+        // Defaults=2, Env=1, File=1. The peak lands on Defaults at
+        // count 2. ConfigSourceKind::Defaults's ordinal is 0. Direct
+        // pin — the ordinal-projected fused pair reads `(0, 2)` at one
+        // call.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().dominant_source_kind_observation_ordinal(),
+            Some((crate::ConfigSourceKind::Defaults.ordinal(), 2)),
+        );
+        assert_eq!(
+            r.provenance().dominant_source_kind_observation_ordinal(),
+            Some((0, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_observation_ordinal_is_some_iff_map_is_nonempty_pointwise() {
+        // Presence-parity pin: the ordinal-projected fused pair reads
+        // `Some(_)` exactly on the non-empty support, matching
+        // `dominant_source_kind_observation_is_some_iff_map_is_nonempty_pointwise`
+        // one seam out and
+        // `dominant_source_kind_ordinal_is_some_iff_map_is_nonempty` on
+        // the scalar-half side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.dominant_source_kind_observation_ordinal().is_some(),
+                !map.is_empty(),
+            );
         }
     }
 
@@ -120657,5 +121153,107 @@ mod progressive_tests {
                 );
             }
         }
+    }
+
+    // ── ProgressiveResolution::dominant_tier_observation_ordinal /
+    //    ProgressiveResolution::dominant_source_kind_observation_ordinal
+    //    — container-altitude peers of the primitive-altitude ordinal-
+    //    projected modal-observation pair on both closed coordinates of
+    //    the atomic `(tier, source)` pair, one-hop delegates on the
+    //    *output* side of the fold's atomic-pair ownership boundary. ──
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_ordinal_agrees_with_provenance_dominant_tier_observation_ordinal()
+     {
+        // Structural-agreement pin on the ordinal-projected modal-
+        // observation delegate at the container altitude:
+        // `res.dominant_tier_observation_ordinal()` routes through
+        // `res.provenance().dominant_tier_observation_ordinal()`, so the
+        // two seams must stay pointwise equivalent — one-hop delegation
+        // on the *output* side of the fold's atomic-pair ownership
+        // boundary. Argmax peer of
+        // `progressive_resolution_dominant_tier_observation_agrees_with_provenance_dominant_tier_observation`
+        // one seam further inland on the ordinal side.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation_ordinal(),
+            r.provenance().dominant_tier_observation_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_ordinal_matches_ordinal_projection_of_observation()
+     {
+        // Cross-seam agreement pin at the container altitude: the
+        // ordinal-projected modal-observation pair agrees with
+        // `.dominant_tier_observation().map(|(t, n)| (t.ordinal(), n))`
+        // — the same shape carried by the primitive-altitude cross-seam
+        // pin one altitude down. Prog's peak lands on Default at
+        // count 2; Default.ordinal() == 2.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation_ordinal(),
+            r.dominant_tier_observation().map(|(t, n)| (t.ordinal(), n)),
+        );
+        assert_eq!(r.dominant_tier_observation_ordinal(), Some((2, 2)));
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_ordinal_ordinal_half_recovers_dominant_tier_ordinal()
+     {
+        // Cell-half round-trip pin at the container: the `.0` slot of
+        // the ordinal-projected fused pair recovers
+        // `dominant_tier_ordinal()` pointwise via `.map(|(o, _)| o)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation_ordinal().map(|(o, _)| o),
+            r.dominant_tier_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_tier_observation_ordinal_count_half_recovers_peak_tier_count()
+     {
+        // Count-half round-trip pin at the container: the `.1` slot of
+        // the ordinal-projected fused pair recovers `peak_tier_count()`
+        // pointwise via `.map_or(0, |(_, n)| n)`, routing through the
+        // provenance-side scalar-count seam.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_tier_observation_ordinal().map_or(0, |(_, n)| n),
+            r.provenance().peak_tier_count(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_observation_ordinal_agrees_with_provenance_dominant_source_kind_observation_ordinal()
+     {
+        // Source-kind-axis peer of the tier-axis structural-agreement pin
+        // above on the same container-altitude delegation — closes the
+        // ordinal-projected modal-observation pair on both closed axes
+        // on the argmax side of the modal-observation surface.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation_ordinal(),
+            r.provenance().dominant_source_kind_observation_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_dominant_source_kind_observation_ordinal_matches_ordinal_projection_of_observation()
+     {
+        // Source-kind-axis peer of the tier-axis cross-seam pin above at
+        // the container altitude — the ordinal-projected fused pair
+        // agrees with `.dominant_source_kind_observation().map(|(k, n)|
+        // (k.ordinal(), n))`. Prog's fold is all-Defaults on the
+        // source-kind axis (singleton support at count 4);
+        // Defaults.ordinal() == 0.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.dominant_source_kind_observation_ordinal(),
+            r.dominant_source_kind_observation()
+                .map(|(k, n)| (k.ordinal(), n)),
+        );
+        assert_eq!(r.dominant_source_kind_observation_ordinal(), Some((0, 4)));
     }
 }
