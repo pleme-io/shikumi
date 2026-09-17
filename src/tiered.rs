@@ -40890,6 +40890,109 @@ impl ConfigDiff {
     pub fn extremal_kinds(&self) -> Option<(DiffLineKind, DiffLineKind)> {
         self.dominant_kind().zip(self.recessive_kind())
     }
+
+    /// The **ordinal-projected extremal kinds pair** on this diff's
+    /// per-line [`DiffLineKind`] histogram — the fused-pair
+    /// `Option<(usize, usize)>` packing the modal (argmax) cell and the
+    /// antimodal (argmin) cell into one nested-pair scalar, both cells
+    /// downcast to their [`crate::ClosedAxis`] precedence-ordinal via
+    /// [`DiffLineKind::ordinal`]. Returns [`None`] exactly on the empty
+    /// diff; otherwise returns `Some((dominant_kind_ordinal().unwrap(),
+    /// recessive_kind_ordinal().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant so the
+    /// outer [`Option`] fuses both empty gates into a single check.
+    ///
+    /// **Ordinal-projection peer** of the shipped typed-tag fused-pair
+    /// [`Self::extremal_kinds`] one const-fn seam further inland — the
+    /// twofold [`DiffLineKind::ordinal`] downcast over the modal /
+    /// antimodal representative pair. Coincides pointwise with
+    /// `dominant_kind_ordinal().zip(recessive_kind_ordinal())` — the
+    /// same nested-pair shape reached from the ordinal-projected scalar
+    /// halves through the outer [`Option::zip`], versus the twofold
+    /// `.ordinal()` downcast on the typed-tag fused pair; the delegation
+    /// implementation routes through the twofold downcast form to
+    /// halve the empty-check work (one outer [`Option::map`] versus one
+    /// outer [`Option::zip`] on two shared-discriminant options).
+    ///
+    /// **Diff-altitude peer** of
+    /// [`crate::ProvenanceMap::extremal_kinds_ordinal`] on the tier /
+    /// source-kind cross-axis one altitude up — the same
+    /// ordinal-projection of a typed-tag fused pair lifted from the
+    /// atomic `(tier, source)` cross-axis at the primitive altitude to
+    /// the diff-cell single-axis at the diff altitude. Where the
+    /// primitive-altitude peer packs a fourfold ordinal `((usize,
+    /// usize), (usize, usize))` across two closed axes, this
+    /// diff-altitude peer packs a twofold ordinal `(usize, usize)` on
+    /// the single [`DiffLineKind`] closed axis — the same
+    /// ordinal-projection shape adapted to the diff-altitude's
+    /// one-axis surface. Fills the fused-pair ordinal-axis peer slot
+    /// on the [`DiffLineKind`] closed axis at the diff altitude,
+    /// closing the three-seam ordinal-axis peer family on the same
+    /// axis alongside the shipped scalar-half pair
+    /// [`Self::dominant_kind_ordinal`] / [`Self::recessive_kind_ordinal`].
+    ///
+    /// The natural typed primitive for reading *"what are the
+    /// precedence-ordinals of the modal and antimodal diff-cell kinds
+    /// on this rebuild summary?"* at one method call — a CLI
+    /// `config-diff` summary emitting the ordinal-pair byte pair
+    /// alone, a `/healthz/config/diff/extremal_kinds_ordinal` payload
+    /// serializing both endpoints on the ordinal axis, an attestation
+    /// manifest recording per-tick fused-pair modal / antimodal kind
+    /// ordinal attribution, a schema-driven fold cross-referencing
+    /// another diff-cell map keyed on the same fused ordinal-pair
+    /// coordinate — all now open the same seam one hop shorter
+    /// without the twofold `.map(DiffLineKind::ordinal)` downcast at
+    /// every site.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_kinds_ordinal() ==
+    ///   extremal_kinds().map(|(m, a)| (m.ordinal(), a.ordinal()))`
+    ///   — the defining twofold ordinal-projection law over the
+    ///   [`DiffLineKind`] fused-pair scalar on the diff altitude.
+    /// - `extremal_kinds_ordinal() ==
+    ///   dominant_kind_ordinal().zip(recessive_kind_ordinal())`
+    ///   — cross-seam coincidence with the two ordinal-projected
+    ///   scalar halves fused through the outer [`Option::zip`] on
+    ///   opposite sides of the typed-tag ↔ ordinal-axis co-projection
+    ///   square (one composes the twofold `.ordinal()` downcast; the
+    ///   other composes the outer [`Option::zip`] of the two
+    ///   ordinal-projected scalars).
+    /// - `extremal_kinds_ordinal().is_none() == self.lines.is_empty()`
+    ///   — the ordinal-projected fused pair is [`None`] exactly on
+    ///   the empty diff, matching the empty-histogram boundary the
+    ///   typed-tag side [`Self::extremal_kinds`] witnesses (the
+    ///   twofold [`DiffLineKind::ordinal`] downcast is
+    ///   structure-preserving on the outer [`Option`]).
+    /// - `extremal_kinds_ordinal().map(|(m, _)| m) ==
+    ///   self.dominant_kind_ordinal()` pointwise — the modal-half
+    ///   projection recovers the modal-cell ordinal scalar on every
+    ///   fixture.
+    /// - `extremal_kinds_ordinal().map(|(_, a)| a) ==
+    ///   self.recessive_kind_ordinal()` pointwise — the antimodal-half
+    ///   projection recovers the antimodal-cell ordinal scalar on
+    ///   every fixture.
+    /// - When `Some((m, a))`, both `m < crate::axis_cardinality::
+    ///   <DiffLineKind>()` and `a < crate::axis_cardinality::
+    ///   <DiffLineKind>()` — both ordinals are bounded by the
+    ///   closed-axis cardinality (three), matching the
+    ///   [`DiffLineKind::ordinal`] range `{0, 1, 2}` by construction.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// paired argmax + argmin scan). Both are `O(n)` in practice
+    /// since the diff-cell axis carries a fixed three-cell
+    /// cardinality; the returned `Option<(usize, usize)>` fits in one
+    /// discriminant + two `usize` cells with no heap allocation. Same
+    /// as [`Self::extremal_kinds`] plus two const-fn
+    /// [`DiffLineKind::ordinal`] downcasts on the [`Some`] side.
+    #[must_use]
+    pub fn extremal_kinds_ordinal(&self) -> Option<(usize, usize)> {
+        self.extremal_kinds()
+            .map(|(m, a)| (m.ordinal(), a.ordinal()))
+    }
 }
 
 #[cfg(test)]
@@ -60221,6 +60324,242 @@ mod tests {
                 assert!(o < k, "ordinal {o} out of range for cardinality {k}");
             }
         }
+    }
+
+    // ── ConfigDiff::extremal_kinds_ordinal — fused-pair
+    //    ordinal-projection of the typed-tag fused-pair extremal_kinds,
+    //    packing dominant_kind_ordinal / recessive_kind_ordinal into one
+    //    nested-pair scalar on the DiffLineKind closed axis. Diff-
+    //    altitude peer of the fused-quadruple ProvenanceMap::
+    //    extremal_kinds_ordinal on the tier / source-kind cross-axis one
+    //    altitude up, shipped through the twofold DiffLineKind::ordinal
+    //    downcast on the modal / antimodal representative pair. ──
+
+    #[test]
+    fn extremal_kinds_ordinal_matches_twofold_ordinal_downcast_of_extremal_kinds_pointwise() {
+        // Defining projection-law pin: `extremal_kinds_ordinal` is
+        // exactly the twofold `DiffLineKind::ordinal` downcast over
+        // the typed-tag fused pair `extremal_kinds` on every fixture.
+        // Catches a future edit that reroutes this seam through a
+        // different fused primitive (a re-fused
+        // `dominant_kind_ordinal().zip(recessive_kind_ordinal())`,
+        // say) instead of the shipped twofold-downcast delegation.
+        for diff in dominant_kind_fixtures() {
+            let via_twofold = diff
+                .extremal_kinds()
+                .map(|(m, a)| (m.ordinal(), a.ordinal()));
+            assert_eq!(diff.extremal_kinds_ordinal(), via_twofold);
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_coincides_with_zip_of_scalar_ordinal_halves_pointwise() {
+        // Cross-seam coincidence law pin: `extremal_kinds_ordinal` and
+        // `dominant_kind_ordinal().zip(recessive_kind_ordinal())` close
+        // the same commuting square on the same nested-pair shape from
+        // opposite seams of the typed-tag ↔ ordinal-axis co-projection
+        // (one composes the twofold `.ordinal()` downcast on the
+        // typed-tag fused pair, the other composes the outer
+        // `Option::zip` of the two ordinal-projected scalar halves).
+        // Diff-altitude peer of the same coincidence law
+        // `extremal_kinds_ordinal_coincides_with_extremal_ordinals_pointwise`
+        // on the primitive altitude's fused-quadruple sibling.
+        for diff in dominant_kind_fixtures() {
+            let via_zip = diff
+                .dominant_kind_ordinal()
+                .zip(diff.recessive_kind_ordinal());
+            assert_eq!(diff.extremal_kinds_ordinal(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_modal_projection_recovers_dominant_kind_ordinal_pointwise() {
+        // Projection-law pin: `.map(|(m, _)| m)` on the ordinal-
+        // projected fused pair recovers `dominant_kind_ordinal()`
+        // pointwise on every fixture. Ordinal-axis peer of the
+        // typed-tag modal projection
+        // `extremal_kinds_modal_projection_recovers_dominant_kind_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kinds_ordinal().map(|(m, _)| m);
+            assert_eq!(via_map, diff.dominant_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_antimodal_projection_recovers_recessive_kind_ordinal_pointwise() {
+        // Projection-law pin: `.map(|(_, a)| a)` on the ordinal-
+        // projected fused pair recovers `recessive_kind_ordinal()`
+        // pointwise on every fixture. Ordinal-axis peer of the
+        // typed-tag antimodal projection
+        // `extremal_kinds_antimodal_projection_recovers_recessive_kind_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.extremal_kinds_ordinal().map(|(_, a)| a);
+            assert_eq!(via_map, diff.recessive_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_none_iff_empty_pointwise() {
+        // Empty-histogram boundary pin: `extremal_kinds_ordinal()` is
+        // `None` exactly when `self.lines` is empty, matching the
+        // empty-diff boundary the typed-tag side `extremal_kinds`
+        // witnesses (the twofold `.ordinal()` downcast is structure-
+        // preserving on the outer `Option`).
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.extremal_kinds_ordinal().is_none();
+            assert_eq!(is_none, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_presence_matches_extremal_kinds_pointwise() {
+        // Presence-parity pin across the twofold `.ordinal()` downcast:
+        // the ordinal-projected fused pair carries the same non-
+        // emptiness discriminant as the typed-tag fused pair on every
+        // fixture. Consumers matching on `Some((m_ord, a_ord))` never
+        // see one side present with the other absent — the structural
+        // invariant lifted from the typed-tag side under
+        // structure-preserving `Option::map`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.extremal_kinds_ordinal().is_some(),
+                diff.extremal_kinds().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_coincide_on_uniform_or_empty_pointwise() {
+        // Coincidence-boundary law: on every uniform-count diff whose
+        // kind histogram carries at least one observation (peak count
+        // == trough count with all observed cells sharing the same
+        // count, and singleton-support diffs) the modal and antimodal
+        // ordinals coincide via declaration-order tie-break, so
+        // `extremal_kinds_ordinal().map(|(m, a)| m == a)` reads
+        // `Some(true)`; on the lines-empty diff the fused pair is
+        // `None`. Ordinal-axis peer of the typed-tag coincidence law
+        // `extremal_kinds_coincide_on_uniform_or_empty_pointwise` on
+        // the same fixture cover, preserved under `DiffLineKind::ordinal`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                assert_eq!(diff.extremal_kinds_ordinal(), None);
+            } else if diff.kind_histogram().is_uniform_count() {
+                let (m, a) = diff.extremal_kinds_ordinal().unwrap();
+                assert_eq!(m, a);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_components_bounded_by_axis_cardinality_pointwise() {
+        // Range pin: when `Some`, both components are bounded above
+        // by the closed-axis cardinality — `DiffLineKind` has three
+        // cells, so both projected ordinals are in `{0, 1, 2}`.
+        // Fused-pair peer of the modal / antimodal scalar-half range
+        // pins on the same closed axis.
+        let k = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some((m, a)) = diff.extremal_kinds_ordinal() {
+                assert!(m < k, "modal ordinal {m} out of range for cardinality {k}");
+                assert!(
+                    a < k,
+                    "antimodal ordinal {a} out of range for cardinality {k}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_context_dominated_fixture_is_context_ordinal_removed_ordinal() {
+        // Ground-truth pin on the Context-dominated fixture (three
+        // Context lines + one Removed): modal ordinal is
+        // `Context.ordinal() = 2` (peak-count 3) and antimodal
+        // ordinal is `Removed.ordinal() = 0` (trough-count 1 at
+        // declaration-order tie-break over the two zero-count cells
+        // Removed and Added below Context; the argmin scan yields
+        // the observed cell rather than a zero-count cell). Fused-
+        // pair peer of the two scalar-half ground-truth pins
+        // `dominant_kind_ordinal_context_dominated_fixture_is_context_ordinal`
+        // and `recessive_kind_ordinal_context_dominated_fixture_is_removed_ordinal`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.extremal_kinds_ordinal(),
+            Some((
+                DiffLineKind::Context.ordinal(),
+                DiffLineKind::Removed.ordinal()
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_added_dominated_fixture_is_added_ordinal_context_ordinal() {
+        // Ground-truth pin on the Added-dominated fixture (two
+        // Added + one Context): modal ordinal is
+        // `Added.ordinal() = 1` (peak-count 2) and antimodal
+        // ordinal is `Context.ordinal() = 2` (trough-count 1 at the
+        // singleton observed cell). Fused-pair peer of the two
+        // scalar-half ground-truth pins
+        // `dominant_kind_ordinal_added_dominated_fixture_is_added_ordinal`
+        // and `recessive_kind_ordinal_added_dominated_fixture_is_context_ordinal`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a".into()),
+                DiffLine::Added("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.extremal_kinds_ordinal(),
+            Some((
+                DiffLineKind::Added.ordinal(),
+                DiffLineKind::Context.ordinal()
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_uniform_three_kind_cover_is_removed_ordinal_removed_ordinal() {
+        // Ground-truth pin on the uniform three-kind cover (one
+        // Removed + one Added + one Context, all at count 1): both
+        // modal and antimodal ordinals coincide at
+        // `Removed.ordinal() = 0` under declaration-order tie-break
+        // (modal picks the first-tied cell, antimodal picks the
+        // first-tied cell above the trough — coincident on the
+        // uniform-count cover). Coincidence-boundary witness for the
+        // uniform-cover half of the coincidence law above.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.extremal_kinds_ordinal(),
+            Some((
+                DiffLineKind::Removed.ordinal(),
+                DiffLineKind::Removed.ordinal()
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_empty_diff_is_none() {
+        // Empty-diff literal pin: the empty diff has no observed
+        // cells, so both `dominant_kind` and `recessive_kind` return
+        // `None` and the fused pair collapses to `None` under the
+        // twofold `.ordinal()` downcast (map applied to `None` is
+        // `None`). Empty-diff peer of the two scalar-half empty pins
+        // `dominant_kind_ordinal_empty_diff_is_none` /
+        // `recessive_kind_ordinal_empty_diff_is_none`.
+        assert_eq!(ConfigDiff::default().extremal_kinds_ordinal(), None);
     }
 
     #[test]
