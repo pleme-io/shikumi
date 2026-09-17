@@ -33918,6 +33918,71 @@ impl ConfigDiff {
         self.kind_histogram().dominant_cell()
     }
 
+    /// The **modal diff-cell kind ordinal** on this diff's per-line
+    /// [`DiffLineKind`] histogram — the [`crate::ClosedAxis`] precedence
+    /// ordinal of the modal (most-observed) cell, one const-fn seam
+    /// further inland from the typed [`DiffLineKind`] tag [`Self::dominant_kind`]
+    /// returns to the [`usize`] precedence-ordinal it carries via
+    /// [`DiffLineKind::ordinal`]. Returns [`None`] exactly on the empty
+    /// diff; otherwise returns `Some(self.dominant_kind().unwrap().ordinal())`.
+    ///
+    /// **Ordinal-axis scalar sub-projection** of [`Self::dominant_kind`]
+    /// on the diff-cell axis modal-cell projection, defined as
+    /// `self.dominant_kind().map(DiffLineKind::ordinal)` — the projection
+    /// law recovers this ordinal-projected scalar pointwise. Where
+    /// [`Self::dominant_kind`] returns the typed [`DiffLineKind`] tag (a
+    /// three-cell closed-axis discriminant), this returns the [`usize`]
+    /// precedence-ordinal alone — the shape a CLI `config-diff` summary
+    /// encoding only the modal-kind ordinal byte, an operator-facing
+    /// `/healthz/config/diff/dominant_kind_ordinal` payload, or a
+    /// compile-time attestation hasher folding just the modal-diff-cell
+    /// precedence coordinate actually wants.
+    ///
+    /// **Diff-altitude peer** of
+    /// [`crate::ProvenanceMap::dominant_tier_ordinal`] on the tier
+    /// altitude and
+    /// [`crate::ProvenanceMap::dominant_source_kind_ordinal`] on the
+    /// source-kind altitude — the same one-hop `.map(_::ordinal)` shape
+    /// lifted from the tier / source-kind closed axes on the atomic
+    /// `(tier, source)` pair to the diff-cell closed axis on the diff
+    /// altitude. Fills the ordinal-axis peer slot of the modal-cell
+    /// projection at the diff altitude on the same seam the primitive-
+    /// altitude [`crate::AxisHistogram::dominant_cell`] pair carries at
+    /// its own altitude.
+    ///
+    /// The natural typed primitive for reading *"what is the precedence-
+    /// ordinal of the modal diff-cell kind on this rebuild summary?"* at
+    /// one method call, without the caller re-writing the `.ordinal()`
+    /// downcast at every site.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_kind_ordinal() == dominant_kind().map(DiffLineKind::ordinal)`
+    ///   — the defining ordinal-projection law over the [`DiffLineKind`]
+    ///   modal-cell scalar on the diff altitude.
+    /// - `dominant_kind_ordinal().is_none() == self.lines.is_empty()`
+    ///   — the ordinal projection reads [`None`] exactly on the empty-
+    ///   histogram boundary the typed-tag side [`Self::dominant_kind`]
+    ///   witnesses.
+    /// - `dominant_kind_ordinal().is_some() == dominant_kind().is_some()`
+    ///   — the ordinal-axis scalar sub-projection agrees with the typed-
+    ///   tag side on the empty-vs-nonempty boundary.
+    /// - When `Some(o)`, `o < crate::axis_cardinality::<DiffLineKind>()`
+    ///   — the ordinal is bounded by the closed-axis cardinality
+    ///   (three), matching the [`DiffLineKind::ordinal`] range
+    ///   `{0, 1, 2}` by construction.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the argmax scan)
+    /// — same as [`Self::dominant_kind`] plus one const-fn
+    /// [`DiffLineKind::ordinal`] downcast on the [`Some`] side.
+    #[must_use]
+    pub fn dominant_kind_ordinal(&self) -> Option<usize> {
+        self.dominant_kind().map(DiffLineKind::ordinal)
+    }
+
     /// The **peak line count** — the number of lines contributed by the
     /// dominant [`DiffLineKind`] on this diff. Returns `0` exactly when the
     /// diff is empty (no lines); otherwise returns the line count carried
@@ -34139,6 +34204,81 @@ impl ConfigDiff {
     #[must_use]
     pub fn recessive_kind(&self) -> Option<DiffLineKind> {
         self.kind_histogram().recessive_cell()
+    }
+
+    /// The **antimodal diff-cell kind ordinal** on this diff's per-line
+    /// [`DiffLineKind`] histogram — the [`crate::ClosedAxis`] precedence
+    /// ordinal of the antimodal (rarest-observed) cell, one const-fn
+    /// seam further inland from the typed [`DiffLineKind`] tag
+    /// [`Self::recessive_kind`] returns to the [`usize`] precedence-
+    /// ordinal it carries via [`DiffLineKind::ordinal`]. Returns [`None`]
+    /// exactly on the empty diff; otherwise returns
+    /// `Some(self.recessive_kind().unwrap().ordinal())`.
+    ///
+    /// **Ordinal-axis scalar sub-projection** of [`Self::recessive_kind`]
+    /// on the diff-cell axis antimodal-cell projection, defined as
+    /// `self.recessive_kind().map(DiffLineKind::ordinal)` — the
+    /// projection law recovers this ordinal-projected scalar pointwise.
+    /// Where [`Self::recessive_kind`] returns the typed [`DiffLineKind`]
+    /// tag (a three-cell closed-axis discriminant), this returns the
+    /// [`usize`] precedence-ordinal alone — the antimodal-side shape a
+    /// CLI `config-diff` summary encoding only the runt-kind ordinal
+    /// byte, an operator-facing
+    /// `/healthz/config/diff/recessive_kind_ordinal` payload, or a
+    /// compile-time attestation hasher folding just the antimodal-diff-
+    /// cell precedence coordinate actually wants.
+    ///
+    /// **Antimodal peer** of [`Self::dominant_kind_ordinal`] on the same
+    /// diff altitude — together they close the (modal, antimodal)
+    /// ordinal-axis scalar pair on the diff-cell axis at the diff
+    /// altitude, matching the ordinal-axis modal + antimodal scalar
+    /// pair ([`crate::ProvenanceMap::dominant_tier_ordinal`] /
+    /// [`crate::ProvenanceMap::recessive_tier_ordinal`]) on the tier
+    /// altitude and
+    /// ([`crate::ProvenanceMap::dominant_source_kind_ordinal`] /
+    /// [`crate::ProvenanceMap::recessive_source_kind_ordinal`]) on the
+    /// source-kind altitude, one const-fn seam further inland than the
+    /// typed-tag pair [`Self::dominant_kind`] / [`Self::recessive_kind`]
+    /// on the same diff-cell axis.
+    ///
+    /// The natural typed primitive for reading *"what is the precedence-
+    /// ordinal of the antimodal diff-cell kind on this rebuild
+    /// summary?"* at one method call, without the caller re-writing the
+    /// `.ordinal()` downcast at every site.
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_kind_ordinal() == recessive_kind().map(DiffLineKind::ordinal)`
+    ///   — the defining ordinal-projection law over the [`DiffLineKind`]
+    ///   antimodal-cell scalar on the diff altitude.
+    /// - `recessive_kind_ordinal().is_none() == self.lines.is_empty()`
+    ///   — the ordinal projection reads [`None`] exactly on the empty-
+    ///   histogram boundary the typed-tag side [`Self::recessive_kind`]
+    ///   witnesses.
+    /// - `recessive_kind_ordinal().is_some() == dominant_kind_ordinal().is_some()`
+    ///   — both ordinal projections are defined on the same support
+    ///   (`!self.lines.is_empty()`), matching the typed-tag-side pairing
+    ///   [`Self::dominant_kind`] / [`Self::recessive_kind`] both witness.
+    /// - `recessive_kind_ordinal() == dominant_kind_ordinal()` whenever
+    ///   the histogram is empty, singleton-support, or uniform-count
+    ///   with declaration-order tie-break agreement — the coincidence
+    ///   boundary the typed-tag-side pair
+    ///   ([`Self::dominant_kind`] / [`Self::recessive_kind`]) shares on
+    ///   the same fixtures, preserved under [`DiffLineKind::ordinal`].
+    /// - When `Some(o)`, `o < crate::axis_cardinality::<DiffLineKind>()`
+    ///   — the ordinal is bounded by the closed-axis cardinality
+    ///   (three), matching the [`DiffLineKind::ordinal`] range
+    ///   `{0, 1, 2}` by construction.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the argmin scan)
+    /// — same as [`Self::recessive_kind`] plus one const-fn
+    /// [`DiffLineKind::ordinal`] downcast on the [`Some`] side.
+    #[must_use]
+    pub fn recessive_kind_ordinal(&self) -> Option<usize> {
+        self.recessive_kind().map(DiffLineKind::ordinal)
     }
 
     /// The **trough line count** — the number of lines contributed by the
@@ -59801,6 +59941,284 @@ mod tests {
                 let hist = diff.kind_histogram();
                 assert!(hist.count(m) >= 1);
                 assert!(hist.count(a) >= 1);
+            }
+        }
+    }
+
+    // ── ConfigDiff::dominant_kind_ordinal — ordinal-axis scalar sub-
+    //    projection of dominant_kind, one const-fn seam further inland
+    //    from the typed DiffLineKind tag to the usize precedence-ordinal
+    //    it carries. Diff-altitude peer of
+    //    ProvenanceMap::dominant_tier_ordinal on the tier altitude and
+    //    ProvenanceMap::dominant_source_kind_ordinal on the source-kind
+    //    altitude, on the diff-cell closed axis. ──
+
+    #[test]
+    fn dominant_kind_ordinal_matches_dominant_kind_projection_pointwise() {
+        // Cross-seam agreement pin: `dominant_kind_ordinal()` is the
+        // ordinal-axis scalar sub-projection of `dominant_kind()`, so
+        // the two seams must stay pointwise equivalent under
+        // `DiffLineKind::ordinal`. Diff-altitude peer of
+        // `dominant_source_kind_ordinal_matches_dominant_source_kind_projection_pointwise`
+        // on the source-kind altitude and
+        // `dominant_tier_ordinal_matches_dominant_tier_projection_pointwise`
+        // on the tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_typed = diff.dominant_kind().map(DiffLineKind::ordinal);
+            assert_eq!(diff.dominant_kind_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_empty_diff_is_none() {
+        // An empty ConfigDiff has no lines and therefore no modal
+        // diff-cell kind and no modal-kind ordinal — the empty-diff /
+        // empty-histogram boundary of the ordinal-axis scalar sub-
+        // projection reads `None`, matching `dominant_kind_empty_diff_is_none`
+        // on the typed-tag side.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.dominant_kind_ordinal(), None);
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_context_dominated_fixture_is_context_ordinal() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // strictly dominant. DiffLineKind::Context's ordinal is 2 by
+        // the closed-axis declaration Removed(0) → Added(1) → Context(2).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.dominant_kind_ordinal(),
+            Some(DiffLineKind::Context.ordinal()),
+        );
+        assert_eq!(diff.dominant_kind_ordinal(), Some(2));
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_added_dominated_fixture_is_added_ordinal() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added strictly
+        // dominant. DiffLineKind::Added's ordinal is 1 by the closed-
+        // axis declaration Removed(0) → Added(1) → Context(2).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.dominant_kind_ordinal(),
+            Some(DiffLineKind::Added.ordinal()),
+        );
+        assert_eq!(diff.dominant_kind_ordinal(), Some(1));
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_uniform_cover_picks_removed_ordinal() {
+        // Declaration-order tie-break pin: a uniform per-kind diff
+        // (one line per kind) reports Removed on the typed side via
+        // the closed-axis first-tied convention. The ordinal projection
+        // preserves that pick — DiffLineKind::Removed.ordinal() is 0.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.dominant_kind_ordinal(),
+            Some(DiffLineKind::Removed.ordinal()),
+        );
+        assert_eq!(diff.dominant_kind_ordinal(), Some(0));
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_is_some_iff_diff_is_nonempty() {
+        // Presence-parity pin: the ordinal-axis scalar sub-projection
+        // agrees with the typed-tag side on the empty-vs-nonempty
+        // boundary — `dominant_kind_ordinal().is_some() ==
+        // !self.lines.is_empty()`, matching
+        // `dominant_kind_is_some_iff_diff_is_nonempty`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.dominant_kind_ordinal().is_some(),
+                !diff.lines.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_kind_ordinal_bounded_by_axis_cardinality_pointwise() {
+        // Range pin: when defined, the ordinal is bounded above by
+        // the closed-axis cardinality — `DiffLineKind` has three
+        // cells, so every projected ordinal is in `{0, 1, 2}`.
+        // Structural pin on the `DiffLineKind::ordinal` range that
+        // catches a future closed-axis extension not accompanied by
+        // an ordinal-range update at any consumer.
+        let k = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some(o) = diff.dominant_kind_ordinal() {
+                assert!(o < k, "ordinal {o} out of range for cardinality {k}");
+            }
+        }
+    }
+
+    // ── ConfigDiff::recessive_kind_ordinal — ordinal-axis scalar sub-
+    //    projection of recessive_kind, one const-fn seam further inland
+    //    from the typed DiffLineKind tag to the usize precedence-ordinal
+    //    it carries; argmin peer of dominant_kind_ordinal on the same
+    //    diff-cell axis at the diff altitude. ──
+
+    #[test]
+    fn recessive_kind_ordinal_matches_recessive_kind_projection_pointwise() {
+        // Cross-seam agreement pin: `recessive_kind_ordinal()` is the
+        // ordinal-axis scalar sub-projection of `recessive_kind()`, so
+        // the two seams must stay pointwise equivalent under
+        // `DiffLineKind::ordinal`. Argmin peer of
+        // `dominant_kind_ordinal_matches_dominant_kind_projection_pointwise`
+        // on the same diff-cell axis.
+        for diff in dominant_kind_fixtures() {
+            let via_typed = diff.recessive_kind().map(DiffLineKind::ordinal);
+            assert_eq!(diff.recessive_kind_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_empty_diff_is_none() {
+        // An empty ConfigDiff has no lines and therefore no antimodal
+        // diff-cell kind and no antimodal-kind ordinal — the empty-diff
+        // / empty-histogram boundary of the ordinal-axis scalar sub-
+        // projection reads `None`, matching `recessive_kind_empty_diff_is_none`
+        // on the typed-tag side and the argmax peer
+        // `dominant_kind_ordinal_empty_diff_is_none` on the modal side.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.recessive_kind_ordinal(), None);
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_context_dominated_fixture_is_removed_ordinal() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Removed as
+        // the unique antimodal cell at count 1. DiffLineKind::Removed's
+        // ordinal is 0 by the closed-axis declaration
+        // Removed(0) → Added(1) → Context(2).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.recessive_kind_ordinal(),
+            Some(DiffLineKind::Removed.ordinal()),
+        );
+        assert_eq!(diff.recessive_kind_ordinal(), Some(0));
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_added_dominated_fixture_is_context_ordinal() {
+        // Direct pin: a diff of 2 Added + 1 Context has Context as the
+        // unique antimodal cell at count 1 (Added holds 2).
+        // DiffLineKind::Context's ordinal is 2 by the closed-axis
+        // declaration Removed(0) → Added(1) → Context(2).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            diff.recessive_kind_ordinal(),
+            Some(DiffLineKind::Context.ordinal()),
+        );
+        assert_eq!(diff.recessive_kind_ordinal(), Some(2));
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_uniform_cover_agrees_with_dominant_kind_ordinal() {
+        // On a uniform three-kind cover, argmin and argmax coincide
+        // under declaration-order tie-break: both pick Removed
+        // (ordinal 0). Ordinal-axis peer of the typed-tag coincidence
+        // `recessive_kind_uniform_cover_picks_first_cell` on the same
+        // fixture.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.recessive_kind_ordinal(), diff.dominant_kind_ordinal(),);
+        assert_eq!(diff.recessive_kind_ordinal(), Some(0));
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_singleton_support_agrees_with_dominant_kind_ordinal() {
+        // Singleton-support degenerate pin: on a diff where the sole
+        // observed cell is both the modal and the anti-modal cell, the
+        // two ordinal projections agree pointwise — the ordinal-axis
+        // peer of `recessive_kind_singleton_support_agrees_with_dominant_kind`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into())],
+        };
+        assert_eq!(diff.recessive_kind_ordinal(), diff.dominant_kind_ordinal(),);
+        assert_eq!(
+            diff.recessive_kind_ordinal(),
+            Some(DiffLineKind::Removed.ordinal()),
+        );
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_is_some_iff_diff_is_nonempty() {
+        // Presence-parity pin: the ordinal-axis scalar sub-projection
+        // agrees with the typed-tag side on the empty-vs-nonempty
+        // boundary — `recessive_kind_ordinal().is_some() ==
+        // !self.lines.is_empty()`, matching
+        // `recessive_kind_is_some_iff_diff_is_nonempty`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.recessive_kind_ordinal().is_some(),
+                !diff.lines.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_is_some_iff_dominant_kind_ordinal_is_some() {
+        // Cross-projection presence pin on the same altitude: both
+        // ordinal projections are defined on the same support
+        // (`!self.lines.is_empty()`), lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()`
+        // law on AxisHistogram and its typed-tag lift
+        // `recessive_kind_is_some_iff_dominant_kind_is_some`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.recessive_kind_ordinal().is_some(),
+                diff.dominant_kind_ordinal().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_ordinal_bounded_by_axis_cardinality_pointwise() {
+        // Range pin: when defined, the ordinal is bounded above by
+        // the closed-axis cardinality — `DiffLineKind` has three
+        // cells, so every projected ordinal is in `{0, 1, 2}`.
+        // Argmin peer of the modal-side range pin
+        // `dominant_kind_ordinal_bounded_by_axis_cardinality_pointwise`.
+        let k = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            if let Some(o) = diff.recessive_kind_ordinal() {
+                assert!(o < k, "ordinal {o} out of range for cardinality {k}");
             }
         }
     }
