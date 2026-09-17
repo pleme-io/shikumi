@@ -32055,6 +32055,166 @@ impl<T> ProgressiveResolution<T> {
     pub fn extremal_kinds_ordinal(&self) -> Option<((usize, usize), (usize, usize))> {
         self.provenance.extremal_kinds_ordinal()
     }
+
+    /// The **extremal tier counts fused-pair** on this resolved fold's
+    /// per-leaf [`ConfigTierKind`] histogram at the container altitude —
+    /// the nested-pair scalar `(usize, usize)` packing the modal (peak)
+    /// and antimodal (trough) leaf counts of the tier histogram into one
+    /// tuple. Returns `(0, 0)` exactly on the empty resolution;
+    /// otherwise returns `self.provenance().extremal_tier_counts()`
+    /// pointwise.
+    ///
+    /// Container-altitude peer of [`ProvenanceMap::extremal_tier_counts`]
+    /// on the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.extremal_tier_counts()`. The **count-axis
+    /// projection peer** of the shipped cells-only fused-pair
+    /// [`Self::extremal_tiers`] on the same container: the fused pair
+    /// one shape over carries the modal + antimodal *cells* of the tier
+    /// histogram; this method carries the two *counts* those cells hold.
+    /// Together with [`Self::extremal_tier_observations`] one const-fn
+    /// seam further inland, the two form the **cells-only ↔ counts-only
+    /// cell-projection pair** on the tier altitude — the observation
+    /// fused quadruple `((cell, count, multiplicity), (cell, count,
+    /// multiplicity))` factors into `(cells, counts, multiplicities)`
+    /// on both endpoints, and this method reads the middle counts-only
+    /// projection off the outer resolution container.
+    ///
+    /// The **source-kind-altitude peer** of
+    /// [`Self::extremal_source_kind_counts`] — the two altitudes now name
+    /// the fused-pair count scalar on both closed coordinates of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries.
+    ///
+    /// Before this seam, a consumer answering *"what are the peak and
+    /// trough per-tier leaf counts on this resolved fold?"* on a
+    /// `ProgressiveResolution<T>` reached through the two-hop borrow
+    /// `res.provenance().extremal_tier_counts()`, or open-coded the
+    /// fused pair as `(res.provenance().peak_tier_count(),
+    /// res.provenance().trough_tier_count())` — two independent scalar
+    /// reads plus a two-element tuple constructor. This method collapses
+    /// both spellings to one seam on the resolution container itself
+    /// (halving the constant factor of the open-coded idiom by routing
+    /// through the shipped [`crate::AxisHistogram::extremal_counts`]
+    /// single-pass running-max + running-min-over-positives fold two
+    /// seams down), matching the container-altitude fused-pair peers
+    /// [`Self::extremal_tiers`] / [`Self::extremal_source_kinds`] /
+    /// [`Self::extremal_ordinals`] / [`Self::extremal_kinds`] on the
+    /// same shape.
+    ///
+    /// **Empty-resolution convention** — returns `(0, 0)` (not
+    /// `Option<(usize, usize)>`), matching the
+    /// [`ProvenanceMap::extremal_tier_counts`] scalar-zero empty
+    /// convention one seam down and the
+    /// [`crate::AxisHistogram::extremal_counts`] convention two seams
+    /// down. This differs from the [`Option`]-wrapped cells-only fused
+    /// pair [`Self::extremal_tiers`] one shape over: an empty histogram
+    /// has no modal or antimodal *cell* (both are [`None`]) but has
+    /// well-defined modal and antimodal *counts* (both are `0`), so the
+    /// count-axis projection lifts the empty case out of the outer
+    /// [`Option`] into the scalar zero pair.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_tier_counts() == provenance().extremal_tier_counts()`
+    ///   pointwise — the defining container-altitude routing identity,
+    ///   the same delegation shape [`Self::extremal_tiers`] /
+    ///   [`Self::extremal_source_kinds`] carry on the cells-only side.
+    /// - `extremal_tier_counts() == tier_histogram().extremal_counts()`
+    ///   pointwise — the routing equivalence two seams down, since both
+    ///   [`Self::tier_histogram`] and [`ProvenanceMap::extremal_tier_counts`]
+    ///   ultimately fold the same per-leaf tier stream through the same
+    ///   primitive.
+    /// - `extremal_tier_counts() == (0, 0)` ⇔ `self.is_empty()` — the
+    ///   empty-boundary equivalence lifted from
+    ///   [`ProvenanceMap::extremal_tier_counts`] through the container-
+    ///   altitude [`Self::is_empty`] / [`ProvenanceMap::is_empty`]
+    ///   coincidence.
+    /// - `extremal_tier_counts().0 >= extremal_tier_counts().1` always —
+    ///   the peak / trough ordering invariant lifted from the primitive
+    ///   `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `extremal_tier_counts().0 <= self.len()` always — the peak is
+    ///   bounded above by the total leaf count of the fold; by
+    ///   transitivity with the ordering invariant, the trough half is
+    ///   also `<= self.len()`.
+    /// - Coincidence on uniform-count or empty: on every uniform-per-
+    ///   tier fold (every observed tier holds the same count) and on
+    ///   the empty resolution, the two halves of the fused pair coincide.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the paired peak +
+    /// trough scan). Both are `O(n)` in practice since the tier axis
+    /// carries a fixed four-cell cardinality; the returned `(usize,
+    /// usize)` reads two scalars in one tuple with no heap allocation.
+    /// Halves the cost of the open-coded `(provenance().peak_tier_count(),
+    /// provenance().trough_tier_count())` idiom (which walked the counts
+    /// vector twice) by routing through
+    /// [`crate::AxisHistogram::extremal_counts`]'s single-pass fold two
+    /// seams down.
+    #[must_use]
+    pub fn extremal_tier_counts(&self) -> (usize, usize) {
+        self.provenance.extremal_tier_counts()
+    }
+
+    /// The **extremal source-kind counts fused-pair** on this resolved
+    /// fold's per-leaf [`crate::ConfigSourceKind`] histogram at the
+    /// container altitude — the nested-pair scalar `(usize, usize)`
+    /// packing the modal (peak) and antimodal (trough) leaf counts of
+    /// the source-kind histogram into one tuple. Returns `(0, 0)`
+    /// exactly on the empty resolution; otherwise returns
+    /// `self.provenance().extremal_source_kind_counts()` pointwise.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::extremal_source_kind_counts`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating
+    /// one seam down into
+    /// `self.provenance.extremal_source_kind_counts()`. The **tier-
+    /// altitude peer** of [`Self::extremal_tier_counts`] — the two
+    /// altitudes now name the fused-pair count scalar on both closed
+    /// coordinates of the atomic `(tier, source)` pair each leaf's
+    /// [`Provenance`] carries, closing the container-altitude count-axis
+    /// fused-pair surface on both closed axes.
+    ///
+    /// The **count-axis projection peer** of the shipped cells-only
+    /// fused-pair [`Self::extremal_source_kinds`] on the same container:
+    /// the fused pair one shape over carries the modal + antimodal
+    /// *cells* of the source-kind histogram; this method carries the
+    /// two *counts* those cells hold. Together with
+    /// [`Self::extremal_source_kind_observations`] one const-fn seam
+    /// further inland, the two form the **cells-only ↔ counts-only
+    /// cell-projection pair** on the source-kind altitude — the
+    /// observation fused quadruple `((cell, count, multiplicity), (cell,
+    /// count, multiplicity))` factors into `(cells, counts,
+    /// multiplicities)` on both endpoints, and this method reads the
+    /// middle counts-only projection off the outer resolution container.
+    ///
+    /// See [`Self::extremal_tier_counts`] for the full contract on the
+    /// container-altitude count-axis fused-pair (empty-resolution
+    /// convention, routing invariants two seams down, arithmetic
+    /// algebra `{+, -, *}` on the closed endpoint pair, ordering
+    /// invariant, uniform-count coincidence).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// paired peak + trough scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality;
+    /// the returned `(usize, usize)` reads two scalars in one tuple
+    /// with no heap allocation. Halves the cost of the open-coded
+    /// `(provenance().peak_source_kind_count(),
+    /// provenance().trough_source_kind_count())` idiom (which walked
+    /// the counts vector twice) by routing through
+    /// [`crate::AxisHistogram::extremal_counts`]'s single-pass fold two
+    /// seams down.
+    #[must_use]
+    pub fn extremal_source_kind_counts(&self) -> (usize, usize) {
+        self.provenance.extremal_source_kind_counts()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -128115,5 +128275,285 @@ mod progressive_tests {
         // pair reads (2, 1).
         let r = source_kind_histogram_mixed_fixture();
         assert_eq!(r.provenance().extremal_source_kind_counts(), (2, 1));
+    }
+
+    // ── ProgressiveResolution::extremal_tier_counts — the container-
+    //    altitude climb of ProvenanceMap::extremal_tier_counts on the
+    //    output side of the fold's atomic-pair ownership boundary. Both
+    //    reads route through AxisHistogram::extremal_counts two seams
+    //    down, so every projection pin cross-checks the container-
+    //    altitude delegate against the provenance-map primitive.
+
+    #[test]
+    fn prog_extremal_tier_counts_matches_provenance_extremal_tier_counts_pointwise() {
+        // Defining container-altitude routing pin: the resolution's
+        // extremal_tier_counts equals its provenance's pointwise. Peer
+        // of the shipped cells-only container-altitude routing pin
+        // `res.extremal_tiers() == res.provenance().extremal_tiers()`.
+        // The Prog / Nested fixtures are heterogeneous in `T` so the
+        // check runs per-fixture rather than in an array-loop.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.extremal_tier_counts(),
+            p.provenance().extremal_tier_counts()
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.extremal_tier_counts(),
+            n.provenance().extremal_tier_counts()
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.extremal_tier_counts(),
+            m.provenance().extremal_tier_counts()
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.extremal_tier_counts(),
+            empty.provenance().extremal_tier_counts(),
+        );
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_matches_tier_histogram_extremal_counts_pointwise() {
+        // Routing pin two seams down: extremal_tier_counts ==
+        // tier_histogram().extremal_counts() on the resolution container,
+        // matching the primitive-altitude fold ProvenanceMap already
+        // routes through one seam down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.extremal_tier_counts(),
+            p.tier_histogram().extremal_counts()
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.extremal_tier_counts(),
+            n.tier_histogram().extremal_counts()
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.extremal_tier_counts(),
+            m.tier_histogram().extremal_counts()
+        );
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_empty_resolution_is_zero_zero() {
+        // Empty-resolution convention pin: on the empty resolution the
+        // fused pair reads (0, 0), lifting out of the outer Option that
+        // the cells-only container-altitude peer `extremal_tiers` reads
+        // as None on the same fixture.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.extremal_tier_counts(), (0, 0));
+        assert_eq!(r.extremal_tiers(), None);
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin lifted through the container-
+        // altitude is_empty coincidence: (0, 0) iff self.is_empty().
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.extremal_tier_counts() == (0, 0), p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.extremal_tier_counts() == (0, 0), n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.extremal_tier_counts() == (0, 0), m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert!(empty.is_empty());
+        assert_eq!(empty.extremal_tier_counts(), (0, 0));
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_peak_ge_trough_pointwise() {
+        // Peak / trough ordering invariant lifted from the primitive
+        // trait-uniform peak_count() >= trough_count() law on
+        // AxisHistogram, matching the ordering invariant on every
+        // shipped extremal_*_counts peer.
+        let (p_peak, p_trough) = Prog::resolve_progressive().extremal_tier_counts();
+        assert!(p_peak >= p_trough);
+        let (n_peak, n_trough) = Nested::resolve_progressive().extremal_tier_counts();
+        assert!(n_peak >= n_trough);
+        let (m_peak, m_trough) = source_kind_histogram_mixed_fixture().extremal_tier_counts();
+        assert!(m_peak >= m_trough);
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_upper_bounded_by_len_pointwise() {
+        // Length upper-bound pin: peak <= self.len() always. By
+        // transitivity with the ordering invariant, trough <= self.len()
+        // too. The container-altitude len() equals the provenance-map
+        // len() by ProgressiveResolution's shipped len() delegate.
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.extremal_tier_counts();
+        assert!(peak <= p.len());
+        assert!(trough <= p.len());
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.extremal_tier_counts();
+        assert!(peak <= n.len());
+        assert!(trough <= n.len());
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.extremal_tier_counts();
+        assert!(peak <= m.len());
+        assert!(trough <= m.len());
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_prog_fixture_is_two_one() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `extremal_tier_counts_prog_fixture_is_two_one` primitive-
+        // altitude pin: 4 leaves attributed as a→Discovered, b→Default,
+        // c→Bare, d→Default gives tier counts {Bare:1, Default:2,
+        // Discovered:1, Custom:0}. Peak = 2, trough = 1. Fused pair
+        // reads (2, 1) at the resolution container itself.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_tier_counts(), (2, 1));
+    }
+
+    #[test]
+    fn prog_extremal_tier_counts_nested_fixture_is_two_one() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `extremal_tier_counts_nested_fixture_is_two_one` primitive-
+        // altitude pin: 3 leaves with Default=2, Discovered=1. Peak =
+        // 2, trough = 1. Fused pair reads (2, 1) at the resolution
+        // container itself.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.extremal_tier_counts(), (2, 1));
+    }
+
+    // ── ProgressiveResolution::extremal_source_kind_counts — the
+    //    source-kind-altitude peer of ProgressiveResolution::
+    //    extremal_tier_counts on the same resolution container. Together
+    //    the two methods close the container-altitude count-axis fused-
+    //    pair surface on both closed coordinates of the atomic (tier,
+    //    source) pair each leaf's Provenance carries.
+
+    #[test]
+    fn prog_extremal_source_kind_counts_matches_provenance_extremal_source_kind_counts_pointwise() {
+        // Defining container-altitude routing pin, source-kind peer of
+        // `prog_extremal_tier_counts_matches_provenance_extremal_tier_counts_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.extremal_source_kind_counts(),
+            p.provenance().extremal_source_kind_counts(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.extremal_source_kind_counts(),
+            n.provenance().extremal_source_kind_counts(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.extremal_source_kind_counts(),
+            m.provenance().extremal_source_kind_counts(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.extremal_source_kind_counts(),
+            empty.provenance().extremal_source_kind_counts(),
+        );
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_matches_source_kind_histogram_extremal_counts_pointwise() {
+        // Routing pin two seams down: extremal_source_kind_counts ==
+        // source_kind_histogram().extremal_counts() on the resolution
+        // container, source-kind peer of the tier-altitude pin.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.extremal_source_kind_counts(),
+            p.source_kind_histogram().extremal_counts(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.extremal_source_kind_counts(),
+            n.source_kind_histogram().extremal_counts(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.extremal_source_kind_counts(),
+            m.source_kind_histogram().extremal_counts(),
+        );
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_empty_resolution_is_zero_zero() {
+        // Empty-resolution convention pin, source-kind peer of the
+        // tier-altitude pin.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.extremal_source_kind_counts(), (0, 0));
+        assert_eq!(r.extremal_source_kinds(), None);
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin, source-kind peer of the
+        // tier-altitude pin.
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.extremal_source_kind_counts() == (0, 0), p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.extremal_source_kind_counts() == (0, 0), n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.extremal_source_kind_counts() == (0, 0), m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert!(empty.is_empty());
+        assert_eq!(empty.extremal_source_kind_counts(), (0, 0));
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_peak_ge_trough_pointwise() {
+        // Peak / trough ordering invariant lifted from the primitive.
+        let (p_peak, p_trough) = Prog::resolve_progressive().extremal_source_kind_counts();
+        assert!(p_peak >= p_trough);
+        let (n_peak, n_trough) = Nested::resolve_progressive().extremal_source_kind_counts();
+        assert!(n_peak >= n_trough);
+        let (m_peak, m_trough) =
+            source_kind_histogram_mixed_fixture().extremal_source_kind_counts();
+        assert!(m_peak >= m_trough);
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_upper_bounded_by_len_pointwise() {
+        // Length upper-bound pin: peak <= self.len() always; by
+        // transitivity with ordering, trough <= self.len() too.
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.extremal_source_kind_counts();
+        assert!(peak <= p.len());
+        assert!(trough <= p.len());
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.extremal_source_kind_counts();
+        assert!(peak <= n.len());
+        assert!(trough <= n.len());
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.extremal_source_kind_counts();
+        assert!(peak <= m.len());
+        assert!(trough <= m.len());
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_prog_fixture_is_four_four() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `extremal_source_kind_counts_prog_fixture_is_four_four`
+        // primitive-altitude pin: 4 leaves all resolve to Defaults
+        // source-kind. Singleton-support fold — peak coincides with
+        // trough at count 4. Fused pair reads (4, 4) at the resolution
+        // container itself.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_source_kind_counts(), (4, 4));
+    }
+
+    #[test]
+    fn prog_extremal_source_kind_counts_mixed_fixture_is_two_one() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `extremal_source_kind_counts_mixed_fixture_is_two_one`
+        // primitive-altitude pin: a→Defaults, b→File, c→Env,
+        // d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak = 2,
+        // trough = 1. Fused pair reads (2, 1) at the resolution
+        // container itself.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.extremal_source_kind_counts(), (2, 1));
     }
 }
