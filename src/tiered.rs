@@ -4074,6 +4074,152 @@ impl ProvenanceMap {
             .map(EnvMetadataTagKind::is_bare)
     }
 
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_yaml`] of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf in the
+    /// resolved config OR if it names a leaf whose source is NOT
+    /// [`ConfigSource::File`] OR if the recorded path has no recognized
+    /// extension — the `Yaml`-arm sub-projection of the File-arm
+    /// typed-sub-axis quinary partition
+    /// (`{Yaml, Toml, Lisp, Nix, Blue}`), one const-fn seam further
+    /// inland from the typed-sub-axis pair [`Self::file_format_of`] /
+    /// [`Self::file_format_of_owned`] on the same closed source-axis
+    /// ternary partition ({`Defaults`, `Env`, `File`}).
+    ///
+    /// The File-arm typed-sub-axis boolean-tag peer of the Env-arm
+    /// boolean-tag pair [`Self::is_env_prefix_prefixed_of`] /
+    /// [`Self::is_env_prefix_bare_of`], the source-axis boolean-tag
+    /// triplet [`Self::is_defaults_of`] / [`Self::is_env_of`] /
+    /// [`Self::is_file_of`] and the tier-axis boolean-tag quartet
+    /// [`Self::is_bare_of`] / [`Self::is_discovered_of`] /
+    /// [`Self::is_default_of`] / [`Self::is_custom_of`], one sub-axis
+    /// further inland on the File-arm coordinate. Collapses the two-hop
+    /// chain
+    /// `self.file_format_of(path).map(crate::discovery::Format::is_yaml)`
+    /// a caller previously reached the File-arm `Yaml` polarity through
+    /// into one hop on the same underlying [`BTreeMap`] cursor.
+    ///
+    /// # Quinary-partition law
+    ///
+    /// Together with [`Self::is_file_format_toml_of`],
+    /// [`Self::is_file_format_lisp_of`],
+    /// [`Self::is_file_format_nix_of`] and
+    /// [`Self::is_file_format_blue_of`], the five per-variant tags form
+    /// a closed quinary partition on every File-arm hit whose extension
+    /// is recognized — exactly one is `Some(true)` and the other four
+    /// are `Some(false)`. Off the File arm, or on a File-arm leaf with
+    /// an unrecognized extension, ALL five evaporate to `None`, matching
+    /// the same `None` boundary [`Self::file_format_of`] carries one
+    /// const-fn seam further out.
+    #[must_use]
+    pub fn is_file_format_yaml_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_file_format_yaml_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_yaml_of`].
+    #[must_use]
+    pub fn is_file_format_yaml_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::is_yaml)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_toml`] of the effective leaf named
+    /// by dotted `path`, or [`None`] with the same evaporation contract
+    /// [`Self::is_file_format_yaml_of`] carries — the `Toml`-arm
+    /// sub-projection of the File-arm typed-sub-axis quinary partition.
+    /// See [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_toml_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_file_format_toml_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_toml_of`].
+    #[must_use]
+    pub fn is_file_format_toml_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::is_toml)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_lisp`] of the effective leaf named
+    /// by dotted `path`, or [`None`] with the same evaporation contract
+    /// [`Self::is_file_format_yaml_of`] carries — the `Lisp`-arm
+    /// sub-projection of the File-arm typed-sub-axis quinary partition.
+    /// See [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_lisp_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_file_format_lisp_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_lisp_of`].
+    #[must_use]
+    pub fn is_file_format_lisp_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::is_lisp)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_nix`] of the effective leaf named
+    /// by dotted `path`, or [`None`] with the same evaporation contract
+    /// [`Self::is_file_format_yaml_of`] carries — the `Nix`-arm
+    /// sub-projection of the File-arm typed-sub-axis quinary partition.
+    /// See [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_nix_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_file_format_nix_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_nix_of`].
+    #[must_use]
+    pub fn is_file_format_nix_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::is_nix)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_blue`] of the effective leaf named
+    /// by dotted `path`, or [`None`] with the same evaporation contract
+    /// [`Self::is_file_format_yaml_of`] carries — the `Blue`-arm
+    /// sub-projection of the File-arm typed-sub-axis quinary partition,
+    /// closing the File-arm typed-sub-axis per-variant boolean-tag
+    /// path-keyed lookup quintet
+    /// [`Self::is_file_format_yaml_of`] / [`Self::is_file_format_toml_of`]
+    /// / [`Self::is_file_format_lisp_of`] /
+    /// [`Self::is_file_format_nix_of`] / [`Self::is_file_format_blue_of`]
+    /// at the primitive altitude.
+    #[must_use]
+    pub fn is_file_format_blue_of(&self, path: &[&str]) -> Option<bool> {
+        self.is_file_format_blue_of_owned(
+            &path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>(),
+        )
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_blue_of`].
+    #[must_use]
+    pub fn is_file_format_blue_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.inner
+            .get(path)
+            .and_then(Provenance::file_format)
+            .map(crate::discovery::Format::is_blue)
+    }
+
     /// Sorted `(path, provenance)` entries, lexicographic by path.
     ///
     /// Naming the return type at the API boundary (rather than
@@ -26313,6 +26459,100 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn is_env_prefix_bare_of_owned(&self, path: &[String]) -> Option<bool> {
         self.provenance.is_env_prefix_bare_of_owned(path)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_yaml`] of the effective leaf named
+    /// by dotted `path`, or [`None`] if `path` names no leaf OR if the
+    /// source is not [`ConfigSource::File`] OR if the recorded path has
+    /// no recognized extension — the container-altitude peer of
+    /// [`ProvenanceMap::is_file_format_yaml_of`], delegating one seam
+    /// down into `self.provenance.is_file_format_yaml_of(path)`.
+    ///
+    /// The `Yaml`-arm sub-projection of the File-arm typed-sub-axis
+    /// quinary partition (`{Yaml, Toml, Lisp, Nix, Blue}`), one const-fn
+    /// seam further inland from the typed-sub-axis pair
+    /// [`Self::file_format_of`]. Together with
+    /// [`Self::is_file_format_toml_of`], [`Self::is_file_format_lisp_of`],
+    /// [`Self::is_file_format_nix_of`] and
+    /// [`Self::is_file_format_blue_of`], closes the File-arm typed-sub-
+    /// axis per-variant boolean-tag path-keyed lookup quintet at the
+    /// container altitude.
+    #[must_use]
+    pub fn is_file_format_yaml_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_file_format_yaml_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_yaml_of`] —
+    /// container-altitude peer of
+    /// [`ProvenanceMap::is_file_format_yaml_of_owned`].
+    #[must_use]
+    pub fn is_file_format_yaml_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_file_format_yaml_of_owned(path)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_toml`] — container-altitude peer
+    /// of [`ProvenanceMap::is_file_format_toml_of`]. See
+    /// [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_toml_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_file_format_toml_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_toml_of`].
+    #[must_use]
+    pub fn is_file_format_toml_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_file_format_toml_of_owned(path)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_lisp`] — container-altitude peer
+    /// of [`ProvenanceMap::is_file_format_lisp_of`]. See
+    /// [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_lisp_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_file_format_lisp_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_lisp_of`].
+    #[must_use]
+    pub fn is_file_format_lisp_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_file_format_lisp_of_owned(path)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_nix`] — container-altitude peer
+    /// of [`ProvenanceMap::is_file_format_nix_of`]. See
+    /// [`Self::is_file_format_yaml_of`] for the full contract.
+    #[must_use]
+    pub fn is_file_format_nix_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_file_format_nix_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_nix_of`].
+    #[must_use]
+    pub fn is_file_format_nix_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_file_format_nix_of_owned(path)
+    }
+
+    /// File-arm typed-sub-axis per-variant boolean tag
+    /// [`crate::discovery::Format::is_blue`] — container-altitude peer
+    /// of [`ProvenanceMap::is_file_format_blue_of`], closing the File-arm
+    /// typed-sub-axis per-variant boolean-tag path-keyed lookup quintet
+    /// [`Self::is_file_format_yaml_of`] / [`Self::is_file_format_toml_of`]
+    /// / [`Self::is_file_format_lisp_of`] /
+    /// [`Self::is_file_format_nix_of`] / [`Self::is_file_format_blue_of`]
+    /// at the container altitude.
+    #[must_use]
+    pub fn is_file_format_blue_of(&self, path: &[&str]) -> Option<bool> {
+        self.provenance.is_file_format_blue_of(path)
+    }
+
+    /// Allocation-free variant of [`Self::is_file_format_blue_of`].
+    #[must_use]
+    pub fn is_file_format_blue_of_owned(&self, path: &[String]) -> Option<bool> {
+        self.provenance.is_file_format_blue_of_owned(path)
     }
 
     /// Sorted `(path, provenance)` entries — the container-altitude peer
@@ -117749,5 +117989,512 @@ mod progressive_tests {
             r.extremal_tiers(),
             Some((ConfigTierKind::Default, ConfigTierKind::Bare)),
         );
+    }
+
+    // -------- ProvenanceMap::is_file_format_{yaml,toml,lisp,nix,blue}_of
+    // -------- File-arm typed-sub-axis per-variant boolean-tag path-keyed
+    // -------- lookup quintet (one const-fn seam further inland than the
+    // -------- typed-sub-axis pair `file_format_of` on the same File-arm
+    // -------- coordinate) ------
+
+    #[test]
+    fn provenance_map_is_file_format_yaml_of_agrees_with_file_format_of_is_yaml_projection_pointwise()
+     {
+        // Cross-seam agreement law on the `Yaml` polarity: the one-hop
+        // per-variant boolean-tag seam yields the same `Option<bool>` on
+        // every leaf as the two-hop chain
+        // `file_format_of(path).map(Format::is_yaml)` that this method
+        // exists to collapse. Runs against a mixed Defaults/Env/File
+        // overlay stack so pointwise agreement carries witnesses for
+        // both the `Some(true)` (yaml file leaf), `Some(false)` (toml
+        // file leaf) and `None` (defaults / env leaf) sides.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tag = r.provenance().is_file_format_yaml_of(&borrowed);
+            let via_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::is_yaml);
+            assert_eq!(
+                via_tag, via_projection,
+                "tag-vs-projection disagreement (yaml) at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_toml_of_agrees_with_file_format_of_is_toml_projection_pointwise()
+     {
+        // Peer of the `Yaml` cross-seam agreement law on the `Toml`
+        // polarity — catches a future edit that projects through
+        // `Format::is_yaml` on every variant (a crossed-polarity
+        // regression the five independent pins together rule out).
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tag = r.provenance().is_file_format_toml_of(&borrowed);
+            let via_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::is_toml);
+            assert_eq!(
+                via_tag, via_projection,
+                "tag-vs-projection disagreement (toml) at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_lisp_of_agrees_with_file_format_of_is_lisp_projection_pointwise()
+     {
+        // Peer of the `Yaml` cross-seam agreement law on the `Lisp`
+        // polarity.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut lisp_dict = Dict::new();
+        lisp_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.lisp", lisp_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tag = r.provenance().is_file_format_lisp_of(&borrowed);
+            let via_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::is_lisp);
+            assert_eq!(
+                via_tag, via_projection,
+                "tag-vs-projection disagreement (lisp) at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_nix_of_agrees_with_file_format_of_is_nix_projection_pointwise()
+    {
+        // Peer of the `Yaml` cross-seam agreement law on the `Nix`
+        // polarity.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut nix_dict = Dict::new();
+        nix_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.nix", nix_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tag = r.provenance().is_file_format_nix_of(&borrowed);
+            let via_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::is_nix);
+            assert_eq!(
+                via_tag, via_projection,
+                "tag-vs-projection disagreement (nix) at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_blue_of_agrees_with_file_format_of_is_blue_projection_pointwise()
+     {
+        // Peer of the `Yaml` cross-seam agreement law on the `Blue`
+        // polarity — closes the five-way pointwise-agreement fan on the
+        // File-arm typed-sub-axis quinary partition.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut blue_dict = Dict::new();
+        blue_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.b", blue_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let via_tag = r.provenance().is_file_format_blue_of(&borrowed);
+            let via_projection = r
+                .provenance()
+                .file_format_of(&borrowed)
+                .map(crate::discovery::Format::is_blue);
+            assert_eq!(
+                via_tag, via_projection,
+                "tag-vs-projection disagreement (blue) at path {borrowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_owned_agrees_with_borrowed_form_pointwise() {
+        // Cross-form parity law on every polarity of the File-arm
+        // quinary-partition boolean-tag quintet — the borrowed-path and
+        // owned-path seams agree on every leaf, mirroring the same
+        // cross-form parity `file_format_of` / `file_format_of_owned`
+        // one const-fn seam further out on the same axis.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.provenance().is_file_format_yaml_of(&borrowed),
+                r.provenance().is_file_format_yaml_of_owned(&owned),
+            );
+            assert_eq!(
+                r.provenance().is_file_format_toml_of(&borrowed),
+                r.provenance().is_file_format_toml_of_owned(&owned),
+            );
+            assert_eq!(
+                r.provenance().is_file_format_lisp_of(&borrowed),
+                r.provenance().is_file_format_lisp_of_owned(&owned),
+            );
+            assert_eq!(
+                r.provenance().is_file_format_nix_of(&borrowed),
+                r.provenance().is_file_format_nix_of_owned(&owned),
+            );
+            assert_eq!(
+                r.provenance().is_file_format_blue_of(&borrowed),
+                r.provenance().is_file_format_blue_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_five_variants_form_a_closed_quinary_partition() {
+        // Partition-invariant law: at every leaf `p` where the map
+        // records a File-arm source with a recognized extension
+        // (`file_format_of(p).is_some()`), exactly one of the five
+        // per-variant boolean tags is `Some(true)` and the other four
+        // are `Some(false)`; off the arm (or on an unrecognized
+        // extension) ALL FIVE evaporate to `None`. Sibling of the
+        // Env-arm binary-partition disjointness law
+        // `is_env_prefix_prefixed_of + is_env_prefix_bare_of == 1`, the
+        // source-axis ternary-partition disjointness law
+        // `is_defaults_of + is_env_of + is_file_of == 1` and the tier-
+        // axis quaternary-partition disjointness law
+        // `is_bare_of + is_discovered_of + is_default_of + is_custom_of == 1`
+        // one sub-axis further inland on the File-arm coordinate.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        let mut saw_yaml = false;
+        let mut saw_toml = false;
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let has_format = r.provenance().file_format_of(&borrowed).is_some();
+            let flags = [
+                r.provenance().is_file_format_yaml_of(&borrowed),
+                r.provenance().is_file_format_toml_of(&borrowed),
+                r.provenance().is_file_format_lisp_of(&borrowed),
+                r.provenance().is_file_format_nix_of(&borrowed),
+                r.provenance().is_file_format_blue_of(&borrowed),
+            ];
+            if has_format {
+                let true_count = flags.iter().filter(|f| **f == Some(true)).count();
+                let false_count = flags.iter().filter(|f| **f == Some(false)).count();
+                assert_eq!(
+                    true_count, 1,
+                    "quinary partition broken at file leaf {borrowed:?}: flags={flags:?}"
+                );
+                assert_eq!(
+                    false_count, 4,
+                    "quinary partition broken at file leaf {borrowed:?}: flags={flags:?}"
+                );
+                if flags[0] == Some(true) {
+                    saw_yaml = true;
+                }
+                if flags[1] == Some(true) {
+                    saw_toml = true;
+                }
+            } else {
+                assert!(
+                    flags.iter().all(|f| f.is_none()),
+                    "off-arm leak at {borrowed:?}: flags={flags:?}"
+                );
+            }
+        }
+        assert!(saw_yaml, "fixture did not produce a Yaml-file leaf");
+        assert!(saw_toml, "fixture did not produce a Toml-file leaf");
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_returns_none_for_defaults_and_env_arms() {
+        // Off-arm evaporation law: leaves whose source is not `File(_)`
+        // collapse to `None` on all five per-variant tags, matching the
+        // same off-arm evaporation `file_format_of` and
+        // `file_format_ordinal_of` carry one const-fn seam further out
+        // on the same axis.
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::env("PROG_", env_dict)]);
+        assert!(r.provenance().is_file_format_yaml_of(&["c"]).is_none());
+        assert!(r.provenance().is_file_format_toml_of(&["c"]).is_none());
+        assert!(r.provenance().is_file_format_lisp_of(&["c"]).is_none());
+        assert!(r.provenance().is_file_format_nix_of(&["c"]).is_none());
+        assert!(r.provenance().is_file_format_blue_of(&["c"]).is_none());
+        // Also a defaults-tier leaf: `a` is bare-seeded by the Prog
+        // fixture and unmodified here.
+        assert!(r.provenance().is_file_format_yaml_of(&["a"]).is_none());
+        assert!(r.provenance().is_file_format_toml_of(&["a"]).is_none());
+        assert!(r.provenance().is_file_format_lisp_of(&["a"]).is_none());
+        assert!(r.provenance().is_file_format_nix_of(&["a"]).is_none());
+        assert!(r.provenance().is_file_format_blue_of(&["a"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_returns_none_for_unrecognized_extension() {
+        // Recognized-extension boundary: a File-arm leaf whose recorded
+        // path carries an extension `Format::from_path` does not
+        // recognize collapses to `None` on all five per-variant tags,
+        // matching the same `None` boundary `file_format_of` carries one
+        // const-fn seam further out.
+        let mut file_dict = Dict::new();
+        file_dict.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(
+            "/etc/prog.mystery",
+            file_dict,
+        )]);
+        assert!(r.provenance().is_file_format_yaml_of(&["b"]).is_none());
+        assert!(r.provenance().is_file_format_toml_of(&["b"]).is_none());
+        assert!(r.provenance().is_file_format_lisp_of(&["b"]).is_none());
+        assert!(r.provenance().is_file_format_nix_of(&["b"]).is_none());
+        assert!(r.provenance().is_file_format_blue_of(&["b"]).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_returns_none_for_unknown_path() {
+        // Miss-path behaviour: an unknown dotted path evaporates to
+        // `None` at every polarity and every form.
+        let r = Prog::resolve_progressive();
+        for polarity in [
+            r.provenance().is_file_format_yaml_of(&["nope"]),
+            r.provenance().is_file_format_toml_of(&["nope"]),
+            r.provenance().is_file_format_lisp_of(&["nope"]),
+            r.provenance().is_file_format_nix_of(&["nope"]),
+            r.provenance().is_file_format_blue_of(&["nope"]),
+        ] {
+            assert!(polarity.is_none());
+        }
+        let owned = ["nope".to_string()];
+        for polarity in [
+            r.provenance().is_file_format_yaml_of_owned(&owned),
+            r.provenance().is_file_format_toml_of_owned(&owned),
+            r.provenance().is_file_format_lisp_of_owned(&owned),
+            r.provenance().is_file_format_nix_of_owned(&owned),
+            r.provenance().is_file_format_blue_of_owned(&owned),
+        ] {
+            assert!(polarity.is_none());
+        }
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_on_empty_map_is_none() {
+        // Empty-map case: every per-variant tag returns `None` on both
+        // forms.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_file_format_yaml_of(&["a"]).is_none());
+        assert!(empty.is_file_format_toml_of(&["a"]).is_none());
+        assert!(empty.is_file_format_lisp_of(&["a"]).is_none());
+        assert!(empty.is_file_format_nix_of(&["a"]).is_none());
+        assert!(empty.is_file_format_blue_of(&["a"]).is_none());
+        let owned = ["a".to_string()];
+        assert!(empty.is_file_format_yaml_of_owned(&owned).is_none());
+        assert!(empty.is_file_format_toml_of_owned(&owned).is_none());
+        assert!(empty.is_file_format_lisp_of_owned(&owned).is_none());
+        assert!(empty.is_file_format_nix_of_owned(&owned).is_none());
+        assert!(empty.is_file_format_blue_of_owned(&owned).is_none());
+    }
+
+    #[test]
+    fn provenance_map_is_file_format_of_surfaces_true_from_each_extension() {
+        // Concrete distinguishing witnesses on every polarity of the
+        // File-arm quinary partition. Rules out a future edit that
+        // swaps the extractor bodies (or hard-codes one polarity across
+        // every variant) — each variant witnesses the `Some(true)` /
+        // four-way-`Some(false)` split at a concrete leaf backed by the
+        // matching file extension.
+        for (path, expected_true_index) in [
+            ("/etc/prog.yaml", 0_usize),
+            ("/etc/prog.toml", 1),
+            ("/etc/prog.lisp", 2),
+            ("/etc/prog.nix", 3),
+            ("/etc/prog.b", 4),
+        ] {
+            let mut file_dict = Dict::new();
+            file_dict.insert("b".to_owned(), Value::from(99_u32));
+            let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file(path, file_dict)]);
+            let flags = [
+                r.provenance().is_file_format_yaml_of(&["b"]),
+                r.provenance().is_file_format_toml_of(&["b"]),
+                r.provenance().is_file_format_lisp_of(&["b"]),
+                r.provenance().is_file_format_nix_of(&["b"]),
+                r.provenance().is_file_format_blue_of(&["b"]),
+            ];
+            for (i, flag) in flags.iter().enumerate() {
+                let expected = if i == expected_true_index {
+                    Some(true)
+                } else {
+                    Some(false)
+                };
+                assert_eq!(
+                    *flag, expected,
+                    "witness at {path} disagreed at variant index {i}: flags={flags:?}"
+                );
+            }
+        }
+    }
+
+    // -------- ProgressiveResolution::is_file_format_{yaml,toml,lisp,nix,blue}_of
+    // -------- container-altitude quintet delegates to the primitive
+    // -------- altitude on the output side of the fold's atomic-pair
+    // -------- ownership boundary ------
+
+    #[test]
+    fn progressive_resolution_is_file_format_of_agrees_with_provenance_map_pointwise() {
+        // Container-vs-primitive delegate-agreement law on every polarity
+        // of the File-arm quinary-partition boolean-tag quintet — the
+        // container hop and the primitive hop yield the same
+        // `Option<bool>` on every leaf, catching a future edit that
+        // reroutes any of the ten container-altitude methods through a
+        // different projection.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            assert_eq!(
+                r.is_file_format_yaml_of(&borrowed),
+                r.provenance().is_file_format_yaml_of(&borrowed),
+            );
+            assert_eq!(
+                r.is_file_format_toml_of(&borrowed),
+                r.provenance().is_file_format_toml_of(&borrowed),
+            );
+            assert_eq!(
+                r.is_file_format_lisp_of(&borrowed),
+                r.provenance().is_file_format_lisp_of(&borrowed),
+            );
+            assert_eq!(
+                r.is_file_format_nix_of(&borrowed),
+                r.provenance().is_file_format_nix_of(&borrowed),
+            );
+            assert_eq!(
+                r.is_file_format_blue_of(&borrowed),
+                r.provenance().is_file_format_blue_of(&borrowed),
+            );
+            assert_eq!(
+                r.is_file_format_yaml_of_owned(&owned),
+                r.provenance().is_file_format_yaml_of_owned(&owned),
+            );
+            assert_eq!(
+                r.is_file_format_toml_of_owned(&owned),
+                r.provenance().is_file_format_toml_of_owned(&owned),
+            );
+            assert_eq!(
+                r.is_file_format_lisp_of_owned(&owned),
+                r.provenance().is_file_format_lisp_of_owned(&owned),
+            );
+            assert_eq!(
+                r.is_file_format_nix_of_owned(&owned),
+                r.provenance().is_file_format_nix_of_owned(&owned),
+            );
+            assert_eq!(
+                r.is_file_format_blue_of_owned(&owned),
+                r.provenance().is_file_format_blue_of_owned(&owned),
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_resolution_is_file_format_of_five_variants_form_a_closed_quinary_partition() {
+        // Container-altitude peer of the primitive-altitude quinary-
+        // partition disjointness law — the container carries the same
+        // partition invariant through the one-hop delegation.
+        let mut yaml_dict = Dict::new();
+        yaml_dict.insert("b".to_owned(), Value::from(99_u32));
+        let mut toml_dict = Dict::new();
+        toml_dict.insert("e".to_owned(), Value::from(11_u32));
+        let mut env_dict = Dict::new();
+        env_dict.insert("c".to_owned(), Value::from(77_u32));
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/prog.yaml", yaml_dict),
+            ProgressiveLayer::file("/etc/prog.toml", toml_dict),
+            ProgressiveLayer::env("PROG_", env_dict),
+        ]);
+        for path in r.provenance().paths() {
+            let owned: Vec<String> = path.to_vec();
+            let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let has_format = r.file_format_of(&borrowed).is_some();
+            let flags = [
+                r.is_file_format_yaml_of(&borrowed),
+                r.is_file_format_toml_of(&borrowed),
+                r.is_file_format_lisp_of(&borrowed),
+                r.is_file_format_nix_of(&borrowed),
+                r.is_file_format_blue_of(&borrowed),
+            ];
+            if has_format {
+                assert_eq!(
+                    flags.iter().filter(|f| **f == Some(true)).count(),
+                    1,
+                    "quinary partition broken at file leaf {borrowed:?}: flags={flags:?}"
+                );
+                assert_eq!(
+                    flags.iter().filter(|f| **f == Some(false)).count(),
+                    4,
+                    "quinary partition broken at file leaf {borrowed:?}: flags={flags:?}"
+                );
+            } else {
+                assert!(
+                    flags.iter().all(|f| f.is_none()),
+                    "off-arm leak at {borrowed:?}: flags={flags:?}"
+                );
+            }
+        }
     }
 }
