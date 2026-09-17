@@ -20442,6 +20442,86 @@ impl ProvenanceMap {
             .zip(self.extremal_source_kinds_ordinal())
     }
 
+    /// The **extremal kinds cross-axis fused-quadruple** on this fold's
+    /// per-leaf provenance histograms — the typed-tag nested-pair
+    /// `Option<((ConfigTierKind, ConfigTierKind),
+    /// (crate::ConfigSourceKind, crate::ConfigSourceKind))>` packing
+    /// both axes' `(modal, antimodal)` cells into one scalar, with the
+    /// outer pair keyed `(tier_axis, source_kind_axis)` and each inner
+    /// pair keyed `(modal, antimodal)`. Returns [`None`] exactly on the
+    /// empty map; otherwise returns
+    /// `Some((self.extremal_tiers().unwrap(),
+    /// self.extremal_source_kinds().unwrap()))` where the two component
+    /// [`Option`]s share the same non-emptiness discriminant (both are
+    /// [`None`] iff the map is empty) so the outer [`Option`] fuses both
+    /// empty gates into a single check.
+    ///
+    /// **Cross-axis fused-quadruple** of [`Self::extremal_tiers`] and
+    /// [`Self::extremal_source_kinds`] on the same [`ProvenanceMap`] —
+    /// the two single-axis typed-tag fused pairs one seam out each carry
+    /// one axis's modal + antimodal representative cells; this method
+    /// carries both axes' pairs in one nested scalar so a caller reading
+    /// both extremes on both axes pays a single non-emptiness gate and
+    /// one shared walk instead of two coordinated [`Option`] walks + an
+    /// [`Option::zip`]. The tier-axis pair projects out by
+    /// `.map(|(t, _)| t)` and recovers [`Self::extremal_tiers`]
+    /// pointwise; the source-kind-axis pair projects out by
+    /// `.map(|(_, s)| s)` and recovers [`Self::extremal_source_kinds`]
+    /// pointwise.
+    ///
+    /// **Typed-tag peer** of the shipped ordinal-projected cross-axis
+    /// fused-quadruple [`Self::extremal_ordinals`] one const-fn seam
+    /// further inland — that peer packs both axes' `(modal.ordinal(),
+    /// antimodal.ordinal())` [`usize`] slots into one nested scalar;
+    /// this method carries the underlying [`ConfigTierKind`] /
+    /// [`crate::ConfigSourceKind`] typed tags on each slot, preserving
+    /// the enum-typed algebra on both axes at the same nested shape.
+    /// The ordinal-projection law
+    /// `extremal_kinds().map(|((mt, at), (ms, as_))| ((mt.ordinal(),
+    /// at.ordinal()), (ms.ordinal(), as_.ordinal())))` recovers
+    /// [`Self::extremal_ordinals`] pointwise, the ordinal-axis cell-
+    /// projection of this typed-tag fused quadruple.
+    ///
+    /// The natural typed primitive for reading *"what are the modal and
+    /// antimodal representative cells on both closed axes of this
+    /// resolved fold?"* at one method call — a ConfigPlane broadcast
+    /// payload encoding the full extremal typed signature of the fold
+    /// across both axes, an operator-facing `/healthz/config/extremal_kinds`
+    /// payload emitting both extremal typed cells on both closed axes, a
+    /// compile-time attestation gate reading the fused typed quadruple,
+    /// an alerting policy reading both extremes on both axes
+    /// simultaneously as typed tags without the ordinal-axis downcast.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_kinds() ==
+    ///   extremal_tiers().zip(extremal_source_kinds())` — the fused-
+    ///   quadruple is the [`Option::zip`] of the two single-axis typed-
+    ///   tag fused pairs pointwise.
+    /// - `extremal_kinds().is_none() == is_empty()` — the fused
+    ///   quadruple is [`None`] exactly on the empty map, since both
+    ///   single-axis components share that discriminant.
+    /// - `extremal_kinds().map(|(t, _)| t) == extremal_tiers()`
+    ///   pointwise — the tier-axis half projects out to the tier-axis
+    ///   typed-tag fused pair.
+    /// - `extremal_kinds().map(|(_, s)| s) == extremal_source_kinds()`
+    ///   pointwise — the source-kind-axis half projects out to the
+    ///   source-kind-axis typed-tag fused pair.
+    /// - `extremal_kinds().map(|((mt, at), (ms, as_))| ((mt.ordinal(),
+    ///   at.ordinal()), (ms.ordinal(), as_.ordinal()))) ==
+    ///   extremal_ordinals()` pointwise — the ordinal-projection law
+    ///   recovers the ordinal-axis cross-axis fused-quadruple one const-
+    ///   fn seam further inland.
+    #[must_use]
+    pub fn extremal_kinds(
+        &self,
+    ) -> Option<(
+        (ConfigTierKind, ConfigTierKind),
+        (crate::ConfigSourceKind, crate::ConfigSourceKind),
+    )> {
+        self.extremal_tiers().zip(self.extremal_source_kinds())
+    }
+
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
     /// `true` exactly when every observed [`ConfigTierKind`] contributed the
     /// same number of leaves. The typed boolean peer of `tier_spread() == 0`
@@ -31626,6 +31706,40 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn extremal_ordinals(&self) -> Option<((usize, usize), (usize, usize))> {
         self.provenance.extremal_ordinals()
+    }
+
+    /// The **extremal kinds cross-axis fused-quadruple** at the container
+    /// altitude — the typed-tag nested-pair
+    /// `Option<((ConfigTierKind, ConfigTierKind),
+    /// (crate::ConfigSourceKind, crate::ConfigSourceKind))>` packing
+    /// both axes' `(modal, antimodal)` cells into one scalar, with the
+    /// outer pair keyed `(tier_axis, source_kind_axis)` and each inner
+    /// pair keyed `(modal, antimodal)`. Container-altitude peer of
+    /// [`ProvenanceMap::extremal_kinds`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary, delegating one seam down
+    /// into `self.provenance.extremal_kinds()`.
+    ///
+    /// The **cross-axis fused-quadruple** of [`Self::extremal_tiers`]
+    /// and [`Self::extremal_source_kinds`] on the same container, one
+    /// const-fn seam further inland than the two single-axis typed-tag
+    /// fused pairs. The tier-axis pair projects out by
+    /// `.map(|(t, _)| t)` and recovers [`Self::extremal_tiers`]
+    /// pointwise; the source-kind-axis pair projects out by
+    /// `.map(|(_, s)| s)` and recovers [`Self::extremal_source_kinds`]
+    /// pointwise. The **typed-tag peer** of the shipped ordinal-
+    /// projected cross-axis fused-quadruple [`Self::extremal_ordinals`]
+    /// one seam over — the ordinal-projection law
+    /// `extremal_kinds().map(|((mt, at), (ms, as_))| ((mt.ordinal(),
+    /// at.ordinal()), (ms.ordinal(), as_.ordinal())))` recovers
+    /// [`Self::extremal_ordinals`] pointwise at this altitude.
+    #[must_use]
+    pub fn extremal_kinds(
+        &self,
+    ) -> Option<(
+        (ConfigTierKind, ConfigTierKind),
+        (crate::ConfigSourceKind, crate::ConfigSourceKind),
+    )> {
+        self.provenance.extremal_kinds()
     }
 }
 
@@ -101078,6 +101192,155 @@ mod progressive_tests {
         );
     }
 
+    // ── ProvenanceMap::extremal_kinds — cross-axis fused-quadruple
+    //    typed-tag pair packing both single-axis typed-tag fused pairs
+    //    `extremal_tiers` and `extremal_source_kinds` into one nested-
+    //    pair `Option<((ConfigTierKind, ConfigTierKind),
+    //    (ConfigSourceKind, ConfigSourceKind))>` at the primitive
+    //    altitude, one const-fn seam further inland than the two
+    //    single-axis typed-tag fused pairs on the same closed axis;
+    //    typed-tag peer of `extremal_ordinals` one seam over on the
+    //    same nested shape. ──
+
+    #[test]
+    fn extremal_kinds_equals_zip_of_axis_pairs_pointwise() {
+        // Defining-law pin: the fused-quadruple equals the
+        // `Option::zip` of the two single-axis typed-tag fused pairs on
+        // every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_zip = map.extremal_tiers().zip(map.extremal_source_kinds());
+            assert_eq!(map.extremal_kinds(), via_zip);
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_tier_axis_projection_recovers_extremal_tiers_pointwise() {
+        // Tier-axis round-trip pin: the `.0` slot of the fused-
+        // quadruple recovers `extremal_tiers()` pointwise via
+        // `.map(|(t, _)| t)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_kinds().map(|(t, _)| t);
+            assert_eq!(via_map, map.extremal_tiers());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_source_kind_axis_projection_recovers_extremal_source_kinds_pointwise() {
+        // Source-kind-axis round-trip pin: the `.1` slot of the fused-
+        // quadruple recovers `extremal_source_kinds()` pointwise via
+        // `.map(|(_, s)| s)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.extremal_kinds().map(|(_, s)| s);
+            assert_eq!(via_map, map.extremal_source_kinds());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_ordinal_projection_recovers_extremal_ordinals_pointwise() {
+        // Ordinal-projection law pin: the typed-tag fused-quadruple
+        // projects to the ordinal-axis fused-quadruple pointwise by
+        // downcasting each of the four typed cells through its
+        // `.ordinal()` method — closes the typed-tag ↔ ordinal-axis
+        // seam on the same nested shape.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_downcast = map.extremal_kinds().map(|((mt, at), (ms, as_))| {
+                ((mt.ordinal(), at.ordinal()), (ms.ordinal(), as_.ordinal()))
+            });
+            assert_eq!(via_downcast, map.extremal_ordinals());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_empty_map_is_none() {
+        // Empty-map boundary pin: the empty map is `None` on both
+        // component axes, so the outer `Option` is `None` on the
+        // fused-quadruple.
+        assert_eq!(ProvenanceMap::default().extremal_kinds(), None);
+    }
+
+    #[test]
+    fn extremal_kinds_none_iff_empty_pointwise() {
+        // Presence-parity pin: the fused-quadruple carries the same
+        // non-emptiness discriminant as either single-axis component
+        // (both share the empty gate).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.extremal_kinds().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_kinds_prog_fixture_is_default_bare_defaults_defaults() {
+        // Fixture-literal pin on Prog: tier axis reads `(Default, Bare)`
+        // (strictly-unimodal witness under decl-order tie-break) and
+        // source-kind axis reads `(Defaults, Defaults)` (singleton-
+        // support coincidence — all four leaves attributed to
+        // `ConfigSource::Defaults`).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().extremal_kinds(),
+            Some((
+                (ConfigTierKind::Default, ConfigTierKind::Bare),
+                (
+                    crate::ConfigSourceKind::Defaults,
+                    crate::ConfigSourceKind::Defaults,
+                ),
+            )),
+        );
+    }
+
+    #[test]
+    fn extremal_kinds_mixed_fixture_source_kind_axis_reads_defaults_env() {
+        // Fixture-literal pin on the mixed source-kind fixture: the
+        // source-kind-axis half of the typed-tag fused-quadruple reads
+        // `(Defaults, Env)` (strictly-unimodal witness); the tier-axis
+        // coordinate is read straight off `extremal_tiers()` for the
+        // fused-quadruple equality.
+        let r = source_kind_histogram_mixed_fixture();
+        let tier_pair = r.provenance().extremal_tiers().unwrap();
+        assert_eq!(
+            r.provenance().extremal_kinds(),
+            Some((
+                tier_pair,
+                (
+                    crate::ConfigSourceKind::Defaults,
+                    crate::ConfigSourceKind::Env,
+                ),
+            )),
+        );
+        assert_eq!(
+            r.provenance().extremal_kinds().map(|(_, s)| s),
+            Some((
+                crate::ConfigSourceKind::Defaults,
+                crate::ConfigSourceKind::Env,
+            )),
+        );
+    }
+
     // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
     //    the source-kind altitude, fusing peak_source_kind_count and
     //    trough_source_kind_count into one dispersion scalar and porting
@@ -123511,6 +123774,89 @@ mod progressive_tests {
         // coincidence at `Defaults`).
         let r = Prog::resolve_progressive();
         assert_eq!(r.extremal_ordinals(), Some(((2, 0), (0, 0))));
+    }
+
+    // ── ProgressiveResolution::extremal_kinds — container-altitude
+    //    cross-axis fused-quadruple typed-tag pair, delegating one
+    //    seam down into `ProvenanceMap::extremal_kinds`. Closes the
+    //    container-altitude fusion of the two single-axis typed-tag
+    //    fused pairs on both closed coordinates of the atomic
+    //    `(tier, source)` pair, and the typed-tag peer of the shipped
+    //    ordinal-projected cross-axis fused-quadruple
+    //    `ProgressiveResolution::extremal_ordinals` one seam over on
+    //    the same nested shape. ──
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_agrees_with_provenance_extremal_kinds() {
+        // Delegation pin: `res.extremal_kinds()` must route one-hop to
+        // the primitive-altitude seam on the same underlying provenance
+        // histograms.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_kinds(), r.provenance().extremal_kinds());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_equals_zip_of_container_axis_pairs() {
+        // Cross-shape equality pin at the container altitude: the
+        // fused-quadruple equals the `Option::zip` of the two
+        // container-altitude single-axis typed-tag fused pairs.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_kinds(),
+            r.extremal_tiers().zip(r.extremal_source_kinds()),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_tier_axis_projection_recovers_extremal_tiers() {
+        // Tier-axis round-trip pin at the container altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.extremal_kinds().map(|(t, _)| t), r.extremal_tiers());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_source_kind_axis_projection_recovers_extremal_source_kinds()
+     {
+        // Source-kind-axis round-trip pin at the container altitude —
+        // closes the container-altitude fused-quadruple round-trip law
+        // on both closed axes of the atomic `(tier, source)` pair.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_kinds().map(|(_, s)| s),
+            r.extremal_source_kinds(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_ordinal_projection_recovers_extremal_ordinals() {
+        // Container-altitude ordinal-projection law pin: the typed-tag
+        // fused-quadruple downcasts pointwise onto the ordinal-axis
+        // fused-quadruple via each cell's `.ordinal()`.
+        let r = Prog::resolve_progressive();
+        let via_downcast = r.extremal_kinds().map(|((mt, at), (ms, as_))| {
+            ((mt.ordinal(), at.ordinal()), (ms.ordinal(), as_.ordinal()))
+        });
+        assert_eq!(via_downcast, r.extremal_ordinals());
+    }
+
+    #[test]
+    fn progressive_resolution_extremal_kinds_prog_fixture_literal() {
+        // Prog fixture at the container altitude: tier-axis pair reads
+        // `(Default, Bare)` (strictly-unimodal witness under decl-order
+        // tie-break) and source-kind-axis pair reads
+        // `(Defaults, Defaults)` (singleton-support coincidence — all
+        // four leaves attributed to `ConfigSource::Defaults`).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.extremal_kinds(),
+            Some((
+                (ConfigTierKind::Default, ConfigTierKind::Bare),
+                (
+                    crate::ConfigSourceKind::Defaults,
+                    crate::ConfigSourceKind::Defaults,
+                ),
+            )),
+        );
     }
 
     // -------- ProvenanceMap::is_file_format_{yaml,toml,lisp,nix,blue}_of
