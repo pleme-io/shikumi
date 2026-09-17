@@ -28295,6 +28295,256 @@ pub trait ConfigSourceChain {
         self.env_prefix_kind_histogram()
             .support_magnitude_direction()
     }
+
+    /// The **extremal layer-kind counts fused-pair** on this chain's per-
+    /// layer [`ConfigSourceKind`] histogram — the nested-pair scalar
+    /// `(usize, usize)` packing the modal (peak) and antimodal (trough)
+    /// per-kind layer counts into one tuple. Returns `(0, 0)` exactly on
+    /// the empty chain; otherwise returns `(peak_layer_kind_count(),
+    /// trough_layer_kind_count())` pointwise.
+    ///
+    /// **Chain-altitude peer** of the shipped altitude-lifted fused-pair
+    /// `(peak, trough)` count peers on the diff and container altitudes —
+    /// [`crate::ConfigDiff::extremal_kind_counts`] on the diff-cell axis
+    /// at the diff altitude, [`crate::ProvenanceMap::extremal_tier_counts`]
+    /// on the tier axis and
+    /// [`crate::ProvenanceMap::extremal_source_kind_counts`] on the
+    /// source-kind axis at the container altitude, both routing through
+    /// [`crate::AxisHistogram::extremal_counts`] one seam down — with this
+    /// chain-altitude lift closing the fused-pair `(peak_count,
+    /// trough_count)` count scalar on the layer-kind sub-axis of
+    /// [`ConfigSourceChain`]'s chain-shape surface. Routes through
+    /// [`Self::layer_kind_histogram`] and
+    /// [`crate::AxisHistogram::extremal_counts`] one altitude down: the
+    /// single running-max + running-min-over-positives walk fusing the two
+    /// shipped scalar-half endpoints [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] into one nested-pair scalar
+    /// (halving the constant factor of the previous open-coded
+    /// `(peak_layer_kind_count(), trough_layer_kind_count())` idiom which
+    /// walked the counts vector twice).
+    ///
+    /// Together with the shipped chain-altitude layer-kind scalar-count
+    /// quintuple ([`Self::peak_layer_kind_count`],
+    /// [`Self::trough_layer_kind_count`], [`Self::layer_kind_spread`],
+    /// [`Self::layer_kind_peak_trough_sum`],
+    /// [`Self::layer_kind_peak_trough_product`]),
+    /// `extremal_layer_kind_counts` reads the entire `(peak, trough)`
+    /// scalar-count pair off in one method call versus two, and the
+    /// shipped arithmetic algebra `{+, -, *}` on the closed endpoint pair
+    /// projects off the fused scalar in one tuple deconstruction rather
+    /// than two independent scalar reads.
+    ///
+    /// **Empty-chain convention** — returns `(0, 0)` (not `Option<(usize,
+    /// usize)>`), matching the [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] scalar-zero empty conventions on
+    /// the same sub-axis and the [`crate::AxisHistogram::extremal_counts`]
+    /// convention one altitude down. The `(peak_layer_kind_count,
+    /// trough_layer_kind_count)` pair reads uniformly `(0, 0)` on the
+    /// empty chain; the fused scalar preserves that boundary.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_layer_kind_counts() == (peak_layer_kind_count(),
+    ///   trough_layer_kind_count())` — the defining fused-pair identity
+    ///   of the extremal-count scalar over the two shipped scalar-half
+    ///   endpoints on the same count surface at the chain altitude's
+    ///   layer-kind sub-axis.
+    /// - `extremal_layer_kind_counts().0 == peak_layer_kind_count()`
+    ///   pointwise — the modal-half projection `.0` recovers the peak-
+    ///   count scalar on every fixture.
+    /// - `extremal_layer_kind_counts().1 == trough_layer_kind_count()`
+    ///   pointwise — the antimodal-half projection `.1` recovers the
+    ///   trough-count scalar on every fixture.
+    /// - `extremal_layer_kind_counts() ==
+    ///   layer_kind_histogram().extremal_counts()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `extremal_layer_kind_counts() == (0, 0)` ⇔
+    ///   `self.as_ref().is_empty()` — the empty-boundary equivalence.
+    ///   Unlike the file-format and env-prefix sub-axes whose empty
+    ///   corner coincides with the corresponding histogram's `is_empty()`,
+    ///   every layer projects to exactly one [`ConfigSourceKind`] cell
+    ///   through [`ConfigSource::kind`], so the empty-histogram floor
+    ///   coincides with `self.as_ref().is_empty()`.
+    /// - `extremal_layer_kind_counts().0 >=
+    ///   extremal_layer_kind_counts().1` always — the peak / trough
+    ///   ordering invariant lifted from the trait-uniform
+    ///   `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `extremal_layer_kind_counts().0 -
+    ///   extremal_layer_kind_counts().1 == layer_kind_spread()` —
+    ///   subtraction-form projection recovers the shipped
+    ///   [`Self::layer_kind_spread`] scalar. Underflow-safe by the peak /
+    ///   trough ordering invariant.
+    /// - `extremal_layer_kind_counts().0 +
+    ///   extremal_layer_kind_counts().1 == layer_kind_peak_trough_sum()`
+    ///   — addition-form projection recovers the shipped
+    ///   [`Self::layer_kind_peak_trough_sum`] scalar.
+    /// - `extremal_layer_kind_counts().0 *
+    ///   extremal_layer_kind_counts().1 ==
+    ///   layer_kind_peak_trough_product()` — multiplication-form
+    ///   projection recovers the shipped
+    ///   [`Self::layer_kind_peak_trough_product`] scalar. Closes the
+    ///   arithmetic algebra `{+, -, *}` on the fused pair.
+    /// - `extremal_layer_kind_counts().0 <= self.as_ref().len()` always
+    ///   — the peak is bounded above by the total layer count. By
+    ///   transitivity with the ordering invariant, the trough half is
+    ///   also `<= self.as_ref().len()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// paired peak + trough scan). Both are `O(n)` in practice since the
+    /// layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `(usize, usize)` reads two scalars in one tuple with no
+    /// heap allocation.
+    #[must_use]
+    fn extremal_layer_kind_counts(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().extremal_counts()
+    }
+
+    /// The **extremal file-format counts fused-pair** on this chain's per-
+    /// file-format [`crate::Format`] histogram — the nested-pair scalar
+    /// `(usize, usize)` packing the modal (peak) and antimodal (trough)
+    /// per-format file-layer counts into one tuple. Returns `(0, 0)`
+    /// exactly when the file-format histogram is empty (no [`ConfigSource::File`]
+    /// entry with a recognized extension); otherwise returns
+    /// `(peak_file_format_count(), trough_file_format_count())` pointwise.
+    ///
+    /// **File-format sub-axis peer** of [`Self::extremal_layer_kind_counts`]
+    /// on the same chain altitude — the sideways lift of the same
+    /// primitive-altitude fused pair
+    /// [`crate::AxisHistogram::extremal_counts`] onto the file-format sub-
+    /// axis of the chain-shape surface, mirroring the shipped
+    /// `file_format_spread` / `file_format_peak_trough_sum` /
+    /// `file_format_peak_trough_product` scalar peers one seam over.
+    /// Routes through [`Self::file_format_histogram`] and
+    /// [`crate::AxisHistogram::extremal_counts`] one altitude down: the
+    /// single running-max + running-min-over-positives walk fusing the
+    /// two shipped scalar-half endpoints [`Self::peak_file_format_count`]
+    /// / [`Self::trough_file_format_count`] into one nested-pair scalar
+    /// (halving the constant factor of the previous open-coded idiom
+    /// which walked the counts vector twice).
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)` on every chain
+    /// whose file-format histogram is empty (empty chain, chain with no
+    /// [`ConfigSource::File`] entry, or chain whose file entries all
+    /// carry unrecognized extensions — the partial-function-projection
+    /// witness on this sub-axis), matching the shipped
+    /// [`Self::peak_file_format_count`] / [`Self::trough_file_format_count`]
+    /// scalar-zero empty conventions and the
+    /// [`crate::AxisHistogram::extremal_counts`] convention one altitude
+    /// down.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_file_format_counts() == (peak_file_format_count(),
+    ///   trough_file_format_count())` — the defining fused-pair identity.
+    /// - `extremal_file_format_counts().0 == peak_file_format_count()`
+    ///   and `extremal_file_format_counts().1 ==
+    ///   trough_file_format_count()` pointwise — modal / antimodal round-
+    ///   trips.
+    /// - `extremal_file_format_counts() ==
+    ///   file_format_histogram().extremal_counts()` — the routing
+    ///   equivalence one altitude down.
+    /// - `extremal_file_format_counts() == (0, 0)` ⇔
+    ///   `file_format_histogram().is_empty()` — the empty-boundary
+    ///   equivalence on the sub-axis's partial-function projection.
+    /// - `extremal_file_format_counts().0 >=
+    ///   extremal_file_format_counts().1` always — the peak / trough
+    ///   ordering invariant.
+    /// - `extremal_file_format_counts().0 -
+    ///   extremal_file_format_counts().1 == file_format_spread()`,
+    ///   `.0 + .1 == file_format_peak_trough_sum()`, and
+    ///   `.0 * .1 == file_format_peak_trough_product()` — the arithmetic
+    ///   algebra `{+, -, *}` on the fused pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::Format>()` (the paired
+    /// peak + trough scan). The returned `(usize, usize)` reads two
+    /// scalars in one tuple with no heap allocation.
+    #[must_use]
+    fn extremal_file_format_counts(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().extremal_counts()
+    }
+
+    /// The **extremal env-prefix-kind counts fused-pair** on this chain's
+    /// per-[`crate::EnvMetadataTagKind`] histogram — the nested-pair
+    /// scalar `(usize, usize)` packing the modal (peak) and antimodal
+    /// (trough) per-prefix-kind env-layer counts into one tuple. Returns
+    /// `(0, 0)` exactly when the env-prefix histogram is empty (no
+    /// [`ConfigSource::Env`] entry); otherwise returns
+    /// `(peak_env_prefix_kind_count(), trough_env_prefix_kind_count())`
+    /// pointwise.
+    ///
+    /// **Env-prefix sub-axis peer** of [`Self::extremal_layer_kind_counts`]
+    /// and [`Self::extremal_file_format_counts`] on the same chain
+    /// altitude — the third sideways lift of the same primitive-altitude
+    /// fused pair [`crate::AxisHistogram::extremal_counts`] onto the env-
+    /// prefix sub-axis of the chain-shape surface, closing the fused-pair
+    /// `(peak_count, trough_count)` count scalar on every typed sub-axis
+    /// of the chain-shape surface. Routes through
+    /// [`Self::env_prefix_kind_histogram`] and
+    /// [`crate::AxisHistogram::extremal_counts`] one altitude down: the
+    /// single running-max + running-min-over-positives walk fusing the
+    /// two shipped scalar-half endpoints [`Self::peak_env_prefix_kind_count`]
+    /// / [`Self::trough_env_prefix_kind_count`] into one nested-pair
+    /// scalar.
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)` on every chain
+    /// whose env-prefix histogram is empty (empty chain, or chain with no
+    /// [`ConfigSource::Env`] entry — the partial-function-projection
+    /// witness on this sub-axis).
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_env_prefix_kind_counts() ==
+    ///   (peak_env_prefix_kind_count(),
+    ///   trough_env_prefix_kind_count())` — the defining fused-pair
+    ///   identity.
+    /// - `extremal_env_prefix_kind_counts().0 ==
+    ///   peak_env_prefix_kind_count()` and
+    ///   `extremal_env_prefix_kind_counts().1 ==
+    ///   trough_env_prefix_kind_count()` pointwise — modal / antimodal
+    ///   round-trips.
+    /// - `extremal_env_prefix_kind_counts() ==
+    ///   env_prefix_kind_histogram().extremal_counts()` — the routing
+    ///   equivalence one altitude down.
+    /// - `extremal_env_prefix_kind_counts() == (0, 0)` ⇔
+    ///   `env_prefix_kind_histogram().is_empty()` — the empty-boundary
+    ///   equivalence on the sub-axis's partial-function projection.
+    /// - `extremal_env_prefix_kind_counts().0 >=
+    ///   extremal_env_prefix_kind_counts().1` always — the peak / trough
+    ///   ordering invariant.
+    /// - `extremal_env_prefix_kind_counts().0 -
+    ///   extremal_env_prefix_kind_counts().1 ==
+    ///   env_prefix_kind_spread()`,
+    ///   `.0 + .1 == env_prefix_kind_peak_trough_sum()`, and
+    ///   `.0 * .1 == env_prefix_kind_peak_trough_product()` — the
+    ///   arithmetic algebra `{+, -, *}` on the fused pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the paired peak + trough scan). The returned `(usize, usize)`
+    /// reads two scalars in one tuple with no heap allocation.
+    #[must_use]
+    fn extremal_env_prefix_kind_counts(&self) -> (usize, usize)
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().extremal_counts()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -103047,5 +103297,406 @@ mod tests {
                  const",
             );
         }
+    }
+
+    // ── ConfigSourceChain::extremal_layer_kind_counts — the chain-altitude
+    //    fused-pair count peer of the shipped `(peak_layer_kind_count,
+    //    trough_layer_kind_count)` scalar-half pair on the layer-kind sub-
+    //    axis of the chain-shape surface. Climbs the same primitive-
+    //    altitude fused pair `AxisHistogram::extremal_counts` one seam
+    //    down through `layer_kind_histogram()`, sideways peer of
+    //    `ProvenanceMap::extremal_tier_counts` /
+    //    `ProvenanceMap::extremal_source_kind_counts` on the container
+    //    altitude and of `ConfigDiff::extremal_kind_counts` on the diff
+    //    altitude. ----
+
+    #[test]
+    fn extremal_layer_kind_counts_matches_peak_trough_layer_kind_count_pair_pointwise() {
+        // Defining projection-law pin: fused pair reads the two shipped
+        // scalar-half endpoints at the chain altitude's layer-kind sub-
+        // axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_scalars = (
+                slice.peak_layer_kind_count(),
+                slice.trough_layer_kind_count(),
+            );
+            assert_eq!(slice.extremal_layer_kind_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_matches_layer_kind_histogram_extremal_counts_pointwise() {
+        // Routing pin: `extremal_layer_kind_counts` routes through
+        // `layer_kind_histogram().extremal_counts()`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_hist = slice.layer_kind_histogram().extremal_counts();
+            assert_eq!(slice.extremal_layer_kind_counts(), via_hist);
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_modal_projection_recovers_peak_layer_kind_count_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_layer_kind_counts().0,
+                slice.peak_layer_kind_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_antimodal_projection_recovers_trough_layer_kind_count_pointwise()
+    {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_layer_kind_counts().1,
+                slice.trough_layer_kind_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_empty_chain_is_zero_zero() {
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.extremal_layer_kind_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence: the fused pair reads `(0, 0)`
+        // exactly on the empty chain (every layer projects to exactly one
+        // `ConfigSourceKind` cell, so a non-empty chain always has both
+        // endpoints `>= 1`).
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_zero = slice.extremal_layer_kind_counts() == (0, 0);
+            assert_eq!(is_zero, slice.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_peak_ge_trough_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let (peak, trough) = chain.as_slice().extremal_layer_kind_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_difference_recovers_layer_kind_spread_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_layer_kind_counts();
+            assert_eq!(peak - trough, slice.layer_kind_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_sum_recovers_layer_kind_peak_trough_sum_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_layer_kind_counts();
+            assert_eq!(peak + trough, slice.layer_kind_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_product_recovers_layer_kind_peak_trough_product_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_layer_kind_counts();
+            assert_eq!(peak * trough, slice.layer_kind_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_upper_bounded_by_len_pointwise() {
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_layer_kind_counts();
+            assert!(peak <= slice.len());
+            assert!(trough <= slice.len());
+        }
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_sample_chain_is_two_one() {
+        // Ground-truth pin: sample_chain has 2 File + 1 Env, so
+        // peak=2 (File), trough=1 (Env).
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().extremal_layer_kind_counts(), (2, 1));
+    }
+
+    #[test]
+    fn extremal_layer_kind_counts_env_majority_is_three_one() {
+        // Ground-truth pin: three Env + one File + one Defaults, so
+        // peak=3 (Env), trough=1 (Defaults or File, both at 1).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert_eq!(chain.as_slice().extremal_layer_kind_counts(), (3, 1));
+    }
+
+    // ── ConfigSourceChain::extremal_file_format_counts — the file-format
+    //    sub-axis peer of extremal_layer_kind_counts on the same chain
+    //    altitude. Sideways lift of the primitive-altitude fused pair
+    //    `AxisHistogram::extremal_counts` onto the file-format sub-axis
+    //    of the chain-shape surface. ----
+
+    #[test]
+    fn extremal_file_format_counts_matches_peak_trough_file_format_count_pair_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_scalars = (
+                slice.peak_file_format_count(),
+                slice.trough_file_format_count(),
+            );
+            assert_eq!(slice.extremal_file_format_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_matches_file_format_histogram_extremal_counts_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_hist = slice.file_format_histogram().extremal_counts();
+            assert_eq!(slice.extremal_file_format_counts(), via_hist);
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_modal_projection_recovers_peak_file_format_count_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_file_format_counts().0,
+                slice.peak_file_format_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_antimodal_projection_recovers_trough_file_format_count_pointwise()
+     {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_file_format_counts().1,
+                slice.trough_file_format_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_empty_chain_is_zero_zero() {
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.extremal_file_format_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_file_format_counts_zero_zero_iff_histogram_empty_pointwise() {
+        // Empty-boundary equivalence: on the file-format sub-axis, the
+        // fused pair reads `(0, 0)` exactly on chains whose file-format
+        // histogram is empty (empty chain, no-file chain, or chain whose
+        // file entries all carry unrecognized extensions — the partial-
+        // function-projection witness).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let is_zero = slice.extremal_file_format_counts() == (0, 0);
+            assert_eq!(is_zero, slice.file_format_histogram().is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_peak_ge_trough_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let (peak, trough) = chain.as_slice().extremal_file_format_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_difference_recovers_file_format_spread_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_file_format_counts();
+            assert_eq!(peak - trough, slice.file_format_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_sum_recovers_file_format_peak_trough_sum_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_file_format_counts();
+            assert_eq!(peak + trough, slice.file_format_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_product_recovers_file_format_peak_trough_product_pointwise() {
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_file_format_counts();
+            assert_eq!(peak * trough, slice.file_format_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_file_format_counts_sample_chain_is_two_two() {
+        // Ground-truth pin: sample_chain has two YAML files (singleton
+        // support on Yaml), so peak=trough=2.
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().extremal_file_format_counts(), (2, 2));
+    }
+
+    #[test]
+    fn extremal_file_format_counts_toml_majority_is_three_one() {
+        // Ground-truth pin: 3 TOML + 1 YAML, peak=3 (Toml), trough=1
+        // (Yaml).
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        assert_eq!(chain.as_slice().extremal_file_format_counts(), (3, 1));
+    }
+
+    // ── ConfigSourceChain::extremal_env_prefix_kind_counts — the env-
+    //    prefix sub-axis peer of extremal_layer_kind_counts /
+    //    extremal_file_format_counts on the same chain altitude. Third
+    //    sideways lift of the primitive-altitude fused pair
+    //    `AxisHistogram::extremal_counts` onto the env-prefix sub-axis
+    //    of the chain-shape surface, closing the fused-pair count scalar
+    //    on every typed sub-axis of the chain-shape surface. ----
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_matches_peak_trough_env_prefix_kind_count_pair_pointwise() {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_scalars = (
+                slice.peak_env_prefix_kind_count(),
+                slice.trough_env_prefix_kind_count(),
+            );
+            assert_eq!(slice.extremal_env_prefix_kind_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_matches_env_prefix_kind_histogram_extremal_counts_pointwise()
+    {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_hist = slice.env_prefix_kind_histogram().extremal_counts();
+            assert_eq!(slice.extremal_env_prefix_kind_counts(), via_hist);
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_modal_projection_recovers_peak_env_prefix_kind_count_pointwise()
+     {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_env_prefix_kind_counts().0,
+                slice.peak_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_antimodal_projection_recovers_trough_env_prefix_kind_count_pointwise()
+     {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.extremal_env_prefix_kind_counts().1,
+                slice.trough_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_empty_chain_is_zero_zero() {
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.extremal_env_prefix_kind_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_zero_zero_iff_histogram_empty_pointwise() {
+        // Empty-boundary equivalence on the env-prefix sub-axis: `(0, 0)`
+        // iff the env-prefix histogram is empty (no `ConfigSource::Env`
+        // entry — the partial-function-projection witness).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_zero = slice.extremal_env_prefix_kind_counts() == (0, 0);
+            assert_eq!(is_zero, slice.env_prefix_kind_histogram().is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_peak_ge_trough_pointwise() {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let (peak, trough) = chain.as_slice().extremal_env_prefix_kind_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_difference_recovers_env_prefix_kind_spread_pointwise() {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_env_prefix_kind_counts();
+            assert_eq!(peak - trough, slice.env_prefix_kind_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_sum_recovers_env_prefix_kind_peak_trough_sum_pointwise() {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_env_prefix_kind_counts();
+            assert_eq!(peak + trough, slice.env_prefix_kind_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_product_recovers_env_prefix_kind_peak_trough_product_pointwise()
+     {
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak, trough) = slice.extremal_env_prefix_kind_counts();
+            assert_eq!(peak * trough, slice.env_prefix_kind_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_sample_chain_is_one_one() {
+        // Ground-truth pin: sample_chain has one prefixed Env entry
+        // (APP_), so peak=trough=1 on the env-prefix sub-axis.
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().extremal_env_prefix_kind_counts(), (1, 1));
+    }
+
+    #[test]
+    fn extremal_env_prefix_kind_counts_bare_majority_is_three_one() {
+        // Ground-truth pin: 3 bare Env + 1 prefixed Env, peak=3 (Bare),
+        // trough=1 (Prefixed).
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(chain.as_slice().extremal_env_prefix_kind_counts(), (3, 1));
     }
 }
