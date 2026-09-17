@@ -11090,6 +11090,75 @@ impl ProvenanceMap {
         self.source_kind_histogram().antimodal_observation()
     }
 
+    /// The **antimodal source-kind observation ordinal** — the ordinal-axis
+    /// cell-projection of [`Self::antimodal_source_kind_observation`] one
+    /// const-fn seam further inland on the antimodal side of this resolved
+    /// fold's source-kind histogram: the fused `(ordinal, count,
+    /// multiplicity)` byte triple carrying the
+    /// [`crate::ConfigSourceKind::ordinal`] of the argmin cell together
+    /// with the trough leaf count it collected and how many source-kind
+    /// cells tied at that trough. Returns `None` exactly when the map is
+    /// empty (no observed cell); otherwise returns `Some((o, n, m))`
+    /// where `o == recessive_source_kind().unwrap().ordinal()`,
+    /// `n == trough_source_kind_count() >= 1`, and
+    /// `m == trough_source_kind_multiplicity() >= 1`.
+    ///
+    /// Defined as `self.antimodal_source_kind_observation().map(|(k, n,
+    /// m)| (k.ordinal(), n, m))`, forwarding through the paired
+    /// antimodal-observation upstream one seam out and the const-callable
+    /// [`crate::ConfigSourceKind::ordinal`] method on the closed
+    /// source-kind axis. The `.1` count and `.2` multiplicity components
+    /// ride through untouched — the ordinal projection touches only the
+    /// typed-tag `.0` slot, so the byte triple encodes the antimodal cell
+    /// as a bare `usize` precedence-ordinal on the wire while the density
+    /// components stay in their scalar form.
+    ///
+    /// The **argmin peer** of
+    /// [`Self::modal_source_kind_observation_ordinal`] one axis-cell over
+    /// on the same ordinal-projected observation triple-surface — the two
+    /// peers now close the ordinal-projected `(modal, antimodal)`
+    /// two-cell partition of the observation triple-surface on the
+    /// source-kind axis at the primitive altitude. Source-kind-axis
+    /// sibling of [`Self::antimodal_tier_observation_ordinal`] one axis
+    /// over on the tier altitude.
+    ///
+    /// **Empty-map convention** — returns `None`, matching
+    /// [`Self::antimodal_source_kind_observation`] one seam out; consumers
+    /// matching on `Some((o, n, m))` never see a spurious `(0, 0, 0)` —
+    /// the empty gate lives on the outer `Option`.
+    ///
+    /// **Round-trip pins**:
+    /// - `antimodal_source_kind_observation_ordinal().map(|(o, _, _)| o)
+    ///   == recessive_source_kind_ordinal()` — the cell-axis scalar
+    ///   sub-projection recovers
+    ///   [`Self::recessive_source_kind_ordinal`] pointwise via
+    ///   `.map(|(o, _, _)| o)`, the same shape the typed-tag round-trip
+    ///   carries one seam out on the un-projected triple.
+    /// - `antimodal_source_kind_observation_ordinal().map_or(0, |(_, n,
+    ///   _)| n) == trough_source_kind_count()` — the count-axis scalar
+    ///   sub-projection recovers [`Self::trough_source_kind_count`]
+    ///   pointwise.
+    /// - `antimodal_source_kind_observation_ordinal().map_or(0, |(_, _,
+    ///   m)| m) == trough_source_kind_multiplicity()` — the
+    ///   multiplicity-axis scalar sub-projection recovers
+    ///   [`Self::trough_source_kind_multiplicity`] pointwise.
+    /// - `antimodal_source_kind_observation_ordinal().is_none() ==
+    ///   is_empty()` — the one-discriminant empty boundary on the byte
+    ///   triple.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` — matches
+    /// [`Self::antimodal_source_kind_observation`] one seam out (delegates
+    /// through it with a `const`-callable
+    /// [`crate::ConfigSourceKind::ordinal`] one-shot on the cell slot).
+    #[must_use]
+    pub fn antimodal_source_kind_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.antimodal_source_kind_observation()
+            .map(|(k, n, m)| (k.ordinal(), n, m))
+    }
+
     /// The **extremal source-kind observations** — the fused-quadruple
     /// pair packing the modal `(cell, count, multiplicity)` triple and
     /// the antimodal `(cell, count, multiplicity)` triple on this
@@ -19723,6 +19792,94 @@ impl ProvenanceMap {
     #[must_use]
     pub fn antimodal_tier_observation(&self) -> Option<(ConfigTierKind, usize, usize)> {
         self.tier_histogram().antimodal_observation()
+    }
+
+    /// The **antimodal tier observation ordinal** — the ordinal-axis
+    /// cell-projection of [`Self::antimodal_tier_observation`] one
+    /// const-fn seam further inland on the antimodal side of this
+    /// resolved fold's tier histogram: the fused `(ordinal, count,
+    /// multiplicity)` byte triple carrying the [`ConfigTierKind::ordinal`]
+    /// of the argmin cell together with the trough leaf count it
+    /// collected and how many tier cells tied at that trough. Returns
+    /// `None` exactly when the map is empty (no observed cell);
+    /// otherwise returns `Some((o, n, m))` where
+    /// `o == recessive_tier().unwrap().ordinal()`,
+    /// `n == trough_tier_count() >= 1`, and
+    /// `m == trough_tier_multiplicity() >= 1`.
+    ///
+    /// Defined as `self.antimodal_tier_observation().map(|(t, n, m)|
+    /// (t.ordinal(), n, m))`, forwarding through the paired
+    /// antimodal-observation upstream one seam out and the const-callable
+    /// [`ConfigTierKind::ordinal`] method on the closed tier axis. The
+    /// `.1` count and `.2` multiplicity components ride through
+    /// untouched — the ordinal projection touches only the typed-tag
+    /// `.0` slot, so the byte triple encodes the antimodal cell as a
+    /// bare `usize` precedence-ordinal on the wire while the density
+    /// components stay in their scalar form.
+    ///
+    /// The **argmin peer** of [`Self::modal_tier_observation_ordinal`]
+    /// one axis-cell over on the same ordinal-projected observation
+    /// triple-surface — the two peers now close the ordinal-projected
+    /// `(modal, antimodal)` two-cell partition of the observation
+    /// triple-surface on the tier axis at the primitive altitude. The
+    /// **fused byte triple** peer of the two sibling fused pairs already
+    /// on this altitude's argmin-ordinal projection surface:
+    /// [`Self::recessive_tier_observation_ordinal`] (the antimodal
+    /// `(ordinal, count)` byte pair) and
+    /// [`Self::trough_tier_observation`] (the antimodal `(count,
+    /// multiplicity)` scalar pair). The primitive altitude now carries
+    /// the (pair, pair, triple) argmin-ordinal-projection family on the
+    /// tier axis — the two overlapping fused pairs plus the closing
+    /// byte triple that fuses them into a single read with the typed
+    /// cell slot ordinal-projected away.
+    ///
+    /// The natural typed primitive for byte-triple wire encodings on the
+    /// argmin side: a ConfigPlane broadcast surface emitting the
+    /// antimodal `(ordinal, count, multiplicity)` byte triple at wire
+    /// time (no serde on the wire, the receiving side re-derives the tag
+    /// via [`ConfigTierKind::ALL`]`[o]`), an operator-facing
+    /// `/healthz/config/antimodal_tier_observation_ordinal` payload
+    /// emitting the antimodal byte triple alone, a compile-time
+    /// attestation hasher folding just the antimodal-cell
+    /// precedence-ordinal + trough count + trough multiplicity triple,
+    /// an alerting policy reading the antimodal `(ordinal, count,
+    /// multiplicity)` byte triple to gate a rebuild window on the
+    /// recessive tier together with its density *and* its tie-breadth
+    /// simultaneously.
+    ///
+    /// **Empty-map convention** — returns `None`, matching
+    /// [`Self::antimodal_tier_observation`] one seam out; consumers
+    /// matching on `Some((o, n, m))` never see a spurious `(0, 0, 0)` —
+    /// the empty gate lives on the outer `Option`.
+    ///
+    /// **Round-trip pins**:
+    /// - `antimodal_tier_observation_ordinal().map(|(o, _, _)| o) ==
+    ///   recessive_tier_ordinal()` — the cell-axis scalar sub-projection
+    ///   recovers [`Self::recessive_tier_ordinal`] pointwise via
+    ///   `.map(|(o, _, _)| o)`, the same shape the typed-tag round-trip
+    ///   `.map(|(t, _, _)| t) == recessive_tier()` carries one seam out
+    ///   on the un-projected triple.
+    /// - `antimodal_tier_observation_ordinal().map_or(0, |(_, n, _)| n)
+    ///   == trough_tier_count()` — the count-axis scalar sub-projection
+    ///   recovers [`Self::trough_tier_count`] pointwise.
+    /// - `antimodal_tier_observation_ordinal().map_or(0, |(_, _, m)| m)
+    ///   == trough_tier_multiplicity()` — the multiplicity-axis scalar
+    ///   sub-projection recovers [`Self::trough_tier_multiplicity`]
+    ///   pointwise.
+    /// - `antimodal_tier_observation_ordinal().is_none() == is_empty()`
+    ///   — the one-discriminant empty boundary on the byte triple.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` — matches
+    /// [`Self::antimodal_tier_observation`] one seam out (delegates
+    /// through it with a `const`-callable
+    /// [`ConfigTierKind::ordinal`] one-shot on the cell slot).
+    #[must_use]
+    pub fn antimodal_tier_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.antimodal_tier_observation()
+            .map(|(t, n, m)| (t.ordinal(), n, m))
     }
 
     /// The **extremal tier observations** — the fused-quadruple pair
@@ -30729,6 +30886,35 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.antimodal_tier_observation()
     }
 
+    /// The **antimodal tier observation ordinal** — the ordinal-axis
+    /// cell-projection of [`Self::antimodal_tier_observation`] one
+    /// const-fn seam further inland on the antimodal side of this
+    /// resolved fold's tier histogram: the fused
+    /// `(ordinal, count, multiplicity)` byte triple carrying the
+    /// [`ConfigTierKind::ordinal`] of the argmin cell with the trough
+    /// leaf count and the trough multiplicity, or [`None`] exactly on
+    /// the empty resolution. Container-altitude peer of
+    /// [`ProvenanceMap::antimodal_tier_observation_ordinal`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.antimodal_tier_observation_ordinal()`.
+    ///
+    /// Argmin peer of [`Self::modal_tier_observation_ordinal`] on the
+    /// same container — together they close the ordinal-projected
+    /// `(modal, antimodal)` fused-triple pair on the tier altitude,
+    /// matching the argmax/argmin byte-triple pair shape one axis over
+    /// on the source-kind altitude via
+    /// [`Self::antimodal_source_kind_observation_ordinal`]. Scalar
+    /// sub-projections on the same container:
+    /// [`Self::recessive_tier_ordinal`] projects by `.map(|(o, _, _)|
+    /// o)`; the trough count / trough multiplicity reach through
+    /// `self.provenance().trough_tier_count()` and
+    /// `self.provenance().trough_tier_multiplicity()`.
+    #[must_use]
+    pub fn antimodal_tier_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.provenance.antimodal_tier_observation_ordinal()
+    }
+
     /// The **modal source-kind observation** — the fused
     /// `(cell, count, multiplicity)` triple on the modal side of this
     /// resolved fold's source-kind histogram: the
@@ -30807,6 +30993,35 @@ impl<T> ProgressiveResolution<T> {
         &self,
     ) -> Option<(crate::ConfigSourceKind, usize, usize)> {
         self.provenance.antimodal_source_kind_observation()
+    }
+
+    /// The **antimodal source-kind observation ordinal** — the
+    /// ordinal-axis cell-projection of
+    /// [`Self::antimodal_source_kind_observation`] one const-fn seam
+    /// further inland on the antimodal side of this resolved fold's
+    /// source-kind histogram: the fused
+    /// `(ordinal, count, multiplicity)` byte triple carrying the
+    /// [`crate::ConfigSourceKind::ordinal`] of the argmin cell with the
+    /// trough leaf count and the trough multiplicity, or [`None`] exactly
+    /// on the empty resolution. Container-altitude peer of
+    /// [`ProvenanceMap::antimodal_source_kind_observation_ordinal`] on
+    /// the *output* side of the fold's atomic-pair ownership boundary,
+    /// delegating one seam down into
+    /// `self.provenance.antimodal_source_kind_observation_ordinal()`.
+    ///
+    /// Source-kind-axis sibling of
+    /// [`Self::antimodal_tier_observation_ordinal`] on the tier altitude:
+    /// the two altitudes now name the ordinal-projected
+    /// antimodal-observation byte triple on both closed coordinates of
+    /// the atomic `(tier, source)` pair. Argmin peer of
+    /// [`Self::modal_source_kind_observation_ordinal`] on the same
+    /// container — the two peers now close the ordinal-projected
+    /// `(modal, antimodal)` fused-triple pair on the source-kind
+    /// altitude, matching the argmax/argmin byte-triple pair shape one
+    /// axis over on the tier altitude.
+    #[must_use]
+    pub fn antimodal_source_kind_observation_ordinal(&self) -> Option<(usize, usize, usize)> {
+        self.provenance.antimodal_source_kind_observation_ordinal()
     }
 
     /// The **extremal tier observations** on this resolved fold's tier
@@ -83606,6 +83821,176 @@ mod progressive_tests {
         assert_eq!(singleton.modal_tier_observation_ordinal(), Some((1, 1, 1)),);
     }
 
+    // ── ProvenanceMap::antimodal_tier_observation_ordinal — argmin
+    //    peer of modal_tier_observation_ordinal one axis-cell over on
+    //    the same ordinal-projected observation triple-surface. The
+    //    two peers close the ordinal-projected (modal, antimodal)
+    //    two-cell partition of the observation triple-surface on the
+    //    tier axis at the primitive altitude. Joint upstream of
+    //    recessive_tier_ordinal (`.map(|(o, _, _)| o)`),
+    //    trough_tier_count (`.map_or(0, |(_, n, _)| n)`) and
+    //    trough_tier_multiplicity (`.map_or(0, |(_, _, m)| m)`). ──
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_matches_ordinal_projection_of_observation_pointwise() {
+        // Cross-seam pin: `antimodal_tier_observation_ordinal()` is the
+        // ordinal-axis cell-projection of `antimodal_tier_observation()`,
+        // so the two seams must stay pointwise equivalent under
+        // `ConfigTierKind::ordinal` on the `.0` slot with the `.1` count
+        // and `.2` multiplicity components riding through untouched.
+        // Argmin peer of the corresponding argmax cross-seam pin one
+        // observation-cell over on the same ordinal-projection surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .antimodal_tier_observation()
+                .map(|(t, n, m)| (t.ordinal(), n, m));
+            assert_eq!(map.antimodal_tier_observation_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_ordinal_half_recovers_recessive_tier_ordinal_pointwise() {
+        // Cell-half round-trip pin: the `.0` slot of the ordinal-projected
+        // antimodal fused triple recovers `recessive_tier_ordinal()`
+        // pointwise via `.map(|(o, _, _)| o)` — the same shape the
+        // typed-tag round-trip `.map(|(t, _, _)| t) == recessive_tier()`
+        // carries one seam out on the un-projected antimodal triple.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_tier_observation_ordinal();
+            assert_eq!(obs.map(|(o, _, _)| o), map.recessive_tier_ordinal());
+        }
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_count_half_recovers_trough_tier_count_pointwise() {
+        // Count-half round-trip pin: the `.1` slot of the ordinal-projected
+        // antimodal fused triple recovers `trough_tier_count()` pointwise
+        // via `.map_or(0, |(_, n, _)| n)`. Empty maps read `0` uniformly on
+        // both seams; non-empty maps read the shared trough count.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_tier_observation_ordinal();
+            assert_eq!(obs.map_or(0, |(_, n, _)| n), map.trough_tier_count());
+        }
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_multiplicity_half_recovers_trough_tier_multiplicity_pointwise()
+     {
+        // Multiplicity-half round-trip pin: the `.2` slot of the
+        // ordinal-projected antimodal fused triple recovers
+        // `trough_tier_multiplicity()` pointwise via `.map_or(0, |(_, _,
+        // m)| m)`. Empty maps read `0` uniformly on both seams; non-empty
+        // maps read the shared trough multiplicity.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_tier_observation_ordinal();
+            assert_eq!(obs.map_or(0, |(_, _, m)| m), map.trough_tier_multiplicity());
+        }
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin: an empty `ProvenanceMap` has no leaves
+        // and therefore no antimodal observation and no ordinal-projected
+        // antimodal observation — the ordinal-projected fused triple reads
+        // `None`, matching `antimodal_tier_observation_empty_map_is_none`
+        // one seam out.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.antimodal_tier_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_prog_fixture_is_bare_ordinal_one_two() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // The trough lands on count 1 with cells {Bare, Discovered} tied.
+        // Declaration-order tie-break on ConfigTierKind::ALL picks Bare
+        // (ordinal 0). Multiplicity is 2. Direct pin — the ordinal-
+        // projected antimodal fused triple reads `(0, 1, 2)` at one call.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().antimodal_tier_observation_ordinal(),
+            Some((ConfigTierKind::Bare.ordinal(), 1, 2)),
+        );
+        assert_eq!(
+            r.provenance().antimodal_tier_observation_ordinal(),
+            Some((0, 1, 2)),
+        );
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_nested_fixture_is_discovered_ordinal_one_one() {
+        // Nested attributes 3 leaves with counts {Default:2, Discovered:1}.
+        // The trough lands uniquely on Discovered at count 1 with
+        // multiplicity 1 (no tie). Discovered.ordinal() == 1. Direct pin
+        // — the ordinal-projected antimodal fused triple reads `(1, 1, 1)`
+        // at one call.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().antimodal_tier_observation_ordinal(),
+            Some((ConfigTierKind::Discovered.ordinal(), 1, 1)),
+        );
+        assert_eq!(
+            r.provenance().antimodal_tier_observation_ordinal(),
+            Some((1, 1, 1)),
+        );
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_is_some_iff_map_is_nonempty_pointwise() {
+        // Presence-parity pin: the ordinal-projected antimodal fused
+        // triple reads `Some(_)` exactly on the non-empty support,
+        // matching `antimodal_tier_observation_none_iff_empty_pointwise`
+        // one seam out on the un-projected triple. Argmin peer of the
+        // argmax presence-parity pin one observation-cell over.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.antimodal_tier_observation_ordinal().is_some(),
+                !map.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn antimodal_tier_observation_ordinal_singleton_leaf_reads_leaf_ordinal_at_count_one_mult_one()
+    {
+        // Singleton-support coincidence pin: on a one-leaf map, the sole
+        // observed cell is simultaneously the modal and antimodal cell,
+        // the trough count is `1`, and the trough multiplicity is `1`.
+        // The ordinal-projected antimodal fused triple reads
+        // `Some((leaf_ordinal, 1, 1))`, coinciding pointwise with the
+        // argmax peer on the same singleton fixture.
+        let mut singleton = ProvenanceMap::default();
+        singleton.extend([(vec!["only".to_string()], Provenance::discovered())]);
+        assert_eq!(
+            singleton.antimodal_tier_observation_ordinal(),
+            Some((ConfigTierKind::Discovered.ordinal(), 1, 1)),
+        );
+        assert_eq!(
+            singleton.antimodal_tier_observation_ordinal(),
+            singleton.modal_tier_observation_ordinal(),
+        );
+    }
+
     // ── ProvenanceMap::antimodal_tier_observation — antimodal-side
     //    fused (cell, count, multiplicity) triple on the tier altitude,
     //    closing the (pair, pair, triple) antimodal-projection family
@@ -98519,6 +98904,153 @@ mod progressive_tests {
             r.provenance().modal_source_kind_observation_ordinal(),
             Some((0, 4, 1)),
         );
+    }
+
+    // ── ProvenanceMap::antimodal_source_kind_observation_ordinal — argmin
+    //    peer of modal_source_kind_observation_ordinal on the same
+    //    ordinal-projected observation triple-surface at the primitive
+    //    altitude, source-kind-axis sibling of
+    //    antimodal_tier_observation_ordinal one axis over on the tier
+    //    altitude. Joint upstream of recessive_source_kind_ordinal,
+    //    trough_source_kind_count and trough_source_kind_multiplicity via
+    //    the three scalar sub-projections. ──
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_matches_ordinal_projection_of_observation_pointwise()
+     {
+        // Cross-seam pin: `antimodal_source_kind_observation_ordinal()`
+        // is the ordinal-axis cell-projection of
+        // `antimodal_source_kind_observation()`, so the two seams must
+        // stay pointwise equivalent under `ConfigSourceKind::ordinal` on
+        // the `.0` slot with the `.1` count and `.2` multiplicity
+        // components riding through untouched.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_typed = map
+                .antimodal_source_kind_observation()
+                .map(|(k, n, m)| (k.ordinal(), n, m));
+            assert_eq!(map.antimodal_source_kind_observation_ordinal(), via_typed);
+        }
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_ordinal_half_recovers_recessive_source_kind_ordinal_pointwise()
+     {
+        // Cell-half round-trip pin: the `.0` slot of the ordinal-projected
+        // antimodal fused triple recovers `recessive_source_kind_ordinal()`
+        // pointwise via `.map(|(o, _, _)| o)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_source_kind_observation_ordinal();
+            assert_eq!(obs.map(|(o, _, _)| o), map.recessive_source_kind_ordinal());
+        }
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_count_half_recovers_trough_source_kind_count_pointwise()
+     {
+        // Count-half round-trip pin: the `.1` slot recovers
+        // `trough_source_kind_count()` pointwise via
+        // `.map_or(0, |(_, n, _)| n)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_source_kind_observation_ordinal();
+            assert_eq!(obs.map_or(0, |(_, n, _)| n), map.trough_source_kind_count(),);
+        }
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_multiplicity_half_recovers_trough_source_kind_multiplicity_pointwise()
+     {
+        // Multiplicity-half round-trip pin: the `.2` slot recovers
+        // `trough_source_kind_multiplicity()` pointwise via
+        // `.map_or(0, |(_, _, m)| m)`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.antimodal_source_kind_observation_ordinal();
+            assert_eq!(
+                obs.map_or(0, |(_, _, m)| m),
+                map.trough_source_kind_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_empty_map_is_none() {
+        // Empty-map boundary pin: an empty `ProvenanceMap` has no leaves
+        // and therefore no antimodal observation and no ordinal-projected
+        // antimodal observation — the ordinal-projected fused triple reads
+        // `None`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.antimodal_source_kind_observation_ordinal(), None);
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_prog_fixture_is_defaults_ordinal_four_one() {
+        // Prog's fold is all-Defaults on the source-kind axis (singleton
+        // support at count 4 with multiplicity 1). Defaults.ordinal() ==
+        // 0. Antimodal coincides with modal on singleton support —
+        // ordinal-projected antimodal fused triple reads `(0, 4, 1)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+            Some((crate::ConfigSourceKind::Defaults.ordinal(), 4, 1)),
+        );
+        assert_eq!(
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+            Some((0, 4, 1)),
+        );
+        assert_eq!(
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+            r.provenance().modal_source_kind_observation_ordinal(),
+        );
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_mixed_fixture_is_env_ordinal_one_two() {
+        // Mixed-overlay fixture attributes 4 leaves with counts
+        // {Defaults:2, Env:1, File:1}. Trough count = 1 tied between
+        // Env and File. Declaration-order ConfigSourceKind::ALL is
+        // [Defaults, Env, File], so recessive is Env (ordinal 1),
+        // multiplicity = 2. Direct pin — the ordinal-projected antimodal
+        // fused triple reads `(1, 1, 2)`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+            Some((crate::ConfigSourceKind::Env.ordinal(), 1, 2)),
+        );
+        assert_eq!(
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+            Some((1, 1, 2)),
+        );
+    }
+
+    #[test]
+    fn antimodal_source_kind_observation_ordinal_is_some_iff_map_is_nonempty_pointwise() {
+        // Presence-parity pin: the ordinal-projected antimodal fused
+        // triple reads `Some(_)` exactly on the non-empty support.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.antimodal_source_kind_observation_ordinal().is_some(),
+                !map.is_empty(),
+            );
+        }
     }
 
     // ── ProvenanceMap::antimodal_source_kind_observation — antimodal-side
@@ -122536,5 +123068,118 @@ mod progressive_tests {
                 .map(|(k, n, m)| (k.ordinal(), n, m)),
         );
         assert_eq!(r.modal_source_kind_observation_ordinal(), Some((0, 4, 1)));
+    }
+
+    // ── ProgressiveResolution::antimodal_tier_observation_ordinal /
+    //    ProgressiveResolution::antimodal_source_kind_observation_ordinal
+    //    — container-altitude peers of the primitive-altitude ordinal-
+    //    projected antimodal-observation fused triple on both closed
+    //    coordinates of the atomic (tier, source) pair, one-hop
+    //    delegates on the *output* side of the fold's atomic-pair
+    //    ownership boundary. Argmin peers of the modal_*_observation_
+    //    ordinal argmax delegates one observation-cell over on the same
+    //    ordinal-projected observation triple-surface at the container
+    //    altitude — the container altitude now names the ordinal-projected
+    //    (modal, antimodal) fused-triple pair on both closed axes. ──
+
+    #[test]
+    fn progressive_resolution_antimodal_tier_observation_ordinal_agrees_with_provenance_antimodal_tier_observation_ordinal()
+     {
+        // Structural-agreement pin on the ordinal-projected antimodal-
+        // observation byte-triple delegate at the container altitude:
+        // `res.antimodal_tier_observation_ordinal()` routes through
+        // `res.provenance().antimodal_tier_observation_ordinal()`, so the
+        // two seams must stay pointwise equivalent — one-hop delegation
+        // on the *output* side of the fold's atomic-pair ownership
+        // boundary. Argmin peer of the argmax structural-agreement pin
+        // one observation-cell over on the same container-altitude
+        // delegation surface.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.antimodal_tier_observation_ordinal(),
+            r.provenance().antimodal_tier_observation_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_antimodal_tier_observation_ordinal_matches_ordinal_projection_of_observation()
+     {
+        // Cross-seam agreement pin at the container altitude: the
+        // ordinal-projected antimodal-observation byte triple agrees
+        // with `.antimodal_tier_observation().map(|(t, n, m)|
+        // (t.ordinal(), n, m))` — the same shape carried by the
+        // primitive-altitude cross-seam pin one altitude down. Prog's
+        // trough lands on Bare (ordinal 0) at count 1 with multiplicity
+        // 2 (Bare and Discovered both at count 1, decl-order tie-break).
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.antimodal_tier_observation_ordinal(),
+            r.antimodal_tier_observation()
+                .map(|(t, n, m)| (t.ordinal(), n, m)),
+        );
+        assert_eq!(r.antimodal_tier_observation_ordinal(), Some((0, 1, 2)));
+    }
+
+    #[test]
+    fn progressive_resolution_antimodal_tier_observation_ordinal_component_round_trips_through_provenance_scalars()
+     {
+        // Component round-trip pin at the container: the three slots of
+        // the ordinal-projected antimodal byte triple recover
+        // `recessive_tier_ordinal()`, `trough_tier_count()`, and
+        // `trough_tier_multiplicity()` pointwise via the three scalar
+        // sub-projections. The count/multiplicity halves route through
+        // the provenance-side scalar seams, while the ordinal half
+        // reaches through the container-altitude ordinal scalar directly.
+        let r = Prog::resolve_progressive();
+        let obs = r.antimodal_tier_observation_ordinal();
+        assert_eq!(obs.map(|(o, _, _)| o), r.recessive_tier_ordinal());
+        assert_eq!(
+            obs.map_or(0, |(_, n, _)| n),
+            r.provenance().trough_tier_count(),
+        );
+        assert_eq!(
+            obs.map_or(0, |(_, _, m)| m),
+            r.provenance().trough_tier_multiplicity(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_antimodal_source_kind_observation_ordinal_agrees_with_provenance_antimodal_source_kind_observation_ordinal()
+     {
+        // Source-kind-axis peer of the tier-axis structural-agreement pin
+        // above on the same container-altitude delegation — closes the
+        // ordinal-projected antimodal-observation byte triple on both
+        // closed axes on the argmin side of the observation surface.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.antimodal_source_kind_observation_ordinal(),
+            r.provenance().antimodal_source_kind_observation_ordinal(),
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_antimodal_source_kind_observation_ordinal_matches_ordinal_projection_of_observation()
+     {
+        // Source-kind-axis peer of the tier-axis cross-seam pin above at
+        // the container altitude — the ordinal-projected byte triple
+        // agrees with `.antimodal_source_kind_observation().map(|(k, n,
+        // m)| (k.ordinal(), n, m))`. Prog's fold is all-Defaults on the
+        // source-kind axis (singleton support at count 4 with
+        // multiplicity 1); Defaults.ordinal() == 0. Coincides pointwise
+        // with the argmax peer on the singleton-support corner.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.antimodal_source_kind_observation_ordinal(),
+            r.antimodal_source_kind_observation()
+                .map(|(k, n, m)| (k.ordinal(), n, m)),
+        );
+        assert_eq!(
+            r.antimodal_source_kind_observation_ordinal(),
+            Some((0, 4, 1))
+        );
+        assert_eq!(
+            r.antimodal_source_kind_observation_ordinal(),
+            r.modal_source_kind_observation_ordinal(),
+        );
     }
 }
