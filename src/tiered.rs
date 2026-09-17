@@ -24270,6 +24270,216 @@ impl ProvenanceMap {
     pub fn tiers_uniform_count(&self) -> bool {
         self.tier_histogram().is_uniform_count()
     }
+
+    /// The **extremal tier counts fused-pair** on this fold's per-leaf
+    /// [`ConfigTierKind`] histogram — the nested-pair scalar `(usize,
+    /// usize)` packing the modal (peak) and antimodal (trough) leaf
+    /// counts of the tier histogram into one tuple. Returns `(0, 0)`
+    /// exactly on the empty map; otherwise returns
+    /// `(peak_tier_count(), trough_tier_count())` pointwise.
+    ///
+    /// **Container-altitude climb** of the primitive-altitude fused pair
+    /// [`crate::AxisHistogram::extremal_counts`] one seam down — this
+    /// method routes through `self.tier_histogram().extremal_counts()`,
+    /// which fuses the two shipped scalar-half endpoints
+    /// [`crate::AxisHistogram::peak_count`] /
+    /// [`crate::AxisHistogram::trough_count`] into one nested-pair scalar
+    /// at a single running-max + running-min-over-positives walk of the
+    /// counts vector (halving the constant factor of the previous open-
+    /// coded `(peak_tier_count(), trough_tier_count())` idiom which
+    /// walked the histogram twice).
+    ///
+    /// **Tier-altitude count-side sibling** of the shipped typed-tag
+    /// fused pair [`Self::extremal_tiers`] and the shipped ordinal-
+    /// projected fused pair [`Self::extremal_tiers_ordinal`] on the same
+    /// closed [`ConfigTierKind`] axis — the three fused-pair surfaces
+    /// close the `(typed-tag, ordinal, count)` sub-projections of the
+    /// fused-quadruple [`Self::extremal_tier_observations`] on the tier
+    /// altitude. Together with the shipped tier-altitude scalar-count
+    /// quintuple ([`Self::peak_tier_count`], [`Self::trough_tier_count`],
+    /// [`Self::tier_spread`], [`Self::tier_peak_trough_sum`],
+    /// [`Self::tier_peak_trough_product`]), `extremal_tier_counts` reads
+    /// the entire `(peak, trough)` scalar-count pair off in one method
+    /// call versus two, and the shipped arithmetic algebra `{+, -, *}` on
+    /// the closed endpoint pair projects off the fused scalar in one
+    /// tuple deconstruction rather than two independent scalar reads.
+    ///
+    /// **Source-kind-altitude peer** of [`Self::extremal_source_kind_counts`]
+    /// — together the two methods close the fused-pair count scalar on
+    /// both closed coordinates of the atomic `(tier, source)` pair each
+    /// leaf's [`Provenance`] carries, one const-fn seam further inland
+    /// than the two scalar-half endpoint pairs on the same closed axes.
+    ///
+    /// The natural typed primitive for reading *"what are the peak and
+    /// trough per-tier leaf counts on this resolved fold?"* at one method
+    /// call — a `/healthz/config/extremal_tier_counts` payload serializing
+    /// both endpoints of the tier histogram simultaneously, a ConfigPlane
+    /// broadcast payload carrying the joint count endpoints without serde
+    /// on the typed cell axis, an attestation manifest recording per-tick
+    /// fused-pair `(peak, trough)` tier count attribution.
+    ///
+    /// **Empty-map convention** — returns `(0, 0)` (not `Option<(usize,
+    /// usize)>`), matching the [`Self::peak_tier_count`] /
+    /// [`Self::trough_tier_count`] scalar-zero empty conventions on the
+    /// same altitude and the [`crate::AxisHistogram::extremal_counts`]
+    /// convention one altitude down (no [`Option`] wrapper — the count
+    /// surface has a natural zero identity that the typed-tag /
+    /// observation surface does not).
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_tier_counts() == (peak_tier_count(),
+    ///   trough_tier_count())` — the defining fused-pair identity of the
+    ///   extremal-count scalar over the two shipped scalar-half endpoints
+    ///   on the same count surface at the tier altitude.
+    /// - `extremal_tier_counts().0 == peak_tier_count()` pointwise — the
+    ///   modal-half projection `.0` recovers the peak-count scalar on
+    ///   every fixture.
+    /// - `extremal_tier_counts().1 == trough_tier_count()` pointwise —
+    ///   the antimodal-half projection `.1` recovers the trough-count
+    ///   scalar on every fixture.
+    /// - `extremal_tier_counts() == tier_histogram().extremal_counts()` —
+    ///   the routing equivalence one altitude down; both project the
+    ///   same fused pair off the same primitive.
+    /// - `extremal_tier_counts() == (0, 0)` ⇔ `self.is_empty()` — the
+    ///   empty-boundary equivalence. Both endpoints are structurally
+    ///   `>= 1` on every non-empty fold (by [`Self::peak_tier_count`]'s
+    ///   and [`Self::trough_tier_count`]'s non-emptiness floors).
+    /// - `extremal_tier_counts().0 >= extremal_tier_counts().1` always —
+    ///   the peak / trough ordering invariant lifted from the trait-
+    ///   uniform `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `extremal_tier_counts().0 - extremal_tier_counts().1 ==
+    ///   tier_spread()` always — subtraction-form projection recovers
+    ///   the shipped [`Self::tier_spread`] scalar. Underflow-safe by
+    ///   the peak / trough ordering invariant.
+    /// - `extremal_tier_counts().0 + extremal_tier_counts().1 ==
+    ///   tier_peak_trough_sum()` always — addition-form projection
+    ///   recovers the shipped [`Self::tier_peak_trough_sum`] scalar.
+    /// - `extremal_tier_counts().0 * extremal_tier_counts().1 ==
+    ///   tier_peak_trough_product()` always — multiplication-form
+    ///   projection recovers the shipped [`Self::tier_peak_trough_product`]
+    ///   scalar. Together with the two identities above this closes the
+    ///   arithmetic algebra `{+, -, *}` on the fused pair.
+    /// - `extremal_tier_counts().0 <= self.len()` always — the peak is
+    ///   bounded above by the total leaf count. By transitivity with the
+    ///   ordering invariant, `extremal_tier_counts().1 <= self.len()`
+    ///   also holds.
+    /// - Coincidence on uniform-count or empty: on every uniform-count
+    ///   fold (peak count == trough count) and on the empty map, the
+    ///   two halves of the fused pair coincide.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the paired peak
+    /// + trough scan). Both are `O(n)` in practice since the tier axis
+    /// carries a fixed four-cell cardinality; the returned `(usize,
+    /// usize)` reads two scalars in one tuple with no heap allocation.
+    /// Halves the cost of the previous open-coded `(peak_tier_count(),
+    /// trough_tier_count())` idiom (which walked the counts vector
+    /// twice) by routing through
+    /// [`crate::AxisHistogram::extremal_counts`]'s single-pass fold.
+    #[must_use]
+    pub fn extremal_tier_counts(&self) -> (usize, usize) {
+        self.tier_histogram().extremal_counts()
+    }
+
+    /// The **extremal source-kind counts fused-pair** on this fold's
+    /// per-leaf [`crate::ConfigSourceKind`] histogram — the nested-pair
+    /// scalar `(usize, usize)` packing the modal (peak) and antimodal
+    /// (trough) leaf counts of the source-kind histogram into one tuple.
+    /// Returns `(0, 0)` exactly on the empty map; otherwise returns
+    /// `(peak_source_kind_count(), trough_source_kind_count())`
+    /// pointwise.
+    ///
+    /// **Source-kind-altitude peer** of [`Self::extremal_tier_counts`] on
+    /// the tier altitude — the two altitudes now name the fused-pair
+    /// count scalar on both closed coordinates of the atomic `(tier,
+    /// source)` pair each leaf's [`Provenance`] carries. Routes through
+    /// [`Self::source_kind_histogram`] and
+    /// [`crate::AxisHistogram::extremal_counts`] one altitude down: the
+    /// single running-max + running-min-over-positives walk fusing the
+    /// two shipped scalar-half endpoints [`Self::peak_source_kind_count`]
+    /// / [`Self::trough_source_kind_count`] into one nested-pair scalar
+    /// (halving the constant factor of the previous open-coded
+    /// `(peak_source_kind_count(), trough_source_kind_count())` idiom
+    /// which walked the histogram twice).
+    ///
+    /// Together with the shipped source-kind-altitude scalar-count
+    /// quintuple ([`Self::peak_source_kind_count`],
+    /// [`Self::trough_source_kind_count`], [`Self::source_kind_spread`],
+    /// [`Self::source_kind_peak_trough_sum`],
+    /// [`Self::source_kind_peak_trough_product`]),
+    /// `extremal_source_kind_counts` reads the entire `(peak, trough)`
+    /// scalar-count pair off in one method call versus two, and the
+    /// shipped arithmetic algebra `{+, -, *}` on the closed endpoint
+    /// pair projects off the fused scalar in one tuple deconstruction
+    /// rather than two independent scalar reads.
+    ///
+    /// **Empty-map convention** — returns `(0, 0)` (not `Option<(usize,
+    /// usize)>`), matching the [`Self::peak_source_kind_count`] /
+    /// [`Self::trough_source_kind_count`] scalar-zero empty conventions
+    /// on the same altitude and the [`crate::AxisHistogram::extremal_counts`]
+    /// convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `extremal_source_kind_counts() == (peak_source_kind_count(),
+    ///   trough_source_kind_count())` — the defining fused-pair identity
+    ///   of the extremal-count scalar over the two shipped scalar-half
+    ///   endpoints on the same count surface at the source-kind altitude.
+    /// - `extremal_source_kind_counts().0 == peak_source_kind_count()`
+    ///   pointwise — the modal-half projection `.0` recovers the peak-
+    ///   count scalar on every fixture.
+    /// - `extremal_source_kind_counts().1 == trough_source_kind_count()`
+    ///   pointwise — the antimodal-half projection `.1` recovers the
+    ///   trough-count scalar on every fixture.
+    /// - `extremal_source_kind_counts() ==
+    ///   source_kind_histogram().extremal_counts()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `extremal_source_kind_counts() == (0, 0)` ⇔ `self.is_empty()` —
+    ///   the empty-boundary equivalence.
+    /// - `extremal_source_kind_counts().0 >=
+    ///   extremal_source_kind_counts().1` always — the peak / trough
+    ///   ordering invariant lifted from the trait-uniform
+    ///   `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `extremal_source_kind_counts().0 -
+    ///   extremal_source_kind_counts().1 == source_kind_spread()` —
+    ///   subtraction-form projection recovers the shipped
+    ///   [`Self::source_kind_spread`] scalar.
+    /// - `extremal_source_kind_counts().0 +
+    ///   extremal_source_kind_counts().1 ==
+    ///   source_kind_peak_trough_sum()` — addition-form projection
+    ///   recovers the shipped [`Self::source_kind_peak_trough_sum`]
+    ///   scalar.
+    /// - `extremal_source_kind_counts().0 *
+    ///   extremal_source_kind_counts().1 ==
+    ///   source_kind_peak_trough_product()` — multiplication-form
+    ///   projection recovers the shipped
+    ///   [`Self::source_kind_peak_trough_product`] scalar.
+    /// - `extremal_source_kind_counts().0 <= self.len()` always — the
+    ///   peak is bounded above by the total leaf count. By transitivity
+    ///   with the ordering invariant, the trough half is also
+    ///   `<= self.len()`.
+    /// - Coincidence on uniform-count or empty: on every uniform-count
+    ///   fold and on the empty map, the two halves of the fused pair
+    ///   coincide.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// paired peak + trough scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `(usize, usize)` reads two scalars in one tuple with no
+    /// heap allocation.
+    #[must_use]
+    pub fn extremal_source_kind_counts(&self) -> (usize, usize) {
+        self.source_kind_histogram().extremal_counts()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -127517,5 +127727,393 @@ mod progressive_tests {
             r.antimodal_source_kind_observation_ordinal(),
             r.modal_source_kind_observation_ordinal(),
         );
+    }
+
+    // ── ProvenanceMap::extremal_tier_counts — the tier-altitude climb
+    //    of the AxisHistogram::extremal_counts primitive, fusing the
+    //    shipped scalar-half endpoints peak_tier_count and
+    //    trough_tier_count into one nested-pair scalar (peak, trough)
+    //    routed through tier_histogram().extremal_counts() at one
+    //    single-pass running-max + running-min walk. Empty-map
+    //    convention (0, 0) matches the scalar-zero identity of the
+    //    underlying count surface (no Option wrapper — the count axis
+    //    has a natural zero). ──
+
+    #[test]
+    fn extremal_tier_counts_matches_peak_trough_tier_count_pair_pointwise() {
+        // Defining projection-law pin: `extremal_tier_counts() ==
+        // (peak_tier_count(), trough_tier_count())` — the fused pair
+        // reads the two shipped scalar-half endpoints of the same count
+        // surface at the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_scalars = (map.peak_tier_count(), map.trough_tier_count());
+            assert_eq!(map.extremal_tier_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_matches_tier_histogram_extremal_counts_pointwise() {
+        // Routing pin: `extremal_tier_counts` routes through
+        // `tier_histogram().extremal_counts()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native fused-pair primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_hist = map.tier_histogram().extremal_counts();
+            assert_eq!(map.extremal_tier_counts(), via_hist);
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_modal_projection_recovers_peak_tier_count_pointwise() {
+        // Modal-half round-trip pin: `.0` recovers `peak_tier_count()`
+        // pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.extremal_tier_counts().0, map.peak_tier_count());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_antimodal_projection_recovers_trough_tier_count_pointwise() {
+        // Antimodal-half round-trip pin: `.1` recovers
+        // `trough_tier_count()` pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.extremal_tier_counts().1, map.trough_tier_count());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_empty_map_is_zero_zero() {
+        // Empty-map literal pin: the scalar-zero identity boundary,
+        // matching the two scalar-half endpoints' empty conventions.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.extremal_tier_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_tier_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: the fused pair reads `(0, 0)`
+        // exactly on the empty map. Both endpoints are structurally
+        // `>= 1` on every non-empty map (by the non-emptiness floors of
+        // the two scalar-half endpoints).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_zero = map.extremal_tier_counts() == (0, 0);
+            assert_eq!(is_zero, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_peak_ge_trough_pointwise() {
+        // Peak / trough ordering invariant: `.0 >= .1` always. Lifted
+        // from the trait-uniform `peak_count() >= trough_count()` law
+        // on `AxisHistogram`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_tier_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_difference_recovers_tier_spread_pointwise() {
+        // Subtraction-form projection pin: `.0 - .1` recovers
+        // `tier_spread()`. Underflow-safe by the peak / trough
+        // ordering invariant.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_tier_counts();
+            assert_eq!(peak - trough, map.tier_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_sum_recovers_tier_peak_trough_sum_pointwise() {
+        // Addition-form projection pin: `.0 + .1` recovers
+        // `tier_peak_trough_sum()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_tier_counts();
+            assert_eq!(peak + trough, map.tier_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_product_recovers_tier_peak_trough_product_pointwise() {
+        // Multiplication-form projection pin: `.0 * .1` recovers
+        // `tier_peak_trough_product()`. Closes the arithmetic algebra
+        // `{+, -, *}` on the fused pair together with the two identities
+        // above.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_tier_counts();
+            assert_eq!(peak * trough, map.tier_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_upper_bounded_by_len_pointwise() {
+        // Line-count upper-bound pin: both endpoints are bounded above
+        // by `self.len()`. Lifted from
+        // `peak_tier_count() <= self.len()` and the peak / trough
+        // ordering invariant.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_tier_counts();
+            assert!(peak <= map.len());
+            assert!(trough <= map.len());
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_coincide_on_uniform_or_empty_pointwise() {
+        // Coincidence-boundary pin: on every uniform-count fold and on
+        // the empty map, the two halves of the fused pair coincide.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_uniform_count() {
+                let (peak, trough) = map.extremal_tier_counts();
+                assert_eq!(peak, trough);
+            }
+        }
+    }
+
+    #[test]
+    fn extremal_tier_counts_prog_fixture_is_two_one() {
+        // Ground-truth pin on the Prog fixture: 4 leaves attributed as
+        // a→Discovered, b→Default, c→Bare, d→Default gives tier counts
+        // {Bare:1, Default:2, Discovered:1, Custom:0}. Peak = 2, trough
+        // = 1. Fused pair reads (2, 1).
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().extremal_tier_counts(), (2, 1));
+    }
+
+    #[test]
+    fn extremal_tier_counts_nested_fixture_is_two_one() {
+        // Ground-truth pin on the Nested fixture: 3 leaves with
+        // Default=2, Discovered=1. Peak = 2, trough = 1. Fused pair
+        // reads (2, 1).
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().extremal_tier_counts(), (2, 1));
+    }
+
+    // ── ProvenanceMap::extremal_source_kind_counts — the source-kind-
+    //    altitude peer of ProvenanceMap::extremal_tier_counts on the
+    //    tier altitude. Climbs the same primitive-altitude fused pair
+    //    AxisHistogram::extremal_counts one seam down through
+    //    source_kind_histogram(), closing the fused-pair count scalar
+    //    on both closed coordinates of the atomic (tier, source) pair
+    //    each leaf's Provenance carries. ──
+
+    #[test]
+    fn extremal_source_kind_counts_matches_peak_trough_source_kind_count_pair_pointwise() {
+        // Defining projection-law pin: `extremal_source_kind_counts()
+        // == (peak_source_kind_count(), trough_source_kind_count())` —
+        // the fused pair reads the two shipped scalar-half endpoints of
+        // the same count surface at the source-kind altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_scalars = (map.peak_source_kind_count(), map.trough_source_kind_count());
+            assert_eq!(map.extremal_source_kind_counts(), via_scalars);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_matches_source_kind_histogram_extremal_counts_pointwise() {
+        // Routing pin: `extremal_source_kind_counts` routes through
+        // `source_kind_histogram().extremal_counts()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_hist = map.source_kind_histogram().extremal_counts();
+            assert_eq!(map.extremal_source_kind_counts(), via_hist);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_modal_projection_recovers_peak_source_kind_count_pointwise() {
+        // Modal-half round-trip pin: `.0` recovers
+        // `peak_source_kind_count()` pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.extremal_source_kind_counts().0,
+                map.peak_source_kind_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_antimodal_projection_recovers_trough_source_kind_count_pointwise()
+     {
+        // Antimodal-half round-trip pin: `.1` recovers
+        // `trough_source_kind_count()` pointwise.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.extremal_source_kind_counts().1,
+                map.trough_source_kind_count()
+            );
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_empty_map_is_zero_zero() {
+        // Empty-map literal pin.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.extremal_source_kind_counts(), (0, 0));
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_zero_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_zero = map.extremal_source_kind_counts() == (0, 0);
+            assert_eq!(is_zero, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_peak_ge_trough_pointwise() {
+        // Peak / trough ordering invariant.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_source_kind_counts();
+            assert!(peak >= trough);
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_difference_recovers_source_kind_spread_pointwise() {
+        // Subtraction-form projection pin: `.0 - .1` recovers
+        // `source_kind_spread()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_source_kind_counts();
+            assert_eq!(peak - trough, map.source_kind_spread());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_sum_recovers_source_kind_peak_trough_sum_pointwise() {
+        // Addition-form projection pin: `.0 + .1` recovers
+        // `source_kind_peak_trough_sum()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_source_kind_counts();
+            assert_eq!(peak + trough, map.source_kind_peak_trough_sum());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_product_recovers_source_kind_peak_trough_product_pointwise() {
+        // Multiplication-form projection pin: `.0 * .1` recovers
+        // `source_kind_peak_trough_product()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_source_kind_counts();
+            assert_eq!(peak * trough, map.source_kind_peak_trough_product());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_upper_bounded_by_len_pointwise() {
+        // Line-count upper-bound pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.extremal_source_kind_counts();
+            assert!(peak <= map.len());
+            assert!(trough <= map.len());
+        }
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_prog_fixture_is_four_four() {
+        // Ground-truth pin on the Prog fixture: 4 leaves, all with
+        // source-kind Defaults (the pure-progressive fold uses only
+        // computed-tier constructors, each pinning
+        // ConfigSource::Defaults). Singleton-support fold on the
+        // source-kind axis — trough coincides with peak at count 4.
+        // Fused pair reads (4, 4).
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().extremal_source_kind_counts(), (4, 4));
+    }
+
+    #[test]
+    fn extremal_source_kind_counts_mixed_fixture_is_two_one() {
+        // Ground-truth pin on the mixed fixture: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak =
+        // 2 (Defaults), trough = 1 (Env or File — the tied trough
+        // count reads 1 regardless of tie-break on the cell). Fused
+        // pair reads (2, 1).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().extremal_source_kind_counts(), (2, 1));
     }
 }
