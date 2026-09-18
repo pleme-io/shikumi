@@ -12598,6 +12598,76 @@ impl ProvenanceMap {
         self.source_kind_histogram().support_cardinality_class()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_cardinality_class`] one const-fn
+    /// seam further inland on the source-kind axis: the declaration-
+    /// order ordinal on the closed five-cell
+    /// (Empty × SingularSupport × StrictPartialCover × SingularGap ×
+    /// FullCover) [`crate::SupportCardinalityClass`] axis — `0` for
+    /// [`crate::SupportCardinalityClass::Empty`], `1` for
+    /// [`crate::SupportCardinalityClass::SingularSupport`], `2` for
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`], `3` for
+    /// [`crate::SupportCardinalityClass::SingularGap`], `4` for
+    /// [`crate::SupportCardinalityClass::FullCover`]. Delegates
+    /// through `self.source_kind_support_cardinality_class().ordinal()`,
+    /// forwarding through the paired typed-class upstream one seam out
+    /// and the `const`-callable
+    /// [`crate::SupportCardinalityClass::ordinal`] method on the closed
+    /// five-corner quinary axis.
+    ///
+    /// The **parent classifier's ordinal peer** of the two shipped
+    /// ordinal projections
+    /// [`Self::source_kind_support_boundary_distance_ordinal`] and
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] — both
+    /// of those project through three-bucket quotients of THIS
+    /// five-corner surface, so the ordinal projection here names the
+    /// unfused five-corner variant tag one seam further inland. Idiom-
+    /// peer of the shipped ordinal projections on every other closed-
+    /// classifier surface on this altitude
+    /// (e.g. [`Self::dominant_source_kind_ordinal`],
+    /// [`Self::source_kind_support_boundary_distance_ordinal`],
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`]).
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis — the
+    /// strict-partial-cover corner is *vacuously unreachable*.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so the
+    /// strict-partial-cover corner (ordinal `2`) is vacuous on this
+    /// altitude (the strict interval `[2, cardinality - 2] = [2, 1]`
+    /// is empty), and the ordinal reads only `0` (Empty), `1`
+    /// (SingularSupport), `3` (SingularGap), or `4` (FullCover); the
+    /// strict-partial-cover ordinal `2` is reserved for the tier axis
+    /// where the cardinality-`4` axis reaches it.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_cardinality_class_ordinal() ==
+    ///   source_kind_support_cardinality_class().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-class classifier.
+    /// - `source_kind_support_cardinality_class_ordinal() <= 4` — the
+    ///   ordinal fits in `{0, 1, 2, 3, 4}` since
+    ///   [`crate::SupportCardinalityClass::ALL`] carries five variants.
+    /// - `source_kind_support_cardinality_class_ordinal() != 2` on
+    ///   every fold — the strict-partial-cover corner is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis.
+    /// - `!source_kind_any_observed() ⇒
+    ///   source_kind_support_cardinality_class_ordinal() == 0` — the
+    ///   empty map lands on the [`crate::SupportCardinalityClass::Empty`]
+    ///   corner.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` — matches
+    /// [`Self::source_kind_support_cardinality_class`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportCardinalityClass::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn source_kind_support_cardinality_class_ordinal(&self) -> usize {
+        self.source_kind_support_cardinality_class().ordinal()
+    }
+
     /// Closed [`crate::SupportBoundaryDistance`] bucket variant naming
     /// how far from the support-cardinality boundary this fold's
     /// [`crate::ConfigSourceKind`] histogram lands on the source-kind
@@ -23959,6 +24029,80 @@ impl ProvenanceMap {
         self.tier_histogram().support_cardinality_class()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_cardinality_class`] one const-fn seam
+    /// further inland on the tier axis: the declaration-order ordinal
+    /// on the closed five-cell (Empty × SingularSupport ×
+    /// StrictPartialCover × SingularGap × FullCover)
+    /// [`crate::SupportCardinalityClass`] axis — `0` for
+    /// [`crate::SupportCardinalityClass::Empty`], `1` for
+    /// [`crate::SupportCardinalityClass::SingularSupport`], `2` for
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`], `3` for
+    /// [`crate::SupportCardinalityClass::SingularGap`], `4` for
+    /// [`crate::SupportCardinalityClass::FullCover`]. Delegates
+    /// through `self.tiers_support_cardinality_class().ordinal()`,
+    /// forwarding through the paired typed-class upstream one seam out
+    /// and the `const`-callable
+    /// [`crate::SupportCardinalityClass::ordinal`] method on the closed
+    /// five-corner quinary axis.
+    ///
+    /// The **parent classifier's ordinal peer** of the two shipped
+    /// ordinal projections
+    /// [`Self::tiers_support_boundary_distance_ordinal`] and
+    /// [`Self::tiers_support_magnitude_direction_ordinal`] — both of
+    /// those project through three-bucket quotients of THIS five-corner
+    /// surface, so the ordinal projection here names the unfused
+    /// five-corner variant tag one seam further inland. On the
+    /// cardinality-`4` tier axis every ordinal in `{0, 1, 2, 3, 4}` is
+    /// reachable, strict advance over the cardinality-`3` source-kind
+    /// axis where the strict-partial-cover corner (ordinal `2`) is
+    /// vacuously unreachable. Idiom-peer of the shipped ordinal
+    /// projections on every other closed-classifier surface on this
+    /// altitude (e.g. [`Self::dominant_tier_ordinal`],
+    /// [`Self::tiers_support_boundary_distance_ordinal`],
+    /// [`Self::tiers_support_magnitude_direction_ordinal`]).
+    ///
+    /// **Cardinality-`4` reachability on the tier axis — every ordinal
+    /// is REACHABLE.** [`ConfigTierKind`] carries four cells, so the
+    /// classifier reads witnesses on **all five** corners: ordinal `0`
+    /// (Empty) on the empty map; ordinal `1` (SingularSupport) on
+    /// every singleton-support fold; ordinal `2` (StrictPartialCover)
+    /// on every two-tier partial-cover fold (the singleton witness of
+    /// the strict interval `[2, cardinality - 2] = [2, 2]`); ordinal
+    /// `3` (SingularGap) on every three-tier partial-cover fold; and
+    /// ordinal `4` (FullCover) on every uniform four-tier cover.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_cardinality_class_ordinal() ==
+    ///   tiers_support_cardinality_class().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same typed-
+    ///   class classifier.
+    /// - `tiers_support_cardinality_class_ordinal() <= 4` — the ordinal
+    ///   fits in `{0, 1, 2, 3, 4}` since
+    ///   [`crate::SupportCardinalityClass::ALL`] carries five variants.
+    /// - `!tiers_any_observed() ⇒
+    ///   tiers_support_cardinality_class_ordinal() == 0` — the empty
+    ///   map lands on the [`crate::SupportCardinalityClass::Empty`]
+    ///   corner.
+    /// - `tiers_strict_partial_cover() ⇒
+    ///   tiers_support_cardinality_class_ordinal() == 2` — the strict-
+    ///   partial-cover corner fires on every two-tier partial-cover
+    ///   fold at the tier altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` — matches
+    /// [`Self::tiers_support_cardinality_class`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportCardinalityClass::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn tiers_support_cardinality_class_ordinal(&self) -> usize {
+        self.tiers_support_cardinality_class().ordinal()
+    }
+
     /// Closed [`crate::SupportBoundaryDistance`] bucket variant naming
     /// how far from the support-cardinality boundary this fold's
     /// [`ConfigTierKind`] histogram lands on the tier altitude — the
@@ -33241,6 +33385,50 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.tiers_support_cardinality_class()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_cardinality_class`] one const-fn seam
+    /// further inland on the tier axis at the container altitude — the
+    /// declaration-order ordinal on the closed five-cell
+    /// (Empty × SingularSupport × StrictPartialCover × SingularGap ×
+    /// FullCover) [`crate::SupportCardinalityClass`] axis, delegating
+    /// one seam down into
+    /// `self.provenance.tiers_support_cardinality_class_ordinal()`.
+    ///
+    /// The **parent classifier's ordinal peer** of the two shipped
+    /// ordinal projections
+    /// [`Self::tiers_support_boundary_distance_ordinal`] and
+    /// [`Self::tiers_support_magnitude_direction_ordinal`] — both of
+    /// those project through three-bucket quotients of THIS five-corner
+    /// surface, so this peer names the unfused five-corner variant tag
+    /// one seam further inland at the container altitude. Sibling of
+    /// [`Self::source_kind_support_cardinality_class_ordinal`] on the
+    /// source-kind axis at the same altitude — the two axes now name
+    /// the ordinal-projected support-cardinality class on both closed
+    /// coordinates of the atomic `(tier, source)` pair the fold
+    /// carries. On the cardinality-`4` tier axis every ordinal in
+    /// `{0, 1, 2, 3, 4}` is reachable (the strict-partial-cover corner
+    /// is witnessed by the two-tier partial-cover fold).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_cardinality_class_ordinal() ==
+    ///   tiers_support_cardinality_class().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same typed-
+    ///   class classifier at the container altitude.
+    /// - `tiers_support_cardinality_class_ordinal() ==
+    ///   provenance().tiers_support_cardinality_class_ordinal()` — the
+    ///   container-altitude routing identity into the primitive-
+    ///   altitude peer.
+    /// - `tiers_support_cardinality_class_ordinal() <= 4` — the ordinal
+    ///   fits in `{0, 1, 2, 3, 4}` since
+    ///   [`crate::SupportCardinalityClass::ALL`] carries five variants.
+    /// - `self.is_empty() ⇒ tiers_support_cardinality_class_ordinal()
+    ///   == 0` — the empty resolution lands on the Empty corner.
+    #[must_use]
+    pub fn tiers_support_cardinality_class_ordinal(&self) -> usize {
+        self.provenance.tiers_support_cardinality_class_ordinal()
+    }
+
     /// The **closed support-cardinality corner** for this resolved
     /// fold's per-leaf [`crate::ConfigSourceKind`] histogram at the
     /// container altitude — the source-kind-altitude peer of
@@ -33324,6 +33512,61 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn source_kind_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
         self.provenance.source_kind_support_cardinality_class()
+    }
+
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_cardinality_class`] one const-fn
+    /// seam further inland on the source-kind axis at the container
+    /// altitude — the declaration-order ordinal on the closed five-cell
+    /// (Empty × SingularSupport × StrictPartialCover × SingularGap ×
+    /// FullCover) [`crate::SupportCardinalityClass`] axis, delegating
+    /// one seam down into
+    /// `self.provenance.source_kind_support_cardinality_class_ordinal()`.
+    ///
+    /// The **parent classifier's ordinal peer** of the two shipped
+    /// ordinal projections
+    /// [`Self::source_kind_support_boundary_distance_ordinal`] and
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] —
+    /// both of those project through three-bucket quotients of THIS
+    /// five-corner surface, so this peer names the unfused five-corner
+    /// variant tag one seam further inland at the container altitude.
+    /// Sibling of [`Self::tiers_support_cardinality_class_ordinal`] on
+    /// the tier axis at the same altitude — the two axes now name the
+    /// ordinal-projected support-cardinality class on both closed
+    /// coordinates of the atomic `(tier, source)` pair the fold
+    /// carries.
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis — the
+    /// strict-partial-cover corner is *vacuously unreachable*.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so the
+    /// strict-partial-cover corner (ordinal `2`) is vacuous on this
+    /// altitude (the strict interval `[2, cardinality - 2] = [2, 1]`
+    /// is empty), and the ordinal reads only `0` (Empty), `1`
+    /// (SingularSupport), `3` (SingularGap), or `4` (FullCover).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_cardinality_class_ordinal() ==
+    ///   source_kind_support_cardinality_class().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-class classifier at the container altitude.
+    /// - `source_kind_support_cardinality_class_ordinal() ==
+    ///   provenance().source_kind_support_cardinality_class_ordinal()`
+    ///   — the container-altitude routing identity into the
+    ///   primitive-altitude peer.
+    /// - `source_kind_support_cardinality_class_ordinal() <= 4` — the
+    ///   ordinal fits in `{0, 1, 2, 3, 4}` since
+    ///   [`crate::SupportCardinalityClass::ALL`] carries five variants.
+    /// - `source_kind_support_cardinality_class_ordinal() != 2` on
+    ///   every fold — the strict-partial-cover corner is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis.
+    /// - `self.is_empty() ⇒
+    ///   source_kind_support_cardinality_class_ordinal() == 0` — the
+    ///   empty resolution lands on the Empty corner.
+    #[must_use]
+    pub fn source_kind_support_cardinality_class_ordinal(&self) -> usize {
+        self.provenance
+            .source_kind_support_cardinality_class_ordinal()
     }
 
     /// Closed [`crate::SupportBoundaryDistance`] bucket variant naming
@@ -93295,6 +93538,118 @@ mod progressive_tests {
         );
     }
 
+    // ── ProvenanceMap::tiers_support_cardinality_class_ordinal —
+    //    ordinal-axis cell-projection of the parent five-corner
+    //    support-cardinality classifier on the tier altitude, threading
+    //    SupportCardinalityClass::ordinal through the typed-class
+    //    upstream on the tier axis. Every ordinal in {0, 1, 2, 3, 4} is
+    //    reachable on the cardinality-4 tier axis. Parent classifier's
+    //    ordinal peer of the two shipped three-bucket-quotient ordinal
+    //    peers (`_support_boundary_distance_ordinal`,
+    //    `_support_magnitude_direction_ordinal`). ──
+
+    #[test]
+    fn tiers_support_cardinality_class_ordinal_matches_ordinal_projection_of_class_pointwise() {
+        // Cross-seam pin: `tiers_support_cardinality_class_ordinal()`
+        // is the ordinal-axis cell-projection of the typed-class peer
+        // `tiers_support_cardinality_class()` one seam out, so the two
+        // seams must stay pointwise equivalent under every fixture via
+        // `SupportCardinalityClass::ordinal`.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            strict,
+        ] {
+            let via_class = map.tiers_support_cardinality_class().ordinal();
+            assert_eq!(map.tiers_support_cardinality_class_ordinal(), via_class);
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_ordinal_fits_quinary_axis_pointwise() {
+        // Quinary-axis bound pin: the ordinal projection reads at most
+        // `4` on every fixture — the closed
+        // `SupportCardinalityClass::ALL` axis carries five variants.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.tiers_support_cardinality_class_ordinal() <= 4);
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying class is Empty.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.tiers_support_cardinality_class_ordinal(), 0);
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_ordinal_two_tier_partial_cover_is_two() {
+        // Cardinality-4 strict-partial-cover reachability pin: the
+        // two-tier partial-cover fold on the cardinality-4 tier axis
+        // fires the StrictPartialCover corner (ordinal `2`) — the
+        // singleton witness of the strict interval `[2, 2]`. Strict
+        // advance over the cardinality-3 source-kind axis where the
+        // strict-partial-cover corner is vacuously unreachable.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(strict.tiers_support_cardinality_class_ordinal(), 2);
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_ordinal_reachable_on_every_ordinal_over_witness_set() {
+        // Reachability-complete pin at the tier altitude — the closed
+        // five-cell ordinal axis carries at least one witness per
+        // ordinal in {0, 1, 2, 3, 4} on the cardinality-4
+        // ConfigTierKind axis. Empty (0) via the empty map;
+        // SingularSupport (1) via a singleton-support fold;
+        // StrictPartialCover (2) via a two-tier partial-cover fold;
+        // SingularGap (3) via a three-tier partial-cover fold;
+        // FullCover (4) via a uniform four-tier cover.
+        let empty = ProvenanceMap::default();
+        let singular: ProvenanceMap = [("b", ConfigTierKind::Bare)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        let two_tier: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        let three_tier: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("i", ConfigTierKind::Discovered),
+            ("d", ConfigTierKind::Default),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        let full: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("i", ConfigTierKind::Discovered),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(empty.tiers_support_cardinality_class_ordinal(), 0);
+        assert_eq!(singular.tiers_support_cardinality_class_ordinal(), 1);
+        assert_eq!(two_tier.tiers_support_cardinality_class_ordinal(), 2);
+        assert_eq!(three_tier.tiers_support_cardinality_class_ordinal(), 3);
+        assert_eq!(full.tiers_support_cardinality_class_ordinal(), 4);
+    }
+
     // ── ProvenanceMap::tiers_support_boundary_distance_ordinal —
     //    ordinal-axis cell-projection of the distance-from-boundary
     //    classifier on the tier altitude, threading
@@ -113863,6 +114218,124 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::source_kind_support_cardinality_class_ordinal
+    //    — ordinal-axis cell-projection of the parent five-corner
+    //    support-cardinality classifier on the source-kind axis,
+    //    threading SupportCardinalityClass::ordinal through the
+    //    typed-class upstream. On the cardinality-3 source-kind axis
+    //    the StrictPartialCover corner (ordinal `2`) is vacuously
+    //    unreachable, so the ordinal reads only `0`, `1`, `3`, or
+    //    `4`. Parent classifier's ordinal peer of the two shipped
+    //    three-bucket-quotient ordinal peers on the same altitude. ──
+
+    #[test]
+    fn source_kind_support_cardinality_class_ordinal_matches_ordinal_projection_of_class_pointwise()
+    {
+        // Cross-seam pin: the ordinal projection agrees pointwise with
+        // `source_kind_support_cardinality_class().ordinal()` on every
+        // fixture — the two seams project through the same closed
+        // five-cell axis.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let via_class = map.source_kind_support_cardinality_class().ordinal();
+            assert_eq!(
+                map.source_kind_support_cardinality_class_ordinal(),
+                via_class,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_cardinality_class_ordinal_never_reads_strict_partial_cover_on_source_kind_axis()
+     {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis — the StrictPartialCover corner (ordinal `2`) is itself
+        // vacuous, so the ordinal reads only `0` (Empty), `1`
+        // (SingularSupport), `3` (SingularGap), or `4` (FullCover) on
+        // every fold.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let o = map.source_kind_support_cardinality_class_ordinal();
+            assert_ne!(
+                o, 2,
+                "cardinality-3 source-kind axis must never read StrictPartialCover ordinal (2), got {o}",
+            );
+            assert!(
+                o == 0 || o == 1 || o == 3 || o == 4,
+                "cardinality-3 source-kind axis must read only Empty(0), SingularSupport(1), SingularGap(3), or FullCover(4), got {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_cardinality_class_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying class is Empty.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_support_cardinality_class_ordinal(), 0);
+    }
+
+    #[test]
+    fn source_kind_support_cardinality_class_ordinal_mixed_full_cover_is_four() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis (all three source-kinds observed —
+        // Defaults, Env, File) projects to ordinal `4`.
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.provenance().source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
+        );
+        assert_eq!(
+            m.provenance()
+                .source_kind_support_cardinality_class_ordinal(),
+            4,
+        );
+    }
+
+    #[test]
+    fn source_kind_support_cardinality_class_ordinal_pure_prog_singular_support_is_one() {
+        // Pure-progressive Prog collapses to SingularSupport on the
+        // source-kind axis (every leaf's source is Defaults, so
+        // distinct_cells = 1). The ordinal reads `1`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+        assert_eq!(
+            r.provenance()
+                .source_kind_support_cardinality_class_ordinal(),
+            1,
+        );
+    }
+
     // ── ProvenanceMap::source_kind_support_boundary_distance_ordinal —
     //    ordinal-axis cell-projection of the distance-from-boundary
     //    classifier on the source-kind axis, threading
@@ -132731,6 +133204,134 @@ mod progressive_tests {
             r.source_kind_support_boundary_distance(),
             crate::SupportBoundaryDistance::Boundary,
         );
+    }
+
+    // ── ProgressiveResolution::tiers_support_cardinality_class_ordinal
+    //    / source_kind_support_cardinality_class_ordinal — container-
+    //    altitude ordinal-axis cell-projections of the parent five-
+    //    corner support-cardinality classifier at both closed
+    //    coordinates. Parent classifier's ordinal peers of the two
+    //    shipped three-bucket-quotient ordinal peers
+    //    (`_support_boundary_distance_ordinal`,
+    //    `_support_magnitude_direction_ordinal`). ──
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin: the ordinal projection
+        // delegates one seam down into the primitive-altitude peer.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class_ordinal(),
+            p.provenance().tiers_support_cardinality_class_ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class_ordinal(),
+            n.provenance().tiers_support_cardinality_class_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class_ordinal(),
+            empty.provenance().tiers_support_cardinality_class_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_ordinal_matches_class_ordinal_pointwise() {
+        // Cross-seam pin: the ordinal projection agrees with the
+        // typed-class peer's `.ordinal()` at the container altitude.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class_ordinal(),
+            p.tiers_support_cardinality_class().ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class_ordinal(),
+            n.tiers_support_cardinality_class().ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class_ordinal(),
+            empty.tiers_support_cardinality_class().ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_ordinal_empty_resolution_is_zero() {
+        // Empty-resolution ceiling pin: the empty map lands on the
+        // Empty corner (ordinal `0`).
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tiers_support_cardinality_class_ordinal(), 0);
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_ordinal_nested_fixture_is_two() {
+        // Cardinality-4 strict-partial-cover reachability pin at the
+        // container altitude: the Nested fixture is a two-tier
+        // partial-cover fold, firing the StrictPartialCover corner
+        // (ordinal `2`). Strict advance over the cardinality-3
+        // source-kind axis where the corner is vacuously unreachable.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+        assert_eq!(r.tiers_support_cardinality_class_ordinal(), 2);
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin on the source-kind axis.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_cardinality_class_ordinal(),
+            p.provenance()
+                .source_kind_support_cardinality_class_ordinal(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_cardinality_class_ordinal(),
+            m.provenance()
+                .source_kind_support_cardinality_class_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_cardinality_class_ordinal(),
+            empty
+                .provenance()
+                .source_kind_support_cardinality_class_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_ordinal_never_reads_strict_partial_cover() {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis at the container altitude — the StrictPartialCover
+        // corner (ordinal `2`) is unreachable on every fold; the
+        // ordinal reads only `0`, `1`, `3`, or `4`.
+        for o in [
+            Prog::resolve_progressive().source_kind_support_cardinality_class_ordinal(),
+            Nested::resolve_progressive().source_kind_support_cardinality_class_ordinal(),
+            source_kind_histogram_mixed_fixture().source_kind_support_cardinality_class_ordinal(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_cardinality_class_ordinal(),
+        ] {
+            assert_ne!(o, 2);
+            assert!(o == 0 || o == 1 || o == 3 || o == 4);
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_ordinal_mixed_fixture_is_four() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis projects to ordinal `4` at the container
+        // altitude.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_support_cardinality_class_ordinal(), 4);
     }
 
     // ── ProgressiveResolution::tiers_support_boundary_distance_ordinal
