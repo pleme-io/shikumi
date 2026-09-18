@@ -35764,6 +35764,82 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::glyph).collect()
     }
 
+    /// Per-line canonical operator-facing label projection of
+    /// [`Self::lines`] over the diff-cell name axis — a length-
+    /// `self.lines.len()` `Vec<&'static str>` whose `i`-th entry is
+    /// `self.lines[i].as_str()` (`"removed"` for [`DiffLine::Removed`],
+    /// `"added"` for [`DiffLine::Added`], `"context"` for
+    /// [`DiffLine::Context`]).
+    ///
+    /// Container-altitude lift of [`DiffLine::as_str`] one seam up onto
+    /// the [`ConfigDiff`] surface, closing the per-line container-
+    /// altitude projection quartet — [`Self::line_kinds`] on the typed-
+    /// variant axis, [`Self::line_ordinals`] on the ordinal axis,
+    /// [`Self::line_glyphs`] on the glyph axis, and this one on the
+    /// label axis — on the same four axes the tag-side [`DiffLine`]
+    /// primitive already carries (`kind` / `ordinal` / `glyph` /
+    /// `as_str`). Consumers that need the per-line canonical label
+    /// without the payload — a per-line structured-log emitter tagging
+    /// each line with its operator-facing class name, a per-tier
+    /// attestation manifest recording the label sequence between two
+    /// config tiers as a `Vec<&'static str>`, a Markdown-fenced diff
+    /// renderer emitting the label column separately from the text
+    /// column — read this projection once and dispatch on the label
+    /// directly, replacing the pre-lift
+    /// `self.lines.iter().map(DiffLine::as_str).collect::<Vec<_>>()`
+    /// two-hop projection at every such consumer with the one-hop
+    /// [`Self::line_labels`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the sibling scalar projections
+    /// [`Self::line_kinds`] (per-line typed variant via
+    /// [`DiffLine::kind`]), [`Self::line_ordinals`] (per-line ordinal
+    /// via [`DiffLine::ordinal`]), and [`Self::line_glyphs`] (per-line
+    /// unified-diff prefix via [`DiffLine::glyph`]) one axis over: same
+    /// length, same `O(n)` cost, same container-altitude discipline.
+    /// The kind-side and label-side projections agree pointwise under
+    /// the primitive-altitude accessor [`DiffLineKind::as_str`], the
+    /// reason the two container-altitude seams sit on the same enum
+    /// axis. Empty diff yields an empty vec; the projection is total on
+    /// [`Self::lines`].
+    ///
+    /// # Invariants
+    ///
+    /// - `line_labels().len() == self.lines.len()` — the row-preserving
+    ///   projection stays parallel to the line list pointwise.
+    /// - `line_labels()[i] == self.lines[i].as_str()` for every `i <
+    ///   self.lines.len()` — pointwise agreement with the tag-side
+    ///   per-line label accessor at the payload-bearing altitude.
+    /// - `line_labels().is_empty() == self.lines.is_empty()` — the
+    ///   projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - `line_labels()[i] == self.line_kinds()[i].as_str()` for every
+    ///   `i < self.lines.len()` — container-altitude cross-projection
+    ///   between this label projection and the typed-variant sibling
+    ///   via the primitive-altitude [`DiffLineKind::as_str`] accessor,
+    ///   the reason the two container-altitude seams sit on the same
+    ///   enum axis.
+    /// - Every entry lies in the fixed three-string set
+    ///   `{"removed", "added", "context"}` — the closed image of
+    ///   [`DiffLine::as_str`] over the diff-cell kind axis, so a future
+    ///   edit that emitted a stray label diverges at the closed-image
+    ///   pin.
+    /// - The [`Self::kind_histogram`] tally reconciles pointwise —
+    ///   `line_labels().iter().filter(|s| **s == chosen.as_str()).count()
+    ///   == kind_histogram().count(chosen)` for every `chosen:
+    ///   DiffLineKind` — the row-preserving projection and the
+    ///   fixed-cardinality collapse read the same per-line kinds
+    ///   through the closed [`DiffLineKind::as_str`] image.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one `&'static str` pointer per line, no per-line
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_labels(&self) -> Vec<&'static str> {
+        self.lines.iter().map(DiffLine::as_str).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -48140,6 +48216,194 @@ mod tests {
                 via_histogram,
                 "line_glyphs count of {:?} ({via_glyphs}) must equal kind_histogram count of {chosen:?} ({via_histogram})",
                 chosen.glyph(),
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_labels — container-altitude lift of
+    //    DiffLine::as_str one seam up onto the payload-bearing
+    //    ConfigDiff surface, row-preserving label sibling of
+    //    ConfigDiff::line_kinds / line_ordinals / line_glyphs on
+    //    the diff-cell axis ─────────────────────────────────────
+
+    #[test]
+    fn line_labels_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_labels().len()` equals
+        // `self.lines.len()` on every fixture. The projection is
+        // total on the line list at length `self.lines.len()` (never
+        // the fixed-cardinality collapse of `kind_histogram` /
+        // `present_kinds`), so a future edit that drops or duplicates
+        // a line at the seam fails here on the first mismatched
+        // length — idiom-peer of `line_glyphs_len_agrees_with_lines_len`
+        // and `line_kinds_len_agrees_with_lines_len` one axis over.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_labels().len(),
+                diff.lines.len(),
+                "line_labels().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_labels_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // label projection. The seam is total on the line list, so
+        // the empty line list projects to the empty vec — the
+        // identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_glyphs_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_labels().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_labels_agree_with_diff_line_as_str_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude projection equals the tag-side per-line accessor
+        // at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_labels` here, `DiffLine::as_str`)
+        // declare the (variant → label) mapping independently on the
+        // same closed three-cell axis. A future edit shifting one
+        // match without the other fails here on the first drifted
+        // line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_labels();
+        assert_eq!(labels.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                labels[i],
+                line.as_str(),
+                "line_labels()[{i}] must equal self.lines[{i}].as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_labels_agree_with_line_kinds_under_kind_as_str() {
+        // Container-altitude cross-projection pin: the label seam
+        // and the typed-variant seam agree pointwise under the
+        // primitive-altitude `DiffLineKind::as_str` accessor —
+        // `line_labels()[i] == line_kinds()[i].as_str()` for every
+        // `i`. The reason the two container-altitude projections sit
+        // on the same enum axis: the label is the closed image of
+        // the typed variant under `DiffLineKind::as_str`, so a
+        // future edit that shifted either seam without the other
+        // diverges here on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_labels();
+        let kinds = diff.line_kinds();
+        assert_eq!(labels.len(), kinds.len());
+        for i in 0..labels.len() {
+            assert_eq!(
+                labels[i],
+                kinds[i].as_str(),
+                "line_labels()[{i}] must equal line_kinds()[{i}].as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_labels_are_in_closed_three_string_image() {
+        // Closed-image pin: every entry in the label projection lies
+        // in the fixed three-string set `{"removed", "added",
+        // "context"}` — the closed image of `DiffLine::as_str` over
+        // the diff-cell kind axis. A future edit that emitted a
+        // stray label (say, `"header"` for a hypothetical `Header`
+        // variant landing on the diff-cell axis without a matching
+        // image update) diverges here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, label) in diff.line_labels().into_iter().enumerate() {
+            assert!(
+                label == "removed" || label == "added" || label == "context",
+                "line_labels()[{i}] = {label:?} must lie in the closed image {{\"removed\", \"added\", \"context\"}}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_labels_reconcile_with_kind_histogram_per_cell() {
+        // Fixed-cardinality reconciliation pin: for every closed-
+        // axis cell, the count of that cell's label in the row-
+        // preserving `line_labels()` projection equals the
+        // histogram's count for that cell — the row-preserving
+        // projection and the fixed-cardinality collapse read the
+        // same per-line kinds through the closed
+        // `DiffLineKind::as_str` image. A future edit that shifted
+        // one seam without the other (say, a histogram overload
+        // that started skipping a cell, or a `line_labels`
+        // implementation that peeked at the payload) fails here on
+        // the first drifted cell.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_labels();
+        let histogram = diff.kind_histogram();
+        for chosen in DiffLineKind::ALL.iter().copied() {
+            let via_labels = labels.iter().filter(|s| **s == chosen.as_str()).count();
+            let via_histogram = histogram.count(chosen);
+            assert_eq!(
+                via_labels,
+                via_histogram,
+                "line_labels count of {:?} ({via_labels}) must equal kind_histogram count of {chosen:?} ({via_histogram})",
+                chosen.as_str(),
             );
         }
     }
