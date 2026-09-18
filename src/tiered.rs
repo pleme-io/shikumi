@@ -35621,6 +35621,79 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::ordinal).collect()
     }
 
+    /// Per-line typed-kind projection of [`Self::lines`] over the
+    /// [`DiffLineKind`] axis — a length-`self.lines.len()`
+    /// `Vec<DiffLineKind>` whose `i`-th entry is `self.lines[i].kind()`.
+    ///
+    /// Container-altitude lift of [`DiffLine::kind`] one seam up onto
+    /// the [`ConfigDiff`] surface, sitting between the tag-side scalar
+    /// projections (per-line glyph via [`DiffLine::glyph`], consumed
+    /// inline by [`Self::render_unified`]) and the ordinal-side scalar
+    /// projection ([`Self::line_ordinals`] → `Vec<usize>`): this
+    /// method is the row-preserving typed-variant counterpart, keeping
+    /// the payload-independent projection at length `self.lines.len()`
+    /// (never the fixed-cardinality collapse of [`Self::kind_histogram`]
+    /// / [`Self::present_kinds`] / [`Self::absent_kinds`], which sum
+    /// the per-line kinds into a support-set or histogram).
+    ///
+    /// Consumers that need the per-line typed diff-cell kind without
+    /// the payload — a per-line structured-log emitter tagging each
+    /// line with its typed variant discriminant, a per-line class
+    /// renderer routing each row through a `HashMap<DiffLineKind, T>`
+    /// palette, a `ConfigDiff` visitor threading a typed accumulator
+    /// through the per-line kind axis without pattern-matching against
+    /// the payload-carrying [`DiffLine`] enum at every callsite —
+    /// read this projection once and dispatch on the typed variant
+    /// directly. Replaces the pre-lift `self.lines.iter().map(DiffLine::kind).
+    /// collect::<Vec<_>>()` two-hop projection at every such consumer
+    /// with the one-hop [`Self::line_kinds`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the sibling scalar projections
+    /// [`Self::line_ordinals`] (per-line ordinal via [`DiffLine::ordinal`])
+    /// one axis over: same length, same `O(n)` cost, same container-
+    /// altitude discipline the primitive-altitude projection triple
+    /// (`kind`, `glyph`, `as_str`, `ordinal`) on [`DiffLine`] already
+    /// carries. Empty diff yields an empty vec; the projection is total
+    /// on [`Self::lines`].
+    ///
+    /// # Invariants
+    ///
+    /// - `line_kinds().len() == self.lines.len()` — the row-preserving
+    ///   projection stays parallel to the line list pointwise.
+    /// - `line_kinds()[i] == self.lines[i].kind()` for every `i <
+    ///   self.lines.len()` — pointwise agreement with the tag-side
+    ///   per-line kind accessor at the payload-bearing altitude.
+    /// - `line_kinds().is_empty() == self.lines.is_empty()` — the
+    ///   projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - `line_kinds()[i] == DiffLineKind::from_ordinal(self.line_ordinals()[i])
+    ///   .expect("line_ordinals in DiffLineKind::from_ordinal domain")`
+    ///   for every `i < self.lines.len()` — container-altitude
+    ///   round-trip law between this typed projection and the ordinal
+    ///   projection sibling via the primitive-altitude inverse
+    ///   [`DiffLineKind::from_ordinal`], the reason the two container-
+    ///   altitude seams sit on the same enum axis.
+    /// - `crate::axis_ordinal(line_kinds()[i]) == self.line_ordinals()[i]`
+    ///   for every `i < self.lines.len()` — the two container-altitude
+    ///   projections agree pointwise under the closed-axis ordinal map,
+    ///   the forward direction of the round-trip law above.
+    /// - The [`Self::kind_histogram`] tally reconciles pointwise —
+    ///   `line_kinds().iter().filter(|k| **k == chosen).count() ==
+    ///   kind_histogram().count(chosen)` for every `chosen: DiffLineKind`
+    ///   — the row-preserving projection and the fixed-cardinality
+    ///   collapse read the same per-line kinds.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one `DiffLineKind` (a data-free discriminant, `size_of::<
+    /// DiffLineKind>() == 1`) per line, no per-line allocation beyond
+    /// the output vec's own storage.
+    #[must_use]
+    pub fn line_kinds(&self) -> Vec<DiffLineKind> {
+        self.lines.iter().map(DiffLine::kind).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -47624,6 +47697,194 @@ mod tests {
                 DiffLineKind::from_ordinal(ordinals[i]),
                 Some(line.kind()),
                 "DiffLineKind::from_ordinal(line_ordinals()[{i}]) must recover self.lines[{i}].kind()",
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_kinds — container-altitude lift of
+    //    DiffLine::kind one seam up onto the payload-bearing
+    //    ConfigDiff surface, row-preserving typed-variant sibling
+    //    of ConfigDiff::line_ordinals on the diff-cell axis ─────
+
+    #[test]
+    fn line_kinds_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_kinds().len()` equals
+        // `self.lines.len()` on every fixture. The projection is
+        // total on the line list at length `self.lines.len()` (never
+        // the fixed-cardinality collapse of `kind_histogram` /
+        // `present_kinds`), so a future edit that drops or duplicates
+        // a line at the seam fails here on the first mismatched
+        // length — idiom-peer of
+        // `line_ordinals_len_agrees_with_lines_len` one axis over.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_kinds().len(),
+                diff.lines.len(),
+                "line_kinds().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_kinds_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // typed projection. The seam is total on the line list, so
+        // the empty line list projects to the empty vec — the
+        // identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_ordinals_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_kinds().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_kinds_agree_with_diff_line_kind_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude projection equals the tag-side per-line accessor
+        // at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_kinds` here, `DiffLine::kind`) declare
+        // the (variant → kind) mapping independently on the same
+        // closed three-cell axis. A future edit shifting one match
+        // without the other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        assert_eq!(kinds.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                kinds[i],
+                line.kind(),
+                "line_kinds()[{i}] must equal self.lines[{i}].kind()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_kinds_agree_with_line_ordinals_under_axis_ordinal() {
+        // Container-altitude cross-projection pin: the two container-
+        // altitude projections agree pointwise under the closed-axis
+        // ordinal map — `crate::axis_ordinal(line_kinds()[i]) ==
+        // self.line_ordinals()[i]` for every `i`. The forward
+        // direction of the container-altitude round-trip law between
+        // this typed projection and the ordinal projection sibling;
+        // a future edit that drifts either seam without the other
+        // fails here on the first mismatched index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        let ordinals = diff.line_ordinals();
+        assert_eq!(kinds.len(), ordinals.len());
+        for i in 0..kinds.len() {
+            assert_eq!(
+                crate::axis_ordinal(kinds[i]),
+                ordinals[i],
+                "crate::axis_ordinal(line_kinds()[{i}]) must equal line_ordinals()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_kinds_round_trip_via_diff_line_kind_from_ordinal() {
+        // Container-altitude round-trip law: the primitive-altitude
+        // inverse `DiffLineKind::from_ordinal` recovers the typed
+        // variant of the corresponding entry in the typed projection
+        // when applied to the ordinal projection at the same index —
+        // `DiffLineKind::from_ordinal(diff.line_ordinals()[i]) ==
+        // Some(diff.line_kinds()[i])` for every `i`. The reverse
+        // direction of the container-altitude cross-projection pin
+        // above via the primitive-altitude inverse; both container-
+        // altitude seams sit on the same enum axis, and the round-
+        // trip law names why the two coexist.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        let ordinals = diff.line_ordinals();
+        assert_eq!(kinds.len(), ordinals.len());
+        for i in 0..kinds.len() {
+            assert_eq!(
+                DiffLineKind::from_ordinal(ordinals[i]),
+                Some(kinds[i]),
+                "DiffLineKind::from_ordinal(line_ordinals()[{i}]) must equal Some(line_kinds()[{i}])",
+            );
+        }
+    }
+
+    #[test]
+    fn line_kinds_reconcile_with_kind_histogram_per_cell() {
+        // Fixed-cardinality reconciliation pin: for every closed-
+        // axis cell, the count of that cell in the row-preserving
+        // `line_kinds()` projection equals the histogram's count
+        // for that cell — the row-preserving projection and the
+        // fixed-cardinality collapse read the same per-line kinds.
+        // A future edit that shifts one seam without the other
+        // (say, a histogram overload that started skipping a
+        // cell, or a `line_kinds` implementation that peeked at
+        // the payload) fails here on the first drifted cell.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        let histogram = diff.kind_histogram();
+        for chosen in DiffLineKind::ALL.iter().copied() {
+            let via_kinds = kinds.iter().filter(|k| **k == chosen).count();
+            let via_histogram = histogram.count(chosen);
+            assert_eq!(
+                via_kinds, via_histogram,
+                "line_kinds count of {chosen:?} ({via_kinds}) must equal kind_histogram count ({via_histogram})",
             );
         }
     }
