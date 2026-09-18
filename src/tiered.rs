@@ -32538,6 +32538,167 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_modality_degree_sum(&self) -> usize {
         self.provenance.source_kind_modality_degree_sum()
     }
+
+    /// The **tier modality-amplitude scalar** on this resolved fold's
+    /// per-leaf [`ConfigTierKind`] histogram at the container altitude —
+    /// the absolute-difference-projection scalar
+    /// `peak_tier_multiplicity().abs_diff(trough_tier_multiplicity())`
+    /// reading the asymmetry between the peak-side and trough-side
+    /// multiplicities of the tier histogram off the fold in one seam.
+    /// Returns `0` exactly on the empty resolution, on every singleton-
+    /// support fold, on every uniform-count fold, and on every fold whose
+    /// peak and trough tiers are each uniquely held (`peak_mult ==
+    /// trough_mult == 1`); otherwise returns
+    /// `self.provenance().tier_modality_amplitude()` pointwise.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::tier_modality_amplitude`] on the *output* side of
+    /// the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.tier_modality_amplitude()`. The
+    /// **absolute-difference-scalar projection peer** of the shipped
+    /// fused-pair [`Self::tier_modality_degree`] on the same container:
+    /// the fused pair one shape over carries the joint `(peak_mult,
+    /// trough_mult)` scalar; this method carries its abs-diff projection
+    /// `.0.abs_diff(.1)` as one scalar read — the *modality-amplitude*
+    /// dashboard cell, the modality-symmetric predicate `amp == 0` on
+    /// the multiplicity surface.
+    ///
+    /// Sibling of the shipped container-altitude additive-scalar peer
+    /// [`Self::tier_modality_degree_sum`] on the same container: the pair
+    /// `(tier_modality_degree_sum, tier_modality_amplitude)` recovers the
+    /// *unordered* pair `{peak_tier_mult, trough_tier_mult}` under the
+    /// invertible transform `max = (sum + amp) / 2, min = (sum - amp) /
+    /// 2` (integer division exact since sum and amp share parity). The
+    /// peak-versus-trough *labelling* itself requires the fused
+    /// [`Self::tier_modality_degree`] pair — the abs-diff-side scalar
+    /// sees no signed direction.
+    ///
+    /// Before this seam, a consumer answering *"how asymmetric is this
+    /// resolved fold's tier-multiplicity extremal pair?"* on a
+    /// `ProgressiveResolution<T>` reached through the two-hop borrow
+    /// `res.provenance().tier_modality_amplitude()`, or open-coded the
+    /// scalar as `res.provenance().peak_tier_multiplicity().abs_diff(
+    /// res.provenance().trough_tier_multiplicity())` — two independent
+    /// scalar reads plus one abs-diff. This method collapses both
+    /// spellings to one seam on the resolution container itself (halving
+    /// the constant factor of the open-coded idiom by routing through
+    /// the shipped [`crate::AxisHistogram::modality_amplitude`] single-
+    /// pass fused scan two seams down), matching the container-altitude
+    /// additive-scalar peer [`Self::tier_modality_degree_sum`] on the
+    /// abs-diff axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_modality_amplitude() ==
+    ///   provenance().tier_modality_amplitude()` pointwise — the defining
+    ///   container-altitude routing identity, the same delegation shape
+    ///   [`Self::tier_modality_degree_sum`] carries on the additive side.
+    /// - `tier_modality_amplitude() ==
+    ///   tier_histogram().modality_amplitude()` pointwise — the routing
+    ///   equivalence two seams down, since both [`Self::tier_histogram`]
+    ///   and [`ProvenanceMap::tier_modality_amplitude`] ultimately fold
+    ///   the same per-leaf tier stream through the same primitive.
+    /// - `tier_modality_amplitude() ==
+    ///   tier_modality_degree().0.abs_diff(tier_modality_degree().1)`
+    ///   pointwise — the defining abs-diff-projection identity relating
+    ///   the scalar to the fused pair one shape over.
+    /// - `tier_modality_amplitude() == 0` on `self.is_empty()` — the
+    ///   vacuous-nothing boundary; matches the empty convention on
+    ///   [`Self::tier_modality_degree`] one shape over (which reads
+    ///   `(0, 0)` iff empty, whose abs-diff is `0`). Note the amp-side
+    ///   `== 0` region is much larger than the sum-side one — it
+    ///   additionally fires on every singleton-support, uniform-count,
+    ///   and strictly-ordered fold.
+    /// - `tier_modality_amplitude() <= self.contributing_tiers_count()`
+    ///   always — both multiplicity components are `<=
+    ///   contributing_tiers_count()`, so their abs-diff is bounded above
+    ///   by the support size.
+    /// - `tier_modality_amplitude() <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` always — bounded
+    ///   above by `4` on the four-cell tier axis.
+    /// - `tier_modality_amplitude() % 2 == tier_modality_degree_sum() %
+    ///   2` — the abs-diff and sum of two `usize` share parity; the pair
+    ///   `(sum, amp)` recovers the unordered `{peak_mult, trough_mult}`
+    ///   pair under the invertible transform above.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the fused peak +
+    /// trough multiplicity scan). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the open-coded
+    /// `provenance().peak_tier_multiplicity().abs_diff(
+    /// provenance().trough_tier_multiplicity())` idiom (which walked the
+    /// counts vector twice — once for the peak multiplicity, once for
+    /// the trough multiplicity) by routing through
+    /// [`crate::AxisHistogram::modality_amplitude`]'s single-pass fused
+    /// scan two seams down.
+    #[must_use]
+    pub fn tier_modality_amplitude(&self) -> usize {
+        self.provenance.tier_modality_amplitude()
+    }
+
+    /// The **source-kind modality-amplitude scalar** on this resolved
+    /// fold's per-leaf [`crate::ConfigSourceKind`] histogram at the
+    /// container altitude — the absolute-difference-projection scalar
+    /// `peak_source_kind_multiplicity().abs_diff(
+    /// trough_source_kind_multiplicity())` reading the asymmetry between
+    /// the peak-side and trough-side multiplicities of the source-kind
+    /// histogram off the fold in one seam. Returns `0` on empty,
+    /// singleton-support, uniform-count, and every fold whose peak and
+    /// trough source-kinds are each uniquely held; otherwise returns
+    /// `self.provenance().source_kind_modality_amplitude()` pointwise.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::source_kind_modality_amplitude`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into `self.provenance.source_kind_modality_amplitude()`.
+    /// The **tier-altitude peer** of [`Self::tier_modality_amplitude`] —
+    /// the two altitudes now name the absolute-difference-projection
+    /// scalar on both closed coordinates of the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries, closing the container-
+    /// altitude modality-amplitude surface on both closed axes.
+    ///
+    /// The **abs-diff-scalar projection peer** of the shipped fused-pair
+    /// [`Self::source_kind_modality_degree`] on the same container: the
+    /// fused pair one shape over carries the joint `(peak_mult,
+    /// trough_mult)` scalar; this method carries its abs-diff projection
+    /// `.0.abs_diff(.1)` as one scalar read. Sibling of the shipped
+    /// container-altitude additive-scalar peer
+    /// [`Self::source_kind_modality_degree_sum`] on the same container:
+    /// the pair `(source_kind_modality_degree_sum,
+    /// source_kind_modality_amplitude)` recovers the *unordered* pair
+    /// `{peak_source_kind_mult, trough_source_kind_mult}` under the
+    /// invertible transform `max = (sum + amp) / 2, min = (sum - amp) /
+    /// 2`. Cardinality-`3` reachable on this axis (one below the tier
+    /// altitude's cardinality-`4` ceiling), so the amp caps at `3` here.
+    ///
+    /// See [`Self::tier_modality_amplitude`] for the full contract on
+    /// the container-altitude abs-diff-scalar peer (empty-resolution
+    /// convention, routing invariants two seams down, abs-diff-
+    /// projection identity to the fused pair, cardinality-bounded upper
+    /// bounds, sum-amp parity law).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the fused
+    /// peak + trough multiplicity scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the open-coded
+    /// `provenance().peak_source_kind_multiplicity().abs_diff(
+    /// provenance().trough_source_kind_multiplicity())` idiom (which
+    /// walked the counts vector twice) by routing through
+    /// [`crate::AxisHistogram::modality_amplitude`]'s single-pass fused
+    /// scan two seams down.
+    #[must_use]
+    pub fn source_kind_modality_amplitude(&self) -> usize {
+        self.provenance.source_kind_modality_amplitude()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -129537,5 +129698,305 @@ mod progressive_tests {
         // Mixed fixture: (1, 2) sums to 3.
         let r = source_kind_histogram_mixed_fixture();
         assert_eq!(r.source_kind_modality_degree_sum(), 3);
+    }
+
+    // ── ProgressiveResolution::tier_modality_amplitude /
+    //    source_kind_modality_amplitude — the container-altitude
+    //    absolute-difference projection of the shipped fused pair
+    //    `tier_modality_degree` / `source_kind_modality_degree` one
+    //    shape over. Both reads route through
+    //    AxisHistogram::modality_amplitude two seams down; every
+    //    projection pin cross-checks the container-altitude delegate
+    //    against the provenance-map primitive one seam down. Completes
+    //    the sum + amp scalar-projection dual pair at the container
+    //    altitude on both closed coordinates of the atomic (tier,
+    //    source) pair — the unordered `{peak_mult, trough_mult}` pair
+    //    is recoverable from `(sum, amp)` under the invertible
+    //    transform `max = (sum + amp) / 2, min = (sum - amp) / 2`.
+
+    #[test]
+    fn prog_tier_modality_amplitude_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tier_modality_amplitude(),
+            p.provenance().tier_modality_amplitude(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tier_modality_amplitude(),
+            n.provenance().tier_modality_amplitude(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tier_modality_amplitude(),
+            m.provenance().tier_modality_amplitude(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tier_modality_amplitude(),
+            empty.provenance().tier_modality_amplitude(),
+        );
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_matches_tier_histogram_pointwise() {
+        // Routing pin two seams down: tier_modality_amplitude ==
+        // tier_histogram().modality_amplitude() on the resolution
+        // container.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tier_modality_amplitude(),
+            p.tier_histogram().modality_amplitude(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tier_modality_amplitude(),
+            n.tier_histogram().modality_amplitude(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tier_modality_amplitude(),
+            m.tier_histogram().modality_amplitude(),
+        );
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_equals_fused_pair_component_abs_diff_pointwise() {
+        // Abs-diff-projection identity pin: amp == pair.0.abs_diff(pair.1).
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.tier_modality_degree();
+        assert_eq!(p.tier_modality_amplitude(), peak.abs_diff(trough));
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.tier_modality_degree();
+        assert_eq!(n.tier_modality_amplitude(), peak.abs_diff(trough));
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.tier_modality_degree();
+        assert_eq!(m.tier_modality_amplitude(), peak.abs_diff(trough));
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_empty_resolution_is_zero() {
+        // Empty-resolution convention pin.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tier_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_bounded_by_contributing_pointwise() {
+        // Support upper-bound pin: amp <= contributing_tiers_count.
+        let p = Prog::resolve_progressive();
+        assert!(p.tier_modality_amplitude() <= p.contributing_tiers_count());
+        let n = Nested::resolve_progressive();
+        assert!(n.tier_modality_amplitude() <= n.contributing_tiers_count());
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(m.tier_modality_amplitude() <= m.contributing_tiers_count());
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_bounded_by_axis_cardinality_pointwise() {
+        // Cardinality upper-bound pin: amp <= 4 on the four-cell tier axis.
+        let bound = crate::axis_cardinality::<ConfigTierKind>();
+        assert_eq!(bound, 4);
+        assert!(Prog::resolve_progressive().tier_modality_amplitude() <= bound);
+        assert!(Nested::resolve_progressive().tier_modality_amplitude() <= bound);
+        assert!(source_kind_histogram_mixed_fixture().tier_modality_amplitude() <= bound);
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_and_degree_sum_share_parity_pointwise() {
+        // Parity law pin: amp and sum share parity — the invertible
+        // transform `max = (sum + amp) / 2, min = (sum - amp) / 2` is
+        // integer-exact.
+        fn check(amp: usize, sum: usize, (peak, trough): (usize, usize)) {
+            assert_eq!(amp % 2, sum % 2);
+            let max = (sum + amp) / 2;
+            let min = (sum - amp) / 2;
+            assert_eq!(peak.max(trough), max);
+            assert_eq!(peak.min(trough), min);
+        }
+        let p = Prog::resolve_progressive();
+        check(
+            p.tier_modality_amplitude(),
+            p.tier_modality_degree_sum(),
+            p.tier_modality_degree(),
+        );
+        let n = Nested::resolve_progressive();
+        check(
+            n.tier_modality_amplitude(),
+            n.tier_modality_degree_sum(),
+            n.tier_modality_degree(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        check(
+            m.tier_modality_amplitude(),
+            m.tier_modality_degree_sum(),
+            m.tier_modality_degree(),
+        );
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_prog_fixture_is_one() {
+        // Container-altitude ground-truth pin lifted from the fused-pair
+        // Prog reading (1, 2): |1 - 2| == 1.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.tier_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_nested_fixture_is_zero() {
+        // Ground-truth: fused pair (1, 1), abs-diff 0 — the strictly-
+        // unimodal AND strictly-anti-unimodal corner is modality-
+        // symmetric on the multiplicity surface.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.tier_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn prog_tier_modality_amplitude_mixed_fixture_is_one() {
+        // Ground-truth: fused pair (1, 2), abs-diff 1.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.tier_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin — source-kind altitude
+        // peer of `prog_tier_modality_amplitude_matches_provenance_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_amplitude(),
+            p.provenance().source_kind_modality_amplitude(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_amplitude(),
+            n.provenance().source_kind_modality_amplitude(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_amplitude(),
+            m.provenance().source_kind_modality_amplitude(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_modality_amplitude(),
+            empty.provenance().source_kind_modality_amplitude(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_matches_source_kind_histogram_pointwise() {
+        // Routing pin two seams down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_amplitude(),
+            p.source_kind_histogram().modality_amplitude(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_amplitude(),
+            n.source_kind_histogram().modality_amplitude(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_amplitude(),
+            m.source_kind_histogram().modality_amplitude(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_equals_fused_pair_component_abs_diff_pointwise() {
+        // Abs-diff-projection identity pin.
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.source_kind_modality_degree();
+        assert_eq!(p.source_kind_modality_amplitude(), peak.abs_diff(trough));
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.source_kind_modality_degree();
+        assert_eq!(n.source_kind_modality_amplitude(), peak.abs_diff(trough));
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.source_kind_modality_degree();
+        assert_eq!(m.source_kind_modality_amplitude(), peak.abs_diff(trough));
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_empty_resolution_is_zero() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_bounded_by_contributing_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert!(p.source_kind_modality_amplitude() <= p.contributing_source_kinds_count());
+        let n = Nested::resolve_progressive();
+        assert!(n.source_kind_modality_amplitude() <= n.contributing_source_kinds_count());
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(m.source_kind_modality_amplitude() <= m.contributing_source_kinds_count());
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_bounded_by_axis_cardinality_pointwise() {
+        // Cardinality upper-bound pin: amp <= 3 on the three-cell
+        // source-kind axis (one below the tier altitude's `4`).
+        let bound = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        assert_eq!(bound, 3);
+        assert!(Prog::resolve_progressive().source_kind_modality_amplitude() <= bound);
+        assert!(Nested::resolve_progressive().source_kind_modality_amplitude() <= bound);
+        assert!(source_kind_histogram_mixed_fixture().source_kind_modality_amplitude() <= bound);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_and_degree_sum_share_parity_pointwise() {
+        // Parity law pin on the source-kind axis: recovery of the
+        // unordered pair from (sum, amp).
+        fn check(amp: usize, sum: usize, (peak, trough): (usize, usize)) {
+            assert_eq!(amp % 2, sum % 2);
+            let max = (sum + amp) / 2;
+            let min = (sum - amp) / 2;
+            assert_eq!(peak.max(trough), max);
+            assert_eq!(peak.min(trough), min);
+        }
+        let p = Prog::resolve_progressive();
+        check(
+            p.source_kind_modality_amplitude(),
+            p.source_kind_modality_degree_sum(),
+            p.source_kind_modality_degree(),
+        );
+        let n = Nested::resolve_progressive();
+        check(
+            n.source_kind_modality_amplitude(),
+            n.source_kind_modality_degree_sum(),
+            n.source_kind_modality_degree(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        check(
+            m.source_kind_modality_amplitude(),
+            m.source_kind_modality_degree_sum(),
+            m.source_kind_modality_degree(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_prog_fixture_is_zero() {
+        // Prog fixture: source-kind fused pair (1, 1), abs-diff 0.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_nested_fixture_is_zero() {
+        // Nested fixture: (1, 1), abs-diff 0.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_amplitude_mixed_fixture_is_one() {
+        // Mixed fixture: (1, 2), abs-diff 1.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_modality_amplitude(), 1);
     }
 }
