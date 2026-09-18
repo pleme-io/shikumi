@@ -12740,6 +12740,75 @@ impl ProvenanceMap {
         self.source_kind_histogram().support_boundary_distance()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_boundary_distance`] one const-fn
+    /// seam further inland on the source-kind axis: the declaration-
+    /// order ordinal on the closed three-cell
+    /// (Boundary × Singular × StrictInterior)
+    /// [`crate::SupportBoundaryDistance`] axis — `0` for
+    /// [`crate::SupportBoundaryDistance::Boundary`], `1` for
+    /// [`crate::SupportBoundaryDistance::Singular`], `2` for
+    /// [`crate::SupportBoundaryDistance::StrictInterior`]. Delegates
+    /// through `self.source_kind_support_boundary_distance().ordinal()`,
+    /// forwarding through the paired typed-bucket upstream one seam out
+    /// and the `const`-callable
+    /// [`crate::SupportBoundaryDistance::ordinal`] method on the closed
+    /// three-bucket ternary axis.
+    ///
+    /// The **strictly-adjacent sibling** of
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] on the
+    /// shared strict-interior middle leg — both classifier rows share
+    /// the [`crate::SupportCardinalityClass::StrictPartialCover`] corner
+    /// as their `StrictInterior` bucket, and both project through the
+    /// closed three-cell ordinal axis on the same cardinality-`3`
+    /// source-kind axis where the middle leg is vacuously unreachable.
+    /// Idiom-peer of the shipped ordinal projections on every other
+    /// closed-classifier surface on this altitude
+    /// (e.g. [`Self::dominant_source_kind_ordinal`],
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`]).
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis** — the
+    /// strict-interior middle leg (ordinal `2`) is *vacuously
+    /// unreachable* on the cardinality-`3`
+    /// [`crate::ConfigSourceKind`] axis (the underlying
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] corner is
+    /// itself vacuous, since the strict interval
+    /// `[2, cardinality - 2] = [2, 1]` is empty), so the ordinal
+    /// projection reads only `0` (Boundary) or `1` (Singular) on this
+    /// altitude; the strict-interior ordinal `2` is reserved for the
+    /// tier axis where the cardinality-`4` axis reaches it.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_boundary_distance_ordinal() ==
+    ///   source_kind_support_boundary_distance().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier.
+    /// - `source_kind_support_boundary_distance_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportBoundaryDistance::ALL`] carries three variants.
+    /// - `source_kind_support_boundary_distance_ordinal() != 2` on
+    ///   every fold — the strict-interior middle leg is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis, so the
+    ///   ordinal reads only `0` or `1`.
+    /// - `!source_kind_any_observed() ⇒
+    ///   source_kind_support_boundary_distance_ordinal() == 0` — the
+    ///   empty map lands on the boundary bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` — matches
+    /// [`Self::source_kind_support_boundary_distance`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportBoundaryDistance::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn source_kind_support_boundary_distance_ordinal(&self) -> usize {
+        self.source_kind_support_boundary_distance().ordinal()
+    }
+
     /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
     /// which magnitude direction of the support-cardinality interval
     /// this fold's [`crate::ConfigSourceKind`] histogram lands on at the
@@ -24045,6 +24114,79 @@ impl ProvenanceMap {
         self.tier_histogram().support_boundary_distance()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_boundary_distance`] one const-fn seam
+    /// further inland on the tier axis: the declaration-order ordinal
+    /// on the closed three-cell (Boundary × Singular × StrictInterior)
+    /// [`crate::SupportBoundaryDistance`] axis — `0` for
+    /// [`crate::SupportBoundaryDistance::Boundary`], `1` for
+    /// [`crate::SupportBoundaryDistance::Singular`], `2` for
+    /// [`crate::SupportBoundaryDistance::StrictInterior`]. Delegates
+    /// through `self.tiers_support_boundary_distance().ordinal()`,
+    /// forwarding through the paired typed-bucket upstream one seam out
+    /// and the `const`-callable
+    /// [`crate::SupportBoundaryDistance::ordinal`] method on the closed
+    /// three-bucket ternary axis.
+    ///
+    /// The **strictly-adjacent sibling** of
+    /// [`Self::tiers_support_magnitude_direction_ordinal`] on the shared
+    /// strict-interior middle leg — both classifier rows share the
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] corner as
+    /// their `StrictInterior` bucket, and both project through the
+    /// closed three-cell ordinal axis. On the cardinality-`4` tier axis
+    /// every ordinal in `{0, 1, 2}` is reachable, strict advance over
+    /// the cardinality-`3` source-kind axis where the middle leg is
+    /// vacuously unreachable. Idiom-peer of the shipped ordinal
+    /// projections on every other closed-classifier surface on this
+    /// altitude (e.g. [`Self::dominant_tier_ordinal`],
+    /// [`Self::tiers_support_magnitude_direction_ordinal`]).
+    ///
+    /// **Cardinality-`4` reachability on the tier axis — the
+    /// strict-interior middle leg is REACHABLE.**
+    /// [`ConfigTierKind`] carries four cells, so the classifier reads
+    /// witnesses on **all three** buckets: ordinal `0` (Boundary) on
+    /// the empty map (via [`crate::SupportCardinalityClass::Empty`])
+    /// and on every uniform four-tier cover (via
+    /// [`crate::SupportCardinalityClass::FullCover`]); ordinal `1`
+    /// (Singular) on every singleton-support fold (via
+    /// [`crate::SupportCardinalityClass::SingularSupport`]) and every
+    /// three-tier partial-cover fold (via
+    /// [`crate::SupportCardinalityClass::SingularGap`]); ordinal `2`
+    /// (StrictInterior) on every two-tier partial-cover fold (the
+    /// singleton witness of the strict interval
+    /// `[2, cardinality - 2] = [2, 2]`).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_boundary_distance_ordinal() ==
+    ///   tiers_support_boundary_distance().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same typed-
+    ///   bucket classifier.
+    /// - `tiers_support_boundary_distance_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportBoundaryDistance::ALL`] carries three variants.
+    /// - `!tiers_any_observed() ⇒
+    ///   tiers_support_boundary_distance_ordinal() == 0` — the empty
+    ///   map lands on the boundary bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    /// - `tiers_strict_partial_cover() ⇒
+    ///   tiers_support_boundary_distance_ordinal() == 2` — the strict-
+    ///   interior middle leg fires on every two-tier partial-cover fold
+    ///   at the tier altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` — matches
+    /// [`Self::tiers_support_boundary_distance`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportBoundaryDistance::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn tiers_support_boundary_distance_ordinal(&self) -> usize {
+        self.tiers_support_boundary_distance().ordinal()
+    }
+
     /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
     /// which magnitude direction of the support-cardinality interval
     /// this fold's [`ConfigTierKind`] histogram lands on at the tier
@@ -33301,6 +33443,50 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.tiers_support_boundary_distance()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_boundary_distance`] one const-fn seam
+    /// further inland on the tier axis at the container altitude — the
+    /// declaration-order ordinal on the closed three-cell
+    /// (Boundary × Singular × StrictInterior)
+    /// [`crate::SupportBoundaryDistance`] axis, delegating one seam
+    /// down into
+    /// `self.provenance.tiers_support_boundary_distance_ordinal()`.
+    ///
+    /// The **strictly-adjacent sibling** of
+    /// [`Self::tiers_support_magnitude_direction_ordinal`] on the shared
+    /// strict-interior middle leg — both classifier rows share the
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] corner as
+    /// their `StrictInterior` bucket, and both project through the
+    /// closed three-cell ordinal axis. Sibling of
+    /// [`Self::source_kind_support_boundary_distance_ordinal`] on the
+    /// source-kind axis at the same altitude — the two axes now name
+    /// the ordinal-projected distance-from-boundary bucket on both
+    /// closed coordinates of the atomic `(tier, source)` pair the fold
+    /// carries. On the cardinality-`4` tier axis every ordinal in
+    /// `{0, 1, 2}` is reachable (the strict-interior middle leg is
+    /// witnessed by the two-tier partial-cover fold).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_boundary_distance_ordinal() ==
+    ///   tiers_support_boundary_distance().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same typed-
+    ///   bucket classifier at the container altitude.
+    /// - `tiers_support_boundary_distance_ordinal() ==
+    ///   provenance().tiers_support_boundary_distance_ordinal()` — the
+    ///   container-altitude routing identity into the primitive-
+    ///   altitude peer.
+    /// - `tiers_support_boundary_distance_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportBoundaryDistance::ALL`] carries three variants.
+    /// - `self.is_empty() ⇒ tiers_support_boundary_distance_ordinal()
+    ///   == 0` — the empty resolution lands on the boundary bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    #[must_use]
+    pub fn tiers_support_boundary_distance_ordinal(&self) -> usize {
+        self.provenance.tiers_support_boundary_distance_ordinal()
+    }
+
     /// Closed [`crate::SupportBoundaryDistance`] bucket variant naming
     /// how far from the support-cardinality boundary this fold's
     /// [`crate::ConfigSourceKind`] histogram lands at the container
@@ -33392,6 +33578,52 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn source_kind_support_boundary_distance(&self) -> crate::SupportBoundaryDistance {
         self.provenance.source_kind_support_boundary_distance()
+    }
+
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_boundary_distance`] one const-fn
+    /// seam further inland on the source-kind axis at the container
+    /// altitude — the declaration-order ordinal on the closed three-
+    /// cell (Boundary × Singular × StrictInterior)
+    /// [`crate::SupportBoundaryDistance`] axis, delegating one seam
+    /// down into
+    /// `self.provenance.source_kind_support_boundary_distance_ordinal()`.
+    ///
+    /// The **strictly-adjacent sibling** of
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] on the
+    /// shared strict-interior middle leg — both classifier rows share
+    /// the [`crate::SupportCardinalityClass::StrictPartialCover`] corner
+    /// as their `StrictInterior` bucket, and both project through the
+    /// closed three-cell ordinal axis on the same cardinality-`3`
+    /// source-kind axis where the middle leg is vacuously unreachable.
+    /// Sibling of [`Self::tiers_support_boundary_distance_ordinal`] on
+    /// the tier axis at the same altitude — the two axes now name the
+    /// ordinal-projected distance-from-boundary bucket on both closed
+    /// coordinates of the atomic `(tier, source)` pair the fold
+    /// carries at the container altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_boundary_distance_ordinal() ==
+    ///   source_kind_support_boundary_distance().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier at the container altitude.
+    /// - `source_kind_support_boundary_distance_ordinal() ==
+    ///   provenance().source_kind_support_boundary_distance_ordinal()`
+    ///   — the container-altitude routing identity into the primitive-
+    ///   altitude peer.
+    /// - `source_kind_support_boundary_distance_ordinal() != 2` on
+    ///   every fold — the strict-interior middle leg is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis, so the
+    ///   ordinal reads only `0` or `1`.
+    /// - `self.is_empty() ⇒
+    ///   source_kind_support_boundary_distance_ordinal() == 0` — the
+    ///   empty resolution lands on the boundary bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    #[must_use]
+    pub fn source_kind_support_boundary_distance_ordinal(&self) -> usize {
+        self.provenance
+            .source_kind_support_boundary_distance_ordinal()
     }
 
     /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
@@ -93063,6 +93295,101 @@ mod progressive_tests {
         );
     }
 
+    // ── ProvenanceMap::tiers_support_boundary_distance_ordinal —
+    //    ordinal-axis cell-projection of the distance-from-boundary
+    //    classifier on the tier altitude, threading
+    //    SupportBoundaryDistance::ordinal through the typed-bucket
+    //    upstream on the tier axis. Every ordinal in {0, 1, 2} is
+    //    reachable on the cardinality-4 tier axis (strict advance over
+    //    the vacuously-unreachable middle leg on the cardinality-3
+    //    source-kind axis). Strictly-adjacent sibling of
+    //    tiers_support_magnitude_direction_ordinal on the shared
+    //    strict-interior middle leg. ──
+
+    #[test]
+    fn tiers_support_boundary_distance_ordinal_matches_ordinal_projection_of_bucket_pointwise() {
+        // Cross-seam pin: `tiers_support_boundary_distance_ordinal()`
+        // is the ordinal-axis cell-projection of the typed-bucket peer
+        // `tiers_support_boundary_distance()` one seam out, so the
+        // two seams must stay pointwise equivalent under every fixture
+        // via `SupportBoundaryDistance::ordinal`.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            strict,
+        ] {
+            let via_bucket = map.tiers_support_boundary_distance().ordinal();
+            assert_eq!(map.tiers_support_boundary_distance_ordinal(), via_bucket);
+        }
+    }
+
+    #[test]
+    fn tiers_support_boundary_distance_ordinal_fits_ternary_axis_pointwise() {
+        // Ternary-axis bound pin: the ordinal projection reads at most
+        // `2` on every fixture — the closed
+        // `SupportBoundaryDistance::ALL` axis carries three variants.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.tiers_support_boundary_distance_ordinal() <= 2);
+        }
+    }
+
+    #[test]
+    fn tiers_support_boundary_distance_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying bucket is Boundary via
+        // `SupportCardinalityClass::Empty`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.tiers_support_boundary_distance_ordinal(), 0);
+    }
+
+    #[test]
+    fn tiers_support_boundary_distance_ordinal_two_tier_partial_cover_is_two() {
+        // Cardinality-4 strict-interior reachability pin: the two-tier
+        // partial-cover fold on the cardinality-4 tier axis fires the
+        // strict-interior middle leg (ordinal `2`) — the singleton
+        // witness of the strict interval `[2, 2]`. Strict advance over
+        // the cardinality-3 source-kind axis where the middle leg is
+        // vacuously unreachable.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(strict.tiers_support_boundary_distance_ordinal(), 2);
+    }
+
+    #[test]
+    fn tiers_support_boundary_distance_ordinal_reachable_on_every_ordinal_over_witness_set() {
+        // Reachability-complete pin at the tier altitude — the closed
+        // three-cell ordinal axis carries at least one witness per
+        // ordinal in {0, 1, 2}. Direct pin of the cardinality-4
+        // strict-interior reachability signature one seam over on the
+        // ordinal side. Boundary (0) via the empty map (Empty);
+        // Singular (1) via a singleton-support fold (SingularSupport);
+        // StrictInterior (2) via the two-tier partial-cover fold.
+        let boundary = ProvenanceMap::default();
+        let singular: ProvenanceMap = [("b", ConfigTierKind::Bare)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        let strict_interior: ProvenanceMap =
+            [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+                .into_iter()
+                .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+                .collect();
+        assert_eq!(boundary.tiers_support_boundary_distance_ordinal(), 0);
+        assert_eq!(singular.tiers_support_boundary_distance_ordinal(), 1);
+        assert_eq!(strict_interior.tiers_support_boundary_distance_ordinal(), 2);
+    }
+
     // ── tiers_support_magnitude_direction — climbs the "support-
     // magnitude-direction across altitudes" projection to the tier
     // altitude. Second altitude of the five-step lift trajectory the
@@ -113536,6 +113863,93 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::source_kind_support_boundary_distance_ordinal —
+    //    ordinal-axis cell-projection of the distance-from-boundary
+    //    classifier on the source-kind axis, threading
+    //    SupportBoundaryDistance::ordinal through the typed-bucket
+    //    upstream. On the cardinality-3 source-kind axis the middle leg
+    //    (ordinal `2`) is vacuously unreachable, so the ordinal reads
+    //    only `0` or `1`. ──
+
+    #[test]
+    fn source_kind_support_boundary_distance_ordinal_matches_ordinal_projection_of_bucket_pointwise()
+     {
+        // Cross-seam pin: the ordinal projection agrees pointwise with
+        // `source_kind_support_boundary_distance().ordinal()` on every
+        // fixture — the two seams project through the same closed
+        // three-cell axis.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let via_bucket = map.source_kind_support_boundary_distance().ordinal();
+            assert_eq!(
+                map.source_kind_support_boundary_distance_ordinal(),
+                via_bucket,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_boundary_distance_ordinal_never_reads_strict_interior_on_source_kind_axis()
+     {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis — the strict-interior middle leg (ordinal `2`) is itself
+        // vacuous, so the ordinal reads only `0` (Boundary) or `1`
+        // (Singular) on every fold.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let o = map.source_kind_support_boundary_distance_ordinal();
+            assert!(
+                o == 0 || o == 1,
+                "cardinality-3 source-kind axis must read only Boundary (0) or Singular (1), got {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_boundary_distance_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying bucket is Boundary via
+        // `SupportCardinalityClass::Empty`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_support_boundary_distance_ordinal(), 0);
+    }
+
+    #[test]
+    fn source_kind_support_boundary_distance_ordinal_mixed_full_cover_is_zero() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis projects to Boundary (ordinal `0`) via the
+        // Empty + FullCover pair that collapses to the boundary bucket.
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.source_kind_support_boundary_distance_ordinal(), 0);
+    }
+
     // ── ProvenanceMap::source_kind_support_magnitude_direction — closed
     // support-magnitude-direction classifier lift on the source-kind
     // altitude ──
@@ -132317,6 +132731,132 @@ mod progressive_tests {
             r.source_kind_support_boundary_distance(),
             crate::SupportBoundaryDistance::Boundary,
         );
+    }
+
+    // ── ProgressiveResolution::tiers_support_boundary_distance_ordinal
+    //    / source_kind_support_boundary_distance_ordinal — container-
+    //    altitude ordinal-axis cell-projections of the distance-from-
+    //    boundary classifier at both closed coordinates. Strictly-
+    //    adjacent siblings of the support-magnitude-direction ordinal
+    //    peers on the shared strict-interior middle leg. ──
+
+    #[test]
+    fn prog_tiers_support_boundary_distance_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin: the ordinal projection
+        // delegates one seam down into the primitive-altitude peer.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_boundary_distance_ordinal(),
+            p.provenance().tiers_support_boundary_distance_ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_boundary_distance_ordinal(),
+            n.provenance().tiers_support_boundary_distance_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_boundary_distance_ordinal(),
+            empty.provenance().tiers_support_boundary_distance_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_boundary_distance_ordinal_matches_bucket_ordinal_pointwise() {
+        // Cross-seam pin: the ordinal projection agrees with the
+        // typed-bucket peer's `.ordinal()` at the container altitude.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_boundary_distance_ordinal(),
+            p.tiers_support_boundary_distance().ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_boundary_distance_ordinal(),
+            n.tiers_support_boundary_distance().ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_boundary_distance_ordinal(),
+            empty.tiers_support_boundary_distance().ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_boundary_distance_ordinal_empty_resolution_is_zero() {
+        // Empty-resolution ceiling pin: the empty map lands on the
+        // Boundary bucket (ordinal `0`) via SupportCardinalityClass::Empty.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tiers_support_boundary_distance_ordinal(), 0);
+    }
+
+    #[test]
+    fn prog_tiers_support_boundary_distance_ordinal_nested_fixture_is_two() {
+        // Cardinality-4 strict-interior reachability pin at the container
+        // altitude: the Nested fixture is a two-tier partial-cover fold,
+        // firing the strict-interior middle leg (ordinal `2`). Strict
+        // advance over the cardinality-3 source-kind axis.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.tiers_support_boundary_distance(),
+            crate::SupportBoundaryDistance::StrictInterior,
+        );
+        assert_eq!(r.tiers_support_boundary_distance_ordinal(), 2);
+    }
+
+    #[test]
+    fn prog_source_kind_support_boundary_distance_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin on the source-kind axis.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_boundary_distance_ordinal(),
+            p.provenance()
+                .source_kind_support_boundary_distance_ordinal(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_boundary_distance_ordinal(),
+            m.provenance()
+                .source_kind_support_boundary_distance_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_boundary_distance_ordinal(),
+            empty
+                .provenance()
+                .source_kind_support_boundary_distance_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_boundary_distance_ordinal_never_reads_strict_interior() {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis at the container altitude — the strict-interior middle
+        // leg (ordinal `2`) is unreachable on every fold; the ordinal
+        // reads only `0` (Boundary) or `1` (Singular).
+        for r in [
+            Prog::resolve_progressive().source_kind_support_boundary_distance_ordinal(),
+            Nested::resolve_progressive().source_kind_support_boundary_distance_ordinal(),
+            source_kind_histogram_mixed_fixture().source_kind_support_boundary_distance_ordinal(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_boundary_distance_ordinal(),
+        ] {
+            assert_ne!(r, 2);
+            assert!(r == 0 || r == 1);
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_boundary_distance_ordinal_mixed_fixture_is_zero() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis projects to Boundary (ordinal `0`) at the
+        // container altitude — the Empty + FullCover pair collapses to
+        // the boundary bucket.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_support_boundary_distance_ordinal(), 0);
     }
 
     // ------------------------------------------------------------
