@@ -32857,6 +32857,187 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_modality_class(&self) -> crate::ModalityClass {
         self.provenance.source_kind_modality_class()
     }
+
+    /// The **closed support-cardinality corner** for this resolved
+    /// fold's per-leaf [`ConfigTierKind`] histogram at the container
+    /// altitude — the fused five-corner
+    /// [`crate::SupportCardinalityClass`] variant tag reading the
+    /// support-cardinality classifier off the resolution in one seam.
+    /// Routes through [`ProvenanceMap::tiers_support_cardinality_class`]
+    /// one seam down and
+    /// [`crate::AxisHistogram::support_cardinality_class`] two seams
+    /// down, delegating via
+    /// `self.provenance.tiers_support_cardinality_class()`.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::tiers_support_cardinality_class`] on the
+    /// *output* side of the fold's atomic-pair ownership boundary. The
+    /// **support-cardinality-classifier projection peer** on the
+    /// container of the shipped modality-classifier
+    /// [`Self::tiers_modality_class`] on the same resolution — the two
+    /// closed-classifier surfaces now sit side by side on the container
+    /// at the tier axis: [`Self::tiers_modality_class`] over the modal
+    /// / antimodal multiplicity partition and
+    /// [`Self::tiers_support_cardinality_class`] over the support-
+    /// cardinality partition. Sibling of
+    /// [`Self::source_kind_support_cardinality_class`] on the same
+    /// container: the two altitudes now name the support-cardinality
+    /// classifier variant on **both closed coordinates** of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries at the
+    /// container altitude.
+    ///
+    /// **Cardinality-`4` reachability on the tier axis** — every one of
+    /// the five [`crate::SupportCardinalityClass`] variants is
+    /// reachable on some fold: [`crate::SupportCardinalityClass::Empty`]
+    /// on the empty resolution;
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// singleton-support fold (support cardinality `1`);
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] on every
+    /// two-tier partial-cover fold (the singleton strict interior
+    /// `[2, cardinality - 2] = [2, 2]`);
+    /// [`crate::SupportCardinalityClass::SingularGap`] on every three-
+    /// tier partial-cover fold (support cardinality
+    /// `3 = cardinality - 1`); and
+    /// [`crate::SupportCardinalityClass::FullCover`] on every uniform
+    /// four-tier cover — the container-altitude support-cardinality-
+    /// classifier peer is reachability-complete on the cardinality-`4`
+    /// [`ConfigTierKind`] axis.
+    ///
+    /// Before this seam, a consumer answering *"which support-
+    /// cardinality corner does this resolved fold's tier distinct-
+    /// cells count land on?"* on a `ProgressiveResolution<T>` reached
+    /// through the two-hop borrow
+    /// `res.provenance().tiers_support_cardinality_class()`, or open-
+    /// coded the variant tag as a five-way `if` chain over
+    /// `res.tier_histogram().distinct_cells()` and
+    /// `axis_cardinality::<ConfigTierKind>()`. This method collapses
+    /// both spellings to one seam on the resolution container itself.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_cardinality_class() ==
+    ///   provenance().tiers_support_cardinality_class()` pointwise —
+    ///   the defining container-altitude routing identity, the same
+    ///   delegation shape [`Self::tiers_modality_class`] carries.
+    /// - `tiers_support_cardinality_class() ==
+    ///   tier_histogram().support_cardinality_class()` pointwise — the
+    ///   routing equivalence two seams down.
+    /// - `tiers_support_cardinality_class().is_empty() == self.is_empty()`
+    ///   — the empty-variant peer-equivalence with the resolution-
+    ///   container emptiness (every leaf carries an observed tier cell,
+    ///   so map-emptiness and tier-histogram-emptiness coincide).
+    /// - `tiers_support_cardinality_class().is_empty() ==
+    ///   (self.contributing_tiers_count() == 0)` — the pointwise
+    ///   recovery of the empty-boundary variant on the container from
+    ///   the shipped support-cardinality scalar projection.
+    /// - `SupportCardinalityClass::ALL.contains(
+    ///   &tiers_support_cardinality_class())` — the total-classification
+    ///   law: every resolution lands on exactly one of the five
+    ///   [`crate::SupportCardinalityClass`] variants.
+    /// - `tiers_support_cardinality_class()` agrees with the direct
+    ///   `if` chain over `tier_histogram().distinct_cells()`:
+    ///   `0 => Empty; cardinality => FullCover; 1 => SingularSupport;
+    ///   cardinality - 1 => SingularGap; _ => StrictPartialCover` —
+    ///   the same branching priority (bottom-boundary-first) the
+    ///   primitive [`crate::AxisHistogram::support_cardinality_class`]
+    ///   carries two seams down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k = crate::axis_cardinality::<ConfigTierKind>()`
+    /// (the distinct-cells scan). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// [`crate::SupportCardinalityClass`] fits in a `u8` discriminant.
+    #[must_use]
+    pub fn tiers_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
+        self.provenance.tiers_support_cardinality_class()
+    }
+
+    /// The **closed support-cardinality corner** for this resolved
+    /// fold's per-leaf [`crate::ConfigSourceKind`] histogram at the
+    /// container altitude — the source-kind-altitude peer of
+    /// [`Self::tiers_support_cardinality_class`] on the same resolution
+    /// container. Routes through
+    /// [`ProvenanceMap::source_kind_support_cardinality_class`] one seam
+    /// down and [`crate::AxisHistogram::support_cardinality_class`] two
+    /// seams down, delegating via
+    /// `self.provenance.source_kind_support_cardinality_class()`.
+    ///
+    /// Together with [`Self::tiers_support_cardinality_class`], the two
+    /// altitudes now name the support-cardinality classifier variant on
+    /// **both closed coordinates** of the atomic `(tier, source)` pair
+    /// each leaf's [`Provenance`] carries at the container altitude —
+    /// closing the container-altitude support-cardinality-classifier
+    /// surface on both closed axes on the same fused five-corner
+    /// [`crate::SupportCardinalityClass`] variant tag surface, matching
+    /// the closure the shipped modality-classifier peers
+    /// ([`Self::tiers_modality_class`] +
+    /// [`Self::source_kind_modality_class`]) already hold on the same
+    /// two coordinates.
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis** — the
+    /// three-cell [`crate::ConfigSourceKind`] axis exposes only four of
+    /// the five [`crate::SupportCardinalityClass`] variants:
+    /// [`crate::SupportCardinalityClass::Empty`] on the empty
+    /// resolution;
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// singleton-source-kind fold (support cardinality `1` — every
+    /// pure-progressive Prog / Nested fold collapses here);
+    /// [`crate::SupportCardinalityClass::SingularGap`] on every two-
+    /// source-kind fold (support cardinality `2 = cardinality - 1`);
+    /// and [`crate::SupportCardinalityClass::FullCover`] on every
+    /// three-source-kind fold (the mixed-overlay saturation shape).
+    /// The strict-interior variant
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] is
+    /// *vacuously unreachable* on the cardinality-`3` axis: the strict
+    /// interval `[2, cardinality - 2] = [2, 1]` is empty. Peer of the
+    /// same cardinality-`3` vacuity on the diff altitude
+    /// [`ConfigDiff::kinds_support_cardinality_class`] carries.
+    ///
+    /// See [`Self::tiers_support_cardinality_class`] for the full
+    /// contract on the container-altitude support-cardinality peer
+    /// (empty-resolution convention, routing invariants two seams down,
+    /// total-classification law, pattern-match consistency with the
+    /// distinct-cells `if` chain).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_cardinality_class() ==
+    ///   provenance().source_kind_support_cardinality_class()` pointwise
+    ///   — the defining container-altitude routing identity.
+    /// - `source_kind_support_cardinality_class() ==
+    ///   source_kind_histogram().support_cardinality_class()` pointwise
+    ///   — the routing equivalence two seams down.
+    /// - `source_kind_support_cardinality_class().is_empty() ==
+    ///   self.is_empty()` — the empty-variant peer-equivalence with the
+    ///   resolution-container emptiness.
+    /// - `SupportCardinalityClass::ALL.contains(
+    ///   &source_kind_support_cardinality_class())` — the total-
+    ///   classification law.
+    /// - `source_kind_support_cardinality_class()` agrees with the
+    ///   direct `if` chain over `source_kind_histogram().distinct_cells()`
+    ///   — the same bottom-boundary-first branching priority the
+    ///   primitive [`crate::AxisHistogram::support_cardinality_class`]
+    ///   carries two seams down.
+    /// - `source_kind_support_cardinality_class() !=
+    ///   SupportCardinalityClass::StrictPartialCover` for every
+    ///   resolution — the vacuous-unreachability pin on the
+    ///   cardinality-`3` axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// distinct-cells scan). Both are `O(n)` in practice since the
+    /// source-kind axis carries a fixed three-cell cardinality; the
+    /// returned [`crate::SupportCardinalityClass`] fits in a `u8`
+    /// discriminant.
+    #[must_use]
+    pub fn source_kind_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
+        self.provenance.source_kind_support_cardinality_class()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -130489,6 +130670,452 @@ mod progressive_tests {
         assert_eq!(
             r.source_kind_modality_class(),
             crate::ModalityClass::StrictModalTiedAntimodal,
+        );
+    }
+
+    // ── ProgressiveResolution::tiers_support_cardinality_class /
+    //    source_kind_support_cardinality_class — the container-altitude
+    //    lifts of the shipped ProvenanceMap support-cardinality
+    //    classifier peers, closing the container-altitude support-
+    //    cardinality-classifier surface on both closed coordinates of
+    //    the atomic (tier, source) pair each leaf's Provenance carries.
+    //    Sibling of the shipped modality-classifier peers
+    //    tiers_modality_class / source_kind_modality_class on the same
+    //    container: the two closed-classifier surfaces (modality-
+    //    quotient AND support-cardinality) now sit side by side on the
+    //    resolution container on both closed axes.
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin — same delegation
+        // shape as `prog_tiers_modality_class_matches_provenance_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class(),
+            p.provenance().tiers_support_cardinality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class(),
+            n.provenance().tiers_support_cardinality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            m.provenance().tiers_support_cardinality_class(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class(),
+            empty.provenance().tiers_support_cardinality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_matches_tier_histogram_pointwise() {
+        // Routing pin two seams down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class(),
+            p.tier_histogram().support_cardinality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class(),
+            n.tier_histogram().support_cardinality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            m.tier_histogram().support_cardinality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_empty_resolution_is_empty_variant() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_is_empty_agrees_with_resolution_is_empty_pointwise() {
+        // Empty-variant peer-equivalence pin on the container: every
+        // leaf carries an observed tier cell, so map-emptiness and
+        // tier-histogram-emptiness coincide.
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.tiers_support_cardinality_class().is_empty(), p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.tiers_support_cardinality_class().is_empty(), n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.tiers_support_cardinality_class().is_empty(), m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class().is_empty(),
+            empty.is_empty(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_is_empty_agrees_with_contributing_tiers_count_zero_pointwise()
+     {
+        // Empty-variant recovery pin via the shipped support-cardinality
+        // scalar projection on the container.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class().is_empty(),
+            p.contributing_tiers_count() == 0,
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class().is_empty(),
+            n.contributing_tiers_count() == 0,
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_cardinality_class().is_empty(),
+            m.contributing_tiers_count() == 0,
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class().is_empty(),
+            empty.contributing_tiers_count() == 0,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_total_classification_partitions_every_fixture() {
+        // Total-classification law pin: every resolution lands on
+        // exactly one of the five SupportCardinalityClass variants.
+        for class in [
+            Prog::resolve_progressive().tiers_support_cardinality_class(),
+            Nested::resolve_progressive().tiers_support_cardinality_class(),
+            source_kind_histogram_mixed_fixture().tiers_support_cardinality_class(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .tiers_support_cardinality_class(),
+        ] {
+            assert!(
+                crate::SupportCardinalityClass::ALL.contains(&class),
+                "class {class:?} not in SupportCardinalityClass::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_agrees_with_distinct_cells_if_chain_pointwise() {
+        // Pattern-match consistency pin two seams down: the container-
+        // altitude classifier reads the same variant a direct
+        // bottom-boundary-first `if` chain over
+        // `tier_histogram().distinct_cells()` would read.
+        fn expected(support: usize, cardinality: usize) -> crate::SupportCardinalityClass {
+            if support == 0 {
+                crate::SupportCardinalityClass::Empty
+            } else if support == cardinality {
+                crate::SupportCardinalityClass::FullCover
+            } else if support == 1 {
+                crate::SupportCardinalityClass::SingularSupport
+            } else if support + 1 == cardinality {
+                crate::SupportCardinalityClass::SingularGap
+            } else {
+                crate::SupportCardinalityClass::StrictPartialCover
+            }
+        }
+        let k = crate::axis_cardinality::<ConfigTierKind>();
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_cardinality_class(),
+            expected(p.tier_histogram().distinct_cells(), k),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_cardinality_class(),
+            expected(n.tier_histogram().distinct_cells(), k),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            expected(m.tier_histogram().distinct_cells(), k),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_cardinality_class(),
+            expected(empty.tier_histogram().distinct_cells(), k),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_prog_fixture_is_singular_gap() {
+        // Container-altitude ground-truth pin lifted from the Prog
+        // fixture's per-leaf tier attribution: a→Discovered, b→Default,
+        // c→Bare, d→Default gives tier counts
+        // {Bare:1, Default:2, Custom:0, Discovered:1}. distinct_cells = 3
+        // = axis_cardinality::<ConfigTierKind>() - 1 = 4 - 1. Classifier
+        // lands on the top singular-boundary corner SingularGap.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.tier_histogram().distinct_cells(), 3);
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularGap,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_nested_fixture_is_strict_partial_cover() {
+        // Container-altitude ground-truth pin lifted from the Nested
+        // fixture's per-leaf tier attribution: win.w→Discovered,
+        // win.h→Default, theme→Default gives tier counts
+        // {Bare:0, Default:2, Custom:0, Discovered:1}. distinct_cells = 2
+        // — the singleton strict interior [2, cardinality - 2] = [2, 2]
+        // on the four-cell tier axis. Classifier lands on the strict-
+        // interior corner StrictPartialCover — the strict advance over
+        // the cardinality-`3` diff altitude where the strict interior
+        // was vacuously unreachable. Direct container-altitude witness
+        // of the shipped `tiers_support_cardinality_class_two_tier_
+        // partial_cover_is_strict_partial_cover_variant` primitive pin
+        // one altitude down.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.tier_histogram().distinct_cells(), 2);
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_cardinality_class_mixed_fixture_is_singular_gap() {
+        // Container-altitude ground-truth pin lifted from the mixed
+        // fixture's per-leaf tier attribution: a→Discovered, b→Custom,
+        // c→Custom, d→Default. Tier counts:
+        // {Bare:0, Default:1, Custom:2, Discovered:1}. distinct_cells = 3
+        // = axis_cardinality::<ConfigTierKind>() - 1. Classifier lands
+        // on SingularGap.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.tier_histogram().distinct_cells(), 3);
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularGap,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin, source-kind altitude
+        // peer of `prog_tiers_support_cardinality_class_matches_
+        // provenance_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_cardinality_class(),
+            p.provenance().source_kind_support_cardinality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_cardinality_class(),
+            n.provenance().source_kind_support_cardinality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_cardinality_class(),
+            m.provenance().source_kind_support_cardinality_class(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_cardinality_class(),
+            empty.provenance().source_kind_support_cardinality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_matches_source_kind_histogram_pointwise() {
+        // Routing pin two seams down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_cardinality_class(),
+            p.source_kind_histogram().support_cardinality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_cardinality_class(),
+            n.source_kind_histogram().support_cardinality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_cardinality_class(),
+            m.source_kind_histogram().support_cardinality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_empty_resolution_is_empty_variant() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_is_empty_agrees_with_resolution_is_empty_pointwise()
+     {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_cardinality_class().is_empty(),
+            p.is_empty(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_cardinality_class().is_empty(),
+            n.is_empty(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_cardinality_class().is_empty(),
+            m.is_empty(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_cardinality_class().is_empty(),
+            empty.is_empty(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_total_classification_partitions_every_fixture() {
+        for class in [
+            Prog::resolve_progressive().source_kind_support_cardinality_class(),
+            Nested::resolve_progressive().source_kind_support_cardinality_class(),
+            source_kind_histogram_mixed_fixture().source_kind_support_cardinality_class(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_cardinality_class(),
+        ] {
+            assert!(
+                crate::SupportCardinalityClass::ALL.contains(&class),
+                "class {class:?} not in SupportCardinalityClass::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_agrees_with_distinct_cells_if_chain_pointwise() {
+        fn expected(support: usize, cardinality: usize) -> crate::SupportCardinalityClass {
+            if support == 0 {
+                crate::SupportCardinalityClass::Empty
+            } else if support == cardinality {
+                crate::SupportCardinalityClass::FullCover
+            } else if support == 1 {
+                crate::SupportCardinalityClass::SingularSupport
+            } else if support + 1 == cardinality {
+                crate::SupportCardinalityClass::SingularGap
+            } else {
+                crate::SupportCardinalityClass::StrictPartialCover
+            }
+        }
+        let k = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_cardinality_class(),
+            expected(p.source_kind_histogram().distinct_cells(), k),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_cardinality_class(),
+            expected(n.source_kind_histogram().distinct_cells(), k),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_cardinality_class(),
+            expected(m.source_kind_histogram().distinct_cells(), k),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_cardinality_class(),
+            expected(empty.source_kind_histogram().distinct_cells(), k),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_never_is_strict_partial_cover_across_fixtures() {
+        // Vacuous-unreachability pin on the cardinality-`3` source-kind
+        // axis: the strict interior [2, cardinality - 2] = [2, 1] is
+        // empty, so the StrictPartialCover variant is unreachable on
+        // this axis. Peer of the same cardinality-`3` vacuity
+        // ConfigDiff::kinds_support_cardinality_class carries on the
+        // diff altitude.
+        let p = Prog::resolve_progressive();
+        assert_ne!(
+            p.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+        let n = Nested::resolve_progressive();
+        assert_ne!(
+            n.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_ne!(
+            m.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_ne!(
+            empty.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_prog_fixture_is_singular_support() {
+        // Prog fixture: every computed-tier leaf attributes to the
+        // Defaults source-kind (bare / discovered / prescribed_default
+        // constructors all pin ConfigSource::Defaults), so the source-
+        // kind histogram collapses to the single Defaults cell.
+        // distinct_cells = 1 → SingularSupport. Direct container-
+        // altitude witness of the shipped source-kind singleton-support
+        // primitive pin one altitude down.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.source_kind_histogram().distinct_cells(), 1);
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_nested_fixture_is_singular_support() {
+        // Nested fixture: same singleton-support source-kind story as
+        // Prog (every computed-constructor leaf attributes to Defaults).
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.source_kind_histogram().distinct_cells(), 1);
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_cardinality_class_mixed_fixture_is_full_cover() {
+        // Mixed fixture: one env overlay (touching c) + one file
+        // overlay (touching b) atop Prog's progressive fold. Per-leaf
+        // source-kinds: a → Defaults, b → File, c → Env, d → Defaults —
+        // every cell of the three-cell ConfigSourceKind axis is
+        // observed. distinct_cells = 3 = axis_cardinality → FullCover.
+        // Direct container-altitude witness of the shipped
+        // `source_kind_histogram_mixed_overlays_cover_every_cell`
+        // primitive pin one altitude down.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_histogram().distinct_cells(), 3);
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
         );
     }
 }
