@@ -12896,6 +12896,82 @@ impl ProvenanceMap {
         self.source_kind_histogram().support_magnitude_direction()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_magnitude_direction`] one const-fn
+    /// seam further inland on the source-kind axis: the
+    /// declaration-order ordinal on the closed three-cell
+    /// (Low × StrictInterior × High) [`crate::SupportMagnitudeDirection`]
+    /// axis — `0` for [`crate::SupportMagnitudeDirection::Low`], `1` for
+    /// [`crate::SupportMagnitudeDirection::StrictInterior`], `2` for
+    /// [`crate::SupportMagnitudeDirection::High`]. Delegates through
+    /// `self.source_kind_support_magnitude_direction().ordinal()`,
+    /// forwarding through the paired typed-bucket upstream one seam out
+    /// and the `const`-callable
+    /// [`crate::SupportMagnitudeDirection::ordinal`] method on the
+    /// closed three-bucket ternary axis.
+    ///
+    /// The **ordinal-axis cell-projection** peer of the newly-landed
+    /// support-magnitude-direction classifier on the source-kind axis —
+    /// idiom-peer of the shipped ordinal projections on every other
+    /// closed-classifier surface on this altitude
+    /// (e.g. [`Self::dominant_tier_ordinal`],
+    /// [`Self::extremal_source_kinds_ordinal`]), and of the sibling
+    /// classifier's ordinal projection to follow on the same source-kind
+    /// axis ([`Self::source_kind_support_boundary_distance`]'s
+    /// as-yet-unclosed `_ordinal` peer). The natural typed primitive for
+    /// **wire-friendly** encodings of the source-kind-axis
+    /// support-magnitude bucket on the closed
+    /// [`crate::SupportMagnitudeDirection`] surface: a ConfigPlane
+    /// broadcast payload encoding the bucket as a bare `u8` at wire time
+    /// (no serde, the receiver re-derives the variant tag through
+    /// [`crate::SupportMagnitudeDirection::ALL`]`[o]`), an operator-
+    /// facing `/healthz/config/support_magnitude/source_kind` payload
+    /// emitting the ordinal alone, a `const [usize; 3]` per-bucket
+    /// weight vector keyed by ordinal routing low-corner rollups under a
+    /// different weight than high-corner rollups.
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis** — the
+    /// strict-interior middle leg is *vacuously unreachable* on the
+    /// cardinality-`3` [`crate::ConfigSourceKind`] axis (the underlying
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] corner is
+    /// itself vacuous, since the strict interval
+    /// `[2, cardinality - 2] = [2, 1]` is empty), so the ordinal
+    /// projection reads only `0` (Low) or `2` (High) on this altitude;
+    /// the strict-interior ordinal `1` is reserved for the tier axis
+    /// where the cardinality-`4` axis reaches it.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_magnitude_direction_ordinal() ==
+    ///   source_kind_support_magnitude_direction().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier.
+    /// - `source_kind_support_magnitude_direction_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportMagnitudeDirection::ALL`] carries three
+    ///   variants.
+    /// - `source_kind_support_magnitude_direction_ordinal() != 1` on
+    ///   every fold — the strict-interior middle leg is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis, so the
+    ///   ordinal reads only `0` or `2`.
+    /// - `!source_kind_any_observed() ⇒
+    ///   source_kind_support_magnitude_direction_ordinal() == 0` — the
+    ///   empty map lands on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` — matches
+    /// [`Self::source_kind_support_magnitude_direction`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportMagnitudeDirection::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn source_kind_support_magnitude_direction_ordinal(&self) -> usize {
+        self.source_kind_support_magnitude_direction().ordinal()
+    }
+
     /// The **uniformly-observed-count boolean** on this resolved fold's
     /// [`crate::ConfigSourceKind`] histogram at the source-kind altitude
     /// — `true` exactly when every observed cell of the histogram
@@ -24136,6 +24212,75 @@ impl ProvenanceMap {
         self.tier_histogram().support_magnitude_direction()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_magnitude_direction`] one const-fn seam
+    /// further inland on the tier axis: the declaration-order ordinal
+    /// on the closed three-cell (Low × StrictInterior × High)
+    /// [`crate::SupportMagnitudeDirection`] axis — `0` for
+    /// [`crate::SupportMagnitudeDirection::Low`], `1` for
+    /// [`crate::SupportMagnitudeDirection::StrictInterior`], `2` for
+    /// [`crate::SupportMagnitudeDirection::High`]. Delegates through
+    /// `self.tiers_support_magnitude_direction().ordinal()`, forwarding
+    /// through the paired typed-bucket upstream one seam out and the
+    /// `const`-callable [`crate::SupportMagnitudeDirection::ordinal`]
+    /// method on the closed three-bucket ternary axis.
+    ///
+    /// The **tier-axis sibling** of
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] on the
+    /// same ordinal-axis cell-projection surface — the two axes now
+    /// name the ordinal-projected support-magnitude-direction bucket on
+    /// **both closed coordinates** of the atomic `(tier, source)` pair
+    /// each leaf's [`Provenance`] carries at the primitive altitude. Idiom-
+    /// peer of the shipped ordinal projections on every other closed-
+    /// classifier surface on this altitude
+    /// (e.g. [`Self::dominant_tier_ordinal`],
+    /// [`Self::extremal_tiers_ordinal`]).
+    ///
+    /// **Cardinality-`4` reachability on the tier axis — the
+    /// strict-interior middle leg is REACHABLE.**
+    /// [`ConfigTierKind`] carries four cells, so the classifier reads
+    /// witnesses on **all three** buckets: ordinal `0` (Low) on the
+    /// empty map and every singleton-support fold, ordinal `1`
+    /// (StrictInterior) on every two-tier partial-cover fold (the
+    /// singleton witness of the strict interval
+    /// `[2, cardinality - 2] = [2, 2]`), and ordinal `2` (High) on every
+    /// three-tier partial-cover fold and every uniform four-tier cover.
+    /// Structural strict advance over the cardinality-`3` source-kind
+    /// axis on the shared middle leg — every ordinal in `{0, 1, 2}` is
+    /// reachable at the tier altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_magnitude_direction_ordinal() ==
+    ///   tiers_support_magnitude_direction().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier.
+    /// - `tiers_support_magnitude_direction_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportMagnitudeDirection::ALL`] carries three
+    ///   variants.
+    /// - `!tiers_any_observed() ⇒
+    ///   tiers_support_magnitude_direction_ordinal() == 0` — the empty
+    ///   map lands on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    /// - `tiers_strict_partial_cover() ⇒
+    ///   tiers_support_magnitude_direction_ordinal() == 1` — the strict-
+    ///   interior middle leg fires on every two-tier partial-cover fold
+    ///   at the tier altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` with `n = self.inner.len()`, `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` — matches
+    /// [`Self::tiers_support_magnitude_direction`] one seam out
+    /// (delegates through it with a `const`-callable
+    /// [`crate::SupportMagnitudeDirection::ordinal`] one-shot on the
+    /// variant tag).
+    #[must_use]
+    pub fn tiers_support_magnitude_direction_ordinal(&self) -> usize {
+        self.tiers_support_magnitude_direction().ordinal()
+    }
+
     /// The **uniformly-observed-count boolean** on this resolved fold's
     /// [`ConfigTierKind`] histogram at the tier altitude — `true`
     /// exactly when every observed cell of the histogram carries the
@@ -33323,6 +33468,49 @@ impl<T> ProgressiveResolution<T> {
         self.provenance.tiers_support_magnitude_direction()
     }
 
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::tiers_support_magnitude_direction`] at the container
+    /// altitude on the tier axis: the declaration-order ordinal on the
+    /// closed three-cell [`crate::SupportMagnitudeDirection`] axis —
+    /// `0` for [`crate::SupportMagnitudeDirection::Low`], `1` for
+    /// [`crate::SupportMagnitudeDirection::StrictInterior`], `2` for
+    /// [`crate::SupportMagnitudeDirection::High`]. Container-altitude
+    /// peer of [`ProvenanceMap::tiers_support_magnitude_direction_ordinal`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.tiers_support_magnitude_direction_ordinal()`.
+    ///
+    /// Sibling of
+    /// [`Self::source_kind_support_magnitude_direction_ordinal`] on the
+    /// source-kind axis at the same altitude — the two altitudes now
+    /// name the ordinal-projected support-magnitude-direction bucket on
+    /// both closed coordinates of the atomic `(tier, source)` pair the
+    /// fold carries. On the cardinality-`4` tier axis every ordinal in
+    /// `{0, 1, 2}` is reachable (the strict-interior middle leg is
+    /// witnessed by the two-tier partial-cover fold).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_magnitude_direction_ordinal() ==
+    ///   tiers_support_magnitude_direction().ordinal()` — the defining
+    ///   ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier at the container altitude.
+    /// - `tiers_support_magnitude_direction_ordinal() ==
+    ///   provenance().tiers_support_magnitude_direction_ordinal()` —
+    ///   the container-altitude routing identity into the primitive-
+    ///   altitude peer.
+    /// - `tiers_support_magnitude_direction_ordinal() <= 2` — the
+    ///   ordinal fits in `{0, 1, 2}` since
+    ///   [`crate::SupportMagnitudeDirection::ALL`] carries three
+    ///   variants.
+    /// - `self.is_empty() ⇒ tiers_support_magnitude_direction_ordinal()
+    ///   == 0` — the empty resolution lands on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    #[must_use]
+    pub fn tiers_support_magnitude_direction_ordinal(&self) -> usize {
+        self.provenance.tiers_support_magnitude_direction_ordinal()
+    }
+
     /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
     /// which magnitude direction of the support-cardinality interval
     /// this fold's [`crate::ConfigSourceKind`] histogram lands on at
@@ -33403,6 +33591,53 @@ impl<T> ProgressiveResolution<T> {
     #[must_use]
     pub fn source_kind_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
         self.provenance.source_kind_support_magnitude_direction()
+    }
+
+    /// Scalar-`usize` ordinal projection of
+    /// [`Self::source_kind_support_magnitude_direction`] at the
+    /// container altitude on the source-kind axis: the declaration-
+    /// order ordinal on the closed three-cell
+    /// [`crate::SupportMagnitudeDirection`] axis — `0` for
+    /// [`crate::SupportMagnitudeDirection::Low`], `1` for
+    /// [`crate::SupportMagnitudeDirection::StrictInterior`], `2` for
+    /// [`crate::SupportMagnitudeDirection::High`]. Container-altitude
+    /// peer of
+    /// [`ProvenanceMap::source_kind_support_magnitude_direction_ordinal`]
+    /// on the *output* side of the fold's atomic-pair ownership
+    /// boundary, delegating one seam down into
+    /// `self.provenance.source_kind_support_magnitude_direction_ordinal()`.
+    ///
+    /// Sibling of [`Self::tiers_support_magnitude_direction_ordinal`]
+    /// on the tier axis at the same altitude — the two altitudes now
+    /// name the ordinal-projected support-magnitude-direction bucket on
+    /// both closed coordinates of the atomic `(tier, source)` pair the
+    /// fold carries. On the cardinality-`3` source-kind axis the
+    /// strict-interior middle leg (ordinal `1`) is *vacuously
+    /// unreachable*, so the ordinal reads only `0` (Low) or `2` (High)
+    /// at this altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_magnitude_direction_ordinal() ==
+    ///   source_kind_support_magnitude_direction().ordinal()` — the
+    ///   defining ordinal-projection identity one seam out on the same
+    ///   typed-bucket classifier at the container altitude.
+    /// - `source_kind_support_magnitude_direction_ordinal() ==
+    ///   provenance().source_kind_support_magnitude_direction_ordinal()`
+    ///   — the container-altitude routing identity into the primitive-
+    ///   altitude peer.
+    /// - `source_kind_support_magnitude_direction_ordinal() != 1` on
+    ///   every fold — the strict-interior middle leg is vacuously
+    ///   unreachable on the cardinality-`3` source-kind axis, so the
+    ///   ordinal reads only `0` or `2`.
+    /// - `self.is_empty() ⇒
+    ///   source_kind_support_magnitude_direction_ordinal() == 0` — the
+    ///   empty resolution lands on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    #[must_use]
+    pub fn source_kind_support_magnitude_direction_ordinal(&self) -> usize {
+        self.provenance
+            .source_kind_support_magnitude_direction_ordinal()
     }
 }
 
@@ -93352,6 +93587,101 @@ mod progressive_tests {
         );
     }
 
+    // ── ProvenanceMap::tiers_support_magnitude_direction_ordinal —
+    //    ordinal-axis cell-projection of the support-magnitude-direction
+    //    classifier on the tier altitude, threading
+    //    SupportMagnitudeDirection::ordinal through the typed-bucket
+    //    upstream on the tier axis. Every ordinal in {0, 1, 2} is
+    //    reachable on the cardinality-4 tier axis (strict advance over
+    //    the vacuously-unreachable middle leg on the cardinality-3
+    //    source-kind axis). ──
+
+    #[test]
+    fn tiers_support_magnitude_direction_ordinal_matches_ordinal_projection_of_bucket_pointwise() {
+        // Cross-seam pin: `tiers_support_magnitude_direction_ordinal()`
+        // is the ordinal-axis cell-projection of the typed-bucket peer
+        // `tiers_support_magnitude_direction()` one seam out, so the
+        // two seams must stay pointwise equivalent under every fixture
+        // via `SupportMagnitudeDirection::ordinal`.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            strict,
+        ] {
+            let via_bucket = map.tiers_support_magnitude_direction().ordinal();
+            assert_eq!(map.tiers_support_magnitude_direction_ordinal(), via_bucket);
+        }
+    }
+
+    #[test]
+    fn tiers_support_magnitude_direction_ordinal_fits_ternary_axis_pointwise() {
+        // Ternary-axis bound pin: the ordinal projection reads at most
+        // `2` on every fixture — the closed
+        // `SupportMagnitudeDirection::ALL` axis carries three variants.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.tiers_support_magnitude_direction_ordinal() <= 2);
+        }
+    }
+
+    #[test]
+    fn tiers_support_magnitude_direction_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying bucket is `Low` via
+        // `SupportCardinalityClass::Empty` — the defining low-corner
+        // convention on the empty histogram.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.tiers_support_magnitude_direction_ordinal(), 0);
+    }
+
+    #[test]
+    fn tiers_support_magnitude_direction_ordinal_two_tier_partial_cover_is_one() {
+        // Cardinality-4 strict-interior reachability pin: the two-tier
+        // partial-cover fold on the cardinality-4 tier axis fires the
+        // strict-interior middle leg (ordinal `1`) — the singleton
+        // witness of the strict interval `[2, 2]`. Strict advance over
+        // the cardinality-3 source-kind axis where the middle leg is
+        // vacuously unreachable.
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(strict.tiers_support_magnitude_direction_ordinal(), 1);
+    }
+
+    #[test]
+    fn tiers_support_magnitude_direction_ordinal_reachable_on_every_ordinal_over_witness_set() {
+        // Reachability-complete pin at the tier altitude — the closed
+        // three-cell ordinal axis carries at least one witness per
+        // ordinal in {0, 1, 2}. Direct pin of the cardinality-4
+        // strict-interior reachability signature one seam over on the
+        // ordinal side.
+        let low = ProvenanceMap::default();
+        let strict: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        let high: ProvenanceMap = [
+            ("a", ConfigTierKind::Bare),
+            ("b", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(low.tiers_support_magnitude_direction_ordinal(), 0);
+        assert_eq!(strict.tiers_support_magnitude_direction_ordinal(), 1);
+        assert_eq!(high.tiers_support_magnitude_direction_ordinal(), 2);
+    }
+
     // ── ProvenanceMap::tiers_uniform_count — uniformly-observed-count
     //    boolean predicate on the tier altitude, climbing the "uniform-
     //    count across altitudes" projection from the diff-altitude seed
@@ -113690,6 +114020,91 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::source_kind_support_magnitude_direction_ordinal
+    //    — ordinal-axis cell-projection of the support-magnitude-direction
+    //    classifier on the source-kind axis, threading
+    //    SupportMagnitudeDirection::ordinal through the typed-bucket
+    //    upstream. On the cardinality-3 source-kind axis the middle leg
+    //    (ordinal `1`) is vacuously unreachable, so the ordinal reads
+    //    only `0` or `2`. ──
+
+    #[test]
+    fn source_kind_support_magnitude_direction_ordinal_matches_ordinal_projection_of_bucket_pointwise()
+     {
+        // Cross-seam pin: the ordinal projection agrees pointwise with
+        // `source_kind_support_magnitude_direction().ordinal()` on every
+        // fixture — the two seams project through the same closed
+        // three-cell axis.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let via_bucket = map.source_kind_support_magnitude_direction().ordinal();
+            assert_eq!(
+                map.source_kind_support_magnitude_direction_ordinal(),
+                via_bucket,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_ordinal_never_reads_one_on_source_kind_axis() {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis — the strict-interior middle leg (ordinal `1`) is itself
+        // vacuous, so the ordinal reads only `0` (Low) or `2` (High)
+        // on every fold.
+        let two_cell: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+            two_cell,
+        ] {
+            let o = map.source_kind_support_magnitude_direction_ordinal();
+            assert!(
+                o == 0 || o == 2,
+                "cardinality-3 source-kind axis must read only Low (0) or High (2), got {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_ordinal_empty_map_is_zero() {
+        // Empty-map ceiling pin: the ordinal projection reads `0` on
+        // the empty map since the underlying bucket is `Low` via
+        // `SupportCardinalityClass::Empty`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_support_magnitude_direction_ordinal(), 0);
+    }
+
+    #[test]
+    fn source_kind_support_magnitude_direction_ordinal_mixed_full_cover_is_two() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis projects to High (ordinal `2`).
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.source_kind_support_magnitude_direction_ordinal(), 2);
+    }
+
     // ── ProvenanceMap::source_kinds_uniform_count — uniformly-observed-
     //    count boolean predicate on the source-kind altitude, climbing
     //    the "uniform-count across altitudes" projection from the diff-
@@ -132226,5 +132641,113 @@ mod progressive_tests {
             r.source_kind_support_magnitude_direction(),
             crate::SupportMagnitudeDirection::High,
         );
+    }
+
+    // ── ProgressiveResolution::tiers_support_magnitude_direction_ordinal
+    //    / source_kind_support_magnitude_direction_ordinal — container-
+    //    altitude ordinal-axis cell-projections of the support-
+    //    magnitude-direction classifier at both closed coordinates. ──
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin: the ordinal projection
+        // delegates one seam down into the primitive-altitude peer.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction_ordinal(),
+            p.provenance().tiers_support_magnitude_direction_ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction_ordinal(),
+            n.provenance().tiers_support_magnitude_direction_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_magnitude_direction_ordinal(),
+            empty
+                .provenance()
+                .tiers_support_magnitude_direction_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_ordinal_matches_bucket_ordinal_pointwise() {
+        // Cross-seam pin: the ordinal projection agrees with the
+        // typed-bucket peer's `.ordinal()` at the container altitude.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction_ordinal(),
+            p.tiers_support_magnitude_direction().ordinal(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction_ordinal(),
+            n.tiers_support_magnitude_direction().ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_magnitude_direction_ordinal(),
+            empty.tiers_support_magnitude_direction().ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_ordinal_empty_resolution_is_zero() {
+        // Empty-resolution ceiling pin.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tiers_support_magnitude_direction_ordinal(), 0);
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_ordinal_matches_provenance_pointwise() {
+        // Container-altitude routing pin on the source-kind axis.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_magnitude_direction_ordinal(),
+            p.provenance()
+                .source_kind_support_magnitude_direction_ordinal(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_magnitude_direction_ordinal(),
+            m.provenance()
+                .source_kind_support_magnitude_direction_ordinal(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_magnitude_direction_ordinal(),
+            empty
+                .provenance()
+                .source_kind_support_magnitude_direction_ordinal(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_ordinal_never_reads_strict_interior() {
+        // Vacuous-unreachability pin on the cardinality-3 source-kind
+        // axis at the container altitude — the middle leg (ordinal `1`)
+        // is unreachable on every fold.
+        for r in [
+            Prog::resolve_progressive().source_kind_support_magnitude_direction_ordinal(),
+            Nested::resolve_progressive().source_kind_support_magnitude_direction_ordinal(),
+            source_kind_histogram_mixed_fixture().source_kind_support_magnitude_direction_ordinal(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_magnitude_direction_ordinal(),
+        ] {
+            assert_ne!(r, 1);
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_ordinal_mixed_fixture_is_two() {
+        // Mixed-fixture literal pin: source-kind FullCover on the
+        // cardinality-3 axis projects to High (ordinal `2`) at the
+        // container altitude.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_support_magnitude_direction_ordinal(), 2);
     }
 }
