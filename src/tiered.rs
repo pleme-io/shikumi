@@ -33248,6 +33248,162 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_support_boundary_distance(&self) -> crate::SupportBoundaryDistance {
         self.provenance.source_kind_support_boundary_distance()
     }
+
+    /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
+    /// which magnitude direction of the support-cardinality interval
+    /// this fold's [`ConfigTierKind`] histogram lands on at the tier
+    /// altitude at the container altitude — the tier-axis peer of
+    /// [`Self::source_kind_support_magnitude_direction`] on the same
+    /// resolution container. Routes through
+    /// [`ProvenanceMap::tiers_support_magnitude_direction`] one seam
+    /// down and [`crate::AxisHistogram::support_magnitude_direction`]
+    /// two seams down, delegating via
+    /// `self.provenance.tiers_support_magnitude_direction()`.
+    ///
+    /// Container-altitude lift of the shipped primitive-altitude
+    /// [`ProvenanceMap::tiers_support_magnitude_direction`] on the
+    /// output side of the fold's atomic-pair ownership boundary — the
+    /// orthogonal three-bucket sibling of the shipped
+    /// [`Self::tiers_support_boundary_distance`] over the same
+    /// [`crate::SupportCardinalityClass`] scalar. The two ternaries
+    /// share the [`crate::SupportMagnitudeDirection::StrictInterior`] ==
+    /// [`crate::SupportBoundaryDistance::StrictInterior`] middle leg
+    /// pointwise on
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] alone;
+    /// the fold's two boundary corners split across the two axes —
+    /// [`crate::SupportCardinalityClass::Empty`] lands on
+    /// [`crate::SupportMagnitudeDirection::Low`] here vs
+    /// [`crate::SupportBoundaryDistance::Boundary`] there,
+    /// [`crate::SupportCardinalityClass::FullCover`] lands on
+    /// [`crate::SupportMagnitudeDirection::High`] here vs
+    /// [`crate::SupportBoundaryDistance::Boundary`] there.
+    ///
+    /// Closes the container-altitude support-magnitude-direction
+    /// classifier surface on the tier axis — the fourth
+    /// closed-classifier surface on the resolution container's tier
+    /// coordinate alongside the shipped modality-classifier
+    /// ([`Self::tiers_modality_class`]), support-cardinality-
+    /// classifier ([`Self::tiers_support_cardinality_class`]), and
+    /// distance-from-boundary classifier
+    /// ([`Self::tiers_support_boundary_distance`]).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_magnitude_direction() ==
+    ///   provenance().tiers_support_magnitude_direction()`
+    ///   pointwise — the defining container-altitude routing identity.
+    /// - `tiers_support_magnitude_direction() ==
+    ///   tier_histogram().support_magnitude_direction()` pointwise —
+    ///   the routing equivalence two seams down.
+    /// - `tiers_support_magnitude_direction() ==
+    ///   tiers_support_cardinality_class().support_magnitude_direction()`
+    ///   pointwise — the *class-side* routing equivalence at the tier
+    ///   altitude on the container.
+    /// - `tiers_support_magnitude_direction().is_strict_interior() ==
+    ///   tiers_support_boundary_distance().is_strict_interior()`
+    ///   pointwise — the shared middle leg with the sibling
+    ///   distance-from-boundary classifier.
+    /// - `SupportMagnitudeDirection::ALL.contains(
+    ///   &tiers_support_magnitude_direction())` — the total-
+    ///   classification law.
+    /// - `self.is_empty() ⇒ tiers_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — the empty resolution lands
+    ///   on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()`. Both are
+    /// `O(n)` in practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned
+    /// [`crate::SupportMagnitudeDirection`] fits in a `u8` discriminant.
+    #[must_use]
+    pub fn tiers_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
+        self.provenance.tiers_support_magnitude_direction()
+    }
+
+    /// Closed [`crate::SupportMagnitudeDirection`] bucket variant naming
+    /// which magnitude direction of the support-cardinality interval
+    /// this fold's [`crate::ConfigSourceKind`] histogram lands on at
+    /// the source-kind altitude at the container altitude — the
+    /// source-kind-axis peer of
+    /// [`Self::tiers_support_magnitude_direction`] on the same
+    /// resolution container. Routes through
+    /// [`ProvenanceMap::source_kind_support_magnitude_direction`] one
+    /// seam down and
+    /// [`crate::AxisHistogram::support_magnitude_direction`] two seams
+    /// down, delegating via
+    /// `self.provenance.source_kind_support_magnitude_direction()`.
+    ///
+    /// Together with [`Self::tiers_support_magnitude_direction`], the
+    /// two altitudes now name the support-magnitude-direction
+    /// classifier variant on **both closed coordinates** of the atomic
+    /// `(tier, source)` pair each leaf's [`Provenance`] carries at the
+    /// container altitude — closing the container-altitude
+    /// support-magnitude-direction classifier surface on both closed
+    /// axes on the same fused three-bucket
+    /// [`crate::SupportMagnitudeDirection`] variant tag surface,
+    /// matching the closure the shipped modality-classifier peers,
+    /// support-cardinality-classifier peers, and distance-from-boundary
+    /// classifier peers already hold on the same two coordinates.
+    ///
+    /// **Cardinality-`3` reachability on the source-kind axis — the
+    /// strict-interior bucket is *vacuously unreachable*.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so the
+    /// underlying [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// corner is itself vacuous on this altitude (the strict interval
+    /// `[2, cardinality - 2] = [2, 1]` is empty), and the classifier
+    /// reads witnesses on **two of three** buckets:
+    /// [`crate::SupportMagnitudeDirection::Low`] on the empty
+    /// resolution (via [`crate::SupportCardinalityClass::Empty`]) and
+    /// on every singleton-support fold (via
+    /// [`crate::SupportCardinalityClass::SingularSupport`]);
+    /// [`crate::SupportMagnitudeDirection::High`] on every two-cell
+    /// partial-cover fold (via
+    /// [`crate::SupportCardinalityClass::SingularGap`]) and on every
+    /// three-cell full-cover fold (via
+    /// [`crate::SupportCardinalityClass::FullCover`]).
+    ///
+    /// See [`Self::tiers_support_magnitude_direction`] for the full
+    /// contract on the container-altitude support-magnitude-direction
+    /// peer.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_support_magnitude_direction() ==
+    ///   provenance().source_kind_support_magnitude_direction()`
+    ///   pointwise — the defining container-altitude routing identity.
+    /// - `source_kind_support_magnitude_direction() ==
+    ///   source_kind_histogram().support_magnitude_direction()`
+    ///   pointwise — the routing equivalence two seams down.
+    /// - `source_kind_support_magnitude_direction() ==
+    ///   source_kind_support_cardinality_class().support_magnitude_direction()`
+    ///   pointwise — the *class-side* routing equivalence at the
+    ///   source-kind altitude on the container.
+    /// - `source_kind_support_magnitude_direction().is_strict_interior()
+    ///   == false` on every fold — the strict-interior bucket is
+    ///   *vacuously unreachable* on the cardinality-`3` source-kind
+    ///   axis.
+    /// - `SupportMagnitudeDirection::ALL.contains(
+    ///   &source_kind_support_magnitude_direction())` — the total-
+    ///   classification law.
+    /// - `self.is_empty() ⇒ source_kind_support_magnitude_direction()
+    ///   == SupportMagnitudeDirection::Low` — the empty resolution
+    ///   lands on the low bucket via
+    ///   [`crate::SupportCardinalityClass::Empty`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`.
+    /// Both are `O(n)` in practice since the source-kind axis carries
+    /// a fixed three-cell cardinality; the returned
+    /// [`crate::SupportMagnitudeDirection`] fits in a `u8` discriminant.
+    #[must_use]
+    pub fn source_kind_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
+        self.provenance.source_kind_support_magnitude_direction()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -131745,6 +131901,330 @@ mod progressive_tests {
         assert_eq!(
             r.source_kind_support_boundary_distance(),
             crate::SupportBoundaryDistance::Boundary,
+        );
+    }
+
+    // ------------------------------------------------------------
+    // Container-altitude support-magnitude-direction classifier peer.
+    // Sibling of the boundary-distance block above over the same
+    // SupportCardinalityClass scalar — the two ternaries share the
+    // StrictInterior middle leg pointwise on
+    // SupportCardinalityClass::StrictPartialCover; the fold's two
+    // boundary corners split (Empty → Low here / Boundary there;
+    // FullCover → High here / Boundary there).
+    // ------------------------------------------------------------
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_matches_provenance_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction(),
+            p.provenance().tiers_support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction(),
+            n.provenance().tiers_support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_magnitude_direction(),
+            m.provenance().tiers_support_magnitude_direction(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_magnitude_direction(),
+            empty.provenance().tiers_support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_matches_tier_histogram_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction(),
+            p.tier_histogram().support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction(),
+            n.tier_histogram().support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_magnitude_direction(),
+            m.tier_histogram().support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_matches_tiers_support_cardinality_class_projection_pointwise()
+     {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction(),
+            p.tiers_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction(),
+            n.tiers_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_magnitude_direction(),
+            m.tiers_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_support_magnitude_direction(),
+            empty
+                .tiers_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_empty_resolution_is_low_variant() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            r.tiers_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_total_classification_partitions_every_fixture() {
+        for bucket in [
+            Prog::resolve_progressive().tiers_support_magnitude_direction(),
+            Nested::resolve_progressive().tiers_support_magnitude_direction(),
+            source_kind_histogram_mixed_fixture().tiers_support_magnitude_direction(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .tiers_support_magnitude_direction(),
+        ] {
+            assert!(
+                crate::SupportMagnitudeDirection::ALL.contains(&bucket),
+                "bucket {bucket:?} not in SupportMagnitudeDirection::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_shares_strict_interior_leg_with_boundary_distance_pointwise()
+     {
+        // The two sibling ternaries agree pointwise on the shared
+        // StrictInterior middle leg (both class-side to
+        // SupportCardinalityClass::StrictPartialCover alone).
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_support_magnitude_direction().is_strict_interior(),
+            p.tiers_support_boundary_distance().is_strict_interior(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_support_magnitude_direction().is_strict_interior(),
+            n.tiers_support_boundary_distance().is_strict_interior(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_support_magnitude_direction().is_strict_interior(),
+            m.tiers_support_boundary_distance().is_strict_interior(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty
+                .tiers_support_magnitude_direction()
+                .is_strict_interior(),
+            empty.tiers_support_boundary_distance().is_strict_interior(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_prog_fixture_is_high() {
+        // Prog fixture: tier SingularGap (distinct_cells = 3 =
+        // cardinality - 1 on the four-cell tier axis) — one of the
+        // two high-support corners — projects to High.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularGap,
+        );
+        assert_eq!(
+            r.tiers_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_support_magnitude_direction_nested_fixture_is_strict_interior() {
+        // Nested fixture: tier StrictPartialCover (distinct_cells = 2
+        // — the singleton strict interior on the four-cell tier axis)
+        // projects to StrictInterior — the reachable middle leg, the
+        // strict advance over the cardinality-`3` source-kind altitude
+        // where StrictInterior is vacuously unreachable.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+        assert_eq!(
+            r.tiers_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::StrictInterior,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_matches_provenance_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_magnitude_direction(),
+            p.provenance().source_kind_support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_magnitude_direction(),
+            n.provenance().source_kind_support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_magnitude_direction(),
+            m.provenance().source_kind_support_magnitude_direction(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_magnitude_direction(),
+            empty.provenance().source_kind_support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_matches_source_kind_histogram_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_magnitude_direction(),
+            p.source_kind_histogram().support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_magnitude_direction(),
+            n.source_kind_histogram().support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_magnitude_direction(),
+            m.source_kind_histogram().support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_matches_source_kind_support_cardinality_class_projection_pointwise()
+     {
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_support_magnitude_direction(),
+            p.source_kind_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_support_magnitude_direction(),
+            n.source_kind_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_support_magnitude_direction(),
+            m.source_kind_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_support_magnitude_direction(),
+            empty
+                .source_kind_support_cardinality_class()
+                .support_magnitude_direction(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_empty_resolution_is_low_variant() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            r.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_total_classification_partitions_every_fixture()
+    {
+        for bucket in [
+            Prog::resolve_progressive().source_kind_support_magnitude_direction(),
+            Nested::resolve_progressive().source_kind_support_magnitude_direction(),
+            source_kind_histogram_mixed_fixture().source_kind_support_magnitude_direction(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_magnitude_direction(),
+        ] {
+            assert!(
+                crate::SupportMagnitudeDirection::ALL.contains(&bucket),
+                "bucket {bucket:?} not in SupportMagnitudeDirection::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_never_is_strict_interior_across_fixtures() {
+        // Vacuous-unreachability pin on the cardinality-`3`
+        // ConfigSourceKind axis — StrictPartialCover is itself vacuous,
+        // so the shared StrictInterior middle leg reads false on every
+        // fold.
+        for r in [
+            Prog::resolve_progressive().source_kind_support_magnitude_direction(),
+            Nested::resolve_progressive().source_kind_support_magnitude_direction(),
+            source_kind_histogram_mixed_fixture().source_kind_support_magnitude_direction(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_support_magnitude_direction(),
+        ] {
+            assert!(!r.is_strict_interior());
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_prog_fixture_is_low() {
+        // Prog fixture: source-kind SingularSupport (distinct_cells = 1)
+        // — one of the two low-support corners — projects to Low.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+        assert_eq!(
+            r.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_support_magnitude_direction_mixed_fixture_is_high() {
+        // Mixed fixture: source-kind FullCover (distinct_cells = 3 =
+        // axis_cardinality — one of the two high-support corners on
+        // the cardinality-`3` axis) projects to High.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.source_kind_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
+        );
+        assert_eq!(
+            r.source_kind_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
         );
     }
 }
