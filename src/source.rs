@@ -1024,6 +1024,100 @@ impl ConfigSourceKind {
             Self::File => 2,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Defaults`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Env`]`)`
+    /// - `2` → [`Some`]`(`[`Self::File`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one
+    /// axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// three-cell surface the (`as_str`, `from_canonical_str`) pair inverts
+    /// the scalar-`&'static str` projection [`Self::as_str`]. Neither
+    /// projection is total on the codomain — the string surface admits
+    /// non-canonical labels, the ordinal surface admits `usize` values
+    /// `>= 3` — so both invertors return [`Option<Self>`] rather than a
+    /// total `Self`, keeping the "not on the variant surface" case a
+    /// typed [`None`] rather than a fabricated variant.
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on the
+    /// atomic `(tier, source)` pair's SOURCE-KIND axis. The tier-kind
+    /// side, [`crate::ConfigTierKind::from_ordinal`], carries the same
+    /// closed-match shape, the same [`Option<Self>`] return, and the
+    /// same `const`-callability contract on the sealed-fold's four-cell
+    /// tier axis; this landing closes the same discipline on the
+    /// three-cell source axis. Together they close the (ordinal,
+    /// from_ordinal) round-trip pair on BOTH closed coordinates of the
+    /// atomic pair the sealed fold resolves through — the axis the
+    /// fleet's ConfigPlane resolver builds every
+    /// [`crate::Provenance::source`] on.
+    ///
+    /// **Round-trip law** —
+    /// `ConfigSourceKind::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: ConfigSourceKind`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::config_source_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `ConfigSourceKind::from_ordinal(o) == None` for every `o >= 3`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format ordinal from a version-skewed peer or an
+    /// operator-typed CLI argument through [`str::parse::<usize>`][str::parse]
+    /// without a bounds check. Pinned by
+    /// [`tests::config_source_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch table
+    /// (e.g. a `const [ConfigSourceKind; 3]` variant array indexed by
+    /// ordinal, or a `const` per-source-kind label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::config_source_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `ConfigSourceKind::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 3`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order — the provider-chain precedence
+    /// `Defaults → Env → File` (later overriding earlier) inside the
+    /// [`crate::ConfigTierKind::Custom`] row — so the test below pins the
+    /// pointwise agreement and a future edit that shifts one without the
+    /// other fails at test time on the first drifted position. Pinned by
+    /// [`tests::config_source_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a ConfigPlane attestation payload emitting the
+    /// source-kind tag as a bare `u8` at wire time (a `const [_; 3]`
+    /// per-source-kind weight vector keyed by ordinal routing
+    /// defaults-tier attributions under a different weight than
+    /// operator-supplied env/file overlays, a per-source-kind
+    /// retry-budget slot keyed by ordinal in a `const` initializer)
+    /// recovers the typed variant on the reader side without a
+    /// hand-rolled `match o { 0 => …, 1 => …, _ => panic!() }` ladder
+    /// that would drift silently as a fourth source-kind variant lands
+    /// (a hypothetical `Http`, `Vault`, or `ConfigMap` layer). The
+    /// closed match here degrades cleanly to [`None`] on out-of-range,
+    /// so a version-skewed peer emitting a `3`-ordinal reads as an
+    /// unknown rather than a runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Defaults),
+            1 => Some(Self::Env),
+            2 => Some(Self::File),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for ConfigSourceKind {
@@ -96751,6 +96845,100 @@ mod tests {
         assert_eq!(DEFAULTS_ORD, 0);
         assert_eq!(ENV_ORD, 1);
         assert_eq!(FILE_ORD, 2);
+    }
+
+    #[test]
+    fn config_source_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `ConfigSourceKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: ConfigSourceKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed three-cell declaration order (`ConfigSourceKind::ALL`,
+        // provider-chain precedence `Defaults → Env → File`, later
+        // overriding earlier inside the `ConfigTierKind::Custom` row);
+        // the law holds by construction. Sibling of
+        // `config_tier_kind_from_ordinal_round_trips_via_ordinal` on the
+        // tier-kind axis of the atomic (tier, source) pair.
+        for &kind in ConfigSourceKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = ConfigSourceKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 3` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `config_tier_kind_from_ordinal_rejects_out_of_range` on the
+        // tier-kind axis of the atomic (tier, source) pair.
+        assert_eq!(ConfigSourceKind::from_ordinal(3), None);
+        assert_eq!(ConfigSourceKind::from_ordinal(4), None);
+        assert_eq!(ConfigSourceKind::from_ordinal(42), None);
+        assert_eq!(ConfigSourceKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn config_source_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(ConfigSourceKind::ALL[i])` for every
+        // i in 0..3 — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Sibling of
+        // `config_tier_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the tier-kind axis of the atomic (tier, source) pair.
+        for (index, &expected) in ConfigSourceKind::ALL.iter().enumerate() {
+            assert_eq!(
+                ConfigSourceKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with ConfigSourceKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (3) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            ConfigSourceKind::from_ordinal(ConfigSourceKind::ALL.len()),
+            None,
+            "ordinal equal to ConfigSourceKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `ConfigSourceKind::ordinal` and the sibling
+        // `ConfigSourceKind::as_str`. A drop of the `const` qualifier
+        // on `ConfigSourceKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness
+        // one of the four const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection. Sibling of
+        // `config_tier_kind_from_ordinal_is_const_callable` on the
+        // tier-kind axis of the atomic (tier, source) pair.
+        const AT_0: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(0);
+        const AT_1: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(1);
+        const AT_2: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(2);
+        const AT_3: Option<ConfigSourceKind> = ConfigSourceKind::from_ordinal(3);
+
+        assert_eq!(AT_0, Some(ConfigSourceKind::Defaults));
+        assert_eq!(AT_1, Some(ConfigSourceKind::Env));
+        assert_eq!(AT_2, Some(ConfigSourceKind::File));
+        assert_eq!(AT_3, None);
     }
 
     #[test]
