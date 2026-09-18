@@ -35694,6 +35694,76 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::kind).collect()
     }
 
+    /// Per-line glyph projection of [`Self::lines`] over the
+    /// unified-diff prefix axis — a length-`self.lines.len()`
+    /// `Vec<char>` whose `i`-th entry is `self.lines[i].glyph()`
+    /// (`'-'` for [`DiffLine::Removed`], `'+'` for [`DiffLine::Added`],
+    /// `' '` for [`DiffLine::Context`]).
+    ///
+    /// Container-altitude lift of [`DiffLine::glyph`] one seam up onto
+    /// the [`ConfigDiff`] surface, closing the per-line container-
+    /// altitude projection trio — [`Self::line_kinds`] on the typed-
+    /// variant axis, [`Self::line_ordinals`] on the ordinal axis, and
+    /// this one on the glyph axis — on the same three axes the tag-side
+    /// [`DiffLine`] primitive already carries (`kind` / `ordinal` /
+    /// `glyph` / `as_str`). Consumers that need the per-line prefix
+    /// character without the payload — a per-line structured-log
+    /// emitter tagging each line with its unified-diff glyph, a per-
+    /// tier attestation manifest recording the glyph sequence between
+    /// two config tiers as a `Vec<char>`, a Markdown-fenced diff
+    /// renderer that emits the glyph column separately from the text
+    /// column — read this projection once and dispatch on the glyph
+    /// directly, replacing the pre-lift
+    /// `self.lines.iter().map(DiffLine::glyph).collect::<Vec<_>>()`
+    /// two-hop projection at every such consumer with the one-hop
+    /// [`Self::line_glyphs`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the sibling scalar projections
+    /// [`Self::line_kinds`] (per-line typed variant via [`DiffLine::kind`])
+    /// and [`Self::line_ordinals`] (per-line ordinal via
+    /// [`DiffLine::ordinal`]) one axis over: same length, same `O(n)`
+    /// cost, same container-altitude discipline. The kind-side and
+    /// glyph-side projections agree pointwise under the primitive-
+    /// altitude accessor [`DiffLineKind::glyph`], the reason the two
+    /// container-altitude seams sit on the same enum axis. Empty diff
+    /// yields an empty vec; the projection is total on [`Self::lines`].
+    ///
+    /// # Invariants
+    ///
+    /// - `line_glyphs().len() == self.lines.len()` — the row-preserving
+    ///   projection stays parallel to the line list pointwise.
+    /// - `line_glyphs()[i] == self.lines[i].glyph()` for every `i <
+    ///   self.lines.len()` — pointwise agreement with the tag-side
+    ///   per-line glyph accessor at the payload-bearing altitude.
+    /// - `line_glyphs().is_empty() == self.lines.is_empty()` — the
+    ///   projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - `line_glyphs()[i] == self.line_kinds()[i].glyph()` for every
+    ///   `i < self.lines.len()` — container-altitude cross-projection
+    ///   between this glyph projection and the typed-variant sibling
+    ///   via the primitive-altitude [`DiffLineKind::glyph`] accessor,
+    ///   the reason the two container-altitude seams sit on the same
+    ///   enum axis.
+    /// - Every entry lies in the fixed three-character set
+    ///   `{'-', '+', ' '}` — the closed image of [`DiffLine::glyph`]
+    ///   over the diff-cell kind axis, so a future edit that emitted
+    ///   a stray character diverges at the closed-image pin.
+    /// - The [`Self::kind_histogram`] tally reconciles pointwise —
+    ///   `line_glyphs().iter().filter(|g| **g == chosen.glyph()).count()
+    ///   == kind_histogram().count(chosen)` for every `chosen:
+    ///   DiffLineKind` — the row-preserving projection and the
+    ///   fixed-cardinality collapse read the same per-line kinds.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one `char` per line, no per-line allocation beyond the
+    /// output vec's own storage.
+    #[must_use]
+    pub fn line_glyphs(&self) -> Vec<char> {
+        self.lines.iter().map(DiffLine::glyph).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -47885,6 +47955,191 @@ mod tests {
             assert_eq!(
                 via_kinds, via_histogram,
                 "line_kinds count of {chosen:?} ({via_kinds}) must equal kind_histogram count ({via_histogram})",
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_glyphs — container-altitude lift of
+    //    DiffLine::glyph one seam up onto the payload-bearing
+    //    ConfigDiff surface, row-preserving glyph sibling of
+    //    ConfigDiff::line_kinds / line_ordinals on the diff-cell axis ─
+
+    #[test]
+    fn line_glyphs_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_glyphs().len()` equals
+        // `self.lines.len()` on every fixture. The projection is
+        // total on the line list at length `self.lines.len()` (never
+        // the fixed-cardinality collapse of `kind_histogram` /
+        // `present_kinds`), so a future edit that drops or duplicates
+        // a line at the seam fails here on the first mismatched
+        // length — idiom-peer of `line_kinds_len_agrees_with_lines_len`
+        // and `line_ordinals_len_agrees_with_lines_len` one axis over.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_glyphs().len(),
+                diff.lines.len(),
+                "line_glyphs().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyphs_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // glyph projection. The seam is total on the line list, so
+        // the empty line list projects to the empty vec — the
+        // identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_kinds_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_glyphs().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_glyphs_agree_with_diff_line_glyph_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude projection equals the tag-side per-line accessor
+        // at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_glyphs` here, `DiffLine::glyph`) declare
+        // the (variant → glyph) mapping independently on the same
+        // closed three-cell axis. A future edit shifting one match
+        // without the other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_glyphs();
+        assert_eq!(glyphs.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                glyphs[i],
+                line.glyph(),
+                "line_glyphs()[{i}] must equal self.lines[{i}].glyph()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyphs_agree_with_line_kinds_under_kind_glyph() {
+        // Container-altitude cross-projection pin: the glyph seam
+        // and the typed-variant seam agree pointwise under the
+        // primitive-altitude `DiffLineKind::glyph` accessor —
+        // `line_glyphs()[i] == line_kinds()[i].glyph()` for every
+        // `i`. The reason the two container-altitude projections
+        // sit on the same enum axis: the glyph is the closed image
+        // of the typed variant under `DiffLineKind::glyph`, so a
+        // future edit that shifted either seam without the other
+        // diverges here on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_glyphs();
+        let kinds = diff.line_kinds();
+        assert_eq!(glyphs.len(), kinds.len());
+        for i in 0..glyphs.len() {
+            assert_eq!(
+                glyphs[i],
+                kinds[i].glyph(),
+                "line_glyphs()[{i}] must equal line_kinds()[{i}].glyph()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyphs_are_in_closed_three_character_image() {
+        // Closed-image pin: every entry in the glyph projection lies
+        // in the fixed three-character set `{'-', '+', ' '}` — the
+        // closed image of `DiffLine::glyph` over the diff-cell kind
+        // axis. A future edit that emitted a stray character (say,
+        // `'*'` for a hypothetical `Header` variant landing on the
+        // diff-cell axis without a matching image update) diverges
+        // here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, glyph) in diff.line_glyphs().into_iter().enumerate() {
+            assert!(
+                glyph == '-' || glyph == '+' || glyph == ' ',
+                "line_glyphs()[{i}] = {glyph:?} must lie in the closed image {{'-', '+', ' '}}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyphs_reconcile_with_kind_histogram_per_cell() {
+        // Fixed-cardinality reconciliation pin: for every closed-
+        // axis cell, the count of that cell's glyph in the row-
+        // preserving `line_glyphs()` projection equals the
+        // histogram's count for that cell — the row-preserving
+        // projection and the fixed-cardinality collapse read the
+        // same per-line kinds through the closed `DiffLineKind::glyph`
+        // image. A future edit that shifted one seam without the
+        // other (say, a histogram overload that started skipping a
+        // cell, or a `line_glyphs` implementation that peeked at
+        // the payload) fails here on the first drifted cell.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_glyphs();
+        let histogram = diff.kind_histogram();
+        for chosen in DiffLineKind::ALL.iter().copied() {
+            let via_glyphs = glyphs.iter().filter(|g| **g == chosen.glyph()).count();
+            let via_histogram = histogram.count(chosen);
+            assert_eq!(
+                via_glyphs,
+                via_histogram,
+                "line_glyphs count of {:?} ({via_glyphs}) must equal kind_histogram count of {chosen:?} ({via_histogram})",
+                chosen.glyph(),
             );
         }
     }
