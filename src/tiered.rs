@@ -35325,6 +35325,106 @@ impl DiffLineKind {
             Self::Context => 2,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Removed`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Added`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Context`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`]
+    /// one axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// three-cell surface the (`as_str`, `from_canonical_str`) pair
+    /// inverts the scalar-`&'static str` projection [`Self::as_str`].
+    /// Neither projection is total on the codomain — the string surface
+    /// admits non-canonical labels, the ordinal surface admits `usize`
+    /// values `>= 3` — so both invertors return [`Option<Self>`] rather
+    /// than a total `Self`, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant.
+    ///
+    /// Sibling landing of [`crate::ConfigSourceKind::from_ordinal`] on
+    /// the three-cell source-kind axis of the atomic `(tier, source)`
+    /// pair (commit `03b2535`) and of
+    /// [`crate::ConfigTierKind::from_ordinal`] on the four-cell tier-
+    /// kind axis (commit `53c3e4f`), lifted here one primitive over
+    /// onto the diff-cell kind axis at the diff altitude. The three
+    /// closed-`tiered.rs`-scoped ordinal-emitting axes
+    /// (`ConfigTierKind`, `DiffLineKind`, and the container-level
+    /// primitives on top of them) now carry the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on both closed coordinates of
+    /// the diff-observation surface.
+    ///
+    /// **Round-trip law** —
+    /// `DiffLineKind::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: DiffLineKind`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::diff_line_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `DiffLineKind::from_ordinal(o) == None` for every `o >= 3`. The
+    /// closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format ordinal from a version-
+    /// skewed peer or an operator-typed CLI argument through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::diff_line_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] / [`Self::glyph`] on the sibling scalar-
+    /// surface projections on the same primitive. Consumers wanting a
+    /// compile-time-selected ordinal-keyed dispatch table
+    /// (a `const [DiffLineKind; 3]` variant array indexed by ordinal,
+    /// or a `const` per-diff-cell label/glyph built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` /
+    /// `Self::from_ordinal(o).unwrap().glyph()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::diff_line_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `DiffLineKind::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 3`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order (`Removed → Added → Context`,
+    /// the operator-facing rendering order the unified-diff renderer
+    /// emits within a hunk), so the test below pins the pointwise
+    /// agreement and a future edit that shifts one without the other
+    /// fails at test time on the first drifted position. Pinned by
+    /// [`tests::diff_line_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a `ConfigDiff` attestation payload emitting the
+    /// per-line kind tag as a bare `u8` at wire time (a `const [_; 3]`
+    /// per-diff-cell-kind weight vector keyed by ordinal routing
+    /// removed-line rollups under a different weight than context-line
+    /// rollups, a `const [_; 3]` per-diff-cell-kind renderer slot in
+    /// the unified-diff emitter, a per-diff-cell-kind retry-budget slot
+    /// keyed by ordinal in a `const` initializer) recovers the typed
+    /// variant on the reader side without a hand-rolled
+    /// `match o { 0 => …, 1 => …, _ => panic!() }` ladder that would
+    /// drift silently as a fourth diff-cell kind (a hypothetical
+    /// `Header` shape for hunk headers, a `Sep` shape for inter-hunk
+    /// separators) landed. The closed match here degrades cleanly to
+    /// [`None`] on out-of-range, so a version-skewed peer emitting a
+    /// `3`-ordinal (a hypothetical future diff-cell kind beyond the
+    /// closed three-cell partition) reads as an unknown rather than a
+    /// runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Removed),
+            1 => Some(Self::Added),
+            2 => Some(Self::Context),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for DiffLineKind {
@@ -45991,6 +46091,109 @@ mod tests {
         assert_eq!(REMOVED_ORD, 0);
         assert_eq!(ADDED_ORD, 1);
         assert_eq!(CONTEXT_ORD, 2);
+    }
+
+    #[test]
+    fn diff_line_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `DiffLineKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: DiffLineKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed three-cell declaration order (`DiffLineKind::ALL`,
+        // the unified-diff rendering precedence `Removed → Added →
+        // Context`); the law holds by construction. This pin re-states
+        // it once on the DiffLineKind surface so a future edit that
+        // drifts one match without the other fails here on the first
+        // drifted variant. Idiom-peer of
+        // `config_tier_kind_from_ordinal_round_trips_via_ordinal` on
+        // the four-cell tier-kind axis and
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal`
+        // on the sibling three-cell source-kind axis of the atomic
+        // `(tier, source)` pair; lifted here one primitive over onto
+        // the diff-cell kind axis at the diff altitude.
+        for &kind in DiffLineKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = DiffLineKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 3` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Idiom-peer of
+        // `config_source_kind_from_ordinal_rejects_out_of_range` on
+        // the sibling three-cell source-kind axis and
+        // `config_tier_kind_from_ordinal_rejects_out_of_range` on the
+        // four-cell tier-kind axis.
+        assert_eq!(DiffLineKind::from_ordinal(3), None);
+        assert_eq!(DiffLineKind::from_ordinal(4), None);
+        assert_eq!(DiffLineKind::from_ordinal(42), None);
+        assert_eq!(DiffLineKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn diff_line_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(DiffLineKind::ALL[i])` for every
+        // i in 0..3 — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Peer of
+        // `config_tier_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the four-cell tier-kind axis and
+        // `config_source_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling three-cell source-kind axis.
+        for (index, &expected) in DiffLineKind::ALL.iter().enumerate() {
+            assert_eq!(
+                DiffLineKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with DiffLineKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (3) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            DiffLineKind::from_ordinal(DiffLineKind::ALL.len()),
+            None,
+            "ordinal equal to DiffLineKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `DiffLineKind::ordinal` and of the sibling
+        // scalar-surface projections `DiffLineKind::as_str` and
+        // `DiffLineKind::glyph`. A drop of the `const` qualifier
+        // on `DiffLineKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness
+        // one of the four const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const AT_0: Option<DiffLineKind> = DiffLineKind::from_ordinal(0);
+        const AT_1: Option<DiffLineKind> = DiffLineKind::from_ordinal(1);
+        const AT_2: Option<DiffLineKind> = DiffLineKind::from_ordinal(2);
+        const AT_3: Option<DiffLineKind> = DiffLineKind::from_ordinal(3);
+
+        assert_eq!(AT_0, Some(DiffLineKind::Removed));
+        assert_eq!(AT_1, Some(DiffLineKind::Added));
+        assert_eq!(AT_2, Some(DiffLineKind::Context));
+        assert_eq!(AT_3, None);
     }
 
     #[test]
