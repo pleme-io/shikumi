@@ -32385,6 +32385,159 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_modality_degree(&self) -> (usize, usize) {
         self.provenance.source_kind_modality_degree()
     }
+
+    /// The **tier modality-degree-sum scalar** on this resolved fold's
+    /// per-leaf [`ConfigTierKind`] histogram at the container altitude —
+    /// the additive-projection scalar `peak_tier_multiplicity() +
+    /// trough_tier_multiplicity()` reading the sum of the peak-side and
+    /// trough-side multiplicities of the tier histogram off the fold in
+    /// one seam. Returns `0` exactly on the empty resolution; otherwise
+    /// returns `self.provenance().tier_modality_degree_sum()` pointwise.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::tier_modality_degree_sum`] on the *output* side
+    /// of the fold's atomic-pair ownership boundary, delegating one seam
+    /// down into `self.provenance.tier_modality_degree_sum()`. The
+    /// **additive-scalar projection peer** of the shipped fused-pair
+    /// [`Self::tier_modality_degree`] on the same container: the fused
+    /// pair one shape over carries the joint `(peak_mult, trough_mult)`
+    /// scalar; this method carries its additive projection `.0 + .1` as
+    /// one scalar read — the *modality-degree-sum* dashboard cell, the
+    /// balanced-support ceiling attestation `sum == 2 *
+    /// contributing_tiers_count()`, or the two-uniquely-held boundary
+    /// classifier `sum == 2` on non-empty folds.
+    ///
+    /// Sibling of the shipped container-altitude additive-scalar peer
+    /// [`Self::source_kind_modality_degree_sum`] one axis over — the two
+    /// altitudes now name the additive-projection scalar on both closed
+    /// coordinates of the atomic `(tier, source)` pair each leaf's
+    /// [`Provenance`] carries, closing the container-altitude modality-
+    /// degree-sum surface on both closed axes.
+    ///
+    /// Before this seam, a consumer answering *"what is the joint peak-
+    /// plus-trough multiplicity of this resolved fold's tier
+    /// distribution?"* on a `ProgressiveResolution<T>` reached through
+    /// the two-hop borrow `res.provenance().tier_modality_degree_sum()`,
+    /// or open-coded the scalar as
+    /// `res.provenance().peak_tier_multiplicity() +
+    /// res.provenance().trough_tier_multiplicity()` — two independent
+    /// scalar reads plus one addition. This method collapses both
+    /// spellings to one seam on the resolution container itself (halving
+    /// the constant factor of the open-coded idiom by routing through
+    /// the shipped [`crate::AxisHistogram::modality_degree_sum`] single-
+    /// pass paired argmax + argmin fused scan two seams down), matching
+    /// the container-altitude fused-pair peers
+    /// [`Self::tier_modality_degree`] /
+    /// [`Self::source_kind_modality_degree`] on the multiplicity axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_modality_degree_sum() ==
+    ///   provenance().tier_modality_degree_sum()` pointwise — the
+    ///   defining container-altitude routing identity, the same
+    ///   delegation shape [`Self::tier_modality_degree`] carries on the
+    ///   fused-pair side.
+    /// - `tier_modality_degree_sum() ==
+    ///   tier_histogram().modality_degree_sum()` pointwise — the routing
+    ///   equivalence two seams down, since both [`Self::tier_histogram`]
+    ///   and [`ProvenanceMap::tier_modality_degree_sum`] ultimately fold
+    ///   the same per-leaf tier stream through the same primitive.
+    /// - `tier_modality_degree_sum() == tier_modality_degree().0 +
+    ///   tier_modality_degree().1` pointwise — the defining additive-
+    ///   projection identity relating the scalar to the fused pair one
+    ///   shape over.
+    /// - `tier_modality_degree_sum() == 0` iff `self.is_empty()` — the
+    ///   vacuous-nothing boundary, matching the empty convention on
+    ///   [`Self::tier_modality_degree`] one shape over (which reads
+    ///   `(0, 0)` iff empty, whose sum is `0`).
+    /// - `tier_modality_degree_sum() >= 2` on every non-empty resolution
+    ///   — both multiplicity components are `>= 1` on non-empty, so
+    ///   their sum is `>= 2`. The scalar-additive dual of the fused-pair
+    ///   positivity law one shape over.
+    /// - `tier_modality_degree_sum() <= 2 *
+    ///   self.contributing_tiers_count()` always — both multiplicity
+    ///   components are `<= contributing_tiers_count()`, so their sum is
+    ///   bounded above by twice that.
+    /// - `tier_modality_degree_sum() <= 2 *
+    ///   crate::axis_cardinality::<ConfigTierKind>()` always — the
+    ///   four-cell tier axis bounds each component at `4`, so their sum
+    ///   is bounded above by `8`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the fused peak +
+    /// trough multiplicity scan). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the open-coded
+    /// `provenance().peak_tier_multiplicity() +
+    /// provenance().trough_tier_multiplicity()` idiom (which walked the
+    /// counts vector twice — once for the peak multiplicity, once for
+    /// the trough multiplicity) by routing through
+    /// [`crate::AxisHistogram::modality_degree_sum`]'s single-pass fused
+    /// scan two seams down.
+    #[must_use]
+    pub fn tier_modality_degree_sum(&self) -> usize {
+        self.provenance.tier_modality_degree_sum()
+    }
+
+    /// The **source-kind modality-degree-sum scalar** on this resolved
+    /// fold's per-leaf [`crate::ConfigSourceKind`] histogram at the
+    /// container altitude — the additive-projection scalar
+    /// `peak_source_kind_multiplicity() +
+    /// trough_source_kind_multiplicity()` reading the sum of the peak-
+    /// side and trough-side multiplicities of the source-kind histogram
+    /// off the fold in one seam. Returns `0` exactly on the empty
+    /// resolution; otherwise returns
+    /// `self.provenance().source_kind_modality_degree_sum()` pointwise.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::source_kind_modality_degree_sum`] on the *output*
+    /// side of the fold's atomic-pair ownership boundary, delegating one
+    /// seam down into
+    /// `self.provenance.source_kind_modality_degree_sum()`. The **tier-
+    /// altitude peer** of [`Self::tier_modality_degree_sum`] — the two
+    /// altitudes now name the additive-projection scalar on both closed
+    /// coordinates of the atomic `(tier, source)` pair each leaf's
+    /// [`Provenance`] carries, closing the container-altitude modality-
+    /// degree-sum surface on both closed axes.
+    ///
+    /// The **additive-scalar projection peer** of the shipped fused-pair
+    /// [`Self::source_kind_modality_degree`] on the same container: the
+    /// fused pair one shape over carries the joint `(peak_mult,
+    /// trough_mult)` scalar; this method carries its additive projection
+    /// `.0 + .1` as one scalar read — the *modality-degree-sum*
+    /// dashboard cell, the balanced-support ceiling attestation `sum ==
+    /// 2 * contributing_source_kinds_count()`, or the two-uniquely-held
+    /// boundary classifier `sum == 2` on non-empty folds. Cardinality-
+    /// `3` reachable on this axis (one below the tier altitude's
+    /// cardinality-`4` ceiling), so the sum caps at `6` here.
+    ///
+    /// See [`Self::tier_modality_degree_sum`] for the full contract on
+    /// the container-altitude additive-scalar peer (empty-resolution
+    /// convention, routing invariants two seams down, additive-
+    /// projection identity to the fused pair, positivity on non-empty,
+    /// cardinality-bounded upper bounds).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the fused
+    /// peak + trough multiplicity scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the open-coded
+    /// `provenance().peak_source_kind_multiplicity() +
+    /// provenance().trough_source_kind_multiplicity()` idiom (which
+    /// walked the counts vector twice) by routing through
+    /// [`crate::AxisHistogram::modality_degree_sum`]'s single-pass fused
+    /// scan two seams down.
+    #[must_use]
+    pub fn source_kind_modality_degree_sum(&self) -> usize {
+        self.provenance.source_kind_modality_degree_sum()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -129100,5 +129253,289 @@ mod progressive_tests {
         // Prog-fixture heavy-tail `(1, 2)` witness on the same fixture.
         let r = source_kind_histogram_mixed_fixture();
         assert_eq!(r.source_kind_modality_degree(), (1, 2));
+    }
+
+    // ── ProgressiveResolution::tier_modality_degree_sum /
+    //    source_kind_modality_degree_sum — the container-altitude
+    //    additive-scalar projection of the shipped fused pair
+    //    `tier_modality_degree` / `source_kind_modality_degree` one
+    //    shape over. Both reads route through
+    //    AxisHistogram::modality_degree_sum two seams down, so every
+    //    projection pin cross-checks the container-altitude delegate
+    //    against the provenance-map primitive one seam down.
+
+    #[test]
+    fn prog_tier_modality_degree_sum_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tier_modality_degree_sum(),
+            p.provenance().tier_modality_degree_sum(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tier_modality_degree_sum(),
+            n.provenance().tier_modality_degree_sum(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tier_modality_degree_sum(),
+            m.provenance().tier_modality_degree_sum(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tier_modality_degree_sum(),
+            empty.provenance().tier_modality_degree_sum(),
+        );
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_matches_tier_histogram_pointwise() {
+        // Routing pin two seams down: tier_modality_degree_sum ==
+        // tier_histogram().modality_degree_sum() on the resolution
+        // container.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tier_modality_degree_sum(),
+            p.tier_histogram().modality_degree_sum(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tier_modality_degree_sum(),
+            n.tier_histogram().modality_degree_sum(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tier_modality_degree_sum(),
+            m.tier_histogram().modality_degree_sum(),
+        );
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_equals_fused_pair_component_sum_pointwise() {
+        // Additive-projection identity pin: sum == pair.0 + pair.1.
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.tier_modality_degree();
+        assert_eq!(p.tier_modality_degree_sum(), peak + trough);
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.tier_modality_degree();
+        assert_eq!(n.tier_modality_degree_sum(), peak + trough);
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.tier_modality_degree();
+        assert_eq!(m.tier_modality_degree_sum(), peak + trough);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_empty_resolution_is_zero() {
+        // Empty-resolution convention pin.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tier_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_zero_iff_empty_pointwise() {
+        // Vacuous-nothing boundary: sum == 0 iff self.is_empty().
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.tier_modality_degree_sum() == 0, p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.tier_modality_degree_sum() == 0, n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.tier_modality_degree_sum() == 0, m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert!(empty.is_empty());
+        assert_eq!(empty.tier_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_at_least_two_on_non_empty_pointwise() {
+        // Additive-side positivity pin: on every non-empty resolution
+        // both multiplicity components are `>= 1`, so their sum is
+        // `>= 2`.
+        let p = Prog::resolve_progressive();
+        assert!(!p.is_empty());
+        assert!(p.tier_modality_degree_sum() >= 2);
+        let n = Nested::resolve_progressive();
+        assert!(!n.is_empty());
+        assert!(n.tier_modality_degree_sum() >= 2);
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(!m.is_empty());
+        assert!(m.tier_modality_degree_sum() >= 2);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_bounded_by_twice_contributing_pointwise() {
+        // Support upper-bound pin: sum <= 2 * contributing_tiers_count.
+        let p = Prog::resolve_progressive();
+        assert!(p.tier_modality_degree_sum() <= 2 * p.contributing_tiers_count());
+        let n = Nested::resolve_progressive();
+        assert!(n.tier_modality_degree_sum() <= 2 * n.contributing_tiers_count());
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(m.tier_modality_degree_sum() <= 2 * m.contributing_tiers_count());
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_bounded_by_twice_axis_cardinality_pointwise() {
+        // Cardinality upper-bound pin: sum <= 2 * 4 on the four-cell
+        // tier axis.
+        let bound = 2 * crate::axis_cardinality::<ConfigTierKind>();
+        assert_eq!(bound, 8);
+        assert!(Prog::resolve_progressive().tier_modality_degree_sum() <= bound);
+        assert!(Nested::resolve_progressive().tier_modality_degree_sum() <= bound);
+        assert!(source_kind_histogram_mixed_fixture().tier_modality_degree_sum() <= bound);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_prog_fixture_is_three() {
+        // Container-altitude ground-truth pin lifted from
+        // `prog_tier_modality_degree_prog_fixture_is_one_two`: the
+        // fused pair reads (1, 2), so its additive projection is 3.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.tier_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_nested_fixture_is_two() {
+        // Ground-truth: fused pair (1, 1) sums to 2 — the strictly-
+        // unimodal AND strictly-anti-unimodal corner.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.tier_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn prog_tier_modality_degree_sum_mixed_fixture_is_three() {
+        // Ground-truth: fused pair (1, 2) sums to 3.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.tier_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin — source-kind altitude
+        // peer of `prog_tier_modality_degree_sum_matches_provenance_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_degree_sum(),
+            p.provenance().source_kind_modality_degree_sum(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_degree_sum(),
+            n.provenance().source_kind_modality_degree_sum(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_degree_sum(),
+            m.provenance().source_kind_modality_degree_sum(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_modality_degree_sum(),
+            empty.provenance().source_kind_modality_degree_sum(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_matches_source_kind_histogram_pointwise() {
+        // Routing pin two seams down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_degree_sum(),
+            p.source_kind_histogram().modality_degree_sum(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_degree_sum(),
+            n.source_kind_histogram().modality_degree_sum(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_degree_sum(),
+            m.source_kind_histogram().modality_degree_sum(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_equals_fused_pair_component_sum_pointwise() {
+        // Additive-projection identity pin.
+        let p = Prog::resolve_progressive();
+        let (peak, trough) = p.source_kind_modality_degree();
+        assert_eq!(p.source_kind_modality_degree_sum(), peak + trough);
+        let n = Nested::resolve_progressive();
+        let (peak, trough) = n.source_kind_modality_degree();
+        assert_eq!(n.source_kind_modality_degree_sum(), peak + trough);
+        let m = source_kind_histogram_mixed_fixture();
+        let (peak, trough) = m.source_kind_modality_degree();
+        assert_eq!(m.source_kind_modality_degree_sum(), peak + trough);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_empty_resolution_is_zero() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.source_kind_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_zero_iff_empty_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.source_kind_modality_degree_sum() == 0, p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.source_kind_modality_degree_sum() == 0, n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.source_kind_modality_degree_sum() == 0, m.is_empty());
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_at_least_two_on_non_empty_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert!(p.source_kind_modality_degree_sum() >= 2);
+        let n = Nested::resolve_progressive();
+        assert!(n.source_kind_modality_degree_sum() >= 2);
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(m.source_kind_modality_degree_sum() >= 2);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_bounded_by_twice_contributing_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert!(p.source_kind_modality_degree_sum() <= 2 * p.contributing_source_kinds_count());
+        let n = Nested::resolve_progressive();
+        assert!(n.source_kind_modality_degree_sum() <= 2 * n.contributing_source_kinds_count());
+        let m = source_kind_histogram_mixed_fixture();
+        assert!(m.source_kind_modality_degree_sum() <= 2 * m.contributing_source_kinds_count());
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_bounded_by_twice_axis_cardinality_pointwise() {
+        // Cardinality upper-bound pin: sum <= 2 * 3 on the three-cell
+        // source-kind axis (one below the tier altitude's `8`).
+        let bound = 2 * crate::axis_cardinality::<crate::ConfigSourceKind>();
+        assert_eq!(bound, 6);
+        assert!(Prog::resolve_progressive().source_kind_modality_degree_sum() <= bound);
+        assert!(Nested::resolve_progressive().source_kind_modality_degree_sum() <= bound);
+        assert!(source_kind_histogram_mixed_fixture().source_kind_modality_degree_sum() <= bound);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_prog_fixture_is_two() {
+        // Prog fixture: source-kind fused pair (1, 1) sums to 2.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.source_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_nested_fixture_is_two() {
+        // Nested fixture: (1, 1) sums to 2.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.source_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_degree_sum_mixed_fixture_is_three() {
+        // Mixed fixture: (1, 2) sums to 3.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.source_kind_modality_degree_sum(), 3);
     }
 }
