@@ -15296,6 +15296,99 @@ impl PartitionFace {
             Self::Unrealizable => 1,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Realizable`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Unrealizable`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as ClosedAxisLabel>::from_canonical_str`] one axis
+    /// over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// two-cell surface the (`as_str`, `from_canonical_str`) pair
+    /// inverts the scalar-`&'static str` projection [`Self::as_str`].
+    /// Neither projection is total on the codomain — the string surface
+    /// admits non-canonical labels, the ordinal surface admits `usize`
+    /// values `>= 2` — so both invertors return [`Option<Self>`] rather
+    /// than a total `Self`, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant.
+    ///
+    /// Idiom-peer of [`SupportMagnitudeDirection::from_ordinal`] (commit
+    /// `6949bed`) and [`SupportBoundaryDistance::from_ordinal`] (commit
+    /// `3fad432`) on the sibling three-cell typed-bucket classifier
+    /// axes, and of [`SupportCardinalityClass::from_ordinal`] (commit
+    /// `cff3be2`) / [`ModalityClass::from_ordinal`] (commit `1bbab53`)
+    /// on the sibling five-cell cube-classifier axes — same closed-
+    /// match shape, same [`Option<Self>`] return, same `const`-
+    /// callability contract, same round-trip law, sized here against
+    /// the two-cell (realizable × unrealizable) cube-cell partition-
+    /// face axis rather than the sibling three- or five-cell surfaces.
+    /// This closes the last cube-native ordinal-carrying closed-axis
+    /// primitive lacking a const-fn ordinal-inverse peer, completing the
+    /// family across every ordinal-projected `cube.rs` primitive.
+    ///
+    /// **Round-trip law** —
+    /// `PartitionFace::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: PartitionFace`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::partition_face_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `PartitionFace::from_ordinal(o) == None` for every `o >= 2`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format ordinal from a version-skewed peer or an
+    /// operator-typed CLI argument through [`str::parse::<usize>`][str::parse]
+    /// without a bounds check. Pinned by
+    /// [`tests::partition_face_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] / [`Self::is_realizable`] /
+    /// [`Self::is_unrealizable`] on the sibling scalar surfaces.
+    /// Consumers wanting a compile-time-selected ordinal-keyed dispatch
+    /// table (e.g. a `const [PartitionFace; 2]` variant array indexed
+    /// by ordinal, or a `const` per-face label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::partition_face_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `PartitionFace::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 2`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order; the test below pins the
+    /// pointwise agreement so a future edit that shifts one without the
+    /// other fails at test time on the first drifted position. Pinned
+    /// by [`tests::partition_face_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a fleet-wide ordinal-keyed wire format (a
+    /// `ConfigPlane` attestation payload emitting the face tag as a
+    /// bare `u8` at wire time, a `const [_; 2]` per-face weight vector
+    /// keyed by ordinal routing recognized-image rollups under a
+    /// different weight than cross-axis consistency-violation rollups)
+    /// recovers the typed variant on the reader side without a hand-
+    /// rolled `match o { 0 => …, 1 => …, _ => panic!() }` ladder that
+    /// would drift silently as new variants land. The closed match here
+    /// degrades cleanly to [`None`] on out-of-range, so a version-
+    /// skewed peer emitting a `2`-ordinal (a hypothetical future face
+    /// variant, though the axis is closed-binary by construction and no
+    /// third face landing is anticipated) reads as an unknown rather
+    /// than a runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Realizable),
+            1 => Some(Self::Unrealizable),
+            _ => None,
+        }
+    }
 }
 
 /// Typed parse failure of [`<PartitionFace as
@@ -22080,6 +22173,100 @@ mod tests {
         ] {
             assert_eq!(face.ordinal(), expected, "face {face:?}");
         }
+    }
+
+    #[test]
+    fn partition_face_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `PartitionFace::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: PartitionFace. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed two-cell declaration order (`PartitionFace::ALL`);
+        // the law holds by construction. This pin re-states it once
+        // on the PartitionFace surface so a future edit that drifts
+        // one match without the other fails here on the first drifted
+        // variant. Idiom-peer of
+        // `support_magnitude_direction_from_ordinal_round_trips_via_ordinal`
+        // and `support_boundary_distance_from_ordinal_round_trips_via_ordinal`
+        // on the sibling three-cell typed-bucket classifiers and of
+        // `support_cardinality_class_from_ordinal_round_trips_via_ordinal`
+        // / `modality_class_from_ordinal_round_trips_via_ordinal` on
+        // the sibling five-cell cube-classifier axes.
+        for &v in PartitionFace::ALL {
+            let ordinal = v.ordinal();
+            let recovered = PartitionFace::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 2` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Idiom-peer of
+        // `support_magnitude_direction_from_ordinal_rejects_out_of_range`
+        // on the sibling three-cell typed-bucket classifier.
+        assert_eq!(PartitionFace::from_ordinal(2), None);
+        assert_eq!(PartitionFace::from_ordinal(3), None);
+        assert_eq!(PartitionFace::from_ordinal(42), None);
+        assert_eq!(PartitionFace::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn partition_face_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(PartitionFace::ALL[i])` for every
+        // i in 0..2 — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index.
+        for (index, &expected) in PartitionFace::ALL.iter().enumerate() {
+            assert_eq!(
+                PartitionFace::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with PartitionFace::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            PartitionFace::from_ordinal(PartitionFace::ALL.len()),
+            None,
+            "ordinal equal to PartitionFace::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn partition_face_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `PartitionFace::ordinal` and the sibling
+        // `PartitionFace::as_str` / `PartitionFace::is_realizable` /
+        // `PartitionFace::is_unrealizable`. A drop of the `const`
+        // qualifier on `PartitionFace::from_ordinal` fails this test
+        // to compile.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the three const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<PartitionFace> = PartitionFace::from_ordinal(0);
+        const AT_1: Option<PartitionFace> = PartitionFace::from_ordinal(1);
+        const AT_2: Option<PartitionFace> = PartitionFace::from_ordinal(2);
+
+        assert_eq!(AT_0, Some(PartitionFace::Realizable));
+        assert_eq!(AT_1, Some(PartitionFace::Unrealizable));
+        assert_eq!(AT_2, None);
     }
 
     #[test]
