@@ -2807,6 +2807,95 @@ impl SupportBoundaryDistance {
             Self::StrictInterior => 2,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Boundary`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Singular`]`)`
+    /// - `2` → [`Some`]`(`[`Self::StrictInterior`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`Self::from_canonical_str`] one axis over: the
+    /// (`ordinal`, `from_ordinal`) pair inverts the scalar-`usize`
+    /// projection [`Self::ordinal`] on the same closed three-cell
+    /// surface the (`as_str`, `from_canonical_str`) pair inverts the
+    /// scalar-`&'static str` projection [`Self::as_str`]. Neither
+    /// projection is total on the codomain — the string surface admits
+    /// non-canonical labels, the ordinal surface admits `usize`
+    /// values `>= 3` — so both invertors return [`Option<Self>`] rather
+    /// than a total `Self`, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant.
+    /// Idiom-peer of [`SupportCardinalityClass::from_ordinal`] (commit
+    /// `cff3be2`) and [`ModalityClass::from_ordinal`] (commit
+    /// `1bbab53`) on the sibling five-cell cube-classifier axes — same
+    /// closed-match shape, same [`Option<Self>`] return, same
+    /// `const`-callability contract, same round-trip law, sized here
+    /// against the three-cell distance-from-boundary axis instead of
+    /// the five-cell corner-partition axis.
+    ///
+    /// **Round-trip law** —
+    /// `SupportBoundaryDistance::from_ordinal(v.ordinal()) == Some(v)`
+    /// for every `v: SupportBoundaryDistance`. Composes with
+    /// [`Self::ordinal`] on the same [`Self::ALL`] slice literal both
+    /// projections match against; the law holds by construction. Pinned
+    /// by
+    /// [`tests::support_boundary_distance_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SupportBoundaryDistance::from_ordinal(o) == None` for every
+    /// `o >= 3`. The closed match's `_` arm forwards the out-of-range
+    /// case to [`None`] structurally; the guard degrades gracefully on
+    /// a caller passing a stale wire-format ordinal from a version-
+    /// skewed peer or an operator-typed CLI argument through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::support_boundary_distance_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar surface. Consumers wanting
+    /// a compile-time-selected ordinal-keyed dispatch table (e.g. a
+    /// `const [SupportBoundaryDistance; 3]` variant array indexed by
+    /// ordinal, or a `const` per-bucket label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::support_boundary_distance_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `SupportBoundaryDistance::from_ordinal(i) == Some(Self::ALL[i])`
+    /// for every `i < 3`. The inherent match and the [`Self::ALL`]
+    /// slice literal carry the same declaration order; the tests below
+    /// pin the pointwise agreement so a future edit that shifts one
+    /// without the other fails at test time on the first drifted
+    /// position. Pinned by
+    /// [`tests::support_boundary_distance_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a fleet-wide ordinal-keyed wire format (a
+    /// `ConfigPlane` telemetry payload emitting the
+    /// distance-from-boundary bucket as a bare `u8` at wire time, a
+    /// `const [_; 3]` per-bucket weight vector keyed by ordinal
+    /// routing boundary rollups under a different weight than
+    /// strict-interior rollups) recovers the typed variant on the
+    /// reader side without a hand-rolled
+    /// `match o { 0 => …, 1 => …, _ => panic!() }` ladder that would
+    /// drift silently as new variants land. The closed match here
+    /// degrades cleanly to [`None`] on out-of-range, so a version-
+    /// skewed peer emitting a `3`-ordinal (a hypothetical future
+    /// variant) reads as an unknown rather than a runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Boundary),
+            1 => Some(Self::Singular),
+            2 => Some(Self::StrictInterior),
+            _ => None,
+        }
+    }
 }
 
 /// Typed parse failure of
@@ -52883,6 +52972,98 @@ mod tests {
         ] {
             assert_eq!(bucket.ordinal(), expected, "bucket {bucket:?}");
         }
+    }
+
+    #[test]
+    fn support_boundary_distance_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law:
+        // `SupportBoundaryDistance::from_ordinal(v.ordinal()) == Some(v)`
+        // for every v: SupportBoundaryDistance. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed three-cell declaration order
+        // (`SupportBoundaryDistance::ALL`); the law holds by
+        // construction. This pin re-states it once on the
+        // SupportBoundaryDistance surface so a future edit that drifts
+        // one match without the other fails here on the first drifted
+        // variant. Idiom-peer of
+        // `support_cardinality_class_from_ordinal_round_trips_via_ordinal`
+        // and `modality_class_from_ordinal_round_trips_via_ordinal` on
+        // the sibling five-cell cube-classifier axes.
+        for &v in SupportBoundaryDistance::ALL {
+            let ordinal = v.ordinal();
+            let recovered = SupportBoundaryDistance::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 3` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant.
+        assert_eq!(SupportBoundaryDistance::from_ordinal(3), None);
+        assert_eq!(SupportBoundaryDistance::from_ordinal(4), None);
+        assert_eq!(SupportBoundaryDistance::from_ordinal(42), None);
+        assert_eq!(SupportBoundaryDistance::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn support_boundary_distance_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(SupportBoundaryDistance::ALL[i])`
+        // for every i in 0..3 — the inverse of `ordinal` agrees with
+        // the same `Self::ALL` slice literal `ordinal` matches against.
+        // A future edit shifting one match without the other fails here
+        // on the first drifted index.
+        for (index, &expected) in SupportBoundaryDistance::ALL.iter().enumerate() {
+            assert_eq!(
+                SupportBoundaryDistance::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with SupportBoundaryDistance::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (3) the projection returns None
+        // at every offset. Pin the immediate boundary and one axis-
+        // cardinality further to catch a future off-by-one landing.
+        assert_eq!(
+            SupportBoundaryDistance::from_ordinal(SupportBoundaryDistance::ALL.len()),
+            None,
+            "ordinal equal to SupportBoundaryDistance::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn support_boundary_distance_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SupportBoundaryDistance::ordinal` and the sibling
+        // `SupportBoundaryDistance::as_str`. A drop of the `const`
+        // qualifier on `SupportBoundaryDistance::from_ordinal` fails
+        // this test to compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the four const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<SupportBoundaryDistance> = SupportBoundaryDistance::from_ordinal(0);
+        const AT_1: Option<SupportBoundaryDistance> = SupportBoundaryDistance::from_ordinal(1);
+        const AT_2: Option<SupportBoundaryDistance> = SupportBoundaryDistance::from_ordinal(2);
+        const AT_3: Option<SupportBoundaryDistance> = SupportBoundaryDistance::from_ordinal(3);
+
+        assert_eq!(AT_0, Some(SupportBoundaryDistance::Boundary));
+        assert_eq!(AT_1, Some(SupportBoundaryDistance::Singular));
+        assert_eq!(AT_2, Some(SupportBoundaryDistance::StrictInterior));
+        assert_eq!(AT_3, None);
     }
 
     #[test]
