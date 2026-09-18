@@ -465,6 +465,105 @@ impl ConfigTierKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..4` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded four-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Bare`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Discovered`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Default`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Custom`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one
+    /// axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// four-cell surface the (`as_str`, `from_canonical_str`) pair inverts
+    /// the scalar-`&'static str` projection [`Self::as_str`]. Neither
+    /// projection is total on the codomain — the string surface admits
+    /// non-canonical labels, the ordinal surface admits `usize` values
+    /// `>= 4` — so both invertors return [`Option<Self>`] rather than a
+    /// total `Self`, keeping the "not on the variant surface" case a
+    /// typed [`None`] rather than a fabricated variant.
+    ///
+    /// **First landing of the const-fn ordinal-inverse peer idiom outside
+    /// `src/cube.rs`.** The `cube.rs`-scoped closed-axis primitives
+    /// ([`crate::cube::PartitionFace`] on the two-cell face axis,
+    /// [`crate::cube::SupportMagnitudeDirection`] /
+    /// [`crate::cube::SupportBoundaryDistance`] on the sibling three-cell
+    /// typed-bucket classifier axes,
+    /// [`crate::cube::SupportCardinalityClass`] /
+    /// [`crate::cube::ModalityClass`] on the sibling five-cell classifier
+    /// axes) already close the (`ordinal`, `from_ordinal`) round-trip
+    /// pair through their own const-fn inverse peers; this landing carries
+    /// the same closed-match shape, the same [`Option<Self>`] return, and
+    /// the same `const`-callability contract onto the sealed-fold's tier-
+    /// kind axis — the axis the fleet's ConfigPlane resolver builds every
+    /// [`crate::Provenance::tier`] on.
+    ///
+    /// **Round-trip law** —
+    /// `ConfigTierKind::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: ConfigTierKind`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::config_tier_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `ConfigTierKind::from_ordinal(o) == None` for every `o >= 4`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format ordinal from a version-skewed peer or an
+    /// operator-typed CLI argument through [`str::parse::<usize>`][str::parse]
+    /// without a bounds check. Pinned by
+    /// [`tests::config_tier_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch table
+    /// (e.g. a `const [ConfigTierKind; 4]` variant array indexed by
+    /// ordinal, or a `const` per-tier label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::config_tier_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `ConfigTierKind::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 4`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order — the sealed-fold precedence
+    /// `bare → discovered → prescribed_default → custom` per
+    /// `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5 — so the test
+    /// below pins the pointwise agreement and a future edit that shifts
+    /// one without the other fails at test time on the first drifted
+    /// position. Pinned by
+    /// [`tests::config_tier_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a ConfigPlane attestation payload emitting the
+    /// tier tag as a bare `u8` at wire time (a `const [_; 4]` per-tier
+    /// weight vector keyed by ordinal routing bare-tier attributions
+    /// under a different weight than operator-supplied custom overlays,
+    /// a per-tier retry-budget slot keyed by ordinal in a `const`
+    /// initializer) recovers the typed variant on the reader side
+    /// without a hand-rolled `match o { 0 => …, 1 => …, _ => panic!() }`
+    /// ladder that would drift silently as a fifth tier variant lands.
+    /// The closed match here degrades cleanly to [`None`] on
+    /// out-of-range, so a version-skewed peer emitting a `4`-ordinal
+    /// (a hypothetical future tier variant beyond the closed sealed-
+    /// fold quartet) reads as an unknown rather than a runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Bare),
+            1 => Some(Self::Discovered),
+            2 => Some(Self::Default),
+            3 => Some(Self::Custom),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for the three built-in computed-defaults tier kinds
     /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]), `false`
     /// for the operator-supplied overlay tier kind [`Self::Custom`] —
@@ -44144,6 +44243,105 @@ mod tests {
         assert_eq!(DISCOVERED_ORD, 1);
         assert_eq!(DEFAULT_ORD, 2);
         assert_eq!(CUSTOM_ORD, 3);
+    }
+
+    #[test]
+    fn config_tier_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `ConfigTierKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: ConfigTierKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed four-cell declaration order (`ConfigTierKind::ALL`,
+        // sealed-fold precedence `bare → discovered → default → custom`
+        // per theory/CONFIGURATION-MANAGEMENT.md Primitive 5); the law
+        // holds by construction. This pin re-states it once on the
+        // ConfigTierKind surface so a future edit that drifts one match
+        // without the other fails here on the first drifted variant.
+        // Idiom-peer of `partition_face_from_ordinal_round_trips_via_ordinal`
+        // and the sibling three-/five-cell peers in `src/cube.rs`,
+        // lifted here to the sealed-fold's tier-kind axis as the FIRST
+        // const-fn ordinal-inverse landing outside `src/cube.rs`.
+        for &kind in ConfigTierKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = ConfigTierKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 4` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Idiom-peer of
+        // `partition_face_from_ordinal_rejects_out_of_range` on the
+        // sibling two-cell face axis and of the three-/five-cell peers
+        // in `src/cube.rs`.
+        assert_eq!(ConfigTierKind::from_ordinal(4), None);
+        assert_eq!(ConfigTierKind::from_ordinal(5), None);
+        assert_eq!(ConfigTierKind::from_ordinal(42), None);
+        assert_eq!(ConfigTierKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn config_tier_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(ConfigTierKind::ALL[i])` for every
+        // i in 0..4 — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Peer of
+        // `partition_face_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling two-cell face axis in `src/cube.rs`.
+        for (index, &expected) in ConfigTierKind::ALL.iter().enumerate() {
+            assert_eq!(
+                ConfigTierKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with ConfigTierKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (4) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            ConfigTierKind::from_ordinal(ConfigTierKind::ALL.len()),
+            None,
+            "ordinal equal to ConfigTierKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn config_tier_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `ConfigTierKind::ordinal` and the sibling
+        // `ConfigTierKind::as_str`. A drop of the `const` qualifier
+        // on `ConfigTierKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Five `const` bindings — four in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness
+        // one of the five const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const AT_0: Option<ConfigTierKind> = ConfigTierKind::from_ordinal(0);
+        const AT_1: Option<ConfigTierKind> = ConfigTierKind::from_ordinal(1);
+        const AT_2: Option<ConfigTierKind> = ConfigTierKind::from_ordinal(2);
+        const AT_3: Option<ConfigTierKind> = ConfigTierKind::from_ordinal(3);
+        const AT_4: Option<ConfigTierKind> = ConfigTierKind::from_ordinal(4);
+
+        assert_eq!(AT_0, Some(ConfigTierKind::Bare));
+        assert_eq!(AT_1, Some(ConfigTierKind::Discovered));
+        assert_eq!(AT_2, Some(ConfigTierKind::Default));
+        assert_eq!(AT_3, Some(ConfigTierKind::Custom));
+        assert_eq!(AT_4, None);
     }
 
     #[test]
