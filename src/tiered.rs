@@ -32699,6 +32699,164 @@ impl<T> ProgressiveResolution<T> {
     pub fn source_kind_modality_amplitude(&self) -> usize {
         self.provenance.source_kind_modality_amplitude()
     }
+
+    /// The **closed modal / antimodal classifier variant** for this
+    /// resolved fold's per-leaf [`ConfigTierKind`] histogram at the
+    /// container altitude — the fused five-corner [`crate::ModalityClass`]
+    /// variant tag reading the modality-quotient classifier off the
+    /// resolution in one seam. Routes through
+    /// [`ProvenanceMap::tiers_modality_class`] one seam down and
+    /// [`crate::AxisHistogram::modality_class`] two seams down, delegating
+    /// via `self.provenance.tiers_modality_class()`.
+    ///
+    /// Container-altitude peer of
+    /// [`ProvenanceMap::tiers_modality_class`] on the *output* side of the
+    /// fold's atomic-pair ownership boundary. The **classifier-variant
+    /// projection peer** of the shipped fused-pair
+    /// [`Self::tier_modality_degree`] on the same container: the fused
+    /// pair one shape over carries the joint `(peak_mult, trough_mult)`
+    /// scalar; this method carries its five-corner classifier variant tag
+    /// via the same pattern-match [`crate::AxisHistogram::modality_class`]
+    /// applies at the primitive altitude. Sibling of the shipped
+    /// container-altitude additive-scalar peer
+    /// [`Self::tier_modality_degree_sum`] and abs-diff-scalar peer
+    /// [`Self::tier_modality_amplitude`] on the same container — the
+    /// three peers now name the fused pair's classifier variant, additive
+    /// scalar, and abs-diff scalar projections at the container altitude
+    /// on the tier axis.
+    ///
+    /// **Total classification.** Every fold lands on exactly one of the
+    /// five [`crate::ModalityClass`] variants
+    /// ([`crate::ModalityClass::Empty`] on the empty resolution,
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`] on every
+    /// singleton-support fold and every strictly-skewed multi-cell fold
+    /// with both extremes uniquely held,
+    /// [`crate::ModalityClass::TiedModalStrictAntimodal`] on multi-cell
+    /// folds with a tied peak and a unique trough,
+    /// [`crate::ModalityClass::StrictModalTiedAntimodal`] on multi-cell
+    /// folds with a unique peak and a tied trough,
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every
+    /// uniform-count multi-cell fold and on every fold carrying both a
+    /// multi-cell peak plateau and a multi-cell trough plateau).
+    ///
+    /// Before this seam, a consumer answering *"which modality-quotient
+    /// corner does this resolved fold's tier extremal pair land on?"* on
+    /// a `ProgressiveResolution<T>` reached through the two-hop borrow
+    /// `res.provenance().tiers_modality_class()`, or open-coded the
+    /// variant tag as a pattern-match over
+    /// `res.provenance().tier_modality_degree()` — a fused pair build
+    /// plus a five-way pattern-match at every call site. This method
+    /// collapses both spellings to one seam on the resolution container
+    /// itself.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_modality_class() == provenance().tiers_modality_class()`
+    ///   pointwise — the defining container-altitude routing identity,
+    ///   the same delegation shape [`Self::tier_modality_degree`],
+    ///   [`Self::tier_modality_degree_sum`] and
+    ///   [`Self::tier_modality_amplitude`] carry.
+    /// - `tiers_modality_class() == tier_histogram().modality_class()`
+    ///   pointwise — the routing equivalence two seams down.
+    /// - `tiers_modality_class().is_empty() == self.is_empty()` — the
+    ///   empty-variant peer-equivalence with the resolution-container
+    ///   emptiness (every leaf carries an observed tier cell, so map-
+    ///   emptiness and tier-histogram-emptiness coincide).
+    /// - `tiers_modality_class().is_empty() == (self.contributing_tiers_count() == 0)`
+    ///   — the pointwise recovery of the empty-boundary variant on the
+    ///   container from the shipped support-cardinality projection.
+    /// - `ModalityClass::ALL.contains(&tiers_modality_class())` — the
+    ///   total-classification law: every resolution lands on exactly one
+    ///   of the five [`crate::ModalityClass`] variants.
+    /// - `tiers_modality_class()` agrees with the direct pattern-match
+    ///   `match tier_modality_degree() { (0, 0) => Empty, (1, 1) =>
+    ///   StrictModalStrictAntimodal, (_, 1) => TiedModalStrictAntimodal,
+    ///   (1, _) => StrictModalTiedAntimodal, _ => TiedModalTiedAntimodal
+    ///   }` — the same pattern the primitive
+    ///   [`crate::AxisHistogram::modality_class`] carries two seams down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k = crate::axis_cardinality::<ConfigTierKind>()`
+    /// (the fused peak + trough multiplicity scan). Both are `O(n)` in
+    /// practice since the tier axis carries a fixed four-cell cardinality;
+    /// the returned [`crate::ModalityClass`] fits in a `u8` discriminant.
+    #[must_use]
+    pub fn tiers_modality_class(&self) -> crate::ModalityClass {
+        self.provenance.tiers_modality_class()
+    }
+
+    /// The **closed modal / antimodal classifier variant** for this
+    /// resolved fold's per-leaf [`crate::ConfigSourceKind`] histogram at
+    /// the container altitude — the source-kind-altitude peer of
+    /// [`Self::tiers_modality_class`] on the same resolution container.
+    /// Routes through [`ProvenanceMap::source_kind_modality_class`] one
+    /// seam down and [`crate::AxisHistogram::modality_class`] two seams
+    /// down, delegating via
+    /// `self.provenance.source_kind_modality_class()`.
+    ///
+    /// Together with [`Self::tiers_modality_class`], the two altitudes
+    /// now name the modality-quotient classifier variant on **both closed
+    /// coordinates** of the atomic `(tier, source)` pair each leaf's
+    /// [`Provenance`] carries at the container altitude — closing the
+    /// container-altitude modality-classifier surface on both closed
+    /// axes on the same fused five-corner [`crate::ModalityClass`]
+    /// variant tag surface, matching the closure the shipped fused-pair
+    /// / additive-scalar / abs-diff-scalar peers
+    /// ([`Self::tier_modality_degree`] +
+    /// [`Self::source_kind_modality_degree`],
+    /// [`Self::tier_modality_degree_sum`] +
+    /// [`Self::source_kind_modality_degree_sum`],
+    /// [`Self::tier_modality_amplitude`] +
+    /// [`Self::source_kind_modality_amplitude`]) already hold on the
+    /// same two coordinates.
+    ///
+    /// Cardinality-`3` reachability on this axis (one below the tier
+    /// altitude's cardinality-`4` ceiling): every variant of the
+    /// classifier is reachable at some fold on the three-cell
+    /// [`crate::ConfigSourceKind`] axis (the singleton-support fold hits
+    /// `StrictModalStrictAntimodal`; a `(2, 1, 1)` heavy-tail fold hits
+    /// `StrictModalTiedAntimodal`; a `(2, 2, 1)` right-skew fold hits
+    /// `TiedModalStrictAntimodal`; a uniform three-cell cover hits
+    /// `TiedModalTiedAntimodal`; the empty fold hits `Empty`).
+    ///
+    /// See [`Self::tiers_modality_class`] for the full contract on the
+    /// container-altitude modality-classifier peer (empty-resolution
+    /// convention, routing invariants two seams down, total-classification
+    /// law, pattern-match consistency with the fused pair one shape
+    /// over).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_modality_class() ==
+    ///   provenance().source_kind_modality_class()` pointwise — the
+    ///   defining container-altitude routing identity.
+    /// - `source_kind_modality_class() ==
+    ///   source_kind_histogram().modality_class()` pointwise — the
+    ///   routing equivalence two seams down.
+    /// - `source_kind_modality_class().is_empty() == self.is_empty()` —
+    ///   the empty-variant peer-equivalence with the resolution-container
+    ///   emptiness.
+    /// - `ModalityClass::ALL.contains(&source_kind_modality_class())` —
+    ///   the total-classification law.
+    /// - `source_kind_modality_class()` agrees with the direct pattern-
+    ///   match over `source_kind_modality_degree()` — the same pattern
+    ///   [`crate::AxisHistogram::modality_class`] carries two seams
+    ///   down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.len()` (the underlying provenance-map
+    /// histogram build) and `k =
+    /// crate::axis_cardinality::<crate::ConfigSourceKind>()` (the fused
+    /// peak + trough multiplicity scan). Both are `O(n)` in practice
+    /// since the source-kind axis carries a fixed three-cell cardinality;
+    /// the returned [`crate::ModalityClass`] fits in a `u8` discriminant.
+    #[must_use]
+    pub fn source_kind_modality_class(&self) -> crate::ModalityClass {
+        self.provenance.source_kind_modality_class()
+    }
 }
 
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
@@ -129998,5 +130156,339 @@ mod progressive_tests {
         // Mixed fixture: (1, 2), abs-diff 1.
         let r = source_kind_histogram_mixed_fixture();
         assert_eq!(r.source_kind_modality_amplitude(), 1);
+    }
+
+    // ── ProgressiveResolution::tiers_modality_class /
+    //    source_kind_modality_class — the container-altitude modality-
+    //    quotient classifier peer on both closed coordinates of the
+    //    atomic (tier, source) pair. Both reads route through
+    //    AxisHistogram::modality_class two seams down; every projection
+    //    pin cross-checks the container-altitude delegate against the
+    //    provenance-map primitive one seam down and against the direct
+    //    pattern-match over the fused-pair modality-degree scalar one
+    //    shape over.
+
+    #[test]
+    fn prog_tiers_modality_class_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_modality_class(),
+            p.provenance().tiers_modality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_modality_class(),
+            n.provenance().tiers_modality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_modality_class(),
+            m.provenance().tiers_modality_class(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_modality_class(),
+            empty.provenance().tiers_modality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_matches_tier_histogram_pointwise() {
+        // Routing pin two seams down: tiers_modality_class ==
+        // tier_histogram().modality_class() on the resolution container.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.tiers_modality_class(),
+            p.tier_histogram().modality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.tiers_modality_class(),
+            n.tier_histogram().modality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.tiers_modality_class(),
+            m.tier_histogram().modality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_empty_resolution_is_empty_variant() {
+        // Empty-resolution convention pin.
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.tiers_modality_class(), crate::ModalityClass::Empty);
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_is_empty_agrees_with_resolution_is_empty_pointwise() {
+        // Empty-variant peer-equivalence pin:
+        // `tiers_modality_class().is_empty() == self.is_empty()`. Every
+        // leaf carries an observed tier cell, so resolution-emptiness
+        // and tier-histogram-emptiness coincide — the classifier's
+        // empty-boundary variant lands iff the resolution is empty.
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.tiers_modality_class().is_empty(), p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.tiers_modality_class().is_empty(), n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.tiers_modality_class().is_empty(), m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(empty.tiers_modality_class().is_empty(), empty.is_empty());
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_total_classification_partitions_every_fixture() {
+        // Total-classification law pin: every resolution lands on
+        // exactly one of the five ModalityClass variants.
+        for class in [
+            Prog::resolve_progressive().tiers_modality_class(),
+            Nested::resolve_progressive().tiers_modality_class(),
+            source_kind_histogram_mixed_fixture().tiers_modality_class(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default()).tiers_modality_class(),
+        ] {
+            assert!(
+                crate::ModalityClass::ALL.contains(&class),
+                "class {class:?} not in ModalityClass::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_agrees_with_modality_degree_pattern_match_pointwise() {
+        // Pattern-match consistency pin one shape over: the container-
+        // altitude classifier reads the same variant a direct
+        // pattern-match over the fused-pair modality-degree scalar
+        // would read.
+        fn expected(pair: (usize, usize)) -> crate::ModalityClass {
+            match pair {
+                (0, 0) => crate::ModalityClass::Empty,
+                (1, 1) => crate::ModalityClass::StrictModalStrictAntimodal,
+                (_, 1) => crate::ModalityClass::TiedModalStrictAntimodal,
+                (1, _) => crate::ModalityClass::StrictModalTiedAntimodal,
+                _ => crate::ModalityClass::TiedModalTiedAntimodal,
+            }
+        }
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.tiers_modality_class(), expected(p.tier_modality_degree()));
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.tiers_modality_class(), expected(n.tier_modality_degree()));
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.tiers_modality_class(), expected(m.tier_modality_degree()));
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.tiers_modality_class(),
+            expected(empty.tier_modality_degree()),
+        );
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_prog_fixture_is_strict_modal_tied_antimodal() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `prog_tier_modality_degree_prog_fixture_is_one_two`: the
+        // Prog fixture's tier fused pair reads (1, 2) — Default
+        // uniquely peaks at 2 (peak_mult=1) while Bare + Discovered
+        // tie at trough 1 (trough_mult=2). The classifier lands on
+        // the strict-modal-tied-antimodal corner.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.tiers_modality_class(),
+            crate::ModalityClass::StrictModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_nested_fixture_is_strict_modal_strict_antimodal() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `prog_tier_modality_degree_nested_fixture_is_one_one`: the
+        // Nested fixture's tier fused pair reads (1, 1) — Default
+        // uniquely peaks at 2 and Discovered uniquely troughs at 1 on
+        // the observed-support-2 skew. The classifier lands on the
+        // doubly-strict corner (peak and trough both uniquely held).
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.tiers_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn prog_tiers_modality_class_mixed_fixture_is_strict_modal_tied_antimodal() {
+        // Container-altitude ground-truth pin lifted from the shipped
+        // `prog_tier_modality_degree_mixed_fixture_is_one_two`: the
+        // mixed fixture's tier fused pair reads (1, 2) — Custom
+        // uniquely peaks at 2 (peak_mult=1) while Default + Discovered
+        // tie at trough 1 (trough_mult=2). The classifier lands on
+        // the strict-modal-tied-antimodal corner.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.tiers_modality_class(),
+            crate::ModalityClass::StrictModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_matches_provenance_pointwise() {
+        // Defining container-altitude routing pin — source-kind altitude
+        // peer of `prog_tiers_modality_class_matches_provenance_pointwise`.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_class(),
+            p.provenance().source_kind_modality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_class(),
+            n.provenance().source_kind_modality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_class(),
+            m.provenance().source_kind_modality_class(),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_modality_class(),
+            empty.provenance().source_kind_modality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_matches_source_kind_histogram_pointwise() {
+        // Routing pin two seams down.
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_class(),
+            p.source_kind_histogram().modality_class(),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_class(),
+            n.source_kind_histogram().modality_class(),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_class(),
+            m.source_kind_histogram().modality_class(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_empty_resolution_is_empty_variant() {
+        let r: ProgressiveResolution<()> = ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(r.source_kind_modality_class(), crate::ModalityClass::Empty);
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_is_empty_agrees_with_resolution_is_empty_pointwise() {
+        let p = Prog::resolve_progressive();
+        assert_eq!(p.source_kind_modality_class().is_empty(), p.is_empty());
+        let n = Nested::resolve_progressive();
+        assert_eq!(n.source_kind_modality_class().is_empty(), n.is_empty());
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(m.source_kind_modality_class().is_empty(), m.is_empty());
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_modality_class().is_empty(),
+            empty.is_empty(),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_total_classification_partitions_every_fixture() {
+        for class in [
+            Prog::resolve_progressive().source_kind_modality_class(),
+            Nested::resolve_progressive().source_kind_modality_class(),
+            source_kind_histogram_mixed_fixture().source_kind_modality_class(),
+            ProgressiveResolution::<()>::new((), ProvenanceMap::default())
+                .source_kind_modality_class(),
+        ] {
+            assert!(
+                crate::ModalityClass::ALL.contains(&class),
+                "class {class:?} not in ModalityClass::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_agrees_with_modality_degree_pattern_match_pointwise() {
+        // Pattern-match consistency pin, source-kind altitude peer.
+        fn expected(pair: (usize, usize)) -> crate::ModalityClass {
+            match pair {
+                (0, 0) => crate::ModalityClass::Empty,
+                (1, 1) => crate::ModalityClass::StrictModalStrictAntimodal,
+                (_, 1) => crate::ModalityClass::TiedModalStrictAntimodal,
+                (1, _) => crate::ModalityClass::StrictModalTiedAntimodal,
+                _ => crate::ModalityClass::TiedModalTiedAntimodal,
+            }
+        }
+        let p = Prog::resolve_progressive();
+        assert_eq!(
+            p.source_kind_modality_class(),
+            expected(p.source_kind_modality_degree()),
+        );
+        let n = Nested::resolve_progressive();
+        assert_eq!(
+            n.source_kind_modality_class(),
+            expected(n.source_kind_modality_degree()),
+        );
+        let m = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            m.source_kind_modality_class(),
+            expected(m.source_kind_modality_degree()),
+        );
+        let empty: ProgressiveResolution<()> =
+            ProgressiveResolution::new((), ProvenanceMap::default());
+        assert_eq!(
+            empty.source_kind_modality_class(),
+            expected(empty.source_kind_modality_degree()),
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_prog_fixture_is_strict_modal_strict_antimodal() {
+        // Prog fixture: source-kind fused pair (1, 1) on a singleton-
+        // support fold (every computed-tier leaf attributes to the
+        // Defaults source-kind). Classifier lands on the doubly-strict
+        // corner. Peer of
+        // `source_kind_modality_class_prog_singleton_support_is_strict_modal_strict_antimodal`
+        // one altitude down on the provenance map.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.source_kind_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_nested_fixture_is_strict_modal_strict_antimodal() {
+        // Nested fixture: source-kind fused pair (1, 1) on the same
+        // singleton-support source-kind story as Prog — every computed-
+        // constructor leaf attributes to Defaults.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.source_kind_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn prog_source_kind_modality_class_mixed_fixture_is_strict_modal_tied_antimodal() {
+        // Mixed fixture: source-kind fused pair (1, 2) — Defaults
+        // uniquely peaks at 2 while Env + File tie at trough 1.
+        // Classifier lands on strict-modal-tied-antimodal. Peer of
+        // `source_kind_modality_class_heavy_tail_mixed_fixture_is_strict_modal_tied_antimodal`
+        // one altitude down on the provenance map.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.source_kind_modality_class(),
+            crate::ModalityClass::StrictModalTiedAntimodal,
+        );
     }
 }
