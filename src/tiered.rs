@@ -35840,6 +35840,76 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::as_str).collect()
     }
 
+    /// Per-line payload-text projection of [`Self::lines`] over the
+    /// diff-cell text axis — a length-`self.lines.len()`
+    /// `Vec<&str>` (each entry borrowed from the corresponding
+    /// [`DiffLine`]'s inner [`String`]) whose `i`-th entry is
+    /// `self.lines[i].text()`.
+    ///
+    /// Container-altitude lift of [`DiffLine::text`] one seam up onto
+    /// the [`ConfigDiff`] surface — the payload-bearing sibling of
+    /// the payload-independent projection quartet ([`Self::line_kinds`]
+    /// / [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`], all of which read only the [`DiffLine`]
+    /// discriminant). This one reads the inner payload [`String`],
+    /// closing the fifth per-line primitive-altitude accessor
+    /// [`DiffLine::text`] on the container-altitude side and completing
+    /// the row-preserving projection quintet on the same five axes
+    /// [`DiffLine`] carries (`kind` / `ordinal` / `glyph` / `as_str` /
+    /// `text`).
+    ///
+    /// Consumers that need the per-line payload column without the
+    /// discriminant — a Markdown-fenced diff renderer emitting the
+    /// text column separately from the glyph or label column, a
+    /// per-tier attestation manifest recording the payload sequence
+    /// between two config tiers as a `Vec<&str>`, a structured-log
+    /// emitter tagging each line with its raw text under a fixed
+    /// `text` key — read this projection once and dispatch on the
+    /// borrowed slice directly, replacing the pre-lift
+    /// `self.lines.iter().map(DiffLine::text).collect::<Vec<_>>()`
+    /// two-hop projection at every such consumer with the one-hop
+    /// [`Self::line_texts`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// sibling scalar projections [`Self::line_kinds`],
+    /// [`Self::line_ordinals`], [`Self::line_glyphs`], and
+    /// [`Self::line_labels`] one axis over: same length, same `O(n)`
+    /// cost, same container-altitude discipline. The (kind, text)
+    /// pair losslessly reconstructs the original [`DiffLine`] value
+    /// at every index — `DiffLine::from_kind_text(line_kinds()[i],
+    /// line_texts()[i])` recovers `self.lines[i]` when such a
+    /// constructor lands — the reason the two container-altitude
+    /// seams sit on the same enum axis. Empty diff yields an empty
+    /// vec; the projection is total on [`Self::lines`].
+    ///
+    /// # Invariants
+    ///
+    /// - `line_texts().len() == self.lines.len()` — the row-preserving
+    ///   projection stays parallel to the line list pointwise.
+    /// - `line_texts()[i] == self.lines[i].text()` for every `i <
+    ///   self.lines.len()` — pointwise agreement with the tag-side
+    ///   per-line text accessor at the payload-bearing altitude.
+    /// - `line_texts().is_empty() == self.lines.is_empty()` — the
+    ///   projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - Every entry borrows from the corresponding `self.lines[i]`
+    ///   storage — no per-line allocation. Unlike the four sibling
+    ///   projections above, this one IS payload-dependent by
+    ///   construction: two [`ConfigDiff`] values with the same kind
+    ///   sequence but different payload texts project to distinct
+    ///   `Vec<&str>` values, whereas the four payload-independent
+    ///   siblings project to identical vecs.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one `&str` borrow per line, no per-line allocation
+    /// beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_texts(&self) -> Vec<&str> {
+        self.lines.iter().map(DiffLine::text).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -48404,6 +48474,211 @@ mod tests {
                 via_histogram,
                 "line_labels count of {:?} ({via_labels}) must equal kind_histogram count of {chosen:?} ({via_histogram})",
                 chosen.as_str(),
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_texts — payload-bearing container-altitude
+    //    lift of DiffLine::text onto the ConfigDiff surface, row-
+    //    preserving payload sibling of the payload-independent quartet
+    //    line_kinds / line_ordinals / line_glyphs / line_labels ─────
+
+    #[test]
+    fn line_texts_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_texts().len()` equals
+        // `self.lines.len()` on every fixture. The projection is
+        // total on the line list at length `self.lines.len()`, so a
+        // future edit that drops or duplicates a line at the seam
+        // fails here on the first mismatched length — idiom-peer of
+        // `line_labels_len_agrees_with_lines_len` one axis over.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_texts().len(),
+                diff.lines.len(),
+                "line_texts().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_texts_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // text projection. The seam is total on the line list, so
+        // the empty line list projects to the empty vec — the
+        // identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_labels_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_texts().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_texts_agree_with_diff_line_text_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude payload projection equals the tag-side per-line
+        // accessor at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_texts` here, `DiffLine::text`) declare
+        // the (line → text) borrow independently on the same closed
+        // three-cell axis. A future edit shifting one match without
+        // the other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let texts = diff.line_texts();
+        assert_eq!(texts.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                texts[i],
+                line.text(),
+                "line_texts()[{i}] must equal self.lines[{i}].text()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_texts_borrow_from_lines_storage_pointwise() {
+        // Zero-copy pin: each `&str` in the projection points at the
+        // same byte range as the corresponding line's inner
+        // `String`. Compares raw pointers via `str::as_ptr`, catching
+        // a future edit that started allocating per line (e.g.
+        // `String::from(l.text()).as_str()` through a temporary) —
+        // the whole point of the borrowed projection is that it
+        // costs one `&str` pointer per line, not one heap
+        // allocation.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1-payload".into()),
+                DiffLine::Added("a1-payload".into()),
+                DiffLine::Context("c1-payload".into()),
+            ],
+        };
+        let texts = diff.line_texts();
+        assert_eq!(texts.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                texts[i].as_ptr(),
+                line.text().as_ptr(),
+                "line_texts()[{i}] must borrow from self.lines[{i}].text() (same as_ptr)",
+            );
+        }
+    }
+
+    #[test]
+    fn line_texts_depend_on_payload_unlike_the_projection_quartet() {
+        // Payload-dependence pin: unlike the four sibling
+        // projections (`line_kinds` / `line_ordinals` / `line_glyphs`
+        // / `line_labels`, all payload-INDEPENDENT), `line_texts` IS
+        // payload-dependent by construction. Two `ConfigDiff` values
+        // with the same kind sequence but different payload texts
+        // project to identical vecs on the quartet, and to distinct
+        // vecs on the payload-bearing text seam — the reason the
+        // fifth axis needed its own container-altitude lift instead
+        // of a discriminant-only alias.
+        let same_kinds_diff_texts_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("alpha".into()),
+                DiffLine::Added("beta".into()),
+                DiffLine::Context("gamma".into()),
+            ],
+        };
+        let same_kinds_diff_texts_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("ALPHA".into()),
+                DiffLine::Added("BETA".into()),
+                DiffLine::Context("GAMMA".into()),
+            ],
+        };
+        // The quartet agrees pointwise:
+        assert_eq!(
+            same_kinds_diff_texts_a.line_kinds(),
+            same_kinds_diff_texts_b.line_kinds(),
+            "line_kinds is payload-independent; must agree across payload-varied siblings",
+        );
+        assert_eq!(
+            same_kinds_diff_texts_a.line_ordinals(),
+            same_kinds_diff_texts_b.line_ordinals(),
+            "line_ordinals is payload-independent; must agree across payload-varied siblings",
+        );
+        assert_eq!(
+            same_kinds_diff_texts_a.line_glyphs(),
+            same_kinds_diff_texts_b.line_glyphs(),
+            "line_glyphs is payload-independent; must agree across payload-varied siblings",
+        );
+        assert_eq!(
+            same_kinds_diff_texts_a.line_labels(),
+            same_kinds_diff_texts_b.line_labels(),
+            "line_labels is payload-independent; must agree across payload-varied siblings",
+        );
+        // The payload-bearing seam disagrees:
+        assert_ne!(
+            same_kinds_diff_texts_a.line_texts(),
+            same_kinds_diff_texts_b.line_texts(),
+            "line_texts is payload-DEPENDENT; must diverge across payload-varied siblings",
+        );
+    }
+
+    #[test]
+    fn line_texts_reconstruct_lines_with_kind_pair() {
+        // Losslessness pin: the (kind, text) pair reconstructs each
+        // original `DiffLine`. Reading `line_kinds()[i]` and
+        // `line_texts()[i]` and rebuilding the variant via the
+        // discriminant reproduces `self.lines[i]` at every index, so
+        // the two container-altitude seams together carry all the
+        // information the payload-bearing enum does — the
+        // information-theoretic completeness dual of the payload-
+        // independent quartet pin.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        let texts = diff.line_texts();
+        assert_eq!(kinds.len(), texts.len());
+        for i in 0..kinds.len() {
+            let reconstructed = match kinds[i] {
+                DiffLineKind::Removed => DiffLine::Removed(texts[i].to_string()),
+                DiffLineKind::Added => DiffLine::Added(texts[i].to_string()),
+                DiffLineKind::Context => DiffLine::Context(texts[i].to_string()),
+            };
+            assert_eq!(
+                reconstructed, diff.lines[i],
+                "(line_kinds()[{i}], line_texts()[{i}]) must losslessly reconstruct self.lines[{i}]",
             );
         }
     }
