@@ -36043,6 +36043,93 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::is_added).collect()
     }
 
+    /// Container-altitude lift of [`DiffLine::is_context`] one seam
+    /// up onto the [`ConfigDiff`] surface — the third and final
+    /// payload-independent boolean-projection sibling of the payload-
+    /// independent scalar projection quartet ([`Self::line_kinds`] /
+    /// [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`], all of which read only the [`DiffLine`]
+    /// discriminant), lifted to the closed image `{true, false}`
+    /// under [`DiffLineKind::is_context`] on the three-cell diff-cell
+    /// kind axis. Closes the boolean-projection triple alongside the
+    /// shipped [`Self::line_removed_flags`] (landed in `0bc158c`) and
+    /// [`Self::line_added_flags`] (landed in `b66145e`), completing
+    /// the tag-side per-line predicate coverage of the closed ternary
+    /// axis at the container altitude — every cell of the closed
+    /// three-cell diff-cell kind axis now carries its own dense bit
+    /// column at the diff altitude, and the three columns partition
+    /// the row space disjointly with the constant-`true` vector as
+    /// their pointwise disjunction.
+    ///
+    /// Consumers that need the per-line context-side polarity as a
+    /// dense bit column — a per-tier attestation manifest recording
+    /// the unchanged-mask between two config tiers as a `Vec<bool>`,
+    /// a structured-log emitter tagging each line with a boolean
+    /// `context` field, a CLI renderer computing
+    /// `line_context_flags().iter().filter(|b| **b).count()` as the
+    /// unchanged-line total without folding through
+    /// [`Self::kind_histogram`] — read this projection directly,
+    /// replacing the pre-lift
+    /// `self.lines.iter().map(DiffLine::is_context).collect::<Vec<_>>()`
+    /// two-hop projection at every such consumer with the one-hop
+    /// [`Self::line_context_flags`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// sibling scalar projections [`Self::line_kinds`],
+    /// [`Self::line_ordinals`], [`Self::line_glyphs`], and
+    /// [`Self::line_labels`] one axis over, and of the shipped
+    /// boolean-projection siblings [`Self::line_removed_flags`] and
+    /// [`Self::line_added_flags`] one polarity over: same length,
+    /// same `O(n)` cost, same container-altitude discipline. Every
+    /// entry is the closed image of the typed variant under
+    /// [`DiffLineKind::is_context`], so `line_context_flags()[i] ==
+    /// line_kinds()[i].is_context()` at every index — the reason
+    /// this projection sits on the same enum axis as its scalar
+    /// siblings.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_context_flags().len() == self.lines.len()` — the
+    ///   row-preserving projection stays parallel to the line list
+    ///   pointwise.
+    /// - `line_context_flags()[i] == self.lines[i].is_context()` for
+    ///   every `i < self.lines.len()` — pointwise agreement with the
+    ///   tag-side per-line predicate at the payload-bearing altitude.
+    /// - `line_context_flags()[i] == self.line_kinds()[i].is_context()`
+    ///   for every `i` — container-altitude cross-projection with
+    ///   the typed-variant sibling under [`DiffLineKind::is_context`].
+    /// - `line_context_flags().is_empty() == self.lines.is_empty()`
+    ///   — the projection is total on the line list, so the empty
+    ///   diff yields the empty projection.
+    /// - `line_context_flags().iter().filter(|b| **b).count() ==
+    ///   self.kind_histogram().count(DiffLineKind::Context)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the context-cell tally through the closed
+    ///   [`DiffLineKind::is_context`] image.
+    /// - `line_context_flags()[i] == !(line_added_flags()[i] ||
+    ///   line_removed_flags()[i])` for every `i` — the context-side
+    ///   polarity is the complement of the changed-side (added ∪
+    ///   removed) polarity on the ternary axis at the container
+    ///   altitude, closing the boolean triple against the shipped
+    ///   changed-side pair.
+    /// - `line_added_flags()[i] as u8 + line_removed_flags()[i] as u8
+    ///   + line_context_flags()[i] as u8 == 1` for every `i` — the
+    ///   three boolean columns form the closed disjoint partition of
+    ///   the three-cell diff-cell kind axis at the container altitude,
+    ///   so exactly one of them is `true` at every index (the ternary-
+    ///   partition totality-and-disjointness law lifted from
+    ///   [`DiffLineKind`] onto the diff surface).
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, no
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_context_flags(&self) -> Vec<bool> {
+        self.lines.iter().map(DiffLine::is_context).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -49219,6 +49306,270 @@ mod tests {
             assert!(
                 !(added[i] && removed[i]),
                 "line_added_flags()[{i}] && line_removed_flags()[{i}] must be false — added and removed cells are disjoint on the three-cell diff-cell kind axis",
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_context_flags — container-altitude lift
+    //    of DiffLine::is_context on the diff-cell context-side axis ──
+
+    #[test]
+    fn line_context_flags_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_context_flags().len()`
+        // equals `self.lines.len()` on every fixture. The projection
+        // is total on the line list (never the fixed-cardinality
+        // collapse of `kind_histogram`), so a future edit that drops
+        // or duplicates a line at the seam fails here on the first
+        // mismatched length — idiom-peer of
+        // `line_added_flags_len_agrees_with_lines_len` and
+        // `line_removed_flags_len_agrees_with_lines_len` one polarity
+        // over on the same three-cell diff-cell kind axis.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_flags().len(),
+                diff.lines.len(),
+                "line_context_flags().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_flags_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // context-flags projection. The seam is total on the line
+        // list, so the empty line list projects to the empty vec —
+        // the identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_added_flags_empty_diff_is_empty` and
+        // `line_removed_flags_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_context_flags().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_context_flags_agree_with_diff_line_is_context_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude projection equals the tag-side per-line predicate
+        // at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_context_flags` here, `DiffLine::is_context`)
+        // declare the (variant → is-context) mapping independently
+        // on the same closed three-cell axis. A future edit shifting
+        // one match without the other fails here on the first
+        // drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_context_flags();
+        assert_eq!(flags.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                flags[i],
+                line.is_context(),
+                "line_context_flags()[{i}] must equal self.lines[{i}].is_context()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_flags_agree_with_line_kinds_under_kind_is_context() {
+        // Container-altitude cross-projection pin: the context-flags
+        // seam and the typed-variant seam agree pointwise under the
+        // primitive-altitude `DiffLineKind::is_context` predicate —
+        // `line_context_flags()[i] == line_kinds()[i].is_context()`
+        // for every `i`. The reason the two container-altitude
+        // projections sit on the same enum axis: the context-flag is
+        // the closed image of the typed variant under
+        // `DiffLineKind::is_context`, so a future edit that shifted
+        // either seam without the other diverges here on the first
+        // drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_context_flags();
+        let kinds = diff.line_kinds();
+        assert_eq!(flags.len(), kinds.len());
+        for i in 0..flags.len() {
+            assert_eq!(
+                flags[i],
+                kinds[i].is_context(),
+                "line_context_flags()[{i}] must equal line_kinds()[{i}].is_context()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_flags_true_count_reconciles_with_kind_histogram_context() {
+        // Fixed-cardinality reconciliation pin: the count of `true`
+        // entries in the row-preserving `line_context_flags()`
+        // projection equals the histogram's count for
+        // `DiffLineKind::Context` — the row-preserving projection
+        // and the fixed-cardinality collapse read the same per-line
+        // kinds through the closed `DiffLineKind::is_context` image.
+        // A future edit that shifted one seam without the other (a
+        // histogram overload that stopped counting Context, or a
+        // `line_context_flags` implementation that peeked at the
+        // payload) fails here on the first drifted cell.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_context_flags();
+        let histogram = diff.kind_histogram();
+        let via_flags = flags.iter().filter(|b| **b).count();
+        let via_histogram = histogram.count(DiffLineKind::Context);
+        assert_eq!(
+            via_flags, via_histogram,
+            "line_context_flags true count ({via_flags}) must equal kind_histogram count of DiffLineKind::Context ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_context_flags_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<bool>` values — the context-side polarity
+        // depends only on the tag, so the closed image under
+        // `DiffLineKind::is_context` cannot see the inner `String`.
+        // Sibling of the four payload-independent scalar projections
+        // (`line_kinds` / `line_ordinals` / `line_glyphs` /
+        // `line_labels`) and of the shipped boolean-projection
+        // siblings `line_removed_flags` and `line_added_flags`; a
+        // future edit that peeked at the payload would diverge here
+        // on the first shape where the two fixtures share a kind
+        // sequence but differ on text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_context_flags(),
+            diff_b.line_context_flags(),
+            "line_context_flags must be payload-independent — same kinds yield same flags",
+        );
+    }
+
+    #[test]
+    fn line_context_flags_are_complement_of_line_added_or_line_removed_pointwise() {
+        // Complement pin closing the boolean triple: at every index
+        // the context column is the boolean complement of the changed-
+        // side disjunction (`added || removed`). Follows because the
+        // three cells partition the closed three-cell diff-cell kind
+        // axis and `DiffLine::is_context` is the tag-side sibling of
+        // the sole context cell. A future edit that widened either
+        // `is_added` / `is_removed` to cover a Context arm — or
+        // narrowed `is_context` away from the Context arm — diverges
+        // here on the first index where the complement law breaks.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let context = diff.line_context_flags();
+        let added = diff.line_added_flags();
+        let removed = diff.line_removed_flags();
+        assert_eq!(context.len(), added.len());
+        assert_eq!(context.len(), removed.len());
+        for i in 0..context.len() {
+            assert_eq!(
+                context[i],
+                !(added[i] || removed[i]),
+                "line_context_flags()[{i}] must equal !(line_added_flags()[{i}] || line_removed_flags()[{i}])",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_flags_close_ternary_partition_with_line_added_and_line_removed_pointwise() {
+        // Ternary-partition totality-and-disjointness pin: the three
+        // boolean columns are the container-altitude image of the
+        // closed disjoint partition of the three-cell diff-cell kind
+        // axis, so exactly one of them is `true` at every index —
+        // `added[i] as u8 + removed[i] as u8 + context[i] as u8 == 1`
+        // for every `i`. Combines the shipped
+        // `line_added_flags_and_line_removed_flags_are_disjoint_pointwise`
+        // pin (which locks disjointness on the changed-side pair) with
+        // the totality property this new sibling closes, catching
+        // both any drift that overlaps two cells and any drift that
+        // leaves a cell uncovered at the same seam.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let added = diff.line_added_flags();
+        let removed = diff.line_removed_flags();
+        let context = diff.line_context_flags();
+        assert_eq!(added.len(), removed.len());
+        assert_eq!(added.len(), context.len());
+        for i in 0..added.len() {
+            let sum = u8::from(added[i]) + u8::from(removed[i]) + u8::from(context[i]);
+            assert_eq!(
+                sum, 1,
+                "line_added_flags[{i}] + line_removed_flags[{i}] + line_context_flags[{i}] must equal 1 — the three boolean columns close the ternary partition of the diff-cell kind axis",
             );
         }
     }
