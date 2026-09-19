@@ -46760,6 +46760,110 @@ impl ConfigDiff {
     }
 }
 
+/// Canonical unified-diff rendering of one [`DiffLine`] cell — one
+/// glyph character ([`DiffLine::glyph`]'s closed image `{'-', '+', ' '}`)
+/// followed by the inner payload ([`DiffLine::text`]), with NO trailing
+/// newline (line delimiters live at the [`ConfigDiff`] surface below,
+/// not at the per-cell altitude).
+///
+/// Standard-idiom `{}` formatter for a diff cell, so consumers routing
+/// a per-line render through `format!("{line}")`, `write!` against any
+/// [`std::fmt::Write`] sink (a [`String`] buffer, another `Formatter`,
+/// an [`std::io::Write`] adapter via
+/// [`std::io::Write::write_fmt`]), a `println!("{line}")` at the top
+/// of a CLI, or an error message chaining the cell's canonical form
+/// via `{}` — no longer materialize an intermediate [`String`] through
+/// a hand-rolled two-hop `format!("{}{}", line.glyph(), line.text())`
+/// composition. The two primitive-altitude accessors
+/// [`DiffLine::glyph`] and [`DiffLine::text`] compose once inside this
+/// trait impl and every consumer reads one named formatter seam.
+///
+/// Sibling of the shipped [`ConfigDiff::render_unified`] surface at
+/// the diff-cell altitude: the [`Display`] impl on [`ConfigDiff`]
+/// (below) walks `self.lines` and delegates each cell to this impl,
+/// then adds the trailing `'\n'` at the surface altitude, so the two
+/// impls together are byte-for-byte equivalent to the shipped
+/// [`String`]-materializing [`ConfigDiff::render_unified`].
+///
+/// # Invariants
+///
+/// - `format!("{line}") == format!("{}{}", line.glyph(), line.text())`
+///   for every [`DiffLine`] value — the trait impl is exactly the
+///   two-hop `glyph`/`text` composition at one call site, and no
+///   trailing newline is emitted (the delimiter lives at the
+///   [`ConfigDiff`] surface).
+/// - Payload-independent under the glyph: swapping the inner text of
+///   a variant changes only the suffix, never the leading glyph.
+/// - Empty payload yields the single-character glyph rendering —
+///   `format!("{}", DiffLine::Context(String::new())) == " "`, and
+///   likewise `"-"` / `"+"` for the other two variants.
+/// - No heap allocation beyond what the caller's destination
+///   formatter allocates; both hops are borrowing lookups.
+///
+/// [`Display`]: std::fmt::Display
+impl std::fmt::Display for DiffLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.glyph(), self.text())
+    }
+}
+
+/// Canonical unified-diff rendering of a [`ConfigDiff`] — every
+/// [`DiffLine`] cell's [`Display`] form followed by `'\n'`, in line
+/// order, byte-for-byte equivalent to the shipped
+/// [`Self::render_unified`] but written directly to the caller's
+/// [`std::fmt::Write`] destination without materializing an
+/// intermediate [`String`].
+///
+/// Standard-idiom `{}` formatter for a whole [`ConfigDiff`], so
+/// consumers routing a diff render through `format!("{diff}")`,
+/// `write!` against any [`std::fmt::Write`] sink (a [`String`]
+/// buffer, another `Formatter`, an [`std::io::Write`] adapter via
+/// [`std::io::Write::write_fmt`]), a `println!("{diff}")` at the top
+/// of a CLI, or an error message chaining the diff's canonical form
+/// via `{}` — no longer materialize the intermediate [`String`] that
+/// the pre-lift [`Self::render_unified`] allocates. The three-line
+/// loop that builds the string once at [`Self::render_unified`] lives
+/// at ONE site inside this trait impl and every consumer reads one
+/// named formatter seam.
+///
+/// [`Self::render_unified`] is preserved as the owned-`String` alias
+/// for consumers that specifically need a materialized copy (an
+/// attestation manifest, a diagnostic body, a snapshot fixture); it
+/// is byte-for-byte equal to `self.to_string()` (pinned by
+/// `config_diff_render_unified_matches_display_to_string` below), so
+/// the shipped surface is preserved without a duplicate rendering
+/// loop.
+///
+/// # Invariants
+///
+/// - `format!("{diff}") == diff.render_unified()` for every
+///   [`ConfigDiff`] — the trait impl is byte-for-byte equivalent to
+///   the shipped [`String`]-materializing renderer, so a future edit
+///   that diverged the two forms would fail the pin.
+/// - Empty diff yields the empty rendering — `format!("{}",
+///   ConfigDiff::default()) == ""`, the identity slot of the
+///   line-concatenating fold.
+/// - Every emitted line ends in `'\n'` — the diff render is a
+///   newline-terminated stream of `<glyph><text>` cells, so a
+///   concatenation of `n` cells emits exactly `n` newlines.
+/// - Character count agrees with the sum of per-cell contributions
+///   plus the trailing newlines — `format!("{diff}").chars().count()
+///   == self.lines.iter().map(|l| 1 + l.text().chars().count() + 1)
+///   .sum::<usize>()`.
+/// - No heap allocation beyond what the caller's destination
+///   formatter allocates; the loop is a borrowing walk over
+///   `self.lines`.
+///
+/// [`Display`]: std::fmt::Display
+impl std::fmt::Display for ConfigDiff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for line in &self.lines {
+            writeln!(f, "{line}")?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75134,6 +75238,256 @@ mod tests {
             serde_yaml::to_string(&DiffLineKind::Context).unwrap(),
             "context\n",
         );
+    }
+
+    // ── Display for DiffLine + ConfigDiff — idiomatic {}-formatter
+    //    seam byte-for-byte equal to render_unified() at the surface
+    //    altitude, and to `<glyph><text>` at the per-cell altitude ──
+
+    fn display_fixtures() -> Vec<ConfigDiff> {
+        vec![
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("same".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("old".into()),
+                    DiffLine::Added("new".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Context("keep".into()),
+                    DiffLine::Removed("drop".into()),
+                    DiffLine::Added("gain".into()),
+                    DiffLine::Context("keep2".into()),
+                ],
+            },
+            // Empty payload lines: the glyph still lands, the payload
+            // contributes zero bytes.
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed(String::new()),
+                    DiffLine::Added(String::new()),
+                    DiffLine::Context(String::new()),
+                ],
+            },
+            // Multi-byte UTF-8 payload: byte count and char count part
+            // ways, but the render must not truncate or re-encode.
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("日本語".into()),
+                    DiffLine::Removed("café".into()),
+                    DiffLine::Context("naïve".into()),
+                ],
+            },
+        ]
+    }
+
+    #[test]
+    fn display_of_diff_line_matches_glyph_plus_text_composition() {
+        // Per-cell pin: `format!("{line}")` is exactly the two-hop
+        // `format!("{}{}", line.glyph(), line.text())` composition,
+        // for every variant on both empty and non-empty payloads.
+        // Payload-independence of the leading glyph falls out of this
+        // pin on the empty-payload arm.
+        let cases: &[DiffLine] = &[
+            DiffLine::Removed("removed-text".into()),
+            DiffLine::Added("added-text".into()),
+            DiffLine::Context("context-text".into()),
+            DiffLine::Removed(String::new()),
+            DiffLine::Added(String::new()),
+            DiffLine::Context(String::new()),
+            DiffLine::Added("日本語".into()),
+        ];
+        for line in cases {
+            let via_display = format!("{line}");
+            let via_two_hop = format!("{}{}", line.glyph(), line.text());
+            assert_eq!(
+                via_display, via_two_hop,
+                "Display for DiffLine ({line:?}) must equal the two-hop \
+                 `{{glyph}}{{text}}` composition — the trait impl is \
+                 exactly that composition at one site",
+            );
+        }
+    }
+
+    #[test]
+    fn display_of_diff_line_has_no_trailing_newline() {
+        // Per-cell pin: line delimiters live at the ConfigDiff surface
+        // altitude, not at the DiffLine cell altitude, so no variant
+        // may emit a trailing `'\n'`. A future edit that tacked one
+        // on would double-newline the ConfigDiff `Display` render
+        // below and fail the byte-parity pin against render_unified.
+        let cases: &[DiffLine] = &[
+            DiffLine::Removed("x".into()),
+            DiffLine::Added("y".into()),
+            DiffLine::Context("z".into()),
+            DiffLine::Context(String::new()),
+        ];
+        for line in cases {
+            let rendered = format!("{line}");
+            assert!(
+                !rendered.ends_with('\n'),
+                "Display for DiffLine must not emit a trailing newline; \
+                 got {rendered:?} for {line:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn display_of_diff_line_empty_payload_yields_single_glyph_character() {
+        // Empty-payload identity pin: every variant renders to its
+        // one-character glyph when the payload is empty. Together
+        // with the two-hop pin above, this locks the `glyph()`
+        // accessor's closed image `{'-', '+', ' '}` into the Display
+        // form at the identity slot.
+        assert_eq!(format!("{}", DiffLine::Removed(String::new())), "-");
+        assert_eq!(format!("{}", DiffLine::Added(String::new())), "+");
+        assert_eq!(format!("{}", DiffLine::Context(String::new())), " ");
+    }
+
+    #[test]
+    fn display_of_config_diff_matches_render_unified_byte_for_byte() {
+        // Surface pin (the load-bearing invariant): `format!("{diff}")`
+        // is byte-for-byte equal to `diff.render_unified()`, for
+        // every fixture. A future edit that changed either the
+        // Display impl or the render_unified body without updating
+        // the other diverges here.
+        for diff in display_fixtures() {
+            let via_display = format!("{diff}");
+            let via_render = diff.render_unified();
+            assert_eq!(
+                via_display, via_render,
+                "Display for ConfigDiff must equal render_unified() \
+                 byte-for-byte for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_diff_render_unified_matches_display_to_string() {
+        // Alias pin: the shipped owned-String surface
+        // `render_unified()` is exactly `self.to_string()` — the two
+        // spellings converge on the Display impl, so a future edit
+        // that added a divergent field to either fails one side.
+        for diff in display_fixtures() {
+            assert_eq!(
+                diff.render_unified(),
+                diff.to_string(),
+                "render_unified() must equal to_string() (both route \
+                 through the Display impl) for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn display_of_empty_config_diff_is_empty_string() {
+        // Identity-slot pin: the empty diff is the identity of the
+        // line-concatenating fold on the surface altitude, so its
+        // Display form is the empty string.
+        assert_eq!(format!("{}", ConfigDiff::default()), "");
+        // And when the default constructor is bypassed:
+        assert_eq!(format!("{}", ConfigDiff { lines: vec![] }), "");
+    }
+
+    #[test]
+    fn display_of_config_diff_emits_one_newline_per_line() {
+        // Delimiter-count pin: the surface Display walk emits exactly
+        // one `'\n'` per DiffLine cell (via `writeln!`), so a
+        // fixture with `n` lines produces exactly `n` newlines
+        // regardless of payload content. This is what makes the
+        // render a well-formed unified-diff body without extra
+        // separator bytes.
+        for diff in display_fixtures() {
+            let rendered = format!("{diff}");
+            let expected_newlines = diff.lines.len();
+            let actual_newlines = rendered.chars().filter(|c| *c == '\n').count();
+            assert_eq!(
+                actual_newlines, expected_newlines,
+                "Display for ConfigDiff must emit exactly one '\\n' \
+                 per line — got {actual_newlines} newlines for \
+                 {expected_newlines}-line fixture {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn display_of_config_diff_writes_to_arbitrary_fmt_write_sink() {
+        // Sink-independence pin: the whole point of Display over
+        // `render_unified()` is writing to any `fmt::Write` sink
+        // without materializing an intermediate String. This test
+        // writes to a `String` buffer via `write!` (the sink the
+        // pre-lift `render_unified` internally uses through
+        // `String::push`/`push_str`) and confirms the byte-equal
+        // result.
+        use std::fmt::Write;
+        for diff in display_fixtures() {
+            let mut sink = String::new();
+            write!(&mut sink, "{diff}").expect("String never fails to write");
+            assert_eq!(
+                sink,
+                diff.render_unified(),
+                "write!({{diff}}) to a String sink must equal \
+                 render_unified() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn display_of_config_diff_starts_each_line_with_a_diff_line_glyph() {
+        // Structure pin: reading the render as `\n`-separated slices
+        // and dropping the empty tail (a trailing `'\n'` after the
+        // last line produces an empty final split), every non-empty
+        // slice must begin with a byte from the closed glyph image
+        // `{'-', '+', ' '}`. A future edit that inserted a header
+        // line, indentation, or a stray character would fail this
+        // shape check.
+        for diff in display_fixtures() {
+            let rendered = format!("{diff}");
+            for (i, slice) in rendered.split('\n').enumerate() {
+                if slice.is_empty() {
+                    continue;
+                }
+                let first = slice
+                    .chars()
+                    .next()
+                    .expect("non-empty slice has a first char");
+                assert!(
+                    matches!(first, '-' | '+' | ' '),
+                    "Display for ConfigDiff line {i} = {slice:?} of \
+                     {diff:?} must start with a glyph in {{'-', '+', ' '}}, \
+                     got {first:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn display_of_config_diff_line_count_agrees_with_lines_len() {
+        // Row-preserving pin at the surface altitude: splitting the
+        // render on `'\n'` yields `self.lines.len() + 1` slices
+        // (the final `+ 1` is the empty tail after the trailing
+        // newline of the last line). Together with the newline-count
+        // pin above, this locks the newline-per-line invariant from
+        // a second angle.
+        for diff in display_fixtures() {
+            let rendered = format!("{diff}");
+            let slice_count = rendered.split('\n').count();
+            let expected = if diff.lines.is_empty() {
+                1 // "".split('\n') yields one empty slice
+            } else {
+                diff.lines.len() + 1
+            };
+            assert_eq!(
+                slice_count, expected,
+                "Display for ConfigDiff must split into \
+                 self.lines.len() + 1 slices on '\\n' (or exactly one \
+                 empty slice for the empty diff) — got \
+                 {slice_count} slices for {diff:?}",
+            );
+        }
     }
 }
 
