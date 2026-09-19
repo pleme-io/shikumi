@@ -37585,6 +37585,162 @@ impl ConfigDiff {
             .collect()
     }
 
+    /// Container-altitude glyph projection on the two-cell context-side
+    /// polarity axis ([`DiffLine::Context`] vs
+    /// [`DiffLine::Added`] ∪ [`DiffLine::Removed`]) — a
+    /// length-`self.lines.len()` `Vec<char>` whose `i`-th entry is
+    /// `' '` when the line is [`DiffLine::Context`] and `'!'` when the
+    /// line is [`DiffLine::Added`] or [`DiffLine::Removed`], read
+    /// through [`DiffLine::is_context`] at the payload-bearing altitude.
+    /// The glyph-altitude sibling of the shipped
+    /// [`Self::line_context_side_ordinals`] (landed in `58d9f4f`) scalar
+    /// projection, [`Self::line_context_flags`] (landed in `46c8a2d`)
+    /// boolean projection, and [`Self::line_context_side_labels`]
+    /// (landed in `31cb4c4`) label projection on the same closed
+    /// two-cell context-side polarity axis, and the context-side peer
+    /// of [`Self::line_added_side_glyphs`] (landed in `53043e3`) and
+    /// [`Self::line_removed_side_glyphs`] (landed in `039549d`) one
+    /// polarity axis over on the sibling added-side and removed-side
+    /// polarity axes, closing the glyph-altitude rung on the THIRD (and
+    /// last) of the three side-polarity axes.
+    ///
+    /// This closes the full `(scalar, boolean, label, glyph)` quadruple
+    /// on the last of the three side-polarity axes — the tuple of
+    /// `(added_side, removed_side, context_side)` container-altitude
+    /// projections now carries every altitude at the seam, matching the
+    /// same quadruple already closed on the modal-polarity axis
+    /// (`line_change_polarity_{ordinals,labels,glyphs}` +
+    /// `line_changed_flags`), the added-side polarity axis
+    /// (`line_added_side_{ordinals,labels,glyphs}` +
+    /// `line_added_flags`), and the removed-side polarity axis
+    /// (`line_removed_side_{ordinals,labels,glyphs}` +
+    /// `line_removed_flags`).
+    ///
+    /// The chosen context-side glyph `' '` on the [`DiffLine::Context`]
+    /// pole deliberately reuses the base three-cell diff-cell glyph
+    /// ([`Self::line_glyphs`] renders `' '` for [`DiffLine::Context`])
+    /// and the [`Self::line_change_polarity_glyphs`] modal-polarity
+    /// glyph on the unchanged pole (both project [`DiffLine::Context`]
+    /// to `' '`), the natural quotient-agreement with both peer axes on
+    /// the singled-out variant. The chosen `'!'` on the not-context
+    /// pole ([`DiffLine::Added`] ∪ [`DiffLine::Removed`]) reuses the
+    /// shipped [`Self::line_change_polarity_glyphs`] glyph on the
+    /// changed pole — because the context-side polarity axis and the
+    /// modal-polarity axis are the same partition of the base
+    /// three-cell diff-cell axis (`{Context}` vs `{Added, Removed}`)
+    /// under distinct polarity-classifier names ([`DiffLine::is_context`]
+    /// vs [`DiffLine::is_changed`]), the two projections at the glyph
+    /// altitude coincide pointwise on the closed two-cell glyph image
+    /// `{' ', '!'}` — a fact pinned by
+    /// `line_context_side_glyphs()[i] == line_change_polarity_glyphs()[i]`
+    /// at every index, the glyph-altitude peer of the label-altitude
+    /// pointwise-complement law with
+    /// [`Self::line_change_polarity_labels`] on the disjoint
+    /// `"context"` / `"unchanged"` label pair.
+    ///
+    /// Consumers that need the per-line context-side polarity as a
+    /// dense single-column glyph track — a terminal renderer prefixing
+    /// each line with `' '` / `'!'` for a quick "is this line a context
+    /// row" scan, a per-tier attestation manifest recording the
+    /// context-side glyph signature between two config tiers as a
+    /// `String` alongside the base-axis glyph signature already
+    /// available via [`Self::line_glyphs`], a structured-log emitter
+    /// tagging each line with a canonical `context_side` glyph field
+    /// (`' '` / `'!'`) for aggregation — read this projection at one
+    /// hop instead of open-coding
+    /// `self.lines.iter().map(|l| if l.is_context() { ' ' } else { '!' }).collect::<Vec<_>>()`,
+    /// `line_context_side_ordinals().iter().map(|o| if *o == 1 { ' ' } else { '!' }).collect::<Vec<_>>()`
+    /// (the scalar-through-conditional route),
+    /// `line_context_flags().iter().map(|b| if *b { ' ' } else { '!' }).collect::<Vec<_>>()`
+    /// (the boolean-through-conditional route), or
+    /// `line_context_side_labels().iter().map(|s| if *s == "context" { ' ' } else { '!' }).collect::<Vec<_>>()`
+    /// (the label-through-conditional route) at the call site.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// scalar-projection quartet [`Self::line_kinds`] /
+    /// [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`], the boolean-projection quintet
+    /// [`Self::line_removed_flags`] / [`Self::line_added_flags`] /
+    /// [`Self::line_context_flags`] / [`Self::line_changed_flags`] /
+    /// [`Self::line_unchanged_flags`], the scalar sibling
+    /// [`Self::line_context_side_ordinals`], and the label sibling
+    /// [`Self::line_context_side_labels`] on the same closed two-cell
+    /// context-side polarity axis: same length, same `O(n)` cost, same
+    /// container-altitude discipline. Every entry is the closed image
+    /// of the typed variant under the fixed pair (`'!'` when
+    /// `is_context() == false`, `' '` when `is_context() == true`), so
+    /// `line_context_side_glyphs()[i] ==
+    /// (if line_context_flags()[i] { ' ' } else { '!' })` at every
+    /// index.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_context_side_glyphs().len() == self.lines.len()` — the
+    ///   row-preserving projection stays parallel to the line list
+    ///   pointwise.
+    /// - `line_context_side_glyphs()[i] ==
+    ///   (if self.lines[i].is_context() { ' ' } else { '!' })`
+    ///   for every `i < self.lines.len()` — pointwise agreement with
+    ///   the tag-side per-line predicate at the payload-bearing
+    ///   altitude, mapped through the fixed two-cell glyph image.
+    /// - `line_context_side_glyphs()[i] ==
+    ///   (if line_context_flags()[i] { ' ' } else { '!' })`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   shipped context-side boolean sibling under the same closed
+    ///   image.
+    /// - `line_context_side_glyphs()[i] ==
+    ///   (if line_context_side_ordinals()[i] == 1 { ' ' } else { '!' })`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   shipped context-side scalar sibling under the ordinal-to-glyph
+    ///   mapping on the closed two-cell axis.
+    /// - `line_context_side_glyphs()[i] ==
+    ///   (if line_context_side_labels()[i] == "context" { ' ' } else { '!' })`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   shipped context-side label sibling under the label-to-glyph
+    ///   mapping on the closed two-cell axis, so the glyph and label
+    ///   projections agree pointwise at the diff altitude.
+    /// - `line_context_side_glyphs()[i] == line_change_polarity_glyphs()[i]`
+    ///   for every `i` — the context-side polarity axis and the
+    ///   modal-polarity axis are the same partition of the base
+    ///   three-cell diff-cell axis (`{Context}` vs `{Added, Removed}`)
+    ///   under distinct polarity classifiers, so at the closed two-cell
+    ///   glyph image `{' ', '!'}` they project to the SAME sequence —
+    ///   the glyph-altitude peer of the label-altitude
+    ///   pointwise-complement law with
+    ///   [`Self::line_change_polarity_labels`].
+    /// - `line_context_side_glyphs().is_empty() == self.lines.is_empty()`
+    ///   — the projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - Every entry of `line_context_side_glyphs()` is one of the two
+    ///   `char` values `' '` or `'!'` — the closed image on the
+    ///   two-cell context-side polarity axis, so the row-preserving
+    ///   projection never yields a value outside the axis cardinality.
+    /// - `line_context_side_glyphs().iter().filter(|c| **c == ' ').count()
+    ///   == self.kind_histogram().count(DiffLineKind::Context)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the context-cell total through the closed
+    ///   `is_context → ' '` image.
+    /// - `line_context_side_glyphs().iter().all(|c| *c == '!') ==
+    ///   (self.kind_histogram().count(DiffLineKind::Context) == 0)` —
+    ///   the glyph-altitude context-side polarity projection agrees
+    ///   with the fixed-cardinality collapse on the not-context pole,
+    ///   so an all-`'!'` witness pins the context-free case (vacuously
+    ///   true on the empty line list).
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, one branch
+    /// per line to select the `char` literal (no allocation), no
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_context_side_glyphs(&self) -> Vec<char> {
+        self.lines
+            .iter()
+            .map(|l| if l.is_context() { ' ' } else { '!' })
+            .collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -54977,6 +55133,358 @@ mod tests {
                     "line_context_side_labels()[{i}] == \"context\" must equal line_change_polarity_labels()[{i}] == \"unchanged\" for {diff:?}",
                 );
             }
+        }
+    }
+
+    // ── ConfigDiff::line_context_side_glyphs — container-altitude
+    //    glyph projection on the two-cell context-side polarity axis,
+    //    sibling of line_context_side_ordinals / line_context_side_labels
+    //    / line_context_flags on the same axis and of
+    //    line_added_side_glyphs / line_removed_side_glyphs one polarity
+    //    axis over ──
+
+    #[test]
+    fn line_context_side_glyphs_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_context_side_glyphs().len()`
+        // equals `self.lines.len()` on every fixture. Idiom-peer of
+        // `line_context_side_labels_len_agrees_with_lines_len` one
+        // altitude over on the glyph pole of the same two-cell
+        // context-side polarity axis; a future edit that drops or
+        // duplicates a line at the seam fails here on the first
+        // mismatched length.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_side_glyphs().len(),
+                diff.lines.len(),
+                "line_context_side_glyphs().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // context-side-glyph projection — the identity slot of the
+        // projection on the diff altitude, sibling of
+        // `line_context_side_labels_empty_diff_is_empty` on the label
+        // pole of the same two-cell context-side polarity axis.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_context_side_glyphs().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_context_side_glyphs_agree_with_diff_line_is_context_pointwise() {
+        // Pointwise-agreement pin: at every index the container-altitude
+        // glyph projection equals `if self.lines[i].is_context() { ' ' }
+        // else { '!' }` — the tag-side per-line predicate at the
+        // payload-bearing altitude, mapped through the fixed two-cell
+        // glyph image on the context-side polarity axis. The two
+        // surfaces declare the (variant → context-side-glyph) mapping
+        // independently; a future edit shifting one match without the
+        // other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_context_side_glyphs();
+        assert_eq!(glyphs.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            let expected = if line.is_context() { ' ' } else { '!' };
+            assert_eq!(
+                glyphs[i], expected,
+                "line_context_side_glyphs()[{i}] must equal the context-side glyph of self.lines[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_agree_with_line_context_flags_pointwise() {
+        // Container-altitude cross-projection pin: the glyph seam and
+        // the boolean seam on the same two-cell context-side polarity
+        // axis agree pointwise under the boolean-to-glyph mapping —
+        // `line_context_side_glyphs()[i] == (if line_context_flags()[i]
+        // { ' ' } else { '!' })` for every `i`. A future edit that
+        // shifted either seam without the other diverges here on the
+        // first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_context_side_glyphs();
+        let flags = diff.line_context_flags();
+        assert_eq!(glyphs.len(), flags.len());
+        for i in 0..glyphs.len() {
+            let expected = if flags[i] { ' ' } else { '!' };
+            assert_eq!(
+                glyphs[i], expected,
+                "line_context_side_glyphs()[{i}] must equal the glyph form of line_context_flags()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_agree_with_line_context_side_ordinals_pointwise() {
+        // Container-altitude cross-projection pin: the glyph seam and
+        // the scalar seam on the same two-cell context-side polarity
+        // axis agree pointwise under the ordinal-to-glyph mapping —
+        // `line_context_side_glyphs()[i] == (if
+        // line_context_side_ordinals()[i] == 1 { ' ' } else { '!' })`
+        // for every `i`. The two projections read the same tag-side
+        // predicate; a future edit that shifted either seam without the
+        // other diverges here on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_context_side_glyphs();
+        let ordinals = diff.line_context_side_ordinals();
+        assert_eq!(glyphs.len(), ordinals.len());
+        for i in 0..glyphs.len() {
+            let expected = if ordinals[i] == 1 { ' ' } else { '!' };
+            assert_eq!(
+                glyphs[i], expected,
+                "line_context_side_glyphs()[{i}] must equal the glyph form of line_context_side_ordinals()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_agree_with_line_context_side_labels_pointwise() {
+        // Container-altitude cross-projection pin: the glyph seam and
+        // the label seam on the same two-cell context-side polarity
+        // axis agree pointwise under the label-to-glyph mapping —
+        // `line_context_side_glyphs()[i] == (if line_context_side_labels()[i]
+        // == "context" { ' ' } else { '!' })` for every `i`. A future
+        // edit that shifted either seam without the other diverges here
+        // on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_context_side_glyphs();
+        let labels = diff.line_context_side_labels();
+        assert_eq!(glyphs.len(), labels.len());
+        for i in 0..glyphs.len() {
+            let expected = if labels[i] == "context" { ' ' } else { '!' };
+            assert_eq!(
+                glyphs[i], expected,
+                "line_context_side_glyphs()[{i}] must equal the glyph form of line_context_side_labels()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<char>` values — the context-side polarity
+        // glyph depends only on the tag. A future edit that peeked at
+        // the payload would diverge here on the first shape where the
+        // two fixtures share a kind sequence but differ on text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_context_side_glyphs(),
+            diff_b.line_context_side_glyphs(),
+            "line_context_side_glyphs must be payload-independent — same kinds yield same glyphs",
+        );
+    }
+
+    #[test]
+    fn line_context_side_glyphs_take_only_bang_or_space_values() {
+        // Closed-image pin on the two-cell context-side polarity axis:
+        // every entry is one of the two `char` values `' '` or `'!'`.
+        // A future edit that widened the projection to a third glyph —
+        // e.g. via a peeking implementation that leaked a
+        // payload-derived char through the seam — diverges here on the
+        // first out-of-image entry.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, c) in diff.line_context_side_glyphs().iter().enumerate() {
+            assert!(
+                *c == ' ' || *c == '!',
+                "line_context_side_glyphs()[{i}] = {c:?} must be ' ' or '!'",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_space_count_reconciles_with_kind_histogram_context_count() {
+        // Fixed-cardinality reconciliation pin: the number of `' '`
+        // entries in the row-preserving glyph projection equals
+        // `kind_histogram().count(DiffLineKind::Context)`. Both surfaces
+        // read the same per-line kinds through the closed
+        // `is_context → ' '` image, so a future edit that shifted one
+        // seam without the other fails here on the first drifted total.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let glyphs = diff.line_context_side_glyphs();
+        let histogram = diff.kind_histogram();
+        let via_glyphs = glyphs.iter().filter(|c| **c == ' ').count();
+        let via_histogram = histogram.count(DiffLineKind::Context);
+        assert_eq!(
+            via_glyphs, via_histogram,
+            "line_context_side_glyphs ' ' count ({via_glyphs}) must equal kind_histogram Context count ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_context_side_glyphs_all_bang_agrees_with_zero_context_count() {
+        // Diff-surface agreement pin: the glyph-altitude context-side
+        // polarity projection is all-`'!'` iff the kind histogram
+        // records zero context lines —
+        // `line_context_side_glyphs().iter().all(|c| *c == '!') ==
+        // (kind_histogram().count(DiffLineKind::Context) == 0)`. An
+        // all-`'!'` witness pins the context-free case (vacuously true
+        // on the empty line list, where `all` is `true` on the empty
+        // iterator and the Context count is `0`).
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r1".into()), DiffLine::Added("a1".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let all_bang = diff.line_context_side_glyphs().iter().all(|c| *c == '!');
+            let zero_context = diff.kind_histogram().count(DiffLineKind::Context) == 0;
+            assert_eq!(
+                all_bang, zero_context,
+                "line_context_side_glyphs().all(|c| *c == '!') must equal (Context count == 0) for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyphs_equal_line_change_polarity_glyphs_pointwise() {
+        // Closed-image coincidence pin: the context-side polarity axis
+        // and the modal-polarity axis are the same partition of the
+        // base three-cell diff-cell axis (`{Context}` vs
+        // `{Added, Removed}`) under distinct polarity classifiers
+        // ([`DiffLine::is_context`] vs [`DiffLine::is_changed`]), so at
+        // the closed two-cell glyph image `{' ', '!'}` they project to
+        // the SAME sequence — `line_context_side_glyphs()[i] ==
+        // line_change_polarity_glyphs()[i]` for every `i`. This is the
+        // glyph-altitude peer of the label-altitude pointwise-complement
+        // law with `line_change_polarity_labels` on the disjoint
+        // `"context"` / `"unchanged"` label pair; a future edit that
+        // shifted either glyph without the other diverges here on the
+        // first mismatched index.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_side_glyphs(),
+                diff.line_change_polarity_glyphs(),
+                "line_context_side_glyphs must equal line_change_polarity_glyphs pointwise for {diff:?}",
+            );
         }
     }
 
