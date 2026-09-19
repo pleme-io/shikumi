@@ -35764,6 +35764,92 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::glyph).collect()
     }
 
+    /// Signature-altitude collapse of [`Self::lines`] over the diff-
+    /// cell glyph axis — the length-`self.lines.len()` [`String`]
+    /// whose `i`-th character is `self.lines[i].glyph()` (`'-'` for
+    /// [`DiffLine::Removed`], `'+'` for [`DiffLine::Added`], `' '` for
+    /// [`DiffLine::Context`]).
+    ///
+    /// One-hop [`String`]-collapse of the container-altitude
+    /// [`Self::line_glyphs`] `Vec<char>` projection, opening the
+    /// signature-altitude rung of the diff-cell glyph axis. Consumers
+    /// that record the diff-cell glyph *signature* between two config
+    /// tiers as a compact single-string label — a per-tier attestation
+    /// manifest recording the (added × removed × context) glyph
+    /// sequence as one stable [`String`] value (the exact use-case the
+    /// container-altitude [`Self::line_glyphs`] doc names, and that
+    /// today re-derives the collapse at every site), a structured-log
+    /// emitter tagging each diff event with a diff-cell glyph
+    /// signature field, a CLI `config-diff` summary printing the diff
+    /// shape as a one-line glyph strip alongside the full unified-diff
+    /// body from [`Self::render_unified`] — replace the pre-lift
+    /// two-hop
+    /// `diff.line_glyphs().into_iter().collect::<String>()`
+    /// composition at every site with the one-hop
+    /// [`Self::line_glyph_string`] signature-altitude sibling.
+    ///
+    /// Signature-altitude peer of the container-altitude `Vec<char>`
+    /// seams [`Self::line_glyphs`],
+    /// [`Self::line_change_polarity_glyphs`],
+    /// [`Self::line_added_side_glyphs`],
+    /// [`Self::line_removed_side_glyphs`], and
+    /// [`Self::line_context_side_glyphs`] one altitude down: same
+    /// row-preserving projection over the same diff-cell glyph axis,
+    /// one altitude up into the [`String`] collapse. Opens the
+    /// signature-altitude rung on the diff-cell glyph axis — the first
+    /// landing of the `Vec<char>` → [`String`] collapse pattern on the
+    /// diff surface, forcing the four sibling glyph axes into the same
+    /// one-hop signature form on their next landings and closing the
+    /// natural next brick after the container-altitude glyph triple
+    /// was completed by [`Self::line_context_side_glyphs`].
+    ///
+    /// # Invariants
+    ///
+    /// - `line_glyph_string().chars().count() == self.lines.len()` —
+    ///   the signature-altitude collapse preserves the row count
+    ///   pointwise (every line contributes exactly one glyph
+    ///   character, none of which is multi-`char` under
+    ///   [`DiffLine::glyph`]'s closed image `{'-', '+', ' '}`).
+    /// - `line_glyph_string().len() == self.lines.len()` — every
+    ///   character in the closed image `{'-', '+', ' '}` is a
+    ///   single-byte ASCII code point, so the [`String`] byte length
+    ///   and the `chars().count()` agree with the line count as one
+    ///   fact.
+    /// - `line_glyph_string() == self.line_glyphs().into_iter()
+    ///   .collect::<String>()` — the signature is the exact
+    ///   [`String`]-collapse of the container-altitude `Vec<char>`
+    ///   projection, pointwise.
+    /// - `line_glyph_string().chars().nth(i) == Some(self.lines[i]
+    ///   .glyph())` for every `i < self.lines.len()` — pointwise
+    ///   agreement with the tag-side per-line accessor at the
+    ///   payload-bearing altitude (the signature is the concatenation
+    ///   of the per-line glyphs in line order, with no reordering).
+    /// - `line_glyph_string().is_empty() == self.lines.is_empty()` —
+    ///   the collapse is total on the line list; an empty diff yields
+    ///   the empty string, the identity slot of the collapse on the
+    ///   signature altitude.
+    /// - Every character of `line_glyph_string()` lies in the fixed
+    ///   three-character set `{'-', '+', ' '}` — the closed image of
+    ///   [`DiffLine::glyph`] over the diff-cell axis, so a future edit
+    ///   that emitted a stray character diverges at the closed-image
+    ///   pin.
+    /// - `line_glyph_string().chars().filter(|c| *c == chosen.glyph())
+    ///   .count() == kind_histogram().count(chosen)` for every
+    ///   `chosen: DiffLineKind` — the signature-altitude collapse and
+    ///   the fixed-cardinality collapse read the same per-line kinds
+    ///   through the closed [`DiffLineKind::glyph`] image.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one ASCII byte (`{'-', '+', ' '}` are all single-byte
+    /// UTF-8) per line pushed into a [`String`] buffer, and the
+    /// buffer's own storage grows to at most `n` bytes.
+    #[must_use]
+    pub fn line_glyph_string(&self) -> String {
+        self.lines.iter().map(DiffLine::glyph).collect()
+    }
+
     /// Per-line canonical operator-facing label projection of
     /// [`Self::lines`] over the diff-cell name axis — a length-
     /// `self.lines.len()` `Vec<&'static str>` whose `i`-th entry is
@@ -50119,6 +50205,234 @@ mod tests {
                 chosen.glyph(),
             );
         }
+    }
+
+    // ── ConfigDiff::line_glyph_string — signature-altitude
+    //    String-collapse of ConfigDiff::line_glyphs one altitude
+    //    up on the diff-cell glyph axis, opens the signature-
+    //    altitude rung on the diff surface ─────────────────────
+
+    #[test]
+    fn line_glyph_string_len_agrees_with_lines_len() {
+        // Row-preserving collapse pin: `line_glyph_string()` has
+        // exactly one character per line on every fixture, and — the
+        // stronger form the ASCII closed image `{'-', '+', ' '}`
+        // permits — one byte per line too. The collapse is total on
+        // the line list at char-count `self.lines.len()`, so a future
+        // edit that dropped or duplicated a line at the seam fails
+        // here on the first mismatched length. Idiom-peer of
+        // `line_glyphs_len_agrees_with_lines_len` one altitude down
+        // on the same axis.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let sig = diff.line_glyph_string();
+            assert_eq!(
+                sig.chars().count(),
+                diff.lines.len(),
+                "line_glyph_string().chars().count() must equal self.lines.len() for {diff:?}",
+            );
+            assert_eq!(
+                sig.len(),
+                diff.lines.len(),
+                "line_glyph_string().len() (bytes) must equal self.lines.len() for {diff:?} — the ASCII closed image collapses char-count and byte-count to one fact",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyph_string_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // signature. The collapse is total on the line list, so the
+        // empty line list projects to the empty string — the identity
+        // slot of the collapse on the signature altitude, idiom-peer
+        // of `line_glyphs_empty_diff_is_empty` one altitude down.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_glyph_string().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_glyph_string_equals_line_glyphs_collect() {
+        // Cross-altitude pin: the signature-altitude collapse equals
+        // the exact `String`-collect of the container-altitude
+        // `Vec<char>` projection. The two seams read the same closed
+        // image through the same per-line accessor; a future edit
+        // that peeked at the payload on one and not the other, or
+        // reordered one of the two, diverges here on the first
+        // fixture. This is the defining law of the signature-altitude
+        // rung sitting on top of the container-altitude rung.
+        let fixtures: [ConfigDiff; 3] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Context("c1".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Context("c0".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_glyph_string(),
+                diff.line_glyphs().into_iter().collect::<String>(),
+                "line_glyph_string() must equal line_glyphs().into_iter().collect::<String>() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyph_string_agrees_with_diff_line_glyph_pointwise() {
+        // Pointwise-agreement pin: at every index the signature
+        // character equals the tag-side per-line accessor at the
+        // payload-bearing altitude — the signature-altitude seam and
+        // `DiffLine::glyph` declare the (variant → glyph) mapping
+        // independently on the same closed three-cell axis. A future
+        // edit shifting one match without the other fails here on
+        // the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let sig = diff.line_glyph_string();
+        let via_chars: Vec<char> = sig.chars().collect();
+        assert_eq!(via_chars.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                via_chars[i],
+                line.glyph(),
+                "line_glyph_string().chars().nth({i}) must equal self.lines[{i}].glyph()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyph_string_is_in_closed_three_character_image() {
+        // Closed-image pin: every character in the signature lies in
+        // the fixed three-character set `{'-', '+', ' '}` — the
+        // closed image of `DiffLine::glyph` over the diff-cell kind
+        // axis, so a future edit that emitted a stray character (say
+        // `'*'` for a hypothetical `Header` variant landing without
+        // a matching image update) diverges here on the first drifted
+        // character.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, c) in diff.line_glyph_string().chars().enumerate() {
+            assert!(
+                c == '-' || c == '+' || c == ' ',
+                "line_glyph_string().chars().nth({i}) = {c:?} must lie in the closed image {{'-', '+', ' '}}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyph_string_reconciles_with_kind_histogram_per_cell() {
+        // Fixed-cardinality reconciliation pin: for every closed-
+        // axis cell, the count of that cell's glyph in the
+        // signature-altitude collapse equals the histogram's count
+        // for that cell — the signature-altitude collapse and the
+        // fixed-cardinality collapse read the same per-line kinds
+        // through the closed `DiffLineKind::glyph` image. A future
+        // edit that shifted one seam without the other fails here on
+        // the first drifted cell. Idiom-peer of
+        // `line_glyphs_reconcile_with_kind_histogram_per_cell` one
+        // altitude down on the same axis.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let sig = diff.line_glyph_string();
+        let histogram = diff.kind_histogram();
+        for chosen in DiffLineKind::ALL.iter().copied() {
+            let via_sig = sig.chars().filter(|c| *c == chosen.glyph()).count();
+            let via_histogram = histogram.count(chosen);
+            assert_eq!(
+                via_sig,
+                via_histogram,
+                "line_glyph_string count of {:?} ({via_sig}) must equal kind_histogram count of {chosen:?} ({via_histogram})",
+                chosen.glyph(),
+            );
+        }
+    }
+
+    #[test]
+    fn line_glyph_string_is_payload_independent() {
+        // Payload-independence pin: two diffs with the same line
+        // kinds in the same order yield the same signature regardless
+        // of the payload strings the underlying `DiffLine::glyph`
+        // accessor is invariant on. A future edit that peeked at the
+        // payload from either the collapse or the per-line accessor
+        // would diverge here on the first payload-varying pair.
+        let same_kinds_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("alpha".into()),
+                DiffLine::Added("beta".into()),
+                DiffLine::Context("gamma".into()),
+            ],
+        };
+        let same_kinds_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed(String::new()),
+                DiffLine::Added("Δ multi-byte 🎯".into()),
+                DiffLine::Context("z".into()),
+            ],
+        };
+        assert_eq!(
+            same_kinds_a.line_glyph_string(),
+            same_kinds_b.line_glyph_string(),
+            "line_glyph_string() must be payload-independent for identical kind sequences",
+        );
     }
 
     // ── ConfigDiff::line_labels — container-altitude lift of
