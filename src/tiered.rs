@@ -35972,6 +35972,77 @@ impl ConfigDiff {
         self.lines.iter().map(DiffLine::is_removed).collect()
     }
 
+    /// Container-altitude lift of [`DiffLine::is_added`] one seam up
+    /// onto the [`ConfigDiff`] surface — the second payload-independent
+    /// boolean-projection sibling of the payload-independent scalar
+    /// projection quartet ([`Self::line_kinds`] / [`Self::line_ordinals`]
+    /// / [`Self::line_glyphs`] / [`Self::line_labels`], all of which
+    /// read only the [`DiffLine`] discriminant), lifted to the closed
+    /// image `{true, false}` under [`DiffLineKind::is_added`] on the
+    /// three-cell diff-cell kind axis. Peer of the shipped
+    /// [`Self::line_removed_flags`] (landed in `0bc158c`) one polarity
+    /// over on the same three-cell axis; the boolean-projection triple
+    /// closes when the sibling [`Self::line_context_flags`] lands on the
+    /// [`DiffLine::is_context`] tag.
+    ///
+    /// Consumers that need the per-line added-side polarity as a dense
+    /// bit column — a per-tier attestation manifest recording the
+    /// added-mask between two config tiers as a `Vec<bool>`, a
+    /// structured-log emitter tagging each line with a boolean `added`
+    /// field, a CLI renderer computing `line_added_flags().iter()
+    /// .filter(|b| **b).count()` as the added-line total without
+    /// folding through [`Self::kind_histogram`] — read this projection
+    /// directly, replacing the pre-lift
+    /// `self.lines.iter().map(DiffLine::is_added).collect::<Vec<_>>()`
+    /// two-hop projection at every such consumer with the one-hop
+    /// [`Self::line_added_flags`] container-altitude sibling.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// sibling scalar projections [`Self::line_kinds`],
+    /// [`Self::line_ordinals`], [`Self::line_glyphs`], and
+    /// [`Self::line_labels`] one axis over, and of the shipped boolean-
+    /// projection sibling [`Self::line_removed_flags`] one polarity
+    /// over: same length, same `O(n)` cost, same container-altitude
+    /// discipline. Every entry is the closed image of the typed variant
+    /// under [`DiffLineKind::is_added`], so
+    /// `line_added_flags()[i] == line_kinds()[i].is_added()` at every
+    /// index — the reason this projection sits on the same enum axis as
+    /// its scalar siblings.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_added_flags().len() == self.lines.len()` — the
+    ///   row-preserving projection stays parallel to the line list
+    ///   pointwise.
+    /// - `line_added_flags()[i] == self.lines[i].is_added()` for
+    ///   every `i < self.lines.len()` — pointwise agreement with the
+    ///   tag-side per-line predicate at the payload-bearing altitude.
+    /// - `line_added_flags()[i] == self.line_kinds()[i].is_added()`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   typed-variant sibling under [`DiffLineKind::is_added`].
+    /// - `line_added_flags().is_empty() == self.lines.is_empty()` —
+    ///   the projection is total on the line list, so the empty diff
+    ///   yields the empty projection.
+    /// - `line_added_flags().iter().filter(|b| **b).count() ==
+    ///   self.kind_histogram().count(DiffLineKind::Added)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the added-cell tally through the closed
+    ///   [`DiffLineKind::is_added`] image.
+    /// - `line_added_flags()[i] && line_removed_flags()[i]` is `false`
+    ///   at every `i` — the two polarity siblings partition the
+    ///   changed-side of the ternary axis disjointly, so no line is
+    ///   simultaneously added and removed.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, no
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_added_flags(&self) -> Vec<bool> {
+        self.lines.iter().map(DiffLine::is_added).collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -48930,6 +49001,226 @@ mod tests {
             diff_b.line_removed_flags(),
             "line_removed_flags must be payload-independent — same kinds yield same flags",
         );
+    }
+
+    // ── ConfigDiff::line_added_flags — container-altitude lift
+    //    of DiffLine::is_added on the diff-cell added-side axis ──
+
+    #[test]
+    fn line_added_flags_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_added_flags().len()`
+        // equals `self.lines.len()` on every fixture. The projection
+        // is total on the line list (never the fixed-cardinality
+        // collapse of `kind_histogram`), so a future edit that drops
+        // or duplicates a line at the seam fails here on the first
+        // mismatched length — idiom-peer of
+        // `line_removed_flags_len_agrees_with_lines_len` one polarity
+        // over on the same three-cell diff-cell kind axis.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_added_flags().len(),
+                diff.lines.len(),
+                "line_added_flags().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_added_flags_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // added-flags projection. The seam is total on the line
+        // list, so the empty line list projects to the empty vec —
+        // the identity slot of the projection on the diff altitude,
+        // idiom-peer of `line_removed_flags_empty_diff_is_empty`.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_added_flags().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_added_flags_agree_with_diff_line_is_added_pointwise() {
+        // Pointwise-agreement pin: at every index the container-
+        // altitude projection equals the tag-side per-line predicate
+        // at the payload-bearing altitude — the two surfaces
+        // (`ConfigDiff::line_added_flags` here, `DiffLine::is_added`)
+        // declare the (variant → is-added) mapping independently
+        // on the same closed three-cell axis. A future edit shifting
+        // one match without the other fails here on the first
+        // drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_added_flags();
+        assert_eq!(flags.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                flags[i],
+                line.is_added(),
+                "line_added_flags()[{i}] must equal self.lines[{i}].is_added()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_added_flags_agree_with_line_kinds_under_kind_is_added() {
+        // Container-altitude cross-projection pin: the added-flags
+        // seam and the typed-variant seam agree pointwise under the
+        // primitive-altitude `DiffLineKind::is_added` predicate —
+        // `line_added_flags()[i] == line_kinds()[i].is_added()`
+        // for every `i`. The reason the two container-altitude
+        // projections sit on the same enum axis: the added-flag is
+        // the closed image of the typed variant under
+        // `DiffLineKind::is_added`, so a future edit that shifted
+        // either seam without the other diverges here on the first
+        // drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_added_flags();
+        let kinds = diff.line_kinds();
+        assert_eq!(flags.len(), kinds.len());
+        for i in 0..flags.len() {
+            assert_eq!(
+                flags[i],
+                kinds[i].is_added(),
+                "line_added_flags()[{i}] must equal line_kinds()[{i}].is_added()",
+            );
+        }
+    }
+
+    #[test]
+    fn line_added_flags_true_count_reconciles_with_kind_histogram_added() {
+        // Fixed-cardinality reconciliation pin: the count of `true`
+        // entries in the row-preserving `line_added_flags()`
+        // projection equals the histogram's count for
+        // `DiffLineKind::Added` — the row-preserving projection
+        // and the fixed-cardinality collapse read the same per-line
+        // kinds through the closed `DiffLineKind::is_added` image.
+        // A future edit that shifted one seam without the other (a
+        // histogram overload that stopped counting Added, or a
+        // `line_added_flags` implementation that peeked at the
+        // payload) fails here on the first drifted cell.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let flags = diff.line_added_flags();
+        let histogram = diff.kind_histogram();
+        let via_flags = flags.iter().filter(|b| **b).count();
+        let via_histogram = histogram.count(DiffLineKind::Added);
+        assert_eq!(
+            via_flags, via_histogram,
+            "line_added_flags true count ({via_flags}) must equal kind_histogram count of DiffLineKind::Added ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_added_flags_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<bool>` values — the added-side polarity
+        // depends only on the tag, so the closed image under
+        // `DiffLineKind::is_added` cannot see the inner `String`.
+        // Sibling of the four payload-independent scalar projections
+        // (`line_kinds` / `line_ordinals` / `line_glyphs` /
+        // `line_labels`) and of the shipped boolean-projection sibling
+        // `line_removed_flags`; a future edit that peeked at the
+        // payload would diverge here on the first shape where the two
+        // fixtures share a kind sequence but differ on text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_added_flags(),
+            diff_b.line_added_flags(),
+            "line_added_flags must be payload-independent — same kinds yield same flags",
+        );
+    }
+
+    #[test]
+    fn line_added_flags_and_line_removed_flags_are_disjoint_pointwise() {
+        // Polarity-disjointness pin: at every index the added and
+        // removed boolean columns cannot both be `true` — the two
+        // polarity siblings partition the changed-side of the ternary
+        // axis disjointly, since `DiffLineKind::Added` and
+        // `DiffLineKind::Removed` are distinct cells of the closed
+        // three-cell diff-cell kind axis. A future edit that widened
+        // either predicate to overlap the other diverges here on the
+        // first index where both flags flip to `true` at once.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let added = diff.line_added_flags();
+        let removed = diff.line_removed_flags();
+        assert_eq!(added.len(), removed.len());
+        for i in 0..added.len() {
+            assert!(
+                !(added[i] && removed[i]),
+                "line_added_flags()[{i}] && line_removed_flags()[{i}] must be false — added and removed cells are disjoint on the three-cell diff-cell kind axis",
+            );
+        }
     }
 
     // ── ConfigDiff::present_kinds — observed-cells peer of
