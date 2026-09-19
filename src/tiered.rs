@@ -37454,6 +37454,137 @@ impl ConfigDiff {
             .collect()
     }
 
+    /// Container-altitude label projection on the two-cell context-side
+    /// polarity axis ([`DiffLine::Context`] vs
+    /// [`DiffLine::Added`] ∪ [`DiffLine::Removed`]) — a
+    /// length-`self.lines.len()` `Vec<&'static str>` whose `i`-th entry
+    /// is `"context"` when the line is [`DiffLine::Context`] and
+    /// `"not_context"` when the line is [`DiffLine::Added`] or
+    /// [`DiffLine::Removed`], read through the tag-side per-line
+    /// predicate at the payload-bearing altitude
+    /// ([`DiffLine::is_context`]). The label-altitude sibling of the
+    /// shipped [`Self::line_context_side_ordinals`] (landed in `58d9f4f`)
+    /// scalar projection and [`Self::line_context_flags`] (landed in
+    /// `46c8a2d`) boolean projection on the same closed two-cell
+    /// context-side polarity axis, and the context-side peer of
+    /// [`Self::line_added_side_labels`] (landed in `9011bd9`) and
+    /// [`Self::line_removed_side_labels`] (landed in `5177a05`) one
+    /// polarity axis over on the sibling added-side and removed-side
+    /// polarity axes, closing the label-altitude rung on the THIRD (and
+    /// last) of the three side-polarity axes.
+    ///
+    /// The modal-polarity axis (changed vs unchanged) at
+    /// [`Self::line_change_polarity_labels`] (landed in `8cae496`)
+    /// singles out [`DiffLine::Added`] ∪ [`DiffLine::Removed`] against
+    /// [`DiffLine::Context`] under the disjoint `"changed"` /
+    /// `"unchanged"` label pair; the context-side polarity axis is the
+    /// polarity-axis complement — it singles out [`DiffLine::Context`]
+    /// alone against the disjunction [`DiffLine::Added`] ∪
+    /// [`DiffLine::Removed`] under the natural `"context"` /
+    /// `"not_context"` label pair, so this projection is pointwise
+    /// tied to [`Self::line_change_polarity_labels`] on the closed
+    /// two-cell label image (`"context"` iff `"unchanged"`,
+    /// `"not_context"` iff `"changed"`).
+    ///
+    /// Consumers that need the per-line context-side polarity as a
+    /// dense single-column label track — a per-tier attestation manifest
+    /// recording the context-side label signature between two config
+    /// tiers as a `Vec<&'static str>` alongside the base-axis label
+    /// signature already available via [`Self::line_labels`], a
+    /// structured-log emitter tagging each line with a canonical
+    /// `context_side` label field (`"context"` / `"not_context"`) for
+    /// aggregation, an alerting policy filtering rows whose
+    /// context-side polarity label equals `"context"` — read this
+    /// projection at one hop instead of open-coding
+    /// `self.lines.iter().map(|l| if l.is_context() { "context" } else { "not_context" }).collect::<Vec<_>>()`,
+    /// `line_context_side_ordinals().iter().map(|o| if *o == 1 { "context" } else { "not_context" }).collect::<Vec<_>>()`
+    /// (the scalar-through-conditional route), or
+    /// `line_context_flags().iter().map(|b| if *b { "context" } else { "not_context" }).collect::<Vec<_>>()`
+    /// (the boolean-through-conditional route) at the call site.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// scalar-projection quartet [`Self::line_kinds`] /
+    /// [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`], the boolean-projection quintet
+    /// [`Self::line_removed_flags`] / [`Self::line_added_flags`] /
+    /// [`Self::line_context_flags`] / [`Self::line_changed_flags`] /
+    /// [`Self::line_unchanged_flags`], and the scalar sibling
+    /// [`Self::line_context_side_ordinals`] on the same closed two-cell
+    /// context-side polarity axis: same length, same `O(n)` cost, same
+    /// container-altitude discipline. Every entry is the closed image
+    /// of the typed variant under the fixed pair (`"not_context"` when
+    /// `is_context() == false`, `"context"` when `is_context() == true`),
+    /// so `line_context_side_labels()[i] ==
+    /// (if line_context_flags()[i] { "context" } else { "not_context" })`
+    /// at every index.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_context_side_labels().len() == self.lines.len()` — the
+    ///   row-preserving projection stays parallel to the line list
+    ///   pointwise.
+    /// - `line_context_side_labels()[i] ==
+    ///   (if self.lines[i].is_context() { "context" } else { "not_context" })`
+    ///   for every `i < self.lines.len()` — pointwise agreement with
+    ///   the tag-side per-line predicate at the payload-bearing
+    ///   altitude, mapped through the fixed two-cell label image.
+    /// - `line_context_side_labels()[i] ==
+    ///   (if line_context_flags()[i] { "context" } else { "not_context" })`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   shipped context-side boolean sibling under the same closed
+    ///   image.
+    /// - `line_context_side_labels()[i] ==
+    ///   (if line_context_side_ordinals()[i] == 1 { "context" } else { "not_context" })`
+    ///   for every `i` — container-altitude cross-projection with the
+    ///   shipped context-side scalar sibling under the ordinal-to-label
+    ///   mapping on the closed two-cell axis, so the label and scalar
+    ///   projections agree pointwise at the diff altitude.
+    /// - `line_context_side_labels().is_empty() == self.lines.is_empty()`
+    ///   — the projection is total on the line list, so the empty
+    ///   diff yields the empty projection.
+    /// - Every entry of `line_context_side_labels()` is one of the two
+    ///   `'static` strings `"context"` or `"not_context"` — the closed
+    ///   image on the two-cell context-side polarity axis, so the
+    ///   row-preserving projection never yields a value outside the
+    ///   axis cardinality.
+    /// - `line_context_side_labels().iter().filter(|s| **s == "context").count()
+    ///   == self.kind_histogram().count(DiffLineKind::Context)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the context-cell total through the closed
+    ///   `is_context → "context"` image.
+    /// - `line_context_side_labels().iter().all(|s| *s == "not_context")
+    ///   == (self.kind_histogram().count(DiffLineKind::Context) == 0)`
+    ///   — the label-altitude context-side polarity projection agrees
+    ///   with the fixed-cardinality collapse on the not-context pole,
+    ///   so an all-`"not_context"` witness pins the context-free case
+    ///   (vacuously true on the empty line list).
+    /// - `line_context_side_labels()[i] == "context"` iff
+    ///   `line_change_polarity_labels()[i] == "unchanged"` at every
+    ///   index — the context-side polarity axis is the label-altitude
+    ///   complement of the modal-polarity axis on the closed two-cell
+    ///   label image (context ⟺ unchanged), so the two seams are tied
+    ///   pointwise at the diff altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, one branch
+    /// per line to select the `'static` label (no allocation), no
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_context_side_labels(&self) -> Vec<&'static str> {
+        self.lines
+            .iter()
+            .map(|l| {
+                if l.is_context() {
+                    "context"
+                } else {
+                    "not_context"
+                }
+            })
+            .collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -54512,6 +54643,340 @@ mod tests {
                 all_space, zero_removed,
                 "line_removed_side_glyphs().all(|c| *c == ' ') must equal (Removed count == 0) for {diff:?}",
             );
+        }
+    }
+
+    // ── ConfigDiff::line_context_side_labels — container-altitude label
+    //    projection on the two-cell context-side polarity axis, sibling
+    //    of line_context_side_ordinals / line_context_flags on the same
+    //    axis and of line_added_side_labels / line_removed_side_labels
+    //    one polarity axis over ──
+
+    #[test]
+    fn line_context_side_labels_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_context_side_labels().len()`
+        // equals `self.lines.len()` on every fixture. Idiom-peer of
+        // `line_context_side_ordinals_len_agrees_with_lines_len` one
+        // altitude below on the same two-cell context-side polarity
+        // axis; a future edit that drops or duplicates a line at the
+        // seam fails here on the first mismatched length.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_side_labels().len(),
+                diff.lines.len(),
+                "line_context_side_labels().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // context-side-label projection — the identity slot of the
+        // projection on the diff altitude, sibling of
+        // `line_context_side_ordinals_empty_diff_is_empty` on the
+        // scalar pole of the same two-cell context-side polarity axis.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_context_side_labels().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_context_side_labels_agree_with_diff_line_is_context_pointwise() {
+        // Pointwise-agreement pin: at every index the container-altitude
+        // label projection equals `if self.lines[i].is_context() { "context" }
+        // else { "not_context" }` — the tag-side per-line predicate at
+        // the payload-bearing altitude, mapped through the fixed two-cell
+        // label image on the context-side polarity axis. The two surfaces
+        // declare the (variant → context-side-label) mapping independently
+        // on the same closed three-cell axis under the context-side
+        // polarity classifier, so a future edit shifting one match without
+        // the other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_context_side_labels();
+        assert_eq!(labels.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            let expected = if line.is_context() {
+                "context"
+            } else {
+                "not_context"
+            };
+            assert_eq!(
+                labels[i], expected,
+                "line_context_side_labels()[{i}] must equal the context-side label of self.lines[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_agree_with_line_context_flags_pointwise() {
+        // Container-altitude cross-projection pin: the label seam and
+        // the boolean seam on the same two-cell context-side polarity
+        // axis agree pointwise under the boolean-to-label mapping —
+        // `line_context_side_labels()[i] == (if line_context_flags()[i]
+        // { "context" } else { "not_context" })` for every `i`. A future
+        // edit that shifted either seam without the other diverges here
+        // on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_context_side_labels();
+        let flags = diff.line_context_flags();
+        assert_eq!(labels.len(), flags.len());
+        for i in 0..labels.len() {
+            let expected = if flags[i] { "context" } else { "not_context" };
+            assert_eq!(
+                labels[i], expected,
+                "line_context_side_labels()[{i}] must equal the label form of line_context_flags()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_agree_with_line_context_side_ordinals_pointwise() {
+        // Container-altitude cross-projection pin: the label seam and
+        // the scalar seam on the same two-cell context-side polarity
+        // axis agree pointwise under the ordinal-to-label mapping —
+        // `line_context_side_labels()[i] == (if
+        // line_context_side_ordinals()[i] == 1 { "context" } else
+        // { "not_context" })` for every `i`. The two projections read
+        // the same tag-side predicate; a future edit that shifted either
+        // seam without the other diverges here on the first drifted
+        // index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_context_side_labels();
+        let ordinals = diff.line_context_side_ordinals();
+        assert_eq!(labels.len(), ordinals.len());
+        for i in 0..labels.len() {
+            let expected = if ordinals[i] == 1 {
+                "context"
+            } else {
+                "not_context"
+            };
+            assert_eq!(
+                labels[i], expected,
+                "line_context_side_labels()[{i}] must equal the label form of line_context_side_ordinals()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<&'static str>` values — the context-side
+        // polarity label depends only on the tag. A future edit that
+        // peeked at the payload would diverge here on the first shape
+        // where the two fixtures share a kind sequence but differ on
+        // text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_context_side_labels(),
+            diff_b.line_context_side_labels(),
+            "line_context_side_labels must be payload-independent — same kinds yield same labels",
+        );
+    }
+
+    #[test]
+    fn line_context_side_labels_take_only_context_or_not_context_values() {
+        // Closed-image pin on the two-cell context-side polarity axis:
+        // every entry is one of the two `'static` strings `"context"`
+        // or `"not_context"`. A future edit that widened the projection
+        // to a third label — e.g. via a peeking implementation that
+        // leaked a payload-derived string through the seam — diverges
+        // here on the first out-of-image entry.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, s) in diff.line_context_side_labels().iter().enumerate() {
+            assert!(
+                *s == "context" || *s == "not_context",
+                "line_context_side_labels()[{i}] = {s:?} must be \"context\" or \"not_context\"",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_context_count_reconciles_with_kind_histogram_context_count() {
+        // Fixed-cardinality reconciliation pin: the number of
+        // `"context"` entries in the row-preserving label projection
+        // equals `kind_histogram().count(DiffLineKind::Context)`. Both
+        // surfaces read the same per-line kinds through the closed
+        // `is_context → "context"` image, so a future edit that shifted
+        // one seam without the other fails here on the first drifted
+        // total.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_context_side_labels();
+        let histogram = diff.kind_histogram();
+        let via_labels = labels.iter().filter(|s| **s == "context").count();
+        let via_histogram = histogram.count(DiffLineKind::Context);
+        assert_eq!(
+            via_labels, via_histogram,
+            "line_context_side_labels \"context\" count ({via_labels}) must equal kind_histogram Context count ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_context_side_labels_all_not_context_agrees_with_zero_context_count() {
+        // Diff-surface agreement pin: the label-altitude context-side
+        // polarity projection is all-`"not_context"` iff the kind
+        // histogram records zero context lines —
+        // `line_context_side_labels().iter().all(|s| *s == "not_context")
+        // == (kind_histogram().count(DiffLineKind::Context) == 0)`. An
+        // all-`"not_context"` witness pins the context-free case
+        // (vacuously true on the empty line list, where `all` is `true`
+        // on the empty iterator and the Context count is `0`).
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r1".into()), DiffLine::Added("a1".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let all_not_context = diff
+                .line_context_side_labels()
+                .iter()
+                .all(|s| *s == "not_context");
+            let zero_context = diff.kind_histogram().count(DiffLineKind::Context) == 0;
+            assert_eq!(
+                all_not_context, zero_context,
+                "line_context_side_labels().all(|s| *s == \"not_context\") must equal (Context count == 0) for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_labels_are_pointwise_complement_of_change_polarity_labels() {
+        // Modal-polarity complement pin: the context-side polarity axis
+        // is the label-altitude complement of the modal-polarity axis on
+        // the closed two-cell label image — `line_context_side_labels()[i]
+        // == "context"` iff `line_change_polarity_labels()[i] ==
+        // "unchanged"` at every index. A future edit that broke the
+        // complement law on either seam fails here on the first fixture
+        // with a mismatched pair.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let context = diff.line_context_side_labels();
+            let changed = diff.line_change_polarity_labels();
+            assert_eq!(context.len(), diff.lines.len());
+            assert_eq!(changed.len(), diff.lines.len());
+            for i in 0..diff.lines.len() {
+                assert_eq!(
+                    context[i] == "context",
+                    changed[i] == "unchanged",
+                    "line_context_side_labels()[{i}] == \"context\" must equal line_change_polarity_labels()[{i}] == \"unchanged\" for {diff:?}",
+                );
+            }
         }
     }
 
