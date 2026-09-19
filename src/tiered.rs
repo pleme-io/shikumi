@@ -38148,6 +38148,143 @@ impl ConfigDiff {
             .collect()
     }
 
+    /// Signature-altitude [`String`]-collapse of
+    /// [`Self::line_context_side_glyphs`] one altitude up on the same
+    /// two-cell context-side polarity glyph axis
+    /// ([`DiffLine::Context`] vs [`DiffLine::Added`] ∪
+    /// [`DiffLine::Removed`]) — a length-`self.lines.len()` [`String`]
+    /// whose `i`-th character is `' '` when the line is
+    /// [`DiffLine::Context`] and `'!'` when the line is
+    /// [`DiffLine::Added`] or [`DiffLine::Removed`], the one-hop
+    /// [`String`]-collapse of the container-altitude
+    /// `line_context_side_glyphs()` `Vec<char>` projection. This is the
+    /// FIFTH and LAST landing of the `Vec<char>` → [`String`]
+    /// signature-altitude pattern on the diff surface, after
+    /// [`Self::line_glyph_string`] (base three-cell diff-cell glyph
+    /// axis, landed in `3dfe0c4`),
+    /// [`Self::line_change_polarity_glyph_string`] (modal-polarity
+    /// glyph axis, landed in `1ca6f85`),
+    /// [`Self::line_added_side_glyph_string`] (added-side polarity
+    /// glyph axis, landed in `ce02ab2`), and
+    /// [`Self::line_removed_side_glyph_string`] (removed-side polarity
+    /// glyph axis, landed in `e0f3b57`) — CLOSING the five-brick
+    /// signature-altitude glyph rectangle over the full
+    /// `{base, modal, added-side, removed-side, context-side}` tuple
+    /// of ClosedAxis glyph axes at the seam.
+    ///
+    /// Consumers that record the context-side glyph *signature* between
+    /// two config tiers as a compact single-string label — a per-tier
+    /// attestation manifest recording the context-side (`' '` / `'!'`)
+    /// glyph sequence as one stable [`String`] value (the exact use-case
+    /// the container-altitude [`Self::line_context_side_glyphs`] doc
+    /// names, and that today re-derives the collapse at every site), a
+    /// structured-log emitter tagging each diff event with a
+    /// context-side glyph signature field alongside the base-axis glyph
+    /// signature from [`Self::line_glyph_string`], the modal-polarity
+    /// glyph signature from [`Self::line_change_polarity_glyph_string`],
+    /// the added-side glyph signature from
+    /// [`Self::line_added_side_glyph_string`], and the removed-side
+    /// glyph signature from [`Self::line_removed_side_glyph_string`], a
+    /// CLI `config-diff` summary printing the context-side strip
+    /// (`' '` for context, `'!'` for not-context) as a one-line
+    /// signature alongside the full unified-diff body from
+    /// [`Self::render_unified`] — replace the pre-lift two-hop
+    /// `diff.line_context_side_glyphs().into_iter().collect::<String>()`
+    /// composition at every site with the one-hop
+    /// [`Self::line_context_side_glyph_string`] signature-altitude
+    /// sibling.
+    ///
+    /// Signature-altitude peer of the container-altitude `Vec<char>`
+    /// seam [`Self::line_context_side_glyphs`] one altitude down: same
+    /// row-preserving projection over the same two-cell context-side
+    /// polarity axis, one altitude up into the [`String`] collapse.
+    /// Closes the signature-altitude rung on the fifth (and last) of
+    /// the five glyph axes after [`Self::line_glyph_string`],
+    /// [`Self::line_change_polarity_glyph_string`],
+    /// [`Self::line_added_side_glyph_string`], and
+    /// [`Self::line_removed_side_glyph_string`].
+    ///
+    /// Because the context-side polarity axis and the modal-polarity
+    /// axis are the same partition of the base three-cell diff-cell
+    /// axis (`{Context}` vs `{Added, Removed}`) under distinct
+    /// polarity classifiers ([`DiffLine::is_context`] vs
+    /// [`DiffLine::is_changed`]), and the two axes project to the SAME
+    /// closed two-cell glyph image `{' ', '!'}` at the glyph altitude
+    /// (a fact pinned by
+    /// `line_context_side_glyphs() == line_change_polarity_glyphs()`),
+    /// the signature-altitude collapse over the two axes yields the
+    /// SAME [`String`] pointwise — a fact pinned by
+    /// `line_context_side_glyph_string() ==
+    /// line_change_polarity_glyph_string()`, the signature-altitude
+    /// peer of the glyph-altitude pointwise-equivalence law.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_context_side_glyph_string().chars().count() ==
+    ///   self.lines.len()` — the signature-altitude collapse preserves
+    ///   the row count pointwise (every line contributes exactly one
+    ///   glyph character, none of which is multi-`char` under the
+    ///   closed image `{' ', '!'}`).
+    /// - `line_context_side_glyph_string().len() == self.lines.len()`
+    ///   — every character in the closed image `{' ', '!'}` is a
+    ///   single-byte ASCII code point, so the [`String`] byte length
+    ///   and the `chars().count()` agree with the line count as one
+    ///   fact.
+    /// - `line_context_side_glyph_string() ==
+    ///   self.line_context_side_glyphs().into_iter().collect::<String>()`
+    ///   — the signature is the exact [`String`]-collapse of the
+    ///   container-altitude `Vec<char>` projection, pointwise. This is
+    ///   the defining law of the signature-altitude rung sitting on top
+    ///   of the container-altitude rung.
+    /// - `line_context_side_glyph_string().chars().nth(i) ==
+    ///   Some(if self.lines[i].is_context() { ' ' } else { '!' })` for
+    ///   every `i < self.lines.len()` — pointwise agreement with the
+    ///   tag-side per-line predicate at the payload-bearing altitude,
+    ///   mapped through the fixed two-cell glyph image, with no
+    ///   reordering.
+    /// - `line_context_side_glyph_string().is_empty() ==
+    ///   self.lines.is_empty()` — the collapse is total on the line
+    ///   list; an empty diff yields the empty string, the identity slot
+    ///   of the collapse on the signature altitude.
+    /// - Every character of `line_context_side_glyph_string()` is `' '`
+    ///   or `'!'` — the closed image on the two-cell context-side
+    ///   polarity axis, so the signature-altitude collapse never yields
+    ///   a value outside the axis cardinality.
+    /// - `line_context_side_glyph_string().chars().filter(|c| *c ==
+    ///   ' ').count() == kind_histogram().count(DiffLineKind::Context)`
+    ///   — the signature-altitude collapse and the fixed-cardinality
+    ///   collapse read the same per-line kinds through the closed
+    ///   `is_context → ' '` image.
+    /// - `line_context_side_glyph_string().chars().all(|c| c == '!') ==
+    ///   (self.kind_histogram().count(DiffLineKind::Context) == 0)` —
+    ///   the signature-altitude context-side polarity projection agrees
+    ///   with the fixed-cardinality collapse on the not-context pole,
+    ///   so an all-`'!'` witness pins the context-free case (vacuously
+    ///   true on the empty line list).
+    /// - `line_context_side_glyph_string() ==
+    ///   self.line_change_polarity_glyph_string()` — the context-side
+    ///   polarity axis and the modal-polarity axis are the same
+    ///   partition of the base three-cell diff-cell axis under distinct
+    ///   polarity classifiers, so at the closed two-cell glyph image
+    ///   `{' ', '!'}` their signature-altitude collapses coincide
+    ///   pointwise — the signature-altitude peer of the glyph-altitude
+    ///   `line_context_side_glyphs() == line_change_polarity_glyphs()`
+    ///   coincidence law one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one ASCII byte (`{' ', '!'}` are both single-byte UTF-8)
+    /// per line pushed into a [`String`] buffer, and the buffer's own
+    /// storage grows to at most `n` bytes.
+    #[must_use]
+    pub fn line_context_side_glyph_string(&self) -> String {
+        self.lines
+            .iter()
+            .map(|l| if l.is_context() { ' ' } else { '!' })
+            .collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -56955,6 +57092,334 @@ mod tests {
                 "line_context_side_glyphs must equal line_change_polarity_glyphs pointwise for {diff:?}",
             );
         }
+    }
+
+    // ── ConfigDiff::line_context_side_glyph_string — signature-
+    //    altitude String-collapse of ConfigDiff::line_context_side_glyphs
+    //    one altitude up on the two-cell context-side polarity glyph
+    //    axis, the FIFTH and LAST landing of the Vec<char> → String
+    //    signature-altitude pattern on the diff surface after
+    //    line_glyph_string (base axis), line_change_polarity_glyph_string
+    //    (modal-polarity axis), line_added_side_glyph_string (added-side
+    //    polarity axis), and line_removed_side_glyph_string (removed-
+    //    side polarity axis), closing the five-brick signature-altitude
+    //    glyph rectangle ─────────
+
+    #[test]
+    fn line_context_side_glyph_string_len_agrees_with_lines_len() {
+        // Row-preserving collapse pin: `line_context_side_glyph_string()`
+        // has exactly one character per line on every fixture, and — the
+        // stronger form the ASCII closed image `{' ', '!'}` permits — one
+        // byte per line too. The collapse is total on the line list at
+        // char-count `self.lines.len()`, so a future edit that dropped or
+        // duplicated a line at the seam fails here on the first mismatched
+        // length. Idiom-peer of
+        // `line_context_side_glyphs_len_agrees_with_lines_len` one altitude
+        // down on the same axis, and of
+        // `line_removed_side_glyph_string_len_agrees_with_lines_len` one
+        // polarity axis over on the same altitude.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let sig = diff.line_context_side_glyph_string();
+            assert_eq!(
+                sig.chars().count(),
+                diff.lines.len(),
+                "line_context_side_glyph_string().chars().count() must equal self.lines.len() for {diff:?}",
+            );
+            assert_eq!(
+                sig.len(),
+                diff.lines.len(),
+                "line_context_side_glyph_string().len() (bytes) must equal self.lines.len() for {diff:?} — the ASCII closed image {{' ', '!'}} collapses char-count and byte-count to one fact",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // signature. The collapse is total on the line list, so the
+        // empty line list projects to the empty string — the identity
+        // slot of the collapse on the signature altitude, idiom-peer of
+        // `line_context_side_glyphs_empty_diff_is_empty` one altitude
+        // down on the same axis.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_context_side_glyph_string().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_equals_line_context_side_glyphs_collect() {
+        // Cross-altitude pin: the signature-altitude collapse equals the
+        // exact `String`-collect of the container-altitude `Vec<char>`
+        // projection. The two seams read the same closed image through
+        // the same per-line predicate; a future edit that peeked at the
+        // payload on one and not the other, or reordered one of the two,
+        // diverges here on the first fixture. This is the defining law of
+        // the signature-altitude rung sitting on top of the container-
+        // altitude rung, idiom-peer of
+        // `line_removed_side_glyph_string_equals_line_removed_side_glyphs_collect`
+        // one polarity axis over on the same altitude.
+        let fixtures: [ConfigDiff; 3] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Context("c1".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Context("c0".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_side_glyph_string(),
+                diff.line_context_side_glyphs()
+                    .into_iter()
+                    .collect::<String>(),
+                "line_context_side_glyph_string() must equal line_context_side_glyphs().into_iter().collect::<String>() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_agrees_with_is_context_pointwise() {
+        // Pointwise-agreement pin: at every index the signature character
+        // equals the tag-side per-line predicate at the payload-bearing
+        // altitude mapped through the fixed two-cell glyph image
+        // (`' '` on context, `'!'` on not-context). A future edit shifting
+        // one match without the other fails here on the first drifted
+        // line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let sig = diff.line_context_side_glyph_string();
+        let via_chars: Vec<char> = sig.chars().collect();
+        assert_eq!(via_chars.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            let expected = if line.is_context() { ' ' } else { '!' };
+            assert_eq!(
+                via_chars[i], expected,
+                "line_context_side_glyph_string().chars().nth({i}) must equal the context-side glyph of self.lines[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_is_in_closed_two_character_image() {
+        // Closed-image pin: every character in the signature is `' '` or
+        // `'!'` — the closed image of the context-side polarity glyph
+        // axis, so a future edit that emitted a stray character (say
+        // `'+'` or `'-'` for a hypothetical bug leaking the sided poles
+        // through the context seam without a matching image update)
+        // diverges here on the first drifted character.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, c) in diff.line_context_side_glyph_string().chars().enumerate() {
+            assert!(
+                c == ' ' || c == '!',
+                "line_context_side_glyph_string().chars().nth({i}) = {c:?} must lie in the closed image {{' ', '!'}}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_space_count_reconciles_with_kind_histogram_context_count() {
+        // Fixed-cardinality reconciliation pin: the count of `' '` in
+        // the signature-altitude collapse equals the histogram count on
+        // `Context` — the signature-altitude collapse and the fixed-
+        // cardinality collapse read the same per-line kinds through the
+        // closed `is_context → ' '` image. A future edit that shifted one
+        // seam without the other fails here on the first drifted cell.
+        // Idiom-peer of
+        // `line_context_side_glyphs_space_count_reconciles_with_kind_histogram_context_count`
+        // one altitude down on the same axis.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let sig = diff.line_context_side_glyph_string();
+        let histogram = diff.kind_histogram();
+        let via_sig = sig.chars().filter(|c| *c == ' ').count();
+        let via_histogram = histogram.count(DiffLineKind::Context);
+        assert_eq!(
+            via_sig, via_histogram,
+            "line_context_side_glyph_string ' ' count ({via_sig}) must equal kind_histogram Context count ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_all_bang_agrees_with_zero_context_count() {
+        // Diff-surface agreement pin: the signature-altitude context-side
+        // polarity projection is all-`'!'` iff the kind histogram records
+        // zero context lines —
+        // `line_context_side_glyph_string().chars().all(|c| c == '!') ==
+        // (kind_histogram().count(DiffLineKind::Context) == 0)`. An
+        // all-`'!'` witness pins the context-free case on every non-empty
+        // fixture where no line is Context (and vacuously on the empty
+        // line list, where `all` is `true` on the empty iterator and the
+        // Context count is `0`). Idiom-peer of
+        // `line_context_side_glyphs_all_bang_agrees_with_zero_context_count`
+        // one altitude down on the same axis.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r1".into()), DiffLine::Added("a1".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let all_bang = diff
+                .line_context_side_glyph_string()
+                .chars()
+                .all(|c| c == '!');
+            let zero_context = diff.kind_histogram().count(DiffLineKind::Context) == 0;
+            assert_eq!(
+                all_bang, zero_context,
+                "line_context_side_glyph_string().chars().all(|c| c == '!') must equal (Context count == 0) for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_equals_line_change_polarity_glyph_string() {
+        // Closed-image coincidence pin at the signature altitude: the
+        // context-side polarity axis and the modal-polarity axis are the
+        // same partition of the base three-cell diff-cell axis
+        // (`{Context}` vs `{Added, Removed}`) under distinct polarity
+        // classifiers ([`DiffLine::is_context`] vs
+        // [`DiffLine::is_changed`]), so at the closed two-cell glyph
+        // image `{' ', '!'}` their signature-altitude collapses coincide
+        // pointwise — `line_context_side_glyph_string() ==
+        // line_change_polarity_glyph_string()` on every fixture. This is
+        // the signature-altitude peer of the glyph-altitude
+        // `line_context_side_glyphs() == line_change_polarity_glyphs()`
+        // coincidence law one altitude down (pinned at
+        // `line_context_side_glyphs_equal_line_change_polarity_glyphs_pointwise`).
+        // A future edit that shifted either signature without the other
+        // diverges here on the first fixture.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_context_side_glyph_string(),
+                diff.line_change_polarity_glyph_string(),
+                "line_context_side_glyph_string() must equal line_change_polarity_glyph_string() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_context_side_glyph_string_is_payload_independent() {
+        // Payload-independence pin: two diffs with the same line kinds
+        // in the same order yield the same signature regardless of the
+        // payload strings — the underlying `DiffLine::is_context`
+        // predicate is invariant on payload. A future edit that peeked
+        // at the payload from either the collapse or the per-line
+        // predicate would diverge here on the first payload-varying pair.
+        // Idiom-peer of `line_removed_side_glyph_string_is_payload_independent`
+        // one polarity axis over on the same altitude.
+        let same_kinds_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("alpha".into()),
+                DiffLine::Added("beta".into()),
+                DiffLine::Context("gamma".into()),
+            ],
+        };
+        let same_kinds_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed(String::new()),
+                DiffLine::Added("Δ multi-byte 🎯".into()),
+                DiffLine::Context("z".into()),
+            ],
+        };
+        assert_eq!(
+            same_kinds_a.line_context_side_glyph_string(),
+            same_kinds_b.line_context_side_glyph_string(),
+            "line_context_side_glyph_string() must be payload-independent for identical kind sequences",
+        );
     }
 
     // ── ConfigDiff::present_kinds — observed-cells peer of
