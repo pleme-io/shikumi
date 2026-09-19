@@ -36429,6 +36429,124 @@ impl ConfigDiff {
             .collect()
     }
 
+    /// Container-altitude label projection on the two-cell
+    /// modal-polarity axis (changed vs unchanged) — a
+    /// length-`self.lines.len()` `Vec<&'static str>` whose `i`-th
+    /// entry is `"unchanged"` when the line is unchanged
+    /// ([`DiffLine::Context`]) and `"changed"` when the line is
+    /// changed ([`DiffLine::Added`] or [`DiffLine::Removed`]), read
+    /// through the tag-side per-line predicate at the payload-bearing
+    /// altitude. The label-altitude sibling of the shipped
+    /// [`Self::line_change_polarity_ordinals`] scalar projection on
+    /// the same two-cell modal-polarity axis, and the modal-polarity
+    /// peer of [`Self::line_labels`] one polarity level up:
+    /// `line_labels` reads the three-cell base diff-cell kind axis
+    /// (`"removed"` / `"added"` / `"context"`); this projection reads
+    /// the coarser two-cell modal-polarity axis that collapses the
+    /// base three-cell axis under the disjunction `Added ∪ Removed`
+    /// (unchanged label `"unchanged"`, changed label `"changed"`).
+    ///
+    /// Consumers that need the per-line change-side polarity as a
+    /// dense label column — a Markdown-fenced diff renderer emitting
+    /// a `changed` / `unchanged` column separately from the base-axis
+    /// label column (`removed` / `added` / `context`), a per-tier
+    /// attestation manifest recording the modal-polarity label
+    /// signature between two config tiers as a `Vec<&'static str>`
+    /// alongside the base-axis label signature already available via
+    /// [`Self::line_labels`], a structured-log emitter tagging each
+    /// line with a canonical `change_polarity` string field
+    /// (`"changed"` / `"unchanged"`) for aggregation — read this
+    /// projection at one hop instead of open-coding
+    /// `self.lines.iter().map(|l| if l.is_changed() { "changed" } else { "unchanged" }).collect::<Vec<_>>()`,
+    /// `line_change_polarity_ordinals().iter().map(|o| if *o == 1 { "changed" } else { "unchanged" }).collect::<Vec<_>>()`
+    /// (the scalar-through-conditional route), or
+    /// `line_changed_flags().iter().map(|b| if *b { "changed" } else { "unchanged" }).collect::<Vec<_>>()`
+    /// (the boolean-through-conditional route) at the call site.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// scalar-projection quartet [`Self::line_kinds`] /
+    /// [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`], the boolean-projection quintet
+    /// [`Self::line_removed_flags`] / [`Self::line_added_flags`] /
+    /// [`Self::line_context_flags`] / [`Self::line_changed_flags`] /
+    /// [`Self::line_unchanged_flags`], and the scalar sibling
+    /// [`Self::line_change_polarity_ordinals`] on the same two-cell
+    /// modal-polarity axis: same length, same `O(n)` cost, same
+    /// container-altitude discipline. Every entry is the closed
+    /// image of the typed variant under the fixed pair
+    /// (`"unchanged"` when `is_changed() == false`, `"changed"` when
+    /// `is_changed() == true`), so
+    /// `line_change_polarity_labels()[i] ==
+    /// (if line_changed_flags()[i] { "changed" } else { "unchanged" })`
+    /// at every index — the reason this projection sits on the same
+    /// modal-polarity axis as [`Self::line_change_polarity_ordinals`],
+    /// only lifted through the ordinal-to-label mapping the closed
+    /// two-cell image gives for free.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_change_polarity_labels().len() == self.lines.len()` —
+    ///   the row-preserving projection stays parallel to the line
+    ///   list pointwise.
+    /// - `line_change_polarity_labels()[i] ==
+    ///   (if self.lines[i].is_changed() { "changed" } else { "unchanged" })`
+    ///   for every `i < self.lines.len()` — pointwise agreement with
+    ///   the tag-side per-line predicate at the payload-bearing
+    ///   altitude, mapped through the fixed two-cell label image.
+    /// - `line_change_polarity_labels()[i] ==
+    ///   (if line_changed_flags()[i] { "changed" } else { "unchanged" })`
+    ///   for every `i` — container-altitude cross-projection with
+    ///   the shipped modal-polarity boolean sibling under the same
+    ///   closed image.
+    /// - `line_change_polarity_labels()[i] ==
+    ///   (if line_change_polarity_ordinals()[i] == 1 { "changed" } else { "unchanged" })`
+    ///   for every `i` — container-altitude cross-projection with
+    ///   the shipped modal-polarity scalar sibling under the ordinal-
+    ///   to-label mapping on the closed two-cell axis, so the label
+    ///   and scalar projections agree pointwise at the diff altitude.
+    /// - `line_change_polarity_labels().is_empty() ==
+    ///   self.lines.is_empty()` — the projection is total on the
+    ///   line list, so the empty diff yields the empty projection.
+    /// - Every entry of `line_change_polarity_labels()` is one of the
+    ///   two `'static` strings `"changed"` or `"unchanged"` — the
+    ///   closed image on the two-cell modal-polarity axis, so the
+    ///   row-preserving projection never yields a value outside the
+    ///   axis cardinality.
+    /// - `line_change_polarity_labels().iter().filter(|s| **s ==
+    ///   "changed").count() ==
+    ///   self.kind_histogram().count(DiffLineKind::Added) +
+    ///   self.kind_histogram().count(DiffLineKind::Removed)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the changed-cell total through the closed
+    ///   `is_changed → "changed"` image.
+    /// - `line_change_polarity_labels().iter().all(|s| *s == "unchanged")
+    ///   == self.is_empty_diff()` — the label-altitude modal-polarity
+    ///   projection agrees with the shipped structural-change
+    ///   predicate [`Self::is_empty_diff`] on the unchanged pole, so
+    ///   an all-`"unchanged"` witness pins the empty-diff case on
+    ///   every non-empty fixture where every line is Context (and
+    ///   vacuously on the empty line list).
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, one branch
+    /// per line to select the `'static` label (no allocation), no
+    /// allocation beyond the output vec's own storage.
+    #[must_use]
+    pub fn line_change_polarity_labels(&self) -> Vec<&'static str> {
+        self.lines
+            .iter()
+            .map(|l| {
+                if l.is_changed() {
+                    "changed"
+                } else {
+                    "unchanged"
+                }
+            })
+            .collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -50828,6 +50946,294 @@ mod tests {
                 all_zero,
                 diff.is_empty_diff(),
                 "line_change_polarity_ordinals().all(|o| *o == 0) must equal is_empty_diff() for {diff:?}",
+            );
+        }
+    }
+
+    // ── ConfigDiff::line_change_polarity_labels — container-altitude
+    //    label projection on the two-cell modal-polarity axis ──
+
+    #[test]
+    fn line_change_polarity_labels_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_change_polarity_labels().len()`
+        // equals `self.lines.len()` on every fixture. Idiom-peer of
+        // `line_change_polarity_ordinals_len_agrees_with_lines_len` one
+        // altitude over on the label pole of the same two-cell modal-
+        // polarity axis; a future edit that drops or duplicates a line
+        // at the seam fails here on the first mismatched length.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_change_polarity_labels().len(),
+                diff.lines.len(),
+                "line_change_polarity_labels().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_change_polarity_labels_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // change-polarity-label projection — the identity slot of the
+        // projection on the diff altitude, sibling of
+        // `line_change_polarity_ordinals_empty_diff_is_empty` on the
+        // scalar pole of the same two-cell modal-polarity axis.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_change_polarity_labels().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_change_polarity_labels_agree_with_diff_line_is_changed_pointwise() {
+        // Pointwise-agreement pin: at every index the container-altitude
+        // label projection equals `if self.lines[i].is_changed() { "changed" }
+        // else { "unchanged" }` — the tag-side per-line predicate at
+        // the payload-bearing altitude, mapped through the fixed two-
+        // cell label image on the modal-polarity axis. The two surfaces
+        // declare the (variant → change-polarity-label) mapping
+        // independently; a future edit shifting one match without the
+        // other fails here on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_change_polarity_labels();
+        assert_eq!(labels.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            let expected = if line.is_changed() {
+                "changed"
+            } else {
+                "unchanged"
+            };
+            assert_eq!(
+                labels[i], expected,
+                "line_change_polarity_labels()[{i}] must equal the modal-polarity label of self.lines[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_change_polarity_labels_agree_with_line_changed_flags_pointwise() {
+        // Container-altitude cross-projection pin: the label seam and
+        // the boolean seam on the same two-cell modal-polarity axis
+        // agree pointwise under the boolean-to-label mapping —
+        // `line_change_polarity_labels()[i] == (if line_changed_flags()[i]
+        // { "changed" } else { "unchanged" })` for every `i`. A future
+        // edit that shifted either seam without the other diverges
+        // here on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_change_polarity_labels();
+        let flags = diff.line_changed_flags();
+        assert_eq!(labels.len(), flags.len());
+        for i in 0..labels.len() {
+            let expected = if flags[i] { "changed" } else { "unchanged" };
+            assert_eq!(
+                labels[i], expected,
+                "line_change_polarity_labels()[{i}] must equal the label form of line_changed_flags()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_change_polarity_labels_agree_with_line_change_polarity_ordinals_pointwise() {
+        // Container-altitude cross-projection pin: the label seam and
+        // the scalar seam on the same two-cell modal-polarity axis
+        // agree pointwise under the ordinal-to-label mapping —
+        // `line_change_polarity_labels()[i] == (if
+        // line_change_polarity_ordinals()[i] == 1 { "changed" } else
+        // { "unchanged" })` for every `i`. The two projections read
+        // the same tag-side predicate; a future edit that shifted
+        // either seam without the other diverges here on the first
+        // drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_change_polarity_labels();
+        let ordinals = diff.line_change_polarity_ordinals();
+        assert_eq!(labels.len(), ordinals.len());
+        for i in 0..labels.len() {
+            let expected = if ordinals[i] == 1 {
+                "changed"
+            } else {
+                "unchanged"
+            };
+            assert_eq!(
+                labels[i], expected,
+                "line_change_polarity_labels()[{i}] must equal the label form of line_change_polarity_ordinals()[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn line_change_polarity_labels_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<&'static str>` values — the change-side
+        // polarity label depends only on the tag. A future edit that
+        // peeked at the payload would diverge here on the first shape
+        // where the two fixtures share a kind sequence but differ on
+        // text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_change_polarity_labels(),
+            diff_b.line_change_polarity_labels(),
+            "line_change_polarity_labels must be payload-independent — same kinds yield same labels",
+        );
+    }
+
+    #[test]
+    fn line_change_polarity_labels_take_only_changed_or_unchanged_values() {
+        // Closed-image pin on the two-cell modal-polarity axis: every
+        // entry is one of the two `'static` strings `"changed"` or
+        // `"unchanged"`. A future edit that widened the projection to a
+        // third label — e.g. via a peeking implementation that leaked
+        // a payload-derived string through the seam — diverges here on
+        // the first out-of-image entry.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        for (i, s) in diff.line_change_polarity_labels().iter().enumerate() {
+            assert!(
+                *s == "changed" || *s == "unchanged",
+                "line_change_polarity_labels()[{i}] = {s:?} must be \"changed\" or \"unchanged\"",
+            );
+        }
+    }
+
+    #[test]
+    fn line_change_polarity_labels_changed_count_reconciles_with_kind_histogram_changed_sum() {
+        // Fixed-cardinality reconciliation pin: the number of `"changed"`
+        // entries in the row-preserving label projection equals the
+        // histogram's sum of counts for `DiffLineKind::Added` and
+        // `DiffLineKind::Removed`. Both surfaces read the same per-line
+        // kinds through the closed `is_changed → "changed"` image, so
+        // a future edit that shifted one seam without the other fails
+        // here on the first drifted total.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let labels = diff.line_change_polarity_labels();
+        let histogram = diff.kind_histogram();
+        let via_labels = labels.iter().filter(|s| **s == "changed").count();
+        let via_histogram =
+            histogram.count(DiffLineKind::Added) + histogram.count(DiffLineKind::Removed);
+        assert_eq!(
+            via_labels, via_histogram,
+            "line_change_polarity_labels \"changed\" count ({via_labels}) must equal kind_histogram sum on Added + Removed ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_change_polarity_labels_all_unchanged_agrees_with_is_empty_diff() {
+        // Diff-surface agreement pin: the label-altitude modal-polarity
+        // projection agrees with the shipped structural-change predicate
+        // `ConfigDiff::is_empty_diff` on the unchanged pole —
+        // `line_change_polarity_labels().iter().all(|s| *s == "unchanged")
+        // == self.is_empty_diff()`. An all-`"unchanged"` witness pins
+        // the empty-diff case on every non-empty fixture where every
+        // line is Context (and vacuously on the empty line list, where
+        // `all` is `true` on the empty iterator and `is_empty_diff` is
+        // `true` on the empty line vec).
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let all_unchanged = diff
+                .line_change_polarity_labels()
+                .iter()
+                .all(|s| *s == "unchanged");
+            assert_eq!(
+                all_unchanged,
+                diff.is_empty_diff(),
+                "line_change_polarity_labels().all(|s| *s == \"unchanged\") must equal is_empty_diff() for {diff:?}",
             );
         }
     }
