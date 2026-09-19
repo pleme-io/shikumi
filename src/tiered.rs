@@ -36759,6 +36759,104 @@ impl ConfigDiff {
             .collect()
     }
 
+    /// Container-altitude scalar projection of [`DiffLine::is_removed`]
+    /// one seam up onto the [`ConfigDiff`] surface, coerced through the
+    /// closed `bool → usize` image — the scalar-altitude sibling of the
+    /// shipped boolean [`Self::line_removed_flags`] (landed in `0bc158c`)
+    /// on the same closed two-cell removed-side polarity axis (Removed
+    /// vs Added ∪ Context) and the removed-side peer of the shipped
+    /// scalar [`Self::line_added_side_ordinals`] (landed in `6ff4410`)
+    /// one polarity over on the added-side axis.
+    ///
+    /// The modal-polarity axis (changed vs unchanged) at
+    /// [`Self::line_change_polarity_ordinals`] (landed in `216552b`)
+    /// collapses [`DiffLine::Added`] and [`DiffLine::Removed`] together;
+    /// this projection instead singles out [`DiffLine::Removed`] alone
+    /// against the disjunction [`DiffLine::Added`] ∪ [`DiffLine::Context`],
+    /// the polarity-axis complement of [`Self::line_added_side_ordinals`]
+    /// under the closed three-cell diff-cell kind axis.
+    ///
+    /// Consumers that need the per-line removed-side polarity as a
+    /// dense scalar column — a per-tier attestation manifest recording
+    /// the removed-side ordinal signature between two config tiers as a
+    /// `Vec<usize>` alongside the base-axis ordinal signature already
+    /// available via [`Self::line_ordinals`], a structured-log emitter
+    /// tagging each line with a canonical `removed_side_ordinal`
+    /// integer field (`0` / `1`) for aggregation, a dense per-line
+    /// removed-side bitmap indexing into a fixed-size lookup by
+    /// `0`/`1` — read this projection at one hop instead of
+    /// open-coding
+    /// `self.lines.iter().map(|l| l.is_removed() as usize).collect::<Vec<_>>()`
+    /// or
+    /// `line_removed_flags().iter().map(|b| *b as usize).collect::<Vec<_>>()`
+    /// (the boolean-through-coercion route) at the call site.
+    ///
+    /// Row-preserving-projection peer of the payload-independent
+    /// scalar-projection quartet [`Self::line_kinds`] /
+    /// [`Self::line_ordinals`] / [`Self::line_glyphs`] /
+    /// [`Self::line_labels`] one axis over, and of the shipped
+    /// boolean sibling [`Self::line_removed_flags`] one altitude below:
+    /// same length, same `O(n)` cost, same container-altitude
+    /// discipline. Every entry is the closed image of the typed
+    /// variant under [`DiffLine::is_removed`] coerced to `usize`, so
+    /// `line_removed_side_ordinals()[i] ==
+    /// usize::from(line_removed_flags()[i])` at every index.
+    ///
+    /// # Invariants
+    ///
+    /// - `line_removed_side_ordinals().len() == self.lines.len()` — the
+    ///   row-preserving projection stays parallel to the line list
+    ///   pointwise.
+    /// - `line_removed_side_ordinals()[i] ==
+    ///   usize::from(self.lines[i].is_removed())` for every `i <
+    ///   self.lines.len()` — pointwise agreement with the tag-side
+    ///   per-line predicate at the payload-bearing altitude, mapped
+    ///   through the fixed two-cell scalar image.
+    /// - `line_removed_side_ordinals()[i] ==
+    ///   usize::from(line_removed_flags()[i])` for every `i` —
+    ///   container-altitude cross-projection with the shipped
+    ///   removed-side boolean sibling under the same closed image.
+    /// - `line_removed_side_ordinals().is_empty() == self.lines.is_empty()`
+    ///   — the projection is total on the line list, so the empty
+    ///   diff yields the empty projection.
+    /// - Every entry of `line_removed_side_ordinals()` is one of the
+    ///   two `usize` values `0` or `1` — the closed image of `bool`
+    ///   on the two-cell removed-side polarity axis, so the row-
+    ///   preserving projection never yields a value outside the axis
+    ///   cardinality.
+    /// - `line_removed_side_ordinals().iter().sum::<usize>() ==
+    ///   self.kind_histogram().count(DiffLineKind::Removed)` — the
+    ///   row-preserving projection and the fixed-cardinality collapse
+    ///   agree on the removed-cell total through the closed
+    ///   `DiffLine::is_removed as usize` image, since the sum of
+    ///   `0`/`1` values counts the number of `1`s (the removed lines).
+    /// - `line_removed_side_ordinals().iter().all(|o| *o == 0) ==
+    ///   (self.kind_histogram().count(DiffLineKind::Removed) == 0)` —
+    ///   the scalar-altitude removed-side polarity projection agrees
+    ///   with the fixed-cardinality collapse on the not-removed pole,
+    ///   so an all-zero witness pins the removed-free case (vacuously
+    ///   true on the empty line list).
+    /// - `line_removed_side_ordinals()[i] + line_added_side_ordinals()[i]
+    ///   + usize::from(line_context_flags()[i]) == 1` for every `i` —
+    ///   the closed three-cell diff-cell kind axis partitions each
+    ///   line's tag into exactly one of the three side-polarity axes,
+    ///   so the three scalar sides sum to `1` pointwise (an axiom of
+    ///   the sealed axis, verified at the seam).
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` where `n = self.lines.len()`: one pass over the line
+    /// list, one const-fn predicate evaluation per line, one
+    /// `usize::from` coercion per line (free), no allocation beyond
+    /// the output vec's own storage.
+    #[must_use]
+    pub fn line_removed_side_ordinals(&self) -> Vec<usize> {
+        self.lines
+            .iter()
+            .map(|l| usize::from(l.is_removed()))
+            .collect()
+    }
+
     /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
     /// diff, in [`DiffLineKind::ALL`] declaration order — the
     /// diff-altitude dual of "which diff-cell kinds actually surfaced
@@ -52000,6 +52098,295 @@ mod tests {
                 all_zero, no_added,
                 "line_added_side_ordinals().all(|o| *o == 0) must equal (Added count == 0) for {diff:?}",
             );
+        }
+    }
+
+    // ── ConfigDiff::line_removed_side_ordinals — container-altitude
+    //    scalar projection on the two-cell removed-side polarity axis ──
+
+    #[test]
+    fn line_removed_side_ordinals_len_agrees_with_lines_len() {
+        // Row-preserving projection pin: `line_removed_side_ordinals().len()`
+        // equals `self.lines.len()` on every fixture. Idiom-peer of
+        // `line_added_side_ordinals_len_agrees_with_lines_len` one polarity
+        // over on the removed-side pole; a future edit that drops or
+        // duplicates a line at the seam fails here on the first
+        // mismatched length.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            assert_eq!(
+                diff.line_removed_side_ordinals().len(),
+                diff.lines.len(),
+                "line_removed_side_ordinals().len() must equal self.lines.len() for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_empty_diff_is_empty() {
+        // Empty-diff pin: an empty `ConfigDiff` yields the empty
+        // removed-side-ordinal projection — the identity slot of the
+        // projection on the diff altitude, sibling of
+        // `line_added_side_ordinals_empty_diff_is_empty` on the
+        // added-side polarity axis.
+        let diff = ConfigDiff::default();
+        assert!(diff.line_removed_side_ordinals().is_empty());
+        assert!(diff.lines.is_empty());
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_agree_with_diff_line_is_removed_as_usize_pointwise() {
+        // Pointwise-agreement pin: at every index the container-altitude
+        // scalar projection equals the tag-side per-line predicate at
+        // the payload-bearing altitude coerced through the `bool →
+        // usize` closed image — `line_removed_side_ordinals()[i] ==
+        // usize::from(self.lines[i].is_removed())`. The two surfaces
+        // (`ConfigDiff::line_removed_side_ordinals` here,
+        // `DiffLine::is_removed`) declare the (variant →
+        // removed-side-ordinal) mapping independently on the same closed
+        // three-cell axis under the removed-side polarity classifier, so
+        // a future edit shifting one match without the other fails here
+        // on the first drifted line.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let ordinals = diff.line_removed_side_ordinals();
+        assert_eq!(ordinals.len(), diff.lines.len());
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                ordinals[i],
+                usize::from(line.is_removed()),
+                "line_removed_side_ordinals()[{i}] must equal usize::from(self.lines[{i}].is_removed())",
+            );
+        }
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_agree_with_line_removed_flags_as_usize_pointwise() {
+        // Container-altitude cross-projection pin: the scalar seam and
+        // the boolean seam on the same two-cell removed-side polarity
+        // axis agree pointwise under the `bool → usize` closed image —
+        // `line_removed_side_ordinals()[i] ==
+        // usize::from(line_removed_flags()[i])` for every `i`. A future
+        // edit that shifted either seam without the other diverges here
+        // on the first drifted index.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let ordinals = diff.line_removed_side_ordinals();
+        let flags = diff.line_removed_flags();
+        assert_eq!(ordinals.len(), flags.len());
+        for i in 0..ordinals.len() {
+            assert_eq!(
+                ordinals[i],
+                usize::from(flags[i]),
+                "line_removed_side_ordinals()[{i}] must equal usize::from(line_removed_flags()[{i}])",
+            );
+        }
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_are_payload_independent() {
+        // Payload-independence pin: two `ConfigDiff` values with the
+        // same kind sequence but different payload texts must project
+        // to identical `Vec<usize>` values — the removed-side polarity
+        // ordinal depends only on the tag, so the closed image under
+        // `DiffLine::is_removed as usize` cannot see the inner `String`.
+        // A future edit that peeked at the payload would diverge here
+        // on the first shape where the two fixtures share a kind
+        // sequence but differ on text.
+        let diff_a = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        let diff_b = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("REMOVED-DIFFERENT".into()),
+                DiffLine::Added("ADDED-DIFFERENT".into()),
+                DiffLine::Context("CONTEXT-DIFFERENT".into()),
+            ],
+        };
+        assert_eq!(diff_a.line_kinds(), diff_b.line_kinds());
+        assert_eq!(
+            diff_a.line_removed_side_ordinals(),
+            diff_b.line_removed_side_ordinals(),
+            "line_removed_side_ordinals must be payload-independent — same kinds yield same ordinals",
+        );
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_take_only_zero_or_one_values() {
+        // Closed-image pin on the two-cell removed-side polarity axis:
+        // every entry lies in `{0, 1}` (the closed image of `bool as
+        // usize`). A future edit that widened the projection to a
+        // third value diverges here on the first out-of-image entry.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let ordinals = diff.line_removed_side_ordinals();
+        for (i, o) in ordinals.iter().enumerate() {
+            assert!(
+                *o < 2,
+                "line_removed_side_ordinals()[{i}] = {o} must be < 2 on the two-cell removed-side polarity axis",
+            );
+        }
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_sum_reconciles_with_kind_histogram_removed_count() {
+        // Fixed-cardinality reconciliation pin: the sum of the row-
+        // preserving `line_removed_side_ordinals()` projection equals
+        // the histogram's count for `DiffLineKind::Removed`. Both
+        // surfaces read the same per-line kinds through the closed
+        // `DiffLine::is_removed as usize` image, so the sum of `0`/`1`
+        // values counts the number of removed lines. A future edit that
+        // shifted one seam without the other fails here on the first
+        // drifted total.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let via_ordinals: usize = diff.line_removed_side_ordinals().iter().sum();
+        let via_histogram = diff.kind_histogram().count(DiffLineKind::Removed);
+        assert_eq!(
+            via_ordinals, via_histogram,
+            "line_removed_side_ordinals sum ({via_ordinals}) must equal kind_histogram Removed count ({via_histogram})",
+        );
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_all_zero_agrees_with_zero_removed_count() {
+        // Diff-surface agreement pin: the scalar-altitude removed-side
+        // polarity projection is all-zero exactly when the histogram
+        // records zero removed lines — `line_removed_side_ordinals()
+        // .iter().all(|o| *o == 0) == (kind_histogram().count(
+        // DiffLineKind::Removed) == 0)`. Vacuously true on the empty
+        // line list (`all` on the empty iterator is `true`, and the
+        // histogram count is `0`).
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c1".into()), DiffLine::Added("a1".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into()), DiffLine::Removed("r".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let all_zero = diff.line_removed_side_ordinals().iter().all(|o| *o == 0);
+            let no_removed = diff.kind_histogram().count(DiffLineKind::Removed) == 0;
+            assert_eq!(
+                all_zero, no_removed,
+                "line_removed_side_ordinals().all(|o| *o == 0) must equal (Removed count == 0) for {diff:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn line_removed_side_ordinals_sum_with_added_and_context_partitions_lines_len() {
+        // Three-cell partition pin: for every fixture, the pointwise
+        // sum `removed + added + context` equals `1` at every index
+        // (the closed three-cell diff-cell kind axis is a partition of
+        // the tag), so the vector sum reconciles with `self.lines.len()`
+        // through the three side-polarity scalar projections together.
+        // A future edit that broke the partition on any one side
+        // diverges here on the first fixture with the wrong total.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in &fixtures {
+            let removed = diff.line_removed_side_ordinals();
+            let added = diff.line_added_side_ordinals();
+            let context = diff.line_context_flags();
+            assert_eq!(removed.len(), diff.lines.len());
+            assert_eq!(added.len(), diff.lines.len());
+            assert_eq!(context.len(), diff.lines.len());
+            for i in 0..diff.lines.len() {
+                let sum = removed[i] + added[i] + usize::from(context[i]);
+                assert_eq!(
+                    sum, 1,
+                    "removed[{i}] + added[{i}] + context[{i}] must equal 1 on the closed three-cell diff-cell kind axis for {diff:?}",
+                );
+            }
         }
     }
 
