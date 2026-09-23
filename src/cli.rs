@@ -659,6 +659,97 @@ impl OutputFormat {
         }
     }
 
+    /// The variant-side inverse of [`Self::ordinal`] — recovers the
+    /// [`OutputFormat`] variant whose scalar-`usize` ordinal is
+    /// `ordinal`, wrapped in [`Some`], for every value the closed range
+    /// [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Yaml`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Json`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **First landing of the const-fn ordinal-inverse peer idiom on a
+    /// [`cli`]-scoped primitive.** Sibling of
+    /// [`crate::tiered::ConfigTierKind::from_ordinal`] (commit `7a047c9`)
+    /// on the four-cell operator-facing tier-kind axis and of
+    /// [`crate::tiered::DiffLineKind::from_ordinal`] (commit `7a047c9`)
+    /// on the three-cell diff-cell kind axis — same closed-match shape,
+    /// same [`Option<Self>`] return, and same `const`-callability
+    /// contract, carried here onto the CLI operator-facing emission-
+    /// format axis. Closes the (`ordinal`, `from_ordinal`) round-trip
+    /// pair on the [`OutputFormat`] closed-binary primitive, matching
+    /// the (`as_str`, [`clap::ValueEnum::from_str`]) round-trip pair
+    /// clap already carries on the same primitive one label-surface
+    /// over.
+    ///
+    /// The `usize` codomain of [`Self::ordinal`] is unbounded on its own
+    /// (any `usize` may reach the seam), while the [`OutputFormat`]
+    /// variant surface is closed at cardinality-2 today; the inverse
+    /// therefore returns [`Option<Self>`] rather than a total `Self`,
+    /// keeping the "not on the variant surface" case a typed [`None`]
+    /// rather than a fabricated variant a consumer could route on.
+    ///
+    /// **Round-trip law** —
+    /// `OutputFormat::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: OutputFormat`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::output_format_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `OutputFormat::from_ordinal(o) == None` for every `o >= 2`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format ordinal from a version-skewed peer or an
+    /// operator-typed CLI argument through [`str::parse::<usize>`][str::parse]
+    /// without a bounds check. Pinned by
+    /// [`tests::output_format_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch table
+    /// (e.g. a `const [OutputFormat; 2]` variant array indexed by
+    /// ordinal, or a `const` per-format label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::output_format_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::ALL`] at every index** —
+    /// `OutputFormat::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 2`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order — `Yaml` before `Json` — so
+    /// the test below pins the pointwise agreement and a future edit
+    /// that shifts one without the other fails at test time on the
+    /// first drifted position. Pinned by
+    /// [`tests::output_format_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a `config-show` attestation payload emitting the
+    /// operator's selected emission format as a bare `u8` at wire time
+    /// (a `const [_; 2]` per-emission weight vector keyed by ordinal
+    /// routing YAML-emitted outputs under a different weight than JSON-
+    /// emitted, a per-emission retry-budget slot keyed by ordinal in a
+    /// `const` initializer) recovers the typed variant on the reader
+    /// side without a hand-rolled
+    /// `match o { 0 => …, 1 => …, _ => panic!() }` ladder that would
+    /// drift silently as a hypothetical third emitter variant (a `Toml`
+    /// class the primitive's own doc-comment already anticipates as a
+    /// deliberate narrowing today) lands. The closed match here degrades
+    /// cleanly to [`None`] on out-of-range, so a version-skewed peer
+    /// emitting a `2`-ordinal reads as an unknown rather than a runtime
+    /// panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Yaml),
+            1 => Some(Self::Json),
+            _ => None,
+        }
+    }
+
     /// Canonical operator-facing lowercase name of this emission format
     /// — `"yaml"` for [`Self::Yaml`], `"json"` for [`Self::Json`].
     ///
@@ -2596,6 +2687,116 @@ mod tests {
         // const-context weld was forgotten upstream.
         for (fmt, expected) in [(OutputFormat::Yaml, YAML), (OutputFormat::Json, JSON)] {
             assert_eq!(fmt.ordinal(), expected, "emission {fmt:?}");
+        }
+    }
+
+    // ─── OutputFormat::from_ordinal — const-fn ordinal-inverse peer
+    // ─── on the CLI operator-facing emission-format tag ────────────
+
+    #[test]
+    fn output_format_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law:
+        // `OutputFormat::from_ordinal(v.ordinal()) == Some(v)` for every
+        // variant. The forward `ordinal` and the inverse `from_ordinal`
+        // match on the same closed two-cell surface — `Yaml` before
+        // `Json` — so the composition is the identity on the variant
+        // surface by construction. Direct methodological peer of
+        // `config_tier_kind_from_ordinal_round_trips_via_ordinal` on the
+        // sibling four-cell tier-kind axis and
+        // `diff_line_kind_from_ordinal_round_trips_via_ordinal` on the
+        // sibling three-cell diff-cell kind axis — same shape, this axis
+        // being the CLI operator-facing emission-format primitive one
+        // altitude over.
+        for &fmt in OutputFormat::ALL {
+            assert_eq!(
+                OutputFormat::from_ordinal(fmt.ordinal()),
+                Some(fmt),
+                "from_ordinal must round-trip via ordinal for {fmt:?}",
+            );
+        }
+
+        // Concrete-cell pin — the two `(ordinal, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `ordinal`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(OutputFormat::from_ordinal(0), Some(OutputFormat::Yaml));
+        assert_eq!(OutputFormat::from_ordinal(1), Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn output_format_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection:
+        // `OutputFormat::from_ordinal(o) == None` for every `o >= 2`.
+        // The closed match's `_` arm forwards the out-of-range case to
+        // `None` structurally; the guard degrades gracefully on a
+        // caller passing a stale wire-format ordinal from a version-
+        // skewed peer, an operator-typed CLI argument through
+        // `str::parse::<usize>` without a bounds check, or a
+        // hypothetical third-variant ordinal a future extension would
+        // introduce. Direct methodological peer of
+        // `config_tier_kind_from_ordinal_rejects_out_of_range` on the
+        // sibling four-cell tier-kind axis and
+        // `diff_line_kind_from_ordinal_rejects_out_of_range` on the
+        // sibling three-cell diff-cell kind axis.
+        for out_of_range in [
+            OutputFormat::ALL.len(),
+            OutputFormat::ALL.len() + 1,
+            OutputFormat::ALL.len() + 7,
+            42,
+            usize::MAX,
+        ] {
+            assert_eq!(
+                OutputFormat::from_ordinal(out_of_range),
+                None,
+                "from_ordinal must reject out-of-range ordinal {out_of_range}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl OutputFormat` block (`is_yaml`, `is_json`, `ordinal`,
+        // `as_str`, all `pub const fn`) and every peer slice constant
+        // (`ALL`, `YAML`, `JSON`, all `pub const &'static [Self]`). A
+        // drop of the `const` qualifier on `OutputFormat::from_ordinal`
+        // fails this test to compile at one of the three const bindings
+        // below before the drift can reach downstream const-context
+        // consumers. Idiom-peer of
+        // `config_tier_kind_from_ordinal_is_const_callable` on the
+        // sibling four-cell tier-kind axis.
+        const YAML: Option<OutputFormat> = OutputFormat::from_ordinal(0);
+        const JSON: Option<OutputFormat> = OutputFormat::from_ordinal(1);
+        const NONE: Option<OutputFormat> = OutputFormat::from_ordinal(2);
+
+        assert_eq!(YAML, Some(OutputFormat::Yaml));
+        assert_eq!(JSON, Some(OutputFormat::Json));
+        assert_eq!(NONE, None);
+    }
+
+    #[test]
+    fn output_format_from_ordinal_agrees_with_all_index_pointwise() {
+        // Independent-witness pin cross-checking the const-fn inverse
+        // projection against the `OutputFormat::ALL` slice literal at
+        // every closed index — `OutputFormat::from_ordinal(i) ==
+        // Some(OutputFormat::ALL[i])` for every `i < ALL.len()`. The
+        // inherent match and the slice literal carry the same
+        // declaration order (`Yaml` before `Json`); a future edit that
+        // shifted one without the other fails here on the first
+        // drifted position, before the round-trip pin masks it under
+        // composition. Direct methodological peer of
+        // `config_tier_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling four-cell tier-kind axis.
+        for (index, &fmt) in OutputFormat::ALL.iter().enumerate() {
+            assert_eq!(
+                OutputFormat::from_ordinal(index),
+                Some(fmt),
+                "from_ordinal must agree with OutputFormat::ALL at index {index}",
+            );
         }
     }
 
