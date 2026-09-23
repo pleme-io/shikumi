@@ -31506,6 +31506,147 @@ impl FigmentSourceKind {
             _ => None,
         }
     }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every canonical lowercase label —
+    /// the exact three-cell codomain [`Self::as_str`] emits — and [`None`]
+    /// for any other `&str`.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `"file"`   → [`Some`]`(`[`Self::File`]`)`
+    /// - `"code"`   → [`Some`]`(`[`Self::Code`]`)`
+    /// - `"custom"` → [`Some`]`(`[`Self::Custom`]`)`
+    /// - `_`        → [`None`]
+    ///
+    /// Sibling of [`Self::from_ordinal`] on the scalar-[`usize`] surface:
+    /// the (`as_str`, `from_str`) pair inverts the scalar-[`&'static str`]
+    /// projection [`Self::as_str`] on the same closed three-cell surface
+    /// the (`ordinal`, `from_ordinal`) pair inverts the scalar-[`usize`]
+    /// projection [`Self::ordinal`]. Neither projection is total on the
+    /// codomain — the string surface admits non-canonical labels, the
+    /// ordinal surface admits `usize` values `>= 3` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant. With this landing the figment-Source-axis
+    /// kind carries the (`forward`, `inverse`) round-trip pair on BOTH
+    /// closed scalar surfaces simultaneously AS A CONST-CALLABLE
+    /// INHERENT, matching the shape the sibling figment-Name-axis kind
+    /// ([`FigmentNameTagKind::from_str`], commit `959a2f5`) and the
+    /// env-name sub-axis kind ([`EnvMetadataTagKind::from_str`], commit
+    /// `d9ace5`) already carry on their respective const scalar surfaces
+    /// — closing the const-fn label-inverse peer discipline uniformly
+    /// across all three figment-metadata sub-axis kinds.
+    ///
+    /// Sibling landing of the const-fn label-inverse peer idiom on the
+    /// figment-Source-axis kind: [`ConfigSourceKind::from_str`] (commit
+    /// `284790b`) carries it on the sibling shikumi-side layer-kind
+    /// axis, [`crate::DiffLineKind::from_str`] (commit `7f2cdb7`) on
+    /// the diff-cell kind axis, [`crate::cli::OutputFormat::from_str`]
+    /// (commit `9f3631f`) on the CLI-side emission-format axis,
+    /// [`EnvMetadataTagKind::from_str`] (commit `d9ace5`) on the env-
+    /// name sub-axis kind, and [`FigmentNameTagKind::from_str`] (commit
+    /// `959a2f5`) on the sibling figment-Name-axis kind; this landing
+    /// closes the same discipline on the figment-Source-axis kind,
+    /// matching the sibling const-fn ordinal-inverse peer
+    /// [`Self::from_ordinal`] (commit `0d979fa`) one scalar altitude
+    /// over on the same primitive.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the three-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer of the macro-generated
+    /// [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`]) one seam over that
+    /// returns [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// lowercase spellings [`Self::as_str`] emits, matching the
+    /// discipline of the sibling const-fn scalar inverse
+    /// [`Self::from_ordinal`] and of the sibling
+    /// [`ConfigSourceKind::from_str`] /
+    /// [`crate::DiffLineKind::from_str`] /
+    /// [`crate::cli::OutputFormat::from_str`] /
+    /// [`EnvMetadataTagKind::from_str`] /
+    /// [`FigmentNameTagKind::from_str`] const-fn label inverses. A
+    /// consumer wanting case-insensitive parsing (an operator-typed
+    /// `--figment-source-kind FILE` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered chain summary) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or
+    /// lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `FigmentSourceKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: FigmentSourceKind`. Composes with [`Self::as_str`] on the
+    /// same three-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::figment_source_kind_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `FigmentSourceKind::from_str(s) == None` for every `s` outside
+    /// the canonical three-cell set `{"file", "code", "custom"}`. The
+    /// closed match's `_` arm forwards the off-surface case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format label from a version-skewed
+    /// peer, a mixed-case operator-typed CLI argument that never went
+    /// through a lowering step, the empty string, or a hypothetical
+    /// fourth-variant label a future extension (a hypothetical `Url`
+    /// kind in lockstep with a hypothetical [`FigmentSourceTag::Url`]
+    /// if figment grows a URL-shaped source axis) would introduce.
+    /// Pinned by
+    /// [`tests::figment_source_kind_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// (a `const` per-figment-source-kind renderer bound at compile
+    /// time via a static label lookup, a `const [FigmentSourceKind; 3]`
+    /// variant array recovered from a `const &[&str; 3]` canonical-
+    /// label list, a per-figment-source-kind attestation-manifest slot
+    /// in a `const` initializer keyed by canonical label) route
+    /// through the projection under `const` without dropping through a
+    /// runtime `let` binding. Pinned by
+    /// [`tests::figment_source_kind_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::as_str`] pointwise** —
+    /// `FigmentSourceKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: FigmentSourceKind`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same three-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::figment_source_kind_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: FigmentSourceKind`,
+    /// `FigmentSourceKind::from_str(v.as_str()) ==
+    /// <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the canonical lowercase
+    /// codomain; they diverge only OFF that codomain (the trait method
+    /// case-insensitive-lowers, the inherent rejects). This pin cross-
+    /// checks the const-fn label seam against the trait-uniform label
+    /// seam on the closed variant surface. Pinned by
+    /// [`tests::figment_source_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"file" => Some(Self::File),
+            b"code" => Some(Self::Code),
+            b"custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for FigmentSourceKind {
@@ -101001,6 +101142,156 @@ mod tests {
         assert_eq!(AT_1, Some(FigmentSourceKind::Code));
         assert_eq!(AT_2, Some(FigmentSourceKind::Custom));
         assert_eq!(AT_3, None);
+    }
+
+    #[test]
+    fn figment_source_kind_from_str_round_trips_via_as_str() {
+        // Round-trip law: `FigmentSourceKind::from_str(v.as_str()) ==
+        // Some(v)` for every v: FigmentSourceKind. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed three-cell label table (`"file"`, `"code"`,
+        // `"custom"` in FigmentSourceKind::ALL declaration order); the
+        // law holds by construction. Sibling of
+        // `figment_name_tag_kind_from_str_round_trips_via_as_str` on the
+        // figment-Name-axis kind one primitive over (commit `959a2f5`),
+        // `env_metadata_tag_kind_from_str_round_trips_via_as_str` on the
+        // env-name sub-axis kind one primitive over (commit `d9ace5`),
+        // and `config_source_kind_from_str_round_trips_via_as_str` on
+        // the shikumi-side layer-kind axis one primitive over (commit
+        // `284790b`); mirror of
+        // `figment_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the scalar-usize surface of the same primitive.
+        for &kind in FigmentSourceKind::ALL {
+            let rendered = kind.as_str();
+            let recovered = FigmentSourceKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical three-cell set `{"file", "code", "custom"}` — the
+        // codomain of `as_str` — resolves to `None` via the closed
+        // match's `_` arm. Sweeps mixed-case (`"FILE"`, `"Code"`,
+        // `"cUsToM"`), leading/trailing whitespace (`"file "`,
+        // `" code"`, `"custom\n"`), the empty string, adjacent labels
+        // a hypothetical future extension might introduce (`"url"`,
+        // `"raw"`, `"path"`), and near-miss spellings from adjacent
+        // primitives on the sealed fold (`"prefixed"` / `"bare"` —
+        // the sibling EnvMetadataTagKind labels one primitive over,
+        // valid there, rejected here; `"format"` / `"env"` — the
+        // sibling FigmentNameTagKind labels one primitive over, valid
+        // there, rejected here; `"defaults"` — the sibling
+        // ConfigSourceKind label on the shikumi-side of the
+        // (figment-source-kind × shikumi-layer-kind) resolution
+        // boundary, valid there, rejected here). The case-sensitivity
+        // discipline matches the sibling `FigmentNameTagKind::from_str`,
+        // `EnvMetadataTagKind::from_str`, `ConfigSourceKind::from_str`,
+        // `DiffLineKind::from_str`, and `OutputFormat::from_str`
+        // const-fn label inverses; callers wanting case-insensitive
+        // parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "FILE", "File", "fIlE", "file ", " file", "file\n", "CODE", "Code", "cOdE", "code ",
+            " code", "code\n", "CUSTOM", "Custom", "cUsToM", "custom ", " custom", "custom\n", "",
+            "url", "raw", "path", "remote", "prefixed", "bare", "format", "env", "defaults", "fil",
+            "files", "codes", "custo", "customs",
+        ] {
+            assert_eq!(
+                FigmentSourceKind::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `FigmentSourceKind::as_str` and the sibling
+        // `FigmentSourceKind::from_ordinal`. A drop of the `const`
+        // qualifier on `FigmentSourceKind::from_str` fails this test
+        // to compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the four const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `figment_name_tag_kind_from_str_is_const_callable`
+        // on the figment-Name-axis kind one primitive over and of
+        // `figment_source_kind_from_ordinal_is_const_callable` on the
+        // scalar-usize surface of the same primitive.
+        const AT_FILE: Option<FigmentSourceKind> = FigmentSourceKind::from_str("file");
+        const AT_CODE: Option<FigmentSourceKind> = FigmentSourceKind::from_str("code");
+        const AT_CUSTOM: Option<FigmentSourceKind> = FigmentSourceKind::from_str("custom");
+        const AT_UNKNOWN: Option<FigmentSourceKind> = FigmentSourceKind::from_str("url");
+
+        assert_eq!(AT_FILE, Some(FigmentSourceKind::File));
+        assert_eq!(AT_CODE, Some(FigmentSourceKind::Code));
+        assert_eq!(AT_CUSTOM, Some(FigmentSourceKind::Custom));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn figment_source_kind_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in FigmentSourceKind::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive their
+        // label table from the same three-cell declaration; a future
+        // edit that shifted the label on ONE match (say renaming the
+        // `Code` arm's label to `"figment-code"` on the `as_str` side
+        // but not the `from_str` side, or vice versa) fails here on
+        // the first drifted arm. Sibling of
+        // `figment_name_tag_kind_from_str_agrees_with_as_str_pointwise`
+        // on the figment-Name-axis kind one primitive over and of
+        // `env_metadata_tag_kind_from_str_agrees_with_as_str_pointwise`
+        // on the env-name sub-axis kind one primitive over.
+        for &kind in FigmentSourceKind::ALL {
+            assert_eq!(
+                FigmentSourceKind::from_str(kind.as_str()),
+                Some(kind),
+                "from_str(as_str) must agree pointwise for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact lowercase
+        // labels `as_str` emits; they diverge only OFF that codomain
+        // (the trait method case-insensitive-lowers non-canonical
+        // labels, the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the trait-
+        // uniform label seam on the closed variant surface. Sibling of
+        // `figment_name_tag_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the figment-Name-axis kind one primitive over and of
+        // `env_metadata_tag_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the env-name sub-axis kind one primitive over.
+        use crate::ClosedAxisLabel;
+        for &kind in FigmentSourceKind::ALL {
+            let label = kind.as_str();
+            let inherent = FigmentSourceKind::from_str(label);
+            let trait_uniform = <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
     }
 
     #[test]
