@@ -4745,6 +4745,97 @@ impl AttributionNameKindCoordinates {
         self.figment_name_tag_kind.ordinal() * ConfigSourceKind::ALL.len()
             + self.layer_kind.ordinal()
     }
+
+    /// Const-fn ordinal → cell inverse of [`Self::ordinal`]. Returns
+    /// [`Some(cell)`][Some] for every `ordinal` in
+    /// `0..Self::ALL.len()` — the exact six-cell range [`Self::ordinal`]
+    /// emits — and [`None`] for any larger value.
+    ///
+    /// **Algebraic inverse of the two-axis product formula.** The body
+    /// inverts the same `figment_name_tag_kind.ordinal() *
+    /// ConfigSourceKind::ALL.len() + layer_kind.ordinal()` composition
+    /// [`Self::ordinal`] emits: integer division by the innermost-axis
+    /// cardinality recovers the outer axis ordinal, integer remainder
+    /// recovers the inner axis ordinal, and the two sibling const-fn
+    /// [`FigmentNameTagKind::from_ordinal`] and
+    /// [`ConfigSourceKind::from_ordinal`] partial-inverses lift the pair
+    /// back to typed variants. When either sibling inversion returns
+    /// [`None`] — which happens exactly when the caller's `ordinal`
+    /// exceeds the product cube's cardinality — the joint inversion
+    /// returns [`None`] too. No hand-rolled ordinal → cell arm-list
+    /// literal to keep in lockstep: the inversion is derived from the
+    /// two sibling primitives' own inherent partial-inverses on the
+    /// same shape the forward `ordinal()` was derived from.
+    ///
+    /// **Second landing of the ordinal-inverse peer idiom on a
+    /// [`crate::ProductCube`] implementor** — sibling to
+    /// [`AttributionSourceKindCoordinates::from_ordinal`] on the
+    /// nine-cell (`figment_source_kind × layer_kind`)
+    /// attribution-source-kind cube, lifted here onto the six-cell
+    /// (`figment_name_tag_kind × layer_kind`) attribution-name-kind
+    /// cube. Same two-axis algebraic inversion of the row-major
+    /// ordinal-composition formula, same partial-inverse degradation on
+    /// out-of-range indices, same const-callability matching the
+    /// forward [`Self::ordinal`]'s const seal. Sibling to the
+    /// trait-generic [`crate::axis_at`] free function: where
+    /// [`crate::axis_at::<Self>`][crate::axis_at] delegates through the
+    /// [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the algebraic two-axis
+    /// inversion above so a future ordinal-formula edit on
+    /// [`Self::ordinal`] and a matching inversion edit here stay in one
+    /// place; pointwise-agreement between the two seams is pinned by
+    /// [`tests::attribution_name_kind_coordinates_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Round-trip law** —
+    /// `AttributionNameKindCoordinates::from_ordinal(c.ordinal()) ==
+    /// Some(c)` for every `c: AttributionNameKindCoordinates`. Composes
+    /// with [`Self::ordinal`] on the same six-cell surface to close the
+    /// cell → ordinal → cell identity. Pinned by
+    /// [`tests::attribution_name_kind_coordinates_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `AttributionNameKindCoordinates::from_ordinal(o) == None` for
+    /// every `o >= Self::ALL.len()`. Bounded rejection: a stale
+    /// wire-format ordinal from a version-skewed peer, or an
+    /// operator-supplied bogus index, degrades cleanly to [`None`]
+    /// rather than panicking on a slice index or a match ladder. Pinned
+    /// by
+    /// [`tests::attribution_name_kind_coordinates_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `AttributionNameKindCoordinates::from_ordinal(i) ==
+    /// Some(Self::ALL[i])` for every `i` in `0..Self::ALL.len()`. The
+    /// algebraic inversion agrees with the slice-index lookup pointwise
+    /// across every in-range ordinal; pinned by
+    /// [`tests::attribution_name_kind_coordinates_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **`const fn`** — matching the `const`-ness of [`Self::ordinal`]
+    /// on the forward side and of both sibling axis
+    /// [`FigmentNameTagKind::from_ordinal`] /
+    /// [`ConfigSourceKind::from_ordinal`] partial-inverses it composes.
+    /// Consumers wanting a compile-time-selected ordinal-keyed dispatch
+    /// table (a per-cell weight vector keyed by ordinal routing
+    /// decoded-from-wire attestation records to typed cells at compile
+    /// time, a per-cell attestation-manifest slot in a `const`
+    /// initializer keyed by ordinal) reach the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::attribution_name_kind_coordinates_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        let inner_len = ConfigSourceKind::ALL.len();
+        let figment_ordinal = ordinal / inner_len;
+        let layer_ordinal = ordinal % inner_len;
+        match (
+            FigmentNameTagKind::from_ordinal(figment_ordinal),
+            ConfigSourceKind::from_ordinal(layer_ordinal),
+        ) {
+            (Some(figment_name_tag_kind), Some(layer_kind)) => Some(Self {
+                figment_name_tag_kind,
+                layer_kind,
+            }),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for ShikumiErrorKind {
@@ -22416,6 +22507,159 @@ mod tests {
                 "const-fn ordinal must equal ALL index for {cell:?}",
             );
         }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law from the value side:
+        //   `AttributionNameKindCoordinates::from_ordinal(c.ordinal())
+        //    == Some(c)` for every `c: AttributionNameKindCoordinates`.
+        // Composed with the sibling forward `Self::ordinal` projection on
+        // the same six-cell surface, closing the (cell → ordinal → cell)
+        // identity across every declared cell. Second landing of the
+        // `(ordinal, from_ordinal)` round-trip pair on a `ProductCube`
+        // implementor — idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_round_trips_via_ordinal`
+        // on the sibling nine-cell attribution-source-kind cube, lifted
+        // here onto the six-cell (`figment_name_tag_kind × layer_kind`)
+        // attribution-name-kind cube.
+        for &cell in AttributionNameKindCoordinates::ALL {
+            assert_eq!(
+                AttributionNameKindCoordinates::from_ordinal(cell.ordinal()),
+                Some(cell),
+                "from_ordinal must invert ordinal at {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `usize` at or beyond the
+        // six-cell cube's cardinality returns `None`. A stale
+        // wire-format ordinal from a version-skewed peer, or an
+        // operator-supplied bogus index, degrades cleanly to `None`
+        // rather than panicking on a slice index or a match ladder.
+        // Idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_rejects_out_of_range`
+        // on the sibling nine-cell attribution-source-kind cube.
+        let card = AttributionNameKindCoordinates::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                AttributionNameKindCoordinates::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme. `usize::MAX` also verifies the integer-division
+        // path doesn't accidentally alias to an in-range cell via a
+        // remainder collision.
+        assert_eq!(
+            AttributionNameKindCoordinates::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            AttributionNameKindCoordinates::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_from_ordinal_agrees_with_all_index_pointwise() {
+        // The algebraic two-axis inversion agrees with the slice-index
+        // lookup on `AttributionNameKindCoordinates::ALL` pointwise
+        // across every in-range ordinal: `from_ordinal(i) ==
+        // Some(ALL[i])` for every `i` in `0..ALL.len()`. A future edit
+        // that shifts the ordinal formula (or the two sibling axis
+        // ordinals it composes) without shifting `Self::ALL` in
+        // lockstep fails here first, before the drift can reach
+        // downstream consumers routing through either seam.
+        for (index, &cell) in AttributionNameKindCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                AttributionNameKindCoordinates::from_ordinal(index),
+                Some(cell),
+                "from_ordinal({index}) must equal Some(ALL[{index}]) = Some({cell:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the algebraic two-axis inversion agrees
+        // with the trait-generic `crate::axis_at::<Self>` free-function
+        // lookup pointwise across every `usize` in `0..ALL.len() + 32`,
+        // covering both the in-range prefix (both `Some`, same cell) and
+        // the out-of-range tail (both `None`). Where `axis_at` delegates
+        // through the `ClosedAxis` impl to a bounds-checked `Self::ALL`
+        // slice index, `Self::from_ordinal` routes through the algebraic
+        // inversion of the ordinal-formula composition; this test pins
+        // that the two seams stay substitutable across every ordinal.
+        let card = AttributionNameKindCoordinates::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                AttributionNameKindCoordinates::from_ordinal(o),
+                crate::axis_at::<AttributionNameKindCoordinates>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<cell>) inversion is
+        // `const`-callable, matching the `const`-ness of `Self::ordinal`
+        // on the forward side and of both sibling axis partial-inverses
+        // it composes (`FigmentNameTagKind::from_ordinal` and
+        // `ConfigSourceKind::from_ordinal`, both `const fn` since their
+        // respective landings). A drop of the `const` qualifier on
+        // `AttributionNameKindCoordinates::from_ordinal` — or on
+        // either sibling axis partial-inverse it composes — fails this
+        // test to compile.
+        //
+        // Four representative `const` bindings — three corner cells
+        // (the (Format, Defaults), (Format, File), and (Env, File)
+        // extremes of the (`figment_name_tag_kind` × `layer_kind`)
+        // layout) plus one out-of-range sentinel at
+        // `AttributionNameKindCoordinates::ALL.len()` — route each
+        // through the const-fn inversion in const position. The moment
+        // `AttributionNameKindCoordinates::from_ordinal` (or one of
+        // the two projections it composes) loses its const-ness, one
+        // of the four `const` welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection.
+        const INV_0: Option<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::from_ordinal(0);
+        const INV_2: Option<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::from_ordinal(2);
+        const INV_5: Option<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::from_ordinal(5);
+        const INV_OOR: Option<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::from_ordinal(AttributionNameKindCoordinates::ALL.len());
+
+        assert_eq!(
+            INV_0,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Format,
+                layer_kind: ConfigSourceKind::Defaults,
+            }),
+        );
+        assert_eq!(
+            INV_2,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Format,
+                layer_kind: ConfigSourceKind::File,
+            }),
+        );
+        assert_eq!(
+            INV_5,
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::File,
+            }),
+        );
+        assert_eq!(INV_OOR, None);
     }
 
     #[test]
