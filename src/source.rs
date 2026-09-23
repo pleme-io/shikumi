@@ -30356,6 +30356,80 @@ impl FigmentNameTagKind {
             Self::Env => 1,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Format`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Env`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one
+    /// axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// two-cell surface the (`as_str`, `from_canonical_str`) pair inverts
+    /// the scalar-`&'static str` projection [`Self::as_str`]. Neither
+    /// projection is total on the codomain — the string surface admits
+    /// non-canonical labels, the ordinal surface admits `usize` values
+    /// `>= 2` — so both invertors return [`Option<Self>`] rather than a
+    /// total `Self`, keeping the "not on the variant surface" case a
+    /// typed [`None`] rather than a fabricated variant.
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on the
+    /// figment-Name-axis kind: [`ConfigSourceKind::from_ordinal`] (commit
+    /// `03b2535`) carries it on the shikumi-side layer-kind axis and
+    /// [`crate::source::EnvMetadataTagKind::from_ordinal`] (commit
+    /// `72c523a`) carries it on the env-name sub-axis kind. Same closed-
+    /// match shape, same [`Option<Self>`] return, same `const`-callability
+    /// contract.
+    ///
+    /// **Round-trip law** —
+    /// `FigmentNameTagKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: FigmentNameTagKind`. Composes with [`Self::ordinal`] on
+    /// the same [`Self::ALL`] slice literal both projections match
+    /// against; the law holds by construction. Pinned by
+    /// [`tests::figment_name_tag_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `FigmentNameTagKind::from_ordinal(o) == None` for every `o >= 2`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer or
+    /// an operator-typed CLI argument through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check. Pinned
+    /// by
+    /// [`tests::figment_name_tag_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching the
+    /// `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch (a `const
+    /// [FigmentNameTagKind; 2]` variant array indexed by ordinal, a
+    /// `const` per-kind label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time, a
+    /// per-figment-name-kind attestation-manifest slot in a `const`
+    /// initializer keyed by ordinal) route through the projection under
+    /// `const` without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::figment_name_tag_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `FigmentNameTagKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i < 2`. The inherent match and the [`Self::ALL`] slice
+    /// literal carry the same declaration order (`Format → Env`) — so a
+    /// future edit shifting one without the other fails at test time on
+    /// the first drifted position. Pinned by
+    /// [`tests::figment_name_tag_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Format),
+            1 => Some(Self::Env),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for FigmentNameTagKind {
@@ -101906,6 +101980,98 @@ mod tests {
 
         assert_eq!(FORMAT_ORD, 0);
         assert_eq!(ENV_ORD, 1);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `FigmentNameTagKind::from_ordinal(v.ordinal())
+        // == Some(v)` for every v: FigmentNameTagKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed two-cell declaration order (`FigmentNameTagKind::ALL`,
+        // `Format → Env`); the law holds by construction. Sibling of
+        // `env_metadata_tag_kind_from_ordinal_round_trips_via_ordinal`
+        // on the env-name sub-axis kind (commit `72c523a`) and of
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the shikumi-side layer-kind axis.
+        for &kind in FigmentNameTagKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = FigmentNameTagKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 2` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `env_metadata_tag_kind_from_ordinal_rejects_out_of_range`
+        // on the env-name sub-axis kind.
+        assert_eq!(FigmentNameTagKind::from_ordinal(2), None);
+        assert_eq!(FigmentNameTagKind::from_ordinal(3), None);
+        assert_eq!(FigmentNameTagKind::from_ordinal(42), None);
+        assert_eq!(FigmentNameTagKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(FigmentNameTagKind::ALL[i])` for
+        // every i in 0..2 — the inverse of `ordinal` agrees with the
+        // same `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Sibling of
+        // `env_metadata_tag_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the env-name sub-axis kind.
+        for (index, &expected) in FigmentNameTagKind::ALL.iter().enumerate() {
+            assert_eq!(
+                FigmentNameTagKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with FigmentNameTagKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            FigmentNameTagKind::from_ordinal(FigmentNameTagKind::ALL.len()),
+            None,
+            "ordinal equal to FigmentNameTagKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `FigmentNameTagKind::ordinal` and the sibling
+        // `FigmentNameTagKind::as_str`. A drop of the `const` qualifier
+        // on `FigmentNameTagKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness
+        // one of the three const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection. Sibling of
+        // `env_metadata_tag_kind_from_ordinal_is_const_callable` on
+        // the env-name sub-axis kind.
+        const AT_0: Option<FigmentNameTagKind> = FigmentNameTagKind::from_ordinal(0);
+        const AT_1: Option<FigmentNameTagKind> = FigmentNameTagKind::from_ordinal(1);
+        const AT_2: Option<FigmentNameTagKind> = FigmentNameTagKind::from_ordinal(2);
+
+        assert_eq!(AT_0, Some(FigmentNameTagKind::Format));
+        assert_eq!(AT_1, Some(FigmentNameTagKind::Env));
+        assert_eq!(AT_2, None);
     }
 
     #[test]
