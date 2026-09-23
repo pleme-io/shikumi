@@ -29304,6 +29304,102 @@ impl EnvMetadataTagKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Prefixed`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Bare`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one
+    /// axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// two-cell surface the (`as_str`, `from_canonical_str`) pair inverts
+    /// the scalar-`&'static str` projection [`Self::as_str`]. Neither
+    /// projection is total on the codomain — the string surface admits
+    /// non-canonical labels, the ordinal surface admits `usize` values
+    /// `>= 2` — so both invertors return [`Option<Self>`] rather than a
+    /// total `Self`, keeping the "not on the variant surface" case a
+    /// typed [`None`] rather than a fabricated variant.
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on the
+    /// third figment-metadata sub-axis kind: [`FigmentSourceKind`] carries
+    /// it on the figment-Source-axis kind, [`FigmentNameTagKind`] carries
+    /// it on the figment-Name-axis kind, and this landing closes the
+    /// same discipline on the env-name sub-axis kind. Same closed-match
+    /// shape, same [`Option<Self>`] return, same `const`-callability
+    /// contract as the shipped peer [`ConfigSourceKind::from_ordinal`]
+    /// (commit `03b2535`) on the shikumi-side layer-kind axis and
+    /// [`crate::ConfigTierKind::from_ordinal`] (commit `9ba26f`) on the
+    /// tier-kind axis of the atomic `(tier, source)` pair the sealed
+    /// fold resolves through.
+    ///
+    /// **Round-trip law** —
+    /// `EnvMetadataTagKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: EnvMetadataTagKind`. Composes with [`Self::ordinal`] on
+    /// the same [`Self::ALL`] slice literal both projections match
+    /// against; the law holds by construction. Pinned by
+    /// [`tests::env_metadata_tag_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `EnvMetadataTagKind::from_ordinal(o) == None` for every `o >= 2`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer
+    /// or an operator-typed CLI argument through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::env_metadata_tag_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] on the sibling scalar-label surface.
+    /// Consumers wanting a compile-time-selected ordinal-keyed dispatch
+    /// (a `const [EnvMetadataTagKind; 2]` variant array indexed by
+    /// ordinal, a `const` per-kind label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time, a
+    /// per-env-metadata-kind attestation-manifest slot in a `const`
+    /// initializer keyed by ordinal) route through the projection under
+    /// `const` without dropping through a runtime `let` binding. Pinned
+    /// by
+    /// [`tests::env_metadata_tag_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `EnvMetadataTagKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i < 2`. The inherent match and the [`Self::ALL`] slice
+    /// literal carry the same declaration order (`Prefixed → Bare`) —
+    /// so a future edit shifting one without the other fails at test
+    /// time on the first drifted position. Pinned by
+    /// [`tests::env_metadata_tag_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Consumers** — a ConfigPlane attestation payload emitting the
+    /// env-name-kind tag as a bare `u8` at wire time (a `const [_; 2]`
+    /// per-env-metadata-kind weight vector keyed by ordinal routing
+    /// prefixed attributions under a different weight than bare ones
+    /// since the bare shape carries no scoping information, a per-kind
+    /// retry-budget slot keyed by ordinal in a `const` initializer, a
+    /// per-kind renderer bound at compile time via a static ordinal
+    /// lookup) recovers the typed variant on the reader side without
+    /// a hand-rolled `match o { 0 => …, 1 => …, _ => panic!() }` ladder
+    /// that would drift silently as a hypothetical third env-metadata
+    /// kind variant lands (a future `Glob` cell in lockstep with a
+    /// hypothetical [`EnvMetadataTag::Glob`] if figment grows
+    /// pattern-matched env providers). The closed match here degrades
+    /// cleanly to [`None`] on out-of-range, so a version-skewed peer
+    /// emitting a `2`-ordinal reads as an unknown rather than a
+    /// runtime panic.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Prefixed),
+            1 => Some(Self::Bare),
+            _ => None,
+        }
+    }
+
     /// The single PREFIXED [`EnvMetadataTagKind`] variant —
     /// [`Self::Prefixed`] (the scoped-prefix pole of the (prefixed ×
     /// bare) meta-partition) — in the SAME relative declaration order
@@ -103021,6 +103117,98 @@ mod tests {
 
         assert_eq!(PREFIXED_ORD, 0);
         assert_eq!(BARE_ORD, 1);
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `EnvMetadataTagKind::from_ordinal(v.ordinal())
+        // == Some(v)` for every v: EnvMetadataTagKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed two-cell declaration order (`EnvMetadataTagKind::ALL`,
+        // `Prefixed → Bare`); the law holds by construction. Sibling of
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the shikumi-side layer-kind axis and of
+        // `config_tier_kind_from_ordinal_round_trips_via_ordinal` on
+        // the tier-kind axis of the atomic (tier, source) pair.
+        for &kind in EnvMetadataTagKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = EnvMetadataTagKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 2` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally
+        // via the closed match's `_` arm. Guards against a stale
+        // wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `config_source_kind_from_ordinal_rejects_out_of_range` on
+        // the shikumi-side layer-kind axis.
+        assert_eq!(EnvMetadataTagKind::from_ordinal(2), None);
+        assert_eq!(EnvMetadataTagKind::from_ordinal(3), None);
+        assert_eq!(EnvMetadataTagKind::from_ordinal(42), None);
+        assert_eq!(EnvMetadataTagKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(EnvMetadataTagKind::ALL[i])` for
+        // every i in 0..2 — the inverse of `ordinal` agrees with the
+        // same `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Sibling of
+        // `config_source_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the shikumi-side layer-kind axis.
+        for (index, &expected) in EnvMetadataTagKind::ALL.iter().enumerate() {
+            assert_eq!(
+                EnvMetadataTagKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with EnvMetadataTagKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            EnvMetadataTagKind::from_ordinal(EnvMetadataTagKind::ALL.len()),
+            None,
+            "ordinal equal to EnvMetadataTagKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `EnvMetadataTagKind::ordinal` and the sibling
+        // `EnvMetadataTagKind::as_str`. A drop of the `const` qualifier
+        // on `EnvMetadataTagKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness
+        // one of the three const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection. Sibling of
+        // `config_source_kind_from_ordinal_is_const_callable` on the
+        // shikumi-side layer-kind axis.
+        const AT_0: Option<EnvMetadataTagKind> = EnvMetadataTagKind::from_ordinal(0);
+        const AT_1: Option<EnvMetadataTagKind> = EnvMetadataTagKind::from_ordinal(1);
+        const AT_2: Option<EnvMetadataTagKind> = EnvMetadataTagKind::from_ordinal(2);
+
+        assert_eq!(AT_0, Some(EnvMetadataTagKind::Prefixed));
+        assert_eq!(AT_1, Some(EnvMetadataTagKind::Bare));
+        assert_eq!(AT_2, None);
     }
 
     #[test]
