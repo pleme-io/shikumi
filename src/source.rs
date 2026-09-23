@@ -31424,6 +31424,88 @@ impl FigmentSourceKind {
             Self::Custom => 2,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::File`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Code`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Custom`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`<Self as crate::ClosedAxisLabel>::from_canonical_str`]
+    /// one axis over: the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-`usize` projection [`Self::ordinal`] on the same closed
+    /// three-cell surface the (`as_str`, `from_canonical_str`) pair
+    /// inverts the scalar-`&'static str` projection [`Self::as_str`].
+    /// Neither projection is total on the codomain — the string surface
+    /// admits non-canonical labels, the ordinal surface admits `usize`
+    /// values `>= 3` — so both invertors return [`Option<Self>`] rather
+    /// than a total `Self`, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant.
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the figment-Source-axis kind: [`FigmentNameTagKind::from_ordinal`]
+    /// (commit `6b8dccf`) carries it on the sibling figment-Name-axis
+    /// kind, [`EnvMetadataTagKind::from_ordinal`] (commit `72c523a`)
+    /// carries it on the env-name sub-axis kind, and
+    /// [`ConfigSourceKind::from_ordinal`] carries it on the sibling
+    /// shikumi-side layer-kind axis. Same closed-match shape, same
+    /// [`Option<Self>`] return, same `const`-callability contract. With
+    /// this landing all three figment-metadata sub-axis kinds
+    /// ([`FigmentSourceKind`], [`FigmentNameTagKind`],
+    /// [`EnvMetadataTagKind`]) carry the const-fn ordinal round-trip
+    /// pair uniformly.
+    ///
+    /// **Round-trip law** —
+    /// `FigmentSourceKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: FigmentSourceKind`. Composes with [`Self::ordinal`] on
+    /// the same three-cell declaration order both projections match
+    /// against; the law holds by construction. Pinned by
+    /// [`tests::figment_source_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `FigmentSourceKind::from_ordinal(o) == None` for every `o >= 3`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer
+    /// or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check — the
+    /// caller reads the unknown as a typed `None` rather than a
+    /// fabricated variant. Pinned by
+    /// [`tests::figment_source_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch (a `const
+    /// [FigmentSourceKind; 3]` variant array indexed by ordinal, a
+    /// `const` per-kind label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time, a
+    /// per-figment-source-kind attestation-manifest slot in a `const`
+    /// initializer keyed by ordinal) route through the projection under
+    /// `const` without dropping through a runtime `let` binding. Pinned
+    /// by [`tests::figment_source_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `FigmentSourceKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i < 3`. The inherent match and the [`Self::ALL`] slice
+    /// literal carry the same declaration order (`File → Code →
+    /// Custom`) — so a future edit shifting one without the other fails
+    /// at test time on the first drifted position. Pinned by
+    /// [`tests::figment_source_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::File),
+            1 => Some(Self::Code),
+            2 => Some(Self::Custom),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for FigmentSourceKind {
@@ -100821,6 +100903,104 @@ mod tests {
         assert_eq!(FILE_ORD, 0);
         assert_eq!(CODE_ORD, 1);
         assert_eq!(CUSTOM_ORD, 2);
+    }
+
+    #[test]
+    fn figment_source_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `FigmentSourceKind::from_ordinal(v.ordinal())
+        // == Some(v)` for every v: FigmentSourceKind. The forward-map
+        // `ordinal` and the inverse-map `from_ordinal` share the SAME
+        // closed three-cell declaration order (`FigmentSourceKind::ALL`,
+        // `File → Code → Custom`); the law holds by construction.
+        // Sibling of
+        // `figment_name_tag_kind_from_ordinal_round_trips_via_ordinal`
+        // on the figment-Name-axis kind (commit `6b8dccf`),
+        // `env_metadata_tag_kind_from_ordinal_round_trips_via_ordinal`
+        // on the env-name sub-axis kind (commit `72c523a`), and
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the shikumi-side layer-kind axis.
+        for &kind in FigmentSourceKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = FigmentSourceKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 3` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally via
+        // the closed match's `_` arm. Guards against a stale wire-format
+        // ordinal from a version-skewed peer (a hypothetical `Url`
+        // fourth kind in lockstep with a future `Source::Url` if figment
+        // grows one) or an operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `figment_name_tag_kind_from_ordinal_rejects_out_of_range` on
+        // the figment-Name-axis kind.
+        assert_eq!(FigmentSourceKind::from_ordinal(3), None);
+        assert_eq!(FigmentSourceKind::from_ordinal(4), None);
+        assert_eq!(FigmentSourceKind::from_ordinal(42), None);
+        assert_eq!(FigmentSourceKind::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn figment_source_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(FigmentSourceKind::ALL[i])` for every
+        // i in 0..3 — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A future
+        // edit shifting one match without the other fails here on the
+        // first drifted index. Sibling of
+        // `figment_name_tag_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the figment-Name-axis kind.
+        for (index, &expected) in FigmentSourceKind::ALL.iter().enumerate() {
+            assert_eq!(
+                FigmentSourceKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with FigmentSourceKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (3) the projection returns None at
+        // every offset. Pin the immediate boundary to catch a future
+        // off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            FigmentSourceKind::from_ordinal(FigmentSourceKind::ALL.len()),
+            None,
+            "ordinal equal to FigmentSourceKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `FigmentSourceKind::ordinal` and the sibling
+        // `FigmentSourceKind::as_str`. A drop of the `const` qualifier
+        // on `FigmentSourceKind::from_ordinal` fails this test to
+        // compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range —
+        // route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the four const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection. Sibling of
+        // `figment_name_tag_kind_from_ordinal_is_const_callable` on the
+        // figment-Name-axis kind.
+        const AT_0: Option<FigmentSourceKind> = FigmentSourceKind::from_ordinal(0);
+        const AT_1: Option<FigmentSourceKind> = FigmentSourceKind::from_ordinal(1);
+        const AT_2: Option<FigmentSourceKind> = FigmentSourceKind::from_ordinal(2);
+        const AT_3: Option<FigmentSourceKind> = FigmentSourceKind::from_ordinal(3);
+
+        assert_eq!(AT_0, Some(FigmentSourceKind::File));
+        assert_eq!(AT_1, Some(FigmentSourceKind::Code));
+        assert_eq!(AT_2, Some(FigmentSourceKind::Custom));
+        assert_eq!(AT_3, None);
     }
 
     #[test]
