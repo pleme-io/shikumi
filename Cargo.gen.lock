@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "ed4341a20987649f77a3e89af62fc8fe9f47cd7aa4c451437518b4a8b9669875",
+  "cargo_lock_sha256": "8029e24ee03e027620e06b59267a2eee736435dbcb1648087a0fef450dfaec5c",
   "manifest_sha256": {
-    "Cargo.toml": "6eeace3b3fe6069ae6c3b98c9555072c426724e73a5dad219c20877fad8e3862"
+    "Cargo.toml": "cb5897435085c189bcd95ce2a3692913a181cdd3f373bc90812ef01740b09ee2"
   },
   "target_resolves": {
     "base": {
@@ -398,7 +398,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.20",
+            "package_key": "thiserror-2.0.21",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -480,7 +480,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.20",
+            "package_key": "thiserror-2.0.21",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.1039": {
+      "shikumi-0.1.1040": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1282,7 +1282,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.20",
+            "package_key": "thiserror-2.0.21",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1460,11 +1460,11 @@
           "getrandom"
         ]
       },
-      "thiserror-2.0.20": {
+      "thiserror-2.0.21": {
         "runtime_dependencies": [
           {
             "name": "thiserror_impl",
-            "package_key": "thiserror-impl-2.0.20",
+            "package_key": "thiserror-impl-2.0.21",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1479,7 +1479,7 @@
           "std"
         ]
       },
-      "thiserror-impl-2.0.20": {
+      "thiserror-impl-2.0.21": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -3992,7 +3992,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.1039": {
+    "shikumi-0.1.1040": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4011,11 +4011,11 @@
     "tempfile-3.27.0": {
       "edition": "2021"
     },
-    "thiserror-2.0.20": {
+    "thiserror-2.0.21": {
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "thiserror-impl-2.0.20": {
+    "thiserror-impl-2.0.21": {
       "edition": "2021",
       "proc_macro": true
     },
