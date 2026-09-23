@@ -35535,6 +35535,99 @@ impl DiffLineKind {
             _ => None,
         }
     }
+
+    /// Const-fn glyph → variant inverse of [`Self::glyph`]. Returns
+    /// [`Some(variant)`][Some] for every canonical unified-diff prefix
+    /// character `'-'` / `'+'` / `' '` — the exact three-cell codomain
+    /// [`Self::glyph`] emits — and [`None`] for any other [`char`].
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `'-'` → [`Some`]`(`[`Self::Removed`]`)`
+    /// - `'+'` → [`Some`]`(`[`Self::Added`]`)`
+    /// - `' '` → [`Some`]`(`[`Self::Context`]`)`
+    /// - `_`   → [`None`]
+    ///
+    /// Sibling of [`Self::from_ordinal`] one axis over: the
+    /// (`glyph`, `from_glyph`) pair inverts the scalar-[`char`]
+    /// projection [`Self::glyph`] on the same closed three-cell surface
+    /// the (`ordinal`, `from_ordinal`) pair inverts the scalar-[`usize`]
+    /// projection [`Self::ordinal`] and the (`as_str`,
+    /// `from_canonical_str`) pair inverts the scalar-[`&'static str`]
+    /// projection [`Self::as_str`]. Neither projection is total on the
+    /// codomain — the glyph surface admits non-canonical characters, the
+    /// ordinal surface admits `usize` values `>= 3`, the string surface
+    /// admits non-canonical labels — so all three invertors return
+    /// [`Option<Self>`] rather than a total `Self`, keeping the "not on
+    /// the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant. With this landing the diff-cell kind axis
+    /// carries the round-trip pair on all THREE closed scalar surfaces
+    /// simultaneously.
+    ///
+    /// **Round-trip law** —
+    /// `DiffLineKind::from_glyph(v.glyph()) == Some(v)` for every
+    /// `v: DiffLineKind`. Composes with [`Self::glyph`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::diff_line_kind_from_glyph_round_trips_via_glyph`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `DiffLineKind::from_glyph(c) == None` for every [`char`] `c` not
+    /// in the canonical unified-diff prefix set `{'-', '+', ' '}`. The
+    /// closed match's `_` arm forwards the off-surface case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format glyph from a version-skewed peer, a
+    /// Markdown-diff renderer using a non-canonical prefix, or an
+    /// operator-typed CLI argument delivering an unrelated character.
+    /// Pinned by
+    /// [`tests::diff_line_kind_from_glyph_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::glyph`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected glyph-keyed dispatch
+    /// (a `const` per-diff-cell prefix decoder for a wire-format frame,
+    /// a `const [DiffLineKind; 3]` variant array indexed via a
+    /// hand-rolled glyph-to-ordinal step, or a `const` per-glyph
+    /// counter initializer resolved at compile time) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::diff_line_kind_from_glyph_is_const_callable`].
+    ///
+    /// **Agreement with `Self::glyph` at every variant** —
+    /// `DiffLineKind::from_glyph(v.glyph()) == Some(v)` for every
+    /// `v: DiffLineKind`. The inherent match and the forward
+    /// [`Self::glyph`] match carry the same three-cell glyph mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the glyph on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::diff_line_kind_from_glyph_agrees_with_glyph_pointwise`].
+    ///
+    /// **Consumers** — a `ConfigDiff` wire-format parser reading the
+    /// unified-diff prefix character back into a typed [`DiffLineKind`]
+    /// (a Markdown-fenced diff decoder recovering the per-line kind
+    /// from its rendered prefix, a per-tier attestation-manifest
+    /// verifier re-hydrating a `Vec<DiffLineKind>` from a rendered
+    /// unified-diff blob, a per-diff-cell renderer normaliser
+    /// classifying an operator-typed patch header by its leading
+    /// character) recovers the typed variant on the reader side without
+    /// a hand-rolled `match c { '-' => …, '+' => …, ' ' => …, _ =>
+    /// panic!() }` ladder that would drift silently as a fourth
+    /// diff-cell kind (a hypothetical `Header` shape for hunk headers,
+    /// a `Sep` shape for inter-hunk separators) landed. The closed
+    /// match here degrades cleanly to [`None`] on off-surface input, so
+    /// a version-skewed peer emitting an unrecognised prefix reads as
+    /// an unknown rather than a runtime panic.
+    #[must_use]
+    pub const fn from_glyph(glyph: char) -> Option<Self> {
+        match glyph {
+            '-' => Some(Self::Removed),
+            '+' => Some(Self::Added),
+            ' ' => Some(Self::Context),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for DiffLineKind {
@@ -49304,6 +49397,111 @@ mod tests {
         assert_eq!(AT_1, Some(DiffLineKind::Added));
         assert_eq!(AT_2, Some(DiffLineKind::Context));
         assert_eq!(AT_3, None);
+    }
+
+    #[test]
+    fn diff_line_kind_from_glyph_round_trips_via_glyph() {
+        // Round-trip law: `DiffLineKind::from_glyph(v.glyph()) ==
+        // Some(v)` for every v: DiffLineKind. The forward-map `glyph`
+        // and the inverse-map `from_glyph` share the SAME closed
+        // three-cell glyph mapping (`'-'` → Removed, `'+'` → Added,
+        // `' '` → Context — the canonical unified-diff prefix set);
+        // the law holds by construction. This pin re-states it once
+        // on the DiffLineKind surface so a future edit that drifts
+        // one match without the other fails here on the first drifted
+        // variant. Sibling of
+        // `diff_line_kind_from_ordinal_round_trips_via_ordinal` on
+        // the same primitive one scalar axis over.
+        for &kind in DiffLineKind::ALL {
+            let glyph = kind.glyph();
+            let recovered = DiffLineKind::from_glyph(glyph);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: glyph={glyph:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_glyph_rejects_non_canonical() {
+        // Out-of-range rejection: any `char` outside the canonical
+        // unified-diff prefix set `{'-', '+', ' '}` is not on the
+        // variant surface, so `from_glyph` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format glyph from a version-skewed peer, a
+        // Markdown-diff renderer using a non-canonical prefix, or an
+        // operator-typed CLI argument delivering an unrelated
+        // character — the caller reads the unknown as a typed `None`
+        // rather than a fabricated variant. Sibling of
+        // `diff_line_kind_from_ordinal_rejects_out_of_range` on the
+        // same primitive one scalar axis over.
+        assert_eq!(DiffLineKind::from_glyph('*'), None);
+        assert_eq!(DiffLineKind::from_glyph('@'), None);
+        assert_eq!(DiffLineKind::from_glyph('\t'), None);
+        assert_eq!(DiffLineKind::from_glyph('\n'), None);
+        assert_eq!(DiffLineKind::from_glyph('\0'), None);
+        assert_eq!(DiffLineKind::from_glyph('~'), None);
+        assert_eq!(DiffLineKind::from_glyph('a'), None);
+        assert_eq!(DiffLineKind::from_glyph('0'), None);
+        // Case-lookalike near-misses (unicode minus sign, unicode
+        // no-break space) are NOT canonical and must also read as None.
+        assert_eq!(DiffLineKind::from_glyph('\u{2212}'), None);
+        assert_eq!(DiffLineKind::from_glyph('\u{00A0}'), None);
+    }
+
+    #[test]
+    fn diff_line_kind_from_glyph_agrees_with_glyph_pointwise() {
+        // `from_glyph(v.glyph()) == Some(v)` for every v: DiffLineKind
+        // — the inverse of `glyph` agrees with the same three-cell
+        // glyph mapping `glyph` matches against. A future edit shifting
+        // one match without the other fails here on the first drifted
+        // variant. Peer of
+        // `diff_line_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the same primitive one scalar axis over. The three
+        // pointwise pins spell the canonical mapping explicitly so a
+        // future edit that shifts BOTH matches in lockstep — preserving
+        // the round trip but breaking the canonical unified-diff prefix
+        // contract — fails here as well.
+        assert_eq!(DiffLineKind::from_glyph('-'), Some(DiffLineKind::Removed));
+        assert_eq!(DiffLineKind::from_glyph('+'), Some(DiffLineKind::Added));
+        assert_eq!(DiffLineKind::from_glyph(' '), Some(DiffLineKind::Context));
+        for &kind in DiffLineKind::ALL {
+            assert_eq!(
+                DiffLineKind::from_glyph(kind.glyph()),
+                Some(kind),
+                "from_glyph({:?}) must agree with DiffLineKind::glyph on {kind:?}",
+                kind.glyph(),
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_glyph_is_const_callable() {
+        // Compile-time weld: the (glyph → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `DiffLineKind::glyph` and of the sibling scalar-
+        // surface inverses `DiffLineKind::from_ordinal` and the trait-
+        // uniform `<DiffLineKind as ClosedAxisLabel>::from_canonical_str`
+        // (const-callable via its inherent match). A drop of the `const`
+        // qualifier on `DiffLineKind::from_glyph` fails this test to
+        // compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each glyph through the const-fn inverse in const
+        // position. The moment `from_glyph` loses its const-ness one of
+        // the four const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_MINUS: Option<DiffLineKind> = DiffLineKind::from_glyph('-');
+        const AT_PLUS: Option<DiffLineKind> = DiffLineKind::from_glyph('+');
+        const AT_SPACE: Option<DiffLineKind> = DiffLineKind::from_glyph(' ');
+        const AT_STAR: Option<DiffLineKind> = DiffLineKind::from_glyph('*');
+
+        assert_eq!(AT_MINUS, Some(DiffLineKind::Removed));
+        assert_eq!(AT_PLUS, Some(DiffLineKind::Added));
+        assert_eq!(AT_SPACE, Some(DiffLineKind::Context));
+        assert_eq!(AT_STAR, None);
     }
 
     #[test]
