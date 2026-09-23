@@ -1074,6 +1074,62 @@ impl ConfigTier {
     }
 }
 
+/// Canonical operator-facing rendering of the tier the operator asked
+/// for — the four-variant label from [`Self::as_str`] on the payload-
+/// free tiers, plus the parenthesized [`std::path::PathBuf`] on the
+/// payload-bearing [`Self::Custom`] arm so the operator's chosen path
+/// travels through `{}` alongside the tier tag.
+///
+/// Standard-library `{}`-formatter seam for the operator-facing tier
+/// primitive, matching the peer [`Display`] surface [`Provenance`] one
+/// primitive over on the sealed `(tier, source)` pair (which routes
+/// its own tier label through [`ConfigTierKind::as_str`] on the
+/// kind-side sibling and attaches source detail through the same
+/// parenthesized-detail idiom). Consumers routing a tier render
+/// through `format!("{tier}")`, `write!` against any
+/// [`std::fmt::Write`] sink, a `println!("{tier}")` at a CLI, a
+/// `tracing::info!(%tier, "resolved config tier")` structured-log
+/// emit, or a `thiserror` `#[error("... {0}")]` inline-format shorthand
+/// on a `ConfigTier` payload — no longer reach for a two-arm match
+/// (`ConfigTier::Custom(p) => format!("custom: {}", p.display())`,
+/// `other => other.as_str().to_owned()`) to fold the `Custom` path
+/// payload into the render at every consumer site.
+///
+/// # Invariants
+///
+/// - `format!("{tier}") == tier.as_str()` for the three payload-free
+///   variants ([`Self::Bare`] / [`Self::Discovered`] / [`Self::Default`]) —
+///   the trait impl reads the same `&'static str` labels that
+///   [`Self::as_str`] projects to, so the standard idiom and the
+///   const-fn accessor agree byte-for-byte on the payload-free arm.
+/// - `format!("{}", ConfigTier::Custom(p)) == format!("custom ({})",
+///   p.display())` for every [`std::path::PathBuf`] `p` — the trait
+///   impl attaches the operator-supplied path through the
+///   parenthesized-detail idiom [`Provenance`]'s own `Display` uses,
+///   so a consumer chaining `{tier}` through a log message reads the
+///   operator's chosen path directly rather than losing it to the
+///   variant-tag projection [`Self::as_str`] returns on the same arm.
+/// - Payload-dependence lives on the `Custom` arm only — swapping the
+///   inner [`std::path::PathBuf`] changes the parenthesized suffix
+///   without touching the leading `"custom"` label, and swapping the
+///   tier label on any payload-free variant changes only that arm's
+///   `&'static str`.
+/// - No heap allocation beyond what the caller's destination formatter
+///   allocates; the payload-free arm writes one `&'static str` from
+///   the [`Self::as_str`] literal table, and the `Custom` arm chains
+///   two `write!` hops to the same `f` without materializing an
+///   intermediate [`String`].
+///
+/// [`Display`]: std::fmt::Display
+impl std::fmt::Display for ConfigTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bare | Self::Discovered | Self::Default => f.write_str(self.as_str()),
+            Self::Custom(path) => write!(f, "custom ({})", path.display()),
+        }
+    }
+}
+
 /// Trait every shikumi-typed config implements to participate in the
 /// fleet-wide tier model. See module docs for the full operator
 /// contract.
@@ -47041,6 +47097,164 @@ mod tests {
         assert_eq!(BARE_NAME, ConfigTier::Bare.kind().as_str());
         assert_eq!(DISCOVERED_NAME, ConfigTier::Discovered.kind().as_str());
         assert_eq!(DEFAULT_NAME, ConfigTier::Default.kind().as_str());
+    }
+
+    // ── Display for ConfigTier — idiomatic {}-formatter surface over
+    //    the operator-facing tier primitive, matching the peer Display
+    //    on Provenance one primitive over.
+    #[test]
+    fn config_tier_display_equals_as_str_on_payload_free_variants() {
+        // Pin the trio-arm agreement: every payload-free variant
+        // projects through Display byte-for-byte identically to the
+        // const-fn label accessor `as_str`, so the standard-idiom `{}`
+        // form and the tag-side `&'static str` seam stay welded on the
+        // three variants Display shares with `as_str`.
+        for tier in [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+        ] {
+            assert_eq!(
+                tier.to_string(),
+                tier.as_str(),
+                "Display for ConfigTier ({tier:?}) must equal as_str() \
+                 on the three payload-free variants"
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_display_canonical_forms_on_payload_free_variants() {
+        // Pin the three canonical labels the payload-free arm reads
+        // out of `as_str`, so a future edit that shifted a label on
+        // one surface only (`as_str`, the ClosedAxisLabel table,
+        // `ConfigTierKind::as_str`) diverges at this pin before it
+        // reaches an operator-facing log line.
+        assert_eq!(ConfigTier::Bare.to_string(), "bare");
+        assert_eq!(ConfigTier::Discovered.to_string(), "discovered");
+        assert_eq!(ConfigTier::Default.to_string(), "default");
+    }
+
+    #[test]
+    fn config_tier_display_of_custom_carries_the_path_payload() {
+        // Pin the `Custom(path)` arm: unlike `as_str` (which
+        // collapses to the label-only `"custom"` on every path
+        // regardless of payload), the Display impl carries the
+        // operator-supplied path through the parenthesized-detail
+        // idiom, so consumers routing a tier render through
+        // `format!("{tier}")` read the path directly.
+        let tier = ConfigTier::Custom(std::path::PathBuf::from("/etc/app.yaml"));
+        assert_eq!(tier.to_string(), "custom (/etc/app.yaml)");
+    }
+
+    #[test]
+    fn config_tier_display_of_custom_diverges_from_as_str_on_the_path_payload() {
+        // Pin the payload-dependence divergence between the Display
+        // impl and `as_str` on the `Custom` arm: `as_str` returns the
+        // label-only `"custom"` regardless of the inner path (payload-
+        // independent), while Display projects the same label plus a
+        // parenthesized path suffix, so the two accessors are strictly
+        // different on any `Custom` value. A future edit that
+        // collapsed the Display arm back to `as_str` would fail this
+        // pin.
+        let tier = ConfigTier::Custom(std::path::PathBuf::from("/etc/app.yaml"));
+        assert_eq!(tier.as_str(), "custom");
+        assert_ne!(tier.to_string(), tier.as_str());
+    }
+
+    #[test]
+    fn config_tier_display_of_custom_starts_with_the_custom_label() {
+        // Pin the leading `"custom"` label on every `Custom(path)` —
+        // swapping the inner path changes only the parenthesized
+        // suffix, never the leading label. A future edit that pushed
+        // the label past the leading position (or emitted a different
+        // label on the `Custom` arm than `as_str` does) would fail
+        // this pin.
+        for raw in ["/a", "/etc/app.yaml", "relative.toml", "/", ""] {
+            let tier = ConfigTier::Custom(std::path::PathBuf::from(raw));
+            let rendered = tier.to_string();
+            assert!(
+                rendered.starts_with("custom"),
+                "Display for ConfigTier::Custom must start with the \
+                 label `custom`; rendered = {rendered:?}"
+            );
+            assert!(
+                rendered.starts_with(tier.as_str()),
+                "Display for ConfigTier::Custom must start with the \
+                 same label as_str returns ({label:?}); rendered = \
+                 {rendered:?}",
+                label = tier.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_display_of_custom_matches_parenthesized_path_form() {
+        // Pin the exact parenthesized-detail shape on the `Custom`
+        // arm: `format!("{}", ConfigTier::Custom(p)) == format!("custom
+        // ({})", p.display())` for every `PathBuf`. Mirrors the
+        // parenthesized-detail idiom `Provenance::Display` uses on the
+        // sealed `(tier, source)` primitive.
+        for raw in ["/a", "/etc/app.yaml", "./relative.toml", "/"] {
+            let path = std::path::PathBuf::from(raw);
+            let tier = ConfigTier::Custom(path.clone());
+            assert_eq!(
+                tier.to_string(),
+                format!("custom ({})", path.display()),
+                "Display for ConfigTier::Custom must equal the \
+                 parenthesized-detail form `custom ({})`",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_display_writes_to_arbitrary_fmt_write_sink() {
+        // Pin sink-independence: the trait impl writes to any
+        // `std::fmt::Write` destination without materializing an
+        // intermediate `String`. Writing through `write!` on a fresh
+        // `String` sink projects to the same bytes `to_string()` does
+        // (which itself routes through Display), across every variant.
+        use std::fmt::Write;
+        for tier in [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+        ] {
+            let mut sink = String::new();
+            write!(&mut sink, "{tier}").unwrap();
+            assert_eq!(
+                sink,
+                tier.to_string(),
+                "Display for ConfigTier ({tier:?}) must write the same \
+                 bytes to an arbitrary `fmt::Write` sink that \
+                 `to_string()` produces"
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_display_never_emits_a_trailing_newline() {
+        // Pin the no-trailing-newline discipline: the tier primitive
+        // is a value-altitude render (like `Provenance`), not a
+        // container-altitude render (like `ConfigDiff`) — the caller
+        // owns any line delimiter. A future edit that appended a
+        // `'\n'` to any arm would fail this pin.
+        for tier in [
+            ConfigTier::Bare,
+            ConfigTier::Discovered,
+            ConfigTier::Default,
+            ConfigTier::Custom(std::path::PathBuf::from("/x.yaml")),
+            ConfigTier::Custom(std::path::PathBuf::from("")),
+        ] {
+            let rendered = tier.to_string();
+            assert!(
+                !rendered.ends_with('\n'),
+                "Display for ConfigTier ({tier:?}) must not emit a \
+                 trailing newline; rendered = {rendered:?}"
+            );
+        }
     }
 
     #[test]
