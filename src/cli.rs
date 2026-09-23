@@ -814,6 +814,129 @@ impl OutputFormat {
         }
     }
 
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every canonical lowercase
+    /// label — the exact two-cell codomain [`Self::as_str`] emits — and
+    /// [`None`] for any other `&str`.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `"yaml"` → [`Some`]`(`[`Self::Yaml`]`)`
+    /// - `"json"` → [`Some`]`(`[`Self::Json`]`)`
+    /// - `_`      → [`None`]
+    ///
+    /// **First landing of the const-fn label-inverse peer idiom on a
+    /// [`cli`]-scoped primitive.** Sibling of [`Self::from_ordinal`] and
+    /// [`crate::tiered::DiffLineKind::from_glyph`] (commit `46ae79f`)
+    /// one scalar altitude over on the same closed-inverse discipline:
+    /// the (`as_str`, `from_str`) pair inverts the scalar-[`&'static
+    /// str`] projection [`Self::as_str`] on the same closed two-cell
+    /// surface the (`ordinal`, `from_ordinal`) pair inverts the
+    /// scalar-[`usize`] projection [`Self::ordinal`]. With this landing
+    /// the [`OutputFormat`] closed-binary primitive carries the round-
+    /// trip pair on BOTH closed scalar surfaces simultaneously — the
+    /// scalar-`usize` ordinal surface AND the scalar-`&'static str`
+    /// label surface — matching the round-trip closure the sibling
+    /// [`crate::tiered::DiffLineKind`] primitive already carries on
+    /// three surfaces (ordinal / label / glyph). Peer of
+    /// [`crate::tiered::ConfigTierKind::from_str`] on the sibling
+    /// tier-kind axis one primitive over (which delegates through the
+    /// [`crate::ClosedAxisLabel`] trait's case-insensitive
+    /// `from_canonical_str`); this inherent instead matches on the
+    /// exact canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the two-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch.
+    ///
+    /// The `&str` codomain of [`Self::as_str`] is unbounded on its own
+    /// (any [`&str`] may reach the seam), while the [`OutputFormat`]
+    /// variant surface is closed at cardinality-2 today; the inverse
+    /// therefore returns [`Option<Self>`] rather than a total `Self`,
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] rather than a fabricated variant a consumer could
+    /// route on.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// lowercase spellings [`Self::as_str`] emits, matching the
+    /// discipline of every other const-fn scalar inverse on the crate
+    /// (`from_ordinal` / `from_glyph`), and the byte-for-byte
+    /// agreement with the clap-side `ValueEnum::from_str` canonical
+    /// name that [`tests::output_format_as_str_matches_clap_value_enum_canonical`]
+    /// pins one seam over. A consumer wanting case-insensitive parsing
+    /// (an operator-typed `--format YAML` at a CLI, a mixed-case tag
+    /// in a Markdown-rendered emitter reference) lowercases at their
+    /// own site or reaches for clap's [`clap::ValueEnum::from_str`]
+    /// with `ignore_case: true` — the same discipline the sibling
+    /// scalar inverses hold (both reject non-canonical inputs
+    /// structurally).
+    ///
+    /// **Round-trip law** —
+    /// `OutputFormat::from_str(v.as_str()) == Some(v)` for every
+    /// `v: OutputFormat`. Composes with [`Self::as_str`] on the same
+    /// two-cell label table both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::output_format_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `OutputFormat::from_str(s) == None` for every `s` outside the
+    /// canonical two-cell set `{"yaml", "json"}`. The closed match's
+    /// `_` arm forwards the off-surface case to [`None`] structurally;
+    /// the guard degrades gracefully on a caller passing a stale
+    /// wire-format label from a version-skewed peer, a mixed-case
+    /// operator-typed CLI argument that never went through clap's
+    /// `ignore_case` lowering, the empty string, or a hypothetical
+    /// third-variant label a future extension would introduce. Pinned
+    /// by [`tests::output_format_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and
+    /// of [`Self::from_ordinal`] on the sibling scalar-surface
+    /// inverse. Consumers wanting a compile-time-selected label-keyed
+    /// dispatch (a `const` per-emission renderer bound at compile time
+    /// via a static label lookup, a `const [OutputFormat; 2]` variant
+    /// array recovered from a `const &[&str; 2]` canonical-label list,
+    /// a per-emission retry-budget slot in a `const` initializer
+    /// keyed by canonical label) route through the projection under
+    /// `const` without dropping through a runtime `let` binding.
+    /// Pinned by [`tests::output_format_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::as_str`] pointwise** —
+    /// `OutputFormat::from_str(v.as_str()) == Some(v)` for every
+    /// `v: OutputFormat`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same two-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::output_format_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Consumers** — a `config-show` attestation payload emitting
+    /// the operator's selected emission format as its canonical
+    /// `&'static str` tag at wire time (a Markdown-fenced emitter
+    /// reference re-hydrating the typed variant from a rendered label,
+    /// a per-emission attestation-manifest verifier recovering a
+    /// `Vec<OutputFormat>` from a JSON string list of canonical
+    /// labels, a per-emission renderer normaliser classifying an
+    /// operator-typed patch-mode selector by its canonical spelling)
+    /// recovers the typed variant on the reader side without a hand-
+    /// rolled `match s { "yaml" => …, "json" => …, _ => panic!() }`
+    /// ladder that would drift silently as a hypothetical third
+    /// emitter variant (a `Toml` class the primitive's own doc-
+    /// comment already anticipates as a deliberate narrowing today)
+    /// lands. The closed match here degrades cleanly to [`None`] on
+    /// off-surface input, so a version-skewed peer emitting an
+    /// unrecognised label reads as an unknown rather than a runtime
+    /// panic.
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"yaml" => Some(Self::Yaml),
+            b"json" => Some(Self::Json),
+            _ => None,
+        }
+    }
+
     /// The single YAML [`OutputFormat`] variant — [`Self::Yaml`] — in
     /// the SAME relative declaration order it occupies in
     /// [`Self::ALL`], forming one pole of the (yaml × json) closed-
@@ -2889,6 +3012,150 @@ mod tests {
                 fmt.as_str(),
                 pv.get_name(),
                 "OutputFormat::{fmt:?}: as_str() must match clap ValueEnum canonical name",
+            );
+        }
+    }
+
+    // ─── OutputFormat::from_str — const-fn label-inverse peer on the
+    // ─── CLI operator-facing emission-format tag ───────────────────
+
+    #[test]
+    fn output_format_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `OutputFormat::from_str(v.as_str()) == Some(v)` for every
+        // variant. The forward `as_str` and the inverse `from_str`
+        // match on the same closed two-cell label table — `Yaml` →
+        // `"yaml"`, `Json` → `"json"` — so the composition is the
+        // identity on the variant surface by construction. Direct
+        // methodological peer of
+        // `output_format_from_ordinal_round_trips_via_ordinal` on the
+        // sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_round_trips_via_glyph` on the
+        // sibling scalar-char inverse over the same closed-inverse
+        // discipline, one primitive over.
+        for &fmt in OutputFormat::ALL {
+            assert_eq!(
+                OutputFormat::from_str(fmt.as_str()),
+                Some(fmt),
+                "from_str must round-trip via as_str for {fmt:?}",
+            );
+        }
+
+        // Concrete-label pin — the two `(label, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `as_str`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(OutputFormat::from_str("yaml"), Some(OutputFormat::Yaml));
+        assert_eq!(OutputFormat::from_str("json"), Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn output_format_from_str_rejects_non_canonical() {
+        // Non-canonical rejection:
+        // `OutputFormat::from_str(s) == None` for every `s` outside the
+        // canonical two-cell set `{"yaml", "json"}`. The closed match's
+        // `_` arm forwards the off-surface case to `None` structurally;
+        // the guard degrades gracefully on a caller passing a mixed-case
+        // spelling that never went through clap's `ignore_case` lowering,
+        // the empty string, a stale wire-format label from a version-
+        // skewed peer, or a hypothetical third-variant label a future
+        // extension would introduce. Direct methodological peer of
+        // `output_format_from_ordinal_rejects_out_of_range` on the
+        // sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_rejects_non_canonical` on the
+        // sibling scalar-char inverse.
+        //
+        // The mixed-case sweep is load-bearing: the const-fn inverse
+        // is deliberately case-sensitive (matching the discipline every
+        // other const-fn scalar inverse on the crate holds), so a
+        // caller wanting case-insensitive parsing lowercases at their
+        // own site or reaches for clap's `ValueEnum::from_str` with
+        // `ignore_case: true`. This test pins the case-sensitive shape.
+        for non_canonical in [
+            "", " ", "YAML", "Yaml", "yAmL", "JSON", "Json", "jSoN", "yaml ", " yaml", "yaml\n",
+            "toml", "xml", "yamljson", "y", "j", "null",
+        ] {
+            assert_eq!(
+                OutputFormat::from_str(non_canonical),
+                None,
+                "from_str must reject non-canonical label {non_canonical:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_from_str_is_const_callable() {
+        // Compile-time weld: the (label → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl OutputFormat` block (`is_yaml`, `is_json`, `ordinal`,
+        // `as_str`, `from_ordinal`, all `pub const fn`) and every peer
+        // slice constant (`ALL`, `YAML`, `JSON`, all
+        // `pub const &'static [Self]`). A drop of the `const` qualifier
+        // on `OutputFormat::from_str` fails this test to compile at one
+        // of the three const bindings below before the drift can reach
+        // downstream const-context consumers. Idiom-peer of
+        // `output_format_from_ordinal_is_const_callable` on the sibling
+        // scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_is_const_callable` on the sibling
+        // scalar-char inverse.
+        const YAML: Option<OutputFormat> = OutputFormat::from_str("yaml");
+        const JSON: Option<OutputFormat> = OutputFormat::from_str("json");
+        const NONE: Option<OutputFormat> = OutputFormat::from_str("toml");
+
+        assert_eq!(YAML, Some(OutputFormat::Yaml));
+        assert_eq!(JSON, Some(OutputFormat::Json));
+        assert_eq!(NONE, None);
+    }
+
+    #[test]
+    fn output_format_from_str_agrees_with_as_str_pointwise() {
+        // Independent-witness pin cross-checking the const-fn label
+        // inverse against the forward `OutputFormat::as_str` label
+        // table on every variant — `OutputFormat::from_str(v.as_str())
+        // == Some(v)` for every `v: OutputFormat`. The inherent match
+        // and the forward `as_str` match carry the same two-cell label
+        // mapping; a future edit that shifted one without the other
+        // fails here on the first drifted variant, before the
+        // round-trip pin masks it under composition. Direct
+        // methodological peer of
+        // `output_format_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling scalar-usize inverse.
+        for &fmt in OutputFormat::ALL {
+            assert_eq!(
+                OutputFormat::from_str(fmt.as_str()),
+                Some(fmt),
+                "from_str must agree with as_str for {fmt:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_from_str_agrees_with_clap_value_enum_canonical() {
+        // Cross-cut pin between the inherent `OutputFormat::from_str`
+        // canonical-label inverse and the clap-side `ValueEnum`
+        // canonical name (`PossibleValue::get_name()`) that
+        // operator-typed `--format <value>` command lines match against
+        // at the CLI seam. Both seams accept the same canonical
+        // lowercase spellings (`"yaml"` / `"json"`); a future edit that
+        // diverged either seam without updating the other would break
+        // the operator-facing round-trip — an operator-typed
+        // `--format yaml` at the clap seam and a subsequent
+        // `OutputFormat::from_str("yaml")` at a downstream verifier
+        // would disagree on the same input — and this pin fires
+        // before that drift can land. Peer of
+        // `output_format_as_str_matches_clap_value_enum_canonical` on
+        // the forward-side label seam over the same primitive.
+        for &fmt in OutputFormat::ALL {
+            let pv = <OutputFormat as clap::ValueEnum>::to_possible_value(&fmt)
+                .expect("every OutputFormat variant has a clap PossibleValue");
+            assert_eq!(
+                OutputFormat::from_str(pv.get_name()),
+                Some(fmt),
+                "OutputFormat::from_str({:?}) must recover {fmt:?}",
+                pv.get_name(),
             );
         }
     }
