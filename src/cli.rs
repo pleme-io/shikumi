@@ -659,6 +659,70 @@ impl OutputFormat {
         }
     }
 
+    /// Canonical operator-facing lowercase name of this emission format
+    /// — `"yaml"` for [`Self::Yaml`], `"json"` for [`Self::Json`].
+    ///
+    /// The single source of truth for the emission-format-label strings
+    /// on the [`OutputFormat`] axis at the CLI operator-facing surface.
+    /// [`std::fmt::Display`] delegates here so the canonical name lives
+    /// at one site instead of being re-stated in the trait impl; a
+    /// consumer routing a `--format` echo through a startup log line
+    /// ("emitted as yaml"), a telemetry counter keyed on the operator's
+    /// emission selection, a documentation renderer covering every
+    /// `<APP> config-show --format` value, or a shell-completion helper
+    /// listing the allowed values reaches the canonical label through
+    /// this const-fn seam without spelling `format!("{:?}", fmt)`
+    /// (which would leak the debug-side variant tag `"Yaml"` /
+    /// `"Json"` — cased differently) at every site.
+    ///
+    /// The lowercase spelling matches what clap's derived
+    /// [`clap::ValueEnum`] impl expects at operator-typed `--format`
+    /// values (clap default-lowercases variant names), so an echo of
+    /// the resolved `self.format.as_str()` back to the operator reads
+    /// as the same token they typed. Byte-for-byte agreement with the
+    /// clap-side canonical spelling is pinned by
+    /// [`tests::output_format_as_str_matches_clap_value_enum_canonical`].
+    ///
+    /// Idiom-peer of [`crate::discovery::Format::as_str`] on the shikumi
+    /// config-file-format axis one altitude down (which returns
+    /// `"yaml"`, `"toml"`, `"lisp"`, `"nix"`, `"b"` — same lowercase-
+    /// canonical convention, shifted by the alias split on the parser
+    /// axis), and of [`crate::tiered::ConfigTier::as_str`] on the
+    /// operator-facing tier tag (which returns `"bare"`, `"discovered"`,
+    /// `"default"`, `"custom"`). First landing of the `as_str`-projection
+    /// idiom on the CLI operator-facing emission-format axis, promoting
+    /// the closed-binary [`OutputFormat`] primitive onto the label-
+    /// altitude that already carries its sibling boolean predicates
+    /// ([`Self::is_yaml`] / [`Self::is_json`]), scalar ordinal
+    /// ([`Self::ordinal`]), and slice constants ([`Self::YAML`] /
+    /// [`Self::JSON`]).
+    ///
+    /// A future third emitter variant (e.g. a hypothetical `Toml` class
+    /// the primitive's own doc-comment already anticipates as a
+    /// deliberate narrowing today) lands here as a third arm returning
+    /// its own canonical lowercase label in lockstep with an
+    /// [`Self::ALL`] extension; the [`Self::Display`]-agreement pin
+    /// refuses a silent landing where the two seams disagree.
+    ///
+    /// The three agreement laws are pinned by:
+    /// - [`tests::output_format_as_str_reuses_declaration_order`] —
+    ///   concrete-label pin (`Yaml` → `"yaml"`, `Json` → `"json"`).
+    /// - [`tests::output_format_as_str_is_const_callable`] — const-
+    ///   context weld matching every peer `pub const fn` on the
+    ///   `impl OutputFormat` block.
+    /// - [`tests::output_format_display_matches_as_str`] — pointwise
+    ///   [`std::fmt::Display`]-agreement across every variant, closing
+    ///   the standard-idiom seam on the same label table.
+    ///
+    /// [`Self::Display`]: std::fmt::Display
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Yaml => "yaml",
+            Self::Json => "json",
+        }
+    }
+
     /// The single YAML [`OutputFormat`] variant — [`Self::Yaml`] — in
     /// the SAME relative declaration order it occupies in
     /// [`Self::ALL`], forming one pole of the (yaml × json) closed-
@@ -747,6 +811,50 @@ impl OutputFormat {
     /// [`Self::is_yaml`]), and the load-bearing agreement and
     /// partition pins.
     pub const JSON: &'static [Self] = &[Self::Json];
+}
+
+/// Canonical operator-facing rendering of the emission format the
+/// operator asked for — the two-variant lowercase label from
+/// [`OutputFormat::as_str`] routed through the standard-library
+/// `{}`-formatter seam.
+///
+/// Consumers routing an emission-format render through
+/// `format!("{format}")`, `write!` against any [`std::fmt::Write`] sink,
+/// a `println!("{format}")` at a CLI, a `tracing::info!(%format,
+/// "emitted config")` structured-log emit, or a `thiserror`
+/// `#[error("... {0}")]` inline-format shorthand on an [`OutputFormat`]
+/// payload — no longer reach for `format!("{fmt:?}").to_lowercase()`
+/// (which pays an allocation and a re-lowercasing tax at every consumer
+/// site, and drifts if a future variant tag happens to differ from its
+/// clap canonical spelling by more than case) to render the operator's
+/// chosen emission format alongside other structured-log fields.
+///
+/// # Invariants
+///
+/// - `format!("{fmt}") == fmt.as_str()` for every [`OutputFormat`] —
+///   the trait impl delegates to the same `&'static str` label table
+///   that [`OutputFormat::as_str`] projects to, so the standard idiom
+///   and the const-fn accessor agree byte-for-byte on every variant.
+/// - No heap allocation beyond what the caller's destination formatter
+///   allocates; the fmt impl writes one `&'static str` from the
+///   [`OutputFormat::as_str`] literal table with no intermediate
+///   materialization.
+///
+/// **Idiom-peer** of [`crate::tiered::ConfigTier`]'s [`std::fmt::Display`]
+/// impl one primitive over on the operator-facing tier tag (which routes
+/// its payload-free arms through the same [`Self::as_str`]-delegating
+/// idiom), of [`crate::discovery::Format`]'s macro-generated Display
+/// (via [`crate::closed_axis_label_string_surface!`]) on the shikumi
+/// parser primitive one altitude down, and of the closed-image cohort
+/// carrying the standard `Display` idiom crate-wide. First landing of
+/// the standard-idiom [`std::fmt::Display`] seam on a [`cli`]-scoped
+/// primitive, promoting the closed-binary [`OutputFormat`] onto the
+/// standard-library `{}`-formatter altitude that already carries its
+/// sibling `as_str` label projection.
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// The clap subcommand every TieredConfig consumer pulls in.
@@ -2488,6 +2596,169 @@ mod tests {
         // const-context weld was forgotten upstream.
         for (fmt, expected) in [(OutputFormat::Yaml, YAML), (OutputFormat::Json, JSON)] {
             assert_eq!(fmt.ordinal(), expected, "emission {fmt:?}");
+        }
+    }
+
+    // ─── OutputFormat::as_str — const-fn label projection on the
+    // ─── CLI operator-facing emission-format tag ───────────────────
+
+    #[test]
+    fn output_format_as_str_reuses_declaration_order() {
+        // Concrete-label pin: the inherent match delivers the two
+        // canonical lowercase labels verbatim, in strictly ascending
+        // declaration order (Yaml → "yaml", Json → "json"). A future
+        // edit that shifted either arm's returned literal fails here
+        // first. Idiom-peer of
+        // `format_provenance_as_str_reuses_declaration_order` on the
+        // sibling two-cell provenance axis one crate module over.
+        assert_eq!(OutputFormat::Yaml.as_str(), "yaml");
+        assert_eq!(OutputFormat::Json.as_str(), "json");
+
+        // Second independent witness: every variant's label under
+        // iteration through `OutputFormat::ALL` matches the closed
+        // list of expected labels in lockstep declaration order. A
+        // future edit that shifts an arm's label without shifting the
+        // expected-table entry in lockstep fails here on the first
+        // drifted variant.
+        let expected: &[(OutputFormat, &str)] =
+            &[(OutputFormat::Yaml, "yaml"), (OutputFormat::Json, "json")];
+        assert_eq!(expected.len(), OutputFormat::ALL.len());
+        for (&(fmt, label), &all_fmt) in expected.iter().zip(OutputFormat::ALL.iter()) {
+            assert_eq!(fmt, all_fmt);
+            assert_eq!(fmt.as_str(), label);
+        }
+    }
+
+    #[test]
+    fn output_format_as_str_is_const_callable() {
+        // Compile-time weld: the (fmt → &'static str) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl OutputFormat` block (`is_yaml`, `is_json`, `ordinal`,
+        // all `pub const fn`) and every peer slice constant
+        // (`ALL`, `YAML`, `JSON`, all `pub const &'static [Self]`). A
+        // drop of the `const` qualifier on `OutputFormat::as_str`
+        // fails this test to compile at one of the two const bindings
+        // below before the drift can reach downstream const-context
+        // consumers.
+        //
+        // Two `const` bindings — one per `OutputFormat` variant —
+        // route each variant through the const-fn projection in const
+        // position. The moment `OutputFormat::as_str` loses its
+        // const-ness one of the two `const` welds below fails to
+        // compile at THAT line before any downstream drift. Idiom-peer
+        // of `output_format_ordinal_is_const_callable` on the sibling
+        // const-fn scalar-ordinal seam over the same primitive.
+        const YAML: &str = OutputFormat::Yaml.as_str();
+        const JSON: &str = OutputFormat::Json.as_str();
+
+        assert_eq!(YAML, "yaml");
+        assert_eq!(JSON, "json");
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `OutputFormat::ALL` to the runtime-side
+        // `fmt.as_str()` call — the const-context weld only exercises
+        // the two variants named at const-binding sites, but the
+        // runtime pin threads the full closed list through the same
+        // projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (fmt, expected) in [(OutputFormat::Yaml, YAML), (OutputFormat::Json, JSON)] {
+            assert_eq!(fmt.as_str(), expected, "emission {fmt:?}");
+        }
+    }
+
+    #[test]
+    fn output_format_as_str_matches_clap_value_enum_canonical() {
+        // Cross-cut pin between the inherent `OutputFormat::as_str`
+        // label table and the clap-side `ValueEnum` canonical name
+        // that operator-typed `--format <value>` command lines match
+        // against. clap default-lowercases variant names for its
+        // `PossibleValue`, so `Yaml → "yaml"` / `Json → "json"` at
+        // the CLI seam; the inherent label table returns the same
+        // spellings. A future edit that diverged either seam without
+        // updating the other would break the operator-facing round-
+        // trip — an echo of `--format {fmt}` back to the operator via
+        // the inherent seam would print a token the operator's
+        // command line could no longer parse — and this pin fires
+        // before that drift can land.
+        for &fmt in OutputFormat::ALL {
+            let pv = <OutputFormat as clap::ValueEnum>::to_possible_value(&fmt)
+                .expect("every OutputFormat variant has a clap PossibleValue");
+            assert_eq!(
+                fmt.as_str(),
+                pv.get_name(),
+                "OutputFormat::{fmt:?}: as_str() must match clap ValueEnum canonical name",
+            );
+        }
+    }
+
+    // ─── OutputFormat Display — standard `{}`-formatter seam on the
+    // ─── CLI operator-facing emission-format tag ───────────────────
+
+    #[test]
+    fn output_format_display_matches_as_str() {
+        // Pointwise `format!("{fmt}") == fmt.as_str()` agreement across
+        // every variant — the `Display` impl delegates to the same
+        // `&'static str` label table `as_str` projects to, so the
+        // standard-library `{}`-formatter idiom and the const-fn
+        // accessor agree byte-for-byte on every arm. A future edit
+        // that regressed the `Display` impl (e.g. writing the
+        // debug-tag "Yaml" instead of the canonical lowercase "yaml",
+        // or wrapping the label in quotes) fails here first. Idiom-
+        // peer of `config_tier_display_canonical_forms_on_payload_free_variants`
+        // on the sibling operator-facing tier tag.
+        for &fmt in OutputFormat::ALL {
+            assert_eq!(
+                format!("{fmt}"),
+                fmt.as_str(),
+                "Display must delegate to as_str for {fmt:?}",
+            );
+        }
+
+        // Concrete-label pin: the two variants' Display renders match
+        // the canonical lowercase labels verbatim.
+        assert_eq!(format!("{}", OutputFormat::Yaml), "yaml");
+        assert_eq!(format!("{}", OutputFormat::Json), "json");
+    }
+
+    #[test]
+    fn output_format_display_writes_to_arbitrary_fmt_write_sink_verbatim() {
+        // Sink-independence pin: writing through `write!` to any
+        // `std::fmt::Write` destination projects to the same bytes
+        // `to_string()` produces, across every variant. A future edit
+        // that made the Display impl reach past the passed formatter
+        // (materializing a heap `String` on the side, buffering, or
+        // otherwise diverging its byte output from the `to_string`
+        // shorthand) fails here first. Idiom-peer of
+        // `display_of_config_diff_writes_to_arbitrary_fmt_write_sink_verbatim`
+        // on the sibling `ConfigDiff` surface.
+        use std::fmt::Write as _;
+        for &fmt in OutputFormat::ALL {
+            let mut buf = String::new();
+            write!(&mut buf, "{fmt}").expect("write! into String never fails");
+            assert_eq!(
+                buf,
+                fmt.to_string(),
+                "write! sink must match to_string() for {fmt:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn output_format_display_has_no_trailing_newline() {
+        // No-trailing-newline discipline pin: the `Display` impl is a
+        // value-altitude render, not a container-altitude one — a
+        // caller composing multiple emission-format labels into a
+        // structured-log line or a shell-completion listing owns line
+        // delimiters at their own altitude, not this one. Idiom-peer
+        // of `display_of_diff_line_has_no_trailing_newline` on the
+        // sibling `DiffLine` value-altitude render.
+        for &fmt in OutputFormat::ALL {
+            let rendered = fmt.to_string();
+            assert!(
+                !rendered.ends_with('\n'),
+                "Display for {fmt:?} must not append a trailing newline; got {rendered:?}",
+            );
         }
     }
 
