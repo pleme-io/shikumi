@@ -658,6 +658,109 @@ impl Format {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..5` — the exact
+    /// five-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Yaml`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Toml`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Lisp`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Nix`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Blue`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Peer to [`Self::as_str`] one axis over: the (`ordinal`,
+    /// `from_ordinal`) pair inverts the scalar-`usize` projection
+    /// [`Self::ordinal`] on the same closed five-cell surface the
+    /// (`as_str`, canonical-label matcher) pair traverses the scalar-
+    /// `&'static str` projection. Neither projection is total on the
+    /// codomain — the ordinal surface admits `usize` values `>= 5`, the
+    /// string surface admits non-canonical labels — so the invertor
+    /// returns [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than
+    /// a fabricated variant.
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the file-format axis: [`crate::source::FigmentSourceKind::from_ordinal`]
+    /// (commit `0d979fa`) carries it on the figment-Source-axis kind,
+    /// [`crate::source::FigmentNameTagKind::from_ordinal`] (commit
+    /// `6b8dccf`) on the figment-Name-axis kind,
+    /// [`crate::source::EnvMetadataTagKind::from_ordinal`] (commit
+    /// `72c523a`) on the env-name sub-axis kind,
+    /// [`crate::source::ConfigSourceKind::from_ordinal`] on the
+    /// shikumi-side layer-kind axis, [`crate::tiered::DiffLineKind::from_ordinal`]
+    /// (commit `7a047c9`) on the diff-cell kind axis, and
+    /// [`crate::cli::OutputFormat::from_ordinal`] (commit `9ba426f`)
+    /// on the CLI-side emission-format axis. Same closed-match shape,
+    /// same [`Option<Self>`] return, same `const`-callability contract,
+    /// applied here to the five-cell file-format axis.
+    ///
+    /// Load-bearing for a future
+    /// [`FormatCoordinates::from_ordinal`] landing on the sibling
+    /// product-cube [`FormatCoordinates`]: the algebraic two-axis
+    /// inversion `AttributionSourceKindCoordinates::from_ordinal`
+    /// (commit `e0b1e1e`) already ships composes the sibling axis
+    /// `from_ordinal`s via integer-division / remainder on the inner-
+    /// axis cardinality; without a `Format::from_ordinal` on one leg
+    /// of the (`Format × FormatProvenance`) cube, the cube-side
+    /// inversion cannot be spelled `const` and cannot degrade
+    /// gracefully on out-of-range cells. This landing carries the
+    /// outer-axis half of that construction.
+    ///
+    /// **Round-trip law** —
+    /// `Format::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: Format`. Composes with [`Self::ordinal`] on the same five-
+    /// cell declaration order both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::format_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `Format::from_ordinal(o) == None` for every `o >= 5`. The
+    /// closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format ordinal from a version-
+    /// skewed peer (a hypothetical `Cue` sixth kind in lockstep with a
+    /// future `Format::Cue`) or an operator-typed CLI argument routed
+    /// through [`str::parse::<usize>`][str::parse] without a bounds
+    /// check — the caller reads the unknown as a typed `None` rather
+    /// than a fabricated variant. Pinned by
+    /// [`tests::format_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] / [`Self::provenance`] / [`Self::extensions`]
+    /// on the sibling scalar surfaces. Consumers wanting a compile-
+    /// time-selected ordinal-keyed dispatch (a `const [Format; 5]`
+    /// variant array indexed by ordinal, a `const` per-format label
+    /// built by pairing `Self::from_ordinal(o).unwrap().as_str()` at
+    /// const-eval time, a per-format attestation-manifest slot in a
+    /// `const` initializer keyed by ordinal) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::format_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with `Self::ALL` at every index** —
+    /// `Format::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < 5`. The inherent match and the [`Self::ALL`] slice literal
+    /// carry the same declaration order (`Yaml → Toml → Lisp → Nix →
+    /// Blue`) — so a future edit shifting one without the other fails
+    /// at test time on the first drifted position. Pinned by
+    /// [`tests::format_from_ordinal_agrees_with_all_index_pointwise`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Yaml),
+            1 => Some(Self::Toml),
+            2 => Some(Self::Lisp),
+            3 => Some(Self::Nix),
+            4 => Some(Self::Blue),
+            _ => None,
+        }
+    }
+
     /// Operator-facing English message stating this format's top-level
     /// dict-required contract — the prefix the shikumi-built providers
     /// (`crate::LispProvider`, `crate::NixProvider`) emit when a parsed
@@ -7182,6 +7285,139 @@ mod tests {
         ] {
             assert_eq!(format.ordinal(), expected, "format {format:?}");
         }
+    }
+
+    #[test]
+    fn format_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `Format::from_ordinal(v.ordinal()) == Some(v)`
+        // for every v: Format. The forward-map `ordinal` and the inverse-
+        // map `from_ordinal` share the SAME closed five-cell declaration
+        // order (`Format::ALL`, `Yaml → Toml → Lisp → Nix → Blue`); the
+        // law holds by construction. Sibling of
+        // `figment_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the figment-Source-axis kind (commit `0d979fa`),
+        // `figment_name_tag_kind_from_ordinal_round_trips_via_ordinal` on
+        // the figment-Name-axis kind (commit `6b8dccf`),
+        // `env_metadata_tag_kind_from_ordinal_round_trips_via_ordinal` on
+        // the env-name sub-axis kind (commit `72c523a`), and
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the shikumi-side layer-kind axis.
+        for &format in Format::ALL {
+            let ordinal = format.ordinal();
+            let recovered = Format::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(format),
+                "round-trip failed for {format:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn format_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: `ordinal >= 5` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally via
+        // the closed match's `_` arm. Guards against a stale wire-format
+        // ordinal from a version-skewed peer (a hypothetical `Cue` sixth
+        // kind in lockstep with a future `Format::Cue`) or an operator-
+        // typed CLI argument routed through `str::parse::<usize>` without
+        // a bounds check — the caller reads the unknown as a typed `None`
+        // rather than a fabricated variant. Sibling of
+        // `figment_source_kind_from_ordinal_rejects_out_of_range` on the
+        // figment-Source-axis kind.
+        assert_eq!(Format::from_ordinal(5), None);
+        assert_eq!(Format::from_ordinal(6), None);
+        assert_eq!(Format::from_ordinal(42), None);
+        assert_eq!(Format::from_ordinal(usize::MAX), None);
+    }
+
+    #[test]
+    fn format_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(Format::ALL[i])` for every i in 0..5 —
+        // the inverse of `ordinal` agrees with the same `Self::ALL` slice
+        // literal `ordinal` matches against. A future edit shifting one
+        // match without the other fails here on the first drifted index.
+        // Sibling of
+        // `figment_source_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the figment-Source-axis kind.
+        for (index, &expected) in Format::ALL.iter().enumerate() {
+            assert_eq!(
+                Format::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with Format::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (5) the projection returns None at
+        // every offset. Pin the immediate boundary to catch a future
+        // off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            Format::from_ordinal(Format::ALL.len()),
+            None,
+            "ordinal equal to Format::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn format_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent const-fn `Format::from_ordinal`
+        // and the trait-uniform free-function projection
+        // `crate::axis_at::<Format>` are two spellings of the same closed-
+        // axis position → variant lookup; pin them pointwise across every
+        // in-range and out-of-range ordinal so a future edit to either
+        // the inherent match or the `Format::ALL` declaration order
+        // cannot silently drift them apart. The inherent seam ships
+        // const-callability that `axis_at` does not (it delegates to a
+        // runtime `Self::ALL.get(o).copied()` under a `ClosedAxis` trait
+        // bound); this test guards the equal-answer contract that keeps
+        // the two seams substitutable. Sweeps
+        // `[0, Format::ALL.len() + 32)` plus `usize::MAX` as the
+        // arithmetic extreme — verifies the closed match's `_` arm
+        // agrees with the `axis_at` `None` on every out-of-range index
+        // the projection can plausibly receive.
+        for ordinal in 0..(Format::ALL.len() + 32) {
+            assert_eq!(
+                Format::from_ordinal(ordinal),
+                crate::axis_at::<Format>(ordinal),
+                "from_ordinal must agree with axis_at at ordinal={ordinal}",
+            );
+        }
+        assert_eq!(
+            Format::from_ordinal(usize::MAX),
+            crate::axis_at::<Format>(usize::MAX),
+            "from_ordinal must agree with axis_at at usize::MAX",
+        );
+    }
+
+    #[test]
+    fn format_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `Format::ordinal` and the sibling `Format::as_str` /
+        // `Format::provenance` / `Format::extensions`. A drop of the
+        // `const` qualifier on `Format::from_ordinal` fails this test to
+        // compile.
+        //
+        // Six `const` bindings — five in-range plus one out-of-range —
+        // route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the six const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection. Sibling of
+        // `figment_source_kind_from_ordinal_is_const_callable` on the
+        // figment-Source-axis kind.
+        const AT_0: Option<Format> = Format::from_ordinal(0);
+        const AT_1: Option<Format> = Format::from_ordinal(1);
+        const AT_2: Option<Format> = Format::from_ordinal(2);
+        const AT_3: Option<Format> = Format::from_ordinal(3);
+        const AT_4: Option<Format> = Format::from_ordinal(4);
+        const AT_5: Option<Format> = Format::from_ordinal(5);
+
+        assert_eq!(AT_0, Some(Format::Yaml));
+        assert_eq!(AT_1, Some(Format::Toml));
+        assert_eq!(AT_2, Some(Format::Lisp));
+        assert_eq!(AT_3, Some(Format::Nix));
+        assert_eq!(AT_4, Some(Format::Blue));
+        assert_eq!(AT_5, None);
     }
 
     #[test]
