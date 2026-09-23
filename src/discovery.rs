@@ -2681,6 +2681,175 @@ impl FormatCoordinates {
     pub const fn ordinal(self) -> usize {
         self.format.ordinal() * FormatProvenance::ALL.len() + self.provenance.ordinal()
     }
+
+    /// Const-callable partial inverse of [`fmt::Display`] on the
+    /// (`format × provenance`) product cube: parses the canonical
+    /// `<format>:<provenance>` scalar cell label into the typed cell it
+    /// names, or [`None`] on any of the three canonical rejection paths
+    /// — no `:` separator, unknown format-half label, or unknown
+    /// provenance-half label.
+    ///
+    /// **Composition of two sibling const-fn label inverses.** Composes
+    /// [`Format::from_str`] (commit `d58463c`, const-fn label inverse on
+    /// the file-format axis) and [`FormatProvenance::from_str`] (commit
+    /// `db16832`, const-fn label inverse on the provenance axis) under a
+    /// leftmost-`:` byte scan. Every construction seam is `const`-stable
+    /// on rustc 1.94.1: the byte-slice loop (`s.as_bytes()`, indexed
+    /// byte compare, [`str::split_at`]), the two sibling const-fn label
+    /// inverses on the sibling axes, and the `Some { format, provenance }`
+    /// constructor. The scalar-string surface finally carries the same
+    /// const-callable-inverse pair shape the scalar-`usize` surface
+    /// already ships via [`Self::ordinal`] + [`Self::from_ordinal`]
+    /// (the ordinal peer would be the natural continuation, but the
+    /// label-surface leg lands first here matching the sibling landing
+    /// order on the outer / inner axes).
+    ///
+    /// **Algebraic two-axis inversion shape.** Direct transposition of
+    /// the same algebraic two-axis inversion shape
+    /// [`crate::AttributionSourceKindCoordinates::from_ordinal`] (commit
+    /// `e0b1e1e`) and
+    /// [`crate::AttributionNameKindCoordinates::from_ordinal`] (commit
+    /// `ac9d3a6`) already ship on their sibling product cubes — decompose
+    /// the scalar into per-axis halves through a structural split, lower
+    /// each half through the sibling axis's const-fn inverse, and
+    /// reassemble on the `(Some, Some)` corner of the resulting pair — but
+    /// applied here to the scalar-`&'static str` surface (leftmost-`:`
+    /// split, per-half label inverse) rather than the scalar-`usize`
+    /// surface (division/modulo against the innermost-axis cardinality,
+    /// per-half ordinal inverse).
+    ///
+    /// **Divergence from the trait-uniform
+    /// [`<Self as FromStr>::from_str`].** The trait impl one seam over
+    /// (see the [`impl FromStr for FormatCoordinates`] block below)
+    /// returns [`Result<Self, ParseFormatCoordinatesError>`] instead of
+    /// [`Option<Self>`], routes each half through the trait-uniform
+    /// [`<Format as FromStr>`] / [`<FormatProvenance as FromStr>`] impls
+    /// (which are neither `const` nor exact-byte on the canonical
+    /// codomain — the format half accepts the alias extensions
+    /// `"yml"` / `"lsp"` / `"el"` via [`Format::from_extension`] and
+    /// both halves lower through the ASCII case-insensitive
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] fallback), and
+    /// preserves the three-arm rejection polarity through the
+    /// [`ParseFormatCoordinatesError`] carrier. This inherent instead
+    /// matches on the exact canonical byte-form the two sibling
+    /// [`Format::as_str`] / [`FormatProvenance::as_str`] projections
+    /// emit — the 10-cell canonical codomain
+    /// `{"yaml", "toml", "lisp", "nix", "b"} × {"figment-builtin",
+    /// "shikumi-built"}` joined by `:` — keeping the projection
+    /// const-callable, keeping the "not on the exact canonical variant
+    /// surface" case a typed [`None`] without allocating an error string,
+    /// and without dragging in the alias-extension or case-insensitive
+    /// branches. Downstream call sites that previously reached the trait
+    /// impl through unqualified `FormatCoordinates::from_str(...)`
+    /// disambiguate through `<FormatCoordinates as FromStr>::from_str(...)`,
+    /// matching the disambiguation the sibling inner-axis landing
+    /// [`FormatProvenance::from_str`] (commit `db16832`) and outer-axis
+    /// landing [`Format::from_str`] (commit `d58463c`) both already
+    /// performed on the two sibling axes.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase / kebab-case spellings the two sibling
+    /// [`Format::as_str`] / [`FormatProvenance::as_str`] projections
+    /// emit, matching the discipline of the two sibling const-fn label
+    /// inverses this method composes. A consumer wanting case-insensitive
+    /// parsing (an operator-typed `--cell YAML:FIGMENT-BUILTIN` at a CLI,
+    /// a mixed-case tag in a Markdown-rendered chain summary) reaches
+    /// for the trait-uniform [`<Self as FromStr>::from_str`] (which
+    /// inherits case-insensitivity from the two sibling trait impls) or
+    /// lowercases at their own site.
+    ///
+    /// **Alias rejection.** The format-half aliases `"yml"`, `"lsp"`, and
+    /// `"el"` that [`Format::from_extension`] accepts (and that the
+    /// trait-uniform [`<Format as FromStr>`] transitively accepts) are
+    /// NOT on the canonical codomain [`Format::as_str`] emits and resolve
+    /// to [`None`] here on the format-half check. A consumer wanting
+    /// alias-extension acceptance on the format half reaches for the
+    /// trait-uniform [`<Self as FromStr>::from_str`]. This inherent is
+    /// the const-callable, canonical-only cell-label inverse; the alias
+    /// algebra lives one seam over on the trait-uniform surface.
+    ///
+    /// **Leftmost-`:` split semantics.** The byte scan splits on the
+    /// leftmost `:` — the same split polarity `str::split_once(':')`
+    /// carries in the trait impl (pinned by
+    /// [`tests::format_coordinates_from_str_uses_leftmost_colon_only`]).
+    /// Any additional `:` characters fall into the provenance half; since
+    /// the canonical provenance labels contain no `:`, such input rejects
+    /// on the provenance-half check.
+    ///
+    /// **Round-trip law** —
+    /// `FormatCoordinates::from_str(c.to_string()) == Some(c)` for every
+    /// `c: FormatCoordinates`. The forward-map [`fmt::Display`] and the
+    /// const-fn inverse-map [`Self::from_str`] share the SAME 10-cell
+    /// canonical codomain (the joined canonical-label pairs). Pinned by
+    /// [`tests::format_coordinates_inherent_from_str_round_trips_via_display`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `FormatCoordinates::from_str(s) == None` for every `s` outside the
+    /// canonical 10-cell set. The three failure paths — missing
+    /// separator, unknown format half, unknown provenance half — all
+    /// collapse to the same [`None`] carrier here; the trait-uniform
+    /// [`<Self as FromStr>::from_str`] surface preserves them as three
+    /// typed [`ParseFormatCoordinatesError`] variants for consumers that
+    /// need the polarity. Pinned by
+    /// [`tests::format_coordinates_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the sibling scalar-usize
+    /// surface, of the two sibling const-fn label inverses it composes,
+    /// and of the const-stable [`str::as_bytes`] / [`str::split_at`] /
+    /// [`slice::len`] seams the byte scan relies on. Consumers wanting a
+    /// compile-time-selected cell-keyed dispatch (a
+    /// `const [FormatCoordinates; 10]` cell array recovered from a
+    /// `const &[&str; 10]` canonical-label list, a per-cell
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding the current
+    /// `<FormatCoordinates as FromStr>::from_str` requires. Pinned by
+    /// [`tests::format_coordinates_inherent_from_str_is_const_callable`].
+    ///
+    /// **Pointwise agreement with [`fmt::Display`]** —
+    /// `FormatCoordinates::from_str(c.to_string()) == Some(c)` for every
+    /// `c: FormatCoordinates::ALL`. The inherent match and the forward
+    /// [`fmt::Display`] rendering both derive their 10-cell label
+    /// table from the two sibling axes' canonical labels; the test below
+    /// pins the pointwise agreement across every cell so a future edit
+    /// that shifts the label on ONE seam without the other fails at test
+    /// time on the first drifted cell. Pinned by
+    /// [`tests::format_coordinates_inherent_from_str_agrees_with_display_pointwise`].
+    ///
+    /// **Agreement with the trait-uniform
+    /// [`<Self as FromStr>::from_str`] on canonical input** — for every
+    /// `c: FormatCoordinates::ALL`,
+    /// `FormatCoordinates::from_str(c.to_string()) ==
+    /// <Self as FromStr>::from_str(&c.to_string()).ok()`. Both seams
+    /// recover the same cell on the 10-cell canonical codomain the
+    /// two [`as_str`] projections emit; they diverge only OFF that
+    /// codomain (the trait method case-insensitive-lowers and accepts
+    /// the format-half aliases, the inherent rejects). Pinned by
+    /// [`tests::format_coordinates_inherent_from_str_agrees_with_from_str_trait_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b':' {
+                let (format_half, rest) = s.split_at(i);
+                let (_, provenance_half) = rest.split_at(1);
+                match (
+                    Format::from_str(format_half),
+                    FormatProvenance::from_str(provenance_half),
+                ) {
+                    (Some(format), Some(provenance)) => {
+                        return Some(Self { format, provenance });
+                    }
+                    _ => return None,
+                }
+            }
+            i += 1;
+        }
+        None
+    }
 }
 
 impl crate::ClosedAxis for Format {
@@ -11991,6 +12160,220 @@ mod tests {
                 assert_eq!(label, "figment-builtin:extra");
             }
             other => panic!("multi-colon input must reject with UnknownProvenance: {other:?}",),
+        }
+    }
+
+    #[test]
+    fn format_coordinates_inherent_from_str_round_trips_via_display() {
+        // Round-trip law: `FormatCoordinates::from_str(c.to_string()) ==
+        // Some(c)` for every c: FormatCoordinates. The forward-map
+        // `fmt::Display` and the const-fn inverse-map inherent `from_str`
+        // share the SAME 10-cell canonical codomain — the joined
+        // canonical-label pairs the two sibling `as_str` projections
+        // emit — so the law holds by construction across the full
+        // 10-cell cube (5 formats × 2 provenances). Sibling of
+        // `format_from_str_round_trips_via_as_str` on the outer format
+        // axis (commit `d58463c`) and
+        // `format_provenance_from_str_round_trips_via_as_str` on the
+        // inner provenance axis (commit `db16832`) — the two sibling
+        // axis-level round-trip laws this cube-level round-trip law
+        // composes.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let rendered = cell.to_string();
+            let recovered = FormatCoordinates::from_str(&rendered);
+            assert_eq!(
+                recovered,
+                Some(cell),
+                "round-trip failed for {cell:?}: to_string={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical 10-cell set (`Format::as_str × FormatProvenance::as_str
+        // joined by ':'`) — the codomain of `fmt::Display` — resolves
+        // to `None` via one of the three internal failure paths
+        // (missing separator, unknown format-half label, unknown
+        // provenance-half label), all of which collapse to `None` at
+        // the inherent surface. Sweeps: (1) missing-separator inputs
+        // (no `:` at all — a bare canonical label like `yaml`, a bare
+        // provenance label like `figment-builtin`, whitespace, empty);
+        // (2) unknown-format-half inputs (mixed-case format halves the
+        // trait-uniform surface accepts through
+        // `<Format as FromStr>` case-insensitivity, the alias
+        // extensions `yml` / `lsp` / `el` the trait-uniform surface
+        // accepts through `Format::from_extension`, near-miss format
+        // labels like `json` / `xml`, sibling-axis labels like
+        // `figment-builtin` misplaced in the format half); (3)
+        // unknown-provenance-half inputs (mixed-case provenance halves,
+        // near-miss provenance labels like `built-in` / `built`,
+        // sibling-axis labels like `yaml` misplaced in the provenance
+        // half). The case-sensitivity discipline matches the two
+        // sibling const-fn label inverses this method composes; callers
+        // wanting case-insensitive parsing or alias acceptance reach
+        // for the trait-uniform `<Self as FromStr>::from_str`.
+        for bad in &[
+            // Missing separator
+            "",
+            "yaml",
+            "figment-builtin",
+            "shikumi-built",
+            "nix",
+            " ",
+            "yaml figment-builtin",
+            "yaml-figment-builtin",
+            // Unknown format-half label
+            "YAML:figment-builtin",
+            "Yaml:figment-builtin",
+            "yAmL:figment-builtin",
+            "yml:figment-builtin",
+            "lsp:shikumi-built",
+            "el:figment-builtin",
+            "json:figment-builtin",
+            "xml:shikumi-built",
+            "figment-builtin:figment-builtin",
+            "shikumi-built:shikumi-built",
+            ":figment-builtin",
+            " yaml:figment-builtin",
+            "yaml :figment-builtin",
+            // Unknown provenance-half label
+            "yaml:FIGMENT-BUILTIN",
+            "yaml:Figment-Builtin",
+            "yaml:SHIKUMI-BUILT",
+            "yaml:built-in",
+            "yaml:built",
+            "yaml:yaml",
+            "yaml:nix",
+            "yaml:",
+            "yaml: figment-builtin",
+            "yaml:figment-builtin ",
+            // Trailing multi-colon garbage (falls into provenance half)
+            "yaml:figment-builtin:extra",
+            "nix:shikumi-built:tail",
+        ] {
+            assert_eq!(
+                FormatCoordinates::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the cell-label → cell inverse is
+        // `const`-callable, matching the `const`-ness of the two
+        // sibling const-fn label inverses it composes
+        // (`Format::from_str`, `FormatProvenance::from_str`), the
+        // const-stable stdlib seams the byte scan relies on
+        // (`str::as_bytes`, `str::split_at`, `slice::len`), and the
+        // sibling scalar-usize surface projection `Self::ordinal`. A
+        // drop of the `const` qualifier on
+        // `FormatCoordinates::from_str` fails this test to compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range —
+        // route the canonical cell labels through the const-fn inverse
+        // in const position. The moment `from_str` loses its const-ness
+        // one of the four const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection. Sibling of
+        // `format_from_str_is_const_callable` on the outer axis and
+        // `format_provenance_from_str_is_const_callable` on the inner
+        // axis.
+        const AT_YAML_FIGMENT: Option<FormatCoordinates> =
+            FormatCoordinates::from_str("yaml:figment-builtin");
+        const AT_NIX_SHIKUMI: Option<FormatCoordinates> =
+            FormatCoordinates::from_str("nix:shikumi-built");
+        const AT_BLUE_SHIKUMI: Option<FormatCoordinates> =
+            FormatCoordinates::from_str("b:shikumi-built");
+        const AT_UNKNOWN: Option<FormatCoordinates> =
+            FormatCoordinates::from_str("yml:figment-builtin");
+
+        assert_eq!(
+            AT_YAML_FIGMENT,
+            Some(FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }),
+        );
+        assert_eq!(
+            AT_NIX_SHIKUMI,
+            Some(FormatCoordinates {
+                format: Format::Nix,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }),
+        );
+        assert_eq!(
+            AT_BLUE_SHIKUMI,
+            Some(FormatCoordinates {
+                format: Format::Blue,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }),
+        );
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn format_coordinates_inherent_from_str_agrees_with_display_pointwise() {
+        // Pointwise agreement: `from_str(c.to_string()) == Some(c)` for
+        // every c in FormatCoordinates::ALL. Both the inherent
+        // `from_str` (composing the two sibling const-fn label
+        // inverses under a leftmost-`:` byte scan) and the forward
+        // `fmt::Display` (rendering the two sibling `as_str`
+        // projections joined by `:`) derive their 10-cell label
+        // table from the same two sibling declarations; a future edit
+        // that shifts the label on ONE seam (say renaming
+        // `Format::Blue`'s canonical label on `as_str` but not
+        // updating the inherent `Format::from_str` match, or vice
+        // versa) fails here on the first drifted cell. Sibling of
+        // `format_from_str_agrees_with_as_str_pointwise` on the outer
+        // axis and
+        // `format_provenance_from_str_agrees_with_as_str_pointwise`
+        // on the inner axis.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let rendered = cell.to_string();
+            assert_eq!(
+                FormatCoordinates::from_str(&rendered),
+                Some(cell),
+                "from_str(Display) must agree pointwise for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_inherent_from_str_agrees_with_from_str_trait_on_canonical_input() {
+        // Cross-seam agreement on the canonical codomain: for every
+        // cell, `FormatCoordinates::from_str(c.to_string()) ==
+        // <FormatCoordinates as FromStr>::from_str(&c.to_string()).ok()`.
+        // Both seams recover the same cell on the exact canonical
+        // 10-cell codomain the two sibling `as_str` projections
+        // emit; they diverge only OFF that codomain (the trait method
+        // case-insensitive-lowers both halves and accepts the format-
+        // half alias extensions `yml` / `lsp` / `el`, the inherent
+        // rejects them structurally through the two sibling const-fn
+        // label inverses). This pin cross-checks the const-fn cell-
+        // label seam against the trait-uniform cell-label seam on the
+        // closed cell surface. Sibling of
+        // `format_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the outer axis and
+        // `format_provenance_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the inner axis, lifted here to the product-cube
+        // altitude where the trait-uniform peer is
+        // `<Self as FromStr>::from_str` (not
+        // `<Self as ClosedAxisLabel>::from_canonical_str`, which does
+        // not apply to the product-cube surface).
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let rendered = cell.to_string();
+            let inherent = FormatCoordinates::from_str(&rendered);
+            let trait_uniform = <FormatCoordinates as FromStr>::from_str(&rendered).ok();
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {rendered:?} must recover the same cell through \
+                 the inherent const-fn `FormatCoordinates::from_str` and the \
+                 trait-uniform `<FormatCoordinates as FromStr>::from_str`",
+            );
         }
     }
 
