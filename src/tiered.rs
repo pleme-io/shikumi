@@ -1022,6 +1022,69 @@ impl ConfigTier {
         }
     }
 
+    /// Construct a [`Self::Custom`] tier from any path-like value.
+    ///
+    /// One source of truth for the `(path → ConfigTier::Custom(<PathBuf>))`
+    /// construction every payload-bearing tier record site previously
+    /// open-coded (`ConfigTier::Custom(p.clone())` at
+    /// [`crate::cli::ConfigShowCommand`]'s tier resolver, and every
+    /// canonical-sample table entry across the tests suite that spelled
+    /// `ConfigTier::Custom(std::path::PathBuf::from(raw))` by hand). A
+    /// future refinement of how a `Custom`-tier is materialised from a
+    /// path (canonicalize, symlink-resolve, annotate mtime) lands at ONE
+    /// named site instead of once per record caller.
+    ///
+    /// Accepts `impl Into<PathBuf>` — the same input surface
+    /// [`Path::to_path_buf`], [`PathBuf::clone`], and the two shipped
+    /// [`ConfigSource::for_file`] / [`ConfigSource::for_env`] peers
+    /// already expose — so callers whose path is a [`&Path`],
+    /// [`&PathBuf`], or an owned [`PathBuf`] all route through this
+    /// helper without a caller-side `to_path_buf()` call.
+    ///
+    /// Idiom-peer of [`crate::ConfigSource::for_file`] and
+    /// [`crate::ConfigSource::for_env`] on the sibling source axis of
+    /// the atomic `(tier, source)` primitive — the (path → File(PathBuf))
+    /// and (prefix → Env(String)) constructors there are the payload-
+    /// bearing peers of this (path → Custom(PathBuf)) constructor here,
+    /// spelling the same *one named payload-bearing constructor per
+    /// payload-carrying variant* discipline on both halves of the sealed
+    /// `(tier, source)` pair. Closes the payload-bearing-constructor
+    /// discipline on the [`ConfigTier`] axis, matching the payload-
+    /// extractor sibling [`Self::as_custom_path`] one direction over:
+    /// the extractor projects `Custom(path)` → borrowed `Path`, this
+    /// constructor packages any path-like input → `Custom(PathBuf)`.
+    ///
+    /// **Extractor round-trip law** —
+    /// `ConfigTier::for_custom(p).as_custom_path() == Some(p.as_ref())`
+    /// for every `p: impl AsRef<Path> + Into<PathBuf>`. The
+    /// [`Self::as_custom_path`] projection over the constructed
+    /// `Custom(PathBuf::from(p))` variant reads the same bytes back,
+    /// matching the payload-identity discipline
+    /// [`tests::config_tier_as_custom_path_preserves_inner_pathbuf_verbatim`]
+    /// pins on the extractor. Pinned by
+    /// [`tests::config_tier_for_custom_round_trips_via_as_custom_path`].
+    ///
+    /// **`is_custom` agreement** — `ConfigTier::for_custom(p).is_custom()
+    /// == true` for every path-like `p`, matching the extractor's
+    /// boolean-agreement law
+    /// [`tests::config_tier_as_custom_path_agrees_with_is_custom_pointwise`].
+    /// Pinned by
+    /// [`tests::config_tier_for_custom_produces_custom_variant`].
+    ///
+    /// **Payload-preservation** — the constructor accepts every
+    /// [`Into<PathBuf>`]-shaped input the production caller
+    /// ([`crate::cli::ConfigShowCommand::resolve_tier`] on `&PathBuf`)
+    /// and every canonical-sample table entry can hand it (`&Path`,
+    /// `&PathBuf`, owned `PathBuf`, the empty path, absolute and
+    /// relative paths alike), and produces the same value as the
+    /// open-coded `ConfigTier::Custom(p.into())` variant construction.
+    /// Pinned by
+    /// [`tests::config_tier_for_custom_accepts_every_into_pathbuf_shape`].
+    #[must_use]
+    pub fn for_custom(path: impl Into<PathBuf>) -> Self {
+        Self::Custom(path.into())
+    }
+
     /// Returns `true` for the three built-in computed-defaults tiers
     /// ([`Self::Bare`], [`Self::Discovered`], [`Self::Default`]),
     /// `false` for the operator-supplied overlay tier
@@ -48074,6 +48137,109 @@ mod tests {
             assert_eq!(tier.as_custom_path(), Some(inner.as_path()));
             assert_eq!(tier.as_custom_path(), Some(Path::new(raw)));
         }
+    }
+
+    #[test]
+    fn config_tier_for_custom_produces_custom_variant() {
+        // Constructor kind-agreement pin: `for_custom(p)` must land on
+        // the `Custom` arm for every path-like input, satisfying the
+        // extractor's `is_custom()` predicate byte-for-byte. Refuses a
+        // future regression that routed the constructor through a
+        // non-Custom arm (e.g. an accidental `Default` fallback on an
+        // empty path). Peer of the ConfigSource-side
+        // `for_file_wraps_path_into_file_variant` kind-agreement pin
+        // one primitive over on the sealed (tier, source) pair.
+        for raw in [
+            "/etc/app/app.yaml",
+            "./local.toml",
+            "../parent/rel.nix",
+            "",
+            "with spaces/in-the-path.yaml",
+        ] {
+            let tier = ConfigTier::for_custom(std::path::PathBuf::from(raw));
+            assert!(
+                tier.is_custom(),
+                "for_custom({raw:?}) must land on the Custom arm",
+            );
+            assert!(!tier.is_computed(), "for_custom({raw:?}) is not computed");
+        }
+    }
+
+    #[test]
+    fn config_tier_for_custom_round_trips_via_as_custom_path() {
+        // Extractor round-trip law: `for_custom(p).as_custom_path() ==
+        // Some(p.as_ref())` for every path-like input. Composes the
+        // payload-bearing constructor with the payload-extractor sibling
+        // `as_custom_path` on the same closed `Custom(PathBuf)` arm,
+        // reading the same bytes back byte-for-byte. Refuses a future
+        // edit that transformed the payload (canonicalize, symlink-
+        // resolve, strip-prefix) inside `for_custom` without also
+        // updating `as_custom_path` in lockstep — the two would diverge
+        // here on the first path that doesn't survive the transform.
+        // Peer of the payload-identity discipline
+        // `config_tier_as_custom_path_preserves_inner_pathbuf_verbatim`
+        // pins on the extractor.
+        for raw in [
+            "/etc/app/app.yaml",
+            "./local.toml",
+            "../parent/rel.nix",
+            "",
+            "with spaces/in-the-path.yaml",
+        ] {
+            let inner = std::path::PathBuf::from(raw);
+            let tier = ConfigTier::for_custom(inner.clone());
+            assert_eq!(
+                tier.as_custom_path(),
+                Some(inner.as_path()),
+                "for_custom({raw:?}).as_custom_path() must return the same Path bytes",
+            );
+            assert_eq!(
+                tier.as_custom_path(),
+                Some(Path::new(raw)),
+                "for_custom({raw:?}).as_custom_path() must equal Path::new({raw:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_for_custom_accepts_every_into_pathbuf_shape() {
+        // Input-shape agreement pin: `for_custom` accepts every
+        // `Into<PathBuf>`-shaped input the production caller
+        // (`ConfigShowCommand::resolve_tier` on `&PathBuf`) and every
+        // canonical-sample table entry can hand it, and produces the
+        // same value as the open-coded `ConfigTier::Custom(p.into())`
+        // variant construction. Peer of the ConfigSource-side
+        // `for_file_wraps_path_into_file_variant` input-shape pin one
+        // primitive over on the sealed (tier, source) pair, mirroring
+        // the same three `Into<PathBuf>` shapes (&Path, &PathBuf, owned
+        // PathBuf) that pin binds on the sibling axis.
+        let want = ConfigTier::Custom(std::path::PathBuf::from("/etc/app/app.yaml"));
+        assert_eq!(
+            ConfigTier::for_custom(Path::new("/etc/app/app.yaml")),
+            want,
+            "for_custom must accept &Path and produce the Custom variant",
+        );
+        let owned = std::path::PathBuf::from("/etc/app/app.yaml");
+        assert_eq!(
+            ConfigTier::for_custom(&owned),
+            want,
+            "for_custom must accept &PathBuf and produce the Custom variant",
+        );
+        assert_eq!(
+            ConfigTier::for_custom(owned),
+            want,
+            "for_custom must accept owned PathBuf and produce the Custom variant",
+        );
+        // Empty-path inhabitant round-trips the same way — the
+        // as_custom_path projection over an empty PathBuf must still
+        // return Some (matching the extractor's payload-independence
+        // discipline over the empty path).
+        assert_eq!(
+            ConfigTier::for_custom(std::path::PathBuf::new()),
+            ConfigTier::Custom(std::path::PathBuf::new()),
+            "for_custom must preserve an empty path so as_custom_path still \
+             returns Some(Path::new(\"\")) on the constructed value",
+        );
     }
 
     #[test]

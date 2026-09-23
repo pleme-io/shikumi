@@ -1246,7 +1246,7 @@ impl ConfigShowCommand {
             TierArg::Discovered => ConfigTier::Discovered,
             TierArg::Default => ConfigTier::Default,
             TierArg::Custom => match path {
-                Some(p) => ConfigTier::Custom(p.clone()),
+                Some(p) => ConfigTier::for_custom(p.clone()),
                 None => return Err(ConfigShowError::CustomTierWithoutPath),
             },
             TierArg::Env => ConfigTier::from_env(env_var),
