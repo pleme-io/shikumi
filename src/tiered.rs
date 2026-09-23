@@ -35628,6 +35628,139 @@ impl DiffLineKind {
             _ => None,
         }
     }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every canonical lowercase
+    /// label — the exact three-cell codomain [`Self::as_str`] emits —
+    /// and [`None`] for any other `&str`.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `"removed"` → [`Some`]`(`[`Self::Removed`]`)`
+    /// - `"added"`   → [`Some`]`(`[`Self::Added`]`)`
+    /// - `"context"` → [`Some`]`(`[`Self::Context`]`)`
+    /// - `_`         → [`None`]
+    ///
+    /// Sibling of [`Self::from_ordinal`] on the scalar-[`usize`] surface
+    /// and [`Self::from_glyph`] on the scalar-[`char`] surface: the
+    /// (`as_str`, `from_str`) pair inverts the scalar-[`&'static str`]
+    /// projection [`Self::as_str`] on the same closed three-cell surface
+    /// the (`ordinal`, `from_ordinal`) pair inverts [`Self::ordinal`] and
+    /// the (`glyph`, `from_glyph`) pair inverts [`Self::glyph`]. With
+    /// this landing the diff-cell kind axis carries the (`forward`,
+    /// `inverse`) round-trip pair on ALL THREE closed scalar surfaces
+    /// AS A CONST-CALLABLE INHERENT, matching the closed-scalar-inverse
+    /// discipline the sibling [`crate::cli::OutputFormat::from_str`]
+    /// (commit `9f3631f`) carries on the CLI-side emission-format
+    /// primitive one primitive over.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the three-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer of the macro-generated
+    /// [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`]) one seam over that
+    /// returns [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// lowercase spellings [`Self::as_str`] emits, matching the
+    /// discipline of every other const-fn scalar inverse on the
+    /// primitive ([`Self::from_ordinal`] / [`Self::from_glyph`]) and on
+    /// the sibling [`crate::cli::OutputFormat::from_str`]. A consumer
+    /// wanting case-insensitive parsing (an operator-typed
+    /// `--diff-kind REMOVED` at a CLI, a mixed-case tag in a Markdown-
+    /// rendered diff summary) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or
+    /// lowercases at their own site — the same discipline the sibling
+    /// scalar inverses hold (all three reject non-canonical inputs
+    /// structurally).
+    ///
+    /// **Round-trip law** —
+    /// `DiffLineKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: DiffLineKind`. Composes with [`Self::as_str`] on the same
+    /// three-cell label table both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::diff_line_kind_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `DiffLineKind::from_str(s) == None` for every `s` outside the
+    /// canonical three-cell set `{"removed", "added", "context"}`. The
+    /// closed match's `_` arm forwards the off-surface case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format label from a version-skewed peer, a mixed-
+    /// case operator-typed CLI argument that never went through a
+    /// lowering step, the empty string, or a hypothetical fourth-
+    /// variant label a future extension (a hypothetical `Header` shape
+    /// for hunk headers, a `Sep` shape for inter-hunk separators) would
+    /// introduce. Pinned by
+    /// [`tests::diff_line_kind_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] / [`Self::from_glyph`] on the sibling
+    /// scalar-surface inverses. Consumers wanting a compile-time-
+    /// selected label-keyed dispatch (a `const` per-diff-cell renderer
+    /// bound at compile time via a static label lookup, a
+    /// `const [DiffLineKind; 3]` variant array recovered from a
+    /// `const &[&str; 3]` canonical-label list, a per-diff-cell
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::diff_line_kind_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::as_str`] pointwise** —
+    /// `DiffLineKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: DiffLineKind`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same three-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::diff_line_kind_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: DiffLineKind`,
+    /// `DiffLineKind::from_str(v.as_str()) ==
+    /// <DiffLineKind as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the canonical lowercase
+    /// codomain; they diverge only OFF that codomain (the trait method
+    /// case-insensitive-lowers, the inherent rejects). This pin cross-
+    /// checks the const-fn label seam against the trait-uniform label
+    /// seam on the closed variant surface. Pinned by
+    /// [`tests::diff_line_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Consumers** — a `ConfigDiff` attestation payload emitting the
+    /// per-line kind tag as its canonical `&'static str` label at wire
+    /// time (a Markdown-fenced diff-kind decoder recovering the typed
+    /// variant from a rendered label, a per-tier attestation-manifest
+    /// verifier re-hydrating a `Vec<DiffLineKind>` from a JSON string
+    /// list of canonical labels, a per-diff-cell renderer normaliser
+    /// classifying an operator-typed kind selector by its canonical
+    /// spelling) recovers the typed variant on the reader side without
+    /// a hand-rolled `match s { "removed" => …, "added" => …, "context"
+    /// => …, _ => panic!() }` ladder that would drift silently as a
+    /// fourth diff-cell kind lands. The closed match here degrades
+    /// cleanly to [`None`] on off-surface input, so a version-skewed
+    /// peer emitting an unrecognised label reads as an unknown rather
+    /// than a runtime panic.
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"removed" => Some(Self::Removed),
+            b"added" => Some(Self::Added),
+            b"context" => Some(Self::Context),
+            _ => None,
+        }
+    }
 }
 
 impl crate::ClosedAxis for DiffLineKind {
@@ -49502,6 +49635,208 @@ mod tests {
         assert_eq!(AT_PLUS, Some(DiffLineKind::Added));
         assert_eq!(AT_SPACE, Some(DiffLineKind::Context));
         assert_eq!(AT_STAR, None);
+    }
+
+    // ─── DiffLineKind::from_str — const-fn label-inverse peer on the
+    // ─── diff-cell kind axis's scalar-`&'static str` label surface ──
+
+    #[test]
+    fn diff_line_kind_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `DiffLineKind::from_str(v.as_str()) == Some(v)` for every
+        // variant. The forward `as_str` and the inverse `from_str`
+        // match on the same closed three-cell label table — `Removed`
+        // → `"removed"`, `Added` → `"added"`, `Context` → `"context"`
+        // — so the composition is the identity on the variant surface
+        // by construction. Direct methodological peer of
+        // `diff_line_kind_from_ordinal_round_trips_via_ordinal` on the
+        // sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_round_trips_via_glyph` on the
+        // sibling scalar-char inverse over the same closed-inverse
+        // discipline on the same primitive.
+        for &kind in DiffLineKind::ALL {
+            let label = kind.as_str();
+            let recovered = DiffLineKind::from_str(label);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: label={label:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the three `(label, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `as_str`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(
+            DiffLineKind::from_str("removed"),
+            Some(DiffLineKind::Removed)
+        );
+        assert_eq!(DiffLineKind::from_str("added"), Some(DiffLineKind::Added));
+        assert_eq!(
+            DiffLineKind::from_str("context"),
+            Some(DiffLineKind::Context)
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_rejects_non_canonical() {
+        // Non-canonical rejection:
+        // `DiffLineKind::from_str(s) == None` for every `s` outside the
+        // canonical three-cell set `{"removed", "added", "context"}`.
+        // The closed match's `_` arm forwards the off-surface case to
+        // `None` structurally; the guard degrades gracefully on a
+        // caller passing a mixed-case spelling that never went through
+        // the trait-uniform `ClosedAxisLabel::from_canonical_str`
+        // case-insensitive lowering, the empty string, a stale wire-
+        // format label from a version-skewed peer, or a hypothetical
+        // fourth-variant label a future extension (a hypothetical
+        // `Header` shape for hunk headers, a `Sep` shape for inter-
+        // hunk separators) would introduce. Direct methodological peer
+        // of `diff_line_kind_from_ordinal_rejects_out_of_range` on the
+        // sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_rejects_non_canonical` on the
+        // sibling scalar-char inverse.
+        //
+        // The mixed-case sweep is load-bearing: the const-fn inverse
+        // is deliberately case-sensitive (matching the discipline every
+        // other const-fn scalar inverse on the crate holds), so a
+        // caller wanting case-insensitive parsing lowercases at their
+        // own site or reaches for `ClosedAxisLabel::from_canonical_str`.
+        // This test pins the case-sensitive shape.
+        for non_canonical in [
+            "",
+            " ",
+            "REMOVED",
+            "Removed",
+            "rEmOvEd",
+            "ADDED",
+            "Added",
+            "aDdEd",
+            "CONTEXT",
+            "Context",
+            "cOnTeXt",
+            "removed ",
+            " removed",
+            "removed\n",
+            "added\t",
+            "header",
+            "sep",
+            "unchanged",
+            "changed",
+            "r",
+            "a",
+            "c",
+            "removedadded",
+            "-",
+            "+",
+        ] {
+            assert_eq!(
+                DiffLineKind::from_str(non_canonical),
+                None,
+                "from_str must reject non-canonical label {non_canonical:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_is_const_callable() {
+        // Compile-time weld: the (label → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl DiffLineKind` block (`as_str`, `glyph`, `ordinal`,
+        // `is_removed`, `is_added`, `is_context`, `is_changed`,
+        // `is_unchanged`, `from_ordinal`, `from_glyph`, all
+        // `pub const fn`) and every peer slice constant (`ALL`,
+        // `ONLY_REMOVED`, `ONLY_ADDED`, `ONLY_CONTEXT`, `CHANGED`,
+        // `UNCHANGED`, all `pub const &'static [Self]`). A drop of the
+        // `const` qualifier on `DiffLineKind::from_str` fails this test
+        // to compile at one of the four const bindings below before the
+        // drift can reach downstream const-context consumers. Idiom-
+        // peer of `diff_line_kind_from_ordinal_is_const_callable` on
+        // the sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_is_const_callable` on the sibling
+        // scalar-char inverse, and of
+        // `output_format_from_str_is_const_callable` on the sibling
+        // CLI-side emission-format primitive's own label inverse one
+        // primitive over.
+        const REMOVED: Option<DiffLineKind> = DiffLineKind::from_str("removed");
+        const ADDED: Option<DiffLineKind> = DiffLineKind::from_str("added");
+        const CONTEXT: Option<DiffLineKind> = DiffLineKind::from_str("context");
+        const NONE: Option<DiffLineKind> = DiffLineKind::from_str("header");
+
+        assert_eq!(REMOVED, Some(DiffLineKind::Removed));
+        assert_eq!(ADDED, Some(DiffLineKind::Added));
+        assert_eq!(CONTEXT, Some(DiffLineKind::Context));
+        assert_eq!(NONE, None);
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_agrees_with_as_str_pointwise() {
+        // Independent-witness pin cross-checking the const-fn label
+        // inverse against the forward `DiffLineKind::as_str` label
+        // table on every variant — `DiffLineKind::from_str(v.as_str())
+        // == Some(v)` for every `v: DiffLineKind`. The inherent match
+        // and the forward `as_str` match carry the same three-cell
+        // label mapping; a future edit that shifted one without the
+        // other fails here on the first drifted variant, before the
+        // round-trip pin masks it under composition. Direct
+        // methodological peer of
+        // `diff_line_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling scalar-usize inverse and of
+        // `diff_line_kind_from_glyph_agrees_with_glyph_pointwise` on
+        // the sibling scalar-char inverse.
+        for &kind in DiffLineKind::ALL {
+            assert_eq!(
+                DiffLineKind::from_str(kind.as_str()),
+                Some(kind),
+                "from_str must agree with as_str for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+    {
+        // Cross-cut pin between the inherent const-fn
+        // `DiffLineKind::from_str` (case-sensitive, `Option`-returning,
+        // canonical-labels only) and the trait-uniform
+        // `<DiffLineKind as ClosedAxisLabel>::from_canonical_str`
+        // (case-insensitive, `Option`-returning, iterator-based) on
+        // the canonical lowercase codomain. Both seams recover the
+        // same variant on every `v.as_str()` input; they diverge only
+        // OFF the canonical codomain (the trait method case-
+        // insensitive-lowers, the inherent rejects). This pin catches
+        // a future edit that shifts one match without the other on
+        // the canonical intersection — the operator-facing round-trip
+        // via `str::parse::<DiffLineKind>()` (which routes through
+        // the macro-generated `FromStr` impl that in turn delegates
+        // to `ClosedAxisLabel::from_canonical_str`) and via the
+        // const-fn `from_str` seam would disagree on the same
+        // canonical label, and this pin fires before that drift can
+        // land. Peer of `output_format_from_str_agrees_with_clap_
+        // value_enum_canonical` on the sibling CLI-side emission-
+        // format primitive one primitive over (which cross-checks its
+        // own inherent const-fn `from_str` against the clap-side
+        // `ValueEnum::to_possible_value(&fmt).get_name()` canonical
+        // name at the same operator-facing label seam).
+        for &kind in DiffLineKind::ALL {
+            let label = kind.as_str();
+            let inherent = DiffLineKind::from_str(label);
+            let trait_side = <DiffLineKind as crate::ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_side,
+                "inherent `from_str({label:?})` must agree with \
+                 `ClosedAxisLabel::from_canonical_str({label:?})` on canonical input",
+            );
+            assert_eq!(
+                inherent,
+                Some(kind),
+                "both label-inverse seams must recover {kind:?} from {label:?}",
+            );
+        }
     }
 
     #[test]
