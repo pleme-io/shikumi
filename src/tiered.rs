@@ -34926,6 +34926,60 @@ impl DiffLine {
             Self::Context(_) => 2,
         }
     }
+
+    /// Package a data-free discriminant [`DiffLineKind`] and an owned
+    /// payload [`String`] back into the payload-bearing [`DiffLine`]
+    /// variant they came from — the (kind, text) → variant inverse of
+    /// the ([`Self::kind`], [`Self::text`]) pair.
+    ///
+    /// The three-arm exhaustive match maps [`DiffLineKind::Removed`] →
+    /// [`Self::Removed`]`(text)`, [`DiffLineKind::Added`] →
+    /// [`Self::Added`]`(text)`, [`DiffLineKind::Context`] →
+    /// [`Self::Context`]`(text)`, so the round-trip law
+    /// `DiffLine::from_kind_text(l.kind(), l.text().to_string()) == l`
+    /// holds pointwise on every value and every payload — pinned by
+    /// [`tests::diff_line_from_kind_text_round_trips_via_kind_and_text`].
+    ///
+    /// One source of truth for the (kind, text) → variant packaging.
+    /// The container-altitude sibling projections [`ConfigDiff::line_kinds`]
+    /// (row-preserving `Vec<DiffLineKind>` over the discriminant axis)
+    /// and [`ConfigDiff::line_texts`] (row-preserving `Vec<&str>` over
+    /// the payload axis) already decompose a [`ConfigDiff`] into its
+    /// two parallel columns; this primitive names their per-row
+    /// zip-recombination inverse at the type level, so a consumer
+    /// rebuilding a [`ConfigDiff`] from the two column projections
+    /// reads one accessor instead of pattern-matching on the kind
+    /// and re-tagging the payload at the call site. The pre-lift
+    /// spelling `match kind { DiffLineKind::Removed =>
+    /// DiffLine::Removed(text), DiffLineKind::Added =>
+    /// DiffLine::Added(text), DiffLineKind::Context =>
+    /// DiffLine::Context(text) }` — anticipated verbatim by the
+    /// [`ConfigDiff::line_texts`] doc comment before this landing —
+    /// now routes through the one-hop [`Self::from_kind_text`]
+    /// primitive.
+    ///
+    /// Kind-side sibling of the [`DiffLineKind`] surface's
+    /// [`DiffLineKind::from_ordinal`] inverse one axis over: same
+    /// exhaustive three-arm match discipline, same total-on-input
+    /// contract, same closed-axis inverse role — [`Self::from_kind_text`]
+    /// packages the discriminant back into the payload-bearing
+    /// [`DiffLine`], while [`DiffLineKind::from_ordinal`] recovers the
+    /// discriminant from its scalar ordinal position.
+    ///
+    /// A future fourth [`DiffLineKind`] variant landing (a hypothetical
+    /// `Header` shape for hunk headers, a `Sep` shape for inter-hunk
+    /// separators) forces a corresponding [`DiffLine`] arm and a new
+    /// arm in this match — the exhaustive match fails at compile time
+    /// on the missing arm before the drift can silently drop through
+    /// the projection at a runtime call site.
+    #[must_use]
+    pub fn from_kind_text(kind: DiffLineKind, text: String) -> Self {
+        match kind {
+            DiffLineKind::Removed => Self::Removed(text),
+            DiffLineKind::Added => Self::Added(text),
+            DiffLineKind::Context => Self::Context(text),
+        }
+    }
 }
 
 /// Data-free, `'static` discriminant of [`DiffLine`]: the closed
@@ -50219,6 +50273,90 @@ mod tests {
             assert_eq!(DiffLine::Removed(payload.to_string()).text(), payload);
             assert_eq!(DiffLine::Added(payload.to_string()).text(), payload);
             assert_eq!(DiffLine::Context(payload.to_string()).text(), payload);
+        }
+    }
+
+    #[test]
+    fn diff_line_from_kind_text_packages_kind_and_payload_pointwise() {
+        // Per-arm forward pin on the packaging inverse: each
+        // `DiffLineKind` variant maps to the corresponding `DiffLine`
+        // variant carrying the exact `String` payload handed in.
+        // Payload-independence sub-pin — empty, short, whitespace-only,
+        // and unicode payloads all route through the same arm — locks
+        // in that the constructor never inspects the inner payload to
+        // pick the arm; only the kind discriminant selects it.
+        for payload in ["", "a", "name: value", "  leading spaces", "café ⇒ 値"] {
+            assert_eq!(
+                DiffLine::from_kind_text(DiffLineKind::Removed, payload.to_string()),
+                DiffLine::Removed(payload.to_string()),
+            );
+            assert_eq!(
+                DiffLine::from_kind_text(DiffLineKind::Added, payload.to_string()),
+                DiffLine::Added(payload.to_string()),
+            );
+            assert_eq!(
+                DiffLine::from_kind_text(DiffLineKind::Context, payload.to_string()),
+                DiffLine::Context(payload.to_string()),
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_from_kind_text_round_trips_via_kind_and_text() {
+        // The (kind, text) decomposition-recomposition round trip:
+        // `DiffLine::from_kind_text(l.kind(), l.text().to_string()) == l`
+        // holds pointwise on every payload-bearing variant and every
+        // canonical payload. Guards the load-bearing law named in the
+        // `from_kind_text` doc comment and the anticipatory reference
+        // in the `ConfigDiff::line_texts` doc, so a future edit that
+        // swaps a match arm in either direction fails here before the
+        // container-altitude recomposition consumer builds a
+        // `DiffLine` with a mis-tagged discriminant.
+        for payload in ["", "a", "name: value", "  leading spaces", "café ⇒ 値"] {
+            for line in [
+                DiffLine::Removed(payload.to_string()),
+                DiffLine::Added(payload.to_string()),
+                DiffLine::Context(payload.to_string()),
+            ] {
+                let kind = line.kind();
+                let text = line.text().to_string();
+                assert_eq!(
+                    DiffLine::from_kind_text(kind, text),
+                    line,
+                    "from_kind_text(kind, text) must reconstruct the original DiffLine for {line:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn diff_line_from_kind_text_agrees_with_kind_and_text_at_every_index() {
+        // Container-altitude cross-pin: for every position `i` in a
+        // hand-built `ConfigDiff`, packaging
+        // `(line_kinds()[i], line_texts()[i].to_string())` through
+        // `from_kind_text` recovers `self.lines[i]`. This closes the
+        // round-trip law at the container altitude — the exact reason
+        // the primitive was named in the `ConfigDiff::line_texts` doc
+        // comment. A future edit that shifts a match arm on either
+        // side of the packaging or the (`kind`, `text`) decomposition
+        // fails here on the first drifted position.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("gone".into()),
+                DiffLine::Context("stays".into()),
+                DiffLine::Added("new".into()),
+                DiffLine::Context(String::new()),
+                DiffLine::Removed("café ⇒ 値".into()),
+            ],
+        };
+        let kinds = diff.line_kinds();
+        let texts = diff.line_texts();
+        for (i, line) in diff.lines.iter().enumerate() {
+            assert_eq!(
+                &DiffLine::from_kind_text(kinds[i], texts[i].to_string()),
+                line,
+                "container-altitude round-trip must reconstruct self.lines[{i}]",
+            );
         }
     }
 
