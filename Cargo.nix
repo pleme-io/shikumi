@@ -9492,7 +9492,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.1040";
+        version = "0.1.1041";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -10098,9 +10098,9 @@ rec {
       };
       "thiserror" = rec {
         crateName = "thiserror";
-        version = "2.0.20";
+        version = "2.0.21";
         edition = "2021";
-        sha256 = "0kxs6p295jffxhzaxpxv1dwaaf5iqlm6sx8h0djp6ancbxgj71pc";
+        sha256 = "17hq1lh5dyr3bkc7zzjrbrp4qgkvhc48kgq1n5fdxkindaw2rr89";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -10117,9 +10117,9 @@ rec {
       };
       "thiserror-impl" = rec {
         crateName = "thiserror-impl";
-        version = "2.0.20";
+        version = "2.0.21";
         edition = "2021";
-        sha256 = "1bwjc94gi0xn5jz26h1a8bjj1wdkvvr6jifamyc4mp9n28zcs15w";
+        sha256 = "0945n8agp7kg6n6b35yyjb4g5xv2q22vrw15h6jj1nw76a99flgy";
         procMacro = true;
         libName = "thiserror_impl";
         authors = [
