@@ -444,6 +444,114 @@ impl ShikumiErrorKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..7` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded seven-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::NotFound`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Parse`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Watch`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Io`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Figment`]`)`
+    /// - `5` → [`Some`]`(`[`Self::Extract`]`)`
+    /// - `6` → [`Some`]`(`[`Self::Validation`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the shikumi error-kind axis. Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a
+    /// closed-enum axis primitive one seam over
+    /// ([`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::OutputFormat::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`]); this landing closes
+    /// the same partial-inverse discipline on the seven-cell
+    /// shikumi error-kind axis, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant. With this
+    /// landing the error-kind axis carries the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on the scalar-[`usize`] surface
+    /// as a const-callable inherent — the same shape the eight sibling
+    /// closed-enum axes already ship.
+    ///
+    /// **Round-trip law** —
+    /// `ShikumiErrorKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: ShikumiErrorKind`. The forward-map [`Self::ordinal`] and
+    /// the const-fn inverse-map [`Self::from_ordinal`] share the SAME
+    /// closed seven-cell declaration order ([`Self::ALL`], mirroring
+    /// the arm order in [`ShikumiError::kind`]); the law holds by
+    /// construction. Pinned by
+    /// [`tests::shikumi_error_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `ShikumiErrorKind::from_ordinal(o) == None` for every `o >= 7`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer or
+    /// an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check. Pinned
+    /// by
+    /// [`tests::shikumi_error_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `ShikumiErrorKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order, so
+    /// the test below pins the pointwise agreement and a future edit
+    /// that shifts one without the other fails at test time on the
+    /// first drifted position. Pinned by
+    /// [`tests::shikumi_error_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `ShikumiErrorKind::from_ordinal(o) == crate::axis_at::<Self>(o)`
+    /// for every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through
+    /// the [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the closed seven-cell
+    /// match; the pointwise-agreement pin keeps the two seams
+    /// substitutable. Pinned by
+    /// [`tests::shikumi_error_kind_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch table
+    /// (e.g. a `const [ShikumiErrorKind; 7]` variant array indexed by
+    /// ordinal, or a `const` per-kind label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::shikumi_error_kind_from_ordinal_is_const_callable`].
+    ///
+    /// **Opens the composed inverse on [`ErrorLocalizationCoordinates`].**
+    /// The seven-cell partial-inverse here is the missing outer-axis
+    /// hop the composed `ErrorLocalizationCoordinates::from_ordinal`
+    /// inverse of the (`kind × localization`) product cube needs on the
+    /// outer axis; landing this peer places the error-fidelity cube
+    /// one const-fn primitive away from carrying the same
+    /// ordinal-inverse peer idiom the two attribution-product cubes
+    /// ([`AttributionSourceKindCoordinates::from_ordinal`],
+    /// [`AttributionNameKindCoordinates::from_ordinal`]) already carry.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::NotFound),
+            1 => Some(Self::Parse),
+            2 => Some(Self::Watch),
+            3 => Some(Self::Io),
+            4 => Some(Self::Figment),
+            5 => Some(Self::Extract),
+            6 => Some(Self::Validation),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::NotFound`]; equivalent to
     /// `self == ShikumiErrorKind::NotFound`.
     ///
@@ -14073,6 +14181,163 @@ mod tests {
             (ShikumiErrorKind::Validation, VALIDATION),
         ] {
             assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `ShikumiErrorKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: ShikumiErrorKind. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share the
+        // SAME closed seven-cell declaration order (`ShikumiErrorKind::ALL`,
+        // mirroring the arm order in `ShikumiError::kind`); the law holds
+        // by construction. Sibling of
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on the
+        // sibling shikumi-side layer-kind axis, extended here onto the
+        // seven-cell error-kind axis.
+        for &kind in ShikumiErrorKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = ShikumiErrorKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 7` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against a
+        // stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `config_source_kind_from_ordinal_rejects_out_of_range` on the
+        // sibling shikumi-side layer-kind axis.
+        let card = ShikumiErrorKind::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                ShikumiErrorKind::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme `usize::MAX` to guard the closed match's `_` arm on
+        // the largest representable index.
+        assert_eq!(
+            ShikumiErrorKind::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            ShikumiErrorKind::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(ShikumiErrorKind::ALL[i])` for every
+        // i in 0..ALL.len() — the inverse of `ordinal` agrees with the
+        // same `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Sibling of
+        // `config_source_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling shikumi-side layer-kind axis.
+        for (index, &expected) in ShikumiErrorKind::ALL.iter().enumerate() {
+            assert_eq!(
+                ShikumiErrorKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with ShikumiErrorKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (7) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            ShikumiErrorKind::from_ordinal(ShikumiErrorKind::ALL.len()),
+            None,
+            "ordinal equal to ShikumiErrorKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent seven-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both `None`).
+        // Where `axis_at` delegates through the `ClosedAxis` impl to a
+        // bounds-checked `Self::ALL` slice index, `Self::from_ordinal`
+        // routes through the closed match ladder; this test pins that
+        // the two seams stay substitutable across every ordinal.
+        let card = ShikumiErrorKind::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                ShikumiErrorKind::from_ordinal(o),
+                crate::axis_at::<ShikumiErrorKind>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `ShikumiErrorKind::ordinal` and the sibling
+        // `ShikumiErrorKind::as_str`. A drop of the `const` qualifier
+        // on `ShikumiErrorKind::from_ordinal` fails this test to
+        // compile. Sibling of
+        // `config_source_kind_from_ordinal_is_const_callable` on the
+        // sibling shikumi-side layer-kind axis, extended here onto the
+        // seven-cell error-kind axis.
+        //
+        // Eight `const` bindings — seven in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the eight const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(0);
+        const AT_1: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(1);
+        const AT_2: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(2);
+        const AT_3: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(3);
+        const AT_4: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(4);
+        const AT_5: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(5);
+        const AT_6: Option<ShikumiErrorKind> = ShikumiErrorKind::from_ordinal(6);
+        const AT_OOR: Option<ShikumiErrorKind> =
+            ShikumiErrorKind::from_ordinal(ShikumiErrorKind::ALL.len());
+
+        assert_eq!(AT_0, Some(ShikumiErrorKind::NotFound));
+        assert_eq!(AT_1, Some(ShikumiErrorKind::Parse));
+        assert_eq!(AT_2, Some(ShikumiErrorKind::Watch));
+        assert_eq!(AT_3, Some(ShikumiErrorKind::Io));
+        assert_eq!(AT_4, Some(ShikumiErrorKind::Figment));
+        assert_eq!(AT_5, Some(ShikumiErrorKind::Extract));
+        assert_eq!(AT_6, Some(ShikumiErrorKind::Validation));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every variant in `ShikumiErrorKind::ALL` to its index — the
+        // const-context welds above only exercise the seven variants
+        // named at const-binding sites plus one out-of-range sentinel,
+        // but the runtime pin threads the full closed seven-cell list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (index, &variant) in ShikumiErrorKind::ALL.iter().enumerate() {
+            assert_eq!(
+                ShikumiErrorKind::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
