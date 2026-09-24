@@ -4226,6 +4226,94 @@ impl ErrorLocalizationCoordinates {
     pub const fn ordinal(self) -> usize {
         self.kind.ordinal() * FieldPathLocalization::ALL.len() + self.localization.ordinal()
     }
+
+    /// Const-fn ordinal → cell inverse of [`Self::ordinal`]. Returns
+    /// [`Some(cell)`][Some] for every `ordinal` in
+    /// `0..Self::ALL.len()` — the exact twenty-one-cell range
+    /// [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// **Algebraic inverse of the two-axis product formula.** The body
+    /// inverts the same `kind.ordinal() * FieldPathLocalization::ALL.len()
+    /// + localization.ordinal()` composition [`Self::ordinal`] emits:
+    /// integer division by the innermost-axis cardinality recovers the
+    /// outer axis ordinal, integer remainder recovers the inner axis
+    /// ordinal, and the two sibling const-fn
+    /// [`ShikumiErrorKind::from_ordinal`] (commit `dd368c4`) and
+    /// [`FieldPathLocalization::from_ordinal`] (commit `86df217`)
+    /// partial-inverses lift the pair back to typed variants. When either
+    /// sibling inversion returns [`None`] — which happens exactly when the
+    /// caller's `ordinal` exceeds the product cube's cardinality — the
+    /// joint inversion returns [`None`] too. No hand-rolled ordinal → cell
+    /// arm-list literal to keep in lockstep: the inversion is derived from
+    /// the two sibling primitives' own inherent partial-inverses on the
+    /// same shape the forward [`Self::ordinal`] was derived from.
+    ///
+    /// **Third landing of the ordinal-inverse peer idiom on a
+    /// [`crate::ProductCube`] implementor.** Peer to
+    /// [`AttributionSourceKindCoordinates::from_ordinal`] (commit
+    /// `e0b1e1e`) on the nine-cell `figment_source_kind × layer_kind`
+    /// cube and [`AttributionNameKindCoordinates::from_ordinal`] (commit
+    /// `ac9d3a6`) on the six-cell `figment_name_tag_kind × layer_kind`
+    /// cube — same `div/mod → sibling inverses` shape, same
+    /// [`Option<Self>`][Option] return, same `_ => None` structural
+    /// degradation on out-of-range, lifted here onto the twenty-one-cell
+    /// (`kind × localization`) error-fidelity cube. Sibling to the
+    /// trait-generic [`crate::axis_at`] free function: where
+    /// [`crate::axis_at::<Self>`][crate::axis_at] delegates through the
+    /// [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`] slice
+    /// index, this method routes through the algebraic two-axis inversion
+    /// above so a future ordinal-formula edit on [`Self::ordinal`] and a
+    /// matching inversion edit here stay in one place; pointwise-agreement
+    /// between the two seams is pinned by
+    /// [`tests::error_localization_coordinates_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Round-trip law** —
+    /// `ErrorLocalizationCoordinates::from_ordinal(c.ordinal()) ==
+    /// Some(c)` for every `c: ErrorLocalizationCoordinates`. Composes with
+    /// [`Self::ordinal`] on the same twenty-one-cell surface to close the
+    /// cell → ordinal → cell identity. Pinned by
+    /// [`tests::error_localization_coordinates_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `ErrorLocalizationCoordinates::from_ordinal(o) == None` for every
+    /// `o >= Self::ALL.len()`. Bounded rejection: a stale wire-format
+    /// ordinal from a version-skewed peer, or an operator-supplied bogus
+    /// index, degrades cleanly to [`None`] rather than panicking on a
+    /// slice index or a match ladder. Pinned by
+    /// [`tests::error_localization_coordinates_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `ErrorLocalizationCoordinates::from_ordinal(i) ==
+    /// Some(Self::ALL[i])` for every `i` in `0..Self::ALL.len()`. The
+    /// algebraic inversion agrees with the slice-index lookup pointwise
+    /// across every declared cell. Pinned by
+    /// [`tests::error_localization_coordinates_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **`const fn`** — matching the `const`-ness of [`Self::ordinal`]
+    /// on the forward side and of both sibling axis
+    /// [`ShikumiErrorKind::from_ordinal`] /
+    /// [`FieldPathLocalization::from_ordinal`] partial-inverses it
+    /// composes. Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (a per-cell weight vector keyed by ordinal routing
+    /// decoded-from-wire attestation records to typed cells at compile
+    /// time, a per-cell attestation-manifest slot in a `const` initializer
+    /// keyed by ordinal, a `const [T; 21]` per-cell diagnostic-legend
+    /// array) reach the projection under `const` without dropping through
+    /// a runtime `let` binding. Pinned by
+    /// [`tests::error_localization_coordinates_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        let inner_len = FieldPathLocalization::ALL.len();
+        let kind_ordinal = ordinal / inner_len;
+        let localization_ordinal = ordinal % inner_len;
+        match (
+            ShikumiErrorKind::from_ordinal(kind_ordinal),
+            FieldPathLocalization::from_ordinal(localization_ordinal),
+        ) {
+            (Some(kind), Some(localization)) => Some(Self { kind, localization }),
+            _ => None,
+        }
+    }
 }
 
 /// Coordinate pair over the two orthogonal closed-enum projections
@@ -21716,6 +21804,160 @@ mod tests {
         for (index, &cell) in ErrorLocalizationCoordinates::ALL.iter().enumerate() {
             assert_eq!(cell.ordinal(), index, "cell {cell:?}");
         }
+    }
+
+    #[test]
+    fn error_localization_coordinates_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law from the value side:
+        //   `ErrorLocalizationCoordinates::from_ordinal(c.ordinal())
+        //    == Some(c)` for every `c: ErrorLocalizationCoordinates`.
+        // Composed with the sibling forward `Self::ordinal` projection on
+        // the same twenty-one-cell surface, closing the (cell → ordinal →
+        // cell) identity across every declared cell. Third landing of the
+        // `(ordinal, from_ordinal)` round-trip pair on a `ProductCube`
+        // implementor — idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_round_trips_via_ordinal`
+        // on the nine-cell attribution-source-kind cube and
+        // `attribution_name_kind_coordinates_from_ordinal_round_trips_via_ordinal`
+        // on the six-cell attribution-name-kind cube, extended here onto
+        // the twenty-one-cell (`kind × localization`) error-fidelity cube.
+        for &cell in ErrorLocalizationCoordinates::ALL {
+            assert_eq!(
+                ErrorLocalizationCoordinates::from_ordinal(cell.ordinal()),
+                Some(cell),
+                "from_ordinal must invert ordinal at {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `usize` at or beyond the
+        // twenty-one-cell cube's cardinality returns `None`. A stale
+        // wire-format ordinal from a version-skewed peer, or an
+        // operator-supplied bogus index, degrades cleanly to `None`
+        // rather than panicking on a slice index or a match ladder.
+        // Idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_rejects_out_of_range`
+        // on the sibling attribution-source-kind cube.
+        let card = ErrorLocalizationCoordinates::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                ErrorLocalizationCoordinates::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme. `usize::MAX` also verifies the integer-division
+        // path doesn't accidentally alias to an in-range cell via a
+        // remainder collision.
+        assert_eq!(
+            ErrorLocalizationCoordinates::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            ErrorLocalizationCoordinates::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn error_localization_coordinates_from_ordinal_agrees_with_all_index_pointwise() {
+        // The algebraic two-axis inversion agrees with the slice-index
+        // lookup on `ErrorLocalizationCoordinates::ALL` pointwise across
+        // every in-range ordinal: `from_ordinal(i) == Some(ALL[i])` for
+        // every `i` in `0..ALL.len()`. A future edit that shifts the
+        // ordinal formula (or the two sibling axis ordinals it composes)
+        // without shifting `Self::ALL` in lockstep fails here first,
+        // before the drift can reach downstream consumers routing through
+        // either seam.
+        for (index, &cell) in ErrorLocalizationCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                ErrorLocalizationCoordinates::from_ordinal(index),
+                Some(cell),
+                "from_ordinal({index}) must equal Some(ALL[{index}]) = Some({cell:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the algebraic two-axis inversion agrees
+        // with the trait-generic `crate::axis_at::<Self>` free-function
+        // lookup pointwise across every `usize` in `0..ALL.len() + 32`,
+        // covering both the in-range prefix (both `Some`, same cell) and
+        // the out-of-range tail (both `None`). Where `axis_at` delegates
+        // through the `ClosedAxis` impl to a bounds-checked `Self::ALL`
+        // slice index, `Self::from_ordinal` routes through the algebraic
+        // inversion of the ordinal-formula composition; this test pins
+        // that the two seams stay substitutable across every ordinal.
+        let card = ErrorLocalizationCoordinates::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                ErrorLocalizationCoordinates::from_ordinal(o),
+                crate::axis_at::<ErrorLocalizationCoordinates>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<cell>) inversion is
+        // `const`-callable, matching the `const`-ness of `Self::ordinal`
+        // on the forward side and of both sibling axis partial-inverses
+        // it composes (`ShikumiErrorKind::from_ordinal` and
+        // `FieldPathLocalization::from_ordinal`, both `const fn` since
+        // their respective landings). A drop of the `const` qualifier on
+        // `ErrorLocalizationCoordinates::from_ordinal` — or on either
+        // sibling axis partial-inverse it composes — fails this test to
+        // compile.
+        //
+        // Four representative `const` bindings — three corner cells (the
+        // (NotFound, Localized), (NotFound, NotApplicable), and
+        // (Validation, NotApplicable) extremes of the (`kind` ×
+        // `localization`) layout) plus one out-of-range sentinel at
+        // `ErrorLocalizationCoordinates::ALL.len()` — route each through
+        // the const-fn inversion in const position. The moment
+        // `ErrorLocalizationCoordinates::from_ordinal` (or one of the two
+        // projections it composes) loses its const-ness, one of the four
+        // `const` welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const INV_0: Option<ErrorLocalizationCoordinates> =
+            ErrorLocalizationCoordinates::from_ordinal(0);
+        const INV_2: Option<ErrorLocalizationCoordinates> =
+            ErrorLocalizationCoordinates::from_ordinal(2);
+        const INV_20: Option<ErrorLocalizationCoordinates> =
+            ErrorLocalizationCoordinates::from_ordinal(20);
+        const INV_OOR: Option<ErrorLocalizationCoordinates> =
+            ErrorLocalizationCoordinates::from_ordinal(ErrorLocalizationCoordinates::ALL.len());
+
+        assert_eq!(
+            INV_0,
+            Some(ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::Localized,
+            }),
+        );
+        assert_eq!(
+            INV_2,
+            Some(ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::NotFound,
+                localization: FieldPathLocalization::NotApplicable,
+            }),
+        );
+        assert_eq!(
+            INV_20,
+            Some(ErrorLocalizationCoordinates {
+                kind: ShikumiErrorKind::Validation,
+                localization: FieldPathLocalization::NotApplicable,
+            }),
+        );
+        assert_eq!(INV_OOR, None);
     }
 
     // ---- AttributionSourceKindCoordinates::ALL cover / partition / realizability ----
