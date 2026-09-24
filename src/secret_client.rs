@@ -1693,6 +1693,123 @@ impl SecretOperation {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..6` — the exact
+    /// six-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded six-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Get`]`)`
+    /// - `1` → [`Some`]`(`[`Self::List`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Put`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Delete`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Rotate`]`)`
+    /// - `5` → [`Some`]`(`[`Self::GetVersion`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// First landing of the const-fn ordinal-inverse peer idiom on the
+    /// secret-client OPERATION axis — the third closed-primitive axis
+    /// carried in `secret_client.rs` after
+    /// [`SecretErrorKind::from_ordinal`] on the five-cell error-kind
+    /// axis (`42ed8a5`) and [`SecretClientKind`] on the seven-cell
+    /// backend-implementor axis. Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a
+    /// closed-enum axis primitive one seam over
+    /// ([`SecretErrorKind::from_ordinal`],
+    /// [`AttributionRule::from_ordinal`][crate::error::AttributionRule::from_ordinal],
+    /// [`crate::error::FieldPathLocalization::from_ordinal`],
+    /// [`crate::error::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`],
+    /// [`crate::secret::SecretRefShape::from_ordinal`]); this landing
+    /// closes the same partial-inverse discipline on the six-cell
+    /// operation axis, keeping the "not on the variant surface" case
+    /// a typed [`None`] rather than a fabricated variant. With this
+    /// landing the operation axis carries the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on the scalar-[`usize`] surface
+    /// as a const-callable inherent — the same shape the sibling
+    /// closed-enum axes already ship.
+    ///
+    /// **Round-trip law** —
+    /// `SecretOperation::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: SecretOperation`. The forward-map [`Self::ordinal`]
+    /// and the const-fn inverse-map [`Self::from_ordinal`] share the
+    /// SAME closed six-cell declaration order ([`Self::ALL`],
+    /// mirroring the arm order in [`Self::ordinal`]); the law holds
+    /// by construction. Pinned by
+    /// [`tests::secret_operation_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SecretOperation::from_ordinal(o) == None` for every `o >= 6`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format ordinal from a version-
+    /// skewed peer (e.g. a client speaking a superset with a
+    /// seventh `Metadata` or `Renew` operation the local build has
+    /// not landed) or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::secret_operation_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `SecretOperation::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order,
+    /// so the test below pins the pointwise agreement and a future
+    /// edit that shifts one without the other fails at test time on
+    /// the first drifted position. Pinned by
+    /// [`tests::secret_operation_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `SecretOperation::from_ordinal(o) == crate::axis_at::<Self>(o)`
+    /// for every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through
+    /// the [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the closed six-cell
+    /// match; the pointwise-agreement pin keeps the two seams
+    /// substitutable. Pinned by
+    /// [`tests::secret_operation_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] on the sibling scalar-label surface.
+    /// Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (e.g. a `const [SecretOperation; 6]` variant
+    /// array recovered from a `const [u8; 6]` wire-format ordinal
+    /// list, a per-operation retry-policy slot in a `const`
+    /// initializer keyed by ordinal, a `const` per-operation weight
+    /// vector partitioning the mutating half ([`Self::Put`],
+    /// [`Self::Delete`], [`Self::Rotate`]) from the read half
+    /// ([`Self::Get`], [`Self::List`], [`Self::GetVersion`]) keyed by
+    /// ordinal, a per-operation attestation-manifest slot bucketing
+    /// refused-call histograms keyed by ordinal) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding that [`crate::axis_at::<SecretOperation>`]
+    /// currently requires (it delegates through [`Iterator::position`]
+    /// over a generic [`crate::ClosedAxis`] trait bound, non-`const`
+    /// on today's toolchain). Pinned by
+    /// [`tests::secret_operation_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Get),
+            1 => Some(Self::List),
+            2 => Some(Self::Put),
+            3 => Some(Self::Delete),
+            4 => Some(Self::Rotate),
+            5 => Some(Self::GetVersion),
+            _ => None,
+        }
+    }
+
     /// Whether `caps` advertises this operation — the typed projection
     /// of [`SecretOperation`] onto the matching [`Capabilities`] field.
     ///
@@ -6377,6 +6494,167 @@ mod tests {
             (SecretOperation::GetVersion, GET_VERSION),
         ] {
             assert_eq!(op.ordinal(), expected, "op {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `SecretOperation::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: SecretOperation. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed six-cell declaration order
+        // (`SecretOperation::ALL`, mirroring the arm order in
+        // `SecretOperation::ordinal`); the law holds by construction.
+        // Sibling of `secret_error_kind_from_ordinal_round_trips_via_ordinal`
+        // on the sibling five-cell secret-client error-kind axis one
+        // impl block over, extended here onto the six-cell operation
+        // axis — the first landing of the round-trip inversion law
+        // on the operation-axis primitive.
+        for &op in SecretOperation::ALL {
+            let ordinal = op.ordinal();
+            let recovered = SecretOperation::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(op),
+                "round-trip failed for {op:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 6` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format ordinal from a version-skewed peer
+        // (e.g. a client speaking a superset with a seventh
+        // `Metadata` or `Renew` operation the local build has not
+        // landed) or an operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `secret_error_kind_from_ordinal_rejects_out_of_range` on
+        // the five-cell secret-client error-kind axis.
+        let card = SecretOperation::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                SecretOperation::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme `usize::MAX` to guard the closed match's `_` arm on
+        // the largest representable index.
+        assert_eq!(
+            SecretOperation::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SecretOperation::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn secret_operation_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(SecretOperation::ALL[i])` for every
+        // i in 0..ALL.len() — the inverse of `ordinal` agrees with
+        // the same `Self::ALL` slice literal `ordinal` matches
+        // against. A future edit shifting one match without the
+        // other fails here on the first drifted index. Sibling of
+        // `secret_error_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the five-cell secret-client error-kind axis.
+        for (index, &expected) in SecretOperation::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretOperation::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with SecretOperation::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (6) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            SecretOperation::from_ordinal(SecretOperation::ALL.len()),
+            None,
+            "ordinal equal to SecretOperation::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn secret_operation_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent six-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both `None`).
+        // Where `axis_at` delegates through the `ClosedAxis` impl to a
+        // bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal.
+        let card = SecretOperation::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                SecretOperation::from_ordinal(o),
+                crate::axis_at::<SecretOperation>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretOperation::ordinal` and the sibling
+        // `SecretOperation::as_str`. A drop of the `const` qualifier
+        // on `SecretOperation::from_ordinal` fails this test to
+        // compile. Sibling of
+        // `secret_error_kind_from_ordinal_is_const_callable` on the
+        // five-cell secret-client error-kind axis, extended here onto
+        // the six-cell operation axis.
+        //
+        // Seven `const` bindings — six in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the seven const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<SecretOperation> = SecretOperation::from_ordinal(0);
+        const AT_1: Option<SecretOperation> = SecretOperation::from_ordinal(1);
+        const AT_2: Option<SecretOperation> = SecretOperation::from_ordinal(2);
+        const AT_3: Option<SecretOperation> = SecretOperation::from_ordinal(3);
+        const AT_4: Option<SecretOperation> = SecretOperation::from_ordinal(4);
+        const AT_5: Option<SecretOperation> = SecretOperation::from_ordinal(5);
+        const AT_OOR: Option<SecretOperation> =
+            SecretOperation::from_ordinal(SecretOperation::ALL.len());
+
+        assert_eq!(AT_0, Some(SecretOperation::Get));
+        assert_eq!(AT_1, Some(SecretOperation::List));
+        assert_eq!(AT_2, Some(SecretOperation::Put));
+        assert_eq!(AT_3, Some(SecretOperation::Delete));
+        assert_eq!(AT_4, Some(SecretOperation::Rotate));
+        assert_eq!(AT_5, Some(SecretOperation::GetVersion));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretOperation::ALL` to its index —
+        // the const-context welds above only exercise the six
+        // variants named at const-binding sites plus one out-of-range
+        // sentinel, but the runtime pin threads the full closed
+        // six-cell list through the same projection to catch a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        for (index, &variant) in SecretOperation::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretOperation::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
