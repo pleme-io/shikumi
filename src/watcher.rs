@@ -575,6 +575,101 @@ impl WatchEventClass {
             Self::Ignored => 2,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..3` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded three-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Reload`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Removed`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Ignored`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the reload-relevance axis.** Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a closed-enum
+    /// axis primitive one seam over
+    /// ([`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::cli::OutputFormat::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::FieldPathLocalization::from_ordinal`],
+    /// [`crate::SupportBoundaryDistance::from_ordinal`],
+    /// [`crate::SupportMagnitudeDirection::from_ordinal`],
+    /// [`crate::HintSurface::from_ordinal`]); this landing closes the
+    /// same partial-inverse discipline on the three-cell
+    /// reload-relevance axis, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant. With
+    /// this landing the reload-relevance axis carries the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on the scalar-[`usize`] surface
+    /// as a const-callable inherent — the same shape the sibling
+    /// closed-enum axes already ship. First landing of the
+    /// ordinal-inverse peer idiom on a `watcher.rs`-scoped
+    /// closed-primitive axis.
+    ///
+    /// **Round-trip law** —
+    /// `WatchEventClass::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: WatchEventClass`. The forward-map [`Self::ordinal`]
+    /// and the const-fn inverse-map [`Self::from_ordinal`] share the
+    /// SAME closed three-cell declaration order ([`Self::ALL`]); the
+    /// law holds by construction. Pinned by
+    /// [`tests::watch_event_class_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `WatchEventClass::from_ordinal(o) == None` for every `o >= 3`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer
+    /// or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::watch_event_class_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `WatchEventClass::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order,
+    /// so the test below pins the pointwise agreement and a future
+    /// edit that shifts one without the other fails at test time on
+    /// the first drifted position. [`WatchEventClass`] is a
+    /// [`crate::ClosedAxis`] primitive (the trait impl below delegates
+    /// `ALL` to [`Self::ALL`]), so the pointwise-agreement law is
+    /// pinned against the [`crate::axis_at`] trait-uniform projection —
+    /// idiom-peer of the same law on the sibling closed-axis
+    /// primitives [`crate::ConfigTierKind::from_ordinal`] and
+    /// [`crate::ConfigSourceKind::from_ordinal`]. Pinned by
+    /// [`tests::watch_event_class_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of every peer per-variant projection on the
+    /// [`impl WatchEventClass`] block ([`Self::is_reload`],
+    /// [`Self::is_removed`], [`Self::is_ignored`],
+    /// [`Self::is_file_mutation`], [`Self::classify`],
+    /// [`Self::should_reload`]). Consumers wanting a
+    /// compile-time-selected ordinal-keyed dispatch table (e.g. a
+    /// `const [WatchEventClass; 3]` variant array recovered from a
+    /// `const [u8; 3]` wire-format ordinal list, a per-class
+    /// reload-policy slot in a `const` initializer keyed by ordinal, a
+    /// `const` per-class weight vector routing reload-trigger
+    /// histograms under a different weight than the raw event-kind
+    /// counters) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::watch_event_class_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Reload),
+            1 => Some(Self::Removed),
+            2 => Some(Self::Ignored),
+            _ => None,
+        }
+    }
 }
 
 impl ClosedAxis for WatchEventClass {
@@ -2351,6 +2446,129 @@ mod tests {
         assert_eq!(RELOAD_ORD, 0);
         assert_eq!(REMOVED_ORD, 1);
         assert_eq!(IGNORED_ORD, 2);
+    }
+
+    #[test]
+    fn watch_event_class_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `WatchEventClass::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: WatchEventClass. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed three-cell declaration order
+        // (`WatchEventClass::ALL`); the law holds by construction.
+        // Sibling of `hint_surface_from_ordinal_round_trips_via_ordinal`
+        // on the coverage-hint surface axis and of
+        // `config_source_kind_from_ordinal_round_trips_via_ordinal` on
+        // the sibling closed-axis source-kind primitive, extended here
+        // onto the three-cell reload-relevance axis.
+        for &class in WatchEventClass::ALL {
+            let ordinal = class.ordinal();
+            let recovered = WatchEventClass::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(class),
+                "round-trip failed for {class:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn watch_event_class_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 3` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant.
+        let card = WatchEventClass::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                WatchEventClass::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            WatchEventClass::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            WatchEventClass::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_from_ordinal_agrees_with_axis_at_pointwise() {
+        // `from_ordinal(i) == Some(axis_at::<WatchEventClass>(i))` for
+        // every i in 0..ALL.len() — the inverse of `ordinal` agrees
+        // with the same trait-uniform `crate::axis_at` projection over
+        // the `ClosedAxis` bound at every declared position.
+        // `WatchEventClass` IS a `ClosedAxis` primitive (the
+        // `impl ClosedAxis for WatchEventClass` above delegates `ALL`
+        // to `Self::ALL`), so the pointwise-agreement law targets
+        // `crate::axis_at` directly — idiom-peer of the corresponding
+        // pin on `ConfigSourceKind::from_ordinal` and
+        // `ConfigTierKind::from_ordinal`. A future edit that shifts
+        // one match arm without shifting `ALL` (or vice versa) fails
+        // here on the first drifted index.
+        for (index, &expected) in WatchEventClass::ALL.iter().enumerate() {
+            let from_axis_at = crate::axis_at::<WatchEventClass>(index);
+            assert_eq!(
+                from_axis_at,
+                Some(expected),
+                "axis_at must yield ALL[{index}] on the closed-axis reload-relevance primitive",
+            );
+            assert_eq!(
+                WatchEventClass::from_ordinal(index),
+                from_axis_at,
+                "from_ordinal({index}) must agree with axis_at({index})",
+            );
+        }
+        // Beyond the axis cardinality (3) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            WatchEventClass::from_ordinal(WatchEventClass::ALL.len()),
+            None,
+            "ordinal equal to WatchEventClass::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn watch_event_class_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `WatchEventClass::ordinal` and of every peer
+        // per-variant projection already carried on the
+        // `impl WatchEventClass` block (`is_reload`, `is_removed`,
+        // `is_ignored`, `is_file_mutation`, `classify`,
+        // `should_reload`). A drop of the `const` qualifier on
+        // `WatchEventClass::from_ordinal` fails this test to compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // sentinel at `WatchEventClass::ALL.len()` — route each
+        // ordinal through the const-fn inverse in const position. The
+        // moment `from_ordinal` loses its const-ness one of the four
+        // const welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const AT_0: Option<WatchEventClass> = WatchEventClass::from_ordinal(0);
+        const AT_1: Option<WatchEventClass> = WatchEventClass::from_ordinal(1);
+        const AT_2: Option<WatchEventClass> = WatchEventClass::from_ordinal(2);
+        const AT_3: Option<WatchEventClass> = WatchEventClass::from_ordinal(3);
+
+        assert_eq!(AT_0, Some(WatchEventClass::Reload));
+        assert_eq!(AT_1, Some(WatchEventClass::Removed));
+        assert_eq!(AT_2, Some(WatchEventClass::Ignored));
+        assert_eq!(AT_3, None);
     }
 
     #[test]
