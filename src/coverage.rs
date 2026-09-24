@@ -1590,6 +1590,101 @@ impl HintSurface {
             Self::EnvVar => 3,
         }
     }
+
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..4` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded four-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::DeadKnob`]`)`
+    /// - `1` → [`Some`]`(`[`Self::StaleEntry`]`)`
+    /// - `2` → [`Some`]`(`[`Self::ValueKey`]`)`
+    /// - `3` → [`Some`]`(`[`Self::EnvVar`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the coverage-hint surface axis.** Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a closed-enum
+    /// axis primitive one seam over
+    /// ([`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::cli::OutputFormat::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::FieldPathLocalization::from_ordinal`],
+    /// [`SupportBoundaryDistance::from_ordinal`][crate::SupportBoundaryDistance::from_ordinal],
+    /// [`SupportMagnitudeDirection::from_ordinal`][crate::SupportMagnitudeDirection::from_ordinal]);
+    /// this landing closes the same partial-inverse discipline on the
+    /// four-cell coverage-hint surface axis, keeping the "not on the
+    /// variant surface" case a typed [`None`] rather than a fabricated
+    /// variant. With this landing the coverage-hint surface axis carries
+    /// the (`ordinal`, `from_ordinal`) round-trip pair on the
+    /// scalar-[`usize`] surface as a const-callable inherent — the same
+    /// shape the sibling closed-enum axes already ship.
+    ///
+    /// **Round-trip law** —
+    /// `HintSurface::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: HintSurface`. The forward-map [`Self::ordinal`] and the
+    /// const-fn inverse-map [`Self::from_ordinal`] share the SAME closed
+    /// four-cell declaration order ([`Self::ALL`]); the law holds by
+    /// construction. Pinned by
+    /// [`tests::hint_surface_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `HintSurface::from_ordinal(o) == None` for every `o >= 4`. The
+    /// closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer
+    /// or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::hint_surface_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `HintSurface::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order,
+    /// so the test below pins the pointwise agreement and a future edit
+    /// that shifts one without the other fails at test time on the
+    /// first drifted position. [`HintSurface`] is not a
+    /// [`crate::ClosedAxis`] primitive (no `ALL`-shaped substrate-axis
+    /// trait constant is declared on it), so the pointwise-agreement
+    /// law targets [`Self::ALL`] position directly rather than
+    /// [`crate::axis_at`] — idiom-peer of
+    /// [`SupportBoundaryDistance::from_ordinal`][crate::SupportBoundaryDistance::from_ordinal]
+    /// and
+    /// [`SupportMagnitudeDirection::from_ordinal`][crate::SupportMagnitudeDirection::from_ordinal]
+    /// on the sibling non-`ClosedAxis` cube-classifier axes. Pinned by
+    /// [`tests::hint_surface_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// every peer per-variant projection on the [`impl HintSurface`]
+    /// block ([`Self::is_dead_knob`], [`Self::is_stale_entry`],
+    /// [`Self::is_value_key`], [`Self::is_env_var`],
+    /// [`Self::is_coverage_hint`], [`Self::is_typo_audit_hint`]).
+    /// Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (e.g. a `const [HintSurface; 4]` variant array
+    /// recovered from a `const [u8; 4]` wire-format ordinal list, a
+    /// per-surface remediation-suggestion slot in a `const` initializer
+    /// keyed by ordinal, a `const` per-surface weight vector routing
+    /// coverage rollups under a different weight than typo-audit
+    /// rollups) route through the projection under `const` without
+    /// dropping through a runtime `let` binding. Pinned by
+    /// [`tests::hint_surface_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::DeadKnob),
+            1 => Some(Self::StaleEntry),
+            2 => Some(Self::ValueKey),
+            3 => Some(Self::EnvVar),
+            _ => None,
+        }
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -8464,6 +8559,124 @@ tags: []
         ] {
             assert_eq!(surface.ordinal(), expected, "surface {surface:?}");
         }
+    }
+
+    #[test]
+    fn hint_surface_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `HintSurface::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: HintSurface. The forward-map `ordinal`
+        // and the const-fn inverse-map `from_ordinal` share the SAME
+        // closed four-cell declaration order (`HintSurface::ALL`); the
+        // law holds by construction. Sibling of
+        // `support_boundary_distance_from_ordinal_round_trips_via_ordinal`
+        // and `support_magnitude_direction_from_ordinal_round_trips_via_ordinal`
+        // on the sibling non-`ClosedAxis` cube-classifier axes,
+        // extended here onto the four-cell coverage-hint surface axis.
+        for &surface in HintSurface::ALL {
+            let ordinal = surface.ordinal();
+            let recovered = HintSurface::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(surface),
+                "round-trip failed for {surface:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 4` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against a
+        // stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant.
+        let card = HintSurface::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                HintSurface::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            HintSurface::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            HintSurface::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn hint_surface_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(HintSurface::ALL[i])` for every i in
+        // 0..ALL.len() — the inverse of `ordinal` agrees with the same
+        // `Self::ALL` slice literal `ordinal` matches against. A future
+        // edit shifting one match without the other fails here on the
+        // first drifted index. `HintSurface` is not a `ClosedAxis`
+        // primitive (no `ALL`-shaped substrate-axis trait constant is
+        // declared on it), so the pointwise-agreement law targets
+        // `Self::ALL` position directly rather than `crate::axis_at` —
+        // idiom-peer of
+        // `support_boundary_distance_from_ordinal_agrees_with_all_index_pointwise`
+        // and `support_magnitude_direction_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling non-`ClosedAxis` cube-classifier axes.
+        for (index, &expected) in HintSurface::ALL.iter().enumerate() {
+            assert_eq!(
+                HintSurface::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with HintSurface::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (4) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            HintSurface::from_ordinal(HintSurface::ALL.len()),
+            None,
+            "ordinal equal to HintSurface::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn hint_surface_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `HintSurface::ordinal` and of every peer per-
+        // variant projection already carried on the `impl HintSurface`
+        // block (`is_dead_knob`, `is_stale_entry`, `is_value_key`,
+        // `is_env_var`, `is_coverage_hint`, `is_typo_audit_hint`). A
+        // drop of the `const` qualifier on `HintSurface::from_ordinal`
+        // fails this test to compile.
+        //
+        // Five `const` bindings — four in-range plus one out-of-range
+        // sentinel at `HintSurface::ALL.len()` — route each ordinal
+        // through the const-fn inverse in const position. The moment
+        // `from_ordinal` loses its const-ness one of the five const
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const AT_0: Option<HintSurface> = HintSurface::from_ordinal(0);
+        const AT_1: Option<HintSurface> = HintSurface::from_ordinal(1);
+        const AT_2: Option<HintSurface> = HintSurface::from_ordinal(2);
+        const AT_3: Option<HintSurface> = HintSurface::from_ordinal(3);
+        const AT_4: Option<HintSurface> = HintSurface::from_ordinal(4);
+
+        assert_eq!(AT_0, Some(HintSurface::DeadKnob));
+        assert_eq!(AT_1, Some(HintSurface::StaleEntry));
+        assert_eq!(AT_2, Some(HintSurface::ValueKey));
+        assert_eq!(AT_3, Some(HintSurface::EnvVar));
+        assert_eq!(AT_4, None);
     }
 
     #[test]
