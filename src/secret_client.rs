@@ -677,6 +677,166 @@ impl SecretErrorKind {
         }
     }
 
+    /// Const-fn label → variant inverse of [`Self::as_str`]. Returns
+    /// [`Some(variant)`][Some] on the exact five-cell canonical label
+    /// codomain [`Self::as_str`] emits (the kebab-case [`Self::NotFound`]
+    /// label `"not-found"` plus the four lowercase single-word labels
+    /// `"unauthorized"`, `"unsupported"`, `"backend"`, `"shikumi"`) and
+    /// [`None`] on any other `&str`.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `"not-found"` → [`Some`]`(`[`Self::NotFound`]`)`
+    /// - `"unauthorized"` → [`Some`]`(`[`Self::Unauthorized`]`)`
+    /// - `"unsupported"` → [`Some`]`(`[`Self::Unsupported`]`)`
+    /// - `"backend"` → [`Some`]`(`[`Self::Backend`]`)`
+    /// - `"shikumi"` → [`Some`]`(`[`Self::Shikumi`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn label-inverse peer idiom on
+    /// the secret-client error-kind axis.** Every prior landing of the
+    /// (`as_str`, `from_str`) round-trip pair targeted a closed-enum
+    /// axis primitive one seam over
+    /// ([`crate::ConfigTierKind::from_str`],
+    /// [`crate::ConfigSourceKind::from_str`],
+    /// [`crate::DiffLineKind::from_str`],
+    /// [`crate::cli::OutputFormat::from_str`],
+    /// [`crate::Format::from_str`],
+    /// [`crate::FormatProvenance::from_str`],
+    /// [`crate::FigmentSourceKind::from_str`],
+    /// [`crate::FigmentNameTagKind::from_str`],
+    /// [`crate::EnvMetadataTagKind::from_str`],
+    /// [`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::secret::SecretRefShape::from_str`],
+    /// [`crate::secret::SecretBackendKind::from_str`], and
+    /// [`crate::ShikumiErrorKind::from_str`]); this landing closes the
+    /// same partial-inverse discipline on the five-cell secret-client
+    /// error-kind axis, keeping the "not on the canonical variant
+    /// surface" case a typed [`None`] rather than a fabricated variant.
+    /// With this landing the secret-client error-kind axis now carries
+    /// BOTH the (`ordinal`, `from_ordinal`) round-trip pair on the
+    /// scalar-[`usize`] surface AND the (`as_str`, `from_str`)
+    /// round-trip pair on the scalar-`&str` surface as const-callable
+    /// inherents — welding the full label/ordinal cube-inversion square
+    /// on the secret-client error-kind primitive, the same shape the
+    /// sibling closed-enum axes [`crate::Format`],
+    /// [`crate::FormatProvenance`], [`crate::ConfigSourceKind`],
+    /// [`crate::DiffLineKind`], [`crate::watcher::WatchEventClass`],
+    /// [`crate::secret::SecretRefShape`],
+    /// [`crate::secret::SecretBackendKind`], and
+    /// [`crate::ShikumiErrorKind`] already carry. First landing of the
+    /// label-inverse peer idiom on a `secret_client.rs`-scoped
+    /// closed-primitive axis.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the five-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer also of the
+    /// macro-generated [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`] on this primitive
+    /// at `src/secret_client.rs`) one seam over that returns
+    /// [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// spellings [`Self::as_str`] emits (the kebab-case `"not-found"`
+    /// for [`Self::NotFound`], the four lowercase single-word labels
+    /// for the others), matching the discipline of the sibling const-fn
+    /// scalar inverse [`Self::from_ordinal`] and of the sibling
+    /// [`crate::ShikumiErrorKind::from_str`] /
+    /// [`crate::secret::SecretBackendKind::from_str`] /
+    /// [`crate::watcher::WatchEventClass::from_str`] /
+    /// [`crate::FormatProvenance::from_str`] const-fn label inverses.
+    /// A consumer wanting case-insensitive parsing (an operator-typed
+    /// `--filter-kind=BACKEND` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered attestation-manifest summary) reaches for the
+    /// trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or the
+    /// macro-generated [`std::str::FromStr`] impl (both case-lower
+    /// before matching), or lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `SecretErrorKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretErrorKind`. Composes with [`Self::as_str`] on the
+    /// same five-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::secret_error_kind_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SecretErrorKind::from_str(s) == None` for every `s` outside the
+    /// canonical five-cell set. The closed match's `_` arm forwards the
+    /// off-surface case to [`None`] structurally; the guard degrades
+    /// gracefully on a caller passing a stale wire-format label from a
+    /// version-skewed peer, a mixed-case operator-typed CLI argument
+    /// that never went through a lowering step, the empty string, an
+    /// underscore rendering of the compound-noun variant (`"not_found"`
+    /// — the snake_case shape a consumer might have inferred from the
+    /// Rust identifier), unpunctuated spellings (`"notfound"`), the
+    /// near-miss labels of adjacent primitives on the sealed fold
+    /// (`"defaults"` / `"env"` / `"file"` — the sibling
+    /// [`crate::ConfigSourceKind`] labels one primitive over, valid
+    /// there, rejected here), or a hypothetical sixth-variant label a
+    /// future extension would introduce (e.g. a `Cancelled` or
+    /// `Timeout` kind). Pinned by
+    /// [`tests::secret_error_kind_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `SecretErrorKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretErrorKind`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same five-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::secret_error_kind_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: SecretErrorKind`,
+    /// `SecretErrorKind::from_str(v.as_str()) ==
+    /// <SecretErrorKind as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact labels
+    /// [`Self::as_str`] emits; they diverge only OFF that codomain
+    /// (the trait method case-insensitive-lowers non-canonical labels,
+    /// the inherent rejects them structurally). This pin cross-checks
+    /// the const-fn label seam against the trait-uniform label seam on
+    /// the closed variant surface. Pinned by
+    /// [`tests::secret_error_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// on the secret-client error-kind axis (a
+    /// `const [SecretErrorKind; 5]` variant array recovered from a
+    /// `const &[&str; 5]` canonical-label list, a per-kind
+    /// retry-policy slot in a `const` initializer keyed by canonical
+    /// label, a `const` per-kind alerting-threshold vector routing
+    /// backend-origin kinds (`"not-found"`, `"unauthorized"`,
+    /// `"unsupported"`, `"backend"`) under a different weight than the
+    /// host-origin kind (`"shikumi"`)) route through the projection
+    /// under `const` without dropping through a runtime `let` binding.
+    /// Pinned by
+    /// [`tests::secret_error_kind_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"not-found" => Some(Self::NotFound),
+            b"unauthorized" => Some(Self::Unauthorized),
+            b"unsupported" => Some(Self::Unsupported),
+            b"backend" => Some(Self::Backend),
+            b"shikumi" => Some(Self::Shikumi),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::NotFound`]; equivalent to
     /// `self == SecretErrorKind::NotFound`.
     ///
@@ -10982,6 +11142,193 @@ mod tests {
         assert_eq!(AT_3, Some(SecretErrorKind::Backend));
         assert_eq!(AT_4, Some(SecretErrorKind::Shikumi));
         assert_eq!(AT_5, None);
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_round_trips_via_as_str() {
+        // Round-trip law: `SecretErrorKind::from_str(v.as_str()) ==
+        // Some(v)` for every v: SecretErrorKind. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed five-cell label table (the kebab-case
+        // `"not-found"` for `NotFound` plus the four lowercase
+        // single-word labels `"unauthorized"`, `"unsupported"`,
+        // `"backend"`, `"shikumi"` in SecretErrorKind::ALL declaration
+        // order); the law holds by construction. Sibling of
+        // `shikumi_error_kind_from_str_round_trips_via_as_str` on the
+        // septet shikumi error-kind axis one primitive over and of
+        // `secret_error_kind_from_ordinal_round_trips_via_ordinal` on
+        // the scalar-usize surface of the same primitive.
+        for &kind in SecretErrorKind::ALL {
+            let rendered = kind.as_str();
+            let recovered = SecretErrorKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical five-cell set — the codomain of `as_str` —
+        // resolves to `None` via the closed match's `_` arm. Sweeps
+        // mixed-case (`"NOT-FOUND"`, `"NotFound"`, `"Backend"`), the
+        // snake_case rendering `"not_found"` a consumer might have
+        // inferred from the Rust identifier, the unpunctuated
+        // `"notfound"`, leading/trailing whitespace, the empty string,
+        // adjacent labels a hypothetical future extension might
+        // introduce (`"cancelled"`, `"timeout"`, `"aborted"`), and
+        // near-miss spellings from adjacent primitives on the sealed
+        // fold (`"defaults"` / `"env"` / `"file"` — the sibling
+        // ConfigSourceKind labels one primitive over, valid there,
+        // rejected here; `"literal"` / `"command"` / `"sops"` — the
+        // sibling SecretBackendKind labels; `"whole"` / `"field"` —
+        // the sibling SecretRefShape labels; `"reload"` / `"removed"`
+        // / `"ignored"` — the sibling WatchEventClass labels;
+        // `"parse"` / `"io"` / `"validation"` — the sibling
+        // ShikumiErrorKind labels, valid there, rejected here). The
+        // case-sensitivity discipline matches the sibling
+        // `ShikumiErrorKind::from_str`, `SecretBackendKind::from_str`,
+        // `WatchEventClass::from_str`, `ConfigSourceKind::from_str`,
+        // `DiffLineKind::from_str`, and `SecretRefShape::from_str`
+        // const-fn label inverses; callers wanting case-insensitive
+        // parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "NOT-FOUND",
+            "Not-Found",
+            "NotFound",
+            "not_found",
+            "notfound",
+            "not-found ",
+            " not-found",
+            "not-found\n",
+            "UNAUTHORIZED",
+            "Unauthorized",
+            "uNaUtHoRiZeD",
+            "UNSUPPORTED",
+            "Unsupported",
+            "BACKEND",
+            "Backend",
+            "SHIKUMI",
+            "Shikumi",
+            "",
+            "cancelled",
+            "timeout",
+            "aborted",
+            "defaults",
+            "env",
+            "file",
+            "literal",
+            "command",
+            "sops",
+            "whole",
+            "field",
+            "multifield",
+            "reload",
+            "removed",
+            "ignored",
+            "parse",
+            "io",
+            "validation",
+            "figment",
+            "extract",
+            "backendshikumi",
+        ] {
+            assert_eq!(
+                SecretErrorKind::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretErrorKind::as_str` and the sibling
+        // `SecretErrorKind::from_ordinal`. A drop of the `const`
+        // qualifier on `SecretErrorKind::from_str` fails this test to
+        // compile.
+        //
+        // Six `const` bindings — five in-range plus one out-of-range
+        // — route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the six const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `secret_error_kind_from_ordinal_is_const_callable`
+        // on the scalar-usize surface of the same primitive and of
+        // `shikumi_error_kind_from_str_is_const_callable` on the
+        // septet shikumi error-kind axis one primitive over.
+        const AT_NOT_FOUND: Option<SecretErrorKind> = SecretErrorKind::from_str("not-found");
+        const AT_UNAUTHORIZED: Option<SecretErrorKind> = SecretErrorKind::from_str("unauthorized");
+        const AT_UNSUPPORTED: Option<SecretErrorKind> = SecretErrorKind::from_str("unsupported");
+        const AT_BACKEND: Option<SecretErrorKind> = SecretErrorKind::from_str("backend");
+        const AT_SHIKUMI: Option<SecretErrorKind> = SecretErrorKind::from_str("shikumi");
+        const AT_UNKNOWN: Option<SecretErrorKind> = SecretErrorKind::from_str("cancelled");
+
+        assert_eq!(AT_NOT_FOUND, Some(SecretErrorKind::NotFound));
+        assert_eq!(AT_UNAUTHORIZED, Some(SecretErrorKind::Unauthorized));
+        assert_eq!(AT_UNSUPPORTED, Some(SecretErrorKind::Unsupported));
+        assert_eq!(AT_BACKEND, Some(SecretErrorKind::Backend));
+        assert_eq!(AT_SHIKUMI, Some(SecretErrorKind::Shikumi));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in SecretErrorKind::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same five-cell declaration; a
+        // future edit that shifts the label on ONE match (say
+        // renaming the `NotFound` arm's label to `"missing"` on the
+        // `as_str` side but not the `from_str` side, or dropping the
+        // kebab on `NotFound` from `"not-found"` to `"notfound"` on
+        // one side but not the other) fails here on the first drifted
+        // arm. Sibling of `shikumi_error_kind_from_str_agrees_with_as_str_pointwise`
+        // on the septet shikumi error-kind axis one primitive over.
+        for &kind in SecretErrorKind::ALL {
+            assert_eq!(
+                SecretErrorKind::from_str(kind.as_str()),
+                Some(kind),
+                "from_str(as_str) must agree pointwise for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the
+        // trait method case-insensitive-lowers non-canonical labels,
+        // the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the
+        // trait-uniform label seam on the closed variant surface.
+        // Sibling of
+        // `shikumi_error_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the septet shikumi error-kind axis one primitive over.
+        use crate::ClosedAxisLabel;
+        for &kind in SecretErrorKind::ALL {
+            let label = kind.as_str();
+            let inherent = SecretErrorKind::from_str(label);
+            let trait_uniform = <SecretErrorKind as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
     }
 
     #[test]
