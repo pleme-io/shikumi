@@ -1144,6 +1144,113 @@ impl SecretBackendKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..8` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded eight-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Literal`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Command`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Op`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Sops`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Akeyless`]`)`
+    /// - `5` → [`Some`]`(`[`Self::Vault`]`)`
+    /// - `6` → [`Some`]`(`[`Self::AwsSecret`]`)`
+    /// - `7` → [`Some`]`(`[`Self::GcpSecret`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on the
+    /// secret-resolution backend-kind axis — the largest closed kind axis
+    /// in the crate (eight cells, one cell wider than
+    /// [`crate::ShikumiErrorKind`]'s septet, two cells wider than the
+    /// crate-side quinary [`crate::cli::TierArg`], and four cells wider
+    /// than the crate-side quaternary [`crate::ConfigTierKind`]). Every
+    /// prior landing of the (`ordinal`, `from_ordinal`) round-trip pair
+    /// targeted a closed-enum axis primitive one seam over
+    /// ([`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::OutputFormat::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`], and
+    /// [`crate::cli::TierArg::from_ordinal`]); this landing closes the
+    /// same partial-inverse discipline on the octonary secret-backend-kind
+    /// axis, keeping the "not on the variant surface" case a typed
+    /// [`None`] rather than a fabricated variant. With this landing the
+    /// backend-kind axis carries the (`ordinal`, `from_ordinal`)
+    /// round-trip pair on the scalar-[`usize`] surface as a
+    /// const-callable inherent — the same shape the twelve sibling
+    /// closed-enum axes already ship.
+    ///
+    /// **Round-trip law** —
+    /// `SecretBackendKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: SecretBackendKind`. The forward-map [`Self::ordinal`]
+    /// and the const-fn inverse-map [`Self::from_ordinal`] share the
+    /// SAME closed eight-cell declaration order ([`Self::ALL`],
+    /// mirroring the arm order in [`SecretBackend::kind`]); the law
+    /// holds by construction. Pinned by
+    /// [`tests::secret_backend_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SecretBackendKind::from_ordinal(o) == None` for every `o >= 8`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer or
+    /// an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::secret_backend_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `SecretBackendKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order, so
+    /// the test below pins the pointwise agreement and a future edit
+    /// that shifts one without the other fails at test time on the
+    /// first drifted position. Pinned by
+    /// [`tests::secret_backend_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `SecretBackendKind::from_ordinal(o) == crate::axis_at::<Self>(o)`
+    /// for every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through the
+    /// [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the closed eight-cell
+    /// match; the pointwise-agreement pin keeps the two seams
+    /// substitutable. Pinned by
+    /// [`tests::secret_backend_kind_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`] on the sibling scalar-label surface. Consumers
+    /// wanting a compile-time-selected ordinal-keyed dispatch table
+    /// (e.g. a `const [SecretBackendKind; 8]` variant array indexed by
+    /// ordinal, or a `const` per-backend label built by pairing
+    /// `Self::from_ordinal(o).unwrap().as_str()` at const-eval time)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::secret_backend_kind_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Literal),
+            1 => Some(Self::Command),
+            2 => Some(Self::Op),
+            3 => Some(Self::Sops),
+            4 => Some(Self::Akeyless),
+            5 => Some(Self::Vault),
+            6 => Some(Self::AwsSecret),
+            7 => Some(Self::GcpSecret),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Literal`]; equivalent to
     /// `self == SecretBackendKind::Literal`.
     ///
@@ -3432,6 +3539,227 @@ mod tests {
             (SecretBackendKind::GcpSecret, GCP_SECRET),
         ] {
             assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
+    }
+
+    // ─── SecretBackendKind::from_ordinal — const-fn ordinal-inverse
+    // ─── peer on the octonary secret-resolution backend-kind axis ────
+
+    #[test]
+    fn secret_backend_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law:
+        // `SecretBackendKind::from_ordinal(v.ordinal()) == Some(v)` for
+        // every variant. The forward `ordinal` and the inverse
+        // `from_ordinal` match on the same closed eight-cell surface
+        // (Literal → Command → Op → Sops → Akeyless → Vault →
+        // AwsSecret → GcpSecret) in the SAME declaration order carried
+        // by `SecretBackendKind::ALL`; the composition is the identity
+        // on the variant surface by construction. Direct methodological
+        // peer of `shikumi_error_kind_from_ordinal_round_trips_via_ordinal`
+        // (`dd368c4`) on the seven-cell error-kind axis one primitive
+        // over, extended here onto the eight-cell backend-kind axis
+        // (the largest closed kind axis in the crate).
+        for &kind in SecretBackendKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = SecretBackendKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+
+        // Concrete-cell pin — the eight `(ordinal, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `ordinal`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(
+            SecretBackendKind::from_ordinal(0),
+            Some(SecretBackendKind::Literal)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(1),
+            Some(SecretBackendKind::Command)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(2),
+            Some(SecretBackendKind::Op)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(3),
+            Some(SecretBackendKind::Sops)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(4),
+            Some(SecretBackendKind::Akeyless)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(5),
+            Some(SecretBackendKind::Vault)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(6),
+            Some(SecretBackendKind::AwsSecret)
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(7),
+            Some(SecretBackendKind::GcpSecret)
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection:
+        // `SecretBackendKind::from_ordinal(o) == None` for every `o >= 8`.
+        // The closed match's `_` arm forwards the out-of-range case to
+        // `None` structurally; the guard degrades gracefully on a
+        // caller passing a stale wire-format ordinal from a version-
+        // skewed peer, an operator-typed CLI argument through
+        // `str::parse::<usize>` without a bounds check, or a
+        // hypothetical ninth-variant ordinal (e.g. a future `EnvVar` or
+        // `Kubernetes` backend named in `SecretBackend::kind`'s docs)
+        // a future extension would introduce. Direct methodological
+        // peer of `shikumi_error_kind_from_ordinal_rejects_out_of_range`
+        // (`dd368c4`) on the seven-cell error-kind axis one primitive
+        // over.
+        let card = SecretBackendKind::ALL.len();
+        for out_of_range in card..card + 32 {
+            assert_eq!(
+                SecretBackendKind::from_ordinal(out_of_range),
+                None,
+                "from_ordinal must reject out-of-range ordinal {out_of_range}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            SecretBackendKind::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SecretBackendKind::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // Independent-witness pin cross-checking the const-fn inverse
+        // projection against the `SecretBackendKind::ALL` slice literal
+        // at every closed index —
+        // `SecretBackendKind::from_ordinal(i) == Some(SecretBackendKind::ALL[i])`
+        // for every `i < ALL.len()`. The inherent match and the slice
+        // literal carry the same declaration order (Literal → Command →
+        // Op → Sops → Akeyless → Vault → AwsSecret → GcpSecret); a
+        // future edit that shifted one without the other fails here on
+        // the first drifted position, before the round-trip pin masks
+        // it under composition. Sibling of
+        // `shikumi_error_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the seven-cell error-kind axis one primitive over.
+        for (index, &expected) in SecretBackendKind::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretBackendKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with SecretBackendKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (8) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            SecretBackendKind::from_ordinal(SecretBackendKind::ALL.len()),
+            None,
+            "ordinal equal to SecretBackendKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent eight-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both `None`).
+        // Where `axis_at` delegates through the `ClosedAxis` impl to a
+        // bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal. Sibling of
+        // `shikumi_error_kind_from_ordinal_agrees_with_axis_at_pointwise`
+        // on the seven-cell error-kind axis one primitive over —
+        // `SecretBackendKind` implements `ClosedAxis` at
+        // `secret.rs:1431`, so the `axis_at` cross-check applies here
+        // the same way it does on the sibling substrate-side kind
+        // primitives.
+        let card = SecretBackendKind::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                SecretBackendKind::from_ordinal(o),
+                crate::axis_at::<SecretBackendKind>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of `Self::ordinal`
+        // on the forward side and of the sibling scalar-label
+        // projection `Self::as_str`. A drop of the `const` qualifier on
+        // `SecretBackendKind::from_ordinal` fails this test to compile
+        // at one of the nine const bindings below before the drift can
+        // reach downstream const-context consumers. Sibling of
+        // `shikumi_error_kind_from_ordinal_is_const_callable` on the
+        // seven-cell error-kind axis one primitive over.
+        //
+        // Nine `const` bindings — eight in-range plus one out-of-range
+        // sentinel at `SecretBackendKind::ALL.len()` — route each
+        // ordinal through the const-fn inverse in const position. The
+        // moment `from_ordinal` loses its const-ness one of the nine
+        // const welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const AT_0: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(0);
+        const AT_1: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(1);
+        const AT_2: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(2);
+        const AT_3: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(3);
+        const AT_4: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(4);
+        const AT_5: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(5);
+        const AT_6: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(6);
+        const AT_7: Option<SecretBackendKind> = SecretBackendKind::from_ordinal(7);
+        const AT_OOR: Option<SecretBackendKind> =
+            SecretBackendKind::from_ordinal(SecretBackendKind::ALL.len());
+
+        assert_eq!(AT_0, Some(SecretBackendKind::Literal));
+        assert_eq!(AT_1, Some(SecretBackendKind::Command));
+        assert_eq!(AT_2, Some(SecretBackendKind::Op));
+        assert_eq!(AT_3, Some(SecretBackendKind::Sops));
+        assert_eq!(AT_4, Some(SecretBackendKind::Akeyless));
+        assert_eq!(AT_5, Some(SecretBackendKind::Vault));
+        assert_eq!(AT_6, Some(SecretBackendKind::AwsSecret));
+        assert_eq!(AT_7, Some(SecretBackendKind::GcpSecret));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every variant in `SecretBackendKind::ALL` to its index — the
+        // const-context welds above only exercise the eight variants
+        // named at const-binding sites plus one out-of-range sentinel,
+        // but the runtime pin threads the full closed eight-cell list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (index, &variant) in SecretBackendKind::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretBackendKind::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
