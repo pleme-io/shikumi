@@ -3129,6 +3129,102 @@ impl SameStoreImpossibilityKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// two-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Regressed`]`)`
+    /// - `1` → [`Some`]`(`[`Self::CrossStore`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **First landing of the const-fn ordinal-inverse peer idiom on
+    /// `hotswap.rs`.** Every prior landing of the (`ordinal`,
+    /// `from_ordinal`) round-trip pair targeted a closed-enum axis
+    /// primitive one file over
+    /// ([`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`],
+    /// [`crate::secret::SecretRefShape::from_ordinal`],
+    /// [`crate::secret_client::SecretErrorKind::from_ordinal`],
+    /// [`crate::secret_client::SecretOperation::from_ordinal`],
+    /// [`crate::cli::OutputFormat::from_ordinal`],
+    /// [`crate::cli::TierArg::from_ordinal`],
+    /// [`crate::error::AttributionRule::from_ordinal`],
+    /// [`crate::error::FieldPathLocalization::from_ordinal`]); this
+    /// landing closes the same partial-inverse discipline on the
+    /// two-cell (regressed × cross_store) impossibility-half kind
+    /// axis in `hotswap.rs`, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant. Seeds
+    /// the same shape for a future one-line lift on the sibling
+    /// ternary consistent-half [`SameStoreConsistencyKind::from_ordinal`]
+    /// and the fused-sum quinary [`ProofRelationKind::from_ordinal`]
+    /// on the [`ProofRelation`] classification lattice.
+    ///
+    /// **Round-trip law** —
+    /// `SameStoreImpossibilityKind::from_ordinal(v.ordinal()) ==
+    /// Some(v)` for every `v: SameStoreImpossibilityKind`. The
+    /// forward-map [`Self::ordinal`] and the const-fn inverse-map
+    /// [`Self::from_ordinal`] share the SAME closed two-cell
+    /// declaration order ([`Self::VARIANTS`], mirroring the arm order
+    /// in [`Self::ordinal`]); the law holds by construction. Pinned
+    /// by
+    /// [`variants_tests::same_store_impossibility_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SameStoreImpossibilityKind::from_ordinal(o) == None` for every
+    /// `o >= 2`. The closed match's `_` arm forwards the out-of-range
+    /// case to [`None`] structurally; the guard degrades gracefully
+    /// on a caller passing a stale wire-format ordinal from a
+    /// version-skewed peer (a hypothetical third
+    /// `SignedAttestationMismatch` impossibility corner the local
+    /// build has not landed, say), an operator-typed CLI argument
+    /// routed through [`str::parse::<usize>`][str::parse] without a
+    /// bounds check, or a persisted per-corner metric key whose
+    /// axis-cardinality shifted between crate versions. Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::VARIANTS`] index** —
+    /// `SameStoreImpossibilityKind::from_ordinal(i) ==
+    /// Some(Self::VARIANTS[i])` for every `i` in
+    /// `0..Self::VARIANTS.len()`. The inherent match and the
+    /// [`Self::VARIANTS`] slice literal carry the same declaration
+    /// order, so the test below pins the pointwise agreement and a
+    /// future edit that shifts one without the other fails at test
+    /// time on the first drifted position. Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_from_ordinal_agrees_with_variants_index_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::name`], [`Self::is_regressed`],
+    /// [`Self::is_cross_store`], [`Self::is_watermark_moved`],
+    /// [`Self::is_watermark_stationary`], and
+    /// [`Self::is_generation_advanced`] on the sibling scalar-projection
+    /// surfaces. A drop of the `const` qualifier on
+    /// [`Self::from_ordinal`] fails the const-callability test to
+    /// compile at one of the three const bindings before the drift
+    /// can reach downstream const-context consumers of the ordinal
+    /// (a const per-corner counter-slot index in an attestation
+    /// manifest, a const-selected per-corner dispatch table keyed by
+    /// ordinal, a static assertion pinning a compile-time-known
+    /// corner's ordinal). Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Regressed),
+            1 => Some(Self::CrossStore),
+            _ => None,
+        }
+    }
+
     /// Whether this impossibility corner witnessed the class-scoped watermark
     /// move — `true` on [`Self::CrossStore`] (watermark moved at unchanged
     /// generation counter — the moved-watermark impossibility corner, the
@@ -41802,6 +41898,145 @@ mod variants_tests {
         const CROSS_STORE_ORDINAL: usize = SameStoreImpossibilityKind::CrossStore.ordinal();
         assert_eq!(REGRESSED_ORDINAL, 0);
         assert_eq!(CROSS_STORE_ORDINAL, 1);
+    }
+
+    // ---------- SameStoreImpossibilityKind::from_ordinal — const-fn
+    // ordinal-inverse peer of Self::ordinal on the two-cell
+    // (regressed × cross_store) impossibility-half kind axis. Closes the
+    // scalar-usize half of the (ordinal, from_ordinal) inversion square
+    // on the impossibility-half primitive, matching the shape the sibling
+    // ConfigSourceKind, ConfigTierKind, DiffLineKind, SecretErrorKind,
+    // SecretOperation, SecretBackendKind, SecretRefShape, Format,
+    // FormatProvenance, ShikumiErrorKind, WatchEventClass,
+    // OutputFormat, TierArg, AttributionRule, and FieldPathLocalization
+    // axes already ship. First landing of the const-fn ordinal-inverse
+    // peer idiom on `hotswap.rs`.
+
+    #[test]
+    fn same_store_impossibility_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `SameStoreImpossibilityKind::from_ordinal(v.ordinal())
+        // == Some(v)` for every v: SameStoreImpossibilityKind. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share the SAME
+        // closed two-cell declaration order (`Self::VARIANTS`, mirroring the
+        // arm order in `Self::ordinal`); the law holds by construction.
+        // Sibling of secret_ref_shape_from_ordinal_round_trips_via_ordinal on
+        // the two-cell secret-ref extraction-shape axis one file over,
+        // extended here onto the impossibility-half kind axis — the first
+        // landing of the round-trip inversion law on `hotswap.rs`.
+        for &k in SameStoreImpossibilityKind::VARIANTS {
+            let ordinal = k.ordinal();
+            let recovered = SameStoreImpossibilityKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(k),
+                "round-trip failed for {k:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 2` is not on the variant
+        // surface, so `from_ordinal` degrades to `None` structurally via the
+        // closed match's `_` arm. Guards against a stale wire-format ordinal
+        // from a version-skewed peer (a hypothetical third
+        // `SignedAttestationMismatch` impossibility corner the local build
+        // has not landed, say), an operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check, or a persisted
+        // per-corner metric key whose axis-cardinality shifted between crate
+        // versions — the caller reads the unknown as a typed `None` rather
+        // than a fabricated variant.
+        let card = SameStoreImpossibilityKind::VARIANTS.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                SameStoreImpossibilityKind::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic extreme
+        // `usize::MAX` to guard the closed match's `_` arm on the largest
+        // representable index.
+        assert_eq!(
+            SameStoreImpossibilityKind::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_from_ordinal_agrees_with_variants_index_pointwise() {
+        // `from_ordinal(i) == Some(Self::VARIANTS[i])` for every i in
+        // 0..VARIANTS.len() — the inverse of `ordinal` agrees with the same
+        // `Self::VARIANTS` slice literal `ordinal` is welded against. A future
+        // edit that shifted one match without the other fails here on the
+        // first drifted index. Sibling of
+        // secret_ref_shape_from_ordinal_agrees_with_all_index_pointwise on
+        // the two-cell secret-ref extraction-shape axis.
+        for (index, &expected) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                SameStoreImpossibilityKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with \
+                 SameStoreImpossibilityKind::VARIANTS[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None at every
+        // offset. Pin the immediate boundary to catch a future off-by-one
+        // landing on the first out-of-range slot.
+        assert_eq!(
+            SameStoreImpossibilityKind::from_ordinal(SameStoreImpossibilityKind::VARIANTS.len()),
+            None,
+            "ordinal equal to SameStoreImpossibilityKind::VARIANTS.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is const-callable,
+        // matching the const-ness of the forward projection
+        // `SameStoreImpossibilityKind::ordinal` and the sibling receivers
+        // `name`, `is_regressed`, `is_cross_store`, `is_watermark_moved`,
+        // `is_watermark_stationary`, and `is_generation_advanced`. A drop of
+        // the `const` qualifier on `SameStoreImpossibilityKind::from_ordinal`
+        // fails this test to compile.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range —
+        // route each ordinal through the const-fn inverse in const position.
+        // The moment `from_ordinal` loses its const-ness one of the three
+        // const welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness through the
+        // projection.
+        const AT_0: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_ordinal(0);
+        const AT_1: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_ordinal(1);
+        const AT_OOR: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_ordinal(SameStoreImpossibilityKind::VARIANTS.len());
+
+        assert_eq!(AT_0, Some(SameStoreImpossibilityKind::Regressed));
+        assert_eq!(AT_1, Some(SameStoreImpossibilityKind::CrossStore));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal on every
+        // variant in `SameStoreImpossibilityKind::VARIANTS` to its index —
+        // the const-context welds above only exercise the two variants named
+        // at const-binding sites plus one out-of-range sentinel, but the
+        // runtime pin threads the full closed two-cell list through the same
+        // projection to catch a future variant landing whose const-context
+        // weld was forgotten upstream.
+        for (index, &variant) in SameStoreImpossibilityKind::VARIANTS.iter().enumerate() {
+            assert_eq!(
+                SameStoreImpossibilityKind::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
+        }
     }
 }
 
