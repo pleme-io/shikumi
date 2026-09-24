@@ -314,6 +314,100 @@ impl TierArg {
         }
     }
 
+    /// The variant-side inverse of [`Self::ordinal`] — recovers the
+    /// [`TierArg`] variant whose scalar-`usize` ordinal is `ordinal`,
+    /// wrapped in [`Some`], for every value the closed range
+    /// [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Bare`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Discovered`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Default`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Custom`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Env`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **CLI-side lift of the const-fn ordinal-inverse peer idiom onto
+    /// the five-cell operator-facing tier tag.** Sibling of
+    /// [`crate::tiered::ConfigTierKind::from_ordinal`] (commit `53c3e4f`)
+    /// on the crate-side four-way tier-kind axis at the shipped
+    /// scalar-ordinal-inverse altitude — same closed-match shape, same
+    /// [`Option<Self>`] return, and same `const`-callability contract,
+    /// one cell wider (the CLI-only [`Self::Env`] arm at ordinal `4`).
+    /// Peer of [`crate::cli::OutputFormat::from_ordinal`] (commit
+    /// `9f3631f`) on the sibling CLI-scoped emission-format axis one
+    /// primitive over — same const-fn ordinal-inverse discipline
+    /// applied here to the CLI operator-facing tier tag. Closes the
+    /// (`ordinal`, `from_ordinal`) round-trip pair on the [`TierArg`]
+    /// five-cell primitive at the CLI operator surface.
+    ///
+    /// The `usize` codomain of [`Self::ordinal`] is unbounded on its own
+    /// (any `usize` may reach the seam), while the [`TierArg`] variant
+    /// surface is closed at cardinality-5 today; the inverse therefore
+    /// returns [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant a consumer could route on. Since [`TierArg`]
+    /// is not a [`crate::ClosedAxis`] primitive (the CLI operator
+    /// surface sibling of the substrate-side [`crate::ConfigTierKind`],
+    /// which itself owns the trait impl), the pointwise-agreement law
+    /// targets [`Self::ALL`] position directly rather than
+    /// [`crate::axis_at`].
+    ///
+    /// **Round-trip law** —
+    /// `TierArg::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: TierArg`. Composes with [`Self::ordinal`] on the same
+    /// [`Self::ALL`] slice literal both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::tier_arg_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `TierArg::from_ordinal(o) == None` for every `o >= 5`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing
+    /// a stale wire-format ordinal from a version-skewed peer or an
+    /// operator-typed CLI argument through [`str::parse::<usize>`][str::parse]
+    /// without a bounds check. Pinned by
+    /// [`tests::tier_arg_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// every peer per-variant projection already carried on the
+    /// `impl TierArg` block ([`Self::is_bare`], [`Self::is_discovered`],
+    /// [`Self::is_default`], [`Self::is_custom`], [`Self::is_env`],
+    /// [`Self::is_computed`], all `pub const fn`). Consumers wanting a
+    /// compile-time-selected ordinal-keyed dispatch table (e.g. a
+    /// `const [TierArg; TierArg::ALL.len()]` variant array recovered
+    /// from a `const [u8; 5]` wire-format ordinal list, a per-tier
+    /// weight vector keyed by ordinal in a `const` initializer routing
+    /// operator-supplied overlays under a different weight than
+    /// computed-defaults tiers, or a compile-time shell-completion
+    /// column layout keyed by tier position) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::tier_arg_from_ordinal_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::ALL`] at every index** —
+    /// `TierArg::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i < TierArg::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order
+    /// (`Bare` → `Discovered` → `Default` → `Custom` → `Env`); the
+    /// pointwise-agreement pin below catches a future edit that shifts
+    /// one without the other on the first drifted position, before the
+    /// round-trip pin masks the divergence under composition. Pinned
+    /// by [`tests::tier_arg_from_ordinal_agrees_with_all_index_pointwise`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Bare),
+            1 => Some(Self::Discovered),
+            2 => Some(Self::Default),
+            3 => Some(Self::Custom),
+            4 => Some(Self::Env),
+            _ => None,
+        }
+    }
+
     /// The four COMPUTED-DEFAULTS [`TierArg`] variants —
     /// [`Self::Bare`] (zero-opinion floor), [`Self::Discovered`]
     /// (runtime auto-detect), [`Self::Default`] (curated app
@@ -1739,6 +1833,149 @@ mod tests {
         ] {
             assert_eq!(arg.ordinal(), expected, "arg {arg:?}");
         }
+    }
+
+    // ─── TierArg::from_ordinal — const-fn ordinal-inverse peer on the
+    // ─── CLI operator-facing tier tag ──────────────────────────────
+
+    #[test]
+    fn tier_arg_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law:
+        // `TierArg::from_ordinal(v.ordinal()) == Some(v)` for every
+        // variant. The forward `ordinal` and the inverse `from_ordinal`
+        // match on the same closed five-cell surface — Bare →
+        // Discovered → Default → Custom → Env — so the composition is
+        // the identity on the variant surface by construction. Direct
+        // methodological peer of
+        // `output_format_from_ordinal_round_trips_via_ordinal` on the
+        // sibling CLI-scoped two-cell emission-format axis and of
+        // `config_tier_kind_from_ordinal_round_trips_via_ordinal` on
+        // the crate-side four-cell tier-kind axis one primitive over —
+        // same shape, this axis being the CLI operator-facing tier tag
+        // one cell wider (the CLI-only `Self::Env` arm at ordinal `4`).
+        for &arg in TierArg::ALL {
+            assert_eq!(
+                TierArg::from_ordinal(arg.ordinal()),
+                Some(arg),
+                "from_ordinal must round-trip via ordinal for {arg:?}",
+            );
+        }
+
+        // Concrete-cell pin — the five `(ordinal, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `ordinal`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(TierArg::from_ordinal(0), Some(TierArg::Bare));
+        assert_eq!(TierArg::from_ordinal(1), Some(TierArg::Discovered));
+        assert_eq!(TierArg::from_ordinal(2), Some(TierArg::Default));
+        assert_eq!(TierArg::from_ordinal(3), Some(TierArg::Custom));
+        assert_eq!(TierArg::from_ordinal(4), Some(TierArg::Env));
+    }
+
+    #[test]
+    fn tier_arg_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection:
+        // `TierArg::from_ordinal(o) == None` for every `o >= 5`. The
+        // closed match's `_` arm forwards the out-of-range case to
+        // `None` structurally; the guard degrades gracefully on a
+        // caller passing a stale wire-format ordinal from a version-
+        // skewed peer, an operator-typed CLI argument through
+        // `str::parse::<usize>` without a bounds check, or a
+        // hypothetical sixth-variant ordinal a future extension would
+        // introduce. Direct methodological peer of
+        // `output_format_from_ordinal_rejects_out_of_range` on the
+        // sibling CLI-scoped two-cell emission-format axis and of
+        // `config_tier_kind_from_ordinal_rejects_out_of_range` on the
+        // crate-side four-cell tier-kind axis one primitive over.
+        let card = TierArg::ALL.len();
+        for out_of_range in card..card + 32 {
+            assert_eq!(
+                TierArg::from_ordinal(out_of_range),
+                None,
+                "from_ordinal must reject out-of-range ordinal {out_of_range}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            TierArg::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            TierArg::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn tier_arg_from_ordinal_agrees_with_all_index_pointwise() {
+        // Independent-witness pin cross-checking the const-fn inverse
+        // projection against the `TierArg::ALL` slice literal at every
+        // closed index — `TierArg::from_ordinal(i) ==
+        // Some(TierArg::ALL[i])` for every `i < ALL.len()`. The
+        // inherent match and the slice literal carry the same
+        // declaration order (Bare → Discovered → Default → Custom →
+        // Env); a future edit that shifted one without the other fails
+        // here on the first drifted position, before the round-trip pin
+        // masks it under composition. Since `TierArg` is not a
+        // `ClosedAxis` primitive (the CLI operator surface sibling of
+        // the substrate-side `ConfigTierKind`, which itself owns the
+        // trait impl), the pointwise-agreement law targets `Self::ALL`
+        // position directly rather than `crate::axis_at` — matching the
+        // `Self::ALL`-position discipline the sibling
+        // `output_format_from_ordinal_agrees_with_all_index_pointwise`
+        // uses on the peer non-`ClosedAxis` CLI-scoped axis.
+        for (index, &arg) in TierArg::ALL.iter().enumerate() {
+            assert_eq!(
+                TierArg::from_ordinal(index),
+                Some(arg),
+                "from_ordinal must agree with TierArg::ALL at index {index}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of every peer
+        // per-variant projection already carried on the
+        // `impl TierArg` block (`is_bare`, `is_discovered`,
+        // `is_default`, `is_custom`, `is_env`, `is_computed`,
+        // `ordinal`, all `pub const fn`). A drop of the `const`
+        // qualifier on `TierArg::from_ordinal` fails this test to
+        // compile at one of the six const bindings below before the
+        // drift can reach downstream const-context consumers.
+        // Idiom-peer of `output_format_from_ordinal_is_const_callable`
+        // on the sibling CLI-scoped two-cell emission-format axis and
+        // of `config_tier_kind_from_ordinal_is_const_callable` on the
+        // crate-side four-cell tier-kind axis one primitive over.
+        //
+        // Six `const` bindings — five in-range plus one out-of-range
+        // sentinel at `TierArg::ALL.len()` — route each ordinal through
+        // the const-fn inverse in const position. The moment
+        // `from_ordinal` loses its const-ness one of the six const
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const BARE: Option<TierArg> = TierArg::from_ordinal(0);
+        const DISCOVERED: Option<TierArg> = TierArg::from_ordinal(1);
+        const DEFAULT: Option<TierArg> = TierArg::from_ordinal(2);
+        const CUSTOM: Option<TierArg> = TierArg::from_ordinal(3);
+        const ENV: Option<TierArg> = TierArg::from_ordinal(4);
+        const NONE: Option<TierArg> = TierArg::from_ordinal(5);
+
+        assert_eq!(BARE, Some(TierArg::Bare));
+        assert_eq!(DISCOVERED, Some(TierArg::Discovered));
+        assert_eq!(DEFAULT, Some(TierArg::Default));
+        assert_eq!(CUSTOM, Some(TierArg::Custom));
+        assert_eq!(ENV, Some(TierArg::Env));
+        assert_eq!(NONE, None);
     }
 
     // ── TierArg COMPUTED / CUSTOM compound-polarity slice constants
