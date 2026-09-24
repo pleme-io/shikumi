@@ -2682,6 +2682,104 @@ impl FormatCoordinates {
         self.format.ordinal() * FormatProvenance::ALL.len() + self.provenance.ordinal()
     }
 
+    /// Const-callable partial inverse of [`Self::ordinal`] on the
+    /// (`format × provenance`) product cube: re-hydrate a typed cell from
+    /// its scalar-[`usize`] ordinal, or [`None`] for every ordinal at or
+    /// beyond [`Self::ALL`]`.len()`.
+    ///
+    /// **Composition of two sibling const-fn ordinal inverses.** Composes
+    /// [`Format::from_ordinal`] (commit `961c830`) on the outer axis and
+    /// [`FormatProvenance::from_ordinal`] (commit `c468a86`) on the inner
+    /// axis under an integer-division / remainder decomposition against
+    /// the innermost-axis cardinality [`FormatProvenance::ALL`]`.len()`,
+    /// reassembling on the `(Some, Some)` corner of the resulting pair and
+    /// returning [`None`] on any of the three failure paths (out-of-range
+    /// format ordinal from the quotient, out-of-range provenance ordinal
+    /// from the remainder — degenerate today since the inner axis has 2
+    /// cells and the remainder is always in `{0, 1}`, but preserved
+    /// structurally so a future inner-axis growth does not silently start
+    /// admitting stale-quotient cells, or the `(None, None)` conjunction
+    /// on the arithmetic extreme). Every construction seam is
+    /// `const`-stable on rustc 1.94.1: the integer-division /
+    /// remainder operators, the two sibling const-fn ordinal inverses on
+    /// the sibling axes, and the `Some { format, provenance }`
+    /// constructor.
+    ///
+    /// **Algebraic two-axis inversion shape.** Direct transposition of the
+    /// same algebraic two-axis inversion shape
+    /// [`crate::AttributionSourceKindCoordinates::from_ordinal`] (commit
+    /// `e0b1e1e`) and
+    /// [`crate::AttributionNameKindCoordinates::from_ordinal`] (commit
+    /// `ac9d3a6`) already ship on their sibling product cubes — decompose
+    /// the scalar into per-axis halves through integer-division /
+    /// remainder against the innermost-axis cardinality, lower each half
+    /// through the sibling axis's const-fn ordinal inverse, and reassemble
+    /// on the `(Some, Some)` corner — applied here to the second
+    /// [`crate::ProductCube`] implementor on the [`Format`] side of the
+    /// typescape. With this landing BOTH the scalar-`&'static str` surface
+    /// ([`Self::from_str`], commit `3cd9bae`) and the scalar-[`usize`]
+    /// surface (this method) carry const-callable inverses on the
+    /// (`Format × FormatProvenance`) product cube, closing the
+    /// (`ordinal`, `from_ordinal`) / (`fmt::Display`, `from_str`)
+    /// inversion square on the cube surface itself.
+    ///
+    /// Sibling of [`crate::axis_at`] on the trait-generic
+    /// [`crate::ClosedAxis`] receiver surface: where
+    /// [`crate::axis_at::<Self>`][crate::axis_at] delegates through the
+    /// [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`] slice
+    /// index, this method routes through the algebraic two-axis inversion
+    /// above so a future ordinal-formula edit on [`Self::ordinal`] and a
+    /// matching inversion edit here stay in one place; pointwise-agreement
+    /// between the two seams is pinned by
+    /// [`tests::format_coordinates_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Round-trip law** —
+    /// `FormatCoordinates::from_ordinal(c.ordinal()) == Some(c)` for every
+    /// `c: FormatCoordinates`. Composes with [`Self::ordinal`] on the same
+    /// ten-cell surface to close the cell → ordinal → cell identity.
+    /// Pinned by
+    /// [`tests::format_coordinates_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `FormatCoordinates::from_ordinal(o) == None` for every
+    /// `o >= Self::ALL.len()`. A stale wire-format ordinal from a
+    /// version-skewed peer, or an operator-supplied bogus index, degrades
+    /// cleanly to [`None`] rather than panicking on a slice index or a
+    /// match ladder. Pinned by
+    /// [`tests::format_coordinates_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `FormatCoordinates::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The algebraic inversion agrees
+    /// with the slice-index lookup pointwise across every in-range
+    /// ordinal; pinned by
+    /// [`tests::format_coordinates_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **`const fn`** — matching the `const`-ness of [`Self::ordinal`] on
+    /// the forward side and of both sibling axis
+    /// [`Format::from_ordinal`] / [`FormatProvenance::from_ordinal`]
+    /// partial-inverses it composes. Consumers wanting a
+    /// compile-time-selected ordinal-keyed dispatch table (a per-cell
+    /// weight vector keyed by ordinal routing decoded-from-wire
+    /// attestation records to typed cells at compile time, a per-cell
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// ordinal) reach the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::format_coordinates_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        let inner_len = FormatProvenance::ALL.len();
+        let format_ordinal = ordinal / inner_len;
+        let provenance_ordinal = ordinal % inner_len;
+        match (
+            Format::from_ordinal(format_ordinal),
+            FormatProvenance::from_ordinal(provenance_ordinal),
+        ) {
+            (Some(format), Some(provenance)) => Some(Self { format, provenance }),
+            _ => None,
+        }
+    }
+
     /// Const-callable partial inverse of [`fmt::Display`] on the
     /// (`format × provenance`) product cube: parses the canonical
     /// `<format>:<provenance>` scalar cell label into the typed cell it
@@ -11235,6 +11333,163 @@ mod tests {
         ] {
             assert_eq!(cell.ordinal(), expected, "cell {cell:?}");
         }
+    }
+
+    #[test]
+    fn format_coordinates_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law from the value side:
+        //   `FormatCoordinates::from_ordinal(c.ordinal()) == Some(c)` for
+        //   every `c: FormatCoordinates`.
+        // Composed with the sibling forward `Self::ordinal` projection on
+        // the same ten-cell surface, closing the (cell → ordinal → cell)
+        // identity across every declared cell. The second landing of the
+        // `(ordinal, from_ordinal)` round-trip pair on a `ProductCube`
+        // implementor — idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_round_trips_via_ordinal`
+        // and `attribution_name_kind_coordinates_from_ordinal_round_trips_via_ordinal`
+        // on the two sibling `ProductCube` implementors, extended here to
+        // the ten-cell (`format × provenance`) cube on the `Format` side.
+        for &cell in FormatCoordinates::ALL {
+            assert_eq!(
+                FormatCoordinates::from_ordinal(cell.ordinal()),
+                Some(cell),
+                "from_ordinal must invert ordinal at {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `usize` at or beyond the
+        // ten-cell cube's cardinality returns `None`. A stale
+        // wire-format ordinal from a version-skewed peer, or an
+        // operator-supplied bogus index, degrades cleanly to `None`
+        // rather than panicking on a slice index or a match ladder.
+        // Idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_rejects_out_of_range`
+        // on the sibling nine-cell product cube.
+        let card = FormatCoordinates::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                FormatCoordinates::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme. `usize::MAX` also verifies the integer-division
+        // path doesn't accidentally alias to an in-range cell via a
+        // remainder collision — for `usize::MAX` with inner_len = 2,
+        // the quotient overshoots `Format::ALL.len()` = 5 by many
+        // orders of magnitude, so `Format::from_ordinal` returns
+        // `None` on the outer half and the `(Some, Some)` conjunction
+        // fails.
+        assert_eq!(
+            FormatCoordinates::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            FormatCoordinates::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_from_ordinal_agrees_with_all_index_pointwise() {
+        // The algebraic two-axis inversion agrees with the slice-index
+        // lookup on `FormatCoordinates::ALL` pointwise across every
+        // in-range ordinal: `from_ordinal(i) == Some(ALL[i])` for every
+        // `i` in `0..ALL.len()`. A future edit that shifts the ordinal
+        // formula (or the two sibling axis ordinals it composes) without
+        // shifting `Self::ALL` in lockstep fails here first, before the
+        // drift can reach downstream consumers routing through either
+        // seam.
+        for (index, &cell) in FormatCoordinates::ALL.iter().enumerate() {
+            assert_eq!(
+                FormatCoordinates::from_ordinal(index),
+                Some(cell),
+                "from_ordinal({index}) must equal Some(ALL[{index}]) = Some({cell:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the algebraic two-axis inversion agrees
+        // with the trait-generic `crate::axis_at::<Self>` free-function
+        // lookup pointwise across every `usize` in `0..ALL.len() + 32`,
+        // covering both the in-range prefix (both `Some`, same cell) and
+        // the out-of-range tail (both `None`). Where `axis_at` delegates
+        // through the `ClosedAxis` impl to a bounds-checked `Self::ALL`
+        // slice index, `Self::from_ordinal` routes through the algebraic
+        // inversion of the ordinal-formula composition; this test pins
+        // that the two seams stay substitutable across every ordinal.
+        // Idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_agrees_with_axis_at_pointwise`
+        // on the sibling nine-cell product cube.
+        let card = FormatCoordinates::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                FormatCoordinates::from_ordinal(o),
+                crate::axis_at::<FormatCoordinates>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<cell>) inversion is
+        // `const`-callable, matching the `const`-ness of `Self::ordinal`
+        // on the forward side and of both sibling axis partial-inverses
+        // it composes (`Format::from_ordinal` and
+        // `FormatProvenance::from_ordinal`, both `const fn` since their
+        // respective landings). A drop of the `const` qualifier on
+        // `FormatCoordinates::from_ordinal` — or on either sibling axis
+        // partial-inverse it composes — fails this test to compile.
+        //
+        // Four representative `const` bindings — three corner cells
+        // (the (Yaml, FigmentBuiltin), (Yaml, ShikumiBuilt), and (Blue,
+        // ShikumiBuilt) extremes of the (`format × provenance`) layout)
+        // plus one out-of-range sentinel at `FormatCoordinates::ALL.len()`
+        // — route each through the const-fn inversion in const position.
+        // The moment `FormatCoordinates::from_ordinal` (or one of the two
+        // projections it composes) loses its const-ness, one of the four
+        // `const` welds below fails to compile at THAT line before the
+        // drift can reach downstream consumers that assumed const-ness
+        // through the projection. Idiom-peer of
+        // `attribution_source_kind_coordinates_from_ordinal_is_const_callable`
+        // on the sibling nine-cell product cube.
+        const INV_0: Option<FormatCoordinates> = FormatCoordinates::from_ordinal(0);
+        const INV_1: Option<FormatCoordinates> = FormatCoordinates::from_ordinal(1);
+        const INV_9: Option<FormatCoordinates> = FormatCoordinates::from_ordinal(9);
+        const INV_OOR: Option<FormatCoordinates> =
+            FormatCoordinates::from_ordinal(FormatCoordinates::ALL.len());
+
+        assert_eq!(
+            INV_0,
+            Some(FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::FigmentBuiltin,
+            }),
+        );
+        assert_eq!(
+            INV_1,
+            Some(FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }),
+        );
+        assert_eq!(
+            INV_9,
+            Some(FormatCoordinates {
+                format: Format::Blue,
+                provenance: FormatProvenance::ShikumiBuilt,
+            }),
+        );
+        assert_eq!(INV_OOR, None);
     }
 
     #[test]
