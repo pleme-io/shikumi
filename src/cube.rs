@@ -15707,6 +15707,135 @@ impl PartitionFace {
             _ => None,
         }
     }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one of
+    /// the two canonical lowercase labels [`Self::as_str`] emits
+    /// (`"realizable"`, `"unrealizable"`), and [`None`] for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// two-cell partition-face surface.** Where [`Self::from_ordinal`]
+    /// inverts the scalar-`usize` projection [`Self::ordinal`], this inverts
+    /// the scalar-`&'static str` projection [`Self::as_str`] under the same
+    /// discipline: bounded match on the exact canonical codomain, [`None`]
+    /// off it, `const fn` in body. Neither projection is total on its
+    /// codomain — the string surface admits non-canonical labels, the
+    /// ordinal surface admits `usize` values `>= 2` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the "not
+    /// on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant a consumer could route on.
+    ///
+    /// **Cube-inversion square.** With this landing the two-cell
+    /// (realizable × unrealizable) partition-face axis carries the (label,
+    /// ordinal) inverse pair on BOTH scalar surfaces simultaneously — the
+    /// scalar-`usize` inverse [`Self::from_ordinal`] AND the scalar-
+    /// `&'static str` inverse [`Self::from_str`] — welding the same
+    /// full (label, ordinal) cube-inversion square that the sibling closed-
+    /// primitive axes across the crate already carry:
+    /// [`ModalityClass`] (five-cell modal-antimodal classifier),
+    /// [`SupportCardinalityClass`] (five-cell support-cardinality
+    /// classifier), [`SupportBoundaryDistance`] /
+    /// [`SupportMagnitudeDirection`] (three-cell typed-bucket classifiers),
+    /// [`crate::Format`] / [`crate::FormatProvenance`] (file-format ×
+    /// provenance product cube),
+    /// [`crate::watcher::WatchEventClass`] (reload-relevance axis),
+    /// [`crate::tiered::DiffLineKind`] (three-cell diff-cell axis),
+    /// [`crate::source::FigmentSourceKind`] /
+    /// [`crate::source::FigmentNameTagKind`] /
+    /// [`crate::source::EnvMetadataTagKind`] /
+    /// [`crate::ConfigSourceKind`] (figment and source-layer axes),
+    /// [`crate::secret::SecretBackendKind`] /
+    /// [`crate::SecretRefShape`] /
+    /// [`crate::SecretErrorKind`] (secret-facing axes),
+    /// [`crate::ShikumiErrorKind`] (shikumi error-kind axis), and
+    /// [`crate::cli::OutputFormat`] (CLI emission-format axis). First
+    /// landing of the (label, ordinal) cube-inversion square on a
+    /// `cube.rs`-native closed-binary [`ClosedAxis`] primitive after the
+    /// pattern spread across the three- and five-cell cube classifiers.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase spellings [`Self::as_str`] emits (`b"realizable"`,
+    /// `b"unrealizable"`), matching the discipline of every other const-fn
+    /// scalar inverse on the crate (`from_ordinal` and the peer
+    /// [`ModalityClass::from_str`] / [`SupportCardinalityClass::from_str`] /
+    /// [`SupportBoundaryDistance::from_str`] /
+    /// [`SupportMagnitudeDirection::from_str`] inherents on the sibling
+    /// cube classifiers). A consumer wanting case-insensitive parsing
+    /// (an operator-typed `--face REALIZABLE` at a CLI, a mixed-case tag
+    /// in a Markdown-rendered face reference, a mixed-case YAML scalar in
+    /// an attestation manifest) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] (which
+    /// lowers through [`str::eq_ignore_ascii_case`]) or the derived
+    /// [`<Self as std::str::FromStr>::from_str`] the
+    /// `closed_axis_label_string_surface_typed_err!` macro synthesizes
+    /// (which routes through the same case-insensitive trait parser and
+    /// returns a typed [`ParsePartitionFaceError`]). The inherent const-fn
+    /// seam here is the byte-exact, canonical-only label inverse; the
+    /// case-folding algebra lives one seam over on the trait-uniform
+    /// surface.
+    ///
+    /// **Round-trip law** —
+    /// `PartitionFace::from_str(v.as_str()) == Some(v)` for every
+    /// `v: PartitionFace`. The forward-map [`Self::as_str`] and the const-fn
+    /// inverse-map [`Self::from_str`] share the SAME two-cell canonical
+    /// codomain; the law holds by construction. Pinned by
+    /// [`tests::partition_face_inherent_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `PartitionFace::from_str(s) == None` for every `s` outside the
+    /// canonical two-cell set `{"realizable", "unrealizable"}`. The closed
+    /// match's `_` arm forwards the off-surface case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing a
+    /// mixed-case spelling that never went through the trait's
+    /// `eq_ignore_ascii_case` lowering, the empty string, a stale wire-
+    /// format label from a version-skewed peer, or a hypothetical third-
+    /// variant label a future extension would introduce (the axis is
+    /// closed-binary by construction and no third face landing is
+    /// anticipated, but the closed match still refuses one structurally).
+    /// Pinned by [`tests::partition_face_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching the
+    /// `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch table
+    /// (a `const [PartitionFace; 2]` variant array recovered from a
+    /// `const &[&str; 2]` canonical-label list, a per-face attestation-
+    /// manifest slot in a `const` initializer keyed by canonical label, a
+    /// per-face retry-budget vector partitioning recognized-image rollups
+    /// from cross-axis consistency-violation rollups) route through the
+    /// projection under `const` without dropping through a runtime `let`
+    /// binding the trait-side
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] and the
+    /// derived [`<Self as std::str::FromStr>::from_str`] both require (they
+    /// lower through non-`const` [`str::eq_ignore_ascii_case`]). Pinned by
+    /// [`tests::partition_face_inherent_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::ALL`] pointwise** —
+    /// `PartitionFace::from_str(PartitionFace::ALL[i].as_str()) ==
+    /// Some(PartitionFace::ALL[i])` for every `i < PartitionFace::ALL.len()`.
+    /// The inherent match and the [`Self::ALL`] slice literal carry the
+    /// same declaration order and the same canonical labels; the test
+    /// below pins the pointwise agreement so a future edit that shifts one
+    /// without the other fails at test time on the first drifted index.
+    /// Pinned by [`tests::partition_face_inherent_from_str_agrees_with_all_index_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`] on
+    /// canonical input** — for every `v: PartitionFace`,
+    /// `PartitionFace::from_str(v.as_str()) ==
+    /// <PartitionFace as crate::ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the canonical lowercase
+    /// codomain; they diverge only OFF that codomain (the sibling
+    /// case-insensitive-lowers, the inherent rejects). Pinned by
+    /// [`tests::partition_face_inherent_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"realizable" => Some(Self::Realizable),
+            b"unrealizable" => Some(Self::Unrealizable),
+            _ => None,
+        }
+    }
 }
 
 /// Typed parse failure of [`<PartitionFace as
@@ -22585,6 +22714,165 @@ mod tests {
         assert_eq!(AT_0, Some(PartitionFace::Realizable));
         assert_eq!(AT_1, Some(PartitionFace::Unrealizable));
         assert_eq!(AT_2, None);
+    }
+
+    #[test]
+    fn partition_face_inherent_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `PartitionFace::from_str(v.as_str()) == Some(v)` for every
+        // `v: PartitionFace`. The forward-map `as_str` and the const-fn
+        // inverse-map inherent `from_str` share the SAME two-cell canonical
+        // codomain (`"realizable"`, `"unrealizable"`); the law holds by
+        // construction. This pin re-states it once on the inherent surface
+        // so a future edit that shifts one match arm without the other
+        // fails here on the first drifted variant. Peer of
+        // `partition_face_from_ordinal_round_trips_via_ordinal` one axis
+        // over on the sibling scalar-`usize` inversion, and of
+        // `modality_class_inherent_from_str_round_trips_via_as_str` /
+        // `support_cardinality_class_inherent_from_str_round_trips_via_as_str`
+        // /
+        // `support_boundary_distance_inherent_from_str_round_trips_via_as_str`
+        // /
+        // `support_magnitude_direction_inherent_from_str_round_trips_via_as_str`
+        // on the sibling three- and five-cell cube-classifier axes.
+        for &v in PartitionFace::ALL {
+            let rendered = v.as_str();
+            let recovered = PartitionFace::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the two `(label, variant)` pairs the closed
+        // match delivers verbatim, in declaration order. An edit that
+        // shifted either arm without shifting the sibling `as_str` arm in
+        // lockstep fails here on the first drifted pair, before the closed-
+        // form round-trip pin above masks the divergence under `for`
+        // iteration.
+        assert_eq!(
+            PartitionFace::from_str("realizable"),
+            Some(PartitionFace::Realizable),
+        );
+        assert_eq!(
+            PartitionFace::from_str("unrealizable"),
+            Some(PartitionFace::Unrealizable),
+        );
+    }
+
+    #[test]
+    fn partition_face_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the two-label canonical
+        // codomain resolves to `None` structurally via the closed match's
+        // `_` arm. Guards against a stale wire-format label from a
+        // version-skewed peer, an operator-typed CLI argument, or a
+        // hand-crafted attestation-manifest field value reaching a `const`
+        // dispatch site through a fabricated variant. The inherent seam
+        // does NOT lowercase — the uppercase and titlecase variants below
+        // (case violations of the canonical lowercase codomain) all
+        // resolve to `None`, matching the exact-byte-match discipline the
+        // sibling landings (`ModalityClass::from_str`,
+        // `ConfigSourceKind::from_str`, `Format::from_str`) already occupy
+        // on their axes.
+        for unknown in [
+            "",
+            "REALIZABLE",   // uppercase — off the canonical codomain.
+            "Realizable",   // titlecase — off the canonical codomain.
+            "UNREALIZABLE", // uppercase.
+            "Unrealizable", // titlecase.
+            "rEaLiZaBlE",   // mixed-case.
+            "realizable ",  // trailing whitespace.
+            " realizable",  // leading whitespace.
+            "realizable\n", // trailing newline.
+            "unrealisable", // British spelling — off the canonical codomain.
+            "real",         // prefix — off the canonical codomain.
+            "unreal",       // prefix — off the canonical codomain.
+            "realizables",  // suffix beyond canonical.
+            "totally-unknown",
+            "face",
+        ] {
+            assert_eq!(
+                PartitionFace::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `PartitionFace::as_str` and the sibling
+        // `PartitionFace::from_ordinal` / `PartitionFace::is_realizable` /
+        // `PartitionFace::is_unrealizable`. A drop of the `const`
+        // qualifier on `PartitionFace::from_str` fails this test to
+        // compile.
+        //
+        // Three `const` bindings — two in-range canonical labels plus one
+        // non-canonical label — route each byte-slice through the const-fn
+        // inverse in const position. The moment `from_str` loses its
+        // const-ness one of the three const welds below fails to compile
+        // at THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the projection. Consumers
+        // wanting a compile-time-selected label-keyed dispatch table (a
+        // `const [PartitionFace; 2]` variant array recovered from a
+        // `const &[&str; 2]` canonical-label list) reach through this
+        // seam. Peer of `partition_face_from_ordinal_is_const_callable`
+        // on the sibling scalar-`usize` inverse.
+        const AT_REALIZABLE: Option<PartitionFace> = PartitionFace::from_str("realizable");
+        const AT_UNREALIZABLE: Option<PartitionFace> = PartitionFace::from_str("unrealizable");
+        const AT_UNKNOWN: Option<PartitionFace> = PartitionFace::from_str("totally-unknown");
+
+        assert_eq!(AT_REALIZABLE, Some(PartitionFace::Realizable));
+        assert_eq!(AT_UNREALIZABLE, Some(PartitionFace::Unrealizable));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn partition_face_inherent_from_str_agrees_with_all_index_pointwise() {
+        // `PartitionFace::from_str(PartitionFace::ALL[i].as_str()) ==
+        // Some(PartitionFace::ALL[i])` for every `i` in
+        // `0..PartitionFace::ALL.len()`. The inherent match and the
+        // `Self::ALL` slice literal carry the same declaration order and
+        // the same canonical labels; the test below pins the pointwise
+        // agreement so a future edit that shifts one without the other
+        // fails at test time on the first drifted index.
+        for (index, &expected) in PartitionFace::ALL.iter().enumerate() {
+            let canonical = expected.as_str();
+            assert_eq!(
+                PartitionFace::from_str(canonical),
+                Some(expected),
+                "from_str({canonical:?}) must agree with PartitionFace::ALL[{index}]",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_inherent_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // On the two-cell canonical lowercase codomain the inherent
+        // const-fn label seam and the trait-side `from_canonical_str` seam
+        // recover the same variant pointwise — they diverge only OFF that
+        // codomain (the sibling case-insensitive-lowers, the inherent
+        // rejects). Pinned across every variant so a future edit that
+        // shifts the label on one seam without the other fails here on
+        // the first drifted cell. This cross-checks the const-fn label
+        // seam against the case-insensitive label seam on the closed
+        // variant surface, matching the discipline
+        // `modality_class_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`
+        // and
+        // `config_source_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // already occupy on their axes.
+        for &v in PartitionFace::ALL {
+            let canonical = v.as_str();
+            assert_eq!(
+                PartitionFace::from_str(canonical),
+                <PartitionFace as crate::ClosedAxisLabel>::from_canonical_str(canonical),
+                "inherent from_str and ClosedAxisLabel::from_canonical_str must agree on {v:?}",
+            );
+        }
     }
 
     #[test]
