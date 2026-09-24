@@ -2570,6 +2570,87 @@ impl SupportCardinalityClass {
             _ => None,
         }
     }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one
+    /// of the five canonical kebab-case labels [`Self::as_str`] emits
+    /// (`"empty"`, `"singular-support"`, `"strict-partial-cover"`,
+    /// `"singular-gap"`, `"full-cover"`), and [`None`] for any other
+    /// input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// five-cell surface.** Where [`Self::from_ordinal`] inverts the
+    /// scalar-`usize` projection [`Self::ordinal`], this inverts the
+    /// scalar-`&'static str` projection [`Self::as_str`] under the same
+    /// discipline: bounded match on the exact canonical codomain, [`None`]
+    /// for values off it, `const fn` in body. Neither projection is total
+    /// on the codomain — the string surface admits non-canonical labels,
+    /// the ordinal surface admits `usize` values `>= 5` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant. Idiom-peer of the sibling const-fn label-
+    /// inverse [`ModalityClass::from_str`] on the sibling five-cell
+    /// cube-classifier axis — same closed-match shape, same
+    /// [`Option<Self>`] return, same `const`-callability contract, same
+    /// round-trip law.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase kebab-case spellings [`Self::as_str`] emits. A consumer
+    /// wanting case-insensitive parsing (an operator-typed
+    /// `--class EMPTY` at a CLI, a mixed-case tag in a Markdown-rendered
+    /// summary) reaches for [`Self::from_canonical_str`] or the trait-
+    /// uniform [`<Self as std::str::FromStr>::from_str`] (both of which
+    /// lower through [`str::eq_ignore_ascii_case`]) or lowercases at their
+    /// own site. The inherent const-fn seam here is the byte-exact,
+    /// canonical-only label inverse; the case-folding algebra lives one
+    /// seam over on the trait-uniform surface.
+    ///
+    /// **Round-trip law** —
+    /// `SupportCardinalityClass::from_str(v.as_str()) == Some(v)` for
+    /// every `v: SupportCardinalityClass`. The forward-map [`Self::as_str`]
+    /// and the const-fn inverse-map [`Self::from_str`] share the SAME
+    /// five-cell canonical codomain. Pinned by
+    /// [`tests::support_cardinality_class_inherent_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SupportCardinalityClass::from_str(s) == None` for every `s`
+    /// outside the canonical five-label set (empty string, unknown label,
+    /// uppercased variant, prefixed / suffixed near-miss). Pinned by
+    /// [`tests::support_cardinality_class_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching the
+    /// `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// (a `const [SupportCardinalityClass; 5]` variant array recovered
+    /// from a `const &[&str; 5]` canonical-label list, a per-corner
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding the current
+    /// `<SupportCardinalityClass as FromStr>::from_str` requires (it
+    /// lowers through non-const [`str::eq_ignore_ascii_case`]). Pinned by
+    /// [`tests::support_cardinality_class_inherent_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::from_canonical_str`] on canonical input** —
+    /// for every `v: SupportCardinalityClass`,
+    /// `SupportCardinalityClass::from_str(v.as_str())` and
+    /// `Self::from_canonical_str(v.as_str())` recover the same variant.
+    /// Both seams agree on the canonical lowercase codomain; they diverge
+    /// only OFF that codomain (the sibling case-insensitive-lowers, the
+    /// inherent rejects). Pinned by
+    /// [`tests::support_cardinality_class_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"empty" => Some(Self::Empty),
+            b"singular-support" => Some(Self::SingularSupport),
+            b"strict-partial-cover" => Some(Self::StrictPartialCover),
+            b"singular-gap" => Some(Self::SingularGap),
+            b"full-cover" => Some(Self::FullCover),
+            _ => None,
+        }
+    }
 }
 
 /// Typed parse failure of
@@ -51429,6 +51510,155 @@ mod tests {
         assert_eq!(AT_3, Some(SupportCardinalityClass::SingularGap));
         assert_eq!(AT_4, Some(SupportCardinalityClass::FullCover));
         assert_eq!(AT_5, None);
+    }
+
+    #[test]
+    fn support_cardinality_class_inherent_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `SupportCardinalityClass::from_str(v.as_str()) == Some(v)` for
+        // every `v: SupportCardinalityClass`. The forward-map `as_str`
+        // and the const-fn inverse-map inherent `from_str` share the SAME
+        // five-cell canonical codomain; the law holds by construction.
+        // This pin re-states it once on the inherent surface so a future
+        // edit that shifts one match arm without the other fails here on
+        // the first drifted variant. Idiom-peer of
+        // `modality_class_inherent_from_str_round_trips_via_as_str` one
+        // primitive over on the sibling five-cell cube-classifier axis.
+        for &v in SupportCardinalityClass::ALL {
+            let rendered = v.as_str();
+            let recovered = SupportCardinalityClass::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the five-label
+        // canonical codomain resolves to `None` structurally via the
+        // closed match's `_` arm. Guards against a stale wire-format
+        // label from a version-skewed peer, an operator-typed CLI
+        // argument, or a hand-crafted attestation-manifest field value
+        // reaching a `const` dispatch site through a fabricated variant.
+        // The inherent seam does NOT lowercase — the uppercase variants
+        // below (case violations of the canonical lowercase codomain)
+        // all resolve to `None`, matching the exact-byte-match
+        // discipline the sibling `ModalityClass::from_str` landing
+        // (commit `9286453`) already occupies on its axis.
+        for unknown in [
+            "",
+            "EMPTY",                // uppercase — off the canonical codomain.
+            "Empty",                // titlecase — off the canonical codomain.
+            "SINGULAR-SUPPORT",     // uppercase.
+            "Singular-Support",     // titlecase.
+            "STRICT-PARTIAL-COVER", // uppercase.
+            "SINGULAR-GAP",         // uppercase.
+            "FULL-COVER",           // uppercase.
+            "empty-with-extra",     // suffix beyond canonical.
+            "x-empty",              // prefix beyond canonical.
+            "totally-unknown",
+            "singular",   // prefix-only substring.
+            "cover",      // suffix-only substring.
+            "partial",    // interior-only substring.
+            "empty ",     // trailing whitespace.
+            " empty",     // leading whitespace.
+            "empty\n",    // trailing newline.
+            "full_cover", // underscore instead of hyphen.
+            "strict_partial_cover",
+        ] {
+            assert_eq!(
+                SupportCardinalityClass::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SupportCardinalityClass::as_str` and the sibling
+        // `SupportCardinalityClass::from_ordinal`. A drop of the `const`
+        // qualifier on `SupportCardinalityClass::from_str` fails this
+        // test to compile.
+        //
+        // Six `const` bindings — five in-range canonical labels plus one
+        // non-canonical label — route each byte-slice through the const-
+        // fn inverse in const position. The moment `from_str` loses its
+        // const-ness one of the six const welds below fails to compile
+        // at THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the projection.
+        const AT_EMPTY: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("empty");
+        const AT_SINGULAR_SUPPORT: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("singular-support");
+        const AT_STRICT_PARTIAL_COVER: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("strict-partial-cover");
+        const AT_SINGULAR_GAP: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("singular-gap");
+        const AT_FULL_COVER: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("full-cover");
+        const AT_UNKNOWN: Option<SupportCardinalityClass> =
+            SupportCardinalityClass::from_str("totally-unknown");
+
+        assert_eq!(AT_EMPTY, Some(SupportCardinalityClass::Empty));
+        assert_eq!(
+            AT_SINGULAR_SUPPORT,
+            Some(SupportCardinalityClass::SingularSupport)
+        );
+        assert_eq!(
+            AT_STRICT_PARTIAL_COVER,
+            Some(SupportCardinalityClass::StrictPartialCover)
+        );
+        assert_eq!(AT_SINGULAR_GAP, Some(SupportCardinalityClass::SingularGap));
+        assert_eq!(AT_FULL_COVER, Some(SupportCardinalityClass::FullCover));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn support_cardinality_class_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input()
+     {
+        // On the five-cell canonical lowercase codomain the inherent
+        // const-fn label seam and the sibling `from_canonical_str` seam
+        // recover the same variant pointwise — they diverge only OFF
+        // that codomain (the sibling case-insensitive-lowers, the
+        // inherent rejects). Pinned across every variant so a future
+        // edit that shifts the label on one seam without the other
+        // fails here on the first drifted cell. Idiom-peer of
+        // `modality_class_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`
+        // one primitive over on the sibling five-cell cube-classifier
+        // axis.
+        for &v in SupportCardinalityClass::ALL {
+            let canonical = v.as_str();
+            assert_eq!(
+                SupportCardinalityClass::from_str(canonical),
+                SupportCardinalityClass::from_canonical_str(canonical),
+                "inherent from_str and from_canonical_str must agree on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_inherent_from_str_agrees_with_all_index_pointwise() {
+        // `from_str(SupportCardinalityClass::ALL[i].as_str()) ==
+        // Some(SupportCardinalityClass::ALL[i])` for every `i` in
+        // `0..SupportCardinalityClass::ALL.len()`. The inherent match
+        // and the `Self::ALL` slice literal carry the same declaration
+        // order and the same canonical labels; the test below pins the
+        // pointwise agreement so a future edit that shifts one without
+        // the other fails at test time on the first drifted index.
+        for (index, &expected) in SupportCardinalityClass::ALL.iter().enumerate() {
+            let canonical = expected.as_str();
+            assert_eq!(
+                SupportCardinalityClass::from_str(canonical),
+                Some(expected),
+                "from_str({canonical:?}) must agree with SupportCardinalityClass::ALL[{index}]",
+            );
+        }
     }
 
     #[test]
