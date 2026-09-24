@@ -2056,6 +2056,120 @@ impl SecretRefShape {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Whole`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Field`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn ordinal-inverse peer idiom on the
+    /// (whole × field) secret-ref extraction-shape axis.** Every prior
+    /// landing of the (`ordinal`, `from_ordinal`) round-trip pair targeted
+    /// a closed-enum axis primitive one seam over
+    /// ([`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::cli::OutputFormat::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::cli::TierArg::from_ordinal`],
+    /// [`SecretBackendKind::from_ordinal`], and
+    /// [`crate::SecretErrorKind::from_ordinal`]); this landing closes the
+    /// same partial-inverse discipline on the two-cell secret-ref
+    /// extraction-shape axis, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant. With this
+    /// landing the extraction-shape axis carries the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on the scalar-[`usize`] surface as
+    /// a const-callable inherent — the same shape the fourteen sibling
+    /// closed-enum axes already ship. First landing of the
+    /// ordinal-inverse peer idiom on a [`SecretRefShape`]-scoped
+    /// closed-primitive axis; opens the (`from_ordinal`, `from_str`)
+    /// cube-inversion square whose scalar-`&str` peer
+    /// [`Self::from_str`] a future sibling landing on the same primitive
+    /// completes.
+    ///
+    /// Peer of the trait-uniform
+    /// [`crate::axis_at::<Self>`] free-function projection over this
+    /// closed axis. [`crate::axis_at`] is not `const` (it delegates to
+    /// [`<[T]>::get`] over a generic [`crate::ClosedAxis`] bound, both
+    /// non-`const` on stable Rust today), so a caller wanting the
+    /// shape-axis ordinal-inverse in a `const` context — a
+    /// compile-time-selected per-shape dispatch table keyed on the
+    /// wire-format shape ordinal, a `const` per-shape reload-policy slot
+    /// in a `const` initializer keyed by ordinal, a `const` weight vector
+    /// indexed by ordinal that weights whole-payload reads visibly
+    /// differently than field extractions (since the whole shape decrypts
+    /// a larger payload than a single-key lookup), a `const` sentinel for
+    /// a compile-time-known shape's position — had to route through the
+    /// non-`const` free-function seam via a runtime `let` binding,
+    /// dropping const-callability at the call site.
+    ///
+    /// **Round-trip law** —
+    /// `SecretRefShape::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: SecretRefShape`. The forward-map [`Self::ordinal`] and the
+    /// const-fn inverse-map [`Self::from_ordinal`] share the SAME closed
+    /// two-cell declaration order ([`Self::ALL`], `Whole → Field`,
+    /// pointwise mirroring the arm order in [`SopsRef::shape`] and
+    /// [`VaultRef::shape`]); the law holds by construction. Pinned by
+    /// [`tests::secret_ref_shape_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SecretRefShape::from_ordinal(o) == None` for every `o >= 2`. The
+    /// closed match's `_` arm forwards the out-of-range case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing a
+    /// stale wire-format ordinal from a version-skewed peer, an
+    /// operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check, or a
+    /// hypothetical tertiary-variant ordinal (e.g. the `MultiField
+    /// { fields }` shape named in [`Self::ALL`]'s docs) a future
+    /// extension would introduce. Pinned by
+    /// [`tests::secret_ref_shape_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `SecretRefShape::from_ordinal(i) == Some(Self::ALL[i])` for every
+    /// `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order, so
+    /// the test below pins the pointwise agreement and a future edit
+    /// that shifts one without the other fails at test time on the first
+    /// drifted position. Pinned by
+    /// [`tests::secret_ref_shape_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `SecretRefShape::from_ordinal(o) == crate::axis_at::<Self>(o)` for
+    /// every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through the
+    /// [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`] slice
+    /// index, this method routes through the closed two-cell match; the
+    /// pointwise-agreement pin keeps the two seams substitutable. Pinned
+    /// by
+    /// [`tests::secret_ref_shape_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// [`Self::as_str`], [`Self::is_whole`], [`Self::is_field`] on the
+    /// sibling scalar-projection surfaces. A drop of the `const`
+    /// qualifier on [`Self::from_ordinal`] fails the const-callability
+    /// test to compile at one of the three const bindings before the
+    /// drift can reach downstream const-context consumers. Pinned by
+    /// [`tests::secret_ref_shape_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Whole),
+            1 => Some(Self::Field),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Whole`]; equivalent to
     /// `self == SecretRefShape::Whole`.
     ///
@@ -7223,6 +7337,181 @@ mod tests {
             (SecretRefShape::Field, FIELD),
         ] {
             assert_eq!(shape.ordinal(), expected, "shape {shape:?}");
+        }
+    }
+
+    // ─── SecretRefShape::from_ordinal — const-fn ordinal-inverse peer
+    // ─── on the (whole × field) secret-ref extraction-shape axis ─────
+
+    #[test]
+    fn secret_ref_shape_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law:
+        // `SecretRefShape::from_ordinal(v.ordinal()) == Some(v)` for
+        // every variant. The forward `ordinal` and the inverse
+        // `from_ordinal` match on the same closed two-cell surface
+        // (Whole → Field) in the SAME declaration order carried by
+        // `SecretRefShape::ALL`; the composition is the identity on the
+        // variant surface by construction. Direct methodological peer
+        // of `secret_backend_kind_from_ordinal_round_trips_via_ordinal`
+        // on the octonary backend-kind axis one primitive over,
+        // extended here onto the two-cell extraction-shape axis.
+        for &shape in SecretRefShape::ALL {
+            let ordinal = shape.ordinal();
+            let recovered = SecretRefShape::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(shape),
+                "round-trip failed for {shape:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+
+        // Concrete-cell pin — the two `(ordinal, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted either arm without shifting the sibling `ordinal`
+        // arm in lockstep fails here on the first drifted pair, before
+        // the closed-form round-trip pin above masks the divergence
+        // under `for` iteration.
+        assert_eq!(SecretRefShape::from_ordinal(0), Some(SecretRefShape::Whole));
+        assert_eq!(SecretRefShape::from_ordinal(1), Some(SecretRefShape::Field));
+    }
+
+    #[test]
+    fn secret_ref_shape_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection:
+        // `SecretRefShape::from_ordinal(o) == None` for every `o >= 2`.
+        // The closed match's `_` arm forwards the out-of-range case to
+        // `None` structurally; the guard degrades gracefully on a
+        // caller passing a stale wire-format ordinal from a version-
+        // skewed peer, an operator-typed CLI argument through
+        // `str::parse::<usize>` without a bounds check, or a
+        // hypothetical tertiary-variant ordinal (e.g. the `MultiField
+        // { fields }` shape named in `SecretRefShape::ALL`'s docs) a
+        // future extension would introduce. Direct methodological peer
+        // of `secret_backend_kind_from_ordinal_rejects_out_of_range` on
+        // the octonary backend-kind axis one primitive over.
+        let card = SecretRefShape::ALL.len();
+        for out_of_range in card..card + 32 {
+            assert_eq!(
+                SecretRefShape::from_ordinal(out_of_range),
+                None,
+                "from_ordinal must reject out-of-range ordinal {out_of_range}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            SecretRefShape::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SecretRefShape::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_from_ordinal_agrees_with_all_index_pointwise() {
+        // Independent-witness pin cross-checking the const-fn inverse
+        // projection against the `SecretRefShape::ALL` slice literal at
+        // every closed index —
+        // `SecretRefShape::from_ordinal(i) == Some(SecretRefShape::ALL[i])`
+        // for every `i < ALL.len()`. The inherent match and the slice
+        // literal carry the same declaration order (Whole → Field); a
+        // future edit that shifted one without the other fails here on
+        // the first drifted position, before the round-trip pin masks
+        // it under composition. Sibling of
+        // `secret_backend_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the octonary backend-kind axis one primitive over.
+        for (index, &expected) in SecretRefShape::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretRefShape::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with SecretRefShape::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            SecretRefShape::from_ordinal(SecretRefShape::ALL.len()),
+            None,
+            "ordinal equal to SecretRefShape::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent two-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both
+        // `None`). Where `axis_at` delegates through the `ClosedAxis`
+        // impl to a bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal. Sibling of
+        // `secret_backend_kind_from_ordinal_agrees_with_axis_at_pointwise`
+        // on the octonary backend-kind axis one primitive over —
+        // `SecretRefShape` implements `ClosedAxis` at the impl below
+        // its inherent block, so the `axis_at` cross-check applies here
+        // the same way it does on the sibling closed-axis primitives.
+        let card = SecretRefShape::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                SecretRefShape::from_ordinal(o),
+                crate::axis_at::<SecretRefShape>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → Option<Self>) projection is
+        // `const`-callable, matching the `const`-ness of `Self::ordinal`
+        // on the forward side and of the sibling scalar projections
+        // `Self::as_str`, `Self::is_whole`, `Self::is_field`. A drop of
+        // the `const` qualifier on `SecretRefShape::from_ordinal` fails
+        // this test to compile at one of the three const bindings below
+        // before the drift can reach downstream const-context
+        // consumers. Sibling of
+        // `secret_backend_kind_from_ordinal_is_const_callable` on the
+        // octonary backend-kind axis one primitive over.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range
+        // sentinel at `SecretRefShape::ALL.len()` — route each ordinal
+        // through the const-fn inverse in const position. The moment
+        // `from_ordinal` loses its const-ness one of the three const
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const AT_0: Option<SecretRefShape> = SecretRefShape::from_ordinal(0);
+        const AT_1: Option<SecretRefShape> = SecretRefShape::from_ordinal(1);
+        const AT_OOR: Option<SecretRefShape> =
+            SecretRefShape::from_ordinal(SecretRefShape::ALL.len());
+
+        assert_eq!(AT_0, Some(SecretRefShape::Whole));
+        assert_eq!(AT_1, Some(SecretRefShape::Field));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal on
+        // every variant in `SecretRefShape::ALL` to its index — the
+        // const-context welds above only exercise the two variants
+        // named at const-binding sites plus one out-of-range sentinel,
+        // but the runtime pin threads the full closed two-cell list
+        // through the same projection to catch a future variant
+        // landing whose const-context weld was forgotten upstream.
+        for (index, &variant) in SecretRefShape::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretRefShape::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
