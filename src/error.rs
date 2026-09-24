@@ -1684,6 +1684,154 @@ impl FieldPathLocalization {
         }
     }
 
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one of
+    /// the three canonical lowercase kebab-labels [`Self::as_str`] emits
+    /// (`"localized"`, `"figment-unlocalized"`, `"not-applicable"`), and
+    /// [`None`] for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// three-cell field-path-localization surface.** Where
+    /// [`Self::from_ordinal`] inverts the scalar-`usize` projection
+    /// [`Self::ordinal`], this inverts the scalar-`&'static str`
+    /// projection [`Self::as_str`] under the same discipline: bounded
+    /// match on the exact canonical codomain, [`None`] off it, `const fn`
+    /// in body. Neither projection is total on its codomain — the string
+    /// surface admits non-canonical labels, the ordinal surface admits
+    /// `usize` values `>= 3` — so both invertors return [`Option<Self>`]
+    /// rather than a total `Self`, keeping the "not on the variant
+    /// surface" case a typed [`None`] rather than a fabricated variant a
+    /// consumer could route on.
+    ///
+    /// **Cube-inversion square.** With this landing the three-cell
+    /// (`Localized` × `FigmentUnlocalized` × `NotApplicable`)
+    /// field-path-localization axis carries the (label, ordinal) inverse
+    /// pair on BOTH scalar surfaces simultaneously — the scalar-`usize`
+    /// inverse [`Self::from_ordinal`] AND the scalar-`&'static str`
+    /// inverse [`Self::from_str`] — welding the same full (label,
+    /// ordinal) cube-inversion square that the sibling closed-primitive
+    /// axes across the crate already carry:
+    /// [`ShikumiErrorKind`] (septet error-kind axis one primitive over
+    /// on the same `(kind × localization)` product cube),
+    /// [`crate::PartitionFace`] (two-cell partition-face axis),
+    /// [`crate::ModalityClass`] / [`crate::SupportCardinalityClass`]
+    /// (five-cell modal-antimodal and support-cardinality classifiers),
+    /// [`crate::SupportBoundaryDistance`] /
+    /// [`crate::SupportMagnitudeDirection`] (three-cell typed-bucket
+    /// classifiers, both the same three-cell cardinality as here),
+    /// [`crate::Format`] / [`crate::FormatProvenance`] (file-format ×
+    /// provenance product cube),
+    /// [`crate::watcher::WatchEventClass`] (reload-relevance axis),
+    /// [`crate::tiered::DiffLineKind`] (three-cell diff-cell axis, the
+    /// same three-cell cardinality as here),
+    /// [`crate::source::FigmentSourceKind`] /
+    /// [`crate::source::FigmentNameTagKind`] /
+    /// [`crate::source::EnvMetadataTagKind`] /
+    /// [`crate::ConfigSourceKind`] (figment and source-layer axes),
+    /// [`crate::secret::SecretBackendKind`] /
+    /// [`crate::SecretRefShape`] /
+    /// [`crate::SecretErrorKind`] (secret-facing axes), and
+    /// [`crate::cli::OutputFormat`] (CLI emission-format axis). First
+    /// landing of the (label, ordinal) cube-inversion square on an
+    /// `error.rs`-scoped `ClosedAxisLabel` primitive OTHER than
+    /// [`ShikumiErrorKind`] — this welds the inner axis of the
+    /// `(kind × localization)` [`ErrorLocalizationCoordinates`] product
+    /// cube's label surface, matching the outer axis
+    /// [`ShikumiErrorKind::from_str`] (commit `03d0d47`) landed
+    /// previously.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase kebab-case spellings [`Self::as_str`] emits
+    /// (`b"localized"`, `b"figment-unlocalized"`, `b"not-applicable"`),
+    /// matching the discipline of every other const-fn scalar inverse on
+    /// the crate ([`Self::from_ordinal`] and the peer
+    /// [`ShikumiErrorKind::from_str`] one primitive over on the sibling
+    /// error-kind axis of the same product cube). A consumer wanting
+    /// case-insensitive parsing (an operator-typed `--localization
+    /// NOT-APPLICABLE` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered localization reference, a mixed-case YAML
+    /// scalar in an attestation manifest) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] (which
+    /// lowers through [`str::eq_ignore_ascii_case`]) or the derived
+    /// [`<Self as std::str::FromStr>::from_str`] the
+    /// `closed_axis_label_string_surface_typed_err!` macro synthesizes
+    /// (which routes through the same case-insensitive trait parser).
+    /// The inherent const-fn seam here is the byte-exact, canonical-only
+    /// label inverse; the case-folding algebra lives one seam over on
+    /// the trait-uniform surface.
+    ///
+    /// **Round-trip law** —
+    /// `FieldPathLocalization::from_str(v.as_str()) == Some(v)` for every
+    /// `v: FieldPathLocalization`. The forward-map [`Self::as_str`] and
+    /// the const-fn inverse-map [`Self::from_str`] share the SAME
+    /// three-cell canonical codomain; the law holds by construction.
+    /// Pinned by
+    /// [`tests::field_path_localization_inherent_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `FieldPathLocalization::from_str(s) == None` for every `s` outside
+    /// the canonical three-cell set `{"localized", "figment-unlocalized",
+    /// "not-applicable"}`. The closed match's `_` arm forwards the
+    /// off-surface case to [`None`] structurally; the guard degrades
+    /// gracefully on a caller passing a mixed-case spelling that never
+    /// went through the trait's `eq_ignore_ascii_case` lowering, the
+    /// empty string, the snake_case rendering
+    /// `"figment_unlocalized"`/`"not_applicable"` a consumer might have
+    /// inferred from the Rust identifiers, a stale wire-format label
+    /// from a version-skewed peer, and near-miss spellings from
+    /// adjacent primitives on the sealed fold (the sibling
+    /// [`ShikumiErrorKind`] labels one axis over on the same product
+    /// cube — `"not-found"`, `"parse"`, `"figment"` — and the sibling
+    /// [`crate::ConfigSourceKind`] labels). Pinned by
+    /// [`tests::field_path_localization_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// table (a `const [FieldPathLocalization; 3]` variant array
+    /// recovered from a `const &[&str; 3]` canonical-label list, a
+    /// per-localization attestation-manifest slot in a `const`
+    /// initializer keyed by canonical label, a per-localization
+    /// remediation-suggestion vector partitioning figment-bearing rollups
+    /// from `NotApplicable` rollups keyed by canonical label) route
+    /// through the projection under `const` without dropping through a
+    /// runtime `let` binding the trait-side
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] and the
+    /// derived [`<Self as std::str::FromStr>::from_str`] both require
+    /// (they lower through non-`const` [`str::eq_ignore_ascii_case`]).
+    /// Pinned by
+    /// [`tests::field_path_localization_inherent_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::ALL`] pointwise** —
+    /// `FieldPathLocalization::from_str(FieldPathLocalization::ALL[i].as_str())
+    /// == Some(FieldPathLocalization::ALL[i])` for every
+    /// `i < FieldPathLocalization::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order and
+    /// the same canonical labels; the test below pins the pointwise
+    /// agreement so a future edit that shifts one without the other
+    /// fails at test time on the first drifted index. Pinned by
+    /// [`tests::field_path_localization_inherent_from_str_agrees_with_all_index_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`] on
+    /// canonical input** — for every `v: FieldPathLocalization`,
+    /// `FieldPathLocalization::from_str(v.as_str()) ==
+    /// <FieldPathLocalization as crate::ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the canonical lowercase
+    /// codomain; they diverge only OFF that codomain (the sibling
+    /// case-insensitive-lowers, the inherent rejects). Pinned by
+    /// [`tests::field_path_localization_inherent_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"localized" => Some(Self::Localized),
+            b"figment-unlocalized" => Some(Self::FigmentUnlocalized),
+            b"not-applicable" => Some(Self::NotApplicable),
+            _ => None,
+        }
+    }
+
     /// Returns `true` when the localization axis carries a signal about
     /// figment-side path attribution — [`Self::Localized`] (figment
     /// attached a non-empty dotted path) or [`Self::FigmentUnlocalized`]
@@ -12210,6 +12358,192 @@ mod tests {
                 FieldPathLocalization::from_ordinal(index),
                 Some(variant),
                 "variant {variant:?} at index {index}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_inherent_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `FieldPathLocalization::from_str(v.as_str()) == Some(v)` for every
+        // `v: FieldPathLocalization`. The forward-map `as_str` and the
+        // const-fn inverse-map inherent `from_str` share the SAME three-cell
+        // canonical codomain (`"localized"`, `"figment-unlocalized"`,
+        // `"not-applicable"`); the law holds by construction. This pin
+        // re-states it once on the inherent surface so a future edit that
+        // shifts one match arm without the other fails here on the first
+        // drifted variant. Peer of
+        // `field_path_localization_from_ordinal_round_trips_via_ordinal` on
+        // the sibling scalar-`usize` inversion of the same primitive, of
+        // `shikumi_error_kind_from_str_round_trips_via_as_str` one axis over
+        // on the sibling error-kind axis of the same
+        // (`kind × localization`) product cube, and of
+        // `partition_face_inherent_from_str_round_trips_via_as_str` /
+        // `support_boundary_distance_inherent_from_str_round_trips_via_as_str`
+        // / `support_magnitude_direction_inherent_from_str_round_trips_via_as_str`
+        // on sibling closed-primitive axes carrying the same round-trip
+        // law under the same const-fn inverse discipline.
+        for &loc in FieldPathLocalization::ALL {
+            let rendered = loc.as_str();
+            let recovered = FieldPathLocalization::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(loc),
+                "round-trip failed for {loc:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact canonical
+        // three-cell set — the codomain of `as_str` — resolves to `None`
+        // via the closed match's `_` arm. Sweeps mixed-case
+        // (`"LOCALIZED"`, `"Localized"`), the snake_case rendering
+        // `"figment_unlocalized"`/`"not_applicable"` a consumer might have
+        // inferred from the Rust identifiers, the unpunctuated
+        // `"figmentunlocalized"`/`"notapplicable"`, leading/trailing
+        // whitespace, the empty string, adjacent labels a hypothetical
+        // future extension might introduce (`"partial-localized"`), and
+        // near-miss spellings from adjacent primitives on the sealed fold
+        // — the sibling `ShikumiErrorKind` labels one axis over on the
+        // same (`kind × localization`) product cube (`"not-found"` /
+        // `"parse"` / `"watch"` / `"io"` / `"figment"` / `"extract"` /
+        // `"validation"`, valid there, rejected here), and the sibling
+        // `ConfigSourceKind` labels (`"defaults"` / `"env"` / `"file"`).
+        // The case-sensitivity discipline matches every other const-fn
+        // scalar inverse on the crate; callers wanting case-insensitive
+        // parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "LOCALIZED",
+            "Localized",
+            "lOcAlIzEd",
+            "FIGMENT-UNLOCALIZED",
+            "Figment-Unlocalized",
+            "figment_unlocalized",
+            "figmentunlocalized",
+            "NOT-APPLICABLE",
+            "Not-Applicable",
+            "not_applicable",
+            "notapplicable",
+            "localized ",
+            " localized",
+            "localized\n",
+            "",
+            "partial-localized",
+            "partially-localized",
+            "unlocalized",
+            "applicable",
+            "not-found",
+            "parse",
+            "watch",
+            "io",
+            "figment",
+            "extract",
+            "validation",
+            "defaults",
+            "env",
+            "file",
+            "localizedfigment-unlocalized",
+        ] {
+            assert_eq!(
+                FieldPathLocalization::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `FieldPathLocalization::as_str` and the sibling
+        // `FieldPathLocalization::from_ordinal`. A drop of the `const`
+        // qualifier on `FieldPathLocalization::from_str` fails this test
+        // to compile.
+        //
+        // Four `const` bindings — three in-range plus one out-of-range
+        // — route each canonical label through the const-fn inverse in
+        // const position. The moment `from_str` loses its const-ness one
+        // of the four const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection. Sibling of
+        // `field_path_localization_from_ordinal_is_const_callable` on the
+        // scalar-usize surface of the same primitive and of
+        // `shikumi_error_kind_from_str_is_const_callable` one axis over
+        // on the sibling error-kind axis of the same product cube.
+        const AT_LOCALIZED: Option<FieldPathLocalization> =
+            FieldPathLocalization::from_str("localized");
+        const AT_FIGMENT_UNLOCALIZED: Option<FieldPathLocalization> =
+            FieldPathLocalization::from_str("figment-unlocalized");
+        const AT_NOT_APPLICABLE: Option<FieldPathLocalization> =
+            FieldPathLocalization::from_str("not-applicable");
+        const AT_UNKNOWN: Option<FieldPathLocalization> =
+            FieldPathLocalization::from_str("partial-localized");
+
+        assert_eq!(AT_LOCALIZED, Some(FieldPathLocalization::Localized));
+        assert_eq!(
+            AT_FIGMENT_UNLOCALIZED,
+            Some(FieldPathLocalization::FigmentUnlocalized),
+        );
+        assert_eq!(
+            AT_NOT_APPLICABLE,
+            Some(FieldPathLocalization::NotApplicable)
+        );
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn field_path_localization_inherent_from_str_agrees_with_all_index_pointwise() {
+        // Pointwise agreement across every declared variant: for every
+        // `i in 0..FieldPathLocalization::ALL.len()`,
+        // `from_str(ALL[i].as_str()) == Some(ALL[i])`. Both the inherent
+        // `from_str` match and the forward `as_str` match derive their
+        // label table from the same three-cell declaration; a future
+        // edit that shifts the label on ONE match without the other
+        // fails here on the first drifted arm. Sibling of
+        // `field_path_localization_from_ordinal_agrees_with_all_index_pointwise`
+        // on the scalar-usize surface of the same primitive and of
+        // `shikumi_error_kind_from_str_agrees_with_as_str_pointwise` on
+        // the sibling error-kind axis of the (`kind × localization`)
+        // product cube.
+        for (index, &loc) in FieldPathLocalization::ALL.iter().enumerate() {
+            assert_eq!(
+                FieldPathLocalization::from_str(loc.as_str()),
+                Some(loc),
+                "from_str(as_str) must agree pointwise for {loc:?} at index {index}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_inherent_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `FieldPathLocalization::from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the trait
+        // method case-insensitive-lowers non-canonical labels, the
+        // inherent rejects them structurally). This pin cross-checks the
+        // const-fn label seam against the trait-uniform label seam on
+        // the closed variant surface. Sibling of
+        // `shikumi_error_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the sibling error-kind axis of the same product cube.
+        use crate::ClosedAxisLabel;
+        for &loc in FieldPathLocalization::ALL {
+            let label = loc.as_str();
+            let inherent = FieldPathLocalization::from_str(label);
+            let trait_uniform =
+                <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
             );
         }
     }
