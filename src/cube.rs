@@ -3051,6 +3051,87 @@ impl SupportBoundaryDistance {
             _ => None,
         }
     }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one
+    /// of the three canonical kebab-case labels [`Self::as_str`] emits
+    /// (`"boundary"`, `"singular"`, `"strict-interior"`), and [`None`]
+    /// for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// three-cell surface.** Where [`Self::from_ordinal`] inverts the
+    /// scalar-`usize` projection [`Self::ordinal`], this inverts the
+    /// scalar-`&'static str` projection [`Self::as_str`] under the same
+    /// discipline: bounded match on the exact canonical codomain, [`None`]
+    /// for values off it, `const fn` in body. Neither projection is total
+    /// on the codomain — the string surface admits non-canonical labels,
+    /// the ordinal surface admits `usize` values `>= 3` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant. Idiom-peer of the sibling const-fn label-
+    /// inverse [`SupportCardinalityClass::from_str`] (commit `91951f3`)
+    /// and [`ModalityClass::from_str`] (commit `9286453`) on the sibling
+    /// cube-classifier axes — same closed-match shape, same
+    /// [`Option<Self>`] return, same `const`-callability contract, same
+    /// round-trip law, sized here against the three-cell
+    /// distance-from-boundary axis instead of the five-cell
+    /// corner-partition axis.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase kebab-case spellings [`Self::as_str`] emits. A consumer
+    /// wanting case-insensitive parsing (an operator-typed
+    /// `--distance BOUNDARY` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered summary) reaches for [`Self::from_canonical_str`]
+    /// or the trait-uniform [`<Self as std::str::FromStr>::from_str`]
+    /// (both of which lower through [`str::eq_ignore_ascii_case`]) or
+    /// lowercases at their own site. The inherent const-fn seam here is
+    /// the byte-exact, canonical-only label inverse; the case-folding
+    /// algebra lives one seam over on the trait-uniform surface.
+    ///
+    /// **Round-trip law** —
+    /// `SupportBoundaryDistance::from_str(v.as_str()) == Some(v)` for
+    /// every `v: SupportBoundaryDistance`. The forward-map [`Self::as_str`]
+    /// and the const-fn inverse-map [`Self::from_str`] share the SAME
+    /// three-cell canonical codomain. Pinned by
+    /// [`tests::support_boundary_distance_inherent_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SupportBoundaryDistance::from_str(s) == None` for every `s`
+    /// outside the canonical three-label set (empty string, unknown label,
+    /// uppercased variant, prefixed / suffixed near-miss). Pinned by
+    /// [`tests::support_boundary_distance_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching the
+    /// `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// (a `const [SupportBoundaryDistance; 3]` variant array recovered
+    /// from a `const &[&str; 3]` canonical-label list, a per-bucket
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding the current
+    /// `<SupportBoundaryDistance as FromStr>::from_str` requires (it
+    /// lowers through non-const [`str::eq_ignore_ascii_case`]). Pinned by
+    /// [`tests::support_boundary_distance_inherent_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::from_canonical_str`] on canonical input** —
+    /// for every `v: SupportBoundaryDistance`,
+    /// `SupportBoundaryDistance::from_str(v.as_str())` and
+    /// `Self::from_canonical_str(v.as_str())` recover the same variant.
+    /// Both seams agree on the canonical lowercase codomain; they diverge
+    /// only OFF that codomain (the sibling case-insensitive-lowers, the
+    /// inherent rejects). Pinned by
+    /// [`tests::support_boundary_distance_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"boundary" => Some(Self::Boundary),
+            b"singular" => Some(Self::Singular),
+            b"strict-interior" => Some(Self::StrictInterior),
+            _ => None,
+        }
+    }
 }
 
 /// Typed parse failure of
@@ -3490,6 +3571,88 @@ impl SupportMagnitudeDirection {
             0 => Some(Self::Low),
             1 => Some(Self::StrictInterior),
             2 => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    /// Const-fn canonical-label → variant inverse of [`Self::as_str`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one
+    /// of the three canonical kebab-case labels [`Self::as_str`] emits
+    /// (`"low"`, `"strict-interior"`, `"high"`), and [`None`] for any
+    /// other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// three-cell surface.** Where [`Self::from_ordinal`] inverts the
+    /// scalar-`usize` projection [`Self::ordinal`], this inverts the
+    /// scalar-`&'static str` projection [`Self::as_str`] under the same
+    /// discipline: bounded match on the exact canonical codomain, [`None`]
+    /// for values off it, `const fn` in body. Neither projection is total
+    /// on the codomain — the string surface admits non-canonical labels,
+    /// the ordinal surface admits `usize` values `>= 3` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant. Idiom-peer of the sibling const-fn label-
+    /// inverse [`SupportBoundaryDistance::from_str`] on the sibling
+    /// three-cell distance-from-boundary axis and of
+    /// [`SupportCardinalityClass::from_str`] (commit `91951f3`) /
+    /// [`ModalityClass::from_str`] (commit `9286453`) on the sibling
+    /// five-cell corner-partition axes — same closed-match shape, same
+    /// [`Option<Self>`] return, same `const`-callability contract, same
+    /// round-trip law, sized here against the three-cell
+    /// support-magnitude axis.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// lowercase kebab-case spellings [`Self::as_str`] emits. A consumer
+    /// wanting case-insensitive parsing (an operator-typed
+    /// `--direction LOW` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered summary) reaches for [`Self::from_canonical_str`]
+    /// or the trait-uniform [`<Self as std::str::FromStr>::from_str`]
+    /// (both of which lower through [`str::eq_ignore_ascii_case`]) or
+    /// lowercases at their own site. The inherent const-fn seam here is
+    /// the byte-exact, canonical-only label inverse; the case-folding
+    /// algebra lives one seam over on the trait-uniform surface.
+    ///
+    /// **Round-trip law** —
+    /// `SupportMagnitudeDirection::from_str(v.as_str()) == Some(v)` for
+    /// every `v: SupportMagnitudeDirection`. The forward-map
+    /// [`Self::as_str`] and the const-fn inverse-map [`Self::from_str`]
+    /// share the SAME three-cell canonical codomain. Pinned by
+    /// [`tests::support_magnitude_direction_inherent_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SupportMagnitudeDirection::from_str(s) == None` for every `s`
+    /// outside the canonical three-label set (empty string, unknown label,
+    /// uppercased variant, prefixed / suffixed near-miss). Pinned by
+    /// [`tests::support_magnitude_direction_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching the
+    /// `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// (a `const [SupportMagnitudeDirection; 3]` variant array recovered
+    /// from a `const &[&str; 3]` canonical-label list, a per-bucket
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding the current
+    /// `<SupportMagnitudeDirection as FromStr>::from_str` requires (it
+    /// lowers through non-const [`str::eq_ignore_ascii_case`]). Pinned by
+    /// [`tests::support_magnitude_direction_inherent_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::from_canonical_str`] on canonical input** —
+    /// for every `v: SupportMagnitudeDirection`,
+    /// `SupportMagnitudeDirection::from_str(v.as_str())` and
+    /// `Self::from_canonical_str(v.as_str())` recover the same variant.
+    /// Both seams agree on the canonical lowercase codomain; they diverge
+    /// only OFF that codomain (the sibling case-insensitive-lowers, the
+    /// inherent rejects). Pinned by
+    /// [`tests::support_magnitude_direction_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"low" => Some(Self::Low),
+            b"strict-interior" => Some(Self::StrictInterior),
+            b"high" => Some(Self::High),
             _ => None,
         }
     }
@@ -53797,6 +53960,143 @@ mod tests {
     }
 
     #[test]
+    fn support_boundary_distance_inherent_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `SupportBoundaryDistance::from_str(v.as_str()) == Some(v)` for
+        // every `v: SupportBoundaryDistance`. The forward-map `as_str`
+        // and the const-fn inverse-map inherent `from_str` share the SAME
+        // three-cell canonical codomain; the law holds by construction.
+        // This pin re-states it once on the inherent surface so a future
+        // edit that shifts one match arm without the other fails here on
+        // the first drifted variant. Idiom-peer of
+        // `support_cardinality_class_inherent_from_str_round_trips_via_as_str`
+        // one primitive over on the sibling five-cell cube-classifier axis.
+        for &v in SupportBoundaryDistance::ALL {
+            let rendered = v.as_str();
+            let recovered = SupportBoundaryDistance::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the three-label
+        // canonical codomain resolves to `None` structurally via the
+        // closed match's `_` arm. Guards against a stale wire-format
+        // label from a version-skewed peer, an operator-typed CLI
+        // argument, or a hand-crafted attestation-manifest field value
+        // reaching a `const` dispatch site through a fabricated variant.
+        // The inherent seam does NOT lowercase — the uppercase variants
+        // below (case violations of the canonical lowercase codomain)
+        // all resolve to `None`, matching the exact-byte-match
+        // discipline the sibling `SupportCardinalityClass::from_str`
+        // landing (commit `91951f3`) already occupies on its axis.
+        for unknown in [
+            "",
+            "BOUNDARY",        // uppercase — off the canonical codomain.
+            "Boundary",        // titlecase — off the canonical codomain.
+            "SINGULAR",        // uppercase.
+            "Singular",        // titlecase.
+            "STRICT-INTERIOR", // uppercase.
+            "Strict-Interior", // titlecase.
+            "boundary-with-x", // suffix beyond canonical.
+            "x-boundary",      // prefix beyond canonical.
+            "totally-unknown",
+            "interior",        // suffix-only substring.
+            "strict",          // prefix-only substring.
+            "boundary ",       // trailing whitespace.
+            " boundary",       // leading whitespace.
+            "boundary\n",      // trailing newline.
+            "strict_interior", // underscore instead of hyphen.
+        ] {
+            assert_eq!(
+                SupportBoundaryDistance::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SupportBoundaryDistance::as_str` and the sibling
+        // `SupportBoundaryDistance::from_ordinal`. A drop of the `const`
+        // qualifier on `SupportBoundaryDistance::from_str` fails this
+        // test to compile.
+        //
+        // Four `const` bindings — three in-range canonical labels plus
+        // one non-canonical label — route each byte-slice through the
+        // const-fn inverse in const position. The moment `from_str`
+        // loses its const-ness one of the four const welds below fails
+        // to compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const AT_BOUNDARY: Option<SupportBoundaryDistance> =
+            SupportBoundaryDistance::from_str("boundary");
+        const AT_SINGULAR: Option<SupportBoundaryDistance> =
+            SupportBoundaryDistance::from_str("singular");
+        const AT_STRICT_INTERIOR: Option<SupportBoundaryDistance> =
+            SupportBoundaryDistance::from_str("strict-interior");
+        const AT_UNKNOWN: Option<SupportBoundaryDistance> =
+            SupportBoundaryDistance::from_str("totally-unknown");
+
+        assert_eq!(AT_BOUNDARY, Some(SupportBoundaryDistance::Boundary));
+        assert_eq!(AT_SINGULAR, Some(SupportBoundaryDistance::Singular));
+        assert_eq!(
+            AT_STRICT_INTERIOR,
+            Some(SupportBoundaryDistance::StrictInterior)
+        );
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn support_boundary_distance_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input()
+     {
+        // On the three-cell canonical lowercase codomain the inherent
+        // const-fn label seam and the sibling `from_canonical_str` seam
+        // recover the same variant pointwise — they diverge only OFF
+        // that codomain (the sibling case-insensitive-lowers, the
+        // inherent rejects). Pinned across every variant so a future
+        // edit that shifts the label on one seam without the other
+        // fails here on the first drifted cell. Idiom-peer of
+        // `support_cardinality_class_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`
+        // one primitive over on the sibling five-cell cube-classifier
+        // axis.
+        for &v in SupportBoundaryDistance::ALL {
+            let canonical = v.as_str();
+            assert_eq!(
+                SupportBoundaryDistance::from_str(canonical),
+                SupportBoundaryDistance::from_canonical_str(canonical),
+                "inherent from_str and from_canonical_str must agree on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_inherent_from_str_agrees_with_all_index_pointwise() {
+        // `from_str(SupportBoundaryDistance::ALL[i].as_str()) ==
+        // Some(SupportBoundaryDistance::ALL[i])` for every `i` in
+        // `0..SupportBoundaryDistance::ALL.len()`. The inherent match
+        // and the `Self::ALL` slice literal carry the same declaration
+        // order and the same canonical labels; the test below pins the
+        // pointwise agreement so a future edit that shifts one without
+        // the other fails at test time on the first drifted index.
+        for (index, &expected) in SupportBoundaryDistance::ALL.iter().enumerate() {
+            let canonical = expected.as_str();
+            assert_eq!(
+                SupportBoundaryDistance::from_str(canonical),
+                Some(expected),
+                "from_str({canonical:?}) must agree with SupportBoundaryDistance::ALL[{index}]",
+            );
+        }
+    }
+
+    #[test]
     fn support_boundary_distance_as_str_round_trips_via_from_canonical_str() {
         // Idiom-peer of
         // `support_cardinality_class_as_str_round_trips_via_from_canonical_str`
@@ -54726,6 +55026,147 @@ mod tests {
         assert_eq!(AT_1, Some(SupportMagnitudeDirection::StrictInterior));
         assert_eq!(AT_2, Some(SupportMagnitudeDirection::High));
         assert_eq!(AT_3, None);
+    }
+
+    #[test]
+    fn support_magnitude_direction_inherent_from_str_round_trips_via_as_str() {
+        // Round-trip law:
+        // `SupportMagnitudeDirection::from_str(v.as_str()) == Some(v)`
+        // for every `v: SupportMagnitudeDirection`. The forward-map
+        // `as_str` and the const-fn inverse-map inherent `from_str`
+        // share the SAME three-cell canonical codomain; the law holds
+        // by construction. This pin re-states it once on the inherent
+        // surface so a future edit that shifts one match arm without
+        // the other fails here on the first drifted variant. Idiom-peer
+        // of
+        // `support_boundary_distance_inherent_from_str_round_trips_via_as_str`
+        // one primitive over on the sibling three-cell cube-classifier
+        // axis.
+        for &v in SupportMagnitudeDirection::ALL {
+            let rendered = v.as_str();
+            let recovered = SupportMagnitudeDirection::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the three-label
+        // canonical codomain resolves to `None` structurally via the
+        // closed match's `_` arm. Guards against a stale wire-format
+        // label from a version-skewed peer, an operator-typed CLI
+        // argument, or a hand-crafted attestation-manifest field value
+        // reaching a `const` dispatch site through a fabricated variant.
+        // The inherent seam does NOT lowercase — the uppercase variants
+        // below (case violations of the canonical lowercase codomain)
+        // all resolve to `None`, matching the exact-byte-match
+        // discipline the sibling `SupportBoundaryDistance::from_str`
+        // landing already occupies on its axis.
+        for unknown in [
+            "",
+            "LOW",             // uppercase — off the canonical codomain.
+            "Low",             // titlecase — off the canonical codomain.
+            "HIGH",            // uppercase.
+            "High",            // titlecase.
+            "STRICT-INTERIOR", // uppercase.
+            "Strict-Interior", // titlecase.
+            "low-with-x",      // suffix beyond canonical.
+            "x-low",           // prefix beyond canonical.
+            "totally-unknown",
+            "interior",        // suffix-only substring.
+            "strict",          // prefix-only substring.
+            "low ",            // trailing whitespace.
+            " low",            // leading whitespace.
+            "low\n",           // trailing newline.
+            "strict_interior", // underscore instead of hyphen.
+            "boundary",        // sibling-axis label misplaced here.
+            "singular",        // sibling-axis label misplaced here.
+        ] {
+            assert_eq!(
+                SupportMagnitudeDirection::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SupportMagnitudeDirection::as_str` and the sibling
+        // `SupportMagnitudeDirection::from_ordinal`. A drop of the `const`
+        // qualifier on `SupportMagnitudeDirection::from_str` fails this
+        // test to compile.
+        //
+        // Four `const` bindings — three in-range canonical labels plus
+        // one non-canonical label — route each byte-slice through the
+        // const-fn inverse in const position. The moment `from_str`
+        // loses its const-ness one of the four const welds below fails
+        // to compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const AT_LOW: Option<SupportMagnitudeDirection> =
+            SupportMagnitudeDirection::from_str("low");
+        const AT_STRICT_INTERIOR: Option<SupportMagnitudeDirection> =
+            SupportMagnitudeDirection::from_str("strict-interior");
+        const AT_HIGH: Option<SupportMagnitudeDirection> =
+            SupportMagnitudeDirection::from_str("high");
+        const AT_UNKNOWN: Option<SupportMagnitudeDirection> =
+            SupportMagnitudeDirection::from_str("totally-unknown");
+
+        assert_eq!(AT_LOW, Some(SupportMagnitudeDirection::Low));
+        assert_eq!(
+            AT_STRICT_INTERIOR,
+            Some(SupportMagnitudeDirection::StrictInterior)
+        );
+        assert_eq!(AT_HIGH, Some(SupportMagnitudeDirection::High));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn support_magnitude_direction_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input()
+     {
+        // On the three-cell canonical lowercase codomain the inherent
+        // const-fn label seam and the sibling `from_canonical_str` seam
+        // recover the same variant pointwise — they diverge only OFF
+        // that codomain (the sibling case-insensitive-lowers, the
+        // inherent rejects). Pinned across every variant so a future
+        // edit that shifts the label on one seam without the other
+        // fails here on the first drifted cell. Idiom-peer of
+        // `support_boundary_distance_inherent_from_str_agrees_with_from_canonical_str_on_canonical_input`
+        // one primitive over on the sibling three-cell cube-classifier
+        // axis.
+        for &v in SupportMagnitudeDirection::ALL {
+            let canonical = v.as_str();
+            assert_eq!(
+                SupportMagnitudeDirection::from_str(canonical),
+                SupportMagnitudeDirection::from_canonical_str(canonical),
+                "inherent from_str and from_canonical_str must agree on {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_inherent_from_str_agrees_with_all_index_pointwise() {
+        // `from_str(SupportMagnitudeDirection::ALL[i].as_str()) ==
+        // Some(SupportMagnitudeDirection::ALL[i])` for every `i` in
+        // `0..SupportMagnitudeDirection::ALL.len()`. The inherent match
+        // and the `Self::ALL` slice literal carry the same declaration
+        // order and the same canonical labels; the test below pins the
+        // pointwise agreement so a future edit that shifts one without
+        // the other fails at test time on the first drifted index.
+        for (index, &expected) in SupportMagnitudeDirection::ALL.iter().enumerate() {
+            let canonical = expected.as_str();
+            assert_eq!(
+                SupportMagnitudeDirection::from_str(canonical),
+                Some(expected),
+                "from_str({canonical:?}) must agree with SupportMagnitudeDirection::ALL[{index}]",
+            );
+        }
     }
 
     #[test]
