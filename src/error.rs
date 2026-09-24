@@ -2638,6 +2638,118 @@ impl AttributionRule {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..5` — the exact
+    /// five-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::FileBySource`]`)`
+    /// - `1` → [`Some`]`(`[`Self::FileByMetadataName`]`)`
+    /// - `2` → [`Some`]`(`[`Self::EnvByPrefix`]`)`
+    /// - `3` → [`Some`]`(`[`Self::EnvByUniqueness`]`)`
+    /// - `4` → [`Some`]`(`[`Self::DefaultsByCodeUniqueness`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the attribution-rule axis. Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a
+    /// closed-enum axis primitive one seam over
+    /// ([`ShikumiErrorKind::from_ordinal`],
+    /// [`FieldPathLocalization::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::OutputFormat::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`],
+    /// [`crate::SecretRefShape::from_ordinal`],
+    /// [`crate::SecretErrorKind::from_ordinal`]); this landing closes
+    /// the same partial-inverse discipline on the five-cell
+    /// attribution-rule axis, keeping the "not on the variant surface"
+    /// case a typed [`None`] rather than a fabricated variant. With
+    /// this landing the attribution-rule axis carries the (`ordinal`,
+    /// `from_ordinal`) round-trip pair on the scalar-[`usize`] surface
+    /// as a const-callable inherent — the same shape the sibling
+    /// closed-enum axes already ship. First landing of the
+    /// scalar-`usize` inverse on an `error.rs`-scoped closed axis
+    /// OTHER than the two ShikumiError sub-axes ([`ShikumiErrorKind`]
+    /// and [`FieldPathLocalization`]) — the attribution-rule axis is
+    /// the fully-realized image of the `(metadata_axis × layer_kind ×
+    /// confidence)` product cube [`AttributionCoordinates`], so the
+    /// const-fn ordinal-inverse here places the attribution-resolver
+    /// axis on the same partial-inverse footing as the two
+    /// error-fidelity sub-axes.
+    ///
+    /// **Round-trip law** —
+    /// `AttributionRule::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: AttributionRule`. The forward-map [`Self::ordinal`]
+    /// and the const-fn inverse-map [`Self::from_ordinal`] share the
+    /// SAME closed five-cell declaration order ([`Self::ALL`],
+    /// mirroring the arm order in [`Self::ordinal`]); the law holds
+    /// by construction. Pinned by
+    /// [`tests::attribution_rule_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `AttributionRule::from_ordinal(o) == None` for every `o >= 5`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format ordinal from a version-
+    /// skewed peer or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::attribution_rule_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `AttributionRule::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order,
+    /// so the test below pins the pointwise agreement and a future
+    /// edit that shifts one without the other fails at test time on
+    /// the first drifted position. Pinned by
+    /// [`tests::attribution_rule_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `AttributionRule::from_ordinal(o) == crate::axis_at::<Self>(o)`
+    /// for every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through
+    /// the [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the closed five-cell
+    /// match; the pointwise-agreement pin keeps the two seams
+    /// substitutable. Pinned by
+    /// [`tests::attribution_rule_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] on the sibling scalar-label surface.
+    /// Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (e.g. a `const [AttributionRule; 5]` variant
+    /// array indexed by ordinal, a `const` per-rule weight vector
+    /// keyed by ordinal that weights fallback-based attributions
+    /// (`EnvByUniqueness`, `DefaultsByCodeUniqueness`) visibly
+    /// differently than equality-based ones, a per-rule attestation-
+    /// manifest slot in a `const` initializer keyed by ordinal)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::attribution_rule_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::FileBySource),
+            1 => Some(Self::FileByMetadataName),
+            2 => Some(Self::EnvByPrefix),
+            3 => Some(Self::EnvByUniqueness),
+            4 => Some(Self::DefaultsByCodeUniqueness),
+            _ => None,
+        }
+    }
+
     /// Confidence class of this rule: [`AttributionConfidence::Exact`]
     /// for equality-based attributions ([`Self::FileBySource`],
     /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
@@ -12747,6 +12859,162 @@ mod tests {
             ),
         ] {
             assert_eq!(rule.ordinal(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `AttributionRule::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: AttributionRule. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed five-cell declaration order
+        // (`AttributionRule::ALL`, mirroring the arm order in
+        // `AttributionRule::ordinal`); the law holds by construction.
+        // Sibling of `shikumi_error_kind_from_ordinal_round_trips_via_ordinal`
+        // on the seven-cell shikumi error-kind axis one impl block
+        // over, extended here onto the five-cell attribution-rule
+        // axis.
+        for &rule in AttributionRule::ALL {
+            let ordinal = rule.ordinal();
+            let recovered = AttributionRule::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(rule),
+                "round-trip failed for {rule:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 5` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `shikumi_error_kind_from_ordinal_rejects_out_of_range` on
+        // the seven-cell shikumi error-kind axis.
+        let card = AttributionRule::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                AttributionRule::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme `usize::MAX` to guard the closed match's `_` arm on
+        // the largest representable index.
+        assert_eq!(
+            AttributionRule::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            AttributionRule::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(AttributionRule::ALL[i])` for every
+        // i in 0..ALL.len() — the inverse of `ordinal` agrees with the
+        // same `Self::ALL` slice literal `ordinal` matches against. A
+        // future edit shifting one match without the other fails here
+        // on the first drifted index. Sibling of
+        // `shikumi_error_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // on the seven-cell shikumi error-kind axis.
+        for (index, &expected) in AttributionRule::ALL.iter().enumerate() {
+            assert_eq!(
+                AttributionRule::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with AttributionRule::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (5) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            AttributionRule::from_ordinal(AttributionRule::ALL.len()),
+            None,
+            "ordinal equal to AttributionRule::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent five-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both `None`).
+        // Where `axis_at` delegates through the `ClosedAxis` impl to a
+        // bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal.
+        let card = AttributionRule::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                AttributionRule::from_ordinal(o),
+                crate::axis_at::<AttributionRule>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `AttributionRule::ordinal` and the sibling
+        // `AttributionRule::as_str`. A drop of the `const` qualifier
+        // on `AttributionRule::from_ordinal` fails this test to
+        // compile. Sibling of
+        // `shikumi_error_kind_from_ordinal_is_const_callable` on the
+        // seven-cell shikumi error-kind axis, extended here onto the
+        // five-cell attribution-rule axis.
+        //
+        // Six `const` bindings — five in-range plus one out-of-range —
+        // route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the six const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<AttributionRule> = AttributionRule::from_ordinal(0);
+        const AT_1: Option<AttributionRule> = AttributionRule::from_ordinal(1);
+        const AT_2: Option<AttributionRule> = AttributionRule::from_ordinal(2);
+        const AT_3: Option<AttributionRule> = AttributionRule::from_ordinal(3);
+        const AT_4: Option<AttributionRule> = AttributionRule::from_ordinal(4);
+        const AT_OOR: Option<AttributionRule> =
+            AttributionRule::from_ordinal(AttributionRule::ALL.len());
+
+        assert_eq!(AT_0, Some(AttributionRule::FileBySource));
+        assert_eq!(AT_1, Some(AttributionRule::FileByMetadataName));
+        assert_eq!(AT_2, Some(AttributionRule::EnvByPrefix));
+        assert_eq!(AT_3, Some(AttributionRule::EnvByUniqueness));
+        assert_eq!(AT_4, Some(AttributionRule::DefaultsByCodeUniqueness));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `AttributionRule::ALL` to its index —
+        // the const-context welds above only exercise the five
+        // variants named at const-binding sites plus one out-of-range
+        // sentinel, but the runtime pin threads the full closed
+        // five-cell list through the same projection to catch a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        for (index, &variant) in AttributionRule::ALL.iter().enumerate() {
+            assert_eq!(
+                AttributionRule::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
