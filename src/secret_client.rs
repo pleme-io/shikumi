@@ -578,6 +578,105 @@ impl SecretErrorKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..5` — the exact
+    /// range [`Self::ordinal`] emits — and [`None`] for any larger value.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::NotFound`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Unauthorized`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Unsupported`]`)`
+    /// - `3` → [`Some`]`(`[`Self::Backend`]`)`
+    /// - `4` → [`Some`]`(`[`Self::Shikumi`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the secret-client error-kind axis.** Every prior landing of the
+    /// (`ordinal`, `from_ordinal`) round-trip pair targeted a closed-enum
+    /// axis primitive one seam over
+    /// ([`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::cli::OutputFormat::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::FieldPathLocalization::from_ordinal`],
+    /// [`crate::SupportBoundaryDistance::from_ordinal`],
+    /// [`crate::SupportMagnitudeDirection::from_ordinal`],
+    /// [`crate::HintSurface::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::cli::TierArg::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`]); this landing
+    /// closes the same partial-inverse discipline on the five-cell
+    /// secret-client error-kind axis, keeping the "not on the variant
+    /// surface" case a typed [`None`] rather than a fabricated variant.
+    /// With this landing the secret-client error-kind axis carries the
+    /// (`ordinal`, `from_ordinal`) round-trip pair on the
+    /// scalar-[`usize`] surface as a const-callable inherent — the same
+    /// shape the sibling closed-enum axes already ship. First landing of
+    /// the ordinal-inverse peer idiom on a `secret_client.rs`-scoped
+    /// closed-primitive axis.
+    ///
+    /// **Round-trip law** —
+    /// `SecretErrorKind::from_ordinal(v.ordinal()) == Some(v)` for every
+    /// `v: SecretErrorKind`. The forward-map [`Self::ordinal`] and the
+    /// const-fn inverse-map [`Self::from_ordinal`] share the SAME closed
+    /// five-cell declaration order ([`Self::ALL`]); the law holds by
+    /// construction. Pinned by
+    /// [`tests::secret_error_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SecretErrorKind::from_ordinal(o) == None` for every `o >= 5`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a stale wire-format ordinal from a version-skewed peer or
+    /// an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check. Pinned
+    /// by
+    /// [`tests::secret_error_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `SecretErrorKind::from_ordinal(i) == axis_at::<SecretErrorKind>(i)`
+    /// for every `i` in `0..Self::ALL.len()`. [`SecretErrorKind`] IS a
+    /// [`crate::ClosedAxis`] primitive (the
+    /// `impl ClosedAxis for SecretErrorKind` block below delegates `ALL`
+    /// to [`Self::ALL`]), so the pointwise-agreement law targets the
+    /// trait-uniform [`crate::axis_at`] projection — idiom-peer of the
+    /// same law on the sibling closed-axis primitives
+    /// [`crate::ConfigTierKind::from_ordinal`] and
+    /// [`crate::watcher::WatchEventClass::from_ordinal`]. A future edit
+    /// that shifts one match arm without shifting [`Self::ALL`] (or vice
+    /// versa) fails here on the first drifted position. Pinned by
+    /// [`tests::secret_error_kind_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and of
+    /// every peer per-variant projection on the [`impl SecretErrorKind`]
+    /// block ([`Self::is_not_found`], [`Self::is_unauthorized`],
+    /// [`Self::is_unsupported`], [`Self::is_backend`],
+    /// [`Self::is_shikumi`]). Consumers wanting a compile-time-selected
+    /// ordinal-keyed dispatch table (e.g. a `const [SecretErrorKind; 5]`
+    /// variant array recovered from a `const [u8; 5]` wire-format
+    /// ordinal list, a per-kind retry-policy slot in a `const`
+    /// initializer keyed by ordinal, a `const` per-kind weight vector
+    /// routing secret-resolution failure histograms) route through the
+    /// projection under `const` without dropping through a runtime `let`
+    /// binding. Pinned by
+    /// [`tests::secret_error_kind_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::NotFound),
+            1 => Some(Self::Unauthorized),
+            2 => Some(Self::Unsupported),
+            3 => Some(Self::Backend),
+            4 => Some(Self::Shikumi),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::NotFound`]; equivalent to
     /// `self == SecretErrorKind::NotFound`.
     ///
@@ -10757,6 +10856,132 @@ mod tests {
         ] {
             assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
         }
+    }
+
+    #[test]
+    fn secret_error_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `SecretErrorKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: SecretErrorKind. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed five-cell declaration order
+        // (`SecretErrorKind::ALL`); the law holds by construction.
+        // Sibling of `watch_event_class_from_ordinal_round_trips_via_ordinal`
+        // on the reload-relevance axis and every peer round-trip pin on
+        // the sibling closed-axis primitives, extended here onto the
+        // five-cell secret-client error-kind axis.
+        for &kind in SecretErrorKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = SecretErrorKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 5` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against a
+        // stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant.
+        let card = SecretErrorKind::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                SecretErrorKind::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: the immediate boundary at `card` and the
+        // arithmetic extreme `usize::MAX` guard the closed match's `_`
+        // arm on both the first out-of-range slot and the largest
+        // representable index.
+        assert_eq!(
+            SecretErrorKind::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SecretErrorKind::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_from_ordinal_agrees_with_axis_at_pointwise() {
+        // `from_ordinal(i) == axis_at::<SecretErrorKind>(i)` for every
+        // i in 0..ALL.len() — the inverse of `ordinal` agrees with the
+        // trait-uniform `crate::axis_at` projection over the
+        // `ClosedAxis` bound at every declared position.
+        // `SecretErrorKind` IS a `ClosedAxis` primitive (the
+        // `impl ClosedAxis for SecretErrorKind` above delegates `ALL`
+        // to `Self::ALL`), so the pointwise-agreement law targets
+        // `crate::axis_at` directly — idiom-peer of the corresponding
+        // pin on `WatchEventClass::from_ordinal` and
+        // `ConfigSourceKind::from_ordinal`. A future edit that shifts
+        // one match arm without shifting `ALL` (or vice versa) fails
+        // here on the first drifted index.
+        for (index, &expected) in SecretErrorKind::ALL.iter().enumerate() {
+            let from_axis_at = crate::axis_at::<SecretErrorKind>(index);
+            assert_eq!(
+                from_axis_at,
+                Some(expected),
+                "axis_at must yield ALL[{index}] on the closed-axis secret-error-kind primitive",
+            );
+            assert_eq!(
+                SecretErrorKind::from_ordinal(index),
+                from_axis_at,
+                "from_ordinal({index}) must agree with axis_at({index})",
+            );
+        }
+        // Beyond the axis cardinality (5) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            SecretErrorKind::from_ordinal(SecretErrorKind::ALL.len()),
+            None,
+            "ordinal equal to SecretErrorKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretErrorKind::ordinal` and of every peer
+        // per-variant projection already carried on the
+        // `impl SecretErrorKind` block (`is_not_found`,
+        // `is_unauthorized`, `is_unsupported`, `is_backend`,
+        // `is_shikumi`). A drop of the `const` qualifier on
+        // `SecretErrorKind::from_ordinal` fails this test to compile.
+        //
+        // Six `const` bindings — five in-range plus one out-of-range
+        // sentinel at `SecretErrorKind::ALL.len()` — route each ordinal
+        // through the const-fn inverse in const position. The moment
+        // `from_ordinal` loses its const-ness one of the six const
+        // welds below fails to compile at THAT line before the drift
+        // can reach downstream consumers that assumed const-ness
+        // through the projection.
+        const AT_0: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(0);
+        const AT_1: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(1);
+        const AT_2: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(2);
+        const AT_3: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(3);
+        const AT_4: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(4);
+        const AT_5: Option<SecretErrorKind> = SecretErrorKind::from_ordinal(5);
+
+        assert_eq!(AT_0, Some(SecretErrorKind::NotFound));
+        assert_eq!(AT_1, Some(SecretErrorKind::Unauthorized));
+        assert_eq!(AT_2, Some(SecretErrorKind::Unsupported));
+        assert_eq!(AT_3, Some(SecretErrorKind::Backend));
+        assert_eq!(AT_4, Some(SecretErrorKind::Shikumi));
+        assert_eq!(AT_5, None);
     }
 
     #[test]
