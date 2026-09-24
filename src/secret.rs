@@ -1251,6 +1251,163 @@ impl SecretBackendKind {
         }
     }
 
+    /// Const-fn label → variant inverse of [`Self::as_str`]. Returns
+    /// [`Some(variant)`][Some] on the exact eight-cell canonical
+    /// snake_case codomain [`Self::as_str`] emits (`"literal"`,
+    /// `"command"`, `"op"`, `"sops"`, `"akeyless"`, `"vault"`,
+    /// `"aws_secret"`, `"gcp_secret"`) and [`None`] on any other
+    /// `&str`.
+    ///
+    /// The bounded eight-cell match delivers:
+    ///
+    /// - `"literal"` → [`Some`]`(`[`Self::Literal`]`)`
+    /// - `"command"` → [`Some`]`(`[`Self::Command`]`)`
+    /// - `"op"` → [`Some`]`(`[`Self::Op`]`)`
+    /// - `"sops"` → [`Some`]`(`[`Self::Sops`]`)`
+    /// - `"akeyless"` → [`Some`]`(`[`Self::Akeyless`]`)`
+    /// - `"vault"` → [`Some`]`(`[`Self::Vault`]`)`
+    /// - `"aws_secret"` → [`Some`]`(`[`Self::AwsSecret`]`)`
+    /// - `"gcp_secret"` → [`Some`]`(`[`Self::GcpSecret`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// **Sibling landing of the const-fn label-inverse peer idiom on
+    /// the octonary secret-resolution backend-kind axis.** Every
+    /// prior landing of the (`as_str`, `from_str`) round-trip pair
+    /// targeted a closed-enum axis primitive one seam over
+    /// ([`crate::ConfigTierKind::from_str`],
+    /// [`crate::ConfigSourceKind::from_str`],
+    /// [`crate::DiffLineKind::from_str`],
+    /// [`crate::cli::OutputFormat::from_str`],
+    /// [`crate::Format::from_str`],
+    /// [`crate::FormatProvenance::from_str`],
+    /// [`crate::FigmentSourceKind::from_str`],
+    /// [`crate::FigmentNameTagKind::from_str`],
+    /// [`crate::EnvMetadataTagKind::from_str`],
+    /// [`crate::watcher::WatchEventClass::from_str`], and
+    /// [`SecretRefShape::from_str`]); this landing closes the same
+    /// partial-inverse discipline on the eight-cell backend-kind axis
+    /// — the largest closed kind axis in the crate (one cell wider
+    /// than [`crate::ShikumiErrorKind`]'s septet, two cells wider than
+    /// the crate-side quinary [`crate::cli::TierArg`], and four cells
+    /// wider than the crate-side quaternary
+    /// [`crate::ConfigTierKind`]) — keeping the "not on the canonical
+    /// variant surface" case a typed [`None`] rather than a fabricated
+    /// variant. With this landing the backend-kind axis now carries
+    /// BOTH the (`ordinal`, `from_ordinal`) round-trip pair on the
+    /// scalar-[`usize`] surface AND the (`as_str`, `from_str`)
+    /// round-trip pair on the scalar-`&str` surface as const-callable
+    /// inherents — welding the full label/ordinal cube-inversion
+    /// square on the backend-kind primitive, the same shape the sibling
+    /// closed-enum axes [`crate::Format`], [`crate::FormatProvenance`],
+    /// [`crate::ConfigSourceKind`], [`crate::DiffLineKind`],
+    /// [`crate::watcher::WatchEventClass`], and [`SecretRefShape`]
+    /// already carry.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the eight-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer also of the
+    /// macro-generated [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`]) one seam over that
+    /// returns [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// snake_case spellings [`Self::as_str`] emits, matching the
+    /// discipline of the sibling const-fn scalar inverse
+    /// [`Self::from_ordinal`] and of the sibling
+    /// [`crate::ConfigSourceKind::from_str`] /
+    /// [`crate::DiffLineKind::from_str`] /
+    /// [`crate::cli::OutputFormat::from_str`] /
+    /// [`crate::watcher::WatchEventClass::from_str`] /
+    /// [`SecretRefShape::from_str`] const-fn label inverses. A consumer
+    /// wanting case-insensitive parsing (an operator-typed
+    /// `--backend LITERAL` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered attestation-manifest summary) reaches for the
+    /// trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or
+    /// lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `SecretBackendKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretBackendKind`. Composes with [`Self::as_str`] on the
+    /// same eight-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::secret_backend_kind_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SecretBackendKind::from_str(s) == None` for every `s` outside
+    /// the canonical eight-cell set. The closed match's `_` arm
+    /// forwards the off-surface case to [`None`] structurally; the
+    /// guard degrades gracefully on a caller passing a stale wire-
+    /// format label from a version-skewed peer, a mixed-case
+    /// operator-typed CLI argument that never went through a lowering
+    /// step, the empty string, an unprefixed shorthand (`"aws"`,
+    /// `"gcp"`), or a hypothetical ninth-variant label a future
+    /// extension would introduce (e.g. an `env_var` or `kubernetes`
+    /// backend named in [`SecretBackend::kind`]'s docs). Pinned by
+    /// [`tests::secret_backend_kind_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `SecretBackendKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretBackendKind`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same eight-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::secret_backend_kind_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: SecretBackendKind`,
+    /// `SecretBackendKind::from_str(v.as_str()) ==
+    /// <SecretBackendKind as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact snake_case
+    /// labels [`Self::as_str`] emits; they diverge only OFF that
+    /// codomain (the trait method case-insensitive-lowers non-canonical
+    /// labels, the inherent rejects them structurally). This pin
+    /// cross-checks the const-fn label seam against the trait-uniform
+    /// label seam on the closed variant surface. Pinned by
+    /// [`tests::secret_backend_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// on the backend-kind axis (a `const [SecretBackendKind; 8]`
+    /// variant array recovered from a `const &[&str; 8]` canonical-
+    /// label list, a per-backend resolution-policy slot in a `const`
+    /// initializer keyed by canonical label, a `const` per-backend
+    /// weight vector routing cloud-Secret-Manager reads
+    /// (`aws_secret`, `gcp_secret`) under a different weight than
+    /// local-tool backends (`literal`, `command`, `sops`) since the
+    /// cloud pole crosses a network boundary) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::secret_backend_kind_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"literal" => Some(Self::Literal),
+            b"command" => Some(Self::Command),
+            b"op" => Some(Self::Op),
+            b"sops" => Some(Self::Sops),
+            b"akeyless" => Some(Self::Akeyless),
+            b"vault" => Some(Self::Vault),
+            b"aws_secret" => Some(Self::AwsSecret),
+            b"gcp_secret" => Some(Self::GcpSecret),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Literal`]; equivalent to
     /// `self == SecretBackendKind::Literal`.
     ///
@@ -4011,6 +4168,190 @@ mod tests {
                 SecretBackendKind::from_ordinal(index),
                 Some(variant),
                 "variant {variant:?} at index {index}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_round_trips_via_as_str() {
+        // Round-trip law: `SecretBackendKind::from_str(v.as_str()) ==
+        // Some(v)` for every v: SecretBackendKind. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed eight-cell label table (`"literal"`, `"command"`,
+        // `"op"`, `"sops"`, `"akeyless"`, `"vault"`, `"aws_secret"`,
+        // `"gcp_secret"` in SecretBackendKind::ALL declaration order);
+        // the law holds by construction. Sibling of
+        // `secret_ref_shape_from_str_round_trips_via_as_str` on the
+        // two-cell extraction-shape axis one primitive over and of
+        // `secret_backend_kind_from_ordinal_round_trips_via_ordinal`
+        // on the scalar-usize surface of the same primitive.
+        for &kind in SecretBackendKind::ALL {
+            let rendered = kind.as_str();
+            let recovered = SecretBackendKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical eight-cell set — the codomain of `as_str` —
+        // resolves to `None` via the closed match's `_` arm. Sweeps
+        // mixed-case (`"LITERAL"`, `"Aws_Secret"`), leading/trailing
+        // whitespace, the empty string, adjacent labels a hypothetical
+        // future extension might introduce (`"env_var"`, `"kubernetes"`,
+        // `"azure_secret"`), unprefixed shorthand (`"aws"`, `"gcp"`),
+        // and near-miss spellings from adjacent primitives on the
+        // sealed fold (`"defaults"` / `"env"` / `"file"` — the sibling
+        // ConfigSourceKind labels one primitive over, valid there,
+        // rejected here; `"whole"` / `"field"` — the sibling
+        // SecretRefShape labels; `"reload"` / `"removed"` / `"ignored"`
+        // — the sibling WatchEventClass labels). The case-sensitivity
+        // discipline matches the sibling `WatchEventClass::from_str`,
+        // `ConfigSourceKind::from_str`, `DiffLineKind::from_str`, and
+        // `SecretRefShape::from_str` const-fn label inverses; callers
+        // wanting case-insensitive parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "LITERAL",
+            "Literal",
+            "lItErAl",
+            "literal ",
+            " literal",
+            "literal\n",
+            "COMMAND",
+            "Command",
+            "OP",
+            "Op",
+            "SOPS",
+            "Sops",
+            "AKEYLESS",
+            "Akeyless",
+            "VAULT",
+            "Vault",
+            "AWS_SECRET",
+            "Aws_Secret",
+            "aws-secret",
+            "aws",
+            "gcp",
+            "GCP_SECRET",
+            "Gcp_Secret",
+            "gcp-secret",
+            "",
+            "env_var",
+            "kubernetes",
+            "azure_secret",
+            "whole",
+            "field",
+            "multifield",
+            "defaults",
+            "env",
+            "file",
+            "reload",
+            "removed",
+            "ignored",
+            "literalcommand",
+            "opsops",
+        ] {
+            assert_eq!(
+                SecretBackendKind::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretBackendKind::as_str` and the sibling
+        // `SecretBackendKind::from_ordinal`. A drop of the `const`
+        // qualifier on `SecretBackendKind::from_str` fails this test
+        // to compile.
+        //
+        // Nine `const` bindings — eight in-range plus one out-of-range
+        // — route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the nine const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `secret_backend_kind_from_ordinal_is_const_callable`
+        // on the scalar-usize surface of the same primitive and of
+        // `secret_ref_shape_from_str_is_const_callable` on the
+        // extraction-shape axis one primitive over.
+        const AT_LITERAL: Option<SecretBackendKind> = SecretBackendKind::from_str("literal");
+        const AT_COMMAND: Option<SecretBackendKind> = SecretBackendKind::from_str("command");
+        const AT_OP: Option<SecretBackendKind> = SecretBackendKind::from_str("op");
+        const AT_SOPS: Option<SecretBackendKind> = SecretBackendKind::from_str("sops");
+        const AT_AKEYLESS: Option<SecretBackendKind> = SecretBackendKind::from_str("akeyless");
+        const AT_VAULT: Option<SecretBackendKind> = SecretBackendKind::from_str("vault");
+        const AT_AWS: Option<SecretBackendKind> = SecretBackendKind::from_str("aws_secret");
+        const AT_GCP: Option<SecretBackendKind> = SecretBackendKind::from_str("gcp_secret");
+        const AT_UNKNOWN: Option<SecretBackendKind> = SecretBackendKind::from_str("azure_secret");
+
+        assert_eq!(AT_LITERAL, Some(SecretBackendKind::Literal));
+        assert_eq!(AT_COMMAND, Some(SecretBackendKind::Command));
+        assert_eq!(AT_OP, Some(SecretBackendKind::Op));
+        assert_eq!(AT_SOPS, Some(SecretBackendKind::Sops));
+        assert_eq!(AT_AKEYLESS, Some(SecretBackendKind::Akeyless));
+        assert_eq!(AT_VAULT, Some(SecretBackendKind::Vault));
+        assert_eq!(AT_AWS, Some(SecretBackendKind::AwsSecret));
+        assert_eq!(AT_GCP, Some(SecretBackendKind::GcpSecret));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in SecretBackendKind::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same eight-cell declaration; a
+        // future edit that shifts the label on ONE match (say
+        // renaming the `AwsSecret` arm's label to `"aws"` on the
+        // `as_str` side but not the `from_str` side, or vice versa)
+        // fails here on the first drifted arm. Sibling of
+        // `secret_ref_shape_from_str_agrees_with_as_str_pointwise` on
+        // the two-cell extraction-shape axis one primitive over.
+        for &kind in SecretBackendKind::ALL {
+            assert_eq!(
+                SecretBackendKind::from_str(kind.as_str()),
+                Some(kind),
+                "from_str(as_str) must agree pointwise for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact snake_case
+        // labels `as_str` emits; they diverge only OFF that codomain
+        // (the trait method case-insensitive-lowers non-canonical
+        // labels, the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the
+        // trait-uniform label seam on the closed variant surface.
+        // Sibling of
+        // `secret_ref_shape_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the two-cell extraction-shape axis one primitive over.
+        use crate::ClosedAxisLabel;
+        for &kind in SecretBackendKind::ALL {
+            let label = kind.as_str();
+            let inherent = SecretBackendKind::from_str(label);
+            let trait_uniform = <SecretBackendKind as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
             );
         }
     }
