@@ -1785,6 +1785,99 @@ impl HintSurface {
             Self::EnvVar => "env-var",
         }
     }
+
+    /// Const-fn label → variant inverse of [`Self::as_str`]. Returns
+    /// [`Some(variant)`][Some] for every `s` in the canonical four-cell
+    /// label codomain [`Self::as_str`] emits (`"dead-knob"`,
+    /// `"stale-entry"`, `"value-key"`, `"env-var"`) — the exact set
+    /// [`Self::as_str`] emits — and [`None`] for any other input.
+    ///
+    /// **Sibling landing of the const-fn label-inverse peer idiom on
+    /// the coverage-hint surface axis.** The (`ordinal`, `from_ordinal`)
+    /// round-trip pair already welds the scalar-[`usize`] cube-inversion
+    /// square on the same primitive; landing this label-inverse peer
+    /// (matching, in order, the shipped
+    /// [`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::SupportBoundaryDistance::from_str`],
+    /// [`crate::SupportMagnitudeDirection::from_str`],
+    /// [`crate::SupportCardinalityClass::from_str`],
+    /// [`crate::PartitionFace::from_str`],
+    /// [`crate::ShikumiErrorKind::from_str`],
+    /// [`crate::SecretErrorKind::from_str`],
+    /// [`crate::SecretBackendKind::from_str`], and
+    /// [`crate::SecretRefShape::from_str`] sibling landings) welds the
+    /// `(label, ordinal)` cube-inversion square on the coverage-hint
+    /// surface axis — every closed-axis primitive on this axis now
+    /// carries the full four-cell forward × inverse quartet
+    /// (`ordinal` + `from_ordinal` + `as_str` + `from_str`) at one
+    /// const-callability altitude.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// kebab-case spellings [`Self::as_str`] emits, matching the
+    /// discipline of the sibling const-fn scalar inverse
+    /// [`Self::from_ordinal`] and of every peer `from_str` landing on
+    /// the sibling closed-enum axes cited above. A consumer wanting
+    /// case-insensitive parsing (an operator-typed
+    /// `--surface DEAD-KNOB` at a CLI, a mixed-case tag in a
+    /// dashboard filter) lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `HintSurface::from_str(v.as_str()) == Some(v)` for every
+    /// `v: HintSurface`. Composes with [`Self::as_str`] on the same
+    /// four-cell label table both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::hint_surface_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `HintSurface::from_str(s) == None` for every `s` outside the
+    /// canonical four-cell set `{"dead-knob", "stale-entry",
+    /// "value-key", "env-var"}`. The closed match's `_` arm forwards
+    /// the off-surface case to [`None`] structurally; the guard
+    /// degrades gracefully on a caller passing a stale wire-format
+    /// label from a version-skewed peer, a mixed-case CLI argument
+    /// that never went through a lowering step, the empty string, or
+    /// a near-miss spelling from an adjacent primitive on the sealed
+    /// fold. Pinned by
+    /// [`tests::hint_surface_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** — the inherent
+    /// match and the forward [`Self::as_str`] match carry the same
+    /// four-cell label mapping; a future edit that shifts the label on
+    /// ONE match without the other fails at test time on the first
+    /// drifted arm. Pinned by
+    /// [`tests::hint_surface_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square** — composed with [`Self::from_ordinal`]
+    /// and [`Self::ordinal`], the four projections form a closed
+    /// commuting square: for every `v: HintSurface`,
+    /// `HintSurface::from_str(v.as_str()) ==
+    /// HintSurface::from_ordinal(v.ordinal()) == Some(v)`. The label
+    /// leg and the ordinal leg agree on every variant. Pinned by
+    /// [`tests::hint_surface_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// (a `const [HintSurface; 4]` variant array recovered from a
+    /// `const &[&str; 4]` canonical-label list, a per-surface
+    /// remediation slot in a `const` initializer keyed by canonical
+    /// label, a `const` per-surface weight vector routing coverage
+    /// rollups indexed by the operator-facing label rather than the
+    /// wire ordinal) route through the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::hint_surface_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"dead-knob" => Some(Self::DeadKnob),
+            b"stale-entry" => Some(Self::StaleEntry),
+            b"value-key" => Some(Self::ValueKey),
+            b"env-var" => Some(Self::EnvVar),
+            _ => None,
+        }
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -8915,6 +9008,204 @@ tags: []
         // across every variant in `HintSurface::ALL`.
         for (index, &surface) in HintSurface::ALL.iter().enumerate() {
             assert_eq!(LABELS[index], surface.as_str(), "LABELS[{index}]");
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_str_round_trips_via_as_str() {
+        // Round-trip law: `HintSurface::from_str(v.as_str()) == Some(v)`
+        // for every `v: HintSurface`. The forward-map `as_str` and the
+        // const-fn inverse-map `from_str` share the SAME closed four-
+        // cell label table (`"dead-knob"`, `"stale-entry"`, `"value-
+        // key"`, `"env-var"` in `HintSurface::ALL` declaration order);
+        // the law holds by construction. Sibling of
+        // `watch_event_class_from_str_round_trips_via_as_str` on the
+        // reload-relevance axis one primitive over and of
+        // `hint_surface_from_ordinal_round_trips_via_ordinal` on the
+        // scalar-usize surface of the same primitive.
+        for &surface in HintSurface::ALL {
+            let rendered = surface.as_str();
+            let recovered = HintSurface::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(surface),
+                "round-trip failed for {surface:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical four-cell set `{"dead-knob", "stale-entry",
+        // "value-key", "env-var"}` — the codomain of `as_str` —
+        // resolves to `None` via the closed match's `_` arm. Sweeps
+        // mixed-case (`"DEAD-KNOB"`, `"Dead-Knob"`, `"STALE-ENTRY"`),
+        // leading/trailing whitespace (`"dead-knob "`, `" stale-entry"`,
+        // `"env-var\n"`), the empty string, snake_case variants
+        // (`"dead_knob"`, `"stale_entry"`, `"value_key"`, `"env_var"`)
+        // an operator might type at a CLI expecting the other
+        // convention, adjacent labels a hypothetical future extension
+        // might introduce (`"missing-key"`, `"unknown-source"`), and
+        // near-miss spellings from adjacent primitives on the sealed
+        // fold (`"reload"` / `"removed"` / `"ignored"` — the sibling
+        // WatchEventClass labels one primitive over, valid there,
+        // rejected here). The case-sensitivity discipline matches the
+        // sibling `WatchEventClass::from_str` and
+        // `SupportBoundaryDistance::from_str` const-fn label inverses.
+        for bad in &[
+            "DEAD-KNOB",
+            "Dead-Knob",
+            "dEaD-kNoB",
+            "dead-knob ",
+            " dead-knob",
+            "dead-knob\n",
+            "STALE-ENTRY",
+            "Stale-Entry",
+            "stale-entry ",
+            " stale-entry",
+            "stale-entry\n",
+            "VALUE-KEY",
+            "Value-Key",
+            "value-key ",
+            " value-key",
+            "value-key\n",
+            "ENV-VAR",
+            "Env-Var",
+            "env-var ",
+            " env-var",
+            "env-var\n",
+            "",
+            "dead_knob",
+            "stale_entry",
+            "value_key",
+            "env_var",
+            "deadknob",
+            "staleentry",
+            "valuekey",
+            "envvar",
+            "missing-key",
+            "unknown-source",
+            "reload",
+            "removed",
+            "ignored",
+            "dead-knobstale-entry",
+        ] {
+            assert_eq!(
+                HintSurface::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in `HintSurface::ALL`. Both the inherent `from_str`
+        // match and the forward `as_str` match derive their label
+        // table from the same four-cell declaration; a future edit
+        // that shifts the label on ONE match (say renaming the
+        // `EnvVar` arm's label to `"env-variable"` on the `as_str`
+        // side but not the `from_str` side, or vice versa) fails here
+        // on the first drifted arm. Sibling of
+        // `watch_event_class_from_str_agrees_with_as_str_pointwise` on
+        // the reload-relevance axis one primitive over.
+        for &surface in HintSurface::ALL {
+            let rendered = surface.as_str();
+            let recovered = HintSurface::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(surface),
+                "pointwise agreement failed for {surface:?}: as_str={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion-square weld: the label leg and the ordinal
+        // leg of the (forward, inverse) × (label, ordinal) commuting
+        // square agree on every variant. For every `v: HintSurface`,
+        // both `HintSurface::from_str(v.as_str())` and
+        // `HintSurface::from_ordinal(v.ordinal())` return `Some(v)` —
+        // and both agree on the same recovered variant. This pin
+        // cross-checks the label-inverse peer against the shipped
+        // ordinal-inverse peer on the same closed four-cell axis so
+        // that a future edit shifting the position of one variant on
+        // ONE inverse (say a swap of `ValueKey` and `EnvVar` on the
+        // `from_str` match but not on the `from_ordinal` match, or
+        // vice versa) fails here on the first drifted variant before
+        // reaching a consumer that assumed both legs of the square
+        // recover the same variant.
+        for &surface in HintSurface::ALL {
+            let via_label = HintSurface::from_str(surface.as_str());
+            let via_ordinal = HintSurface::from_ordinal(surface.ordinal());
+            assert_eq!(via_label, Some(surface), "label leg failed for {surface:?}",);
+            assert_eq!(
+                via_ordinal,
+                Some(surface),
+                "ordinal leg failed for {surface:?}",
+            );
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square legs diverged for {surface:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `HintSurface::as_str` and the sibling
+        // `HintSurface::from_ordinal`. A drop of the `const`
+        // qualifier on `HintSurface::from_str` fails this test to
+        // compile.
+        //
+        // Five `const` bindings — four in-range plus one out-of-set
+        // sentinel — route each canonical label through the const-fn
+        // inverse in const position. The moment `from_str` loses its
+        // const-ness one of the five const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `hint_surface_from_ordinal_is_const_callable` on
+        // the scalar-usize surface of the same primitive and of
+        // `watch_event_class_from_str_is_const_callable` on the
+        // reload-relevance axis one primitive over.
+        const AT_DEAD_KNOB: Option<HintSurface> = HintSurface::from_str("dead-knob");
+        const AT_STALE_ENTRY: Option<HintSurface> = HintSurface::from_str("stale-entry");
+        const AT_VALUE_KEY: Option<HintSurface> = HintSurface::from_str("value-key");
+        const AT_ENV_VAR: Option<HintSurface> = HintSurface::from_str("env-var");
+        const AT_UNKNOWN: Option<HintSurface> = HintSurface::from_str("missing-key");
+
+        assert_eq!(AT_DEAD_KNOB, Some(HintSurface::DeadKnob));
+        assert_eq!(AT_STALE_ENTRY, Some(HintSurface::StaleEntry));
+        assert_eq!(AT_VALUE_KEY, Some(HintSurface::ValueKey));
+        assert_eq!(AT_ENV_VAR, Some(HintSurface::EnvVar));
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Compile-time-selected canonical-label → variant recovery
+        // table: the exact consumer shape the const-ness weld exists
+        // to enable. A future const-drop lands at the initializer
+        // below at compile time before reaching any static dispatch
+        // table consumer.
+        const RECOVERED: [Option<HintSurface>; HintSurface::ALL.len()] = [
+            HintSurface::from_str("dead-knob"),
+            HintSurface::from_str("stale-entry"),
+            HintSurface::from_str("value-key"),
+            HintSurface::from_str("env-var"),
+        ];
+
+        // Cross-check: the const-context weld recovers exactly
+        // `HintSurface::ALL` in declaration order — welding the ordinal-
+        // keyed const dispatch table to the runtime closed-list oracle.
+        for (index, &surface) in HintSurface::ALL.iter().enumerate() {
+            assert_eq!(
+                RECOVERED[index],
+                Some(surface),
+                "RECOVERED[{index}] disagrees with HintSurface::ALL",
+            );
         }
     }
 
