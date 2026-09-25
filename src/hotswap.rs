@@ -9551,6 +9551,146 @@ impl SameStoreConsistencyKind {
         }
     }
 
+    /// Const-fn canonical-label → variant inverse of [`Self::name`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one
+    /// of the three canonical snake-case labels [`Self::name`] emits
+    /// (`"stationary"`, `"identity_republish"`, `"progression"`), and
+    /// [`None`] for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// three-cell consistency-half kind surface.** Where
+    /// [`Self::from_ordinal`] inverts the scalar-`usize` projection
+    /// [`Self::ordinal`], this inverts the scalar-`&'static str`
+    /// projection [`Self::name`] under the same discipline: bounded match
+    /// on the exact canonical codomain, [`None`] off it, `const fn` in
+    /// body. Neither projection is total on its codomain — the string
+    /// surface admits non-canonical labels, the ordinal surface admits
+    /// `usize` values `>= 3` — so both invertors return [`Option<Self>`]
+    /// rather than a total `Self`, keeping the "not on the variant
+    /// surface" case a typed [`None`] rather than a fabricated variant a
+    /// consumer could route on.
+    ///
+    /// **Second landing of the (label, ordinal) cube-inversion square on
+    /// `hotswap.rs`.** With this landing the three-cell (stationary ×
+    /// identity_republish × progression) consistency-half kind axis
+    /// carries the (label, ordinal) inverse pair on BOTH scalar surfaces
+    /// simultaneously — the scalar-`usize` inverse [`Self::from_ordinal`]
+    /// AND the scalar-`&'static str` inverse [`Self::from_str`] —
+    /// welding the same full (label, ordinal) cube-inversion square that
+    /// the sibling closed-primitive axes across the crate already carry:
+    /// [`crate::Format`] / [`crate::FormatProvenance`] (file-format ×
+    /// provenance product cube),
+    /// [`crate::ShikumiErrorKind`] (shikumi error-kind axis),
+    /// [`crate::watcher::WatchEventClass`] (reload-relevance axis),
+    /// [`crate::tiered::DiffLineKind`] (three-cell diff-cell axis),
+    /// [`crate::ConfigSourceKind`] (source-layer axis),
+    /// [`crate::secret::SecretBackendKind`] (octonary secret-resolution
+    /// backend axis),
+    /// [`crate::SecretRefShape`] (two-cell secret-ref extraction-shape
+    /// axis, closed in `ac510f2`),
+    /// [`crate::SecretErrorKind`] (secret-client error-kind axis),
+    /// [`crate::cube::PartitionFace`] (two-cell partition-face axis,
+    /// closed in `25bd3e9`),
+    /// [`crate::error::FieldPathLocalization`] (ternary field-path-
+    /// localization axis, closed in `923dc4d`), and
+    /// [`SameStoreImpossibilityKind`] (two-cell impossibility-half kind
+    /// axis one enum over, closed in `6a992dc`). Seeds the same shape
+    /// for a follow-up one-line lift on the fused-sum quinary
+    /// [`ProofRelationKind::from_str`] on the [`ProofRelation`]
+    /// classification lattice.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// snake-case spellings [`Self::name`] emits (`b"stationary"`,
+    /// `b"identity_republish"`, `b"progression"`), matching the
+    /// discipline of every other const-fn scalar-`&str` inverse on the
+    /// crate ([`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::ConfigSourceKind::from_str`],
+    /// [`crate::SecretRefShape::from_str`],
+    /// [`crate::cube::PartitionFace::from_str`],
+    /// [`SameStoreImpossibilityKind::from_str`]). A consumer wanting
+    /// case-insensitive parsing (an operator-typed
+    /// `--consistency=STATIONARY` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered classification reference, a mixed-case YAML
+    /// scalar in an attestation manifest) reaches for the sibling
+    /// [`<Self as std::str::FromStr>::from_str`] impl, which routes
+    /// through the ONE `match s` body in that trait impl and returns a
+    /// typed [`ParseKindError`] carrying both the malformed input verbatim
+    /// AND the three-entry accepted-set [`Self::NAMES`]. The inherent
+    /// const-fn seam here is the byte-exact, canonical-only label
+    /// inverse; the diagnostic-carrying error-legend surface lives one
+    /// seam over on the trait impl.
+    ///
+    /// **Round-trip law** —
+    /// `SameStoreConsistencyKind::from_str(v.name()) == Some(v)` for
+    /// every `v: SameStoreConsistencyKind`. The forward-map
+    /// [`Self::name`] and the const-fn inverse-map [`Self::from_str`]
+    /// share the SAME three-cell canonical codomain; the law holds by
+    /// construction. Pinned by
+    /// [`variants_tests::same_store_consistency_kind_inherent_from_str_round_trips_via_name`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SameStoreConsistencyKind::from_str(s) == None` for every `s`
+    /// outside the canonical three-cell set `{"stationary",
+    /// "identity_republish", "progression"}`. The closed match's `_`
+    /// arm forwards the off-surface case to [`None`] structurally; the
+    /// guard degrades gracefully on a caller passing a mixed-case
+    /// spelling that never went through the trait impl's case-sensitive
+    /// `match`, the empty string, a stale wire-format label from a
+    /// version-skewed peer, or a hypothetical fourth-variant label a
+    /// future extension would introduce (the axis is closed-ternary by
+    /// construction on this build). Pinned by
+    /// [`variants_tests::same_store_consistency_kind_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::name`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// table (a `const [SameStoreConsistencyKind; 3]` variant array
+    /// recovered from a `const &[&str; 3]` canonical-label list, a
+    /// per-corner attestation-manifest slot in a `const` initializer
+    /// keyed by canonical label, a `const` per-corner metric-key
+    /// reconstruction on a version-skew-tolerant reader that reads the
+    /// canonical label as a stable wire string and rejects a
+    /// hypothetical fourth corner as a typed [`None`]) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding the trait-side [`<Self as std::str::FromStr>::from_str`]
+    /// currently requires (it lowers through a non-`const` `match` on
+    /// `&str` and a non-`const` [`String::from`] on the error path).
+    /// Pinned by
+    /// [`variants_tests::same_store_consistency_kind_inherent_from_str_is_const_callable`].
+    ///
+    /// **Pointwise agreement with [`Self::VARIANTS`] index** —
+    /// `SameStoreConsistencyKind::from_str(Self::NAMES[i]) ==
+    /// Some(Self::VARIANTS[i])` for every `i` in
+    /// `0..Self::VARIANTS.len()`. The inherent match and the
+    /// [`Self::VARIANTS`] / [`Self::NAMES`] slice literals carry the
+    /// same declaration order and the same canonical labels; the test
+    /// below pins the pointwise agreement so a future edit that shifts
+    /// one without the others fails at test time on the first drifted
+    /// index. Pinned by
+    /// [`variants_tests::same_store_consistency_kind_inherent_from_str_agrees_with_variants_index_pointwise`].
+    ///
+    /// **Agreement with [`<Self as std::str::FromStr>::from_str`] on
+    /// canonical input** — for every `v: SameStoreConsistencyKind`,
+    /// `SameStoreConsistencyKind::from_str(v.name()) ==
+    /// <Self as std::str::FromStr>::from_str(v.name()).ok()`. Both seams
+    /// recover the same variant on the canonical snake-case codomain
+    /// (the trait impl's `match` is byte-exact on the same three labels
+    /// this inherent matches); they diverge only OFF that codomain (the
+    /// trait impl carries a typed [`ParseKindError`] diagnostic, the
+    /// inherent returns [`None`] structurally). Pinned by
+    /// [`variants_tests::same_store_consistency_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"stationary" => Some(Self::Stationary),
+            b"identity_republish" => Some(Self::IdentityRepublish),
+            b"progression" => Some(Self::Progression),
+            _ => None,
+        }
+    }
+
     /// The closed set of variant values in declaration order — the
     /// mirror of [`SameStoreImpossibilityKind::VARIANTS`] on the
     /// consistent half of the classification. An ordered slice of
@@ -37814,7 +37954,7 @@ mod from_str_tests {
         }
         for k in all_consistent() {
             let s = k.to_string();
-            let parsed = SameStoreConsistencyKind::from_str(&s)
+            let parsed = <SameStoreConsistencyKind as std::str::FromStr>::from_str(&s)
                 .expect("consistency identifier must round-trip");
             assert_eq!(parsed, k, "consistency round-trip mismatch on {k:?}");
             let parsed2: SameStoreConsistencyKind =
@@ -37902,7 +38042,7 @@ mod from_str_tests {
         assert_eq!(err.input(), "Regressd");
         assert_eq!(err.expected(), &["regressed", "cross_store"]);
         // Consistency half.
-        let err = SameStoreConsistencyKind::from_str("STATIONARY")
+        let err = <SameStoreConsistencyKind as std::str::FromStr>::from_str("STATIONARY")
             .expect_err("case-mismatched input must be rejected");
         assert_eq!(err.input(), "STATIONARY");
         assert_eq!(
@@ -37967,7 +38107,7 @@ mod from_str_tests {
         }
         for i in all_impossible() {
             assert!(
-                SameStoreConsistencyKind::from_str(i.name()).is_err(),
+                <SameStoreConsistencyKind as std::str::FromStr>::from_str(i.name()).is_err(),
                 "impossible identifier `{}` must not parse as consistency",
                 i.name(),
             );
@@ -37990,7 +38130,7 @@ mod from_str_tests {
             "impossibility parser accepts EXACTLY what the formatter emits",
         );
         // Consistency half.
-        let err = SameStoreConsistencyKind::from_str("_never_matches_")
+        let err = <SameStoreConsistencyKind as std::str::FromStr>::from_str("_never_matches_")
             .expect_err("sentinel must not parse");
         let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
         let emitted: std::collections::HashSet<&str> =
@@ -38619,12 +38759,12 @@ mod variants_tests {
         }
 
         for (i, name) in SameStoreConsistencyKind::NAMES.iter().enumerate() {
-            let parsed = SameStoreConsistencyKind::from_str(name)
+            let parsed = <SameStoreConsistencyKind as std::str::FromStr>::from_str(name)
                 .expect("NAMES[i] must be accepted by the parser");
             assert_eq!(parsed, SameStoreConsistencyKind::VARIANTS[i]);
         }
         for k in SameStoreConsistencyKind::VARIANTS {
-            let parsed = SameStoreConsistencyKind::from_str(k.name())
+            let parsed = <SameStoreConsistencyKind as std::str::FromStr>::from_str(k.name())
                 .expect("VARIANTS[i].name() must round-trip through the parser");
             assert_eq!(parsed, *k);
         }
@@ -38669,7 +38809,7 @@ mod variants_tests {
              SameStoreImpossibilityKind::NAMES pointwise",
         );
 
-        let err = SameStoreConsistencyKind::from_str("_never_matches_")
+        let err = <SameStoreConsistencyKind as std::str::FromStr>::from_str("_never_matches_")
             .expect_err("sentinel must not parse");
         assert_eq!(
             err.expected(),
@@ -43002,6 +43142,232 @@ mod variants_tests {
         assert_eq!(SameStoreImpossibilityKind::from_str(off), None);
         assert_eq!(
             <SameStoreImpossibilityKind as std::str::FromStr>::from_str(off).ok(),
+            None,
+        );
+    }
+
+    // ---- SameStoreConsistencyKind::from_str — const-fn label-inverse peer
+    // on the ternary consistency-half kind axis, welding the (label, ordinal)
+    // cube-inversion square on hotswap.rs's ternary primitive (second
+    // landing on this file after the two-cell impossibility-half). Sibling
+    // of the same shape the closed-primitive axes across the crate already
+    // ship (SecretRefShape, PartitionFace, WatchEventClass,
+    // ConfigSourceKind, Format, FormatProvenance, ShikumiErrorKind,
+    // SecretErrorKind, SecretBackendKind, FieldPathLocalization, and
+    // SameStoreImpossibilityKind one enum over).
+
+    #[test]
+    fn same_store_consistency_kind_inherent_from_str_round_trips_via_name() {
+        // Round-trip law: `SameStoreConsistencyKind::from_str(v.name())
+        // == Some(v)` for every v: SameStoreConsistencyKind. The
+        // forward-map `name` and the const-fn inverse-map inherent
+        // `from_str` share the SAME three-cell canonical codomain
+        // (`"stationary"`, `"identity_republish"`, `"progression"`); the
+        // law holds by construction. Ternary-cardinality sibling of
+        // same_store_impossibility_kind_inherent_from_str_round_trips_via_name
+        // one enum over on the two-cell impossibility-half kind axis.
+        for &v in SameStoreConsistencyKind::VARIANTS {
+            let rendered = v.name();
+            let recovered = SameStoreConsistencyKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: name={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the three `(label, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An edit
+        // that shifted any arm without shifting the sibling `name` arm
+        // in lockstep fails here on the first drifted pair, before the
+        // closed-form round-trip pin above masks the divergence under
+        // `for` iteration.
+        assert_eq!(
+            SameStoreConsistencyKind::from_str("stationary"),
+            Some(SameStoreConsistencyKind::Stationary),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::from_str("identity_republish"),
+            Some(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(
+            SameStoreConsistencyKind::from_str("progression"),
+            Some(SameStoreConsistencyKind::Progression),
+        );
+    }
+
+    #[test]
+    fn same_store_consistency_kind_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the three-label canonical
+        // codomain resolves to `None` structurally via the closed match's
+        // `_` arm. Guards against a stale wire-format label from a
+        // version-skewed peer, an operator-typed CLI argument that never
+        // went through the trait impl's byte-exact `match`, or a
+        // hand-crafted attestation-manifest field value reaching a `const`
+        // dispatch site through a fabricated variant. The inherent seam
+        // does NOT lowercase — the uppercase and titlecase variants below
+        // (case violations of the canonical snake-case codomain) all
+        // resolve to `None`, matching the exact-byte-match discipline the
+        // sibling landings (SameStoreImpossibilityKind::from_str,
+        // SecretRefShape::from_str, PartitionFace::from_str,
+        // WatchEventClass::from_str, ConfigSourceKind::from_str,
+        // Format::from_str) already occupy on their axes.
+        for unknown in [
+            "",
+            "STATIONARY",            // uppercase — off the canonical codomain.
+            "Stationary",            // titlecase — off the canonical codomain.
+            "IDENTITY_REPUBLISH",    // uppercase.
+            "IdentityRepublish",     // camel-case — off the canonical codomain.
+            "identity-republish",    // dash instead of underscore.
+            "identityrepublish",     // missing separator.
+            "identity_Republish",    // mixed-case.
+            "sTaTiOnArY",            // alternating case.
+            "PROGRESSION",           // uppercase.
+            "Progression",           // titlecase.
+            "stationary ",           // trailing whitespace.
+            " stationary",           // leading whitespace.
+            "stationary\n",          // trailing newline.
+            "station",               // prefix — off the canonical codomain.
+            "stationaryes",          // suffix beyond canonical.
+            "progressions",          // suffix beyond canonical.
+            "consistent_stationary", // hypothetical future variant label.
+            // Adjacent-axis labels that must not resolve on this axis:
+            "regressed",    // impossibility-half arm.
+            "cross_store",  // impossibility-half arm.
+            "consistent",   // fused-sum arm.
+            "impossible",   // fused-sum arm.
+            "whole",        // secret-ref extraction-shape label.
+            "field",        // secret-ref extraction-shape label.
+            "realizable",   // partition-face label.
+            "unrealizable", // partition-face label.
+        ] {
+            assert_eq!(
+                SameStoreConsistencyKind::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SameStoreConsistencyKind::name` and the sibling
+        // `SameStoreConsistencyKind::from_ordinal` /
+        // `is_stationary` / `is_identity_republish` / `is_progression` /
+        // `is_generation_advanced` / `is_watermark_stationary` /
+        // `is_watermark_moved`. A drop of the `const` qualifier on
+        // `SameStoreConsistencyKind::from_str` fails this test to
+        // compile.
+        //
+        // Four `const` bindings — three in-range canonical labels plus
+        // one non-canonical label — route each byte-slice through the
+        // const-fn inverse in const position. The moment `from_str`
+        // loses its const-ness one of the four const welds below fails
+        // to compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Consumers wanting a compile-time-selected label-keyed dispatch
+        // table (a `const [SameStoreConsistencyKind; 3]` variant array
+        // recovered from a `const &[&str; 3]` canonical-label list, a
+        // per-corner attestation-manifest slot in a `const` initializer
+        // keyed by canonical label) reach through this seam. Peer of
+        // `same_store_consistency_kind_from_ordinal_is_const_callable`
+        // on the sibling scalar-`usize` inverse.
+        const AT_STATIONARY: Option<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::from_str("stationary");
+        const AT_IDENTITY_REPUBLISH: Option<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::from_str("identity_republish");
+        const AT_PROGRESSION: Option<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::from_str("progression");
+        const AT_UNKNOWN: Option<SameStoreConsistencyKind> =
+            SameStoreConsistencyKind::from_str("consistent_stationary");
+
+        assert_eq!(AT_STATIONARY, Some(SameStoreConsistencyKind::Stationary));
+        assert_eq!(
+            AT_IDENTITY_REPUBLISH,
+            Some(SameStoreConsistencyKind::IdentityRepublish),
+        );
+        assert_eq!(AT_PROGRESSION, Some(SameStoreConsistencyKind::Progression));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn same_store_consistency_kind_inherent_from_str_agrees_with_variants_index_pointwise() {
+        // `SameStoreConsistencyKind::from_str(Self::NAMES[i]) ==
+        // Some(Self::VARIANTS[i])` for every `i` in
+        // `0..Self::VARIANTS.len()`. The inherent match, the
+        // `Self::VARIANTS` slice literal, and the `Self::NAMES` slice
+        // literal carry the same declaration order and the same
+        // canonical labels; the test below pins the pointwise agreement
+        // so a future edit that shifts one without the others fails at
+        // test time on the first drifted index.
+        assert_eq!(
+            SameStoreConsistencyKind::VARIANTS.len(),
+            SameStoreConsistencyKind::NAMES.len(),
+            "VARIANTS / NAMES cardinality must agree",
+        );
+        for (index, (&expected, &label)) in SameStoreConsistencyKind::VARIANTS
+            .iter()
+            .zip(SameStoreConsistencyKind::NAMES.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                SameStoreConsistencyKind::from_str(label),
+                Some(expected),
+                "from_str({label:?}) must agree with VARIANTS[{index}] = {expected:?}",
+            );
+            // The `name()` receiver and the NAMES slice carry the same
+            // label pointwise — pin the two seams at the same index so a
+            // future edit that shifts NAMES without shifting `name()`
+            // (or vice versa) fails here before either drift reaches the
+            // inherent inverse.
+            assert_eq!(
+                expected.name(),
+                label,
+                "VARIANTS[{index}].name() must agree with NAMES[{index}]",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_consistency_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input()
+     {
+        // On the three-cell canonical snake-case codomain the inherent
+        // const-fn label seam and the trait-side `<Self as
+        // std::str::FromStr>::from_str` impl recover the same variant
+        // pointwise — the trait impl's `match s { "stationary" => …,
+        // "identity_republish" => …, "progression" => …, _ => Err(_) }`
+        // is byte-exact on the same three labels this inherent matches.
+        // Pinned across every variant so a future edit that shifts the
+        // label on one seam without the other fails here on the first
+        // drifted cell.
+        //
+        // The two seams diverge only OFF the canonical codomain: the
+        // trait impl carries a typed `ParseKindError` diagnostic (the
+        // malformed input verbatim plus the three-entry accepted-set),
+        // the inherent returns `None` structurally. That divergence is
+        // deliberate — the inherent is the const-callable, structural
+        // half of the label-inversion surface; the trait impl is the
+        // diagnostic-carrying half.
+        for &v in SameStoreConsistencyKind::VARIANTS {
+            let canonical = v.name();
+            assert_eq!(
+                SameStoreConsistencyKind::from_str(canonical),
+                <SameStoreConsistencyKind as std::str::FromStr>::from_str(canonical).ok(),
+                "inherent from_str and <Self as FromStr>::from_str must agree on {v:?}",
+            );
+        }
+        // Cross-check that both seams agree on the None/Err side for a
+        // representative off-codomain label — the inherent yields `None`
+        // and the trait impl yields `Err(_)`, projected pointwise
+        // through `.ok()` to `None` for byte-equal comparison. A future
+        // edit that dropped the closed-match `_` arm on either seam
+        // would fail here.
+        let off = "consistent_stationary";
+        assert_eq!(SameStoreConsistencyKind::from_str(off), None);
+        assert_eq!(
+            <SameStoreConsistencyKind as std::str::FromStr>::from_str(off).ok(),
             None,
         );
     }
