@@ -3225,6 +3225,142 @@ impl SameStoreImpossibilityKind {
         }
     }
 
+    /// Const-fn canonical-label → variant inverse of [`Self::name`].
+    /// Returns [`Some(variant)`][Some] for every `s` that byte-equals one
+    /// of the two canonical snake-case labels [`Self::name`] emits
+    /// (`"regressed"`, `"cross_store"`), and [`None`] for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// two-cell impossibility-half kind surface.** Where
+    /// [`Self::from_ordinal`] inverts the scalar-`usize` projection
+    /// [`Self::ordinal`], this inverts the scalar-`&'static str`
+    /// projection [`Self::name`] under the same discipline: bounded match
+    /// on the exact canonical codomain, [`None`] off it, `const fn` in
+    /// body. Neither projection is total on its codomain — the string
+    /// surface admits non-canonical labels, the ordinal surface admits
+    /// `usize` values `>= 2` — so both invertors return [`Option<Self>`]
+    /// rather than a total `Self`, keeping the "not on the variant
+    /// surface" case a typed [`None`] rather than a fabricated variant a
+    /// consumer could route on.
+    ///
+    /// **First landing of the (label, ordinal) cube-inversion square on
+    /// `hotswap.rs`.** With this landing the two-cell (regressed ×
+    /// cross_store) impossibility-half kind axis carries the (label,
+    /// ordinal) inverse pair on BOTH scalar surfaces simultaneously —
+    /// the scalar-`usize` inverse [`Self::from_ordinal`] AND the scalar-
+    /// `&'static str` inverse [`Self::from_str`] — welding the same
+    /// full (label, ordinal) cube-inversion square that the sibling
+    /// closed-primitive axes across the crate already carry:
+    /// [`crate::Format`] / [`crate::FormatProvenance`] (file-format ×
+    /// provenance product cube),
+    /// [`crate::ShikumiErrorKind`] (shikumi error-kind axis),
+    /// [`crate::watcher::WatchEventClass`] (reload-relevance axis),
+    /// [`crate::tiered::DiffLineKind`] (three-cell diff-cell axis),
+    /// [`crate::ConfigSourceKind`] (source-layer axis),
+    /// [`crate::secret::SecretBackendKind`] (octonary secret-resolution
+    /// backend axis),
+    /// [`crate::SecretRefShape`] (two-cell secret-ref extraction-shape
+    /// axis, closed in `ac510f2`),
+    /// [`crate::SecretErrorKind`] (secret-client error-kind axis),
+    /// [`crate::cube::PartitionFace`] (two-cell partition-face axis,
+    /// closed in `25bd3e9`), and
+    /// [`crate::error::FieldPathLocalization`] (ternary field-path-
+    /// localization axis, closed in `923dc4d`). Seeds the same shape for
+    /// a follow-up one-line lift on the sibling ternary consistent-half
+    /// [`SameStoreConsistencyKind::from_str`] and the fused-sum quinary
+    /// [`ProofRelationKind::from_str`] on the [`ProofRelation`]
+    /// classification lattice.
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// snake-case spellings [`Self::name`] emits (`b"regressed"`,
+    /// `b"cross_store"`), matching the discipline of every other
+    /// const-fn scalar-`&str` inverse on the crate
+    /// ([`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::ConfigSourceKind::from_str`],
+    /// [`crate::SecretRefShape::from_str`],
+    /// [`crate::cube::PartitionFace::from_str`]). A consumer wanting
+    /// case-insensitive parsing (an operator-typed
+    /// `--impossibility=REGRESSED` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered classification reference, a mixed-case YAML
+    /// scalar in an attestation manifest) reaches for the sibling
+    /// [`<Self as std::str::FromStr>::from_str`] impl, which routes
+    /// through the ONE `match s` body in that trait impl and returns a
+    /// typed [`ParseKindError`] carrying both the malformed input verbatim
+    /// AND the two-entry accepted-set [`Self::NAMES`]. The inherent
+    /// const-fn seam here is the byte-exact, canonical-only label
+    /// inverse; the diagnostic-carrying error-legend surface lives one
+    /// seam over on the trait impl.
+    ///
+    /// **Round-trip law** —
+    /// `SameStoreImpossibilityKind::from_str(v.name()) == Some(v)` for
+    /// every `v: SameStoreImpossibilityKind`. The forward-map
+    /// [`Self::name`] and the const-fn inverse-map [`Self::from_str`]
+    /// share the SAME two-cell canonical codomain; the law holds by
+    /// construction. Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_inherent_from_str_round_trips_via_name`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SameStoreImpossibilityKind::from_str(s) == None` for every `s`
+    /// outside the canonical two-cell set `{"regressed", "cross_store"}`.
+    /// The closed match's `_` arm forwards the off-surface case to
+    /// [`None`] structurally; the guard degrades gracefully on a caller
+    /// passing a mixed-case spelling that never went through the trait
+    /// impl's case-sensitive `match`, the empty string, a stale wire-
+    /// format label from a version-skewed peer, or a hypothetical third-
+    /// variant label a future extension would introduce (a
+    /// `SignedAttestationMismatch`, say — the axis is closed-binary by
+    /// construction on this build). Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::name`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// table (a `const [SameStoreImpossibilityKind; 2]` variant array
+    /// recovered from a `const &[&str; 2]` canonical-label list, a
+    /// per-corner attestation-manifest slot in a `const` initializer
+    /// keyed by canonical label, a `const` per-corner metric-key
+    /// reconstruction on a version-skew-tolerant reader that reads the
+    /// canonical label as a stable wire string and rejects a
+    /// hypothetical third corner as a typed [`None`]) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding the trait-side [`<Self as std::str::FromStr>::from_str`]
+    /// currently requires (it lowers through a non-`const` `match` on
+    /// `&str` and a non-`const` [`String::from`] on the error path).
+    /// Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_inherent_from_str_is_const_callable`].
+    ///
+    /// **Pointwise agreement with [`Self::VARIANTS`] index** —
+    /// `SameStoreImpossibilityKind::from_str(Self::NAMES[i]) ==
+    /// Some(Self::VARIANTS[i])` for every `i` in
+    /// `0..Self::VARIANTS.len()`. The inherent match and the
+    /// [`Self::VARIANTS`] / [`Self::NAMES`] slice literals carry the
+    /// same declaration order and the same canonical labels; the test
+    /// below pins the pointwise agreement so a future edit that shifts
+    /// one without the others fails at test time on the first drifted
+    /// index. Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_inherent_from_str_agrees_with_variants_index_pointwise`].
+    ///
+    /// **Agreement with [`<Self as std::str::FromStr>::from_str`] on
+    /// canonical input** — for every `v: SameStoreImpossibilityKind`,
+    /// `SameStoreImpossibilityKind::from_str(v.name()) ==
+    /// <Self as std::str::FromStr>::from_str(v.name()).ok()`. Both seams
+    /// recover the same variant on the canonical snake-case codomain
+    /// (the trait impl's `match` is byte-exact on the same two labels
+    /// this inherent matches); they diverge only OFF that codomain (the
+    /// trait impl carries a typed [`ParseKindError`] diagnostic, the
+    /// inherent returns [`None`] structurally). Pinned by
+    /// [`variants_tests::same_store_impossibility_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"regressed" => Some(Self::Regressed),
+            b"cross_store" => Some(Self::CrossStore),
+            _ => None,
+        }
+    }
+
     /// Whether this impossibility corner witnessed the class-scoped watermark
     /// move — `true` on [`Self::CrossStore`] (watermark moved at unchanged
     /// generation counter — the moved-watermark impossibility corner, the
@@ -37755,8 +37891,13 @@ mod from_str_tests {
 
     #[test]
     fn unknown_input_returns_typed_error_with_verbatim_input_and_accepted_set() {
-        // Impossibility half.
-        let err = SameStoreImpossibilityKind::from_str("Regressd")
+        // Impossibility half. Fully qualified to reach the trait's
+        // `Result`-returning parser rather than the sibling inherent
+        // `SameStoreImpossibilityKind::from_str` (which returns an
+        // `Option<Self>` and would shadow the trait method at unqualified
+        // syntax after `d58463c`-style const-fn label-inverse peer
+        // landings on this axis).
+        let err = <SameStoreImpossibilityKind as std::str::FromStr>::from_str("Regressd")
             .expect_err("misspelled input must be rejected");
         assert_eq!(err.input(), "Regressd");
         assert_eq!(err.expected(), &["regressed", "cross_store"]);
@@ -37791,7 +37932,7 @@ mod from_str_tests {
 
     #[test]
     fn parse_error_display_is_self_describing() {
-        let err = SameStoreImpossibilityKind::from_str("bogus")
+        let err = <SameStoreImpossibilityKind as std::str::FromStr>::from_str("bogus")
             .expect_err("bogus input must be rejected");
         let msg = err.to_string();
         assert!(
@@ -37819,7 +37960,7 @@ mod from_str_tests {
     fn no_identifier_is_accepted_by_both_half_side_parsers() {
         for c in all_consistent() {
             assert!(
-                SameStoreImpossibilityKind::from_str(c.name()).is_err(),
+                <SameStoreImpossibilityKind as std::str::FromStr>::from_str(c.name()).is_err(),
                 "consistent identifier `{}` must not parse as impossibility",
                 c.name(),
             );
@@ -37839,7 +37980,7 @@ mod from_str_tests {
     #[test]
     fn advertised_accepted_set_matches_the_emitted_identifier_set() {
         // Impossibility half.
-        let err = SameStoreImpossibilityKind::from_str("_never_matches_")
+        let err = <SameStoreImpossibilityKind as std::str::FromStr>::from_str("_never_matches_")
             .expect_err("sentinel must not parse");
         let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
         let emitted: std::collections::HashSet<&str> =
@@ -38519,7 +38660,7 @@ mod variants_tests {
 
     #[test]
     fn parse_error_expected_matches_names_pointwise() {
-        let err = SameStoreImpossibilityKind::from_str("_never_matches_")
+        let err = <SameStoreImpossibilityKind as std::str::FromStr>::from_str("_never_matches_")
             .expect_err("sentinel must not parse");
         assert_eq!(
             err.expected(),
@@ -42649,6 +42790,220 @@ mod variants_tests {
                 "variant {variant:?} at index {index}",
             );
         }
+    }
+
+    // ---------- SameStoreImpossibilityKind::from_str — const-fn
+    // canonical-label inverse peer of Self::name on the two-cell
+    // (regressed × cross_store) impossibility-half kind axis. Closes the
+    // scalar-&str half of the (label, ordinal) inversion square on the
+    // impossibility-half primitive, matching the shape the sibling closed-
+    // primitive axes across the crate already ship (ConfigSourceKind,
+    // DiffLineKind, SecretErrorKind, SecretBackendKind, SecretRefShape,
+    // Format, FormatProvenance, ShikumiErrorKind, WatchEventClass,
+    // PartitionFace, FieldPathLocalization). First landing of the
+    // const-fn label-inverse peer idiom on hotswap.rs.
+
+    #[test]
+    fn same_store_impossibility_kind_inherent_from_str_round_trips_via_name() {
+        // Round-trip law: `SameStoreImpossibilityKind::from_str(v.name())
+        // == Some(v)` for every v: SameStoreImpossibilityKind. The
+        // forward-map `name` and the const-fn inverse-map inherent
+        // `from_str` share the SAME two-cell canonical codomain
+        // (`"regressed"`, `"cross_store"`); the law holds by construction.
+        // Sibling of secret_ref_shape_inherent_from_str_round_trips_via_as_str
+        // (`ac510f2`) on the two-cell secret-ref extraction-shape axis one
+        // file over, and of
+        // partition_face_inherent_from_str_round_trips_via_as_str
+        // (`25bd3e9`) on the two-cell cube partition-face axis.
+        for &v in SameStoreImpossibilityKind::VARIANTS {
+            let rendered = v.name();
+            let recovered = SameStoreImpossibilityKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: name={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the two `(label, variant)` pairs the closed
+        // match delivers verbatim, in declaration order. An edit that
+        // shifted either arm without shifting the sibling `name` arm in
+        // lockstep fails here on the first drifted pair, before the closed-
+        // form round-trip pin above masks the divergence under `for`
+        // iteration.
+        assert_eq!(
+            SameStoreImpossibilityKind::from_str("regressed"),
+            Some(SameStoreImpossibilityKind::Regressed),
+        );
+        assert_eq!(
+            SameStoreImpossibilityKind::from_str("cross_store"),
+            Some(SameStoreImpossibilityKind::CrossStore),
+        );
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the two-label canonical
+        // codomain resolves to `None` structurally via the closed match's
+        // `_` arm. Guards against a stale wire-format label from a
+        // version-skewed peer, an operator-typed CLI argument that never
+        // went through the trait impl's byte-exact `match`, or a
+        // hand-crafted attestation-manifest field value reaching a `const`
+        // dispatch site through a fabricated variant. The inherent seam
+        // does NOT lowercase — the uppercase and titlecase variants below
+        // (case violations of the canonical snake-case codomain) all
+        // resolve to `None`, matching the exact-byte-match discipline the
+        // sibling landings (SecretRefShape::from_str, PartitionFace::from_str,
+        // WatchEventClass::from_str, ConfigSourceKind::from_str,
+        // Format::from_str) already occupy on their axes.
+        for unknown in [
+            "",
+            "REGRESSED",                   // uppercase — off the canonical codomain.
+            "Regressed",                   // titlecase — off the canonical codomain.
+            "CROSS_STORE",                 // uppercase.
+            "CrossStore",                  // camel-case — off the canonical codomain.
+            "cross-store",                 // dash instead of underscore.
+            "crossstore",                  // missing separator.
+            "cross_Store",                 // mixed-case.
+            "rEgReSsEd",                   // alternating case.
+            "regressed ",                  // trailing whitespace.
+            " regressed",                  // leading whitespace.
+            "regressed\n",                 // trailing newline.
+            "regress",                     // prefix — off the canonical codomain.
+            "regressedes",                 // suffix beyond canonical.
+            "cross_stores",                // suffix beyond canonical.
+            "signed_attestation_mismatch", // hypothetical future variant label.
+            // Adjacent-axis labels that must not resolve on this axis:
+            "stationary",         // consistency-half arm.
+            "identity_republish", // consistency-half arm.
+            "progression",        // consistency-half arm.
+            "consistent",         // fused-sum arm.
+            "impossible",         // fused-sum arm.
+            "whole",              // secret-ref extraction-shape label.
+            "field",              // secret-ref extraction-shape label.
+            "realizable",         // partition-face label.
+            "unrealizable",       // partition-face label.
+        ] {
+            assert_eq!(
+                SameStoreImpossibilityKind::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SameStoreImpossibilityKind::name` and the sibling
+        // `SameStoreImpossibilityKind::from_ordinal` /
+        // `is_regressed` / `is_cross_store` / `is_watermark_moved` /
+        // `is_watermark_stationary` / `is_generation_advanced`. A drop of
+        // the `const` qualifier on `SameStoreImpossibilityKind::from_str`
+        // fails this test to compile.
+        //
+        // Three `const` bindings — two in-range canonical labels plus one
+        // non-canonical label — route each byte-slice through the const-fn
+        // inverse in const position. The moment `from_str` loses its
+        // const-ness one of the three const welds below fails to compile
+        // at THAT line before the drift can reach downstream consumers
+        // that assumed const-ness through the projection. Consumers wanting
+        // a compile-time-selected label-keyed dispatch table (a
+        // `const [SameStoreImpossibilityKind; 2]` variant array recovered
+        // from a `const &[&str; 2]` canonical-label list, a per-corner
+        // attestation-manifest slot in a `const` initializer keyed by
+        // canonical label) reach through this seam. Peer of
+        // `same_store_impossibility_kind_from_ordinal_is_const_callable`
+        // on the sibling scalar-`usize` inverse.
+        const AT_REGRESSED: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_str("regressed");
+        const AT_CROSS_STORE: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_str("cross_store");
+        const AT_UNKNOWN: Option<SameStoreImpossibilityKind> =
+            SameStoreImpossibilityKind::from_str("signed_attestation_mismatch");
+
+        assert_eq!(AT_REGRESSED, Some(SameStoreImpossibilityKind::Regressed));
+        assert_eq!(AT_CROSS_STORE, Some(SameStoreImpossibilityKind::CrossStore));
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_inherent_from_str_agrees_with_variants_index_pointwise() {
+        // `SameStoreImpossibilityKind::from_str(Self::NAMES[i]) ==
+        // Some(Self::VARIANTS[i])` for every `i` in
+        // `0..Self::VARIANTS.len()`. The inherent match, the
+        // `Self::VARIANTS` slice literal, and the `Self::NAMES` slice
+        // literal carry the same declaration order and the same canonical
+        // labels; the test below pins the pointwise agreement so a future
+        // edit that shifts one without the others fails at test time on
+        // the first drifted index.
+        assert_eq!(
+            SameStoreImpossibilityKind::VARIANTS.len(),
+            SameStoreImpossibilityKind::NAMES.len(),
+            "VARIANTS / NAMES cardinality must agree",
+        );
+        for (index, (&expected, &label)) in SameStoreImpossibilityKind::VARIANTS
+            .iter()
+            .zip(SameStoreImpossibilityKind::NAMES.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                SameStoreImpossibilityKind::from_str(label),
+                Some(expected),
+                "from_str({label:?}) must agree with VARIANTS[{index}] = {expected:?}",
+            );
+            // The `name()` receiver and the NAMES slice carry the same
+            // label pointwise — pin the two seams at the same index so a
+            // future edit that shifts NAMES without shifting `name()` (or
+            // vice versa) fails here before either drift reaches the
+            // inherent inverse.
+            assert_eq!(
+                expected.name(),
+                label,
+                "VARIANTS[{index}].name() must agree with NAMES[{index}]",
+            );
+        }
+    }
+
+    #[test]
+    fn same_store_impossibility_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input()
+     {
+        // On the two-cell canonical snake-case codomain the inherent
+        // const-fn label seam and the trait-side `<Self as
+        // std::str::FromStr>::from_str` impl recover the same variant
+        // pointwise — the trait impl's `match s { "regressed" => …,
+        // "cross_store" => …, _ => Err(_) }` is byte-exact on the same
+        // two labels this inherent matches. Pinned across every variant
+        // so a future edit that shifts the label on one seam without the
+        // other fails here on the first drifted cell.
+        //
+        // The two seams diverge only OFF the canonical codomain: the
+        // trait impl carries a typed `ParseKindError` diagnostic (the
+        // malformed input verbatim plus the two-entry accepted-set), the
+        // inherent returns `None` structurally. That divergence is
+        // deliberate — the inherent is the const-callable, structural
+        // half of the label-inversion surface; the trait impl is the
+        // diagnostic-carrying half.
+        for &v in SameStoreImpossibilityKind::VARIANTS {
+            let canonical = v.name();
+            assert_eq!(
+                SameStoreImpossibilityKind::from_str(canonical),
+                <SameStoreImpossibilityKind as std::str::FromStr>::from_str(canonical).ok(),
+                "inherent from_str and <Self as FromStr>::from_str must agree on {v:?}",
+            );
+        }
+        // Cross-check that both seams agree on the None/Err side for a
+        // representative off-codomain label — the inherent yields `None`
+        // and the trait impl yields `Err(_)`, projected pointwise through
+        // `.ok()` to `None` for byte-equal comparison. A future edit that
+        // dropped the closed-match `_` arm on either seam would fail here.
+        let off = "signed_attestation_mismatch";
+        assert_eq!(SameStoreImpossibilityKind::from_str(off), None);
+        assert_eq!(
+            <SameStoreImpossibilityKind as std::str::FromStr>::from_str(off).ok(),
+            None,
+        );
     }
 }
 
