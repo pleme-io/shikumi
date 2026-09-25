@@ -12805,6 +12805,170 @@ impl ProofRelationKind {
         }
     }
 
+    /// Const-fn canonical-label → variant inverse of [`Self::name`] on
+    /// the fused-sum quinary (consistent × impossible) kind axis. Returns
+    /// [`Some(variant)`][Some] for every `s` that byte-equals one of the
+    /// five canonical snake-case labels [`Self::name`] emits
+    /// (`"stationary"`, `"identity_republish"`, `"progression"`,
+    /// `"regressed"`, `"cross_store"`), and [`None`] for any other input.
+    ///
+    /// **Label-inverse peer of [`Self::from_ordinal`] on the same closed
+    /// five-cell fused kind surface.** Where [`Self::from_ordinal`]
+    /// inverts the scalar-`usize` projection [`Self::ordinal`], this
+    /// inverts the scalar-`&'static str` projection [`Self::name`] under
+    /// the same discipline: delegation through the two half-side inverses
+    /// welded pointwise to the fused arms, [`None`] off the canonical
+    /// codomain, `const fn` in body. Neither projection is total on its
+    /// codomain — the string surface admits non-canonical labels, the
+    /// ordinal surface admits `usize` values `>= 5` — so both invertors
+    /// return [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the variant surface" case a typed [`None`] rather than a
+    /// fabricated variant a consumer could route on.
+    ///
+    /// **Closing landing of the (label, ordinal) cube-inversion square on
+    /// `hotswap.rs`.** With this landing the fused-sum quinary kind axis
+    /// carries the (label, ordinal) inverse pair on BOTH scalar surfaces
+    /// simultaneously — the scalar-`usize` inverse [`Self::from_ordinal`]
+    /// (commit `34968e7`) AND the scalar-`&'static str` inverse
+    /// [`Self::from_str`] — welding the same full cube-inversion square
+    /// that the two half-side kind axes now carry on both surfaces
+    /// ([`SameStoreImpossibilityKind::from_str`] commit `6a992dc`,
+    /// [`SameStoreConsistencyKind::from_str`] commit `6b062f2`). All
+    /// THREE primitives on `hotswap.rs`'s (impossibility × consistency ×
+    /// fused) classification lattice now carry the full (label, ordinal)
+    /// inversion square in lockstep, matching the shape the sibling
+    /// closed-primitive axes across the crate already ship:
+    /// [`crate::Format`] / [`crate::FormatProvenance`] (file-format ×
+    /// provenance product cube), [`crate::ShikumiErrorKind`] (shikumi
+    /// error-kind axis), [`crate::watcher::WatchEventClass`]
+    /// (reload-relevance axis), [`crate::tiered::DiffLineKind`]
+    /// (three-cell diff-cell axis), [`crate::ConfigSourceKind`]
+    /// (source-layer axis), [`crate::secret::SecretBackendKind`]
+    /// (octonary secret-resolution backend axis), [`crate::SecretRefShape`]
+    /// (two-cell secret-ref extraction-shape axis, closed in `ac510f2`),
+    /// [`crate::SecretErrorKind`] (secret-client error-kind axis),
+    /// [`crate::cube::PartitionFace`] (two-cell partition-face axis,
+    /// closed in `25bd3e9`), and [`crate::error::FieldPathLocalization`]
+    /// (ternary field-path-localization axis, closed in `923dc4d`).
+    ///
+    /// **Delegation through the two half-side inverses.** Body is a
+    /// two-arm outer `match` that projects `s` through
+    /// [`SameStoreConsistencyKind::from_str`] first, wrapping any hit in
+    /// [`Self::Consistent`]; on a miss it projects through
+    /// [`SameStoreImpossibilityKind::from_str`], wrapping any hit in
+    /// [`Self::Impossible`]; on a miss on both halves it returns [`None`].
+    /// The pairwise-disjoint accepted-set partition the two half-side
+    /// enums carry (three consistent snake-case identifiers vs. two
+    /// impossibility identifiers, no overlap) makes the delegation order
+    /// immaterial — no canonical label is accepted by both halves — so
+    /// the fused-altitude inverse is a LOSSLESS lift of the pair of
+    /// half-side inverses, mirroring the cross-altitude same-answer
+    /// identity [`Self::from_ordinal`] already carries on the sibling
+    /// scalar-`usize` inverse. A hypothetical sixth corner added to
+    /// either half-side enum extends the fused label-axis by ONE cell
+    /// through exactly one edit on the corresponding half-side
+    /// `from_str`, not a second edit on THIS receiver — the delegation
+    /// is pulled from the half-side inverses, not open-coded as a
+    /// five-arm match against [`Self::NAMES`].
+    ///
+    /// **Case sensitivity.** The match is exact-byte on the canonical
+    /// snake-case spellings [`Self::name`] emits (`b"stationary"`,
+    /// `b"identity_republish"`, `b"progression"`, `b"regressed"`,
+    /// `b"cross_store"`), matching the discipline of every other
+    /// const-fn scalar-`&str` inverse on the crate
+    /// ([`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::ConfigSourceKind::from_str`],
+    /// [`crate::SecretRefShape::from_str`],
+    /// [`crate::cube::PartitionFace::from_str`],
+    /// [`SameStoreImpossibilityKind::from_str`],
+    /// [`SameStoreConsistencyKind::from_str`]). A consumer wanting
+    /// case-insensitive parsing (an operator-typed
+    /// `--relation=CROSS_STORE` at a CLI, a mixed-case tag in a
+    /// Markdown-rendered classification reference, a mixed-case YAML
+    /// scalar in an attestation manifest) reaches for the sibling
+    /// [`<Self as std::str::FromStr>::from_str`] impl, which routes
+    /// through the two half-side `.parse()` seams and returns a typed
+    /// [`ParseKindError`] carrying both the malformed input verbatim
+    /// AND the five-entry accepted-set [`Self::NAMES`]. The inherent
+    /// const-fn seam here is the byte-exact, canonical-only label
+    /// inverse; the diagnostic-carrying error-legend surface lives one
+    /// seam over on the trait impl.
+    ///
+    /// **Round-trip law** —
+    /// `ProofRelationKind::from_str(v.name()) == Some(v)` for every
+    /// `v: ProofRelationKind`. The forward-map [`Self::name`] and the
+    /// const-fn inverse-map [`Self::from_str`] share the SAME five-cell
+    /// canonical codomain via the two half-side round-trip laws already
+    /// welded on [`SameStoreConsistencyKind::from_str`] /
+    /// [`SameStoreImpossibilityKind::from_str`]; the fused-altitude law
+    /// holds by construction. Pinned by
+    /// [`variants_tests::proof_relation_kind_inherent_from_str_round_trips_via_name`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `ProofRelationKind::from_str(s) == None` for every `s` outside
+    /// the canonical five-cell set `{"stationary", "identity_republish",
+    /// "progression", "regressed", "cross_store"}`. The two half-side
+    /// closed matches forward the off-surface case to [`None`]
+    /// structurally; the guard degrades gracefully on a caller passing a
+    /// mixed-case spelling that never went through the trait impl's
+    /// case-sensitive `match`, the empty string, a stale wire-format
+    /// label from a version-skewed peer, or a hypothetical sixth-variant
+    /// label a future extension would introduce (the axis is
+    /// closed-quinary by construction on this build). Pinned by
+    /// [`variants_tests::proof_relation_kind_inherent_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::name`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// table (a `const [ProofRelationKind; 5]` variant array recovered
+    /// from a `const &[&str; 5]` canonical-label list, a per-corner
+    /// attestation-manifest slot in a `const` initializer keyed by
+    /// canonical label, a `const` per-corner metric-key reconstruction
+    /// on a version-skew-tolerant reader that reads the canonical label
+    /// as a stable wire string and rejects a hypothetical sixth corner
+    /// as a typed [`None`]) route through the projection under `const`
+    /// without dropping through a runtime `let` binding the trait-side
+    /// [`<Self as std::str::FromStr>::from_str`] currently requires (it
+    /// lowers through the two half-side `.parse()` seams and a
+    /// non-`const` [`String::from`] on the error path). Pinned by
+    /// [`variants_tests::proof_relation_kind_inherent_from_str_is_const_callable`].
+    ///
+    /// **Pointwise agreement with [`Self::VARIANTS`] index** —
+    /// `ProofRelationKind::from_str(Self::NAMES[i]) ==
+    /// Some(Self::VARIANTS[i])` for every `i` in
+    /// `0..Self::VARIANTS.len()`. The two half-side inherent matches,
+    /// the [`Self::VARIANTS`] slice literal, and the [`Self::NAMES`]
+    /// slice literal carry the same declaration order and the same
+    /// canonical labels; the test below pins the pointwise agreement so
+    /// a future edit that shifts one without the others fails at test
+    /// time on the first drifted index. Pinned by
+    /// [`variants_tests::proof_relation_kind_inherent_from_str_agrees_with_variants_index_pointwise`].
+    ///
+    /// **Agreement with [`<Self as std::str::FromStr>::from_str`] on
+    /// canonical input** — for every `v: ProofRelationKind`,
+    /// `ProofRelationKind::from_str(v.name()) ==
+    /// <Self as std::str::FromStr>::from_str(v.name()).ok()`. Both seams
+    /// recover the same variant on the canonical snake-case codomain
+    /// (the trait impl delegates through the two half-side `.parse()`
+    /// seams which are byte-exact on the same five labels this inherent
+    /// matches); they diverge only OFF that codomain (the trait impl
+    /// carries a typed [`ParseKindError`] diagnostic with the five-entry
+    /// accepted-set, the inherent returns [`None`] structurally). Pinned
+    /// by
+    /// [`variants_tests::proof_relation_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match SameStoreConsistencyKind::from_str(s) {
+            Some(k) => Some(Self::Consistent(k)),
+            None => match SameStoreImpossibilityKind::from_str(s) {
+                Some(k) => Some(Self::Impossible(k)),
+                None => None,
+            },
+        }
+    }
+
     /// The closed set of variant values in declaration order — the
     /// fused-arm sibling of [`SameStoreConsistencyKind::VARIANTS`]
     /// and [`SameStoreImpossibilityKind::VARIANTS`]. An ordered slice
@@ -37832,7 +37996,6 @@ mod from_str_tests {
     //! under every future variant addition by construction.
 
     use super::*;
-    use std::str::FromStr;
     use std::time::{Duration, UNIX_EPOCH};
 
     // Match the corner fixture the surrounding `name_tests` /
@@ -37963,7 +38126,8 @@ mod from_str_tests {
         }
         for k in all_fused() {
             let s = k.to_string();
-            let parsed = ProofRelationKind::from_str(&s).expect("fused identifier must round-trip");
+            let parsed = <ProofRelationKind as std::str::FromStr>::from_str(&s)
+                .expect("fused identifier must round-trip");
             assert_eq!(parsed, k, "fused round-trip mismatch on {k:?}");
             let parsed2: ProofRelationKind = s.parse().expect("s.parse::<K>() must round-trip");
             assert_eq!(parsed2, k);
@@ -38050,7 +38214,7 @@ mod from_str_tests {
             &["stationary", "identity_republish", "progression"],
         );
         // Fused sum.
-        let err = ProofRelationKind::from_str("cross-store")
+        let err = <ProofRelationKind as std::str::FromStr>::from_str("cross-store")
             .expect_err("hyphenated (non-snake) input must be rejected");
         assert_eq!(err.input(), "cross-store");
         assert_eq!(
@@ -38065,7 +38229,8 @@ mod from_str_tests {
         );
         // Empty input path — carries the empty verbatim, and the
         // accepted set is the same closed set.
-        let err = ProofRelationKind::from_str("").expect_err("empty input must be rejected");
+        let err = <ProofRelationKind as std::str::FromStr>::from_str("")
+            .expect_err("empty input must be rejected");
         assert_eq!(err.input(), "");
         assert_eq!(err.expected().len(), 5);
     }
@@ -38140,8 +38305,8 @@ mod from_str_tests {
             "consistency parser accepts EXACTLY what the formatter emits",
         );
         // Fused sum — the union of the two half-side accepted sets.
-        let err =
-            ProofRelationKind::from_str("_never_matches_").expect_err("sentinel must not parse");
+        let err = <ProofRelationKind as std::str::FromStr>::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
         let accepted: std::collections::HashSet<&str> = err.expected().iter().copied().collect();
         let emitted: std::collections::HashSet<&str> =
             all_fused().iter().map(|k| k.name()).collect();
@@ -38617,7 +38782,6 @@ mod variants_tests {
     #![allow(clippy::float_cmp)]
 
     use super::*;
-    use std::str::FromStr;
 
     // ---------- (1) Axis cardinality per enum matches the declared
     // variant count.
@@ -38770,12 +38934,12 @@ mod variants_tests {
         }
 
         for (i, name) in ProofRelationKind::NAMES.iter().enumerate() {
-            let parsed =
-                ProofRelationKind::from_str(name).expect("NAMES[i] must be accepted by the parser");
+            let parsed = <ProofRelationKind as std::str::FromStr>::from_str(name)
+                .expect("NAMES[i] must be accepted by the parser");
             assert_eq!(parsed, ProofRelationKind::VARIANTS[i]);
         }
         for k in ProofRelationKind::VARIANTS {
-            let parsed = ProofRelationKind::from_str(k.name())
+            let parsed = <ProofRelationKind as std::str::FromStr>::from_str(k.name())
                 .expect("VARIANTS[i].name() must round-trip through the parser");
             assert_eq!(parsed, *k);
         }
@@ -38818,8 +38982,8 @@ mod variants_tests {
              SameStoreConsistencyKind::NAMES pointwise",
         );
 
-        let err =
-            ProofRelationKind::from_str("_never_matches_").expect_err("sentinel must not parse");
+        let err = <ProofRelationKind as std::str::FromStr>::from_str("_never_matches_")
+            .expect_err("sentinel must not parse");
         assert_eq!(
             err.expected(),
             ProofRelationKind::NAMES,
@@ -43368,6 +43532,296 @@ mod variants_tests {
         assert_eq!(SameStoreConsistencyKind::from_str(off), None);
         assert_eq!(
             <SameStoreConsistencyKind as std::str::FromStr>::from_str(off).ok(),
+            None,
+        );
+    }
+
+    // ---- ProofRelationKind::from_str — const-fn label-inverse peer on
+    // the fused-sum quinary (consistent × impossible) kind axis, welding
+    // the (label, ordinal) cube-inversion square on hotswap.rs's fused
+    // primitive (closing landing on this file after the two-cell
+    // impossibility-half and the three-cell consistency-half). All THREE
+    // primitives on hotswap.rs's (impossibility × consistency × fused)
+    // classification lattice now carry the full (label, ordinal)
+    // inversion square in lockstep, matching the shape the sibling
+    // closed-primitive axes across the crate already ship (SecretRefShape,
+    // PartitionFace, WatchEventClass, ConfigSourceKind, Format,
+    // FormatProvenance, ShikumiErrorKind, SecretErrorKind,
+    // SecretBackendKind, FieldPathLocalization, SameStoreImpossibilityKind,
+    // and SameStoreConsistencyKind).
+
+    #[test]
+    fn proof_relation_kind_inherent_from_str_round_trips_via_name() {
+        // Round-trip law: `ProofRelationKind::from_str(v.name()) ==
+        // Some(v)` for every v: ProofRelationKind. The forward-map
+        // `name` and the const-fn inverse-map inherent `from_str` share
+        // the SAME five-cell canonical codomain (`"stationary"`,
+        // `"identity_republish"`, `"progression"`, `"regressed"`,
+        // `"cross_store"`) via the two half-side round-trip laws already
+        // welded on `SameStoreConsistencyKind::from_str` and
+        // `SameStoreImpossibilityKind::from_str`; the fused-altitude law
+        // holds by construction. Quinary-cardinality peer of
+        // same_store_consistency_kind_inherent_from_str_round_trips_via_name
+        // (three-cell consistency half) and
+        // same_store_impossibility_kind_inherent_from_str_round_trips_via_name
+        // (two-cell impossibility half) on the fused sum both halves
+        // project into.
+        for &v in ProofRelationKind::VARIANTS {
+            let rendered = v.name();
+            let recovered = ProofRelationKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(v),
+                "round-trip failed for {v:?}: name={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the five `(label, variant)` pairs the
+        // fused inverse delivers verbatim, in declaration order. An edit
+        // that shifted any arm without shifting the sibling `name` arm
+        // in lockstep fails here on the first drifted pair, before the
+        // closed-form round-trip pin above masks the divergence under
+        // `for` iteration.
+        assert_eq!(
+            ProofRelationKind::from_str("stationary"),
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Stationary,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::from_str("identity_republish"),
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::IdentityRepublish,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::from_str("progression"),
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Progression,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::from_str("regressed"),
+            Some(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::Regressed,
+            )),
+        );
+        assert_eq!(
+            ProofRelationKind::from_str("cross_store"),
+            Some(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::CrossStore,
+            )),
+        );
+    }
+
+    #[test]
+    fn proof_relation_kind_inherent_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: every input off the five-label
+        // canonical codomain resolves to `None` structurally via the two
+        // half-side closed matches. Guards against a stale wire-format
+        // label from a version-skewed peer, an operator-typed CLI
+        // argument that never went through the trait impl's byte-exact
+        // `match`, or a hand-crafted attestation-manifest field value
+        // reaching a `const` dispatch site through a fabricated variant.
+        // The inherent seam does NOT lowercase — the uppercase and
+        // titlecase variants below (case violations of the canonical
+        // snake-case codomain) all resolve to `None`, matching the
+        // exact-byte-match discipline the sibling landings
+        // (SameStoreImpossibilityKind::from_str,
+        // SameStoreConsistencyKind::from_str, SecretRefShape::from_str,
+        // PartitionFace::from_str, WatchEventClass::from_str,
+        // ConfigSourceKind::from_str, Format::from_str) already occupy
+        // on their axes.
+        for unknown in [
+            "",
+            "STATIONARY",         // uppercase — off the canonical codomain.
+            "Stationary",         // titlecase — off the canonical codomain.
+            "IDENTITY_REPUBLISH", // uppercase.
+            "IdentityRepublish",  // camel-case — off the canonical codomain.
+            "identity-republish", // dash instead of underscore.
+            "identityrepublish",  // missing separator.
+            "identity_Republish", // mixed-case.
+            "sTaTiOnArY",         // alternating case.
+            "PROGRESSION",        // uppercase.
+            "Progression",        // titlecase.
+            "REGRESSED",          // uppercase.
+            "Regressed",          // titlecase.
+            "regresed",           // misspelling.
+            "CROSS_STORE",        // uppercase.
+            "CrossStore",         // camel-case.
+            "cross-store",        // hyphenated non-snake spelling.
+            "crossstore",         // missing separator.
+            "cross_Store",        // mixed-case.
+            "stationary ",        // trailing whitespace.
+            " stationary",        // leading whitespace.
+            "stationary\n",       // trailing newline.
+            "cross_store\t",      // trailing tab.
+            "station",            // prefix — off the canonical codomain.
+            "regress",            // prefix — off the canonical codomain.
+            "stationaryes",       // suffix beyond canonical.
+            "progressions",       // suffix beyond canonical.
+            "regressed_by",       // hypothetical future variant label.
+            // Adjacent-axis labels that must not resolve on this axis:
+            "consistent",   // outer-arm fused-sum tag.
+            "impossible",   // outer-arm fused-sum tag.
+            "whole",        // secret-ref extraction-shape label.
+            "field",        // secret-ref extraction-shape label.
+            "realizable",   // partition-face label.
+            "unrealizable", // partition-face label.
+        ] {
+            assert_eq!(
+                ProofRelationKind::from_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_inherent_from_str_is_const_callable() {
+        // Compile-time weld: the (canonical-label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `ProofRelationKind::name` and the sibling
+        // `ProofRelationKind::from_ordinal` / `consistency` /
+        // `impossibility` / `is_consistent` / `is_impossible` /
+        // `is_generation_advanced` / `is_watermark_moved` /
+        // `is_watermark_stationary`. A drop of the `const` qualifier on
+        // `ProofRelationKind::from_str` (or on either half-side inverse
+        // the fused arm delegates through) fails this test to compile.
+        //
+        // Six `const` bindings — five in-range canonical labels plus one
+        // non-canonical label — route each byte-slice through the
+        // const-fn inverse in const position. The moment `from_str`
+        // loses its const-ness one of the six const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Consumers wanting a compile-time-selected label-keyed dispatch
+        // table (a `const [ProofRelationKind; 5]` variant array
+        // recovered from a `const &[&str; 5]` canonical-label list, a
+        // per-corner attestation-manifest slot in a `const` initializer
+        // keyed by canonical label) reach through this seam. Peer of
+        // `proof_relation_kind_from_ordinal_is_const_callable` on the
+        // sibling scalar-`usize` inverse.
+        const AT_STATIONARY: Option<ProofRelationKind> = ProofRelationKind::from_str("stationary");
+        const AT_IDENTITY_REPUBLISH: Option<ProofRelationKind> =
+            ProofRelationKind::from_str("identity_republish");
+        const AT_PROGRESSION: Option<ProofRelationKind> =
+            ProofRelationKind::from_str("progression");
+        const AT_REGRESSED: Option<ProofRelationKind> = ProofRelationKind::from_str("regressed");
+        const AT_CROSS_STORE: Option<ProofRelationKind> =
+            ProofRelationKind::from_str("cross_store");
+        const AT_UNKNOWN: Option<ProofRelationKind> = ProofRelationKind::from_str("regressed_by");
+
+        assert_eq!(
+            AT_STATIONARY,
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Stationary,
+            )),
+        );
+        assert_eq!(
+            AT_IDENTITY_REPUBLISH,
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::IdentityRepublish,
+            )),
+        );
+        assert_eq!(
+            AT_PROGRESSION,
+            Some(ProofRelationKind::Consistent(
+                SameStoreConsistencyKind::Progression,
+            )),
+        );
+        assert_eq!(
+            AT_REGRESSED,
+            Some(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::Regressed,
+            )),
+        );
+        assert_eq!(
+            AT_CROSS_STORE,
+            Some(ProofRelationKind::Impossible(
+                SameStoreImpossibilityKind::CrossStore,
+            )),
+        );
+        assert_eq!(AT_UNKNOWN, None);
+    }
+
+    #[test]
+    fn proof_relation_kind_inherent_from_str_agrees_with_variants_index_pointwise() {
+        // `ProofRelationKind::from_str(Self::NAMES[i]) ==
+        // Some(Self::VARIANTS[i])` for every `i` in
+        // `0..Self::VARIANTS.len()`. The two half-side inherent matches,
+        // the `Self::VARIANTS` slice literal, and the `Self::NAMES`
+        // slice literal carry the same declaration order and the same
+        // canonical labels; the test below pins the pointwise agreement
+        // so a future edit that shifts one without the others fails at
+        // test time on the first drifted index. Quinary-cardinality peer
+        // of same_store_consistency_kind_inherent_from_str_agrees_with_variants_index_pointwise
+        // and same_store_impossibility_kind_inherent_from_str_agrees_with_variants_index_pointwise
+        // on the two halves this fused sum projects into.
+        assert_eq!(
+            ProofRelationKind::VARIANTS.len(),
+            ProofRelationKind::NAMES.len(),
+            "VARIANTS / NAMES cardinality must agree",
+        );
+        for (index, (&expected, &label)) in ProofRelationKind::VARIANTS
+            .iter()
+            .zip(ProofRelationKind::NAMES.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                ProofRelationKind::from_str(label),
+                Some(expected),
+                "from_str({label:?}) must agree with VARIANTS[{index}] = {expected:?}",
+            );
+            // The `name()` receiver and the NAMES slice carry the same
+            // label pointwise — pin the two seams at the same index so a
+            // future edit that shifts NAMES without shifting `name()`
+            // (or vice versa) fails here before either drift reaches the
+            // inherent inverse.
+            assert_eq!(
+                expected.name(),
+                label,
+                "VARIANTS[{index}].name() must agree with NAMES[{index}]",
+            );
+        }
+    }
+
+    #[test]
+    fn proof_relation_kind_inherent_from_str_agrees_with_std_str_from_str_on_canonical_input() {
+        // On the five-cell canonical snake-case codomain the inherent
+        // const-fn label seam and the trait-side `<Self as
+        // std::str::FromStr>::from_str` impl recover the same variant
+        // pointwise — the trait impl delegates through the two half-side
+        // `.parse()` seams which are byte-exact on the same five labels
+        // this inherent matches. Pinned across every variant so a future
+        // edit that shifts the label on one seam without the other fails
+        // here on the first drifted cell.
+        //
+        // The two seams diverge only OFF the canonical codomain: the
+        // trait impl carries a typed `ParseKindError` diagnostic (the
+        // malformed input verbatim plus the five-entry accepted-set),
+        // the inherent returns `None` structurally. That divergence is
+        // deliberate — the inherent is the const-callable, structural
+        // half of the label-inversion surface; the trait impl is the
+        // diagnostic-carrying half.
+        for &v in ProofRelationKind::VARIANTS {
+            let canonical = v.name();
+            assert_eq!(
+                ProofRelationKind::from_str(canonical),
+                <ProofRelationKind as std::str::FromStr>::from_str(canonical).ok(),
+                "inherent from_str and <Self as FromStr>::from_str must agree on {v:?}",
+            );
+        }
+        // Cross-check that both seams agree on the None/Err side for a
+        // representative off-codomain label — the inherent yields `None`
+        // and the trait impl yields `Err(_)`, projected pointwise
+        // through `.ok()` to `None` for byte-equal comparison. A future
+        // edit that dropped the closed-match `_` arm on either seam
+        // would fail here.
+        let off = "regressed_by";
+        assert_eq!(ProofRelationKind::from_str(off), None);
+        assert_eq!(
+            <ProofRelationKind as std::str::FromStr>::from_str(off).ok(),
             None,
         );
     }
