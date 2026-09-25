@@ -1685,6 +1685,106 @@ impl HintSurface {
             _ => None,
         }
     }
+
+    /// Canonical operator-facing kebab-case label for the variant tag —
+    /// `"dead-knob"`, `"stale-entry"`, `"value-key"`, `"env-var"`. The
+    /// scalar-`&'static str` peer of [`Self::ordinal`] on the same
+    /// coverage-hint surface axis: where [`Self::ordinal`] projects the
+    /// variant tag onto its dense `0..4` scalar position for consumers
+    /// keying per-surface data by ordinal (a `const [T; 4]` dispatch
+    /// table sized to [`Self::ALL`], a per-surface bitset), this
+    /// projects the same variant tag onto its dense canonical label
+    /// for consumers keying per-surface data by human-facing string
+    /// (a dashboard column heading, a per-surface structured-log tag,
+    /// a per-tenant `ConfigPlane` remediation-suggestion key, an
+    /// operator-facing CLI `--surface dead-knob` argument).
+    ///
+    /// **First landing of the const-fn label-projection idiom on the
+    /// coverage-hint surface axis.** Idiom-peer of the sibling closed-
+    /// enum label projections one seam over
+    /// ([`crate::SupportCardinalityClass::as_str`],
+    /// [`crate::SupportBoundaryDistance::as_str`],
+    /// [`crate::SupportMagnitudeDirection::as_str`],
+    /// [`crate::PartitionFace::as_str`],
+    /// [`crate::watcher::WatchEventClass::as_str`]) — the same closed
+    /// exhaustive match returning `&'static str` on the canonical
+    /// kebab-case codomain, same `const`-callability contract. The
+    /// kebab-case spellings track the sub-string tags the panic path
+    /// already renders through
+    /// [`ConfigCoverage::assert_healthy`]'s "dead knobs" / "stale
+    /// entries" / "unknown value keys" / "unknown env vars" legend —
+    /// each label collapses the panic legend's noun phrase to its
+    /// hyphenated tag form, so an operator reading a per-surface
+    /// telemetry stream keyed by [`Self::as_str`] can trace back to
+    /// the panic message that would fire on the same surface without
+    /// a lookup table.
+    ///
+    /// Since [`HintSurface`] is not a [`crate::ClosedAxis`] primitive
+    /// (no substrate-axis trait constant is declared on it), the label
+    /// projection stays inherent-only for now — the trait-uniform
+    /// [`crate::axis_label`] free function is unreachable through
+    /// this primitive, matching the discipline of
+    /// [`crate::SupportBoundaryDistance::as_str`] and
+    /// [`crate::SupportMagnitudeDirection::as_str`] on the sibling
+    /// non-`ClosedAxis` cube-classifier axes. A follow-up const-fn
+    /// label-inverse peer [`Self::from_str`] can then weld the
+    /// `(label, ordinal)` cube-inversion square on the coverage-hint
+    /// surface axis the same way the sibling closed-enum axes already
+    /// ship — matching, in order, the ordinal-first-then-label
+    /// discipline the recent
+    /// [`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::SupportCardinalityClass::from_str`], and
+    /// [`crate::ShikumiErrorKind::from_str`] landings shared.
+    ///
+    /// **Round-trip law** —
+    /// `HintSurface::as_str(v) == HintSurface::ALL[v.ordinal()].as_str()`
+    /// for every `v: HintSurface`. The label projection and the
+    /// ordinal projection share the SAME closed four-cell declaration
+    /// order carried by [`Self::ALL`], so a future edit that shifts
+    /// one match arm without the other fails on the first drifted
+    /// position. Pinned by
+    /// [`tests::hint_surface_as_str_agrees_with_all_index_pointwise`].
+    ///
+    /// **Injectivity** — the four labels are pairwise-distinct, so
+    /// [`Self::as_str`] is an injection into the canonical four-cell
+    /// label codomain. A future edit that duplicates a label across
+    /// two variants collapses [`Self::from_str`]'s future inverse
+    /// (and any string-keyed per-surface consumer) onto one variant
+    /// and silently drops the other — the injectivity pin fails
+    /// first. Pinned by
+    /// [`tests::hint_surface_as_str_labels_are_pairwise_distinct`].
+    ///
+    /// **Declaration-order preservation** — the four kebab-case labels
+    /// appear in the same relative order they occupy in [`Self::ALL`]:
+    /// `"dead-knob"` ([`Self::DeadKnob`], ordinal 0), `"stale-entry"`
+    /// ([`Self::StaleEntry`], ordinal 1), `"value-key"`
+    /// ([`Self::ValueKey`], ordinal 2), `"env-var"` ([`Self::EnvVar`],
+    /// ordinal 3). Pinned by
+    /// [`tests::hint_surface_as_str_reuses_declaration_order`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`], [`Self::from_ordinal`],
+    /// and every peer per-variant projection on the [`impl HintSurface`]
+    /// block ([`Self::is_dead_knob`], [`Self::is_stale_entry`],
+    /// [`Self::is_value_key`], [`Self::is_env_var`],
+    /// [`Self::is_coverage_hint`], [`Self::is_typo_audit_hint`]).
+    /// Consumers wanting a compile-time-selected per-surface label
+    /// slot in a `const` initializer (e.g. a
+    /// `const [&str; HintSurface::ALL.len()]` label vector keyed by
+    /// ordinal for a static dashboard column header, a `const` per-
+    /// surface remediation-message table indexed by canonical label)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::hint_surface_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DeadKnob => "dead-knob",
+            Self::StaleEntry => "stale-entry",
+            Self::ValueKey => "value-key",
+            Self::EnvVar => "env-var",
+        }
+    }
 }
 
 /// Surface-tagged view of one coverage hint, borrowed from a
@@ -8677,6 +8777,145 @@ tags: []
         assert_eq!(AT_2, Some(HintSurface::ValueKey));
         assert_eq!(AT_3, Some(HintSurface::EnvVar));
         assert_eq!(AT_4, None);
+    }
+
+    #[test]
+    fn hint_surface_as_str_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the four
+        // canonical kebab-case labels verbatim, in strictly ascending
+        // declaration order (DeadKnob → StaleEntry → ValueKey →
+        // EnvVar). A future swap in the match arms that would still
+        // pass the `agrees_with_all_index` pointwise pin (which reads
+        // the same declaration order out of `HintSurface::ALL` on both
+        // sides) fails here first on the drifted arm.
+        assert_eq!(HintSurface::DeadKnob.as_str(), "dead-knob");
+        assert_eq!(HintSurface::StaleEntry.as_str(), "stale-entry");
+        assert_eq!(HintSurface::ValueKey.as_str(), "value-key");
+        assert_eq!(HintSurface::EnvVar.as_str(), "env-var");
+    }
+
+    #[test]
+    fn hint_surface_as_str_agrees_with_all_index_pointwise() {
+        // Round-trip law composed through `ordinal`:
+        // `v.as_str() == HintSurface::ALL[v.ordinal()].as_str()` for
+        // every v: HintSurface. The label projection `as_str` and the
+        // scalar projection `ordinal` share the SAME closed four-cell
+        // declaration order (`HintSurface::ALL`); a future edit that
+        // shifts the label match without shifting the ordinal match
+        // (or the slice literal) fails here on the first drifted
+        // position. `HintSurface` is not a `ClosedAxis` primitive (no
+        // `ALL`-shaped substrate-axis trait constant is declared on
+        // it), so the pointwise-agreement law targets `Self::ALL`
+        // position directly rather than `crate::axis_label` — idiom-
+        // peer of the sibling non-`ClosedAxis` cube-classifier axes.
+        for (index, &expected) in HintSurface::ALL.iter().enumerate() {
+            assert_eq!(
+                expected.as_str(),
+                HintSurface::ALL[expected.ordinal()].as_str(),
+                "as_str must agree with HintSurface::ALL[ordinal()] for {expected:?}",
+            );
+            // Second witness: the surface at `HintSurface::ALL[index]`
+            // reports the same label the freshly-recovered variant
+            // does, so an edit that shifts one match arm without the
+            // other diverges here on the first drifted index.
+            assert_eq!(
+                HintSurface::ALL[index].as_str(),
+                expected.as_str(),
+                "HintSurface::ALL[{index}] must carry the same label as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_as_str_labels_are_pairwise_distinct() {
+        // Injectivity of the label projection into the canonical four-
+        // cell label codomain: a future edit duplicating a label across
+        // two variants collapses the future `from_str` inverse onto one
+        // variant and silently drops the other. This pin fires FIRST on
+        // that class of drift so the string-keyed per-surface consumers
+        // (dashboard column headers, structured-log tags, per-tenant
+        // remediation tables) never build atop an ambiguous label
+        // codomain.
+        let labels: Vec<&'static str> = HintSurface::ALL.iter().map(|s| s.as_str()).collect();
+        assert_eq!(labels.len(), HintSurface::ALL.len());
+        for (i, a) in labels.iter().enumerate() {
+            for (j, b) in labels.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                assert_ne!(
+                    a, b,
+                    "labels at ALL[{i}] and ALL[{j}] must be distinct (got {a:?} both)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hint_surface_as_str_is_const_callable() {
+        // Compile-time weld: the (surface → &'static str) projection is
+        // `const`-callable, matching the `const`-ness of
+        // `HintSurface::ordinal`, `HintSurface::from_ordinal`, and every
+        // peer per-variant projection already carried on the `impl
+        // HintSurface` block (`is_dead_knob`, `is_stale_entry`,
+        // `is_value_key`, `is_env_var`, `is_coverage_hint`,
+        // `is_typo_audit_hint`). A drop of the `const` qualifier on
+        // `HintSurface::as_str` fails this test to compile.
+        //
+        // Four `const` bindings — one per `HintSurface` variant —
+        // route each payload-free variant through the const-fn label
+        // projection in const position. The moment `HintSurface::as_str`
+        // loses its const-ness one of the four `const` welds below
+        // fails to compile at THAT line before the drift can reach
+        // downstream consumers that assumed const-ness through the
+        // projection (e.g. a `const [&str; HintSurface::ALL.len()]`
+        // label vector keyed by ordinal for a static dashboard column
+        // header).
+        const DEAD_KNOB: &str = HintSurface::DeadKnob.as_str();
+        const STALE_ENTRY: &str = HintSurface::StaleEntry.as_str();
+        const VALUE_KEY: &str = HintSurface::ValueKey.as_str();
+        const ENV_VAR: &str = HintSurface::EnvVar.as_str();
+
+        // Compile-time-selected per-surface label vector: the exact
+        // consumer shape the const-ness weld exists to enable. A
+        // future const-drop lands at the initializer below at
+        // compile time before reaching any static dashboard consumer.
+        const LABELS: [&str; HintSurface::ALL.len()] = [
+            HintSurface::DeadKnob.as_str(),
+            HintSurface::StaleEntry.as_str(),
+            HintSurface::ValueKey.as_str(),
+            HintSurface::EnvVar.as_str(),
+        ];
+
+        assert_eq!(DEAD_KNOB, "dead-knob");
+        assert_eq!(STALE_ENTRY, "stale-entry");
+        assert_eq!(VALUE_KEY, "value-key");
+        assert_eq!(ENV_VAR, "env-var");
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `HintSurface::ALL` to the runtime-side
+        // `surface.as_str()` call — the const-context weld only
+        // exercises the four variants named at const-binding sites,
+        // but the runtime pin threads the full closed list through
+        // the same projection to catch a future variant landing whose
+        // const-context weld was forgotten upstream.
+        for (surface, expected) in [
+            (HintSurface::DeadKnob, DEAD_KNOB),
+            (HintSurface::StaleEntry, STALE_ENTRY),
+            (HintSurface::ValueKey, VALUE_KEY),
+            (HintSurface::EnvVar, ENV_VAR),
+        ] {
+            assert_eq!(surface.as_str(), expected, "surface {surface:?}");
+        }
+
+        // Const-context weld → runtime consumer: the `LABELS` array
+        // lands the const-fn label projection in an initializer keyed
+        // by ordinal, and the pointwise pin below welds that ordinal-
+        // keyed static vector to the runtime `surface.as_str()` call
+        // across every variant in `HintSurface::ALL`.
+        for (index, &surface) in HintSurface::ALL.iter().enumerate() {
+            assert_eq!(LABELS[index], surface.as_str(), "LABELS[{index}]");
+        }
     }
 
     #[test]
