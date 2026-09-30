@@ -6585,6 +6585,137 @@ impl AttributionAxis {
         }
     }
 
+    /// Const-fn label → variant inverse of [`Self::as_str`]. Returns
+    /// [`Some(variant)`][Some] for every `s` in the closed two-cell
+    /// canonical-label set [`Self::as_str`] emits — the two kebab-case
+    /// compound-noun identifiers `"metadata-source"` and
+    /// `"metadata-name"` — and [`None`] for any input outside that
+    /// codomain.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `"metadata-source"` → [`Some`]`(`[`Self::MetadataSource`]`)`
+    /// - `"metadata-name"` → [`Some`]`(`[`Self::MetadataName`]`)`
+    /// - anything else → [`None`]
+    ///
+    /// Exact-byte case-sensitive: mixed-case renderings
+    /// (`"Metadata-Source"`, `"METADATA-NAME"`), `snake_case`
+    /// renderings (`"metadata_source"`, `"metadata_name"`), and
+    /// unpunctuated spellings (`"metadatasource"`, `"metadataname"`)
+    /// all resolve to [`None`] here, matching the discipline of the
+    /// sibling const-fn scalar inverse [`Self::from_ordinal`] and of
+    /// the sibling [`AttributionRule::from_str`],
+    /// [`ShikumiErrorKind::from_str`],
+    /// [`FieldPathLocalization::from_str`],
+    /// [`crate::SecretErrorKind::from_str`],
+    /// [`crate::SecretBackendKind::from_str`],
+    /// [`crate::watcher::WatchEventClass::from_str`],
+    /// [`crate::SecretOperation::from_str`], and
+    /// [`crate::SecretClientKind::from_str`] const-fn label inverses.
+    /// A consumer wanting case-insensitive parsing reaches for the
+    /// trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] (which
+    /// case-lowers before matching), or lowercases at their own site.
+    ///
+    /// Sibling landing of the const-fn label-inverse peer idiom on the
+    /// metadata axis, welding the (label, ordinal) cube-inversion
+    /// square on the two-cell (source × name) partition of
+    /// [`AttributionRule::metadata_axis`]. With this landing the axis
+    /// primitive carries all four corners of the square —
+    /// [`Self::as_str`] / [`Self::from_str`] on the `&'static str`
+    /// surface, [`Self::ordinal`] / [`Self::from_ordinal`] on the
+    /// [`usize`] surface — under `const`, the same shape the sibling
+    /// [`AttributionRule`] and every other 20+ closed-axis primitive
+    /// in the crate ship.
+    ///
+    /// **Round-trip law** —
+    /// `AttributionAxis::from_str(v.as_str()) == Some(v)` for every
+    /// `v: AttributionAxis`. Composes with [`Self::as_str`] on the
+    /// same two-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::attribution_axis_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `AttributionAxis::from_str(s) == None` for every `s` outside
+    /// the canonical two-cell set. The closed match's `_` arm forwards
+    /// the off-surface case to [`None`] structurally; the guard
+    /// degrades gracefully on a caller passing a stale wire-format
+    /// label from a version-skewed peer, a mixed-case operator-typed
+    /// CLI argument that never went through a lowering step, the
+    /// empty string, a `snake_case` rendering of the compound-noun
+    /// variant (`"metadata_source"` — the shape a consumer might have
+    /// inferred from a Python or Ruby port), unpunctuated spellings
+    /// (`"metadatasource"`), the near-miss labels of adjacent
+    /// primitives on the sealed fold (`"source"` / `"name"` — the
+    /// sibling [`crate::FigmentSourceKind`] / [`crate::FigmentNameTagKind`]
+    /// labels one axis over, valid there, rejected here), or a
+    /// hypothetical tertiary-variant label a future extension would
+    /// introduce (e.g. `"metadata-extras"` for a `MetadataExtras`
+    /// cell the primitive's own doc-comment anticipates). Pinned by
+    /// [`tests::attribution_axis_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `AttributionAxis::from_str(v.as_str()) == Some(v)` for every
+    /// `v: AttributionAxis`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same two-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other (say renaming `MetadataSource` from
+    /// `"metadata-source"` to `"metadata-src"` on the `as_str` side
+    /// but not here) fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::attribution_axis_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square weld: agreement with
+    /// [`Self::from_ordinal`]** — for every `v: AttributionAxis`,
+    /// `AttributionAxis::from_str(v.as_str()) ==
+    /// AttributionAxis::from_ordinal(v.ordinal())`. Both legs of the
+    /// (label, ordinal) × (forward, inverse) commuting square recover
+    /// the same variant on every cell of the closed two-cell axis; a
+    /// swapped variant on ONE inverse but not the other fails first
+    /// here before either seam's drift can reach downstream consumers.
+    /// Pinned by
+    /// [`tests::attribution_axis_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Agreement with
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] on canonical
+    /// input** — for every `v: AttributionAxis`,
+    /// `AttributionAxis::from_str(v.as_str()) ==
+    /// <AttributionAxis as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact labels
+    /// [`Self::as_str`] emits; they diverge only OFF that codomain
+    /// (the trait method case-insensitive-lowers non-canonical labels,
+    /// the inherent rejects them structurally). This pin cross-checks
+    /// the const-fn label seam against the trait-uniform label seam
+    /// on the closed variant surface. Pinned by
+    /// [`tests::attribution_axis_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and
+    /// of [`Self::from_ordinal`] on the sibling scalar-surface
+    /// inverse. Consumers wanting a compile-time-selected label-keyed
+    /// dispatch on the metadata axis (a
+    /// `const [AttributionAxis; AttributionAxis::ALL.len()]` variant
+    /// array recovered from a
+    /// `const &[&str; AttributionAxis::ALL.len()]` canonical-label
+    /// list, a per-axis attestation-manifest slot keyed by canonical
+    /// label in a `const` initializer, a per-axis weight vector keyed
+    /// by label that weights name-axis attributions
+    /// (`"metadata-name"`) visibly weaker than source-axis
+    /// (`"metadata-source"`)) route through the projection under
+    /// `const` without dropping through a runtime `let` binding.
+    /// Pinned by
+    /// [`tests::attribution_axis_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"metadata-source" => Some(Self::MetadataSource),
+            b"metadata-name" => Some(Self::MetadataName),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::MetadataSource`]; equivalent to
     /// `self == AttributionAxis::MetadataSource`.
     ///
@@ -12641,6 +12772,283 @@ mod tests {
                 "variant {variant:?} at index {index}",
             );
         }
+    }
+
+    #[test]
+    fn attribution_axis_from_str_round_trips_via_as_str() {
+        // Round-trip law: `AttributionAxis::from_str(v.as_str()) ==
+        // Some(v)` for every v: AttributionAxis. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed two-cell label table (the two kebab-case
+        // compound-noun labels `"metadata-source"` and
+        // `"metadata-name"` in AttributionAxis::ALL declaration
+        // order); the law holds by construction. Sibling of
+        // `attribution_rule_from_str_round_trips_via_as_str` on the
+        // five-cell attribution-rule axis one impl block up and of
+        // `attribution_axis_from_ordinal_round_trips_via_ordinal` on
+        // the scalar-usize surface of the same primitive.
+        for &axis in AttributionAxis::ALL {
+            let rendered = axis.as_str();
+            let recovered = AttributionAxis::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(axis),
+                "round-trip failed for {axis:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. dropping `metadata-` on `MetadataSource` to
+        // `"source"`, or collapsing `"metadata-name"` to `"name"`)
+        // fails here before drifting through the round-trip law
+        // above.
+        assert_eq!(
+            AttributionAxis::from_str("metadata-source"),
+            Some(AttributionAxis::MetadataSource),
+        );
+        assert_eq!(
+            AttributionAxis::from_str("metadata-name"),
+            Some(AttributionAxis::MetadataName),
+        );
+    }
+
+    #[test]
+    fn attribution_axis_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical two-cell set — the codomain of `as_str` — resolves
+        // to `None` via the closed match's `_` arm. Sweeps mixed-case
+        // renderings, snake_case renderings, unpunctuated spellings,
+        // partial-prefix truncations, hypothetical extensions, and
+        // near-miss labels of adjacent primitives on the sealed fold.
+        // Case-sensitivity discipline matches the sibling
+        // `AttributionRule::from_str` (five-cell attribution-rule
+        // axis one impl block up), `ShikumiErrorKind::from_str`,
+        // `SecretErrorKind::from_str`, `SecretBackendKind::from_str`,
+        // and `WatchEventClass::from_str` const-fn label inverses;
+        // callers wanting case-insensitive parsing reach for the
+        // trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str`.
+        for bad in &[
+            // Mixed-case renderings of the canonical labels.
+            "Metadata-Source",
+            "METADATA-SOURCE",
+            "metadata-Source",
+            "Metadata-source",
+            "Metadata-Name",
+            "METADATA-NAME",
+            "metadata-Name",
+            "Metadata-name",
+            // Snake_case renderings — the shape a Python or Ruby
+            // port might have inferred from the Rust identifier.
+            "metadata_source",
+            "metadata_name",
+            // Unpunctuated spellings — no hyphen, no underscore.
+            "metadatasource",
+            "metadataname",
+            // PascalCase renderings — the raw Rust identifier bytes.
+            "MetadataSource",
+            "MetadataName",
+            // Whitespace-flanked and embedded-whitespace renderings.
+            "metadata-source ",
+            " metadata-source",
+            "metadata-source\n",
+            "metadata source",
+            "metadata name",
+            // Partial-prefix truncations — leading segment only, or
+            // a dropped trailing segment.
+            "metadata",
+            "metadata-",
+            "source",
+            "name",
+            // Empty string.
+            "",
+            // Hypothetical tertiary-variant labels a future extension
+            // would introduce (e.g. a `MetadataExtras` cell the
+            // primitive's own doc-comment anticipates) — rejected
+            // today, must not silently resolve.
+            "metadata-extras",
+            "metadata-value",
+            "metadata-tag",
+            "metadata-envelope",
+            // Near-miss labels of adjacent primitives on the sealed
+            // fold — valid there, rejected here.
+            "not-found",
+            "unauthorized",
+            "unsupported",
+            "backend",
+            "shikumi",
+            "literal",
+            "command",
+            "sops",
+            "op",
+            "vault",
+            "whole",
+            "field",
+            "runtime",
+            "figment-unlocalized",
+            "not-applicable",
+            "figment-builtin",
+            "shikumi-built",
+            // Sibling ConfigSourceKind labels — a consumer wanting
+            // the layer-kind rendering rather than the metadata-axis
+            // rendering must resolve through `ConfigSourceKind::as_str`,
+            // not this seam.
+            "bare",
+            "discovered",
+            "prescribed_default",
+            "prescribed-default",
+            // Sibling AttributionRule labels — the source-altitude
+            // rule primitive on the same closed cube, rejected here
+            // on the metadata-axis seam.
+            "file-by-source",
+            "file-by-metadata-name",
+            "env-by-prefix",
+            "env-by-uniqueness",
+            "defaults-by-code-uniqueness",
+            // Sibling AttributionConfidence labels — the other
+            // projection of the attribution rule.
+            "exact",
+            "fallback",
+        ] {
+            assert_eq!(
+                AttributionAxis::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in AttributionAxis::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same two-cell declaration; a
+        // future edit that shifts the label on ONE match without the
+        // other (say renaming `MetadataSource` from
+        // `"metadata-source"` to `"metadata-src"` on the `as_str`
+        // side but not the `from_str` side) fails here on the first
+        // drifted arm. Sibling of
+        // `attribution_rule_from_str_agrees_with_as_str_pointwise`
+        // on the five-cell attribution-rule axis one impl block up.
+        for &axis in AttributionAxis::ALL {
+            assert_eq!(
+                AttributionAxis::from_str(axis.as_str()),
+                Some(axis),
+                "from_str(as_str) must agree pointwise for {axis:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion square weld: cross-checks the label leg
+        // against the shipped ordinal leg on the same closed two-cell
+        // axis. For every variant, recovering it through the
+        // canonical label and through the canonical ordinal must
+        // yield the same variant — a swapped variant on ONE inverse
+        // (say `"metadata-source"` returning `Self::MetadataName` on
+        // the label leg after a future edit but ordinal `0` still
+        // returning `Self::MetadataSource` on the ordinal leg) fails
+        // first here before either seam's drift can reach downstream
+        // consumers. Sibling of
+        // `attribution_rule_from_str_and_from_ordinal_agree_pointwise`
+        // on the five-cell attribution-rule axis one impl block up
+        // and of every other `*_from_str_and_from_ordinal_agree_
+        // pointwise` seal on the sibling closed-primitive axes.
+        for &axis in AttributionAxis::ALL {
+            let via_label = AttributionAxis::from_str(axis.as_str());
+            let via_ordinal = AttributionAxis::from_ordinal(axis.ordinal());
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square must commute for {axis:?}: \
+                 via_label={via_label:?} vs via_ordinal={via_ordinal:?}",
+            );
+            assert_eq!(
+                via_label,
+                Some(axis),
+                "both legs of the square must recover the source variant for {axis:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the
+        // trait method case-insensitive-lowers non-canonical labels,
+        // the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the trait-
+        // uniform label seam on the closed variant surface. Sibling
+        // of
+        // `attribution_rule_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the five-cell attribution-rule axis one impl block up.
+        use crate::ClosedAxisLabel;
+        for &axis in AttributionAxis::ALL {
+            let label = axis.as_str();
+            let inherent = AttributionAxis::from_str(label);
+            let trait_uniform = <AttributionAxis as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_axis_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `AttributionAxis::as_str` and the sibling
+        // `AttributionAxis::from_ordinal`. A drop of the `const`
+        // qualifier on `AttributionAxis::from_str` fails this test
+        // to compile.
+        //
+        // Three `const` bindings — two in-range plus one out-of-set —
+        // route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the three const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `attribution_axis_from_ordinal_is_const_callable`
+        // on the scalar-usize surface of the same primitive and of
+        // `attribution_rule_from_str_is_const_callable` on the
+        // five-cell attribution-rule axis one impl block up.
+        const AT_METADATA_SOURCE: Option<AttributionAxis> =
+            AttributionAxis::from_str("metadata-source");
+        const AT_METADATA_NAME: Option<AttributionAxis> =
+            AttributionAxis::from_str("metadata-name");
+        const AT_UNKNOWN: Option<AttributionAxis> = AttributionAxis::from_str("metadata-extras");
+
+        assert_eq!(AT_METADATA_SOURCE, Some(AttributionAxis::MetadataSource));
+        assert_eq!(AT_METADATA_NAME, Some(AttributionAxis::MetadataName));
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Const recovery vector — the exact static-dispatch consumer
+        // shape the const-ness enables: a `const [Option<AttributionAxis>;
+        // AttributionAxis::ALL.len()]` array recovered from a
+        // `const [&str; AttributionAxis::ALL.len()]` canonical-label
+        // list under `const`. A future drop of const-ness on
+        // `from_str` fails this binding to compile before it can
+        // reach any downstream consumer that assumed a const-context
+        // label dispatch table.
+        const RECOVERY: [Option<AttributionAxis>; AttributionAxis::ALL.len()] = [
+            AttributionAxis::from_str("metadata-source"),
+            AttributionAxis::from_str("metadata-name"),
+        ];
+        assert_eq!(
+            RECOVERY,
+            [
+                Some(AttributionAxis::MetadataSource),
+                Some(AttributionAxis::MetadataName),
+            ],
+        );
     }
 
     #[test]
