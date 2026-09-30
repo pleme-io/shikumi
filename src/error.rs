@@ -2750,6 +2750,129 @@ impl AttributionRule {
         }
     }
 
+    /// Const-fn label → variant inverse of [`Self::as_str`]. Returns
+    /// [`Some(variant)`][Some] for every `s` in the closed five-cell
+    /// canonical-label set [`Self::as_str`] emits — the five kebab-case
+    /// compound-noun identifiers `"file-by-source"`,
+    /// `"file-by-metadata-name"`, `"env-by-prefix"`,
+    /// `"env-by-uniqueness"`, `"defaults-by-code-uniqueness"` — and
+    /// [`None`] for any input outside that codomain.
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `"file-by-source"` → [`Some`]`(`[`Self::FileBySource`]`)`
+    /// - `"file-by-metadata-name"` → [`Some`]`(`[`Self::FileByMetadataName`]`)`
+    /// - `"env-by-prefix"` → [`Some`]`(`[`Self::EnvByPrefix`]`)`
+    /// - `"env-by-uniqueness"` → [`Some`]`(`[`Self::EnvByUniqueness`]`)`
+    /// - `"defaults-by-code-uniqueness"` → [`Some`]`(`[`Self::DefaultsByCodeUniqueness`]`)`
+    /// - anything else → [`None`]
+    ///
+    /// Exact-byte case-sensitive: mixed-case renderings
+    /// (`"File-By-Source"`, `"ENV-BY-PREFIX"`), `snake_case` renderings
+    /// (`"file_by_source"`, `"env_by_prefix"`), and unpunctuated
+    /// spellings (`"filebysource"`, `"envbyprefix"`) all resolve to
+    /// [`None`] here, matching the discipline of the sibling const-fn
+    /// scalar inverse [`Self::from_ordinal`] and of the sibling
+    /// [`ShikumiErrorKind::from_str`] /
+    /// [`FieldPathLocalization::from_str`] /
+    /// [`crate::SecretErrorKind::from_str`] /
+    /// [`crate::SecretBackendKind::from_str`] /
+    /// [`crate::watcher::WatchEventClass::from_str`] const-fn label
+    /// inverses. A consumer wanting case-insensitive parsing reaches
+    /// for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] (which
+    /// case-lowers before matching), or lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `AttributionRule::from_str(v.as_str()) == Some(v)` for every
+    /// `v: AttributionRule`. Composes with [`Self::as_str`] on the same
+    /// five-cell label table both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::attribution_rule_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `AttributionRule::from_str(s) == None` for every `s` outside the
+    /// canonical five-cell set. The closed match's `_` arm forwards the
+    /// off-surface case to [`None`] structurally; the guard degrades
+    /// gracefully on a caller passing a stale wire-format label from a
+    /// version-skewed peer, a mixed-case operator-typed CLI argument
+    /// that never went through a lowering step, the empty string, a
+    /// `snake_case` rendering of the compound-noun variant
+    /// (`"file_by_source"` — the shape a consumer might have inferred
+    /// from a Python or Ruby port), unpunctuated spellings
+    /// (`"filebysource"`), the near-miss labels of adjacent primitives
+    /// on the sealed fold (`"defaults"` / `"env"` / `"file"` — the
+    /// sibling [`crate::ConfigSourceKind`] labels one axis over, valid
+    /// there, rejected here), or a hypothetical sixth-variant label a
+    /// future extension would introduce
+    /// (e.g. `"file-by-metadata-value"` or
+    /// `"env-by-code-uniqueness"`). Pinned by
+    /// [`tests::attribution_rule_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `AttributionRule::from_str(v.as_str()) == Some(v)` for every
+    /// `v: AttributionRule`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same five-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other (say renaming `EnvByPrefix` from
+    /// `"env-by-prefix"` to `"env-prefix"` on the `as_str` side but
+    /// not here) fails at test time on the first drifted arm. Pinned
+    /// by [`tests::attribution_rule_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square weld: agreement with
+    /// [`Self::from_ordinal`]** — for every `v: AttributionRule`,
+    /// `AttributionRule::from_str(v.as_str()) ==
+    /// AttributionRule::from_ordinal(v.ordinal())`. Both legs of the
+    /// (label, ordinal) × (forward, inverse) commuting square recover
+    /// the same variant on every cell of the closed five-cell axis; a
+    /// swapped variant on ONE inverse but not the other fails first
+    /// here before either seam's drift can reach downstream consumers.
+    /// Pinned by
+    /// [`tests::attribution_rule_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: AttributionRule`,
+    /// `AttributionRule::from_str(v.as_str()) ==
+    /// <AttributionRule as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact labels
+    /// [`Self::as_str`] emits; they diverge only OFF that codomain
+    /// (the trait method case-insensitive-lowers non-canonical labels,
+    /// the inherent rejects them structurally). This pin cross-checks
+    /// the const-fn label seam against the trait-uniform label seam on
+    /// the closed variant surface. Pinned by
+    /// [`tests::attribution_rule_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// on the attribution-rule axis (a
+    /// `const [AttributionRule; AttributionRule::ALL.len()]` variant
+    /// array recovered from a `const &[&str; AttributionRule::ALL.len()]`
+    /// canonical-label list, a per-rule attestation-manifest slot
+    /// keyed by canonical label in a `const` initializer, a per-rule
+    /// weight vector keyed by label that weights fallback-based
+    /// attributions (`"env-by-uniqueness"`,
+    /// `"defaults-by-code-uniqueness"`) visibly differently than
+    /// equality-based ones (`"file-by-source"`,
+    /// `"file-by-metadata-name"`, `"env-by-prefix"`)) route through
+    /// the projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::attribution_rule_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"file-by-source" => Some(Self::FileBySource),
+            b"file-by-metadata-name" => Some(Self::FileByMetadataName),
+            b"env-by-prefix" => Some(Self::EnvByPrefix),
+            b"env-by-uniqueness" => Some(Self::EnvByUniqueness),
+            b"defaults-by-code-uniqueness" => Some(Self::DefaultsByCodeUniqueness),
+            _ => None,
+        }
+    }
+
     /// Confidence class of this rule: [`AttributionConfidence::Exact`]
     /// for equality-based attributions ([`Self::FileBySource`],
     /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
@@ -13016,6 +13139,328 @@ mod tests {
                 "variant {variant:?} at index {index}",
             );
         }
+    }
+
+    #[test]
+    fn attribution_rule_from_str_round_trips_via_as_str() {
+        // Round-trip law: `AttributionRule::from_str(v.as_str()) ==
+        // Some(v)` for every v: AttributionRule. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed five-cell label table (the five kebab-case
+        // compound-noun labels `"file-by-source"`,
+        // `"file-by-metadata-name"`, `"env-by-prefix"`,
+        // `"env-by-uniqueness"`, `"defaults-by-code-uniqueness"` in
+        // AttributionRule::ALL declaration order); the law holds by
+        // construction. Sibling of
+        // `secret_error_kind_from_str_round_trips_via_as_str` on the
+        // five-cell secret-client error-kind axis and of
+        // `attribution_rule_from_ordinal_round_trips_via_ordinal` on
+        // the scalar-usize surface of the same primitive.
+        for &rule in AttributionRule::ALL {
+            let rendered = rule.as_str();
+            let recovered = AttributionRule::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(rule),
+                "round-trip failed for {rule:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. dropping `-by-` on `EnvByPrefix` to
+        // `"env-prefix"`, or collapsing
+        // `"defaults-by-code-uniqueness"` to `"defaults"`) fails here
+        // before drifting through the round-trip law above.
+        assert_eq!(
+            AttributionRule::from_str("file-by-source"),
+            Some(AttributionRule::FileBySource),
+        );
+        assert_eq!(
+            AttributionRule::from_str("file-by-metadata-name"),
+            Some(AttributionRule::FileByMetadataName),
+        );
+        assert_eq!(
+            AttributionRule::from_str("env-by-prefix"),
+            Some(AttributionRule::EnvByPrefix),
+        );
+        assert_eq!(
+            AttributionRule::from_str("env-by-uniqueness"),
+            Some(AttributionRule::EnvByUniqueness),
+        );
+        assert_eq!(
+            AttributionRule::from_str("defaults-by-code-uniqueness"),
+            Some(AttributionRule::DefaultsByCodeUniqueness),
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical five-cell set — the codomain of `as_str` — resolves
+        // to `None` via the closed match's `_` arm. Sweeps mixed-case
+        // renderings, snake_case renderings, unpunctuated spellings,
+        // partial-prefix truncations, hypothetical extensions, and
+        // near-miss labels of adjacent primitives on the sealed fold.
+        // Case-sensitivity discipline matches the sibling
+        // `ShikumiErrorKind::from_str`, `SecretErrorKind::from_str`,
+        // `SecretBackendKind::from_str`, and `WatchEventClass::from_str`
+        // const-fn label inverses; callers wanting case-insensitive
+        // parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str`.
+        for bad in &[
+            // Mixed-case renderings of the canonical labels.
+            "File-By-Source",
+            "FILE-BY-SOURCE",
+            "file-By-Source",
+            "File-by-Source",
+            "File-By-Metadata-Name",
+            "FILE-BY-METADATA-NAME",
+            "Env-By-Prefix",
+            "ENV-BY-PREFIX",
+            "Env-By-Uniqueness",
+            "ENV-BY-UNIQUENESS",
+            "Defaults-By-Code-Uniqueness",
+            "DEFAULTS-BY-CODE-UNIQUENESS",
+            // Snake_case renderings — the shape a Python or Ruby port
+            // might have inferred from the Rust identifier.
+            "file_by_source",
+            "file_by_metadata_name",
+            "env_by_prefix",
+            "env_by_uniqueness",
+            "defaults_by_code_uniqueness",
+            // Unpunctuated spellings — no hyphen, no underscore.
+            "filebysource",
+            "filebymetadataname",
+            "envbyprefix",
+            "envbyuniqueness",
+            "defaultsbycodeuniqueness",
+            // PascalCase renderings — the raw Rust identifier bytes.
+            "FileBySource",
+            "FileByMetadataName",
+            "EnvByPrefix",
+            "EnvByUniqueness",
+            "DefaultsByCodeUniqueness",
+            // Whitespace-flanked and embedded-whitespace renderings.
+            "file-by-source ",
+            " file-by-source",
+            "file-by-source\n",
+            "file by source",
+            "env by prefix",
+            // Partial-prefix truncations — leading segment only, or a
+            // dropped trailing segment.
+            "file",
+            "env",
+            "defaults",
+            "file-by",
+            "env-by",
+            "defaults-by",
+            "file-by-metadata",
+            "defaults-by-code",
+            // Empty string.
+            "",
+            // Hypothetical sixth-variant labels a future extension
+            // would introduce — rejected today, must not silently
+            // resolve.
+            "file-by-metadata-value",
+            "env-by-code-uniqueness",
+            "runtime-by-caller",
+            "figment-by-name",
+            "custom-by-source",
+            // Near-miss labels of adjacent primitives on the sealed
+            // fold — valid there, rejected here.
+            "not-found",
+            "unauthorized",
+            "unsupported",
+            "backend",
+            "shikumi",
+            "literal",
+            "command",
+            "sops",
+            "op",
+            "vault",
+            "whole",
+            "field",
+            "runtime",
+            "figment-unlocalized",
+            "not-applicable",
+            "figment-builtin",
+            "shikumi-built",
+            "metadata-source",
+            "metadata-name",
+            // Sibling ConfigSourceKind labels — a consumer wanting the
+            // layer-kind rendering rather than the attribution-rule
+            // rendering must resolve through `AttributionRule::layer_kind`
+            // + `ConfigSourceKind::as_str`, not this seam.
+            "bare",
+            "discovered",
+            "prescribed_default",
+            "prescribed-default",
+            // AttributionConfidence labels — the sibling axis this
+            // rule projects onto via `AttributionRule::confidence`.
+            "exact",
+            "fallback",
+        ] {
+            assert_eq!(
+                AttributionRule::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in AttributionRule::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same five-cell declaration; a
+        // future edit that shifts the label on ONE match without the
+        // other (say renaming `EnvByPrefix` from `"env-by-prefix"` to
+        // `"env-prefix"` on the `as_str` side but not the `from_str`
+        // side) fails here on the first drifted arm. Sibling of
+        // `secret_error_kind_from_str_agrees_with_as_str_pointwise`
+        // on the five-cell secret-client error-kind axis and of
+        // `secret_operation_from_str_agrees_with_as_str_pointwise`
+        // on the six-cell secret-client operation axis.
+        for &rule in AttributionRule::ALL {
+            assert_eq!(
+                AttributionRule::from_str(rule.as_str()),
+                Some(rule),
+                "from_str(as_str) must agree pointwise for {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion square weld: cross-checks the label leg
+        // against the shipped ordinal leg on the same closed five-cell
+        // axis. For every variant, recovering it through the canonical
+        // label and through the canonical ordinal must yield the same
+        // variant — a swapped variant on ONE inverse (say
+        // `"env-by-prefix"` returning `Self::FileBySource` on the
+        // label leg after a future edit but ordinal `2` still
+        // returning `Self::EnvByPrefix` on the ordinal leg) fails
+        // first here before either seam's drift can reach downstream
+        // consumers. Sibling of
+        // `secret_operation_from_str_and_from_ordinal_agree_pointwise`
+        // on the six-cell secret-client operation axis and of every
+        // other `*_from_str_and_from_ordinal_agree_pointwise` seal on
+        // the sibling closed-primitive axes.
+        for &rule in AttributionRule::ALL {
+            let via_label = AttributionRule::from_str(rule.as_str());
+            let via_ordinal = AttributionRule::from_ordinal(rule.ordinal());
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square must commute for {rule:?}: \
+                 via_label={via_label:?} vs via_ordinal={via_ordinal:?}",
+            );
+            assert_eq!(
+                via_label,
+                Some(rule),
+                "both legs of the square must recover the source variant for {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the
+        // trait method case-insensitive-lowers non-canonical labels,
+        // the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the trait-
+        // uniform label seam on the closed variant surface. Sibling
+        // of `secret_operation_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the six-cell secret-client operation axis.
+        use crate::ClosedAxisLabel;
+        for &rule in AttributionRule::ALL {
+            let label = rule.as_str();
+            let inherent = AttributionRule::from_str(label);
+            let trait_uniform = <AttributionRule as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `AttributionRule::as_str` and the sibling
+        // `AttributionRule::from_ordinal`. A drop of the `const`
+        // qualifier on `AttributionRule::from_str` fails this test to
+        // compile.
+        //
+        // Six `const` bindings — five in-range plus one out-of-set —
+        // route each canonical label through the const-fn inverse in
+        // const position. The moment `from_str` loses its const-ness
+        // one of the six const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection. Sibling of
+        // `attribution_rule_from_ordinal_is_const_callable` on the
+        // scalar-usize surface of the same primitive and of
+        // `secret_operation_from_str_is_const_callable` on the
+        // six-cell secret-client operation axis.
+        const AT_FILE_BY_SOURCE: Option<AttributionRule> =
+            AttributionRule::from_str("file-by-source");
+        const AT_FILE_BY_METADATA_NAME: Option<AttributionRule> =
+            AttributionRule::from_str("file-by-metadata-name");
+        const AT_ENV_BY_PREFIX: Option<AttributionRule> =
+            AttributionRule::from_str("env-by-prefix");
+        const AT_ENV_BY_UNIQUENESS: Option<AttributionRule> =
+            AttributionRule::from_str("env-by-uniqueness");
+        const AT_DEFAULTS_BY_CODE_UNIQUENESS: Option<AttributionRule> =
+            AttributionRule::from_str("defaults-by-code-uniqueness");
+        const AT_UNKNOWN: Option<AttributionRule> =
+            AttributionRule::from_str("file-by-metadata-value");
+
+        assert_eq!(AT_FILE_BY_SOURCE, Some(AttributionRule::FileBySource));
+        assert_eq!(
+            AT_FILE_BY_METADATA_NAME,
+            Some(AttributionRule::FileByMetadataName),
+        );
+        assert_eq!(AT_ENV_BY_PREFIX, Some(AttributionRule::EnvByPrefix));
+        assert_eq!(AT_ENV_BY_UNIQUENESS, Some(AttributionRule::EnvByUniqueness));
+        assert_eq!(
+            AT_DEFAULTS_BY_CODE_UNIQUENESS,
+            Some(AttributionRule::DefaultsByCodeUniqueness),
+        );
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Const recovery vector — the exact static-dispatch consumer
+        // shape the const-ness enables: a `const [Option<AttributionRule>;
+        // AttributionRule::ALL.len()]` array recovered from a
+        // `const [&str; AttributionRule::ALL.len()]` canonical-label
+        // list under `const`. A future drop of const-ness on
+        // `from_str` fails this binding to compile before it can reach
+        // any downstream consumer that assumed a const-context label
+        // dispatch table.
+        const RECOVERY: [Option<AttributionRule>; AttributionRule::ALL.len()] = [
+            AttributionRule::from_str("file-by-source"),
+            AttributionRule::from_str("file-by-metadata-name"),
+            AttributionRule::from_str("env-by-prefix"),
+            AttributionRule::from_str("env-by-uniqueness"),
+            AttributionRule::from_str("defaults-by-code-uniqueness"),
+        ];
+        assert_eq!(
+            RECOVERY,
+            [
+                Some(AttributionRule::FileBySource),
+                Some(AttributionRule::FileByMetadataName),
+                Some(AttributionRule::EnvByPrefix),
+                Some(AttributionRule::EnvByUniqueness),
+                Some(AttributionRule::DefaultsByCodeUniqueness),
+            ],
+        );
     }
 
     #[test]
