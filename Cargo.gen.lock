@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "71e0a6242db40727fad07ee40162e167093f7beb2e8d84ee00dbd4e1474d3b2a",
+  "cargo_lock_sha256": "6005f217fd4bf56f023d428b5a71d0eba6f37f4af921f7671f7e631b5d11e59a",
   "manifest_sha256": {
-    "Cargo.toml": "3985990d300c366e23ac1851919755966371fe0a2c6e18da217237c07a12060e"
+    "Cargo.toml": "14c303cf406f2aa8ad7873c06b5bb5deff2ff0fb7f8b4320e291e7bd23801d4e"
   },
   "target_resolves": {
     "base": {
@@ -82,11 +82,11 @@
           "std"
         ]
       },
-      "cc-1.4.7": {
+      "cc-1.5.1": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
-            "package_key": "find-msvc-tools-0.1.13",
+            "package_key": "find-msvc-tools-0.1.14",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -298,12 +298,12 @@
           "yaml"
         ]
       },
-      "find-msvc-tools-0.1.13": {
+      "find-msvc-tools-0.1.14": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.50": {
+      "gen-macros-0.1.51": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -342,11 +342,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.50": {
+      "gen-platform-0.1.51": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.50",
+            "package_key": "gen-macros-0.1.51",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -356,7 +356,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.50",
+            "package_key": "gen-types-0.1.51",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -410,7 +410,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.50": {
+      "gen-types-0.1.51": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -1170,7 +1170,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.1068": {
+      "shikumi-0.1.1069": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1208,7 +1208,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.50",
+            "package_key": "gen-platform-0.1.51",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1218,7 +1218,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.50",
+            "package_key": "gen-types-0.1.51",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1958,7 +1958,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2194,7 +2194,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2535,7 +2535,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2886,7 +2886,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3137,7 +3137,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3493,7 +3493,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.4.7",
+                "package_key": "cc-1.5.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3824,7 +3824,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.4.7": {
+    "cc-1.5.1": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -3855,20 +3855,20 @@
       "edition": "2018",
       "build_script": "build.rs"
     },
-    "find-msvc-tools-0.1.13": {
+    "find-msvc-tools-0.1.14": {
       "edition": "2021"
     },
     "fsevent-sys-4.1.0": {
       "edition": "2018"
     },
-    "gen-macros-0.1.50": {
+    "gen-macros-0.1.51": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.50": {
+    "gen-platform-0.1.51": {
       "edition": "2024"
     },
-    "gen-types-0.1.50": {
+    "gen-types-0.1.51": {
       "edition": "2024"
     },
     "getrandom-0.4.3": {
@@ -3992,7 +3992,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.1068": {
+    "shikumi-0.1.1069": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
