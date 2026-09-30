@@ -408,6 +408,137 @@ impl TierArg {
         }
     }
 
+    /// Canonical operator-facing lowercase label for the variant tag —
+    /// `"bare"`, `"discovered"`, `"default"`, `"custom"`, `"env"`. The
+    /// scalar-[`&'static str`] peer of [`Self::ordinal`] on the same
+    /// CLI-side five-cell tier-arg axis: where [`Self::ordinal`]
+    /// projects the variant tag onto its dense `0..5` scalar position
+    /// for consumers keying per-arg data by ordinal (a `const [T;
+    /// TierArg::ALL.len()]` dispatch table sized to [`Self::ALL`], a
+    /// per-arg bitset, a compile-time-materialized column layout
+    /// keyed by ordinal), this projects the same variant tag onto its
+    /// dense canonical label for consumers keying per-arg data by
+    /// human-facing string (a `<APP> config-show --tier` documentation
+    /// renderer, a per-arg structured-log tag, a shell-completion
+    /// helper listing the operator-selectable labels, a per-tier
+    /// telemetry counter bucketed by canonical label).
+    ///
+    /// **First landing of the const-fn label-projection idiom on the
+    /// CLI-side five-cell tier-arg axis.** Idiom-peer of the sibling
+    /// CLI-scoped emission-format label projection
+    /// [`OutputFormat::as_str`] on the two-cell emission axis one
+    /// primitive over, and of the crate-side four-way tier-kind label
+    /// projection [`crate::tiered::ConfigTierKind::as_str`] on the
+    /// crate-side sibling — same closed exhaustive match returning
+    /// [`&'static str`] on the canonical lowercase codomain, same
+    /// `const`-callability contract. Reuses the four crate-side tier-
+    /// kind labels ([`"bare"`, `"discovered"`, `"default"`, `"custom"`])
+    /// verbatim on the four shared cells and adds `"env"` as the CLI-
+    /// only fifth cell — the shared byte-for-byte spellings keep the
+    /// crate-side and CLI-side tag projections legible under one
+    /// operator vocabulary for the four cells they share, and the
+    /// CLI-only `"env"` label sits under the same lowercase-alphabetic
+    /// discipline the four shared labels follow.
+    ///
+    /// **Byte-for-byte agreement with clap's `ValueEnum` canonical name.**
+    /// clap's default [`clap::ValueEnum`] derivation lowers each
+    /// variant's identifier to a kebab-case token (a one-word variant
+    /// like every arm on [`TierArg`] just lowercases), so
+    /// `TierArg::Bare` renders as `"bare"` at the CLI seam, matching
+    /// the label this projection emits. A consumer that wants the
+    /// clap-canonical spelling for a rendered [`TierArg`] value (a
+    /// structured-log emit alongside every other clap-canonical token,
+    /// a `--tier bare` operator-facing echo, a completion helper
+    /// listing the allowed labels) previously reached for
+    /// `format!("{arg:?}").to_lowercase()` — the const-fn projection
+    /// here delivers the same string without the allocation and re-
+    /// lowercasing tax, and stays composable through the `const` seam
+    /// the peer projections already carry.
+    ///
+    /// Since [`TierArg`] is not a [`crate::ClosedAxis`] primitive (the
+    /// CLI operator surface sibling of the substrate-side
+    /// [`crate::ConfigTierKind`], which itself owns the trait impl),
+    /// the label projection stays inherent-only for now — the trait-
+    /// uniform [`crate::axis_label`] free function is unreachable
+    /// through this primitive, matching the discipline of
+    /// [`Self::ordinal`] / [`Self::from_ordinal`] on the sibling
+    /// scalar-`usize` surface of the same primitive. A follow-up
+    /// const-fn label-inverse peer [`Self::from_str`] can then weld
+    /// the `(label, ordinal)` cube-inversion square on the CLI-side
+    /// tier-arg axis the same way the sibling CLI-scoped
+    /// [`OutputFormat::from_str`] and every closed-enum axis on
+    /// `watcher.rs` / `hotswap.rs` / `secret.rs` / `secret_client.rs`
+    /// / `error.rs` / `cube.rs` / `coverage.rs` already ship —
+    /// matching the ordinal-first-then-label-then-label-inverse
+    /// discipline the recent
+    /// [`crate::coverage::HintSurface::from_str`],
+    /// [`crate::watcher::WatchEventClass::from_str`], and
+    /// [`crate::SupportCardinalityClass::from_str`] landings shared.
+    ///
+    /// **Round-trip law composed through ordinal** —
+    /// `TierArg::as_str(v) == TierArg::ALL[v.ordinal()].as_str()` for
+    /// every `v: TierArg`. The label projection and the ordinal
+    /// projection share the SAME closed five-cell declaration order
+    /// carried by [`Self::ALL`], so a future edit that shifts one
+    /// match arm without the other fails on the first drifted
+    /// position. Pinned by
+    /// [`tests::tier_arg_as_str_agrees_with_all_index_pointwise`].
+    ///
+    /// **Injectivity** — the five labels are pairwise-distinct, so
+    /// [`Self::as_str`] is an injection into the canonical five-cell
+    /// label codomain. A future edit that duplicates a label across
+    /// two variants collapses the future [`Self::from_str`] inverse
+    /// (and any string-keyed per-arg consumer) onto one variant and
+    /// silently drops the other — the injectivity pin fails first.
+    /// Pinned by
+    /// [`tests::tier_arg_as_str_labels_are_pairwise_distinct`].
+    ///
+    /// **Declaration-order preservation** — the five lowercase labels
+    /// appear in the same relative order they occupy in [`Self::ALL`]:
+    /// `"bare"` ([`Self::Bare`], ordinal 0), `"discovered"`
+    /// ([`Self::Discovered`], ordinal 1), `"default"`
+    /// ([`Self::Default`], ordinal 2), `"custom"` ([`Self::Custom`],
+    /// ordinal 3), `"env"` ([`Self::Env`], ordinal 4). Pinned by
+    /// [`tests::tier_arg_as_str_reuses_declaration_order`].
+    ///
+    /// **Cross-axis agreement with [`crate::tiered::ConfigTierKind::as_str`]** —
+    /// on the four cells the CLI-side and crate-side tier-kind axes
+    /// share (`Bare` / `Discovered` / `Default` / `Custom`), the label
+    /// this projection emits equals the label
+    /// [`crate::tiered::ConfigTierKind::as_str`] emits for the
+    /// corresponding kind — the CLI operator surface and the substrate
+    /// tier-kind primitive speak byte-for-byte the same words for their
+    /// shared cells. The CLI-only [`Self::Env`] arm has no crate-side
+    /// peer (it dispatches through [`crate::ConfigTier::from_env`]
+    /// rather than naming a distinct tier), so the cross-axis pin
+    /// covers only the four shared cells. Pinned by
+    /// [`tests::tier_arg_as_str_agrees_with_config_tier_kind_on_shared_cells`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`], [`Self::from_ordinal`],
+    /// and every peer per-variant projection already carried on the
+    /// [`impl TierArg`] block ([`Self::is_bare`],
+    /// [`Self::is_discovered`], [`Self::is_default`],
+    /// [`Self::is_custom`], [`Self::is_env`], [`Self::is_computed`]).
+    /// Consumers wanting a compile-time-selected per-arg label slot in
+    /// a `const` initializer (e.g. a
+    /// `const [&str; TierArg::ALL.len()]` label vector keyed by
+    /// ordinal for a static `--tier` completion table, a `const`
+    /// per-arg documentation-snippet table indexed by canonical label)
+    /// route through the projection under `const` without dropping
+    /// through a runtime `let` binding. Pinned by
+    /// [`tests::tier_arg_as_str_is_const_callable`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bare => "bare",
+            Self::Discovered => "discovered",
+            Self::Default => "default",
+            Self::Custom => "custom",
+            Self::Env => "env",
+        }
+    }
+
     /// The four COMPUTED-DEFAULTS [`TierArg`] variants —
     /// [`Self::Bare`] (zero-opinion floor), [`Self::Discovered`]
     /// (runtime auto-detect), [`Self::Default`] (curated app
@@ -1976,6 +2107,201 @@ mod tests {
         assert_eq!(CUSTOM, Some(TierArg::Custom));
         assert_eq!(ENV, Some(TierArg::Env));
         assert_eq!(NONE, None);
+    }
+
+    // ─── TierArg::as_str — const-fn label-projection peer on the
+    // ─── CLI operator-facing tier tag ──────────────────────────────
+
+    #[test]
+    fn tier_arg_as_str_reuses_declaration_order() {
+        // Concrete-position pin: the inherent match delivers the five
+        // canonical lowercase labels verbatim, in strictly ascending
+        // declaration order (Bare → Discovered → Default → Custom →
+        // Env). A future swap in the match arms that would still pass
+        // the `agrees_with_all_index` pointwise pin (which reads the
+        // same declaration order out of `TierArg::ALL` on both sides)
+        // fails here first on the drifted arm. Direct methodological
+        // peer of `output_format_as_str_reuses_declaration_order` on
+        // the sibling CLI-scoped two-cell emission-format axis one
+        // primitive over and of
+        // `hint_surface_as_str_reuses_declaration_order` on the
+        // coverage-hint surface axis.
+        assert_eq!(TierArg::Bare.as_str(), "bare");
+        assert_eq!(TierArg::Discovered.as_str(), "discovered");
+        assert_eq!(TierArg::Default.as_str(), "default");
+        assert_eq!(TierArg::Custom.as_str(), "custom");
+        assert_eq!(TierArg::Env.as_str(), "env");
+    }
+
+    #[test]
+    fn tier_arg_as_str_agrees_with_all_index_pointwise() {
+        // Round-trip law composed through `ordinal`:
+        // `v.as_str() == TierArg::ALL[v.ordinal()].as_str()` for every
+        // v: TierArg. The label projection `as_str` and the scalar
+        // projection `ordinal` share the SAME closed five-cell
+        // declaration order (`TierArg::ALL`); a future edit that
+        // shifts the label match without shifting the ordinal match
+        // (or the slice literal) fails here on the first drifted
+        // position. Since `TierArg` is not a `ClosedAxis` primitive
+        // (the CLI operator surface sibling of the substrate-side
+        // `ConfigTierKind`, which itself owns the trait impl), the
+        // pointwise-agreement law targets `Self::ALL` position
+        // directly rather than `crate::axis_label` — matching the
+        // `Self::ALL`-position discipline the sibling
+        // `output_format_as_str_agrees_with_all_index_pointwise` uses
+        // on the peer non-`ClosedAxis` CLI-scoped axis.
+        for (index, &expected) in TierArg::ALL.iter().enumerate() {
+            assert_eq!(
+                expected.as_str(),
+                TierArg::ALL[expected.ordinal()].as_str(),
+                "as_str must agree with TierArg::ALL[ordinal()] for {expected:?}",
+            );
+            // Second witness: the arg at `TierArg::ALL[index]` reports
+            // the same label the freshly-recovered variant does, so
+            // an edit that shifts one match arm without the other
+            // diverges here on the first drifted index.
+            assert_eq!(
+                TierArg::ALL[index].as_str(),
+                expected.as_str(),
+                "TierArg::ALL[{index}] must carry the same label as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_as_str_labels_are_pairwise_distinct() {
+        // Injectivity of the label projection into the canonical five-
+        // cell label codomain: a future edit duplicating a label
+        // across two variants collapses the future `from_str` inverse
+        // onto one variant and silently drops the other. This pin
+        // fires FIRST on that class of drift so the string-keyed
+        // per-arg consumers (a `--tier` documentation renderer, a
+        // per-arg structured-log tag, a shell-completion helper
+        // listing the operator-selectable labels, a per-tier
+        // telemetry counter bucketed by canonical label) never build
+        // atop an ambiguous label codomain.
+        let labels: Vec<&'static str> = TierArg::ALL.iter().map(|a| a.as_str()).collect();
+        assert_eq!(labels.len(), TierArg::ALL.len());
+        for (i, a) in labels.iter().enumerate() {
+            for (j, b) in labels.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                assert_ne!(
+                    a, b,
+                    "labels at ALL[{i}] and ALL[{j}] must be distinct (got {a:?} both)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tier_arg_as_str_agrees_with_config_tier_kind_on_shared_cells() {
+        // Cross-axis agreement law
+        // `arg.as_str() == kind.as_str()` pointwise on the four cells
+        // that TierArg shares with [`crate::ConfigTierKind`]
+        // (`Bare`/`Discovered`/`Default`/`Custom`). The CLI-only
+        // [`TierArg::Env`] arm has no `ConfigTierKind` peer to
+        // compare against — it dispatches through
+        // `ConfigTier::from_env` rather than naming a distinct tier —
+        // so the cross-axis pin covers only the four shared cells.
+        // A future drift of either label from the shared operator
+        // vocabulary fails here before drifting through the crate-
+        // side / CLI-side seam. Direct methodological peer of
+        // `tier_arg_is_computed_agrees_with_config_tier_kind_on_shared_cells`
+        // on the sibling compound-polarity boolean axis and of
+        // `tier_arg_ordinal_agrees_with_all_position_pointwise` on
+        // the sibling scalar-usize surface of the same primitive.
+        use crate::tiered::ConfigTierKind;
+        for (arg, kind) in [
+            (TierArg::Bare, ConfigTierKind::Bare),
+            (TierArg::Discovered, ConfigTierKind::Discovered),
+            (TierArg::Default, ConfigTierKind::Default),
+            (TierArg::Custom, ConfigTierKind::Custom),
+        ] {
+            assert_eq!(
+                arg.as_str(),
+                kind.as_str(),
+                "TierArg::{arg:?} and ConfigTierKind::{kind:?} must agree on \
+                 as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_as_str_is_const_callable() {
+        // Compile-time weld: the (arg → &'static str) projection is
+        // `const`-callable, matching the `const`-ness of
+        // `TierArg::ordinal`, `TierArg::from_ordinal`, and every peer
+        // per-variant projection already carried on the `impl
+        // TierArg` block (`is_bare`, `is_discovered`, `is_default`,
+        // `is_custom`, `is_env`, `is_computed`). A drop of the
+        // `const` qualifier on `TierArg::as_str` fails this test to
+        // compile at one of the five const bindings below before the
+        // drift can reach downstream const-context consumers.
+        // Idiom-peer of `output_format_as_str_is_const_callable` on
+        // the sibling CLI-scoped two-cell emission-format axis and of
+        // `hint_surface_as_str_is_const_callable` on the coverage-
+        // hint surface axis one primitive over.
+        //
+        // Five `const` bindings — one per `TierArg` variant — route
+        // each variant through the const-fn label projection in const
+        // position. The moment `TierArg::as_str` loses its const-ness
+        // one of the five const welds below fails to compile at THAT
+        // line before the drift can reach downstream consumers that
+        // assumed const-ness through the projection (e.g. a
+        // `const [&str; TierArg::ALL.len()]` label vector keyed by
+        // ordinal for a static `--tier` completion table).
+        const BARE: &str = TierArg::Bare.as_str();
+        const DISCOVERED: &str = TierArg::Discovered.as_str();
+        const DEFAULT: &str = TierArg::Default.as_str();
+        const CUSTOM: &str = TierArg::Custom.as_str();
+        const ENV: &str = TierArg::Env.as_str();
+
+        // Compile-time-selected per-arg label vector: the exact
+        // consumer shape the const-ness weld exists to enable. A
+        // future const-drop lands at the initializer below at
+        // compile time before reaching any static completion-table
+        // consumer.
+        const LABELS: [&str; TierArg::ALL.len()] = [
+            TierArg::Bare.as_str(),
+            TierArg::Discovered.as_str(),
+            TierArg::Default.as_str(),
+            TierArg::Custom.as_str(),
+            TierArg::Env.as_str(),
+        ];
+
+        assert_eq!(BARE, "bare");
+        assert_eq!(DISCOVERED, "discovered");
+        assert_eq!(DEFAULT, "default");
+        assert_eq!(CUSTOM, "custom");
+        assert_eq!(ENV, "env");
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `TierArg::ALL` to the runtime-side
+        // `arg.as_str()` call — the const-context weld only exercises
+        // the five variants named at const-binding sites, but the
+        // runtime pin threads the full closed list through the same
+        // projection to catch a future variant landing whose const-
+        // context weld was forgotten upstream.
+        for (arg, expected) in [
+            (TierArg::Bare, BARE),
+            (TierArg::Discovered, DISCOVERED),
+            (TierArg::Default, DEFAULT),
+            (TierArg::Custom, CUSTOM),
+            (TierArg::Env, ENV),
+        ] {
+            assert_eq!(arg.as_str(), expected, "arg {arg:?}");
+        }
+
+        // Const-context weld → runtime consumer: the `LABELS` array
+        // lands the const-fn label projection in an initializer keyed
+        // by ordinal, and the pointwise pin below welds that ordinal-
+        // keyed static vector to the runtime `arg.as_str()` call
+        // across every variant in `TierArg::ALL`.
+        for (index, &arg) in TierArg::ALL.iter().enumerate() {
+            assert_eq!(LABELS[index], arg.as_str(), "LABELS[{index}]");
+        }
     }
 
     // ── TierArg COMPUTED / CUSTOM compound-polarity slice constants
