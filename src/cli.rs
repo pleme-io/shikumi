@@ -539,6 +539,140 @@ impl TierArg {
         }
     }
 
+    /// The variant-side inverse of [`Self::as_str`] — recovers the
+    /// [`TierArg`] variant whose canonical lowercase label is `s`,
+    /// wrapped in [`Some`], for every value in the closed five-cell
+    /// label codomain [`Self::as_str`] emits — and [`None`] for any
+    /// input outside that codomain (mixed case, whitespace-flanked,
+    /// `snake_case`, empty string, adjacent-primitive labels, a
+    /// hypothetical future-variant label).
+    ///
+    /// The bounded five-cell match delivers:
+    ///
+    /// - `"bare"` → [`Some`]`(`[`Self::Bare`]`)`
+    /// - `"discovered"` → [`Some`]`(`[`Self::Discovered`]`)`
+    /// - `"default"` → [`Some`]`(`[`Self::Default`]`)`
+    /// - `"custom"` → [`Some`]`(`[`Self::Custom`]`)`
+    /// - `"env"` → [`Some`]`(`[`Self::Env`]`)`
+    /// - any other `&str` → [`None`]
+    ///
+    /// **Welds the (label, ordinal) cube-inversion square on the CLI-
+    /// side five-cell tier-arg axis.** Scalar-`&str` peer of the shipped
+    /// scalar-`usize` inverse [`Self::from_ordinal`] on the same closed
+    /// axis, closing the label leg of the (forward, inverse) × (label,
+    /// ordinal) commuting square that the sibling CLI-scoped
+    /// [`OutputFormat::from_str`] and every closed-enum axis on
+    /// `watcher.rs` / `hotswap.rs` / `secret.rs` / `secret_client.rs` /
+    /// `error.rs` / `cube.rs` / `coverage.rs` already ships — matching
+    /// the ordinal-first-then-label discipline the recent
+    /// [`crate::coverage::HintSurface::from_str`] and
+    /// [`crate::watcher::WatchEventClass::from_str`] landings shared.
+    /// Exact-byte case-sensitive, mirroring the discipline of the
+    /// sibling CLI-scoped [`OutputFormat::from_str`] const-fn label
+    /// inverse and of every other const-fn scalar inverse on the crate
+    /// — a caller wanting case-insensitive parsing (an operator-typed
+    /// `--tier BARE` at a CLI, a mixed-case tag in a Markdown-rendered
+    /// documentation reference) lowercases at their own site or reaches
+    /// for clap's [`clap::ValueEnum::from_str`] with `ignore_case: true`
+    /// at the CLI seam.
+    ///
+    /// The `&str` codomain of [`Self::as_str`] is unbounded on its own
+    /// (any [`&str`] may reach the seam), while the [`TierArg`] variant
+    /// surface is closed at cardinality-5 today; the inverse therefore
+    /// returns [`Option<Self>`] rather than a total `Self`, keeping the
+    /// "not on the canonical variant surface" case a typed [`None`]
+    /// rather than a fabricated variant a consumer could route on.
+    /// Since [`TierArg`] is not a [`crate::ClosedAxis`] primitive (the
+    /// CLI operator surface sibling of the substrate-side
+    /// [`crate::ConfigTierKind`], which itself owns the trait impl and
+    /// its case-insensitive [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// delegate), the label inverse stays inherent-only for now,
+    /// matching the discipline of [`Self::ordinal`] / [`Self::from_ordinal`]
+    /// / [`Self::as_str`] on the sibling scalar surfaces of the same
+    /// primitive.
+    ///
+    /// **Round-trip law** —
+    /// `TierArg::from_str(v.as_str()) == Some(v)` for every
+    /// `v: TierArg`. Composes with [`Self::as_str`] on the same closed
+    /// five-cell label table both projections match against; the law
+    /// holds by construction. Pinned by
+    /// [`tests::tier_arg_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `TierArg::from_str(s) == None` for every `s` outside the
+    /// canonical five-cell set `{"bare", "discovered", "default",
+    /// "custom", "env"}`. The closed match's `_` arm forwards the
+    /// off-surface case to [`None`] structurally; the guard degrades
+    /// gracefully on a caller passing a stale wire-format label from a
+    /// version-skewed peer, a mixed-case operator-typed CLI argument
+    /// that never went through clap's `ignore_case` lowering, the
+    /// empty string, or a hypothetical sixth-variant label a future
+    /// extension would introduce. Pinned by
+    /// [`tests::tier_arg_from_str_rejects_non_canonical`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side, of
+    /// [`Self::from_ordinal`] on the sibling scalar-`usize` inverse,
+    /// and of every peer per-variant projection already carried on the
+    /// `impl TierArg` block ([`Self::is_bare`], [`Self::is_discovered`],
+    /// [`Self::is_default`], [`Self::is_custom`], [`Self::is_env`],
+    /// [`Self::is_computed`], all `pub const fn`). Consumers wanting a
+    /// compile-time-selected canonical-label → variant dispatch (a
+    /// `const [Option<TierArg>; TierArg::ALL.len()]` recovery vector
+    /// keyed by canonical-label order for a static `--tier` completion
+    /// helper, a `const` per-arg retry-budget slot in a `const`
+    /// initializer keyed by canonical label, a compile-time-materialized
+    /// documentation-snippet table keyed by operator-typed label) route
+    /// through the projection under `const` without dropping through a
+    /// runtime `let` binding. Pinned by
+    /// [`tests::tier_arg_from_str_is_const_callable`].
+    ///
+    /// **Agreement with [`Self::as_str`] pointwise** —
+    /// `TierArg::from_str(v.as_str()) == Some(v)` for every
+    /// `v: TierArg`. The inherent match and the forward [`Self::as_str`]
+    /// match carry the same five-cell label mapping; the test below
+    /// pins the pointwise agreement across every variant, and a future
+    /// edit that shifts the label on ONE match without the other fails
+    /// at test time on the first drifted arm. Pinned by
+    /// [`tests::tier_arg_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square weld with [`Self::from_ordinal`]** —
+    /// the label leg (`from_str ∘ as_str`) and the ordinal leg
+    /// (`from_ordinal ∘ ordinal`) of the (forward, inverse) × (label,
+    /// ordinal) commuting square agree on every variant. A future edit
+    /// shifting the position of one variant on ONE inverse (say a swap
+    /// of `Custom` and `Env` on the `from_str` match but not on the
+    /// `from_ordinal` match, or vice versa) fails at test time on the
+    /// first drifted variant before reaching a consumer that assumed
+    /// both legs of the square recover the same variant. Pinned by
+    /// [`tests::tier_arg_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Cross-axis agreement with [`crate::tiered::ConfigTierKind::from_str`]** —
+    /// on the four cells the CLI-side and crate-side tier-kind axes
+    /// share (`Bare` / `Discovered` / `Default` / `Custom`), the
+    /// variant this inverse recovers from the canonical label agrees
+    /// with the tier kind [`crate::tiered::ConfigTierKind::from_str`]
+    /// recovers from the same label — the CLI operator surface and the
+    /// substrate tier-kind primitive parse byte-for-byte the same words
+    /// on their shared cells. The CLI-only [`Self::Env`] arm has no
+    /// crate-side peer (it dispatches through
+    /// [`crate::ConfigTier::from_env`] rather than naming a distinct
+    /// tier), so the cross-axis pin covers only the four shared cells.
+    /// Pinned by
+    /// [`tests::tier_arg_from_str_agrees_with_config_tier_kind_on_shared_cells`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"bare" => Some(Self::Bare),
+            b"discovered" => Some(Self::Discovered),
+            b"default" => Some(Self::Default),
+            b"custom" => Some(Self::Custom),
+            b"env" => Some(Self::Env),
+            _ => None,
+        }
+    }
+
     /// The four COMPUTED-DEFAULTS [`TierArg`] variants —
     /// [`Self::Bare`] (zero-opinion floor), [`Self::Discovered`]
     /// (runtime auto-detect), [`Self::Default`] (curated app
@@ -2301,6 +2435,275 @@ mod tests {
         // across every variant in `TierArg::ALL`.
         for (index, &arg) in TierArg::ALL.iter().enumerate() {
             assert_eq!(LABELS[index], arg.as_str(), "LABELS[{index}]");
+        }
+    }
+
+    // ─── TierArg::from_str — const-fn label-inverse peer on the
+    // ─── CLI operator-facing tier tag ──────────────────────────────
+
+    #[test]
+    fn tier_arg_from_str_round_trips_via_as_str() {
+        // Round-trip law: `TierArg::from_str(v.as_str()) == Some(v)`
+        // for every `v: TierArg`. The forward-map `as_str` and the
+        // const-fn inverse-map `from_str` share the SAME closed five-
+        // cell label table (`"bare"`, `"discovered"`, `"default"`,
+        // `"custom"`, `"env"` in `TierArg::ALL` declaration order); the
+        // law holds by construction. Sibling of
+        // `output_format_from_str_round_trips_via_as_str` on the CLI-
+        // scoped two-cell emission-format axis one primitive over, and
+        // of `tier_arg_from_ordinal_round_trips_via_ordinal` on the
+        // scalar-usize surface of the same primitive.
+        for &arg in TierArg::ALL {
+            let rendered = arg.as_str();
+            let recovered = TierArg::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(arg),
+                "round-trip failed for {arg:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-label pin — the five `(label, variant)` pairs the
+        // closed match delivers verbatim, in declaration order. An
+        // edit that shifted either arm without shifting the sibling
+        // `as_str` arm in lockstep fails here on the first drifted
+        // pair, before the closed-form round-trip pin above masks the
+        // divergence under `for` iteration.
+        assert_eq!(TierArg::from_str("bare"), Some(TierArg::Bare));
+        assert_eq!(TierArg::from_str("discovered"), Some(TierArg::Discovered));
+        assert_eq!(TierArg::from_str("default"), Some(TierArg::Default));
+        assert_eq!(TierArg::from_str("custom"), Some(TierArg::Custom));
+        assert_eq!(TierArg::from_str("env"), Some(TierArg::Env));
+    }
+
+    #[test]
+    fn tier_arg_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical five-cell set `{"bare", "discovered", "default",
+        // "custom", "env"}` — the codomain of `as_str` — resolves to
+        // `None` via the closed match's `_` arm. Sweeps mixed-case
+        // (`"BARE"`, `"Bare"`, `"bArE"`), leading/trailing whitespace
+        // (`"bare "`, `" default"`, `"env\n"`), the empty string,
+        // adjacent-primitive labels a hypothetical future extension
+        // might introduce (`"runtime"`, `"file"`, `"prescribed"`),
+        // near-miss spellings from adjacent primitives on the sealed
+        // fold (`"yaml"` / `"json"` — the sibling `OutputFormat`
+        // labels one primitive over, valid there, rejected here), and
+        // labels that look like a canonical spelling with trailing
+        // junk. The case-sensitivity discipline matches the sibling
+        // CLI-scoped `OutputFormat::from_str` and
+        // `HintSurface::from_str` const-fn label inverses.
+        for bad in &[
+            "",
+            " ",
+            "BARE",
+            "Bare",
+            "bArE",
+            "bare ",
+            " bare",
+            "bare\n",
+            "DISCOVERED",
+            "Discovered",
+            "dIsCoVeReD",
+            "discovered ",
+            " discovered",
+            "discovered\n",
+            "DEFAULT",
+            "Default",
+            "dEfAuLt",
+            "default ",
+            " default",
+            "default\n",
+            "CUSTOM",
+            "Custom",
+            "cUsToM",
+            "custom ",
+            " custom",
+            "custom\n",
+            "ENV",
+            "Env",
+            "eNv",
+            "env ",
+            " env",
+            "env\n",
+            "runtime",
+            "file",
+            "prescribed",
+            "prescribed_default",
+            "prescribed-default",
+            "yaml",
+            "json",
+            "toml",
+            "null",
+            "baredefault",
+            "b",
+            "d",
+            "c",
+            "e",
+        ] {
+            assert_eq!(
+                TierArg::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in `TierArg::ALL`. Both the inherent `from_str` match
+        // and the forward `as_str` match derive their label table from
+        // the same five-cell declaration; a future edit that shifts
+        // the label on ONE match (say renaming the `Env` arm's label
+        // to `"environment"` on the `as_str` side but not the
+        // `from_str` side, or vice versa) fails here on the first
+        // drifted arm. Sibling of
+        // `output_format_from_str_agrees_with_as_str_pointwise` on the
+        // CLI-scoped two-cell emission-format axis one primitive over
+        // and of `hint_surface_from_str_agrees_with_as_str_pointwise`
+        // on the coverage-hint surface axis.
+        for &arg in TierArg::ALL {
+            let rendered = arg.as_str();
+            let recovered = TierArg::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(arg),
+                "pointwise agreement failed for {arg:?}: as_str={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion-square weld: the label leg and the ordinal
+        // leg of the (forward, inverse) × (label, ordinal) commuting
+        // square agree on every variant. For every `v: TierArg`, both
+        // `TierArg::from_str(v.as_str())` and
+        // `TierArg::from_ordinal(v.ordinal())` return `Some(v)` — and
+        // both agree on the same recovered variant. This pin cross-
+        // checks the label-inverse peer against the shipped ordinal-
+        // inverse peer on the same closed five-cell axis so that a
+        // future edit shifting the position of one variant on ONE
+        // inverse (say a swap of `Custom` and `Env` on the `from_str`
+        // match but not on the `from_ordinal` match, or vice versa)
+        // fails here on the first drifted variant before reaching a
+        // consumer that assumed both legs of the square recover the
+        // same variant. Direct methodological peer of
+        // `hint_surface_from_str_and_from_ordinal_agree_pointwise` on
+        // the coverage-hint surface axis one primitive over.
+        for &arg in TierArg::ALL {
+            let via_label = TierArg::from_str(arg.as_str());
+            let via_ordinal = TierArg::from_ordinal(arg.ordinal());
+            assert_eq!(via_label, Some(arg), "label leg failed for {arg:?}");
+            assert_eq!(via_ordinal, Some(arg), "ordinal leg failed for {arg:?}");
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square legs diverged for {arg:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_from_str_agrees_with_config_tier_kind_on_shared_cells() {
+        // Cross-axis agreement law
+        // `TierArg::from_str(label) == config-tier-kind-then-TierArg(label)`
+        // pointwise on the four cells that TierArg shares with
+        // [`crate::ConfigTierKind`] (`Bare` / `Discovered` / `Default`
+        // / `Custom`). For each shared cell, the canonical label the
+        // CLI-side `as_str` emits parses through both the CLI-side
+        // `TierArg::from_str` inverse and the crate-side
+        // `ConfigTierKind::from_str` inverse, and both recover the
+        // corresponding variant on the same axis. The CLI-only
+        // [`TierArg::Env`] arm has no `ConfigTierKind` peer to compare
+        // against — it dispatches through `ConfigTier::from_env`
+        // rather than naming a distinct tier — so the cross-axis pin
+        // covers only the four shared cells. A future drift of either
+        // label from the shared operator vocabulary would fail
+        // `tier_arg_as_str_agrees_with_config_tier_kind_on_shared_cells`
+        // one seam over on the forward side; this inverse-side pin
+        // catches a drift that shifted the inverse match on one side
+        // without shifting the sibling forward match in lockstep.
+        // Direct inverse-side peer of
+        // `tier_arg_as_str_agrees_with_config_tier_kind_on_shared_cells`
+        // on the same primitive.
+        use crate::tiered::ConfigTierKind;
+        for (arg, kind) in [
+            (TierArg::Bare, ConfigTierKind::Bare),
+            (TierArg::Discovered, ConfigTierKind::Discovered),
+            (TierArg::Default, ConfigTierKind::Default),
+            (TierArg::Custom, ConfigTierKind::Custom),
+        ] {
+            let label = arg.as_str();
+            assert_eq!(
+                TierArg::from_str(label),
+                Some(arg),
+                "TierArg::from_str({label:?}) must recover {arg:?}",
+            );
+            assert_eq!(
+                ConfigTierKind::from_str(label),
+                Some(kind),
+                "ConfigTierKind::from_str({label:?}) must recover {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_arg_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `TierArg::as_str` and the sibling
+        // `TierArg::from_ordinal`. A drop of the `const` qualifier on
+        // `TierArg::from_str` fails this test to compile at one of
+        // the six const bindings below before the drift can reach
+        // downstream const-context consumers. Sibling of
+        // `output_format_from_str_is_const_callable` on the CLI-scoped
+        // two-cell emission-format axis and of
+        // `hint_surface_from_str_is_const_callable` on the coverage-
+        // hint surface axis one primitive over.
+        //
+        // Six `const` bindings — five in-range plus one out-of-set
+        // sentinel — route each canonical label through the const-fn
+        // inverse in const position. The moment `from_str` loses its
+        // const-ness one of the six const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        const AT_BARE: Option<TierArg> = TierArg::from_str("bare");
+        const AT_DISCOVERED: Option<TierArg> = TierArg::from_str("discovered");
+        const AT_DEFAULT: Option<TierArg> = TierArg::from_str("default");
+        const AT_CUSTOM: Option<TierArg> = TierArg::from_str("custom");
+        const AT_ENV: Option<TierArg> = TierArg::from_str("env");
+        const AT_UNKNOWN: Option<TierArg> = TierArg::from_str("runtime");
+
+        assert_eq!(AT_BARE, Some(TierArg::Bare));
+        assert_eq!(AT_DISCOVERED, Some(TierArg::Discovered));
+        assert_eq!(AT_DEFAULT, Some(TierArg::Default));
+        assert_eq!(AT_CUSTOM, Some(TierArg::Custom));
+        assert_eq!(AT_ENV, Some(TierArg::Env));
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Compile-time-selected canonical-label → variant recovery
+        // table: the exact consumer shape the const-ness weld exists
+        // to enable. A future const-drop lands at the initializer
+        // below at compile time before reaching any static dispatch
+        // table consumer.
+        const RECOVERED: [Option<TierArg>; TierArg::ALL.len()] = [
+            TierArg::from_str("bare"),
+            TierArg::from_str("discovered"),
+            TierArg::from_str("default"),
+            TierArg::from_str("custom"),
+            TierArg::from_str("env"),
+        ];
+
+        // Cross-check: the const-context weld recovers exactly
+        // `TierArg::ALL` in declaration order — welding the ordinal-
+        // keyed const dispatch table to the runtime closed-list oracle.
+        for (index, &arg) in TierArg::ALL.iter().enumerate() {
+            assert_eq!(
+                RECOVERED[index],
+                Some(arg),
+                "RECOVERED[{index}] disagrees with TierArg::ALL",
+            );
         }
     }
 
