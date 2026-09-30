@@ -3893,6 +3893,132 @@ impl SecretClientKind {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..7` — the exact
+    /// seven-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded seven-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Mem`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Command`]`)`
+    /// - `2` → [`Some`]`(`[`Self::Akeyless`]`)`
+    /// - `3` → [`Some`]`(`[`Self::AwsSecretsManager`]`)`
+    /// - `4` → [`Some`]`(`[`Self::OpConnect`]`)`
+    /// - `5` → [`Some`]`(`[`Self::Vault`]`)`
+    /// - `6` → [`Some`]`(`[`Self::GcpSecretManager`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// First landing of the const-fn ordinal-inverse peer idiom on the
+    /// secret-client RUNTIME-CLIENT KIND axis — the third closed-primitive
+    /// axis carried in `secret_client.rs` after
+    /// [`SecretErrorKind::from_ordinal`] on the five-cell error-kind axis
+    /// (commit `a6e94a1`) and [`SecretOperation::from_ordinal`] on the
+    /// six-cell operation axis (commit `e078cc7`). Every prior landing of
+    /// the (`ordinal`, `from_ordinal`) round-trip pair targeted a
+    /// closed-enum axis primitive one seam over
+    /// ([`SecretErrorKind::from_ordinal`],
+    /// [`SecretOperation::from_ordinal`],
+    /// [`crate::error::AttributionRule::from_ordinal`],
+    /// [`crate::error::FieldPathLocalization::from_ordinal`],
+    /// [`crate::error::ShikumiErrorKind::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`],
+    /// [`crate::secret::SecretRefShape::from_ordinal`],
+    /// [`crate::hotswap::SameStoreImpossibilityKind::from_ordinal`],
+    /// [`crate::hotswap::SameStoreConsistencyKind::from_ordinal`],
+    /// [`crate::hotswap::ProofRelationKind::from_ordinal`],
+    /// [`crate::coverage::HintSurface::from_ordinal`],
+    /// [`crate::cli::TierArg::from_ordinal`]); this landing closes the
+    /// same partial-inverse discipline on the seven-cell runtime-client
+    /// kind axis, keeping the "not on the variant surface" case a typed
+    /// [`None`] rather than a fabricated variant. With this landing the
+    /// runtime-client kind axis carries the (`ordinal`, `from_ordinal`)
+    /// round-trip pair on the scalar-[`usize`] surface as a
+    /// const-callable inherent — the same shape the sibling closed-enum
+    /// axes already ship.
+    ///
+    /// **Round-trip law** —
+    /// `SecretClientKind::from_ordinal(v.ordinal()) == Some(v)` for
+    /// every `v: SecretClientKind`. The forward-map [`Self::ordinal`]
+    /// and the const-fn inverse-map [`Self::from_ordinal`] share the
+    /// SAME closed seven-cell declaration order ([`Self::ALL`],
+    /// mirroring the arm order in [`Self::ordinal`]); the law holds
+    /// by construction. Pinned by
+    /// [`tests::secret_client_kind_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `SecretClientKind::from_ordinal(o) == None` for every `o >= 7`.
+    /// The closed match's `_` arm forwards the out-of-range case to
+    /// [`None`] structurally; the guard degrades gracefully on a
+    /// caller passing a stale wire-format ordinal from a version-
+    /// skewed peer (e.g. a build speaking a superset with an eighth
+    /// `AzureKeyVault` runtime client the local build has not landed)
+    /// or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::secret_client_kind_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `SecretClientKind::from_ordinal(i) == Some(Self::ALL[i])` for
+    /// every `i` in `0..Self::ALL.len()`. The inherent match and the
+    /// [`Self::ALL`] slice literal carry the same declaration order,
+    /// so the test below pins the pointwise agreement and a future
+    /// edit that shifts one without the other fails at test time on
+    /// the first drifted position. Pinned by
+    /// [`tests::secret_client_kind_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `SecretClientKind::from_ordinal(o) == crate::axis_at::<Self>(o)`
+    /// for every `o: usize` across both the in-range prefix and the
+    /// out-of-range tail. Where [`crate::axis_at`] delegates through
+    /// the [`crate::ClosedAxis`] impl to a bounds-checked [`Self::ALL`]
+    /// slice index, this method routes through the closed seven-cell
+    /// match; the pointwise-agreement pin keeps the two seams
+    /// substitutable. Pinned by
+    /// [`tests::secret_client_kind_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] on the sibling scalar-label surface.
+    /// Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (a `const [SecretClientKind; 7]` variant array
+    /// recovered from a `const [u8; 7]` wire-format ordinal list, a
+    /// per-client retry-policy slot in a `const` initializer keyed by
+    /// ordinal, a `const` per-client weight vector partitioning the
+    /// cloud-Secret-Manager half ([`Self::AwsSecretsManager`],
+    /// [`Self::GcpSecretManager`]) from the everything-else half
+    /// ([`Self::Mem`], [`Self::Command`], [`Self::Akeyless`],
+    /// [`Self::OpConnect`], [`Self::Vault`]) keyed by ordinal, a
+    /// per-client attestation-manifest slot bucketing captured-
+    /// failure histograms keyed by ordinal) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding that [`crate::axis_at::<SecretClientKind>`]
+    /// currently requires (it delegates through [`Iterator::position`]
+    /// over a generic [`crate::ClosedAxis`] trait bound, non-`const`
+    /// on today's toolchain). Pinned by
+    /// [`tests::secret_client_kind_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Mem),
+            1 => Some(Self::Command),
+            2 => Some(Self::Akeyless),
+            3 => Some(Self::AwsSecretsManager),
+            4 => Some(Self::OpConnect),
+            5 => Some(Self::Vault),
+            6 => Some(Self::GcpSecretManager),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Mem`]; equivalent to
     /// `self == SecretClientKind::Mem`. Per-variant sibling predicate
     /// on the closed seven-way runtime-client kind partition.
@@ -13972,6 +14098,175 @@ mod tests {
             (SecretClientKind::GcpSecretManager, GCP_SECRET_MANAGER),
         ] {
             assert_eq!(kind.ordinal(), expected, "kind {kind:?}");
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `SecretClientKind::from_ordinal(v.ordinal()) ==
+        // Some(v)` for every v: SecretClientKind. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed seven-cell declaration order
+        // (`SecretClientKind::ALL`, mirroring the arm order in
+        // `SecretClientKind::ordinal`); the law holds by construction.
+        // Sibling of `secret_error_kind_from_ordinal_round_trips_via_ordinal`
+        // on the five-cell error-kind axis and of
+        // `secret_operation_from_ordinal_round_trips_via_ordinal` on the
+        // six-cell operation axis one impl block over, extended here
+        // onto the seven-cell runtime-client kind axis — the first
+        // landing of the round-trip inversion law on the
+        // runtime-client kind primitive.
+        for &kind in SecretClientKind::ALL {
+            let ordinal = kind.ordinal();
+            let recovered = SecretClientKind::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 7` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format ordinal from a version-skewed peer (e.g.
+        // a build speaking a superset with an eighth `AzureKeyVault`
+        // runtime client the local build has not landed) or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `secret_error_kind_from_ordinal_rejects_out_of_range` on the
+        // five-cell error-kind axis and of
+        // `secret_operation_from_ordinal_rejects_out_of_range` on the
+        // six-cell operation axis one impl block over.
+        let card = SecretClientKind::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                SecretClientKind::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme `usize::MAX` to guard the closed match's `_` arm on
+        // the largest representable index.
+        assert_eq!(
+            SecretClientKind::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            SecretClientKind::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(SecretClientKind::ALL[i])` for every
+        // i in 0..ALL.len() — the inverse of `ordinal` agrees with
+        // the same `Self::ALL` slice literal `ordinal` matches
+        // against. A future edit shifting one match without the
+        // other fails here on the first drifted index. Sibling of
+        // `secret_error_kind_from_ordinal_agrees_with_all_index_pointwise`
+        // and `secret_operation_from_ordinal_agrees_with_all_index_pointwise`
+        // on the sibling closed-axis primitives.
+        for (index, &expected) in SecretClientKind::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretClientKind::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with SecretClientKind::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (7) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            SecretClientKind::from_ordinal(SecretClientKind::ALL.len()),
+            None,
+            "ordinal equal to SecretClientKind::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent seven-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both `None`).
+        // Where `axis_at` delegates through the `ClosedAxis` impl to a
+        // bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal.
+        let card = SecretClientKind::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                SecretClientKind::from_ordinal(o),
+                crate::axis_at::<SecretClientKind>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretClientKind::ordinal` and the sibling
+        // `SecretClientKind::as_str`. A drop of the `const` qualifier
+        // on `SecretClientKind::from_ordinal` fails this test to
+        // compile. Sibling of
+        // `secret_error_kind_from_ordinal_is_const_callable` and
+        // `secret_operation_from_ordinal_is_const_callable` on the
+        // sibling closed-axis primitives, extended here onto the
+        // seven-cell runtime-client kind axis.
+        //
+        // Eight `const` bindings — seven in-range plus one out-of-range
+        // — route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the eight const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<SecretClientKind> = SecretClientKind::from_ordinal(0);
+        const AT_1: Option<SecretClientKind> = SecretClientKind::from_ordinal(1);
+        const AT_2: Option<SecretClientKind> = SecretClientKind::from_ordinal(2);
+        const AT_3: Option<SecretClientKind> = SecretClientKind::from_ordinal(3);
+        const AT_4: Option<SecretClientKind> = SecretClientKind::from_ordinal(4);
+        const AT_5: Option<SecretClientKind> = SecretClientKind::from_ordinal(5);
+        const AT_6: Option<SecretClientKind> = SecretClientKind::from_ordinal(6);
+        const AT_OOR: Option<SecretClientKind> =
+            SecretClientKind::from_ordinal(SecretClientKind::ALL.len());
+
+        assert_eq!(AT_0, Some(SecretClientKind::Mem));
+        assert_eq!(AT_1, Some(SecretClientKind::Command));
+        assert_eq!(AT_2, Some(SecretClientKind::Akeyless));
+        assert_eq!(AT_3, Some(SecretClientKind::AwsSecretsManager));
+        assert_eq!(AT_4, Some(SecretClientKind::OpConnect));
+        assert_eq!(AT_5, Some(SecretClientKind::Vault));
+        assert_eq!(AT_6, Some(SecretClientKind::GcpSecretManager));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `SecretClientKind::ALL` to its index —
+        // the const-context welds above only exercise the seven
+        // variants named at const-binding sites plus one out-of-range
+        // sentinel, but the runtime pin threads the full closed
+        // seven-cell list through the same projection to catch a
+        // future variant landing whose const-context weld was
+        // forgotten upstream.
+        for (index, &variant) in SecretClientKind::ALL.iter().enumerate() {
+            assert_eq!(
+                SecretClientKind::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
