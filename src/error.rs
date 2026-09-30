@@ -5995,6 +5995,110 @@ impl AttributionConfidence {
         }
     }
 
+    /// Const-fn ordinal → variant inverse of [`Self::ordinal`]. Returns
+    /// [`Some(variant)`][Some] for every `ordinal` in `0..2` — the exact
+    /// two-cell range [`Self::ordinal`] emits — and [`None`] for any
+    /// larger value.
+    ///
+    /// The bounded two-cell match delivers:
+    ///
+    /// - `0` → [`Some`]`(`[`Self::Exact`]`)`
+    /// - `1` → [`Some`]`(`[`Self::Fallback`]`)`
+    /// - `_` → [`None`]
+    ///
+    /// Sibling landing of the const-fn ordinal-inverse peer idiom on
+    /// the confidence axis. Every prior landing of the (`ordinal`,
+    /// `from_ordinal`) round-trip pair targeted a closed-enum axis
+    /// primitive one seam over ([`ShikumiErrorKind::from_ordinal`],
+    /// [`FieldPathLocalization::from_ordinal`],
+    /// [`AttributionRule::from_ordinal`],
+    /// [`crate::ConfigSourceKind::from_ordinal`],
+    /// [`crate::ConfigTierKind::from_ordinal`],
+    /// [`crate::DiffLineKind::from_ordinal`],
+    /// [`crate::OutputFormat::from_ordinal`],
+    /// [`crate::FigmentSourceKind::from_ordinal`],
+    /// [`crate::FigmentNameTagKind::from_ordinal`],
+    /// [`crate::EnvMetadataTagKind::from_ordinal`],
+    /// [`crate::Format::from_ordinal`],
+    /// [`crate::FormatProvenance::from_ordinal`],
+    /// [`crate::watcher::WatchEventClass::from_ordinal`],
+    /// [`crate::secret::SecretBackendKind::from_ordinal`],
+    /// [`crate::SecretRefShape::from_ordinal`],
+    /// [`crate::SecretErrorKind::from_ordinal`],
+    /// [`crate::SecretOperation::from_ordinal`],
+    /// [`crate::SecretClientKind::from_ordinal`]); this landing closes
+    /// the same partial-inverse discipline on the two-cell confidence
+    /// axis, keeping the "not on the variant surface" case a typed
+    /// [`None`] rather than a fabricated variant. With this landing
+    /// the confidence axis carries the (`ordinal`, `from_ordinal`)
+    /// round-trip pair on the scalar-[`usize`] surface as a
+    /// const-callable inherent — the same shape the sibling closed-
+    /// enum axes already ship. The confidence axis is the source-
+    /// altitude projection of [`AttributionRule::confidence`] through
+    /// the (exact × fallback) partition, so the const-fn ordinal-
+    /// inverse here places the confidence altitude on the same
+    /// partial-inverse footing as the rule altitude one seam up in
+    /// the same module already carries.
+    ///
+    /// **Round-trip law** —
+    /// `AttributionConfidence::from_ordinal(v.ordinal()) == Some(v)`
+    /// for every `v: AttributionConfidence`. The forward-map
+    /// [`Self::ordinal`] and the const-fn inverse-map
+    /// [`Self::from_ordinal`] share the SAME closed two-cell
+    /// declaration order ([`Self::ALL`], mirroring the arm order in
+    /// [`Self::ordinal`]); the law holds by construction. Pinned by
+    /// [`tests::attribution_confidence_from_ordinal_round_trips_via_ordinal`].
+    ///
+    /// **Out-of-range rejection** —
+    /// `AttributionConfidence::from_ordinal(o) == None` for every
+    /// `o >= 2`. The closed match's `_` arm forwards the out-of-range
+    /// case to [`None`] structurally; the guard degrades gracefully on
+    /// a caller passing a stale wire-format ordinal from a version-
+    /// skewed peer or an operator-typed CLI argument routed through
+    /// [`str::parse::<usize>`][str::parse] without a bounds check.
+    /// Pinned by
+    /// [`tests::attribution_confidence_from_ordinal_rejects_out_of_range`].
+    ///
+    /// **Pointwise agreement with [`Self::ALL`] index** —
+    /// `AttributionConfidence::from_ordinal(i) == Some(Self::ALL[i])`
+    /// for every `i` in `0..Self::ALL.len()`. The inherent match and
+    /// the [`Self::ALL`] slice literal carry the same declaration
+    /// order, so the test below pins the pointwise agreement and a
+    /// future edit that shifts one without the other fails at test
+    /// time on the first drifted position. Pinned by
+    /// [`tests::attribution_confidence_from_ordinal_agrees_with_all_index_pointwise`].
+    ///
+    /// **Pointwise agreement with [`crate::axis_at`]** —
+    /// `AttributionConfidence::from_ordinal(o) ==
+    /// crate::axis_at::<Self>(o)` for every `o: usize` across both the
+    /// in-range prefix and the out-of-range tail. Where
+    /// [`crate::axis_at`] delegates through the [`crate::ClosedAxis`]
+    /// impl to a bounds-checked [`Self::ALL`] slice index, this method
+    /// routes through the closed two-cell match; the pointwise-
+    /// agreement pin keeps the two seams substitutable. Pinned by
+    /// [`tests::attribution_confidence_from_ordinal_agrees_with_axis_at_pointwise`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::ordinal`] on the forward side and
+    /// of [`Self::as_str`] on the sibling scalar-label surface.
+    /// Consumers wanting a compile-time-selected ordinal-keyed
+    /// dispatch table (e.g. a `const [AttributionConfidence; 2]`
+    /// variant array indexed by ordinal, a `const` per-confidence
+    /// weight vector keyed by ordinal that weights fallback-pole
+    /// attributions visibly weaker than exact-pole ones, a per-
+    /// confidence attestation-manifest slot in a `const` initializer
+    /// keyed by ordinal) route through the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::attribution_confidence_from_ordinal_is_const_callable`].
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        match ordinal {
+            0 => Some(Self::Exact),
+            1 => Some(Self::Fallback),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Exact`]; equivalent to
     /// `self == AttributionConfidence::Exact`.
     ///
@@ -10173,6 +10277,157 @@ mod tests {
             (AttributionConfidence::Fallback, FALLBACK),
         ] {
             assert_eq!(confidence.ordinal(), expected, "confidence {confidence:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_from_ordinal_round_trips_via_ordinal() {
+        // Round-trip law: `AttributionConfidence::from_ordinal(v.ordinal())
+        // == Some(v)` for every v: AttributionConfidence. The forward-map
+        // `ordinal` and the const-fn inverse-map `from_ordinal` share
+        // the SAME closed two-cell declaration order
+        // (`AttributionConfidence::ALL`, mirroring the arm order in
+        // `AttributionConfidence::ordinal`); the law holds by
+        // construction. Sibling of
+        // `attribution_rule_from_ordinal_round_trips_via_ordinal` on
+        // the five-cell attribution-rule axis one seam up in the same
+        // module, extended here onto the two-cell source-altitude
+        // confidence projection.
+        for &confidence in AttributionConfidence::ALL {
+            let ordinal = confidence.ordinal();
+            let recovered = AttributionConfidence::from_ordinal(ordinal);
+            assert_eq!(
+                recovered,
+                Some(confidence),
+                "round-trip failed for {confidence:?}: ordinal={ordinal} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_from_ordinal_rejects_out_of_range() {
+        // Out-of-range rejection: every `ordinal >= 2` is not on the
+        // variant surface, so `from_ordinal` degrades to `None`
+        // structurally via the closed match's `_` arm. Guards against
+        // a stale wire-format ordinal from a version-skewed peer or an
+        // operator-typed CLI argument routed through
+        // `str::parse::<usize>` without a bounds check — the caller
+        // reads the unknown as a typed `None` rather than a fabricated
+        // variant. Sibling of
+        // `attribution_rule_from_ordinal_rejects_out_of_range` on the
+        // five-cell attribution-rule axis.
+        let card = AttributionConfidence::ALL.len();
+        for o in card..card + 32 {
+            assert_eq!(
+                AttributionConfidence::from_ordinal(o),
+                None,
+                "from_ordinal must reject out-of-range ordinal {o}",
+            );
+        }
+        // Edge sentinels: one past the boundary, and the arithmetic
+        // extreme `usize::MAX` to guard the closed match's `_` arm on
+        // the largest representable index.
+        assert_eq!(
+            AttributionConfidence::from_ordinal(card),
+            None,
+            "from_ordinal({card}) must reject the boundary sentinel",
+        );
+        assert_eq!(
+            AttributionConfidence::from_ordinal(usize::MAX),
+            None,
+            "from_ordinal(usize::MAX) must reject the arithmetic extreme",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_from_ordinal_agrees_with_all_index_pointwise() {
+        // `from_ordinal(i) == Some(AttributionConfidence::ALL[i])` for
+        // every i in 0..ALL.len() — the inverse of `ordinal` agrees
+        // with the same `Self::ALL` slice literal `ordinal` matches
+        // against. A future edit shifting one match without the other
+        // fails here on the first drifted index. Sibling of
+        // `attribution_rule_from_ordinal_agrees_with_all_index_pointwise`
+        // on the five-cell attribution-rule axis.
+        for (index, &expected) in AttributionConfidence::ALL.iter().enumerate() {
+            assert_eq!(
+                AttributionConfidence::from_ordinal(index),
+                Some(expected),
+                "from_ordinal({index}) must agree with AttributionConfidence::ALL[{index}]",
+            );
+        }
+        // Beyond the axis cardinality (2) the projection returns None
+        // at every offset. Pin the immediate boundary to catch a
+        // future off-by-one landing on the first out-of-range slot.
+        assert_eq!(
+            AttributionConfidence::from_ordinal(AttributionConfidence::ALL.len()),
+            None,
+            "ordinal equal to AttributionConfidence::ALL.len() must be out of range",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_from_ordinal_agrees_with_axis_at_pointwise() {
+        // Cross-seam agreement: the inherent two-cell partial-inverse
+        // agrees with the trait-generic `crate::axis_at::<Self>`
+        // free-function lookup pointwise across every `usize` in
+        // `0..ALL.len() + 32`, covering both the in-range prefix (both
+        // `Some`, same variant) and the out-of-range tail (both
+        // `None`). Where `axis_at` delegates through the `ClosedAxis`
+        // impl to a bounds-checked `Self::ALL` slice index,
+        // `Self::from_ordinal` routes through the closed match ladder;
+        // this test pins that the two seams stay substitutable across
+        // every ordinal.
+        let card = AttributionConfidence::ALL.len();
+        for o in 0..card + 32 {
+            assert_eq!(
+                AttributionConfidence::from_ordinal(o),
+                crate::axis_at::<AttributionConfidence>(o),
+                "from_ordinal must agree with axis_at at ordinal {o}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_from_ordinal_is_const_callable() {
+        // Compile-time weld: the (ordinal → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `AttributionConfidence::ordinal` and the sibling
+        // `AttributionConfidence::as_str`. A drop of the `const`
+        // qualifier on `AttributionConfidence::from_ordinal` fails
+        // this test to compile. Sibling of
+        // `attribution_rule_from_ordinal_is_const_callable` on the
+        // five-cell attribution-rule axis, extended here onto the
+        // two-cell confidence axis.
+        //
+        // Three `const` bindings — two in-range plus one out-of-range —
+        // route each ordinal through the const-fn inverse in const
+        // position. The moment `from_ordinal` loses its const-ness one
+        // of the three const welds below fails to compile at THAT line
+        // before the drift can reach downstream consumers that assumed
+        // const-ness through the projection.
+        const AT_0: Option<AttributionConfidence> = AttributionConfidence::from_ordinal(0);
+        const AT_1: Option<AttributionConfidence> = AttributionConfidence::from_ordinal(1);
+        const AT_OOR: Option<AttributionConfidence> =
+            AttributionConfidence::from_ordinal(AttributionConfidence::ALL.len());
+
+        assert_eq!(AT_0, Some(AttributionConfidence::Exact));
+        assert_eq!(AT_1, Some(AttributionConfidence::Fallback));
+        assert_eq!(AT_OOR, None);
+
+        // Cross-check: the const-fn projection stays pointwise equal
+        // on every variant in `AttributionConfidence::ALL` to its
+        // index — the const-context welds above only exercise the two
+        // variants named at const-binding sites plus one out-of-range
+        // sentinel, but the runtime pin threads the full closed
+        // two-cell list through the same projection to catch a future
+        // variant landing whose const-context weld was forgotten
+        // upstream.
+        for (index, &variant) in AttributionConfidence::ALL.iter().enumerate() {
+            assert_eq!(
+                AttributionConfidence::from_ordinal(index),
+                Some(variant),
+                "variant {variant:?} at index {index}",
+            );
         }
     }
 
