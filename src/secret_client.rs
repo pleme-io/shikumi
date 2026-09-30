@@ -1810,6 +1810,165 @@ impl SecretOperation {
         }
     }
 
+    /// Recover the [`SecretOperation`] variant whose [`Self::as_str`]
+    /// label equals `s`, byte-for-byte, or [`None`] when `s` is not on
+    /// the closed six-cell canonical label surface
+    /// (`"get"` / `"list"` / `"put"` / `"delete"` / `"rotate"` /
+    /// `"get_version"`).
+    ///
+    /// The const-fn label-inverse peer of the shipped scalar label
+    /// projection [`Self::as_str`] and of the sibling scalar-`usize`
+    /// inverse [`Self::from_ordinal`] on the same closed six-cell axis.
+    /// With this landing the [`SecretOperation`] primitive carries the
+    /// complete forward × inverse quartet on both scalar surfaces
+    /// (`ordinal` + `from_ordinal` on `usize`, `as_str` + `from_str` on
+    /// `&str`) — the same `(label, ordinal)` cube-inversion square the
+    /// sibling closed-enum axes [`SecretErrorKind`],
+    /// [`crate::SecretBackendKind`], [`crate::SecretRefShape`],
+    /// [`crate::ShikumiErrorKind`], [`crate::watcher::WatchEventClass`],
+    /// [`crate::ConfigSourceKind`], [`crate::DiffLineKind`],
+    /// [`crate::Format`], [`crate::FormatProvenance`],
+    /// [`crate::FigmentSourceKind`], [`crate::FigmentNameTagKind`],
+    /// [`crate::EnvMetadataTagKind`],
+    /// [`crate::error::AttributionRule`],
+    /// [`crate::error::FieldPathLocalization`],
+    /// [`crate::error::PartitionFace`],
+    /// [`crate::hotswap::SameStoreImpossibilityKind`],
+    /// [`crate::hotswap::SameStoreConsistencyKind`],
+    /// [`crate::hotswap::ProofRelationKind`],
+    /// [`crate::coverage::HintSurface`],
+    /// [`crate::cli::OutputFormat`], and [`crate::cli::TierArg`]
+    /// already ship. Second landing of the label-inverse peer idiom on
+    /// a `secret_client.rs`-scoped closed-primitive axis, after the
+    /// sibling [`SecretErrorKind::from_str`] one impl block over.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the six-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer also of the
+    /// macro-generated [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`] on this primitive
+    /// at `src/secret_client.rs`) one seam over that returns
+    /// [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// spellings [`Self::as_str`] emits (the snake_case
+    /// `"get_version"` for [`Self::GetVersion`], the five lowercase
+    /// single-word labels for the others), matching the discipline of
+    /// the sibling const-fn scalar inverse [`Self::from_ordinal`] and
+    /// of the sibling [`SecretErrorKind::from_str`] /
+    /// [`crate::ShikumiErrorKind::from_str`] /
+    /// [`crate::secret::SecretBackendKind::from_str`] /
+    /// [`crate::watcher::WatchEventClass::from_str`] /
+    /// [`crate::FormatProvenance::from_str`] const-fn label inverses.
+    /// A consumer wanting case-insensitive parsing (an operator-typed
+    /// `--op=GET` at a CLI, a mixed-case tag in a Markdown-rendered
+    /// attestation-manifest summary) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or the
+    /// macro-generated [`std::str::FromStr`] impl (both case-lower
+    /// before matching), or lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `SecretOperation::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretOperation`. Composes with [`Self::as_str`] on the
+    /// same six-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::secret_operation_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SecretOperation::from_str(s) == None` for every `s` outside
+    /// the canonical six-cell set. The closed match's `_` arm forwards
+    /// the off-surface case to [`None`] structurally; the guard
+    /// degrades gracefully on a caller passing a stale wire-format
+    /// label from a version-skewed peer (e.g. a client speaking a
+    /// superset with a seventh `Metadata` or `Renew` operation the
+    /// local build has not landed), a mixed-case operator-typed CLI
+    /// argument that never went through a lowering step, the empty
+    /// string, kebab-case or space-punctuated renderings of the
+    /// compound-noun variant (`"get-version"` / `"get version"` —
+    /// spellings a consumer might have inferred from the operator
+    /// vocabulary), unpunctuated spellings (`"getversion"`), the
+    /// Capabilities-field name (`"versions"` — plural, matching the
+    /// [`Capabilities::versions`] field but disagreeing with the
+    /// trait-method singular this variant carries), the near-miss
+    /// labels of adjacent primitives on the sealed fold
+    /// (`"not-found"` / `"unauthorized"` — the sibling
+    /// [`SecretErrorKind`] labels one impl block over, valid there,
+    /// rejected here), or a hypothetical seventh-variant label a
+    /// future extension would introduce. Pinned by
+    /// [`tests::secret_operation_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `SecretOperation::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretOperation`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same six-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::secret_operation_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square weld with [`Self::from_ordinal`]** —
+    /// for every canonical label `label`, if
+    /// `SecretOperation::from_str(label) == Some(v)` then
+    /// `SecretOperation::from_ordinal(v.ordinal()) == Some(v)`, and
+    /// symmetrically on the ordinal-first leg. The two const-fn
+    /// scalar inverses live on the same closed six-cell axis; the pin
+    /// welds a swapped variant on ONE inverse (say `"put"` returning
+    /// [`Self::Get`] on the label leg after a future edit but ordinal
+    /// `2` still returning [`Self::Put`] on the ordinal leg) at test
+    /// time before either seam's drift can reach downstream consumers.
+    /// Pinned by
+    /// [`tests::secret_operation_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: SecretOperation`,
+    /// `SecretOperation::from_str(v.as_str()) ==
+    /// <SecretOperation as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact labels
+    /// [`Self::as_str`] emits; they diverge only OFF that codomain
+    /// (the trait method case-insensitive-lowers non-canonical
+    /// labels, the inherent rejects them structurally). This pin
+    /// cross-checks the const-fn label seam against the trait-uniform
+    /// label seam on the closed variant surface. Pinned by
+    /// [`tests::secret_operation_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// on the secret-client operation axis (a `const [SecretOperation; 6]`
+    /// variant array recovered from a `const &[&str; 6]` canonical-label
+    /// list, a per-operation retry-policy slot in a `const` initializer
+    /// keyed by canonical label, a `const` per-operation weight vector
+    /// routing the mutating half (`"put"` / `"delete"` / `"rotate"`)
+    /// under a different weight than the read half (`"get"` / `"list"`
+    /// / `"get_version"`) keyed by canonical label) route through the
+    /// projection under `const` without dropping through a runtime
+    /// `let` binding. Pinned by
+    /// [`tests::secret_operation_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"get" => Some(Self::Get),
+            b"list" => Some(Self::List),
+            b"put" => Some(Self::Put),
+            b"delete" => Some(Self::Delete),
+            b"rotate" => Some(Self::Rotate),
+            b"get_version" => Some(Self::GetVersion),
+            _ => None,
+        }
+    }
+
     /// Whether `caps` advertises this operation — the typed projection
     /// of [`SecretOperation`] onto the matching [`Capabilities`] field.
     ///
@@ -6656,6 +6815,289 @@ mod tests {
                 "variant {variant:?} at index {index}",
             );
         }
+    }
+
+    #[test]
+    fn secret_operation_from_str_round_trips_via_as_str() {
+        // Round-trip law: `SecretOperation::from_str(v.as_str()) ==
+        // Some(v)` for every v: SecretOperation. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed six-cell label table (the snake_case
+        // `"get_version"` for `GetVersion` plus the five lowercase
+        // single-word labels `"get"`, `"list"`, `"put"`, `"delete"`,
+        // `"rotate"` in SecretOperation::ALL declaration order); the
+        // law holds by construction. Sibling of
+        // `secret_error_kind_from_str_round_trips_via_as_str` on the
+        // five-cell secret-client error-kind axis one impl block over
+        // and of `secret_operation_from_ordinal_round_trips_via_ordinal`
+        // on the scalar-usize surface of the same primitive.
+        for &op in SecretOperation::ALL {
+            let rendered = op.as_str();
+            let recovered = SecretOperation::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(op),
+                "round-trip failed for {op:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. "versions" for GetVersion to match the
+        // Capabilities field name) fails here before drifting through
+        // the round-trip law above.
+        assert_eq!(SecretOperation::from_str("get"), Some(SecretOperation::Get));
+        assert_eq!(
+            SecretOperation::from_str("list"),
+            Some(SecretOperation::List),
+        );
+        assert_eq!(SecretOperation::from_str("put"), Some(SecretOperation::Put));
+        assert_eq!(
+            SecretOperation::from_str("delete"),
+            Some(SecretOperation::Delete),
+        );
+        assert_eq!(
+            SecretOperation::from_str("rotate"),
+            Some(SecretOperation::Rotate),
+        );
+        assert_eq!(
+            SecretOperation::from_str("get_version"),
+            Some(SecretOperation::GetVersion),
+        );
+    }
+
+    #[test]
+    fn secret_operation_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical six-cell set — the codomain of `as_str` — resolves
+        // to `None` via the closed match's `_` arm. Sweeps mixed-case
+        // (`"GET"`, `"Get"`, `"GET_VERSION"`, `"Get_Version"`), the
+        // kebab-case and space-punctuated renderings of `GetVersion`
+        // (`"get-version"` / `"get version"`), the unpunctuated
+        // `"getversion"`, the Capabilities-field plural `"versions"`
+        // (matching the `Capabilities::versions` field but disagreeing
+        // with the trait-method singular this variant carries),
+        // leading/trailing whitespace, the empty string, adjacent
+        // labels a hypothetical future extension might introduce
+        // (`"metadata"`, `"renew"`, `"describe"`), and near-miss
+        // spellings from adjacent primitives on the sealed fold
+        // (`"not-found"` / `"unauthorized"` / `"backend"` — the
+        // sibling SecretErrorKind labels one impl block over, valid
+        // there, rejected here; `"literal"` / `"command"` / `"sops"`
+        // — the sibling SecretBackendKind labels; `"whole"` /
+        // `"field"` — the sibling SecretRefShape labels). The
+        // case-sensitivity discipline matches the sibling
+        // `SecretErrorKind::from_str`, `ShikumiErrorKind::from_str`,
+        // `SecretBackendKind::from_str`, and `WatchEventClass::from_str`
+        // const-fn label inverses; callers wanting case-insensitive
+        // parsing reach for the trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "GET",
+            "Get",
+            "gEt",
+            "LIST",
+            "List",
+            "PUT",
+            "Put",
+            "DELETE",
+            "Delete",
+            "ROTATE",
+            "Rotate",
+            "GET_VERSION",
+            "Get_Version",
+            "GetVersion",
+            "get-version",
+            "get version",
+            "getversion",
+            "versions",
+            "get ",
+            " get",
+            "get\n",
+            "",
+            "metadata",
+            "renew",
+            "describe",
+            "not-found",
+            "unauthorized",
+            "unsupported",
+            "backend",
+            "shikumi",
+            "literal",
+            "command",
+            "sops",
+            "op",
+            "vault",
+            "whole",
+            "field",
+            "multifield",
+            "reload",
+            "removed",
+            "ignored",
+            "parse",
+            "io",
+            "validation",
+            "defaults",
+            "env",
+            "file",
+            "runtime",
+            "getlistput",
+        ] {
+            assert_eq!(
+                SecretOperation::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in SecretOperation::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same six-cell declaration; a
+        // future edit that shifts the label on ONE match (say
+        // renaming the `GetVersion` arm's label to `"versions"` on the
+        // `as_str` side but not the `from_str` side, or dropping the
+        // underscore on `GetVersion` from `"get_version"` to
+        // `"getversion"` on one side but not the other) fails here on
+        // the first drifted arm. Sibling of
+        // `secret_error_kind_from_str_agrees_with_as_str_pointwise`
+        // on the five-cell secret-client error-kind axis one impl
+        // block over.
+        for &op in SecretOperation::ALL {
+            assert_eq!(
+                SecretOperation::from_str(op.as_str()),
+                Some(op),
+                "from_str(as_str) must agree pointwise for {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion square weld: cross-checks the label leg
+        // against the shipped ordinal leg on the same closed six-cell
+        // axis. For every variant, recovering it through the
+        // canonical label and through the canonical ordinal must
+        // yield the same variant — a swapped variant on ONE inverse
+        // (say `"put"` returning `Self::Get` on the label leg after a
+        // future edit but ordinal `2` still returning `Self::Put` on
+        // the ordinal leg) fails first here before either seam's
+        // drift can reach downstream consumers. Sibling of
+        // `tier_arg_from_str_and_from_ordinal_agree_pointwise` on the
+        // CLI-side five-cell tier-arg axis and of every other
+        // `*_from_str_and_from_ordinal_agree_pointwise` seal on the
+        // sibling closed-primitive axes.
+        for &op in SecretOperation::ALL {
+            let via_label = SecretOperation::from_str(op.as_str());
+            let via_ordinal = SecretOperation::from_ordinal(op.ordinal());
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square must commute for {op:?}: \
+                 via_label={via_label:?} vs via_ordinal={via_ordinal:?}",
+            );
+            assert_eq!(
+                via_label,
+                Some(op),
+                "both legs of the square must recover the source variant for {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the
+        // trait method case-insensitive-lowers non-canonical labels,
+        // the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the
+        // trait-uniform label seam on the closed variant surface.
+        // Sibling of
+        // `secret_error_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the five-cell secret-client error-kind axis one impl
+        // block over.
+        use crate::ClosedAxisLabel;
+        for &op in SecretOperation::ALL {
+            let label = op.as_str();
+            let inherent = SecretOperation::from_str(label);
+            let trait_uniform = <SecretOperation as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretOperation::as_str` and the sibling
+        // `SecretOperation::from_ordinal`. A drop of the `const`
+        // qualifier on `SecretOperation::from_str` fails this test to
+        // compile.
+        //
+        // Seven `const` bindings — six in-range plus one out-of-set
+        // — route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the seven const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `secret_operation_from_ordinal_is_const_callable`
+        // on the scalar-usize surface of the same primitive and of
+        // `secret_error_kind_from_str_is_const_callable` on the
+        // five-cell secret-client error-kind axis one impl block over.
+        const AT_GET: Option<SecretOperation> = SecretOperation::from_str("get");
+        const AT_LIST: Option<SecretOperation> = SecretOperation::from_str("list");
+        const AT_PUT: Option<SecretOperation> = SecretOperation::from_str("put");
+        const AT_DELETE: Option<SecretOperation> = SecretOperation::from_str("delete");
+        const AT_ROTATE: Option<SecretOperation> = SecretOperation::from_str("rotate");
+        const AT_GET_VERSION: Option<SecretOperation> = SecretOperation::from_str("get_version");
+        const AT_UNKNOWN: Option<SecretOperation> = SecretOperation::from_str("metadata");
+
+        assert_eq!(AT_GET, Some(SecretOperation::Get));
+        assert_eq!(AT_LIST, Some(SecretOperation::List));
+        assert_eq!(AT_PUT, Some(SecretOperation::Put));
+        assert_eq!(AT_DELETE, Some(SecretOperation::Delete));
+        assert_eq!(AT_ROTATE, Some(SecretOperation::Rotate));
+        assert_eq!(AT_GET_VERSION, Some(SecretOperation::GetVersion));
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Const recovery vector — the exact static-dispatch consumer
+        // shape the const-ness enables: a `const [Option<SecretOperation>;
+        // SecretOperation::ALL.len()]` array recovered from a
+        // `const [&str; SecretOperation::ALL.len()]` canonical-label
+        // list under `const`. A future drop of const-ness on
+        // `from_str` fails this binding to compile before it can reach
+        // any downstream consumer that assumed a const-context label
+        // dispatch table.
+        const RECOVERY: [Option<SecretOperation>; SecretOperation::ALL.len()] = [
+            SecretOperation::from_str("get"),
+            SecretOperation::from_str("list"),
+            SecretOperation::from_str("put"),
+            SecretOperation::from_str("delete"),
+            SecretOperation::from_str("rotate"),
+            SecretOperation::from_str("get_version"),
+        ];
+        assert_eq!(
+            RECOVERY,
+            [
+                Some(SecretOperation::Get),
+                Some(SecretOperation::List),
+                Some(SecretOperation::Put),
+                Some(SecretOperation::Delete),
+                Some(SecretOperation::Rotate),
+                Some(SecretOperation::GetVersion),
+            ],
+        );
     }
 
     #[test]
