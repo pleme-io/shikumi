@@ -4019,6 +4019,174 @@ impl SecretClientKind {
         }
     }
 
+    /// Recover the [`SecretClientKind`] variant whose [`Self::as_str`]
+    /// label equals `s`, byte-for-byte, or [`None`] when `s` is not on
+    /// the closed seven-cell canonical label surface
+    /// (`"mem"` / `"command"` / `"akeyless"` / `"aws-secrets-manager"` /
+    /// `"op-connect"` / `"vault"` / `"gcp-secret-manager"`).
+    ///
+    /// The const-fn label-inverse peer of the shipped scalar label
+    /// projection [`Self::as_str`] and of the sibling scalar-`usize`
+    /// inverse [`Self::from_ordinal`] on the same closed seven-cell axis.
+    /// With this landing the [`SecretClientKind`] primitive carries the
+    /// complete forward × inverse quartet on both scalar surfaces
+    /// (`ordinal` + `from_ordinal` on `usize`, `as_str` + `from_str` on
+    /// `&str`) — the same `(label, ordinal)` cube-inversion square the
+    /// sibling closed-enum axes [`SecretErrorKind`],
+    /// [`crate::SecretBackendKind`], [`crate::SecretRefShape`],
+    /// [`SecretOperation`], [`crate::ShikumiErrorKind`],
+    /// [`crate::watcher::WatchEventClass`],
+    /// [`crate::ConfigSourceKind`], [`crate::DiffLineKind`],
+    /// [`crate::Format`], [`crate::FormatProvenance`],
+    /// [`crate::FigmentSourceKind`], [`crate::FigmentNameTagKind`],
+    /// [`crate::EnvMetadataTagKind`],
+    /// [`crate::error::AttributionRule`],
+    /// [`crate::error::FieldPathLocalization`],
+    /// [`crate::error::PartitionFace`],
+    /// [`crate::hotswap::SameStoreImpossibilityKind`],
+    /// [`crate::hotswap::SameStoreConsistencyKind`],
+    /// [`crate::hotswap::ProofRelationKind`],
+    /// [`crate::coverage::HintSurface`],
+    /// [`crate::cli::OutputFormat`], and [`crate::cli::TierArg`]
+    /// already ship. Third landing of the label-inverse peer idiom on
+    /// a `secret_client.rs`-scoped closed-primitive axis, after the
+    /// sibling [`SecretErrorKind::from_str`] and
+    /// [`SecretOperation::from_str`] two impl blocks over — and with
+    /// this landing the last unshipped label-inverse peer on the
+    /// seven-cell runtime-client kind primitive, closing every scalar
+    /// projection × scalar inverse corner on every closed-axis
+    /// primitive in the crate.
+    ///
+    /// Peer of the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] one seam
+    /// over on the same primitive (case-insensitive, iterator-based,
+    /// non-`const`); this inherent instead matches on the exact
+    /// canonical byte-form [`Self::as_str`] emits, keeping the
+    /// projection const-callable and the seven-cell inverse a total
+    /// function on the canonical codomain without dragging in the
+    /// trait's case-insensitive branch. Peer also of the
+    /// macro-generated [`std::str::FromStr`] impl (via
+    /// [`crate::closed_axis_label_string_surface!`] on this primitive
+    /// at `src/secret_client.rs`) one seam over that returns
+    /// [`Result<Self, crate::ShikumiError>`] with a formatted
+    /// parse-error legend for operator-facing `str::parse::<Self>()`
+    /// call sites; this inherent instead returns [`Option<Self>`],
+    /// keeping the "not on the canonical variant surface" case a typed
+    /// [`None`] without allocating an error string.
+    ///
+    /// **Case sensitivity** — the match is exact-byte on the canonical
+    /// spellings [`Self::as_str`] emits (the kebab-case
+    /// `"aws-secrets-manager"`, `"op-connect"`, `"gcp-secret-manager"`
+    /// for the multi-word compound-noun variants and the four
+    /// lowercase single-word labels `"mem"`, `"command"`, `"akeyless"`,
+    /// `"vault"`), matching the discipline of the sibling const-fn
+    /// scalar inverse [`Self::from_ordinal`] and of the sibling
+    /// [`SecretErrorKind::from_str`] / [`SecretOperation::from_str`] /
+    /// [`crate::ShikumiErrorKind::from_str`] /
+    /// [`crate::secret::SecretBackendKind::from_str`] /
+    /// [`crate::watcher::WatchEventClass::from_str`] /
+    /// [`crate::FormatProvenance::from_str`] const-fn label inverses.
+    /// A consumer wanting case-insensitive parsing (an operator-typed
+    /// `--client=MEM` at a CLI, a mixed-case tag in a Markdown-rendered
+    /// attestation-manifest summary) reaches for the trait-uniform
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] or the
+    /// macro-generated [`std::str::FromStr`] impl (both case-lower
+    /// before matching), or lowercases at their own site.
+    ///
+    /// **Round-trip law** —
+    /// `SecretClientKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretClientKind`. Composes with [`Self::as_str`] on the
+    /// same seven-cell label table both projections match against; the
+    /// law holds by construction. Pinned by
+    /// [`tests::secret_client_kind_from_str_round_trips_via_as_str`].
+    ///
+    /// **Non-canonical rejection** —
+    /// `SecretClientKind::from_str(s) == None` for every `s` outside
+    /// the canonical seven-cell set. The closed match's `_` arm
+    /// forwards the off-surface case to [`None`] structurally; the
+    /// guard degrades gracefully on a caller passing a stale
+    /// wire-format label from a version-skewed peer (e.g. a client
+    /// speaking a superset with an eighth `AzureKeyVault` runtime
+    /// client the local build has not landed), a mixed-case
+    /// operator-typed CLI argument that never went through a lowering
+    /// step, the empty string, snake_case renderings of the
+    /// kebab-case compound-noun variants
+    /// (`"aws_secrets_manager"` / `"op_connect"` /
+    /// `"gcp_secret_manager"` — spellings a consumer might have
+    /// inferred from the `#[serde(rename_all = "snake_case")]` sibling
+    /// on [`crate::SecretBackendKind`]), the sibling
+    /// [`crate::SecretBackendKind`] labels (`"aws_secret"` /
+    /// `"gcp_secret"` / `"op"` — valid on the config-author backend
+    /// axis one primitive over, rejected here on the runtime-client
+    /// transport axis), or a hypothetical eighth-variant label a
+    /// future extension would introduce. Pinned by
+    /// [`tests::secret_client_kind_from_str_rejects_non_canonical`].
+    ///
+    /// **Pointwise agreement with [`Self::as_str`]** —
+    /// `SecretClientKind::from_str(v.as_str()) == Some(v)` for every
+    /// `v: SecretClientKind`. The inherent match and the forward
+    /// [`Self::as_str`] match carry the same seven-cell label mapping;
+    /// the test below pins the pointwise agreement across every
+    /// variant, and a future edit that shifts the label on ONE match
+    /// without the other fails at test time on the first drifted arm.
+    /// Pinned by
+    /// [`tests::secret_client_kind_from_str_agrees_with_as_str_pointwise`].
+    ///
+    /// **Cube-inversion square weld with [`Self::from_ordinal`]** —
+    /// for every canonical label `label`, if
+    /// `SecretClientKind::from_str(label) == Some(v)` then
+    /// `SecretClientKind::from_ordinal(v.ordinal()) == Some(v)`, and
+    /// symmetrically on the ordinal-first leg. The two const-fn scalar
+    /// inverses live on the same closed seven-cell axis; the pin welds
+    /// a swapped variant on ONE inverse (say `"vault"` returning
+    /// [`Self::Mem`] on the label leg after a future edit but ordinal
+    /// `5` still returning [`Self::Vault`] on the ordinal leg) at test
+    /// time before either seam's drift can reach downstream consumers.
+    /// Pinned by
+    /// [`tests::secret_client_kind_from_str_and_from_ordinal_agree_pointwise`].
+    ///
+    /// **Agreement with [`crate::ClosedAxisLabel::from_canonical_str`]
+    /// on canonical input** — for every `v: SecretClientKind`,
+    /// `SecretClientKind::from_str(v.as_str()) ==
+    /// <SecretClientKind as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+    /// Both seams recover the same variant on the exact labels
+    /// [`Self::as_str`] emits; they diverge only OFF that codomain
+    /// (the trait method case-insensitive-lowers non-canonical
+    /// labels, the inherent rejects them structurally). This pin
+    /// cross-checks the const-fn label seam against the trait-uniform
+    /// label seam on the closed variant surface. Pinned by
+    /// [`tests::secret_client_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`].
+    ///
+    /// **Const-callability** — the projection is `const fn`, matching
+    /// the `const`-ness of [`Self::as_str`] on the forward side and of
+    /// [`Self::from_ordinal`] on the sibling scalar-surface inverse.
+    /// Consumers wanting a compile-time-selected label-keyed dispatch
+    /// on the runtime-client kind axis (a `const [SecretClientKind; 7]`
+    /// variant array recovered from a `const &[&str; 7]`
+    /// canonical-label list, a per-client retry-policy slot in a
+    /// `const` initializer keyed by canonical label, a `const`
+    /// per-client weight vector routing the cloud-Secret-Manager
+    /// half (`"aws-secrets-manager"` / `"gcp-secret-manager"`) under a
+    /// different weight than the everything-else half (`"mem"` /
+    /// `"command"` / `"akeyless"` / `"op-connect"` / `"vault"`) keyed
+    /// by canonical label) route through the projection under `const`
+    /// without dropping through a runtime `let` binding. Pinned by
+    /// [`tests::secret_client_kind_from_str_is_const_callable`].
+    #[must_use]
+    #[allow(clippy::should_implement_trait)]
+    pub const fn from_str(s: &str) -> Option<Self> {
+        match s.as_bytes() {
+            b"mem" => Some(Self::Mem),
+            b"command" => Some(Self::Command),
+            b"akeyless" => Some(Self::Akeyless),
+            b"aws-secrets-manager" => Some(Self::AwsSecretsManager),
+            b"op-connect" => Some(Self::OpConnect),
+            b"vault" => Some(Self::Vault),
+            b"gcp-secret-manager" => Some(Self::GcpSecretManager),
+            _ => None,
+        }
+    }
+
     /// Returns `true` for [`Self::Mem`]; equivalent to
     /// `self == SecretClientKind::Mem`. Per-variant sibling predicate
     /// on the closed seven-way runtime-client kind partition.
@@ -14266,6 +14434,326 @@ mod tests {
                 SecretClientKind::from_ordinal(index),
                 Some(variant),
                 "variant {variant:?} at index {index}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_round_trips_via_as_str() {
+        // Round-trip law: `SecretClientKind::from_str(v.as_str()) ==
+        // Some(v)` for every v: SecretClientKind. The forward-map
+        // `as_str` and the const-fn inverse-map `from_str` share the
+        // SAME closed seven-cell label table (the kebab-case
+        // `"aws-secrets-manager"`, `"op-connect"`,
+        // `"gcp-secret-manager"` for the multi-word compound-noun
+        // variants plus the four lowercase single-word labels
+        // `"mem"`, `"command"`, `"akeyless"`, `"vault"` in
+        // SecretClientKind::ALL declaration order); the law holds by
+        // construction. Sibling of
+        // `secret_operation_from_str_round_trips_via_as_str` on the
+        // six-cell secret-client operation axis two impl blocks over
+        // and of `secret_client_kind_from_ordinal_round_trips_via_ordinal`
+        // on the scalar-usize surface of the same primitive.
+        for &kind in SecretClientKind::ALL {
+            let rendered = kind.as_str();
+            let recovered = SecretClientKind::from_str(rendered);
+            assert_eq!(
+                recovered,
+                Some(kind),
+                "round-trip failed for {kind:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. `"aws"` for AwsSecretsManager to shorten the
+        // transport label, or dropping the hyphens on the compound
+        // variants) fails here before drifting through the round-trip
+        // law above.
+        assert_eq!(
+            SecretClientKind::from_str("mem"),
+            Some(SecretClientKind::Mem)
+        );
+        assert_eq!(
+            SecretClientKind::from_str("command"),
+            Some(SecretClientKind::Command),
+        );
+        assert_eq!(
+            SecretClientKind::from_str("akeyless"),
+            Some(SecretClientKind::Akeyless),
+        );
+        assert_eq!(
+            SecretClientKind::from_str("aws-secrets-manager"),
+            Some(SecretClientKind::AwsSecretsManager),
+        );
+        assert_eq!(
+            SecretClientKind::from_str("op-connect"),
+            Some(SecretClientKind::OpConnect),
+        );
+        assert_eq!(
+            SecretClientKind::from_str("vault"),
+            Some(SecretClientKind::Vault),
+        );
+        assert_eq!(
+            SecretClientKind::from_str("gcp-secret-manager"),
+            Some(SecretClientKind::GcpSecretManager),
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_rejects_non_canonical() {
+        // Non-canonical rejection: any `&str` outside the exact
+        // canonical seven-cell set — the codomain of `as_str` —
+        // resolves to `None` via the closed match's `_` arm. Sweeps
+        // mixed-case (`"MEM"`, `"Mem"`, `"AWS-SECRETS-MANAGER"`),
+        // snake_case renderings of the kebab-case compound-noun
+        // variants (`"aws_secrets_manager"` / `"op_connect"` /
+        // `"gcp_secret_manager"` — spellings a consumer might have
+        // inferred from the `#[serde(rename_all = "snake_case")]`
+        // sibling on SecretBackendKind), the unpunctuated spellings
+        // (`"awssecretsmanager"` / `"opconnect"` /
+        // `"gcpsecretmanager"`), space-punctuated renderings
+        // (`"aws secrets manager"`), leading/trailing whitespace, the
+        // empty string, adjacent labels a hypothetical future
+        // extension might introduce (`"azure-key-vault"` / `"kms"` /
+        // `"cyberark"`), and near-miss spellings from adjacent
+        // primitives on the sealed fold — the sibling
+        // SecretBackendKind labels one impl block over
+        // (`"aws_secret"` / `"gcp_secret"` / `"op"`, valid there,
+        // rejected here because the runtime-client transport axis
+        // labels its transport not its YAML key), the sibling
+        // SecretOperation labels (`"get"` / `"list"` / `"put"` /
+        // `"delete"` / `"rotate"` / `"get_version"`), the sibling
+        // SecretErrorKind labels (`"not-found"` / `"unauthorized"` /
+        // `"backend"` / `"shikumi"`), the sibling SecretRefShape
+        // labels (`"whole"` / `"field"`). The case-sensitivity
+        // discipline matches the sibling `SecretErrorKind::from_str`,
+        // `SecretOperation::from_str`, `ShikumiErrorKind::from_str`,
+        // `SecretBackendKind::from_str`, and
+        // `WatchEventClass::from_str` const-fn label inverses;
+        // callers wanting case-insensitive parsing reach for the
+        // trait-uniform
+        // `<Self as ClosedAxisLabel>::from_canonical_str` or the
+        // macro-generated `FromStr` impl (which also case-lowers).
+        for bad in &[
+            "MEM",
+            "Mem",
+            "mEm",
+            "COMMAND",
+            "Command",
+            "AKEYLESS",
+            "Akeyless",
+            "AWS-SECRETS-MANAGER",
+            "Aws-Secrets-Manager",
+            "aws_secrets_manager",
+            "AwsSecretsManager",
+            "awssecretsmanager",
+            "aws secrets manager",
+            "aws",
+            "OP-CONNECT",
+            "Op-Connect",
+            "op_connect",
+            "OpConnect",
+            "opconnect",
+            "op connect",
+            "VAULT",
+            "Vault",
+            "GCP-SECRET-MANAGER",
+            "Gcp-Secret-Manager",
+            "gcp_secret_manager",
+            "GcpSecretManager",
+            "gcpsecretmanager",
+            "gcp secret manager",
+            "gcp",
+            "mem ",
+            " mem",
+            "mem\n",
+            "",
+            "azure-key-vault",
+            "kms",
+            "cyberark",
+            "aws_secret",
+            "gcp_secret",
+            "op",
+            "sops",
+            "literal",
+            "get",
+            "list",
+            "put",
+            "delete",
+            "rotate",
+            "get_version",
+            "not-found",
+            "unauthorized",
+            "unsupported",
+            "backend",
+            "shikumi",
+            "whole",
+            "field",
+            "multifield",
+            "reload",
+            "removed",
+            "ignored",
+            "parse",
+            "io",
+            "validation",
+            "defaults",
+            "env",
+            "file",
+            "runtime",
+        ] {
+            assert_eq!(
+                SecretClientKind::from_str(bad),
+                None,
+                "non-canonical {bad:?} must reject through the const-fn inverse",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_agrees_with_as_str_pointwise() {
+        // Pointwise agreement: `from_str(v.as_str()) == Some(v)` for
+        // every v in SecretClientKind::ALL. Both the inherent
+        // `from_str` match and the forward `as_str` match derive
+        // their label table from the same seven-cell declaration; a
+        // future edit that shifts the label on ONE match (say
+        // dropping the hyphens on `AwsSecretsManager` from
+        // `"aws-secrets-manager"` to `"aws_secrets_manager"` on the
+        // `as_str` side but not the `from_str` side, or renaming the
+        // `Mem` arm's label from `"mem"` to `"memory"` on one side
+        // but not the other) fails here on the first drifted arm.
+        // Sibling of `secret_operation_from_str_agrees_with_as_str_pointwise`
+        // on the six-cell secret-client operation axis two impl
+        // blocks over.
+        for &kind in SecretClientKind::ALL {
+            assert_eq!(
+                SecretClientKind::from_str(kind.as_str()),
+                Some(kind),
+                "from_str(as_str) must agree pointwise for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_and_from_ordinal_agree_pointwise() {
+        // Cube-inversion square weld: cross-checks the label leg
+        // against the shipped ordinal leg on the same closed seven-cell
+        // axis. For every variant, recovering it through the
+        // canonical label and through the canonical ordinal must
+        // yield the same variant — a swapped variant on ONE inverse
+        // (say `"vault"` returning `Self::Mem` on the label leg after
+        // a future edit but ordinal `5` still returning `Self::Vault`
+        // on the ordinal leg) fails first here before either seam's
+        // drift can reach downstream consumers. Sibling of
+        // `secret_operation_from_str_and_from_ordinal_agree_pointwise`
+        // on the six-cell secret-client operation axis two impl
+        // blocks over and of every other
+        // `*_from_str_and_from_ordinal_agree_pointwise` seal on the
+        // sibling closed-primitive axes.
+        for &kind in SecretClientKind::ALL {
+            let via_label = SecretClientKind::from_str(kind.as_str());
+            let via_ordinal = SecretClientKind::from_ordinal(kind.ordinal());
+            assert_eq!(
+                via_label, via_ordinal,
+                "cube-inversion square must commute for {kind:?}: \
+                 via_label={via_label:?} vs via_ordinal={via_ordinal:?}",
+            );
+            assert_eq!(
+                via_label,
+                Some(kind),
+                "both legs of the square must recover the source variant for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input()
+     {
+        // Cross-seam agreement on the canonical codomain: for every
+        // variant, `from_str(v.as_str()) ==
+        // <Self as ClosedAxisLabel>::from_canonical_str(v.as_str())`.
+        // Both seams recover the same variant on the exact labels
+        // `as_str` emits; they diverge only OFF that codomain (the
+        // trait method case-insensitive-lowers non-canonical labels,
+        // the inherent rejects them structurally). This pin
+        // cross-checks the const-fn label seam against the
+        // trait-uniform label seam on the closed variant surface.
+        // Sibling of
+        // `secret_operation_from_str_agrees_with_closed_axis_label_from_canonical_str_on_canonical_input`
+        // on the six-cell secret-client operation axis two impl
+        // blocks over.
+        use crate::ClosedAxisLabel;
+        for &kind in SecretClientKind::ALL {
+            let label = kind.as_str();
+            let inherent = SecretClientKind::from_str(label);
+            let trait_uniform = <SecretClientKind as ClosedAxisLabel>::from_canonical_str(label);
+            assert_eq!(
+                inherent, trait_uniform,
+                "canonical label {label:?} must recover the same variant through \
+                 the inherent const-fn `from_str` and the trait-uniform \
+                 `ClosedAxisLabel::from_canonical_str`",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_is_const_callable() {
+        // Compile-time weld: the (label → variant) inverse is
+        // `const`-callable, matching the `const`-ness of the forward
+        // projection `SecretClientKind::as_str` and the sibling
+        // `SecretClientKind::from_ordinal`. A drop of the `const`
+        // qualifier on `SecretClientKind::from_str` fails this test
+        // to compile.
+        //
+        // Eight `const` bindings — seven in-range plus one out-of-set
+        // — route each canonical label through the const-fn inverse
+        // in const position. The moment `from_str` loses its
+        // const-ness one of the eight const welds below fails to
+        // compile at THAT line before the drift can reach downstream
+        // consumers that assumed const-ness through the projection.
+        // Sibling of `secret_client_kind_from_ordinal_is_const_callable`
+        // on the scalar-usize surface of the same primitive and of
+        // `secret_operation_from_str_is_const_callable` on the
+        // six-cell secret-client operation axis two impl blocks over.
+        const AT_MEM: Option<SecretClientKind> = SecretClientKind::from_str("mem");
+        const AT_COMMAND: Option<SecretClientKind> = SecretClientKind::from_str("command");
+        const AT_AKEYLESS: Option<SecretClientKind> = SecretClientKind::from_str("akeyless");
+        const AT_AWS: Option<SecretClientKind> = SecretClientKind::from_str("aws-secrets-manager");
+        const AT_OP_CONNECT: Option<SecretClientKind> = SecretClientKind::from_str("op-connect");
+        const AT_VAULT: Option<SecretClientKind> = SecretClientKind::from_str("vault");
+        const AT_GCP: Option<SecretClientKind> = SecretClientKind::from_str("gcp-secret-manager");
+        const AT_UNKNOWN: Option<SecretClientKind> = SecretClientKind::from_str("azure-key-vault");
+
+        assert_eq!(AT_MEM, Some(SecretClientKind::Mem));
+        assert_eq!(AT_COMMAND, Some(SecretClientKind::Command));
+        assert_eq!(AT_AKEYLESS, Some(SecretClientKind::Akeyless));
+        assert_eq!(AT_AWS, Some(SecretClientKind::AwsSecretsManager));
+        assert_eq!(AT_OP_CONNECT, Some(SecretClientKind::OpConnect));
+        assert_eq!(AT_VAULT, Some(SecretClientKind::Vault));
+        assert_eq!(AT_GCP, Some(SecretClientKind::GcpSecretManager));
+        assert_eq!(AT_UNKNOWN, None);
+
+        // Const recovery vector — the exact static-dispatch consumer
+        // shape the const-ness enables: a `const [Option<SecretClientKind>;
+        // SecretClientKind::ALL.len()]` array recovered from a
+        // `const [&str; SecretClientKind::ALL.len()]` canonical-label
+        // list under `const`. A future drop of const-ness on
+        // `from_str` fails this binding to compile before it can
+        // reach any downstream consumer that assumed a const-context
+        // label dispatch table.
+        const RECOVERY: [Option<SecretClientKind>; SecretClientKind::ALL.len()] = [
+            SecretClientKind::from_str("mem"),
+            SecretClientKind::from_str("command"),
+            SecretClientKind::from_str("akeyless"),
+            SecretClientKind::from_str("aws-secrets-manager"),
+            SecretClientKind::from_str("op-connect"),
+            SecretClientKind::from_str("vault"),
+            SecretClientKind::from_str("gcp-secret-manager"),
+        ];
+        for (index, &slot) in RECOVERY.iter().enumerate() {
+            assert_eq!(
+                slot,
+                Some(SecretClientKind::ALL[index]),
+                "const recovery slot {index} must equal SecretClientKind::ALL[{index}]",
             );
         }
     }
