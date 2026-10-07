@@ -8887,6 +8887,11 @@ rec {
             packageId = "ref-cast";
           }
           {
+            name = "schemars_derive";
+            packageId = "schemars_derive";
+            optional = true;
+          }
+          {
             name = "serde";
             packageId = "serde";
             usesDefaultFeatures = false;
@@ -8927,7 +8932,43 @@ rec {
           "url2" = [ "dep:url2" ];
           "uuid1" = [ "dep:uuid1" ];
         };
-        resolvedDefaultFeatures = [ "std" ];
+        resolvedDefaultFeatures = [ "default" "derive" "schemars_derive" "std" ];
+      };
+      "schemars_derive" = rec {
+        crateName = "schemars_derive";
+        version = "1.2.2";
+        edition = "2021";
+        sha256 = "1fp2wkdk32nv66swy7k7pz7sxygn634snlppih5jzbs6ddqng36r";
+        procMacro = true;
+        authors = [
+          "Graham Esau <gesau@hotmail.co.uk>"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+          }
+          {
+            name = "serde_derive_internals";
+            packageId = "serde_derive_internals";
+          }
+          {
+            name = "syn";
+            packageId = "syn 3.0.6";
+          }
+        ];
+        devDependencies = [
+          {
+            name = "syn";
+            packageId = "syn 3.0.6";
+            features = [ "extra-traits" ];
+          }
+        ];
+
       };
       "sct" = rec {
         crateName = "sct";
@@ -9122,6 +9163,36 @@ rec {
         features = {
         };
         resolvedDefaultFeatures = [ "default" ];
+      };
+      "serde_derive_internals" = rec {
+        crateName = "serde_derive_internals";
+        version = "0.30.0";
+        edition = "2021";
+        sha256 = "1gd9n45na7n79nr54ghfl79rygkbzw2ybk3wyr6nlp83rry16lpq";
+        libPath = "lib.rs";
+        authors = [
+          "Erick Tryzelaar <erick.tryzelaar@gmail.com>"
+          "David Tolnay <dtolnay@gmail.com>"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "syn";
+            packageId = "syn 3.0.6";
+            usesDefaultFeatures = false;
+            features = [ "clone-impls" "derive" "parsing" "printing" ];
+          }
+        ];
+
       };
       "serde_json" = rec {
         crateName = "serde_json";
@@ -9498,7 +9569,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.1077";
+        version = "0.1.1078";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9588,6 +9659,10 @@ rec {
             optional = true;
             usesDefaultFeatures = false;
             features = [ "json" "rustls-tls" ];
+          }
+          {
+            name = "schemars";
+            packageId = "schemars 1.2.2";
           }
           {
             name = "serde";

@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "2afd612c4df720489ba04ea7591d63f43255f98094e390ab9d2da82f450ed0dc",
+  "cargo_lock_sha256": "8b51f3640ea23d4a6399156a14c532aa16b5790d5ac782eb22e7e314480f2164",
   "manifest_sha256": {
-    "Cargo.toml": "16087b9c5842dd9ac335a6c5b1b1afede255137795d1834e465a06ac3a2aeb7e"
+    "Cargo.toml": "39c93e154325a53b9665902105304cfeb42c184f9238fe8a52d256162d9459f5"
   },
   "target_resolves": {
     "base": {
@@ -82,7 +82,7 @@
           "std"
         ]
       },
-      "cc-1.5.1": {
+      "cc-1.6.0": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -186,7 +186,7 @@
         "runtime_dependencies": [
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -196,7 +196,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -206,7 +206,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -511,7 +511,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -521,7 +521,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -531,7 +531,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -541,7 +541,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -551,7 +551,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -561,7 +561,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -571,7 +571,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -581,7 +581,7 @@
           },
           {
             "name": "libc",
-            "package_key": "libc-0.2.189",
+            "package_key": "libc-0.2.190",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -653,7 +653,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "libc-0.2.189": {
+      "libc-0.2.190": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -1382,7 +1382,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.1077": {
+      "shikumi-0.1.1078": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1737,7 +1737,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "tokio-1.53.1": {
+      "tokio-1.53.2": {
         "runtime_dependencies": [
           {
             "name": "pin_project_lite",
@@ -2180,7 +2180,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2206,7 +2206,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2260,7 +2260,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2349,7 +2349,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -2359,7 +2359,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -2416,7 +2416,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2461,7 +2461,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2477,7 +2477,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2501,11 +2501,11 @@
               "no_std"
             ]
           },
-          "mio-1.2.3": {
+          "mio-1.2.4": {
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2546,7 +2546,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2566,7 +2566,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2578,7 +2578,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2659,7 +2659,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -2669,7 +2669,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -2757,7 +2757,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2802,7 +2802,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2818,7 +2818,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2842,11 +2842,11 @@
               "no_std"
             ]
           },
-          "mio-1.2.3": {
+          "mio-1.2.4": {
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2887,7 +2887,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2907,7 +2907,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2919,7 +2919,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3000,7 +3000,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3010,7 +3010,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3108,7 +3108,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3139,7 +3139,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3193,7 +3193,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3282,7 +3282,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3292,7 +3292,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3359,7 +3359,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3409,7 +3409,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3425,7 +3425,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3449,11 +3449,11 @@
               "no_std"
             ]
           },
-          "mio-1.2.3": {
+          "mio-1.2.4": {
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3494,7 +3494,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3514,7 +3514,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3526,7 +3526,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3607,7 +3607,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3617,7 +3617,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3715,7 +3715,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.5.1",
+                "package_key": "cc-1.6.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3765,7 +3765,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3781,7 +3781,7 @@
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3805,11 +3805,11 @@
               "no_std"
             ]
           },
-          "mio-1.2.3": {
+          "mio-1.2.4": {
             "runtime_dependencies": [
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3850,7 +3850,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3870,7 +3870,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3882,7 +3882,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.3",
+                "package_key": "mio-1.2.4",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3963,7 +3963,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -3973,7 +3973,7 @@
               },
               {
                 "name": "libc",
-                "package_key": "libc-0.2.189",
+                "package_key": "libc-0.2.190",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": false,
@@ -4046,7 +4046,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.5.1": {
+    "cc-1.6.0": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -4125,7 +4125,7 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "libc-0.2.189": {
+    "libc-0.2.190": {
       "edition": "2021",
       "build_script": "build.rs"
     },
@@ -4138,7 +4138,7 @@
     "memchr-2.8.3": {
       "edition": "2021"
     },
-    "mio-1.2.3": {
+    "mio-1.2.4": {
       "edition": "2021"
     },
     "notify-8.2.0": {
@@ -4239,7 +4239,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.1077": {
+    "shikumi-0.1.1078": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4266,7 +4266,7 @@
       "edition": "2021",
       "proc_macro": true
     },
-    "tokio-1.53.1": {
+    "tokio-1.53.2": {
       "edition": "2021"
     },
     "tokio-macros-2.7.2": {
