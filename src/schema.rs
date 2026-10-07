@@ -106,11 +106,13 @@ fn field_entry(schema: &Value, default: Option<&Value>, description: String) -> 
 /// when it is an enum. Mirrors the vocabulary the hand-written groups use:
 /// `bool` / `int` / `float` / `str` / `enum` / `nullOrStr`.
 fn map_type(schema: &Value) -> (String, Option<Vec<Value>>) {
-    // Enum of string literals → "enum" + its values.
-    if let Some(vals) = schema.get("enum").and_then(Value::as_array) {
-        if vals.iter().all(Value::is_string) {
-            return ("enum".into(), Some(vals.clone()));
-        }
+    // Enum of string literals → "enum" + its values. Two shapes: a flat
+    // `enum: [...]` (a plain unit enum), or a `oneOf`/`anyOf` of `{const:"..."}`
+    // branches — which is what schemars emits once the variants carry doc
+    // comments. Both must recover the same variant list, else a documented enum
+    // silently degrades to "unknown" (the mado tear.mode/runtime bug, 2026-10-07).
+    if let Some(vals) = enum_values(schema) {
+        return ("enum".into(), Some(vals));
     }
     // `Option<T>` renders as a type array `["<t>","null"]` or an `anyOf` with a
     // null branch. Only the string case has a dedicated nix type today.
@@ -126,6 +128,34 @@ fn map_type(schema: &Value) -> (String, Option<Vec<Value>>) {
         // generator can decide; it is never silently coerced to a scalar.
         other => (other.unwrap_or("unknown").into(), None),
     }
+}
+
+/// Recover a string-enum's variant list from either schemars shape: a flat
+/// `enum: ["a","b"]`, or a `oneOf`/`anyOf` whose branches are ALL `{const:
+/// "..."}` (the form a unit enum takes once its variants carry doc comments).
+/// `None` when it is not a pure string-enum — so a nullable `Option<Enum>`
+/// (a union with a `null` branch) does not masquerade as one.
+fn enum_values(schema: &Value) -> Option<Vec<Value>> {
+    if let Some(vals) = schema.get("enum").and_then(Value::as_array) {
+        if !vals.is_empty() && vals.iter().all(Value::is_string) {
+            return Some(vals.clone());
+        }
+    }
+    for key in ["oneOf", "anyOf"] {
+        if let Some(Value::Array(branches)) = schema.get(key) {
+            let consts: Vec<Value> = branches
+                .iter()
+                .filter_map(|b| b.get("const").cloned())
+                .collect();
+            if !consts.is_empty()
+                && consts.len() == branches.len()
+                && consts.iter().all(Value::is_string)
+            {
+                return Some(consts);
+            }
+        }
+    }
+    None
 }
 
 /// The scalar type name, whether `"type": "string"` or `"type": ["string",
@@ -216,6 +246,39 @@ mod tests {
         assert_eq!(style["values"], json!(["block", "bar", "underline"]));
         assert_eq!(style["default"], json!("block"));
         assert_eq!(style["description"], json!("Cursor style."));
+    }
+
+    #[test]
+    fn documented_enum_as_oneof_of_const_still_maps_to_enum() {
+        // schemars renders a unit enum whose variants have doc comments as a
+        // oneOf of {const:"..."} instead of a flat `enum` — the mado
+        // tear.mode/runtime/auto_attach shape that regressed to "unknown".
+        let schema = json!({
+            "type": "object",
+            "properties": { "tear": { "$ref": "#/$defs/Tear" } },
+            "$defs": {
+                "Tear": { "type": "object", "properties": {
+                    "mode": { "$ref": "#/$defs/Mode", "description": "attach policy" }
+                } },
+                "Mode": { "oneOf": [
+                    { "const": "auto",   "description": "try, fall back" },
+                    { "const": "always", "description": "require tear" },
+                    { "const": "attach", "description": "never spawn" }
+                ] }
+            }
+        });
+        let default = json!({ "tear": { "mode": "always" } });
+        let groups = normalize(&schema, &default);
+        assert_eq!(groups["tear"]["mode"]["type"], json!("enum"));
+        assert_eq!(
+            groups["tear"]["mode"]["values"],
+            json!(["auto", "always", "attach"])
+        );
+        assert_eq!(groups["tear"]["mode"]["default"], json!("always"));
+        assert_eq!(
+            groups["tear"]["mode"]["description"],
+            json!("attach policy")
+        );
     }
 
     #[test]
