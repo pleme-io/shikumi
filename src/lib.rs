@@ -77,6 +77,7 @@ pub mod nix_provider;
 mod observatory;
 mod provider;
 mod reload;
+pub mod schema;
 pub mod secret;
 pub mod secret_client;
 mod source;

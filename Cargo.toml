@@ -168,6 +168,12 @@ gen-types = "0.1"
 notify = { version = "8.2", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Config-schema emission (src/schema.rs): the type/enum/doc half of a
+# generated config surface. The default VALUES come from the type's own
+# `Default`; schemars supplies the field kinds + enum variants + docs that
+# `Default` cannot see. The join is how a nix option surface stays 1:1 with
+# the Rust config by construction instead of by hand.
+schemars = "1.2"
 # Used by shikumi::tiered::ConfigDiff for structural YAML diffing
 # in TieredConfig::diff_against's default impl. Must be a non-dev
 # dep because tiered.rs is lib code that consumers compile against.

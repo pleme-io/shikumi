@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "902191bde14494fdce8afed3981d74c85888fbe40af330b430776e17b1638704",
+  "cargo_lock_sha256": "2afd612c4df720489ba04ea7591d63f43255f98094e390ab9d2da82f450ed0dc",
   "manifest_sha256": {
-    "Cargo.toml": "675c20284f1799fc89897c6dd0c7c867b44cf3a0471c957137aae86c61f11f17"
+    "Cargo.toml": "16087b9c5842dd9ac335a6c5b1b1afede255137795d1834e465a06ac3a2aeb7e"
   },
   "target_resolves": {
     "base": {
@@ -171,6 +171,11 @@
         "features": [
           "std"
         ]
+      },
+      "dyn-clone-1.0.20": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "equivalent-1.0.2": {
         "runtime_dependencies": [],
@@ -943,6 +948,58 @@
           "proc-macro"
         ]
       },
+      "ref-cast-1.0.27": {
+        "runtime_dependencies": [
+          {
+            "name": "ref_cast_impl",
+            "package_key": "ref-cast-impl-1.0.27",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
+      "ref-cast-impl-1.0.27": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.6",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "rustversion-1.0.23": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -955,6 +1012,117 @@
       },
       "same-file-1.0.6": {
         "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "schemars-1.2.2": {
+        "runtime_dependencies": [
+          {
+            "name": "dyn_clone",
+            "package_key": "dyn-clone-1.0.20",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "ref_cast",
+            "package_key": "ref-cast-1.0.27",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "schemars_derive",
+            "package_key": "schemars_derive-1.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "serde",
+            "package_key": "serde-1.0.229",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "serde_json",
+            "package_key": "serde_json-1.0.151",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default",
+          "derive",
+          "schemars_derive",
+          "std"
+        ]
+      },
+      "schemars_derive-1.2.2": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "serde_derive_internals",
+            "package_key": "serde_derive_internals-0.30.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.6",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [],
         "features": []
       },
@@ -985,6 +1153,7 @@
         ],
         "build_dependencies": [],
         "features": [
+          "alloc",
           "default",
           "derive",
           "serde_derive",
@@ -995,6 +1164,7 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
+          "alloc",
           "result",
           "std"
         ]
@@ -1047,6 +1217,47 @@
           "default"
         ]
       },
+      "serde_derive_internals-0.30.0": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.6",
+            "kind": "normal",
+            "features": [
+              "clone-impls",
+              "derive",
+              "parsing",
+              "printing"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "serde_json-1.0.151": {
         "runtime_dependencies": [
           {
@@ -1092,6 +1303,7 @@
         ],
         "build_dependencies": [],
         "features": [
+          "alloc",
           "default",
           "std"
         ]
@@ -1246,6 +1458,16 @@
             "uses_default_features": false,
             "optional": false,
             "target": "cfg(target_os = \"macos\")",
+            "tree": "target"
+          },
+          {
+            "name": "schemars",
+            "package_key": "schemars-1.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
             "tree": "target"
           },
           {
@@ -3842,6 +4064,9 @@
     "cpufeatures-0.3.1": {
       "edition": "2024"
     },
+    "dyn-clone-1.0.20": {
+      "edition": "2018"
+    },
     "equivalent-1.0.2": {
       "edition": "2015"
     },
@@ -3955,6 +4180,14 @@
       "edition": "2021",
       "build_script": "build.rs"
     },
+    "ref-cast-1.0.27": {
+      "edition": "2021",
+      "build_script": "build.rs"
+    },
+    "ref-cast-impl-1.0.27": {
+      "edition": "2021",
+      "proc_macro": true
+    },
     "rustix-1.1.5": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -3970,6 +4203,13 @@
     "same-file-1.0.6": {
       "edition": "2018"
     },
+    "schemars-1.2.2": {
+      "edition": "2021"
+    },
+    "schemars_derive-1.2.2": {
+      "edition": "2021",
+      "proc_macro": true
+    },
     "serde-1.0.229": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -3981,6 +4221,13 @@
     "serde_derive-1.0.229": {
       "edition": "2021",
       "proc_macro": true
+    },
+    "serde_derive_internals-0.30.0": {
+      "edition": "2021",
+      "lib_target": {
+        "name": "serde_derive_internals",
+        "path": "lib.rs"
+      }
     },
     "serde_json-1.0.151": {
       "edition": "2021",
