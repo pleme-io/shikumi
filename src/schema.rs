@@ -151,7 +151,9 @@ fn is_nullable_of(schema: &Value, t: &str) -> bool {
     }
     for key in ["anyOf", "oneOf"] {
         if let Some(Value::Array(branches)) = schema.get(key) {
-            let has_null = branches.iter().any(|b| type_name(b).as_deref() == Some("null"));
+            let has_null = branches
+                .iter()
+                .any(|b| type_name(b).as_deref() == Some("null"));
             let has_t = branches.iter().any(|b| type_name(b).as_deref() == Some(t));
             if has_null && has_t {
                 return true;
