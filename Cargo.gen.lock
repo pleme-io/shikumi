@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "829537592051b50c1300c9c36e63cf23fcae410c8f1a9aa9cb009a7cc7cc4fbc",
+  "cargo_lock_sha256": "7891a642b60ad707a05ea30f86628d262fa43e9a617e55e6c8042b99d408d7ae",
   "manifest_sha256": {
-    "Cargo.toml": "19fd2f07b449114a2fc103758d03d0436523c11caee7c61500cf6a617e231072"
+    "Cargo.toml": "fd37e6789551f46ed265c7c4f1dd6fcd6c1ab8c8d8d7a69cb6a67795b80863ca"
   },
   "target_resolves": {
     "base": {
@@ -488,7 +488,7 @@
           },
           {
             "name": "inventory",
-            "package_key": "inventory-0.3.24",
+            "package_key": "inventory-0.3.25",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -570,7 +570,7 @@
           },
           {
             "name": "inventory",
-            "package_key": "inventory-0.3.24",
+            "package_key": "inventory-0.3.25",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -817,7 +817,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "inventory-0.3.24": {
+      "inventory-0.3.25": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2109,7 +2109,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.1080": {
+      "shikumi-0.1.1081": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -4958,7 +4958,7 @@
       "edition": "2015",
       "build_script": "build.rs"
     },
-    "inventory-0.3.24": {
+    "inventory-0.3.25": {
       "edition": "2021"
     },
     "itoa-1.0.18": {
@@ -5119,7 +5119,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.1080": {
+    "shikumi-0.1.1081": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
