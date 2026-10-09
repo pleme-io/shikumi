@@ -42,11 +42,99 @@
 //! myapp config-show default --diff bare  # unified diff between tiers
 //! ```
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
+use figment::value::{Dict, Value};
+use serde::Serialize;
 
-use crate::tiered::{ConfigTier, TieredConfig};
+use crate::overlay::{LayerError, SetAssignment};
+use crate::tiered::{ConfigTier, ProgressiveResolution, TieredConfig};
+
+/// The default config ↔ CLI association every pleme-io binary flattens in:
+/// `--config <PATH>` merge-override files and `--set <PATH=VALUE>`
+/// assignments, folded with the binary's own typed flags by ONE call,
+/// [`Self::resolve`].
+///
+/// ```ignore
+/// use clap::Parser;
+/// use serde::Serialize;
+/// use shikumi::cli::ConfigArgs;
+///
+/// #[derive(Parser)]
+/// struct Cli {
+///     #[command(flatten)]
+///     config: ConfigArgs,
+///     #[command(flatten)]
+///     flags: Flags,
+/// }
+///
+/// /// Every flag that sets a config value is an `Option`, named by the
+/// /// config path it overrides — an absent flag contributes nothing.
+/// #[derive(clap::Args, Serialize)]
+/// struct Flags {
+///     #[arg(long)]
+///     #[serde(skip_serializing_if = "Option::is_none")]
+///     github_token_file: Option<std::path::PathBuf>,
+/// }
+///
+/// let cli = Cli::parse();
+/// let resolved = cli.config.resolve::<MyConfig>("myapp", &cli.flags)?;
+/// let config: MyConfig = resolved.into_value();
+/// ```
+///
+/// Precedence, lowest first — each step a typed [`crate::OverlaySlot`],
+/// so the order holds however the layers are assembled:
+///
+/// ```text
+/// bare → discovered → prescribed_default       computed tiers
+///   → discovered file ($MYAPP_CONFIG or XDG)   file
+///   → --config FILE … (in order)               config-override
+///   → MYAPP_* env (`__` nests)                 env
+///   → typed flags                              cli-flags
+///   → --set PATH=VALUE … (in order)            cli-set
+/// ```
+///
+/// Passing a YAML with `--config` is a merge-override (maps merge per key,
+/// scalars and lists replace), never a replacement of the whole config.
+#[derive(Debug, Clone, Default, PartialEq, Args)]
+pub struct ConfigArgs {
+    /// Merge-override config file, applied above the discovered config
+    /// file. Repeatable; later files win.
+    #[arg(long = "config", value_name = "PATH", global = true)]
+    pub config: Vec<PathBuf>,
+
+    /// Override one config value, e.g. `--set daemon.interval=300`
+    /// (VALUE is YAML). Repeatable; highest precedence.
+    #[arg(long = "set", value_name = "PATH=VALUE", global = true)]
+    pub set: Vec<SetAssignment>,
+}
+
+impl ConfigArgs {
+    /// Resolve the config `T` for `app` — the ONE entry point. Folds the
+    /// computed tiers, the discovered file, every `--config` file, the
+    /// `<APP>_` env layer, the typed flag `overlay` and every `--set`
+    /// (see the type docs for the order), strictly: an unknown or
+    /// ill-typed key is refused naming the layer that wrote it.
+    ///
+    /// `overlay` is the binary's own flags struct (pass
+    /// [`crate::NoFlags`] when it has none); see
+    /// [`crate::ProgressiveLayer::cli`] for why its fields are `Option`s.
+    ///
+    /// # Errors
+    ///
+    /// Any [`LayerError`]: an unreadable discovered or `--config` file, a
+    /// non-map overlay, an unknown key, an ill-typed value.
+    pub fn resolve<T: TieredConfig>(
+        &self,
+        app: &str,
+        overlay: &impl Serialize,
+    ) -> Result<ProgressiveResolution<T>, LayerError> {
+        let layers = crate::overlay::operator_layers(app, &self.config, overlay, &self.set)?;
+        T::try_resolve_progressive_with(&layers)
+    }
+}
 
 /// Which tier the operator asked for at the CLI level. Distinct
 /// from `ConfigTier::Custom(PathBuf)` because clap surfaces the
@@ -1454,6 +1542,18 @@ pub struct ConfigShowCommand {
     /// Output is a unified diff (- = baseline, + = candidate).
     #[arg(long, value_enum)]
     pub diff: Option<TierArg>,
+
+    /// Show the EFFECTIVE config this binary runs with — the full fold
+    /// (discovered file, `--config`, env, flags, `--set`) — instead of a
+    /// single tier. Needs the binary to dispatch through
+    /// [`ConfigShowCommand::run_effective`].
+    #[arg(long)]
+    pub effective: bool,
+
+    /// With `--effective`: print every leaf with the layer that set it
+    /// (tier + source) instead of the plain config.
+    #[arg(long, requires = "effective")]
+    pub provenance: bool,
 }
 
 /// Errors returned by `ConfigShowCommand::run`. Kept small + library-
@@ -1466,6 +1566,8 @@ pub enum ConfigShowError {
     Yaml(#[from] serde_yaml::Error),
     #[error("JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("effective config resolution failed: {0}")]
+    Resolve(#[from] LayerError),
 }
 
 impl ConfigShowError {
@@ -1493,8 +1595,8 @@ impl ConfigShowError {
     /// single welded [`matches!`]: adding a fourth variant fails to
     /// compile at this method's pattern in lockstep with
     /// [`Self::is_yaml`] and [`Self::is_json`] via the
-    /// ternary-partition pin
-    /// [`tests::config_show_error_predicates_are_a_closed_ternary_partition`],
+    /// quaternary-partition pin
+    /// [`tests::config_show_error_predicates_are_a_closed_quaternary_partition`],
     /// which fires when a new variant collapses the partition sum to
     /// zero at that variant. Operator-facing help-line dispatches that
     /// surface "did you mean `--path <FILE>`?" only on the missing-
@@ -1530,7 +1632,7 @@ impl ConfigShowError {
     /// [`Self::Json`] both return `false`.
     ///
     /// Sibling of [`Self::is_custom_tier_without_path`] and
-    /// [`Self::is_json`] on the same closed ternary partition; same
+    /// [`Self::is_json`] on the same closed quaternary partition; same
     /// routing rationale (see [`Self::is_custom_tier_without_path`]
     /// docs). A structured-log field that names the failing emission
     /// backend without hand-copying the variant tag, or a
@@ -1549,7 +1651,7 @@ impl ConfigShowError {
     /// [`Self::Yaml`] both return `false`.
     ///
     /// Sibling of [`Self::is_custom_tier_without_path`] and
-    /// [`Self::is_yaml`] on the same closed ternary partition; same
+    /// [`Self::is_yaml`] on the same closed quaternary partition; same
     /// routing rationale (see [`Self::is_custom_tier_without_path`]
     /// docs). A structured-log field that names the failing emission
     /// backend without hand-copying the variant tag, or a
@@ -1559,6 +1661,16 @@ impl ConfigShowError {
     #[must_use]
     pub const fn is_json(&self) -> bool {
         matches!(self, Self::Json(_))
+    }
+
+    /// True iff this rejection is [`Self::Resolve`] — the effective fold
+    /// behind `--effective` refused (an unreadable file, an unknown or
+    /// ill-typed key). The fourth cell of the closed partition beside
+    /// [`Self::is_custom_tier_without_path`] / [`Self::is_yaml`] /
+    /// [`Self::is_json`].
+    #[must_use]
+    pub const fn is_resolve(&self) -> bool {
+        matches!(self, Self::Resolve(_))
     }
 }
 
@@ -1589,6 +1701,54 @@ impl ConfigShowCommand {
         Ok(())
     }
 
+    /// Run the subcommand in a binary wired with [`ConfigArgs`]: with
+    /// `--effective` it prints the config the binary actually runs with
+    /// (the same [`ConfigArgs::resolve`] fold, so `config-show` cannot
+    /// disagree with the running process); otherwise it falls back to the
+    /// single-tier [`Self::run`] with `<APP>_TIER`.
+    ///
+    /// # Errors
+    /// [`ConfigShowError::Resolve`] when the effective fold refuses, plus
+    /// every [`Self::run`] error.
+    pub fn run_effective<C: TieredConfig>(
+        &self,
+        app: &str,
+        config: &ConfigArgs,
+        overlay: &impl Serialize,
+    ) -> Result<(), ConfigShowError> {
+        if !self.effective {
+            let env_var = format!("{}TIER", crate::overlay::env_prefix_for(app));
+            return self.run::<C>(&env_var);
+        }
+        let resolved = config.resolve::<C>(app, overlay)?;
+        print!("{}", self.render_effective(&resolved)?);
+        Ok(())
+    }
+
+    /// Render a resolved config in `self.format`: the plain value, or with
+    /// `--provenance` one row per leaf —
+    /// `<dotted.path>: { value, tier, source }` — naming the layer that
+    /// set it.
+    ///
+    /// # Errors
+    /// YAML / JSON serialization errors.
+    pub fn render_effective<C: TieredConfig>(
+        &self,
+        resolved: &ProgressiveResolution<C>,
+    ) -> Result<String, ConfigShowError> {
+        if !self.provenance {
+            return Ok(match self.format {
+                OutputFormat::Yaml => serde_yaml::to_string(resolved.value())?,
+                OutputFormat::Json => serde_json::to_string_pretty(resolved.value())?,
+            });
+        }
+        let rows = provenance_rows(resolved);
+        Ok(match self.format {
+            OutputFormat::Yaml => serde_yaml::to_string(&rows)?,
+            OutputFormat::Json => serde_json::to_string_pretty(&rows)?,
+        })
+    }
+
     /// Resolve `self.tier` (with `self.path` for `custom`, `env_var`
     /// for `env`) into a `ConfigTier`.
     fn resolve(&self, env_var: &str) -> Result<ConfigTier, ConfigShowError> {
@@ -1610,6 +1770,56 @@ impl ConfigShowCommand {
             },
             TierArg::Env => ConfigTier::from_env(env_var),
         })
+    }
+}
+
+/// One `--provenance` row: a leaf's effective value and the layer that
+/// set it.
+#[derive(Debug, Serialize)]
+struct ProvenanceRow {
+    value: Value,
+    tier: &'static str,
+    source: String,
+}
+
+/// Per-leaf rows of a resolved config, keyed by dotted path. Values are
+/// read back from the typed value (what the binary runs with), so the
+/// listing cannot show a value serde dropped.
+fn provenance_rows<C: TieredConfig>(
+    resolved: &ProgressiveResolution<C>,
+) -> BTreeMap<String, ProvenanceRow> {
+    let typed: Dict = figment::Figment::new()
+        .merge(figment::providers::Serialized::defaults(resolved.value()))
+        .extract()
+        .unwrap_or_default();
+    resolved
+        .provenance()
+        .iter()
+        .map(|(path, prov)| {
+            let value = leaf(&typed, path).cloned().unwrap_or_else(|| {
+                Value::Empty(figment::value::Tag::Default, figment::value::Empty::None)
+            });
+            (
+                path.join("."),
+                ProvenanceRow {
+                    value,
+                    tier: prov.tier().as_str(),
+                    source: prov.source().to_string(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn leaf<'a>(dict: &'a Dict, path: &[String]) -> Option<&'a Value> {
+    let (first, rest) = path.split_first()?;
+    let v = dict.get(first)?;
+    if rest.is_empty() {
+        return Some(v);
+    }
+    match v {
+        Value::Dict(_, inner) => leaf(inner, rest),
+        _ => None,
     }
 }
 
@@ -1646,6 +1856,8 @@ mod tests {
             path: None,
             format: OutputFormat::Yaml,
             diff: None,
+            effective: false,
+            provenance: false,
         };
         // Smoke test: doesn't error. (Output goes to stdout; the
         // contract test we want is that no error path is taken.)
@@ -1659,6 +1871,8 @@ mod tests {
             path: None,
             format: OutputFormat::Json,
             diff: None,
+            effective: false,
+            provenance: false,
         };
         cmd.run::<FixtureConfig>("FIXTURE_TIER").unwrap();
     }
@@ -1670,6 +1884,8 @@ mod tests {
             path: None,
             format: OutputFormat::Yaml,
             diff: None,
+            effective: false,
+            provenance: false,
         };
         let err = cmd.run::<FixtureConfig>("FIXTURE_TIER").unwrap_err();
         assert!(matches!(err, ConfigShowError::CustomTierWithoutPath));
@@ -1682,6 +1898,8 @@ mod tests {
             path: None,
             format: OutputFormat::Yaml,
             diff: Some(TierArg::Bare),
+            effective: false,
+            provenance: false,
         };
         cmd.run::<FixtureConfig>("FIXTURE_TIER").unwrap();
     }
@@ -1697,6 +1915,8 @@ mod tests {
             path: None,
             format: OutputFormat::Yaml,
             diff: None,
+            effective: false,
+            provenance: false,
         };
         cmd.run::<FixtureConfig>("FIXTURE_TIER_TEST_BARE").unwrap();
         unsafe { std::env::remove_var("FIXTURE_TIER_TEST_BARE") };
@@ -4257,7 +4477,7 @@ mod tests {
     }
 
     #[test]
-    fn config_show_error_predicates_are_a_closed_ternary_partition() {
+    fn config_show_error_predicates_are_a_closed_quaternary_partition() {
         // Every `ConfigShowError` value in the canonical sample table
         // satisfies exactly one of the three sibling predicates: none
         // satisfies two, none satisfies zero. Ternary-partition
@@ -4277,15 +4497,17 @@ mod tests {
             ConfigShowError::CustomTierWithoutPath,
             ConfigShowError::Yaml(synthetic_yaml_error()),
             ConfigShowError::Json(synthetic_json_error()),
+            ConfigShowError::Resolve(LayerError::Overlay("synthetic".to_owned())),
         ];
         for err in &errors {
             let hits = usize::from(err.is_custom_tier_without_path())
                 + usize::from(err.is_yaml())
-                + usize::from(err.is_json());
+                + usize::from(err.is_json())
+                + usize::from(err.is_resolve());
             assert_eq!(
                 hits, 1,
                 "ConfigShowError::{err:?} must satisfy exactly one of \
-                 is_custom_tier_without_path/is_yaml/is_json (satisfied {hits})",
+                 is_custom_tier_without_path/is_yaml/is_json/is_resolve (satisfied {hits})",
             );
         }
     }
@@ -4314,6 +4536,8 @@ mod tests {
             path: None,
             format: OutputFormat::Yaml,
             diff: None,
+            effective: false,
+            provenance: false,
         };
         let err = cmd
             .run::<FixtureConfig>("FIXTURE_TIER")
@@ -4342,5 +4566,12 @@ mod tests {
             promoted_json.is_json(),
             "expected is_json for {promoted_json:?}",
         );
+        assert!(!promoted_json.is_resolve());
+
+        let promoted_resolve: ConfigShowError = LayerError::Overlay("synthetic".to_owned()).into();
+        assert!(promoted_resolve.is_resolve());
+        assert!(!promoted_resolve.is_custom_tier_without_path());
+        assert!(!promoted_resolve.is_yaml());
+        assert!(!promoted_resolve.is_json());
     }
 }

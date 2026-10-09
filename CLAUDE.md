@@ -200,6 +200,8 @@ for Nix-managed desktop applications. Four modules, each independently testable:
 | `watcher.rs` | Symlink-aware file watcher | `ConfigWatcher`, `symlink_target` |
 | `tiered.rs` | Tiered progressive-discovery resolution (the default) | `TieredConfig`, `ConfigTier`, `resolve_progressive`, `resolve_progressive_full`, `Provenance`, `ProgressiveResolution`, `ConfigDiff` |
 | `discovered.rs` | Per-leaf attributed deep-merge fold (kanchi discovery composition) | `discovered_from_layers`, `deep_merge_attributed`, `LayerAttribution` |
+| `overlay.rs` | CLI as a partial layer: typed within-tier precedence, `--set` parsing, strict attributed extraction | `OverlaySlot`, `SetAssignment`, `LayerError`, `NoFlags`, `operator_layers` |
+| `cli.rs` (`cli` feat) | clap surfaces: `ConfigArgs` (`--config`/`--set` + `resolve`), `config-show` incl. `--effective --provenance` | `ConfigArgs`, `ConfigShowCommand` |
 | `kube_discovery.rs` (`kube-discovery` feat) | ConfigPlane DISCOVERED-tier cluster `DiscoveryLayer` over the `kanchi::ClusterEnv` seam | `KubeClusterDiscovery`, `KubeSecretReader` (`kube` feat) |
 | `error.rs` | Error types | `ShikumiError` |
 | `secret.rs` | Declarative secret references (`literal`, `command`, `op`, `sops`, `akeyless`, `vault`, `aws_secret`, `gcp_secret`, `file`, `env`) and their resolvers | `SecretSource`, `SecretBackend`, `SecretBackendKind`, `resolve` |
@@ -237,6 +239,51 @@ struct literal. Tier-honest seal grades (precedence-order + discovery-totality
 truly-unrep; provenance construction-complete with a side-map ceiling) live in
 [`docs/PROGRESSIVE-DISCOVERY-VERIFICATION.md`](./docs/PROGRESSIVE-DISCOVERY-VERIFICATION.md).
 The legacy single-tier `resolve_tier` / `resolve_from_env` path is preserved.
+
+### CLI as a partial layer (the default for every pleme-io binary)
+
+A binary never hand-wires clap → config. It flattens `shikumi::cli::ConfigArgs`
+(feature `cli`) next to its own flags struct and makes ONE call:
+
+```rust
+#[derive(clap::Parser)]
+struct Cli {
+    #[command(flatten)] config: shikumi::cli::ConfigArgs,   // --config PATH…, --set PATH=VALUE…
+    #[command(flatten)] flags: Flags,                       // the binary's own flags
+}
+/// Every config-setting flag is an `Option`, shaped like the config path it
+/// overrides (`--github-token-file` → `github.token_file`).
+#[derive(clap::Args, serde::Serialize)]
+struct Flags { #[arg(long)] github_token_file: Option<PathBuf> /* … */ }
+
+let cfg = cli.config.resolve::<MyConfig>("myapp", &cli.flags)?.into_value();
+```
+
+`resolve` folds, lowest first, each step a typed `OverlaySlot` (so the order is
+a property of the layers, never of push order):
+
+```text
+bare → discovered → prescribed_default                 computed tiers
+  → discovered file ($MYAPP_CONFIG or XDG)             file
+  → each --config FILE (merge-override, in order)      config-override
+  → MYAPP_* env (`__` nests; _CONFIG/_TIER ignored)    env
+  → typed flags (nulls stripped: absent ≠ clobber)     cli-flags
+  → each --set PATH=VALUE (YAML-typed value)           cli-set
+```
+
+Maps merge per key; scalars and lists replace. Extraction is strict
+(`TieredConfig::try_resolve_progressive_with`): an unknown or ill-typed key is a
+`LayerError` naming the dotted path and the `Provenance` of the layer that wrote
+it (`unknown config key `daemon.intervall` (set by custom (cli: --set))`).
+Tier-honest: unknown-key detection re-serializes the typed value, so a
+`#[serde(skip_serializing)]` field or a `#[serde(alias)]` spelling reads as
+unknown — runtime-refused, not compile-time. `config-show --effective
+[--provenance]` (wired via `ConfigShowCommand::run_effective`) runs the same fold,
+so the shown config is the one the binary runs with, per leaf.
+
+Every closed set that names source kinds carries `ConfigSourceKind::Cli`
+(`ConfigSource::Cli(label)`, label `flags` or `--set`); the layer-kind axis is
+cardinality 4, so its strict interior (two of four kinds) is reachable.
 
 ### Symlink-Aware Watching
 

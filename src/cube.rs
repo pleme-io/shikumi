@@ -17135,8 +17135,8 @@ mod tests {
         AttributionNameKindCoordinates, AttributionRule, AttributionSourceKindCoordinates,
         ConfigSourceKind, ConfigTierKind, DiffLineKind, EnvMetadataTagKind,
         ErrorLocalizationCoordinates, FieldPathLocalization, FigmentNameTagKind, FigmentSourceKind,
-        Format, FormatCoordinates, FormatProvenance, SecretBackendKind, SecretRefShape,
-        ShikumiErrorKind, WatchEventClass,
+        Format, FormatCoordinates, FormatProvenance, OverlaySlot, SecretBackendKind,
+        SecretRefShape, ShikumiErrorKind, WatchEventClass,
         secret_client::{SecretClientKind, SecretErrorKind, SecretOperation},
     };
 
@@ -17224,6 +17224,7 @@ mod tests {
             $cb!(SecretErrorKind);
             $cb!(SecretClientKind);
             $cb!(DiffLineKind);
+            $cb!(OverlaySlot);
         };
     }
 
@@ -17335,6 +17336,7 @@ mod tests {
             $cb!(SecretErrorKind);
             $cb!(SecretClientKind);
             $cb!(DiffLineKind);
+            $cb!(OverlaySlot);
         };
     }
 
@@ -19624,7 +19626,7 @@ mod tests {
     // ---- axis_cardinality pins today's variant / cell counts ----
 
     #[test]
-    fn axis_cardinality_pins_todays_counts_across_twenty_implementors() {
+    fn axis_cardinality_pins_todays_counts_across_twenty_one_implementors() {
         // Twenty closed-enum axis primitives. A new variant landing
         // on any of these enums extends the expected count in
         // lockstep.
@@ -19643,6 +19645,7 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<FigmentNameTagKind>(2);
         assert_axis_cardinality_matches_trait_all::<EnvMetadataTagKind>(2);
         assert_axis_cardinality_matches_trait_all::<DiffLineKind>(3);
+        assert_axis_cardinality_matches_trait_all::<OverlaySlot>(6);
         // Five product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
@@ -22079,7 +22082,7 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_twenty_axes() {
+    fn for_each_closed_axis_primitive_macro_covers_twenty_one_axes() {
         // Pin that the macro expands to exactly twenty arms — the
         // nineteen pre-existing axis primitives plus
         // [`crate::DiffLineKind`], the `'static` closed three-way
@@ -22097,8 +22100,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 20,
-            "for_each_closed_axis_primitive! must expand to twenty arms",
+            count, 21,
+            "for_each_closed_axis_primitive! must expand to twenty-one arms",
         );
     }
 
@@ -22143,7 +22146,7 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_twenty_five_types() {
+    fn for_each_closed_axis_implementor_macro_covers_twenty_six_types() {
         // Pin that the superset macro expands to exactly twenty-five
         // arms — the twenty axis primitives plus the five product
         // cubes. A twenty-first axis primitive OR a sixth cube landing
@@ -22158,8 +22161,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 25,
-            "for_each_closed_axis_implementor! must expand to twenty-five arms (20 axes + 5 cubes)",
+            count, 26,
+            "for_each_closed_axis_implementor! must expand to twenty-six arms (21 axes + 5 cubes)",
         );
     }
 
@@ -22189,14 +22192,14 @@ mod tests {
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=10,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7, DiffLineKind=3 → 79.
+        // SecretClientKind=7, DiffLineKind=3, OverlaySlot=6 → 85.
         // 5-cube sum: FormatCoordinates=10, AttributionCoordinates=16,
         // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=12,
-        // AttributionNameKindCoordinates=8 → 67. Grand total 79+67 = 146.
+        // AttributionNameKindCoordinates=8 → 67. Grand total 85+67 = 152.
         assert_eq!(
-            total, 146,
+            total, 152,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 146)",
+             (today's axis_cardinality checksum is 152)",
         );
     }
 
@@ -22455,7 +22458,7 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_twenty_implementors() {
+    fn for_each_closed_axis_label_implementor_macro_covers_twenty_one_implementors() {
         // Pin that the macro expands to exactly twenty arms — the
         // nineteen pre-existing [`ClosedAxisLabel`] implementors plus
         // [`crate::DiffLineKind`], the removed/added/context classification
@@ -22472,8 +22475,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 20,
-            "for_each_closed_axis_label_implementor! must expand to twenty arms",
+            count, 21,
+            "for_each_closed_axis_label_implementor! must expand to twenty-one arms",
         );
     }
 
@@ -22501,16 +22504,16 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 79,
+            total, 85,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 79: \
+             (today's axis_cardinality checksum is 85: \
              PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2 \
              + ConfigSourceKind=4 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
              + EnvMetadataTagKind=2 + SecretBackendKind=10 + SecretRefShape=2 \
              + SecretOperation=6 + SecretErrorKind=5 + SecretClientKind=7 \
-             + DiffLineKind=3)",
+             + DiffLineKind=3 + OverlaySlot=6)",
         );
     }
 

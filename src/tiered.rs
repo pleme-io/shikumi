@@ -94,6 +94,7 @@
 
 use crate::discovered::{DiscoveryLayer, compose, deep_merge, deep_merge_attributed};
 use crate::error::ShikumiError;
+use crate::overlay::OverlaySlot;
 use crate::provider::ProviderChain;
 use crate::source::{ConfigSource, EnvMetadataTagKind};
 use figment::value::Dict;
@@ -1298,12 +1299,13 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     /// [`Self::resolve_progressive`] with operator `overlays` (file / env /
     /// runtime override) appended above the three trait tiers.
     ///
-    /// Each [`ProgressiveLayer`] carries its own [`Provenance`]; the fold
-    /// **stable-sorts the whole layer stack by the const [`ConfigTierKind`]
-    /// [`crate::ClosedAxis`] precedence ordinal BEFORE merging**, so no
-    /// input ordering can let a lower tier beat a higher one — the
-    /// precedence IS the ordering, structurally (a mis-ordered overlay is
-    /// re-sorted to its tier's rank; same-tier overlays keep caller order).
+    /// Each [`ProgressiveLayer`] carries its own [`Provenance`] and
+    /// [`OverlaySlot`]; the fold **stable-sorts the whole layer stack by
+    /// `(`[`ConfigTierKind`]` ordinal, `[`OverlaySlot`]` ordinal)` BEFORE
+    /// merging**, so no input ordering can let a lower layer beat a higher
+    /// one — the precedence IS the ordering, structurally (a mis-ordered
+    /// overlay is re-sorted to its rank; only same-slot overlays, e.g. two
+    /// `--config` files, keep caller order).
     ///
     /// Attribution is **last-changer**: a leaf is credited to the highest
     /// tier that set it to its final value, so a `prescribed_default()`
@@ -1311,60 +1313,57 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     /// leaves that leaf credited to `Discovered`, not `Default`.
     #[must_use]
     fn resolve_progressive_with(overlays: &[ProgressiveLayer]) -> ProgressiveResolution<Self> {
-        // 1. Assemble the three trait tiers, each serialized to a dict and
-        //    tagged with its computed-defaults provenance. Each tier's
-        //    provenance flows through the named constructor on `Provenance`
-        //    (`bare()` / `discovered()` / `prescribed_default()`), so the
-        //    fold's provenance-construction identity lives at one site per
-        //    tier — not three unpacked `computed(ConfigTierKind::_)`
-        //    literals here that drift from the constructor grid on
-        //    `Provenance` if a tier ever grows a richer source variant.
-        let mut layers: Vec<(Provenance, Dict)> = vec![
-            (Provenance::bare(), tiered_to_dict(&Self::bare())),
-            (
-                Provenance::discovered(),
-                tiered_to_dict(&Self::discovered()),
-            ),
-            (
-                Provenance::prescribed_default(),
-                tiered_to_dict(&Self::prescribed_default()),
-            ),
-        ];
-        // Unpack each overlay into its (provenance, dict) pair via the
-        // named ProgressiveLayer::into_parts destructuring accessor —
-        // NOT the ad-hoc `|ov| (ov.provenance().clone(), ov.dict().clone())`
-        // lambda the seam previously carried. The two forms are pointwise
-        // equal (both clone the two owned fields once each: the outer
-        // `.cloned()` on the borrowed slice clones the whole overlay
-        // struct, which the derived `Clone` impl on `ProgressiveLayer`
-        // implements as a field-wise clone of `Provenance` + `Dict`;
-        // `into_parts` then moves both fields out with no allocation) —
-        // pinned by `tests::progressive_layer_into_parts_matches_field_accessors`.
-        // Routing the seam through the named method means a future
-        // callsite unpacking a `ProgressiveLayer` into its owned pair
-        // reaches for the same primitive, not a re-derived closure.
-        layers.extend(overlays.iter().cloned().map(ProgressiveLayer::into_parts));
-        // 2. Order by the const ConfigTierKind ClosedAxis ordinal. A stable
-        //    sort keeps same-tier overlays (e.g. two files) in caller order.
-        layers.sort_by_key(|(prov, _)| prov.tier_ordinal());
-
-        // 3. Fold with per-leaf, change-aware provenance attribution — the
-        //    ONLY construction path for a progressively-resolved provenance
-        //    map, so "a lower tier silently beats a higher one" has no path.
-        let mut merged = Dict::new();
-        let mut attribution: BTreeMap<Vec<String>, Provenance> = BTreeMap::new();
-        for (prov, dict) in layers {
-            deep_merge_attributed(&mut merged, dict, &[], &prov, &mut attribution, true);
-        }
+        // 1.–3. Assemble the three trait tiers + overlays, order them by
+        //       `(tier, slot)` and fold with last-changer attribution — the
+        //       one fold shared with the strict entry point.
+        let (merged, attribution) = fold_progressive::<Self>(overlays);
 
         // 4. Materialize `Self` from the folded dict. Every input is a valid
         //    `Self` serialization (or an operator overlay merged over one),
         //    so extraction succeeds; the defensive fallback keeps totality.
+        //    [`Self::try_resolve_progressive_with`] is the strict peer that
+        //    refuses (and attributes) instead of falling back.
         let value = Figment::new()
             .merge(Serialized::defaults(&merged))
             .extract::<Self>()
             .unwrap_or_else(|_| Self::prescribed_default());
         ProgressiveResolution::new(value, ProvenanceMap { inner: attribution })
+    }
+
+    /// **The strict progressive fold** — [`Self::resolve_progressive_with`]
+    /// with every silent fallback turned into a typed, attributed refusal.
+    ///
+    /// Same fold, same `(tier, `[`OverlaySlot`]`)` precedence, same
+    /// last-changer [`ProvenanceMap`]. The difference is extraction:
+    ///
+    /// * an ill-typed leaf ([`crate::LayerError::Invalid`]) and
+    /// * a key `Self` does not declare ([`crate::LayerError::UnknownKey`])
+    ///
+    /// are refused, each naming the dotted path and the [`Provenance`] of
+    /// the layer that wrote it — so `--set daemon.intervall=5` fails as
+    /// "unknown key `daemon.intervall` (set by custom (cli: --set))" instead
+    /// of being dropped on the floor by serde.
+    ///
+    /// Unknown-key detection needs no `#[serde(deny_unknown_fields)]` on
+    /// `Self`: the extracted value is re-serialized and every input path it
+    /// does not reproduce is unknown. The honest ceiling of that check: a
+    /// field that is `#[serde(skip_serializing)]`, or reached through a
+    /// `#[serde(alias)]`, is reported as unknown; null-valued input leaves
+    /// are never reported.
+    ///
+    /// This is the entry point [`crate::cli::ConfigArgs::resolve`] runs.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::LayerError::Invalid`] / [`crate::LayerError::UnknownKey`] as
+    /// above.
+    fn try_resolve_progressive_with(
+        overlays: &[ProgressiveLayer],
+    ) -> Result<ProgressiveResolution<Self>, crate::LayerError> {
+        let (merged, attribution) = fold_progressive::<Self>(overlays);
+        let provenance = ProvenanceMap { inner: attribution };
+        let value = crate::overlay::extract_strict::<Self>(&merged, &provenance)?;
+        Ok(ProgressiveResolution::new(value, provenance))
     }
 
     /// **The end-to-end fused chain** — folds the three computed tiers *and*
@@ -1385,10 +1384,10 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     /// resolves in one call, every leaf still carrying its typed [`Provenance`].
     /// `file` overlays carry [`Provenance::file`]; `env` overlays carry
     /// [`Provenance::env`]. Both land at [`ConfigTierKind::Custom`] tier rank
-    /// (above the three computed tiers) and, being the same rank, keep their
-    /// documented **file-then-env** order so env wins over file per leaf — the
-    /// two are then told apart by [`Provenance::source`] (`File` vs `Env`), not
-    /// by tier.
+    /// (above the three computed tiers); within that rank the typed
+    /// [`OverlaySlot`] puts env above file ([`OverlaySlot::Env`] >
+    /// [`OverlaySlot::File`]), so env wins over file per leaf — the two are
+    /// told apart by [`Provenance::source`] (`File` vs `Env`), not by tier.
     ///
     /// A missing / malformed file contributes an **empty** overlay (via
     /// [`ProgressiveLayer::from_file`]) — never a panic, never a partial guess.
@@ -1454,6 +1453,73 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
         let b = serde_yaml::to_string(self).unwrap_or_default();
         ConfigDiff::from_yaml_pair(&a, &b)
     }
+}
+
+/// The one progressive fold both [`TieredConfig::resolve_progressive_with`]
+/// (lenient) and [`TieredConfig::try_resolve_progressive_with`] (strict)
+/// run: the three computed tiers plus `overlays`, ordered by
+/// `(tier, `[`OverlaySlot`]`)`, deep-merged with last-changer attribution.
+/// Returns the merged dict and the per-leaf provenance; the two callers
+/// differ only in how they extract `T` from the dict.
+fn fold_progressive<T: TieredConfig>(
+    overlays: &[ProgressiveLayer],
+) -> (Dict, BTreeMap<Vec<String>, Provenance>) {
+    // 1. Assemble the three trait tiers, each serialized to a dict and
+    //    tagged with its computed-defaults provenance.
+    let mut layers: Vec<(OverlaySlot, Provenance, Dict)> = vec![
+        (
+            OverlaySlot::Computed,
+            Provenance::bare(),
+            tiered_to_dict(&T::bare()),
+        ),
+        (
+            OverlaySlot::Computed,
+            Provenance::discovered(),
+            tiered_to_dict(&T::discovered()),
+        ),
+        (
+            OverlaySlot::Computed,
+            Provenance::prescribed_default(),
+            tiered_to_dict(&T::prescribed_default()),
+        ),
+    ];
+    // Unpack each overlay into its (provenance, dict) pair via the
+    // named ProgressiveLayer::into_parts destructuring accessor —
+    // NOT the ad-hoc `|ov| (ov.provenance().clone(), ov.dict().clone())`
+    // lambda the seam previously carried. The two forms are pointwise
+    // equal (both clone the two owned fields once each: the outer
+    // `.cloned()` on the borrowed slice clones the whole overlay
+    // struct, which the derived `Clone` impl on `ProgressiveLayer`
+    // implements as a field-wise clone of `Provenance` + `Dict`;
+    // `into_parts` then moves both fields out with no allocation) —
+    // pinned by `tests::progressive_layer_into_parts_matches_field_accessors`.
+    // Routing the seam through the named method means a future
+    // callsite unpacking a `ProgressiveLayer` into its owned pair
+    // reaches for the same primitive, not a re-derived closure.
+    layers.extend(overlays.iter().cloned().map(|layer| {
+        let slot = layer.slot();
+        let (provenance, dict) = layer.into_parts();
+        (slot, provenance, dict)
+    }));
+    // 2. Order by `(tier, slot)`: the const ConfigTierKind ClosedAxis
+    //    ordinal first, then the typed OverlaySlot within the tier
+    //    (file < config-override < env < cli-flags < cli-set). Both keys
+    //    are properties of the layers, so no caller ordering can let a
+    //    lower layer beat a higher one. A stable sort keeps same-slot
+    //    overlays (e.g. two `--config` files) in caller order — that one
+    //    order IS the operator's: repeated flags apply left to right.
+    layers.sort_by_key(|(slot, prov, _)| (prov.tier_ordinal(), slot.ordinal()));
+
+    // 3. Fold with per-leaf, change-aware provenance attribution — the
+    //    ONLY construction path for a progressively-resolved provenance
+    //    map, so "a lower tier silently beats a higher one" has no path.
+    let mut merged = Dict::new();
+    let mut attribution: BTreeMap<Vec<String>, Provenance> = BTreeMap::new();
+    for (_, prov, dict) in layers {
+        deep_merge_attributed(&mut merged, dict, &[], &prov, &mut attribution, true);
+    }
+
+    (merged, attribution)
 }
 
 /// Serialize a tiered value into a figment [`Dict`] for the progressive
@@ -25894,35 +25960,122 @@ impl Extend<(Vec<String>, Provenance)> for ProvenanceMap {
 /// [`Self::file`] / [`Self::env`]; the fold appends it above the three
 /// trait tiers and re-sorts by tier precedence, so a caller cannot place
 /// an overlay out of precedence order.
+///
+/// Every layer also carries a typed [`OverlaySlot`] — its precedence rank
+/// *within* its tier. The fold orders layers by `(tier, slot)`, so the
+/// operator-layer order `file < config-override < env < cli-flags <
+/// cli-set` is a property of the layers themselves, never of the position
+/// a caller happened to push them at.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgressiveLayer {
     provenance: Provenance,
     dict: Dict,
+    slot: OverlaySlot,
 }
 
 impl ProgressiveLayer {
     /// Construct an overlay from an explicit provenance + partial dict.
+    ///
+    /// The [`OverlaySlot`] is derived from the provenance's source kind
+    /// ([`OverlaySlot::for_source_kind`]); the two slots a source kind
+    /// cannot name — [`OverlaySlot::ConfigOverride`] and
+    /// [`OverlaySlot::CliSet`] — are reached only through
+    /// [`Self::config_override`] / [`Self::set`].
     #[must_use]
     pub fn new(provenance: Provenance, dict: Dict) -> Self {
-        Self { provenance, dict }
+        let slot = OverlaySlot::for_source_kind(provenance.source_kind());
+        Self {
+            provenance,
+            dict,
+            slot,
+        }
+    }
+
+    /// The typed within-tier precedence slot this layer folds at.
+    #[must_use]
+    pub const fn slot(&self) -> OverlaySlot {
+        self.slot
+    }
+
+    /// An explicit `--config <PATH>` merge-override FILE overlay —
+    /// [`Provenance::file`], slot [`OverlaySlot::ConfigOverride`]: above
+    /// the discovered config file, below env and the command line.
+    #[must_use]
+    pub fn config_override(path: impl Into<PathBuf>, dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::file(path),
+            dict,
+            slot: OverlaySlot::ConfigOverride,
+        }
+    }
+
+    /// Read a `--config <PATH>` merge-override file — the fallible
+    /// [`Self::try_from_file`] parse, stamped at
+    /// [`OverlaySlot::ConfigOverride`]. A missing or malformed override
+    /// file is an error: the operator named it explicitly.
+    ///
+    /// # Errors
+    ///
+    /// [`ShikumiError::NotFound`] when `path` is not a file; otherwise the
+    /// same as [`Self::try_from_file`].
+    pub fn try_from_config_override(path: impl AsRef<Path>) -> Result<Self, ShikumiError> {
+        let path = path.as_ref();
+        // figment's file providers treat a missing file as empty; an
+        // operator-named override that does not exist is a typo, not a
+        // no-op.
+        if !path.is_file() {
+            return Err(ShikumiError::NotFound {
+                tried: vec![path.to_path_buf()],
+            });
+        }
+        let dict: Dict = ProviderChain::new().with_file(path).extract()?;
+        Ok(Self::config_override(path.to_path_buf(), dict))
+    }
+
+    /// A typed command-line overlay — serialize a partial "flags" struct
+    /// (every field `Option<_>`) into a layer at [`Provenance::cli`]`("flags")`,
+    /// slot [`OverlaySlot::CliFlags`]. Nulls are dropped recursively
+    /// ([`crate::overlay::strip_nulls`]), so a flag the operator did not
+    /// pass contributes no leaf and can never clobber a file or env value.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::LayerError::Overlay`] when `overlay` does not serialize to
+    /// a map (a non-struct overlay, or a map with non-string keys).
+    pub fn cli(overlay: &impl Serialize) -> Result<Self, crate::LayerError> {
+        let dict = crate::overlay::overlay_dict(overlay)?;
+        Ok(Self {
+            provenance: Provenance::cli(crate::overlay::CLI_FLAGS_LABEL),
+            dict,
+            slot: OverlaySlot::CliFlags,
+        })
+    }
+
+    /// The `--set <PATH=VALUE>` layer — every assignment folded in order
+    /// (a later assignment to the same path wins) into one layer at
+    /// [`Provenance::cli`]`("--set")`, slot [`OverlaySlot::CliSet`], the
+    /// highest-precedence operator slot. Unlike [`Self::cli`], an explicit
+    /// `--set key=null` is kept: it is how an operator resets an
+    /// `Option` field to `None`.
+    #[must_use]
+    pub fn set(assignments: &[crate::SetAssignment]) -> Self {
+        Self {
+            provenance: Provenance::cli(crate::overlay::CLI_SET_LABEL),
+            dict: crate::overlay::assignments_dict(assignments),
+            slot: OverlaySlot::CliSet,
+        }
     }
 
     /// An operator FILE overlay — [`Provenance::file`].
     #[must_use]
     pub fn file(path: impl Into<PathBuf>, dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::file(path),
-            dict,
-        }
+        Self::new(Provenance::file(path), dict)
     }
 
     /// An operator ENV overlay — [`Provenance::env`].
     #[must_use]
     pub fn env(prefix: impl Into<String>, dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::env(prefix),
-            dict,
-        }
+        Self::new(Provenance::env(prefix), dict)
     }
 
     /// A runtime-discovered overlay — [`Provenance::discovered`].
@@ -25938,10 +26091,7 @@ impl ProgressiveLayer {
     /// [`Self::try_from_file`] / [`Self::from_env`] on the discovered tier.
     #[must_use]
     pub fn discovered(dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::discovered(),
-            dict,
-        }
+        Self::new(Provenance::discovered(), dict)
     }
 
     /// Read a runtime-discovered overlay from a [`DiscoveryLayer`] stack —
@@ -25997,10 +26147,7 @@ impl ProgressiveLayer {
     /// composition through [`Provenance::bare`] + [`Self::new`].
     #[must_use]
     pub fn bare(dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::bare(),
-            dict,
-        }
+        Self::new(Provenance::bare(), dict)
     }
 
     /// A prescribed-default overlay — [`Provenance::prescribed_default`].
@@ -26040,10 +26187,7 @@ impl ProgressiveLayer {
     /// composition through [`Provenance::prescribed_default`] + [`Self::new`].
     #[must_use]
     pub fn prescribed_default(dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::prescribed_default(),
-            dict,
-        }
+        Self::new(Provenance::prescribed_default(), dict)
     }
 
     /// A tier-parameterized computed-defaults overlay — stamps
@@ -26091,10 +26235,7 @@ impl ProgressiveLayer {
     /// [`tests::progressive_layer_computed_pins_source_to_defaults_on_every_tier`].
     #[must_use]
     pub fn computed(tier: ConfigTierKind, dict: Dict) -> Self {
-        Self {
-            provenance: Provenance::computed(tier),
-            dict,
-        }
+        Self::new(Provenance::computed(tier), dict)
     }
 
     /// Read an operator FILE overlay from a path — the single-call fusion

@@ -77,6 +77,7 @@ pub mod kube_discovery;
 pub mod lisp_provider;
 pub mod nix_provider;
 mod observatory;
+pub mod overlay;
 mod provider;
 mod reload;
 pub mod schema;
@@ -152,6 +153,7 @@ pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 #[doc(hidden)]
 pub use macros::__tiered_permutation_run;
 pub use nix_provider::NixProvider;
+pub use overlay::{LayerError, NoFlags, OverlaySlot, SetAssignment, SetAssignmentError};
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
 pub use secret::{SecretBackendKind, SecretRefShape};
