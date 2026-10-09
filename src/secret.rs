@@ -34,12 +34,18 @@
 //!   gcp_secret: "projects/my-proj/secrets/jwt"                # GCP Secret Manager
 //! # or
 //! jwt_secret:
+//!   file: "~/.config/hanabi/jwt"                              # File (re-read per resolve)
+//! # or
+//! jwt_secret:
+//!   env: "HANABI_JWT"                                         # Environment variable
+//! # or
+//! jwt_secret:
 //!   command: "custom-vault-cli read prod/jwt"                 # Anything else
 //! # or (dev convenience)
 //! jwt_secret: "dev-secret-change-me"                          # Plaintext
 //! ```
 //!
-//! All seven backend variants plus the literal fall-through decode into
+//! All nine backend variants plus the literal fall-through decode into
 //! the [`SecretSource`] enum. Call [`resolve`] to get a `String`.
 //!
 //! # Direct API
@@ -56,8 +62,10 @@
 //! | HashiCorp Vault | [`resolve_vault`] | `vault read -field=<field> <path>` |
 //! | AWS Secrets Manager | [`resolve_aws_secret`] | `aws secretsmanager get-secret-value …` |
 //! | GCP Secret Manager | [`resolve_gcp_secret`] | `gcloud secrets versions access …` |
+//! | file | [`resolve_file`] | — (read in-process, `~` expanded) |
+//! | env var | [`resolve_env`] | — (read in-process) |
 //!
-//! All seven funnel through one `capture_stdout` helper and therefore
+//! The seven CLI-backed resolvers funnel through one `capture_stdout` helper and therefore
 //! share error semantics: non-zero exit → [`ShikumiError::Parse`] with
 //! stderr included.
 //!
@@ -102,7 +110,7 @@ use crate::error::ShikumiError;
 ///
 /// `non_exhaustive` so we can add new vault backends without a semver
 /// break at the config layer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum SecretSource {
@@ -400,6 +408,25 @@ impl SecretSource {
             Self::Backend(backend) => backend.is_non_cloud_secret_manager(),
         }
     }
+
+    /// Operator-facing description of WHERE this secret lives — safe to
+    /// log, never the secret itself.
+    ///
+    /// Every backend's payload is a *reference* (a path, a variable name, a
+    /// vault key, a command line) except the two literal shapes, whose
+    /// payload IS the secret; those render as `literal` with no value. The
+    /// match is exhaustive over [`SecretBackend`], so a new backend has to
+    /// decide what it reveals at `cargo build` rather than inheriting a
+    /// `{:?}` that would print a literal. This is what lets an aggregated
+    /// "no source yielded a token" error name each source it tried
+    /// (`crate::github::GithubAuthError::Chain`).
+    #[must_use]
+    pub fn describe_reference(&self) -> String {
+        match self {
+            Self::Literal(_) => "literal".to_owned(),
+            Self::Backend(backend) => backend.describe_reference(),
+        }
+    }
 }
 
 /// Internally-tagged variants — the backends proper.
@@ -407,7 +434,15 @@ impl SecretSource {
 /// Split out from [`SecretSource`] so the outer enum can be `untagged`
 /// (for bare-string literals) while the backends stay `rename_all` to
 /// match the YAML keys used by config files.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Serialize` is hand-written as a single-key map (`{tag: payload}`) rather
+/// than derived. For `serde_json` and figment the two are byte-identical; the
+/// difference is `serde_yaml` 0.9, which emits a *derived* externally tagged
+/// enum as a YAML tag (`!env X`) — a shape this crate's own untagged
+/// [`SecretSource`] cannot read back — and refuses outright to emit one nested
+/// inside another enum. Pinned by
+/// `tests::secret_source_yaml_emission_round_trips_for_every_backend`.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum SecretBackend {
@@ -432,6 +467,41 @@ pub enum SecretBackend {
     /// GCP Secret Manager secret name — `projects/.../secrets/.../versions/latest`
     /// or short form `projects/my-proj/secrets/my-secret` (see [`resolve_gcp_secret`]).
     GcpSecret(String),
+    /// A file whose contents ARE the secret — `~/.config/github/token`,
+    /// `/run/secrets/app.pem` (see [`resolve_file`]). A leading `~` expands
+    /// to `$HOME`; trailing whitespace is trimmed. The file is re-read on
+    /// every [`resolve`], so a rotated file (sops-nix re-rendering
+    /// `/run/secrets`, a projected Kubernetes Secret) is picked up without a
+    /// restart — the property an env var resolved once at process start
+    /// cannot have.
+    File(PathBuf),
+    /// An environment variable holding the secret — `GITHUB_TOKEN`
+    /// (see [`resolve_env`]). Unset and set-but-empty are BOTH errors that
+    /// name the variable: an empty token is not a token, and treating it as
+    /// one is how `Authorization: Bearer ` reaches an API and reads as a
+    /// permissions problem far from its cause.
+    Env(String),
+}
+
+impl Serialize for SecretBackend {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
+        let tag = self.kind().as_str();
+        match self {
+            Self::Literal(v)
+            | Self::Command(v)
+            | Self::Op(v)
+            | Self::Akeyless(v)
+            | Self::AwsSecret(v)
+            | Self::GcpSecret(v)
+            | Self::Env(v) => map.serialize_entry(tag, v)?,
+            Self::Sops(r) => map.serialize_entry(tag, r)?,
+            Self::Vault(r) => map.serialize_entry(tag, r)?,
+            Self::File(p) => map.serialize_entry(tag, p)?,
+        }
+        map.end()
+    }
 }
 
 impl SecretBackend {
@@ -464,6 +534,8 @@ impl SecretBackend {
             Self::Vault(_) => SecretBackendKind::Vault,
             Self::AwsSecret(_) => SecretBackendKind::AwsSecret,
             Self::GcpSecret(_) => SecretBackendKind::GcpSecret,
+            Self::File(_) => SecretBackendKind::File,
+            Self::Env(_) => SecretBackendKind::Env,
         }
     }
 
@@ -565,6 +637,47 @@ impl SecretBackend {
     #[must_use]
     pub const fn is_gcp_secret(&self) -> bool {
         matches!(self, Self::GcpSecret(_))
+    }
+
+    /// Backend-side half of [`SecretSource::describe_reference`]: the
+    /// reference, labelled with the backend's canonical tag, and never
+    /// the payload of [`Self::Literal`].
+    #[must_use]
+    pub fn describe_reference(&self) -> String {
+        let label = self.kind().as_str();
+        match self {
+            Self::Literal(_) => label.to_owned(),
+            Self::Command(reference)
+            | Self::Op(reference)
+            | Self::Akeyless(reference)
+            | Self::AwsSecret(reference)
+            | Self::GcpSecret(reference)
+            | Self::Env(reference) => format!("{label} {reference}"),
+            Self::Sops(SopsRef::File(path)) | Self::File(path) => {
+                format!("{label} {}", path.display())
+            }
+            Self::Sops(SopsRef::Field { file, field }) => {
+                format!("{label} {}:{field}", file.display())
+            }
+            Self::Vault(VaultRef::Path(path)) => format!("{label} {path}"),
+            Self::Vault(VaultRef::Field { path, field }) => format!("{label} {path}:{field}"),
+        }
+    }
+
+    /// Returns `true` for [`Self::File`] regardless of the inner path
+    /// payload; tag-side sibling of [`SecretBackendKind::is_file`]. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
+        matches!(self, Self::File(_))
+    }
+
+    /// Returns `true` for [`Self::Env`] regardless of the inner variable
+    /// name; tag-side sibling of [`SecretBackendKind::is_env`]. See
+    /// [`Self::is_literal`] for the full contract.
+    #[must_use]
+    pub const fn is_env(&self) -> bool {
+        matches!(self, Self::Env(_))
     }
 
     /// Returns `true` for the cloud-provider Secret Manager pole of
@@ -700,7 +813,9 @@ impl SecretBackend {
             | Self::Op(_)
             | Self::Sops(_)
             | Self::Akeyless(_)
-            | Self::Vault(_) => true,
+            | Self::Vault(_)
+            | Self::File(_)
+            | Self::Env(_) => true,
             Self::AwsSecret(_) | Self::GcpSecret(_) => false,
         }
     }
@@ -775,6 +890,10 @@ pub enum SecretBackendKind {
     /// Maps to [`SecretBackend::GcpSecret`] regardless of inner resource
     /// name.
     GcpSecret,
+    /// Maps to [`SecretBackend::File`] regardless of inner path.
+    File,
+    /// Maps to [`SecretBackend::Env`] regardless of inner variable name.
+    Env,
 }
 
 impl SecretBackendKind {
@@ -809,6 +928,8 @@ impl SecretBackendKind {
         Self::Vault,
         Self::AwsSecret,
         Self::GcpSecret,
+        Self::File,
+        Self::Env,
     ];
 
     /// The two CLOUD-SECRET-MANAGER [`SecretBackendKind`] variants —
@@ -898,6 +1019,8 @@ impl SecretBackendKind {
         Self::Sops,
         Self::Akeyless,
         Self::Vault,
+        Self::File,
+        Self::Env,
     ];
 
     /// The [`Self::Literal`] pole of the eight-way identity meta-
@@ -1039,6 +1162,14 @@ impl SecretBackendKind {
     /// bearing pins the eight `ONLY_*` singletons share.
     pub const ONLY_GCP_SECRET: &'static [Self] = &[Self::GcpSecret];
 
+    /// Singleton slice containing only [`Self::File`]. See
+    /// [`Self::ONLY_LITERAL`] for the full contract.
+    pub const ONLY_FILE: &'static [Self] = &[Self::File];
+
+    /// Singleton slice containing only [`Self::Env`]. See
+    /// [`Self::ONLY_LITERAL`] for the full contract.
+    pub const ONLY_ENV: &'static [Self] = &[Self::Env];
+
     /// Canonical operator-facing `snake_case` name of the backend kind
     /// — `"literal"`, `"command"`, `"op"`, `"sops"`, `"akeyless"`,
     /// `"vault"`, `"aws_secret"`, or `"gcp_secret"`.
@@ -1076,6 +1207,8 @@ impl SecretBackendKind {
             Self::Vault => "vault",
             Self::AwsSecret => "aws_secret",
             Self::GcpSecret => "gcp_secret",
+            Self::File => "file",
+            Self::Env => "env",
         }
     }
 
@@ -1141,6 +1274,8 @@ impl SecretBackendKind {
             Self::Vault => 5,
             Self::AwsSecret => 6,
             Self::GcpSecret => 7,
+            Self::File => 8,
+            Self::Env => 9,
         }
     }
 
@@ -1247,6 +1382,8 @@ impl SecretBackendKind {
             5 => Some(Self::Vault),
             6 => Some(Self::AwsSecret),
             7 => Some(Self::GcpSecret),
+            8 => Some(Self::File),
+            9 => Some(Self::Env),
             _ => None,
         }
     }
@@ -1404,6 +1541,8 @@ impl SecretBackendKind {
             b"vault" => Some(Self::Vault),
             b"aws_secret" => Some(Self::AwsSecret),
             b"gcp_secret" => Some(Self::GcpSecret),
+            b"file" => Some(Self::File),
+            b"env" => Some(Self::Env),
             _ => None,
         }
     }
@@ -1510,6 +1649,20 @@ impl SecretBackendKind {
     #[must_use]
     pub const fn is_gcp_secret(self) -> bool {
         matches!(self, Self::GcpSecret)
+    }
+
+    /// Returns `true` for [`Self::File`]. See [`Self::is_literal`] for
+    /// the full contract.
+    #[must_use]
+    pub const fn is_file(self) -> bool {
+        matches!(self, Self::File)
+    }
+
+    /// Returns `true` for [`Self::Env`]. See [`Self::is_literal`] for
+    /// the full contract.
+    #[must_use]
+    pub const fn is_env(self) -> bool {
+        matches!(self, Self::Env)
     }
 
     /// Returns `true` for the cloud-provider Secret Manager pole of
@@ -1686,7 +1839,9 @@ impl SecretBackendKind {
             | Self::Op
             | Self::Sops
             | Self::Akeyless
-            | Self::Vault => true,
+            | Self::Vault
+            | Self::File
+            | Self::Env => true,
             Self::AwsSecret | Self::GcpSecret => false,
         }
     }
@@ -1723,7 +1878,8 @@ closed_axis_label_string_surface! {
     parse_error = "unknown secret backend kind",
     expecting = "a canonical SecretBackendKind snake_case label \
                  (`literal`, `command`, `op`, `sops`, `akeyless`, \
-                 `vault`, `aws_secret`, `gcp_secret`; case-insensitive)",
+                 `vault`, `aws_secret`, `gcp_secret`, `file`, `env`; \
+                 case-insensitive)",
 }
 
 /// SOPS-encrypted file reference.
@@ -1732,7 +1888,7 @@ closed_axis_label_string_surface! {
 /// pair via the struct form. Bare paths decrypt the whole file; the
 /// `field` form extracts a single JSON/YAML key after decryption using
 /// `jq`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum SopsRef {
     /// Path to the SOPS-encrypted file. Entire decrypted contents become
@@ -1847,7 +2003,7 @@ impl SopsRef {
 /// secret — handy for single-value KV secrets. The `field` form extracts
 /// a named field — the typical case for KV v2 where the secret is a
 /// key-value map.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum VaultRef {
     /// Path to the Vault secret. Runs `vault read -field=value <path>` —
@@ -2597,6 +2753,8 @@ pub fn resolve(source: &SecretSource) -> Result<String, ShikumiError> {
         }
         SecretSource::Backend(SecretBackend::AwsSecret(secret_id)) => resolve_aws_secret(secret_id),
         SecretSource::Backend(SecretBackend::GcpSecret(name)) => resolve_gcp_secret(name),
+        SecretSource::Backend(SecretBackend::File(path)) => resolve_file(path),
+        SecretSource::Backend(SecretBackend::Env(var)) => resolve_env(var),
     }
 }
 
@@ -2861,6 +3019,84 @@ pub fn resolve_gcp_secret(name: &str) -> Result<String, ShikumiError> {
         &format!("gcloud secrets versions access {version} --secret={short_name}"),
         &output,
     )
+}
+
+/// Read a secret from a file on disk.
+///
+/// A leading `~` (alone, or as `~/…`) expands to `$HOME`; any other path is
+/// used verbatim. Trailing whitespace — the newline every editor, `echo` and
+/// sops-nix leave behind — is trimmed; leading whitespace is preserved,
+/// matching [`resolve_command`]. The file is opened afresh on every call, so
+/// rotation needs no restart.
+///
+/// # Errors
+///
+/// [`ShikumiError::Parse`] naming the (expanded) path when the file cannot
+/// be read, is not UTF-8, or is empty after trimming. An empty file is an
+/// error rather than an empty secret for the same reason [`resolve_env`]
+/// refuses an empty variable.
+pub fn resolve_file(path: &Path) -> Result<String, ShikumiError> {
+    let expanded = expand_tilde(path);
+    let raw = std::fs::read_to_string(&expanded).map_err(|e| {
+        ShikumiError::Parse(format!(
+            "secret file {} could not be read: {e}",
+            expanded.display()
+        ))
+    })?;
+    let value = raw.trim_end();
+    if value.is_empty() {
+        return Err(ShikumiError::Parse(format!(
+            "secret file {} is empty",
+            expanded.display()
+        )));
+    }
+    Ok(value.to_owned())
+}
+
+/// Read a secret from an environment variable.
+///
+/// Trailing whitespace is trimmed, matching [`resolve_file`].
+///
+/// # Errors
+///
+/// [`ShikumiError::Parse`] naming the variable when it is unset, not
+/// UTF-8, or empty / whitespace-only. The three are worded distinctly so
+/// an operator can tell "never exported" from "exported as nothing".
+pub fn resolve_env(var: &str) -> Result<String, ShikumiError> {
+    match std::env::var(var) {
+        Ok(value) if value.trim().is_empty() => Err(ShikumiError::Parse(format!(
+            "secret env var {var} is set but empty"
+        ))),
+        Ok(value) => Ok(value.trim_end().to_owned()),
+        Err(std::env::VarError::NotPresent) => Err(ShikumiError::Parse(format!(
+            "secret env var {var} is not set"
+        ))),
+        Err(std::env::VarError::NotUnicode(_)) => Err(ShikumiError::Parse(format!(
+            "secret env var {var} is not valid UTF-8"
+        ))),
+    }
+}
+
+/// Expand a leading `~` / `~/` against `$HOME`. Anything else — including
+/// `~user/…`, which needs a passwd lookup this crate does not do — is
+/// returned unchanged, so a path that cannot be expanded fails loudly at
+/// the read naming the literal path rather than resolving somewhere else.
+#[must_use]
+pub fn expand_tilde(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    let rest = if text == "~" {
+        ""
+    } else if let Some(rest) = text.strip_prefix("~/") {
+        rest
+    } else {
+        return path.to_path_buf();
+    };
+    match std::env::var_os("HOME") {
+        Some(home) if !home.is_empty() => PathBuf::from(home).join(rest),
+        _ => path.to_path_buf(),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -3614,6 +3850,132 @@ mod tests {
     /// Canonical sample table covering every [`SecretBackend`] variant
     /// once, with the kind each must classify into. Source for the
     /// `secret_backend_kind_all_*` cover/partition tests below.
+    #[test]
+    fn secret_source_yaml_emission_round_trips_for_every_backend() {
+        // serde_yaml must emit every backend as a single-key MAP — the shape
+        // config files are written in and the untagged SecretSource reads —
+        // never as a YAML tag (`!env X`). JSON must stay the externally
+        // tagged object the derive used to produce.
+        for (backend, kind) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend);
+            let yaml = serde_yaml::to_string(&source).expect("YAML emission must succeed");
+            assert!(
+                yaml.starts_with(&format!("{}:", kind.as_str())),
+                "{kind:?} must emit as a `{}:` map, got {yaml:?}",
+                kind.as_str()
+            );
+            let back: SecretSource = serde_yaml::from_str(&yaml).expect("emitted YAML must parse");
+            assert_eq!(back.backend_kind(), kind);
+            assert_eq!(
+                serde_json::to_value(&back).unwrap(),
+                serde_json::to_value(&source).unwrap()
+            );
+            let json = serde_json::to_value(&source).unwrap();
+            let object = json.as_object().expect("JSON is a single-key object");
+            assert_eq!(object.len(), 1);
+            assert!(object.contains_key(kind.as_str()));
+        }
+    }
+
+    #[test]
+    fn file_and_env_backends_parse_from_yaml() {
+        let file: SecretSource = serde_yaml::from_str("file: ~/.config/github/token").unwrap();
+        assert!(matches!(
+            &file,
+            SecretSource::Backend(SecretBackend::File(p)) if p == Path::new("~/.config/github/token")
+        ));
+        let env: SecretSource = serde_yaml::from_str("{ env: GITHUB_TOKEN }").unwrap();
+        assert!(
+            matches!(&env, SecretSource::Backend(SecretBackend::Env(v)) if v == "GITHUB_TOKEN")
+        );
+        assert_eq!(file.describe_reference(), "file ~/.config/github/token");
+        assert_eq!(env.describe_reference(), "env GITHUB_TOKEN");
+    }
+
+    #[test]
+    fn resolve_file_trims_trailing_whitespace_and_re_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret");
+        std::fs::write(&path, "  first\n\n").unwrap();
+        let source = SecretSource::Backend(SecretBackend::File(path.clone()));
+        assert_eq!(resolve(&source).unwrap(), "  first");
+        std::fs::write(&path, "second").unwrap();
+        assert_eq!(
+            resolve(&source).unwrap(),
+            "second",
+            "rotation needs no restart"
+        );
+    }
+
+    #[test]
+    fn resolve_file_errors_name_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("absent");
+        let err = resolve_file(&missing).unwrap_err().to_string();
+        assert!(err.contains(&missing.display().to_string()), "{err}");
+        let empty = dir.path().join("empty");
+        std::fs::write(&empty, " \n").unwrap();
+        let err = resolve_file(&empty).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
+    }
+
+    #[test]
+    fn expand_tilde_expands_only_a_leading_home_reference() {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        if let Some(home) = home.filter(|h| !h.as_os_str().is_empty()) {
+            assert_eq!(expand_tilde(Path::new("~/a/b")), home.join("a/b"));
+            assert_eq!(expand_tilde(Path::new("~")), home);
+        }
+        assert_eq!(
+            expand_tilde(Path::new("/abs/~/x")),
+            PathBuf::from("/abs/~/x")
+        );
+        assert_eq!(
+            expand_tilde(Path::new("~other/x")),
+            PathBuf::from("~other/x")
+        );
+        assert_eq!(expand_tilde(Path::new("rel/x")), PathBuf::from("rel/x"));
+    }
+
+    #[test]
+    fn resolve_env_distinguishes_unset_from_empty() {
+        // SAFETY: test-unique variable names; nothing else touches them.
+        unsafe {
+            std::env::set_var("SHIKUMI_SECRET_ENV_TEST_SET", "value\n");
+            std::env::set_var("SHIKUMI_SECRET_ENV_TEST_EMPTY", "");
+        }
+        let source =
+            SecretSource::Backend(SecretBackend::Env("SHIKUMI_SECRET_ENV_TEST_SET".into()));
+        assert_eq!(resolve(&source).unwrap(), "value");
+        let unset = resolve_env("SHIKUMI_SECRET_ENV_TEST_UNSET")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            unset.contains("SHIKUMI_SECRET_ENV_TEST_UNSET is not set"),
+            "{unset}"
+        );
+        let empty = resolve_env("SHIKUMI_SECRET_ENV_TEST_EMPTY")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            empty.contains("SHIKUMI_SECRET_ENV_TEST_EMPTY is set but empty"),
+            "{empty}"
+        );
+    }
+
+    #[test]
+    fn describe_reference_never_reveals_a_literal() {
+        let bare = SecretSource::Literal("hunter2".into());
+        let tagged = SecretSource::Backend(SecretBackend::Literal("hunter2".into()));
+        assert_eq!(bare.describe_reference(), "literal");
+        assert_eq!(tagged.describe_reference(), "literal");
+        for (backend, kind) in canonical_secret_backend_kind_samples() {
+            let described = backend.describe_reference();
+            assert!(described.starts_with(kind.as_str()), "{described}");
+            assert!(!described.contains("dev") || kind != SecretBackendKind::Literal);
+        }
+    }
+
     fn canonical_secret_backend_kind_samples() -> Vec<(SecretBackend, SecretBackendKind)> {
         vec![
             (
@@ -3661,6 +4023,14 @@ mod tests {
             (
                 SecretBackend::GcpSecret("projects/p/secrets/jwt".into()),
                 SecretBackendKind::GcpSecret,
+            ),
+            (
+                SecretBackend::File(PathBuf::from("~/.config/github/token")),
+                SecretBackendKind::File,
+            ),
+            (
+                SecretBackend::Env("GITHUB_TOKEN".into()),
+                SecretBackendKind::Env,
             ),
         ]
     }
@@ -3808,6 +4178,8 @@ mod tests {
                 SecretBackendKind::Vault,
                 SecretBackendKind::AwsSecret,
                 SecretBackendKind::GcpSecret,
+                SecretBackendKind::File,
+                SecretBackendKind::Env,
             ],
         );
     }
@@ -4250,8 +4622,9 @@ mod tests {
             "field",
             "multifield",
             "defaults",
-            "env",
-            "file",
+            "environment",
+            "files",
+            "env_file",
             "reload",
             "removed",
             "ignored",
@@ -4528,6 +4901,14 @@ mod tests {
             (
                 SecretSource::Backend(SecretBackend::GcpSecret("projects/p/secrets/s".into())),
                 SecretBackendKind::GcpSecret,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::File(PathBuf::from("/run/secrets/s"))),
+                SecretBackendKind::File,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Env("S".into())),
+                SecretBackendKind::Env,
             ),
         ];
         for (source, expected) in cases {
@@ -5037,7 +5418,9 @@ mod tests {
                     | SecretBackendKind::Op
                     | SecretBackendKind::Sops
                     | SecretBackendKind::Akeyless
-                    | SecretBackendKind::Vault,
+                    | SecretBackendKind::Vault
+                    | SecretBackendKind::File
+                    | SecretBackendKind::Env,
             );
             let source = SecretSource::Backend(backend);
             assert_eq!(
@@ -5186,10 +5569,10 @@ mod tests {
              (Backend(AwsSecret), Backend(GcpSecret))",
         );
         assert_eq!(
-            non_cloud_count, 9,
-            "expected exactly 9 non-cloud-Secret-Manager sources \
+            non_cloud_count, 11,
+            "expected exactly 11 non-cloud-Secret-Manager sources \
              (top-level Literal + Backend of \
-              Literal, Command, Op, two Sops, Akeyless, two Vault)",
+              Literal, Command, Op, two Sops, Akeyless, two Vault, File, Env)",
         );
         assert_eq!(
             cloud_count + non_cloud_count,
@@ -5356,6 +5739,8 @@ mod tests {
             ("is_gcp_secret", SecretBackendKind::GcpSecret, |k| {
                 k.is_gcp_secret()
             }),
+            ("is_file", SecretBackendKind::File, |k| k.is_file()),
+            ("is_env", SecretBackendKind::Env, |k| k.is_env()),
         ];
         for &(name, own_variant, pred) in predicates {
             for &kind in SecretBackendKind::ALL {
@@ -5401,6 +5786,8 @@ mod tests {
                 kind.is_vault(),
                 kind.is_aws_secret(),
                 kind.is_gcp_secret(),
+                kind.is_file(),
+                kind.is_env(),
             ];
             let count = hits.iter().filter(|hit| **hit).count();
             assert_eq!(
@@ -5445,6 +5832,8 @@ mod tests {
                 |k| k.is_gcp_secret(),
                 "gcp_secret",
             ),
+            (SecretBackendKind::File, |k| k.is_file(), "file"),
+            (SecretBackendKind::Env, |k| k.is_env(), "env"),
         ];
         for &(kind, pred, label) in expected {
             assert!(
@@ -5486,6 +5875,8 @@ mod tests {
             assert_eq!(projected.is_vault(), expected_kind.is_vault());
             assert_eq!(projected.is_aws_secret(), expected_kind.is_aws_secret());
             assert_eq!(projected.is_gcp_secret(), expected_kind.is_gcp_secret());
+            assert_eq!(projected.is_file(), expected_kind.is_file());
+            assert_eq!(projected.is_env(), expected_kind.is_env());
         }
     }
 
@@ -5537,6 +5928,8 @@ mod tests {
             ("is_gcp_secret", SecretBackendKind::GcpSecret, |b| {
                 b.is_gcp_secret()
             }),
+            ("is_file", SecretBackendKind::File, |b| b.is_file()),
+            ("is_env", SecretBackendKind::Env, |b| b.is_env()),
         ];
         for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
             for &(name, own_variant, pred) in predicates {
@@ -5577,6 +5970,8 @@ mod tests {
                 backend.is_vault(),
                 backend.is_aws_secret(),
                 backend.is_gcp_secret(),
+                backend.is_file(),
+                backend.is_env(),
             ];
             let count = hits.iter().filter(|hit| **hit).count();
             assert_eq!(
@@ -5650,6 +6045,16 @@ mod tests {
                 backend.is_gcp_secret(),
                 kind.is_gcp_secret(),
                 "is_gcp_secret drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_file(),
+                kind.is_file(),
+                "is_file drift on {backend:?}",
+            );
+            assert_eq!(
+                backend.is_env(),
+                kind.is_env(),
+                "is_env drift on {backend:?}"
             );
         }
     }
@@ -5806,7 +6211,9 @@ mod tests {
                     | SecretBackendKind::Op
                     | SecretBackendKind::Sops
                     | SecretBackendKind::Akeyless
-                    | SecretBackendKind::Vault,
+                    | SecretBackendKind::Vault
+                    | SecretBackendKind::File
+                    | SecretBackendKind::Env,
             );
             assert_eq!(
                 kind.is_non_cloud_secret_manager(),
@@ -5865,7 +6272,9 @@ mod tests {
                     || kind.is_op()
                     || kind.is_sops()
                     || kind.is_akeyless()
-                    || kind.is_vault(),
+                    || kind.is_vault()
+                    || kind.is_file()
+                    || kind.is_env(),
                 "compound-polarity ↔ (six-arm disjunction) drift on {kind:?}",
             );
         }
@@ -5912,8 +6321,8 @@ mod tests {
             "expected exactly 2 cloud-Secret-Manager cells"
         );
         assert_eq!(
-            non_cloud_count, 6,
-            "expected exactly 6 non-cloud-Secret-Manager cells",
+            non_cloud_count, 8,
+            "expected exactly 8 non-cloud-Secret-Manager cells",
         );
         assert_eq!(
             cloud_count + non_cloud_count,
@@ -6189,7 +6598,7 @@ mod tests {
         const CLOUD_LEN: usize = SecretBackendKind::CLOUD_SECRET_MANAGER.len();
         const NON_CLOUD_LEN: usize = SecretBackendKind::NON_CLOUD_SECRET_MANAGER.len();
         assert_eq!(CLOUD_LEN, 2);
-        assert_eq!(NON_CLOUD_LEN, 6);
+        assert_eq!(NON_CLOUD_LEN, 8);
     }
 
     // ── SecretBackendKind ONLY_* eight-way identity meta-partition
@@ -6500,7 +6909,7 @@ mod tests {
         // none breaks the partition here before any consumer that
         // reasons about the polarity as a covering meta-partition
         // observes the drift.
-        let identity_slices: [&[SecretBackendKind]; 8] = [
+        let identity_slices: [&[SecretBackendKind]; 10] = [
             SecretBackendKind::ONLY_LITERAL,
             SecretBackendKind::ONLY_COMMAND,
             SecretBackendKind::ONLY_OP,
@@ -6509,6 +6918,8 @@ mod tests {
             SecretBackendKind::ONLY_VAULT,
             SecretBackendKind::ONLY_AWS_SECRET,
             SecretBackendKind::ONLY_GCP_SECRET,
+            SecretBackendKind::ONLY_FILE,
+            SecretBackendKind::ONLY_ENV,
         ];
         for (i, left) in identity_slices.iter().enumerate() {
             for right in identity_slices.iter().skip(i + 1) {
@@ -6696,6 +7107,24 @@ mod tests {
                     .filter(|k| k.is_gcp_secret())
                     .count(),
             ),
+            (
+                "is_file",
+                SecretBackendKind::ONLY_FILE.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_file())
+                    .count(),
+            ),
+            (
+                "is_env",
+                SecretBackendKind::ONLY_ENV.len(),
+                SecretBackendKind::ALL
+                    .iter()
+                    .copied()
+                    .filter(|k| k.is_env())
+                    .count(),
+            ),
         ];
         for (name, slice_len, boolean_count) in counts {
             assert_eq!(
@@ -6707,7 +7136,7 @@ mod tests {
                 "identity slice for {name} must be a singleton",
             );
         }
-        assert_eq!(SecretBackendKind::ALL.len(), 8);
+        assert_eq!(SecretBackendKind::ALL.len(), 10);
     }
 
     #[test]
@@ -6727,6 +7156,8 @@ mod tests {
         const ONLY_VAULT_LEN: usize = SecretBackendKind::ONLY_VAULT.len();
         const ONLY_AWS_SECRET_LEN: usize = SecretBackendKind::ONLY_AWS_SECRET.len();
         const ONLY_GCP_SECRET_LEN: usize = SecretBackendKind::ONLY_GCP_SECRET.len();
+        const ONLY_FILE_LEN: usize = SecretBackendKind::ONLY_FILE.len();
+        const ONLY_ENV_LEN: usize = SecretBackendKind::ONLY_ENV.len();
         const ALL_LEN: usize = SecretBackendKind::ALL.len();
         assert_eq!(ONLY_LITERAL_LEN, 1);
         assert_eq!(ONLY_COMMAND_LEN, 1);
@@ -6736,6 +7167,8 @@ mod tests {
         assert_eq!(ONLY_VAULT_LEN, 1);
         assert_eq!(ONLY_AWS_SECRET_LEN, 1);
         assert_eq!(ONLY_GCP_SECRET_LEN, 1);
+        assert_eq!(ONLY_FILE_LEN, 1);
+        assert_eq!(ONLY_ENV_LEN, 1);
         assert_eq!(
             ONLY_LITERAL_LEN
                 + ONLY_COMMAND_LEN
@@ -6744,7 +7177,9 @@ mod tests {
                 + ONLY_AKEYLESS_LEN
                 + ONLY_VAULT_LEN
                 + ONLY_AWS_SECRET_LEN
-                + ONLY_GCP_SECRET_LEN,
+                + ONLY_GCP_SECRET_LEN
+                + ONLY_FILE_LEN
+                + ONLY_ENV_LEN,
             ALL_LEN,
         );
     }
@@ -6783,6 +7218,8 @@ mod tests {
             SecretBackendKind::ONLY_SOPS,
             SecretBackendKind::ONLY_AKEYLESS,
             SecretBackendKind::ONLY_VAULT,
+            SecretBackendKind::ONLY_FILE,
+            SecretBackendKind::ONLY_ENV,
         ]
         .iter()
         .flat_map(|s| s.iter().copied())
@@ -6936,7 +7373,9 @@ mod tests {
                     | SecretBackendKind::Op
                     | SecretBackendKind::Sops
                     | SecretBackendKind::Akeyless
-                    | SecretBackendKind::Vault,
+                    | SecretBackendKind::Vault
+                    | SecretBackendKind::File
+                    | SecretBackendKind::Env,
             );
             assert_eq!(
                 backend.is_non_cloud_secret_manager(),
@@ -7015,7 +7454,9 @@ mod tests {
                     || backend.is_op()
                     || backend.is_sops()
                     || backend.is_akeyless()
-                    || backend.is_vault(),
+                    || backend.is_vault()
+                    || backend.is_file()
+                    || backend.is_env(),
                 "compound-polarity ↔ (six-arm disjunction) drift on {backend:?}",
             );
         }
@@ -7066,9 +7507,9 @@ mod tests {
             "expected exactly 2 cloud-Secret-Manager samples (AwsSecret, GcpSecret)",
         );
         assert_eq!(
-            non_cloud_count, 8,
-            "expected exactly 8 non-cloud-Secret-Manager samples \
-             (Literal, Command, Op, two Sops, Akeyless, two Vault)",
+            non_cloud_count, 10,
+            "expected exactly 10 non-cloud-Secret-Manager samples \
+             (Literal, Command, Op, two Sops, Akeyless, two Vault, File, Env)",
         );
         assert_eq!(
             cloud_count + non_cloud_count,
@@ -8228,6 +8669,8 @@ mod tests {
         counts.insert(SecretBackendKind::Sops, 4);
         counts.insert(SecretBackendKind::Akeyless, 6);
         counts.insert(SecretBackendKind::Command, 8);
+        counts.insert(SecretBackendKind::Env, 10);
+        counts.insert(SecretBackendKind::File, 9);
         let observed: Vec<SecretBackendKind> = counts.keys().copied().collect();
         assert_eq!(
             observed,
@@ -8301,7 +8744,7 @@ mod tests {
         // ConfigSourceKind's FromStr surface (commit `e0b96d1`),
         // FormatProvenance's FromStr surface (commit `2c7654c`), and
         // ParseFormatCoordinatesError (commit `06a2f42`).
-        for bad in &["aws", "gcp", "kubernetes", "env", "", "  op"] {
+        for bad in &["aws", "gcp", "kubernetes", "environ", "", "  op"] {
             let err = bad
                 .parse::<SecretBackendKind>()
                 .expect_err("non-canonical label must reject");
@@ -8383,7 +8826,7 @@ mod tests {
         // (commit `64a47e7`), ConfigSourceKind's serde surface
         // (commit `e0b96d1`), and FormatProvenance's serde surface
         // (commit `2c7654c`).
-        for bad in &["aws", "gcp", "kubernetes", "env"] {
+        for bad in &["aws", "gcp", "kubernetes", "environ"] {
             let err = serde_yaml::from_str::<SecretBackendKind>(bad)
                 .expect_err("non-canonical label must reject");
             let rendered = err.to_string();

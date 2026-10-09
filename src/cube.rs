@@ -22187,16 +22187,16 @@ mod tests {
         // FigmentSourceKind=3, ShikumiErrorKind=7, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
-        // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=8,
+        // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=10,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7, DiffLineKind=3 → 76.
+        // SecretClientKind=7, DiffLineKind=3 → 78.
         // 5-cube sum: FormatCoordinates=10, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 58. Grand total 76+58 = 134.
+        // AttributionNameKindCoordinates=6 → 58. Grand total 78+58 = 136.
         assert_eq!(
-            total, 134,
+            total, 136,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 134)",
+             (today's axis_cardinality checksum is 136)",
         );
     }
 
@@ -22501,14 +22501,14 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 76,
+            total, 78,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 76: \
+             (today's axis_cardinality checksum is 78: \
              PartitionFace=2 + ConfigTierKind=4 + Format=5 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
-             + EnvMetadataTagKind=2 + SecretBackendKind=8 + SecretRefShape=2 \
+             + EnvMetadataTagKind=2 + SecretBackendKind=10 + SecretRefShape=2 \
              + SecretOperation=6 + SecretErrorKind=5 + SecretClientKind=7 \
              + DiffLineKind=3)",
         );

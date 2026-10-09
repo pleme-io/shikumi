@@ -67,6 +67,8 @@ pub mod daemon;
 pub mod discovered;
 mod discovery;
 mod error;
+#[cfg(feature = "github")]
+pub mod github;
 #[cfg(feature = "hotswap")]
 pub mod hotswap;
 #[cfg(feature = "kube-discovery")]
@@ -129,6 +131,11 @@ pub use error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionNameKindCoordinates,
     AttributionRule, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
     FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+};
+#[cfg(feature = "github")]
+pub use github::{
+    GithubApp, GithubAuth, GithubAuthError, GithubAuthKind, GithubAuthResolver, GithubId,
+    GithubToken, GithubTokenProvenance,
 };
 #[cfg(feature = "hotswap")]
 pub use hotswap::{

@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "c23eabc9720e62431547189d50b626647d78e28787ef2c52a7dfbcb17649a624",
+  "cargo_lock_sha256": "829537592051b50c1300c9c36e63cf23fcae410c8f1a9aa9cb009a7cc7cc4fbc",
   "manifest_sha256": {
-    "Cargo.toml": "b4c3c6c2a7a8eb2de7181bf72ab7bd83339e015de17000e2dda7027803cc2a2f"
+    "Cargo.toml": "19fd2f07b449114a2fc103758d03d0436523c11caee7c61500cf6a617e231072"
   },
   "target_resolves": {
     "base": {
@@ -74,6 +74,13 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "base64ct-1.8.3": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "alloc"
+        ]
       },
       "bitflags-2.13.2": {
         "runtime_dependencies": [],
@@ -165,10 +172,120 @@
           "windows-link"
         ]
       },
+      "const-oid-0.9.6": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "constant_time_eq-0.4.2": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
+          "std"
+        ]
+      },
+      "crypto-common-0.1.7": {
+        "runtime_dependencies": [
+          {
+            "name": "generic_array",
+            "package_key": "generic-array-0.14.7",
+            "kind": "normal",
+            "features": [
+              "more_lengths"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "typenum",
+            "package_key": "typenum-1.20.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "std"
+        ]
+      },
+      "der-0.7.10": {
+        "runtime_dependencies": [
+          {
+            "name": "const_oid",
+            "package_key": "const-oid-0.9.6",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pem_rfc7468",
+            "package_key": "pem-rfc7468-0.7.0",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "oid",
+          "pem",
+          "std",
+          "zeroize"
+        ]
+      },
+      "digest-0.10.7": {
+        "runtime_dependencies": [
+          {
+            "name": "const_oid",
+            "package_key": "const-oid-0.9.6",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "crypto_common",
+            "package_key": "crypto-common-0.1.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "const-oid",
+          "oid",
           "std"
         ]
       },
@@ -497,6 +614,63 @@
         "build_dependencies": [],
         "features": []
       },
+      "generic-array-0.14.7": {
+        "runtime_dependencies": [
+          {
+            "name": "typenum",
+            "package_key": "typenum-1.20.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [
+          {
+            "name": "version_check",
+            "package_key": "version_check-0.9.5",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "features": [
+          "more_lengths"
+        ]
+      },
+      "getrandom-0.2.17": {
+        "runtime_dependencies": [
+          {
+            "name": "cfg_if",
+            "package_key": "cfg-if-1.0.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.190",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(unix)",
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "std"
+        ]
+      },
       "getrandom-0.4.3": {
         "runtime_dependencies": [
           {
@@ -653,12 +827,41 @@
         "build_dependencies": [],
         "features": []
       },
+      "lazy_static-1.5.1": {
+        "runtime_dependencies": [
+          {
+            "name": "spin",
+            "package_key": "spin-0.9.9",
+            "kind": "normal",
+            "features": [
+              "once"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "spin",
+          "spin_no_std"
+        ]
+      },
       "libc-0.2.190": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
           "default",
           "std"
+        ]
+      },
+      "libm-0.2.16": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "arch",
+          "default"
         ]
       },
       "log-0.4.34": {
@@ -690,8 +893,167 @@
         "build_dependencies": [],
         "features": []
       },
+      "num-bigint-dig-0.8.6": {
+        "runtime_dependencies": [
+          {
+            "name": "lazy_static",
+            "package_key": "lazy_static-1.5.1",
+            "kind": "normal",
+            "features": [
+              "spin_no_std"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "libm",
+            "package_key": "libm-0.2.16",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_integer",
+            "package_key": "num-integer-0.1.47",
+            "kind": "normal",
+            "features": [
+              "i128"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_iter",
+            "package_key": "num-iter-0.1.46",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_traits",
+            "package_key": "num-traits-0.2.19",
+            "kind": "normal",
+            "features": [
+              "i128"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rand",
+            "package_key": "rand-0.8.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "smallvec",
+            "package_key": "smallvec-1.16.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "i128",
+          "prime",
+          "rand",
+          "u64_digit",
+          "zeroize"
+        ]
+      },
+      "num-integer-0.1.47": {
+        "runtime_dependencies": [
+          {
+            "name": "num_traits",
+            "package_key": "num-traits-0.2.19",
+            "kind": "normal",
+            "features": [
+              "i128"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "i128"
+        ]
+      },
+      "num-iter-0.1.46": {
+        "runtime_dependencies": [
+          {
+            "name": "num_integer",
+            "package_key": "num-integer-0.1.47",
+            "kind": "normal",
+            "features": [
+              "i128"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_traits",
+            "package_key": "num-traits-0.2.19",
+            "kind": "normal",
+            "features": [
+              "i128"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "num-traits-0.2.19": {
-        "runtime_dependencies": [],
+        "runtime_dependencies": [
+          {
+            "name": "libm",
+            "package_key": "libm-0.2.16",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [
           {
             "name": "autocfg",
@@ -704,7 +1066,10 @@
             "tree": "host"
           }
         ],
-        "features": []
+        "features": [
+          "i128",
+          "libm"
+        ]
       },
       "once_cell-1.21.4": {
         "runtime_dependencies": [],
@@ -806,10 +1171,104 @@
         "build_dependencies": [],
         "features": []
       },
+      "pem-rfc7468-0.7.0": {
+        "runtime_dependencies": [
+          {
+            "name": "base64ct",
+            "package_key": "base64ct-1.8.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc"
+        ]
+      },
       "pin-project-lite-0.2.17": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "pkcs1-0.7.5": {
+        "runtime_dependencies": [
+          {
+            "name": "der",
+            "package_key": "der-0.7.10",
+            "kind": "normal",
+            "features": [
+              "oid"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pkcs8",
+            "package_key": "pkcs8-0.10.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "spki",
+            "package_key": "spki-0.7.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "pem",
+          "pkcs8",
+          "std",
+          "zeroize"
+        ]
+      },
+      "pkcs8-0.10.2": {
+        "runtime_dependencies": [
+          {
+            "name": "der",
+            "package_key": "der-0.7.10",
+            "kind": "normal",
+            "features": [
+              "oid"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "spki",
+            "package_key": "spki-0.7.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "pem",
+          "std"
+        ]
       },
       "pleme-hotswap-derive-0.1.3": {
         "runtime_dependencies": [
@@ -848,6 +1307,27 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "ppv-lite86-0.2.21": {
+        "runtime_dependencies": [
+          {
+            "name": "zerocopy",
+            "package_key": "zerocopy-0.8.62",
+            "kind": "normal",
+            "features": [
+              "simd"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "simd",
+          "std"
+        ]
       },
       "proc-macro2-1.0.107": {
         "runtime_dependencies": [
@@ -948,6 +1428,100 @@
           "proc-macro"
         ]
       },
+      "rand-0.8.8": {
+        "runtime_dependencies": [
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.190",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(unix)",
+            "tree": "target"
+          },
+          {
+            "name": "rand_chacha",
+            "package_key": "rand_chacha-0.3.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rand_core",
+            "package_key": "rand_core-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default",
+          "getrandom",
+          "libc",
+          "rand_chacha",
+          "std",
+          "std_rng"
+        ]
+      },
+      "rand_chacha-0.3.1": {
+        "runtime_dependencies": [
+          {
+            "name": "ppv_lite86",
+            "package_key": "ppv-lite86-0.2.21",
+            "kind": "normal",
+            "features": [
+              "simd"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rand_core",
+            "package_key": "rand_core-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "std"
+        ]
+      },
+      "rand_core-0.6.4": {
+        "runtime_dependencies": [
+          {
+            "name": "getrandom",
+            "package_key": "getrandom-0.2.17",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "getrandom",
+          "std"
+        ]
+      },
       "ref-cast-1.0.27": {
         "runtime_dependencies": [
           {
@@ -999,6 +1573,159 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "rsa-0.9.10": {
+        "runtime_dependencies": [
+          {
+            "name": "const_oid",
+            "package_key": "const-oid-0.9.6",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "digest",
+            "package_key": "digest-0.10.7",
+            "kind": "normal",
+            "features": [
+              "alloc",
+              "oid"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_bigint",
+            "package_key": "num-bigint-dig-0.8.6",
+            "kind": "normal",
+            "features": [
+              "i128",
+              "prime",
+              "zeroize"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_integer",
+            "package_key": "num-integer-0.1.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "num_traits",
+            "package_key": "num-traits-0.2.19",
+            "kind": "normal",
+            "features": [
+              "libm"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pkcs1",
+            "package_key": "pkcs1-0.7.5",
+            "kind": "normal",
+            "features": [
+              "alloc",
+              "pkcs8"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "pkcs8",
+            "package_key": "pkcs8-0.10.2",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rand_core",
+            "package_key": "rand_core-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "signature",
+            "package_key": "signature-2.2.0",
+            "kind": "normal",
+            "features": [
+              "alloc",
+              "digest",
+              "rand_core"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "spki",
+            "package_key": "spki-0.7.3",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "subtle",
+            "package_key": "subtle-2.6.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.1",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default",
+          "pem",
+          "std",
+          "u64_digit"
+        ]
       },
       "rustversion-1.0.23": {
         "runtime_dependencies": [],
@@ -1536,6 +2263,76 @@
           "std"
         ]
       },
+      "signature-2.2.0": {
+        "runtime_dependencies": [
+          {
+            "name": "digest",
+            "package_key": "digest-0.10.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "rand_core",
+            "package_key": "rand_core-0.6.4",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "digest",
+          "rand_core",
+          "std"
+        ]
+      },
+      "smallvec-1.16.2": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "spin-0.9.9": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "once"
+        ]
+      },
+      "spki-0.7.3": {
+        "runtime_dependencies": [
+          {
+            "name": "der",
+            "package_key": "der-0.7.10",
+            "kind": "normal",
+            "features": [
+              "oid"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "pem",
+          "std"
+        ]
+      },
+      "subtle-2.6.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "syn-2.0.119": {
         "runtime_dependencies": [
           {
@@ -2067,6 +2864,11 @@
           "std"
         ]
       },
+      "typenum-1.20.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "uncased-0.9.10": {
         "runtime_dependencies": [],
         "build_dependencies": [
@@ -2133,6 +2935,21 @@
           "alloc",
           "default",
           "std"
+        ]
+      },
+      "zerocopy-0.8.62": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "simd"
+        ]
+      },
+      "zeroize-1.9.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default"
         ]
       },
       "zmij-1.0.23": {
@@ -4039,6 +4856,9 @@
     "autocfg-1.5.1": {
       "edition": "2015"
     },
+    "base64ct-1.8.3": {
+      "edition": "2024"
+    },
     "bitflags-2.13.2": {
       "edition": "2021"
     },
@@ -4055,6 +4875,9 @@
     "chrono-0.4.45": {
       "edition": "2021"
     },
+    "const-oid-0.9.6": {
+      "edition": "2021"
+    },
     "constant_time_eq-0.4.2": {
       "edition": "2024"
     },
@@ -4063,6 +4886,15 @@
     },
     "cpufeatures-0.3.1": {
       "edition": "2024"
+    },
+    "crypto-common-0.1.7": {
+      "edition": "2018"
+    },
+    "der-0.7.10": {
+      "edition": "2021"
+    },
+    "digest-0.10.7": {
+      "edition": "2018"
     },
     "dyn-clone-1.0.20": {
       "edition": "2018"
@@ -4096,6 +4928,13 @@
     "gen-types-0.1.51": {
       "edition": "2024"
     },
+    "generic-array-0.14.7": {
+      "edition": "2015",
+      "build_script": "build.rs"
+    },
+    "getrandom-0.2.17": {
+      "edition": "2018"
+    },
     "getrandom-0.4.3": {
       "edition": "2024",
       "build_script": "build.rs"
@@ -4125,7 +4964,14 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
+    "lazy_static-1.5.1": {
+      "edition": "2015"
+    },
     "libc-0.2.190": {
+      "edition": "2021",
+      "build_script": "build.rs"
+    },
+    "libm-0.2.16": {
       "edition": "2021",
       "build_script": "build.rs"
     },
@@ -4147,6 +4993,16 @@
     "notify-types-2.1.0": {
       "edition": "2021"
     },
+    "num-bigint-dig-0.8.6": {
+      "edition": "2021",
+      "build_script": "build.rs"
+    },
+    "num-integer-0.1.47": {
+      "edition": "2018"
+    },
+    "num-iter-0.1.46": {
+      "edition": "2018"
+    },
     "num-traits-0.2.19": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -4161,12 +5017,24 @@
       "edition": "2018",
       "proc_macro": true
     },
+    "pem-rfc7468-0.7.0": {
+      "edition": "2021"
+    },
     "pin-project-lite-0.2.17": {
       "edition": "2018"
+    },
+    "pkcs1-0.7.5": {
+      "edition": "2021"
+    },
+    "pkcs8-0.10.2": {
+      "edition": "2021"
     },
     "pleme-hotswap-derive-0.1.3": {
       "edition": "2024",
       "proc_macro": true
+    },
+    "ppv-lite86-0.2.21": {
+      "edition": "2021"
     },
     "proc-macro2-1.0.107": {
       "edition": "2021",
@@ -4180,6 +5048,15 @@
       "edition": "2021",
       "build_script": "build.rs"
     },
+    "rand-0.8.8": {
+      "edition": "2018"
+    },
+    "rand_chacha-0.3.1": {
+      "edition": "2018"
+    },
+    "rand_core-0.6.4": {
+      "edition": "2018"
+    },
     "ref-cast-1.0.27": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -4187,6 +5064,9 @@
     "ref-cast-impl-1.0.27": {
       "edition": "2021",
       "proc_macro": true
+    },
+    "rsa-0.9.10": {
+      "edition": "2021"
     },
     "rustix-1.1.5": {
       "edition": "2021",
@@ -4249,6 +5129,21 @@
     "shlex-2.0.1": {
       "edition": "2018"
     },
+    "signature-2.2.0": {
+      "edition": "2021"
+    },
+    "smallvec-1.16.2": {
+      "edition": "2018"
+    },
+    "spin-0.9.9": {
+      "edition": "2015"
+    },
+    "spki-0.7.3": {
+      "edition": "2021"
+    },
+    "subtle-2.6.1": {
+      "edition": "2018"
+    },
     "syn-2.0.119": {
       "edition": "2021"
     },
@@ -4295,6 +5190,9 @@
     "tracing-core-0.1.36": {
       "edition": "2018"
     },
+    "typenum-1.20.1": {
+      "edition": "2018"
+    },
     "uncased-0.9.10": {
       "edition": "2018",
       "build_script": "build.rs"
@@ -4326,6 +5224,13 @@
     },
     "yansi-1.0.1": {
       "edition": "2021"
+    },
+    "zerocopy-0.8.62": {
+      "edition": "2021",
+      "build_script": "build.rs"
+    },
+    "zeroize-1.9.1": {
+      "edition": "2024"
     },
     "zmij-1.0.23": {
       "edition": "2021",

@@ -202,6 +202,8 @@ for Nix-managed desktop applications. Four modules, each independently testable:
 | `discovered.rs` | Per-leaf attributed deep-merge fold (kanchi discovery composition) | `discovered_from_layers`, `deep_merge_attributed`, `LayerAttribution` |
 | `kube_discovery.rs` (`kube-discovery` feat) | ConfigPlane DISCOVERED-tier cluster `DiscoveryLayer` over the `kanchi::ClusterEnv` seam | `KubeClusterDiscovery`, `KubeSecretReader` (`kube` feat) |
 | `error.rs` | Error types | `ShikumiError` |
+| `secret.rs` | Declarative secret references (`literal`, `command`, `op`, `sops`, `akeyless`, `vault`, `aws_secret`, `gcp_secret`, `file`, `env`) and their resolvers | `SecretSource`, `SecretBackend`, `SecretBackendKind`, `resolve` |
+| `github.rs` (`github` feat) | The fleet's typed GitHub credential: token from any `SecretSource` \| `gh auth token` \| App installation token (JWT-minted, cached, refreshed) \| ordered chain with aggregated failures. Resolves to a `GithubToken` that renders headers / git extraheader / nix `access-tokens` / env pairs and never prints itself. Subsumes fleet `github_token.rs`, pangea-operator `GitHubAppCredentialsConfig`, engenho-types auth `TokenSource`, nix `github-runners` app\|pat | `GithubAuth`, `GithubApp`, `GithubToken`, `GithubAuthResolver`, `GithubAuth::default_chain` |
 
 ### Config Discovery Precedence
 

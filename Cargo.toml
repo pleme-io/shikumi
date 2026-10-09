@@ -150,6 +150,16 @@ kube-discovery = ["dep:kanchi"]
 # (no live cluster in CI) — a shadow-first live proof is the M0 gate.
 kube = ["kube-discovery", "dep:reqwest", "reqwest/blocking", "dep:base64"]
 
+# A typed GitHub credential (src/github.rs): `GithubAuth` = token from any
+# SecretSource | `gh auth token` | GitHub App installation token | an ordered
+# chain of those, resolved to a `GithubToken` that renders into headers, git
+# extraheaders, nix access-tokens and env pairs but never prints itself.
+# Subsumes the partial copies in fleet (github_token.rs), pangea-operator
+# (GitHubAppCredentialsConfig), engenho-types (auth TokenSource), the nix
+# github-runners app|pat union and the github-app-installation-token action.
+# Off by default: it is the only arm that signs JWTs (jsonwebtoken, ring).
+github = ["dep:reqwest", "reqwest/blocking", "dep:jsonwebtoken", "dep:base64"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -234,8 +244,12 @@ clap = { version = "4", features = ["derive"], optional = true }
 # branch head (the cluster module is not yet on kanchi's main / crates.io);
 # repin to `version = "0.1"` once kanchi merges + auto-releases. pending-configplane.
 kanchi = { version = "0.1", optional = true }
-# base64 decode for the real in-cluster Secret value (`kube` feature only).
+# base64: decode for the real in-cluster Secret value (`kube` feature) and the
+# git `http.extraheader` basic-auth encoding (`github` feature).
 base64 = { version = "0.22", optional = true }
+# RS256 JWT signing for GitHub App installation tokens (`github` feature only).
+# 9.x signs through ring, which reqwest's rustls stack already brings in.
+jsonwebtoken = { version = "9", optional = true }
 
 # macOS opts into the FSEvents backend for notify. The target-gate is still
 # required: Cargo unifies features per-target, so a bare `[dependencies]` line
@@ -277,3 +291,15 @@ tokio = { version = "1", features = ["rt", "macros"] }
 # src/store.rs, which derives HotSwap on a fixture config to drive the
 # end-to-end load_and_watch_hotswap path.
 pleme-hotswap-derive = "0.1"
+# `github` feature tests: a throwaway RSA App keypair generated per test run
+# instead of a committed PEM (credential material to every scanner and hook,
+# whatever a comment says). Dev-only; nothing here reaches a consumer.
+rsa = "0.9"
+rand = "0.8"
+
+# RSA-2048 keygen in an unoptimized build takes seconds; optimizing just the
+# bignum crates keeps the github tests fast. Dev profile of this crate only.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.rsa]
+opt-level = 3
