@@ -95,18 +95,23 @@ The count below is re-derivable; do not hand-edit it. Reproduce with:
 cargo test --lib --all-features -- --list | grep -c ': test$'
 ```
 
-Measured 2026-08-16 on `aarch64-darwin` (`cargo test`, exit 0, zero failures):
+Measured 2026-10-09 on `x86_64-linux` (`cargo test --workspace --all-features
+--no-fail-fast`, exit 0, zero failures; default-features column is the
+`--list` count of the lib target only):
 
 | target | `cargo test` (default features) | `cargo test --all-features` |
 |---|---|---|
-| lib unit tests (`src/`) | 7,603 | **9,993** |
+| lib unit tests (`src/`) | 11,002 | **13,760** |
+| `tests/cli_overlay.rs` (`cli` feature) | — | 14 |
+| `tests/discovery_var_is_not_a_field.rs` | not measured | 2 |
 | `tests/dispatcher_registration.rs` | 7 | 7 |
-| doctests | — | 21 collected · 12 run · 9 ignored |
-| **executed total** | **7,610** | **10,012** |
+| doctests | — | 29 collected · 12 run · 17 ignored |
+| **executed total** | not measured | **13,795** |
 
-> **The 2026-07-27 figures this replaced were stale by ~3,400** — they read
-> 6,437 / 6,489 / 6,508, and the ~500 commits of hotswap conversion cells
-> since had never moved them. That is the direction of drift this file warns
+> **The 2026-08-16 figures this replaced (9,993 lib / 10,012 total) were
+> stale by ~3,800**, and the 2026-07-27 figures before them by ~3,400 —
+> they read 6,437 / 6,489 / 6,508, and the ~500 commits of hotswap
+> conversion cells since had never moved them. That is the direction of drift this file warns
 > about everywhere else: a count that is too LOW reads as merely modest, so
 > nobody re-reads it as wrong. Re-derive rather than trust; the reproducer is
 > right above.
